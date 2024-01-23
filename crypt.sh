@@ -332,13 +332,14 @@ fi
 if [ "x$KEY" = 'x' ] ; then
   DATE="$(date +'%b %d %H:%M:%S.%3N') $(hostname) $(basename $0)[$$]: ($(whoami)):"
   echo -n "${DATE} INFO: provide a password: "
-  while read line ; do
+  while read -s line ; do
     [ "x$(echo $line)" = 'x' ] && continue
     pass="$line"
     break
   done </dev/stdin 
+  echo
   echo -n "${DATE} INFO: confirm a password: "
-  while read line ; do
+  while read -s line ; do
     [ "x$(echo $line)" = 'x' ] && continue
     verify="$line"
     break
