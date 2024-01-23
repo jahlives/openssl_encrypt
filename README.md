@@ -7,7 +7,6 @@ Bash Wrapper for encrypting and decrypting files via `openssl`. It uses a `pytho
 # clone repo to /whatever/path
 cd /whatever/path
 git clone http://gitlab.rm-rf.ch/world/openssl_encrypt.git
-sudo apt install python2-minimal
 cd ./openssl_encrypt
 ```
 ## Debian
