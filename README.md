@@ -91,4 +91,4 @@ crypt.sh ACTION -f|--file -p|--pass [[-c|--cipher] blowfish] [[-d|--digest] sha2
                                Has no effect if --quiet is set
                                not mandatory
 ```
-`cipher` and `digest` should support any value that your `openssl` is aware of or use `--show` to see supported ciphers
+`cipher` and `digest` should support any value that your `openssl` is aware of. The password can be provided as CLI arg (not recommended as shown in process list) or as a path to file. In that case the first line of file is used as password. If omitted it will be queried from CLI, written to a temp file and used for the call to python script.
