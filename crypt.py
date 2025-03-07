@@ -736,8 +736,8 @@ if __name__ == '__main__':
     parser.add_argument('--recursive', '-r', action='store_true', help='Process directories recursively when shredding')
     
     # Hash configuration arguments (all optional)
-    parser.add_argument('--sha512', type=int, default=0, help='Number of SHA-512 iterations (default: 0, not used)')
-    parser.add_argument('--sha256', type=int, default=0, help='Number of SHA-256 iterations (default: 0, not used)')
+    parser.add_argument('--sha512', type=int, nargs='?', const=1, default=0, help='Number of SHA-512 iterations (default: 1,000,000 if flag provided without value)')
+    parser.add_argument('--sha256', type=int, nargs='?', const=1, default=0, help='Number of SHA-256 iterations (default: 1,000,000 if flag provided without value)')
     parser.add_argument('--whirlpool', type=int, default=0, help='Number of Whirlpool iterations (default: 0, not used)')
     parser.add_argument('--scrypt-cost', type=int, default=0, help='Scrypt cost factor N as power of 2 (default: 0, not used)')
     parser.add_argument('--scrypt-r', type=int, default=8, help='Scrypt block size parameter r (default: 8)')
@@ -766,6 +766,20 @@ if __name__ == '__main__':
     
     # Create hash configuration dictionary (only include algorithms with iterations > 0)
     scrypt_n = 2 ** args.scrypt_cost if args.scrypt_cost > 0 else 0
+    
+    # Set default iterations if SHA algorithms are requested but no iterations provided
+    MIN_SHA_ITERATIONS = 1000000
+    
+    # If user specified to use SHA-256 or SHA-512 but didn't provide iterations
+    if args.sha256 == 1:  # When flag is provided without value
+        args.sha256 = MIN_SHA_ITERATIONS
+        if not args.quiet:
+            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-256")
+    
+    if args.sha512 == 1:  # When flag is provided without value
+        args.sha512 = MIN_SHA_ITERATIONS
+        if not args.quiet:
+            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-512")
     
     hash_config = {
         'sha512': args.sha512,
