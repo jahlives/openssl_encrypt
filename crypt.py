@@ -1,3 +1,45 @@
+#!/usr/bin/env python3
+
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
+from cryptography.hazmat.backends import default_backend
+import os
+import base64
+import argparse
+import getpass
+import hashlib
+import json
+import tempfile
+import uuid
+import stat
+import signal
+import atexit
+import sys
+import time
+import threading
+import random
+
+try:
+    import pywhirlpool
+    WHIRLPOOL_AVAILABLE = True
+except ImportError:
+    WHIRLPOOL_AVAILABLE = False
+
+def request_confirmation(message):
+    """
+    Ask the user for confirmation
+    
+    Args:
+        message (str): The confirmation message to display
+        
+    Returns:
+        bool: True if the user confirmed, False otherwise
+    """
+    response = input(f"{message} (y/N): ").strip().lower()
+    return response == 'y' or response == 'yes'
+
 def secure_shred_file(file_path, passes=3, quiet=False):
     """
     Securely delete a file by overwriting its contents multiple times with random data
@@ -239,34 +281,7 @@ def with_progress_bar(func, message, *args, quiet=False, **kwargs):
             progress_thread.join()
             # Clear the current line
             print(f"\r{' ' * 80}\r", end='', flush=True)
-        raise e#!/usr/bin/env python3
-
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
-from cryptography.hazmat.backends import default_backend
-import os
-import base64
-import argparse
-import getpass
-import hashlib
-import json
-import tempfile
-import uuid
-import stat
-import signal
-import atexit
-import sys
-import time
-import threading
-import random
-
-try:
-    import pywhirlpool
-    WHIRLPOOL_AVAILABLE = True
-except ImportError:
-    WHIRLPOOL_AVAILABLE = False
+        raise e
 
 def set_secure_permissions(file_path):
     """
@@ -822,7 +837,7 @@ if __name__ == '__main__':
                 
                 # If shredding was requested and encryption was successful
                 if args.shred and not args.overwrite:
-                    if not quiet:
+                    if not args.quiet:
                         print("Shredding the original file as requested...")
                     secure_shred_file(args.input, args.shred_passes, args.quiet)
             
@@ -889,12 +904,32 @@ if __name__ == '__main__':
         
         elif args.action == 'shred':
             # Direct shredding of a file without encryption/decryption
-            if not args.quiet:
-                print(f"Securely shredding file: {args.input}")
-            
-            success = secure_shred_file(args.input, args.shred_passes, args.quiet)
-            if not success:
-                exit_code = 1
+            if os.path.isdir(args.input) and not args.recursive:
+                # Directory detected but recursive flag not provided
+                if args.quiet:
+                    # In quiet mode, fail immediately without confirmation
+                    if not args.quiet:
+                        print(f"Error: {args.input} is a directory. Use --recursive to shred directories.")
+                    exit_code = 1
+                else:
+                    # Ask for confirmation
+                    confirm_message = f"WARNING: {args.input} is a directory but --recursive flag is not specified. " \
+                                     f"Only empty directories will be removed. Continue?"
+                    if request_confirmation(confirm_message):
+                        success = secure_shred_file(args.input, args.shred_passes, args.quiet)
+                        if not success:
+                            exit_code = 1
+                    else:
+                        print("Operation cancelled by user.")
+                        exit_code = 0
+            else:
+                # File or directory with recursive flag
+                if not args.quiet:
+                    print(f"Securely shredding {'directory' if os.path.isdir(args.input) else 'file'}: {args.input}")
+                
+                success = secure_shred_file(args.input, args.shred_passes, args.quiet)
+                if not success:
+                    exit_code = 1
     
     except Exception as e:
         if not args.quiet:
