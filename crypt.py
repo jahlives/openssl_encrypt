@@ -16,6 +16,45 @@ def secure_shred_file(file_path, passes=3, quiet=False):
             print(f"File not found: {file_path}")
         return False
     
+    # Handle directory recursively
+    if os.path.isdir(file_path):
+        if not quiet:
+            print(f"\nRecursively shredding directory: {file_path}")
+        
+        success = True
+        # First, process all files and subdirectories
+        for root, dirs, files in os.walk(file_path, topdown=False):
+            # Process files first
+            for name in files:
+                full_path = os.path.join(root, name)
+                if not secure_shred_file(full_path, passes, quiet):
+                    success = False
+            
+            # Then remove empty directories
+            for name in dirs:
+                dir_path = os.path.join(root, name)
+                try:
+                    os.rmdir(dir_path)
+                    if not quiet:
+                        print(f"Removed directory: {dir_path}")
+                except OSError:
+                    # Directory might not be empty yet due to failed deletions
+                    if not quiet:
+                        print(f"Could not remove directory: {dir_path}")
+                    success = False
+        
+        # Finally remove the root directory
+        try:
+            os.rmdir(file_path)
+            if not quiet:
+                print(f"Removed directory: {file_path}")
+        except OSError:
+            if not quiet:
+                print(f"Could not remove directory: {file_path}")
+            success = False
+            
+        return success
+    
     try:
         # Get file size
         file_size = os.path.getsize(file_path)
@@ -660,12 +699,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Encrypt or decrypt a file with a password')
     parser.add_argument('action', choices=['encrypt', 'decrypt', 'shred'], help='Action to perform')
     parser.add_argument('--password', '-p', help='Password (will prompt if not provided)')
-    parser.add_argument('--input', '-i', required=True, help='Input file')
+    parser.add_argument('--input', '-i', required=True, help='Input file or directory')
     parser.add_argument('--output', '-o', help='Output file (optional for decrypt)')
     parser.add_argument('--quiet', '-q', action='store_true', help='Suppress all output except decrypted content and exit code')
     parser.add_argument('--overwrite', action='store_true', help='Overwrite the input file with the output')
     parser.add_argument('--shred', '-s', action='store_true', help='Securely delete the original file after encryption/decryption')
     parser.add_argument('--shred-passes', type=int, default=3, help='Number of passes for secure deletion (default: 3)')
+    parser.add_argument('--recursive', '-r', action='store_true', help='Process directories recursively when shredding')
     
     # Hash configuration arguments (all optional)
     parser.add_argument('--sha512', type=int, default=0, help='Number of SHA-512 iterations (default: 0, not used)')
