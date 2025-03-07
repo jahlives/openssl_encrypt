@@ -1,6 +1,6 @@
 # Secure File Encryption Tool
 
-A powerful command-line tool for securely encrypting, decrypting, and shredding files with military-grade cryptography and multi-layer password hashing.
+A powerful tool for securely encrypting, decrypting, and shredding files with military-grade cryptography and multi-layer password hashing.
 
 ## Features
 
@@ -12,13 +12,14 @@ A powerful command-line tool for securely encrypting, decrypting, and shredding 
 - **Glob Pattern Support**: Batch operations using wildcard patterns
 - **Safe Overwriting**: Secure in-place file replacement with atomic operations
 - **Progress Visualization**: Real-time progress bars for lengthy operations
+- **Graphical User Interface**: User-friendly GUI for all operations
 
 ## Installation
 
 ### Requirements
 
 - Python 3.6 or higher
-- Dependencies: cryptography (required), pywhirlpool (optional)
+- Dependencies: cryptography (required), pywhirlpool (optional), tkinter (for GUI)
 
 ### Setup
 
@@ -29,41 +30,61 @@ A powerful command-line tool for securely encrypting, decrypting, and shredding 
 pip install -r requirements.txt
 ```
 
-## Basic Usage
+## Usage
 
-### Encrypt a file
+The tool can be used either through the command line interface or the graphical user interface.
 
-```bash
-python crypt.py encrypt -i secretdoc.txt
-```
+### GUI Interface
 
-This creates `secretdoc.txt.encrypted` and prompts for a password.
-
-### Decrypt a file
+To start the graphical user interface:
 
 ```bash
-python crypt.py decrypt -i secretdoc.txt.encrypted -o secretdoc.txt 
+python crypt_launcher.py
 ```
 
-### Securely shred a file
+or directly:
 
 ```bash
-python crypt.py shred -i old_secret.txt
+python crypt_gui.py
 ```
 
-## Command Reference
+The GUI provides a user-friendly interface with four main tabs:
+
+1. **Encrypt**: Encrypt files with various options
+   - Select input and output files
+   - Enter and confirm password
+   - Choose to shred original or overwrite in place
+   - Select hash algorithm
+
+2. **Decrypt**: Decrypt previously encrypted files
+   - Select encrypted file and output location
+   - Enter password
+   - Options to display to screen, shred encrypted file, or overwrite
+
+3. **Shred**: Securely delete files beyond recovery
+   - Select files using path or glob patterns
+   - Preview matched files before deletion
+   - Configure overwrite passes and recursive options
+   - Confirmation dialog to prevent accidental deletion
+
+4. **Advanced**: Configure detailed security options
+   - Set PBKDF2 iterations
+   - Configure iterations for each hash algorithm
+   - Adjust Scrypt parameters (cost factor, block size, parallelization)
+
+### Command-Line Interface
 
 ```
 python crypt.py ACTION [OPTIONS]
 ```
 
-### Actions:
+#### Actions:
 
 - `encrypt`: Encrypt a file with a password
 - `decrypt`: Decrypt a file with a password
 - `shred`: Securely delete a file by overwriting its contents
 
-### Common Options:
+#### Common Options:
 
 | Option | Description |
 |--------|-------------|
@@ -76,7 +97,7 @@ python crypt.py ACTION [OPTIONS]
 | `--shred-passes` | Number of passes for secure deletion (default: 3) |
 | `-r`, `--recursive` | Process directories recursively when shredding |
 
-### Hash Configuration Options:
+#### Hash Configuration Options:
 
 | Option | Description |
 |--------|-------------|
@@ -90,7 +111,7 @@ python crypt.py ACTION [OPTIONS]
 | `--scrypt-p` | Scrypt parallelization parameter p (default: 1) |
 | `--pbkdf2` | Number of PBKDF2 iterations (default: 100,000) |
 
-## Usage Examples
+## Command-Line Examples
 
 ### Basic Encryption/Decryption
 
@@ -153,19 +174,6 @@ python crypt.py shred -i "temp*.log"
 python crypt.py shred -i "backup_*.old"
 ```
 
-### Automation and Batch Processing
-
-```bash
-# Quiet mode for scripts (suppress all output)
-python crypt.py encrypt -i data.db -q
-
-# Provide password via command line (less secure, but useful for scripts)
-python crypt.py encrypt -i config.ini -p "your-password"
-
-# Process an entire directory
-python crypt.py shred -i "cache/*" -r
-```
-
 ## Security Notes
 
 - Use strong, unique passwords! The security of your encrypted files depends primarily on password strength.
@@ -192,6 +200,15 @@ python crypt.py shred -i "cache/*" -r
    - All 0's (0x00)
 2. Truncate the file to zero bytes
 3. Delete the file from the filesystem
+
+## Files Included
+
+- `crypt.py` - Main command-line utility
+- `crypt_gui.py` - Graphical user interface
+- `crypt_launcher.py` - Simple launcher for the GUI
+- `requirements.txt` - Required Python packages
+- `README.md` - This documentation file
+- `test_crypt.py` - Unit tests for the utility
 
 ## License
 
