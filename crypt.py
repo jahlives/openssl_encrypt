@@ -677,6 +677,19 @@ def decrypt_file(input_file, output_file, password, quiet=False):
     else:
         return decrypted_data
 
+def expand_glob_patterns(pattern):
+    """
+    Expand glob patterns into a list of matching files and directories
+    
+    Args:
+        pattern (str): Glob pattern to expand
+        
+    Returns:
+        list: List of matching file and directory paths
+    """
+    import glob
+    return glob.glob(pattern)
+
 if __name__ == '__main__':
     # Global variable to track temporary files that need cleanup
     temp_files_to_cleanup = []
@@ -714,7 +727,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Encrypt or decrypt a file with a password')
     parser.add_argument('action', choices=['encrypt', 'decrypt', 'shred'], help='Action to perform')
     parser.add_argument('--password', '-p', help='Password (will prompt if not provided)')
-    parser.add_argument('--input', '-i', required=True, help='Input file or directory')
+    parser.add_argument('--input', '-i', required=True, help='Input file or directory (supports glob patterns for shred action)')
     parser.add_argument('--output', '-o', help='Output file (optional for decrypt)')
     parser.add_argument('--quiet', '-q', action='store_true', help='Suppress all output except decrypted content and exit code')
     parser.add_argument('--overwrite', action='store_true', help='Overwrite the input file with the output')
@@ -903,32 +916,53 @@ if __name__ == '__main__':
                         print("\nDecrypted successfully, but content is binary and cannot be displayed.")
         
         elif args.action == 'shred':
-            # Direct shredding of a file without encryption/decryption
-            if os.path.isdir(args.input) and not args.recursive:
-                # Directory detected but recursive flag not provided
-                if args.quiet:
-                    # In quiet mode, fail immediately without confirmation
-                    if not args.quiet:
-                        print(f"Error: {args.input} is a directory. Use --recursive to shred directories.")
-                    exit_code = 1
-                else:
-                    # Ask for confirmation
-                    confirm_message = f"WARNING: {args.input} is a directory but --recursive flag is not specified. " \
-                                     f"Only empty directories will be removed. Continue?"
-                    if request_confirmation(confirm_message):
-                        success = secure_shred_file(args.input, args.shred_passes, args.quiet)
-                        if not success:
-                            exit_code = 1
-                    else:
-                        print("Operation cancelled by user.")
-                        exit_code = 0
-            else:
-                # File or directory with recursive flag
+            # Direct shredding of files or directories without encryption/decryption
+            
+            # Expand any glob patterns in the input path
+            matched_paths = expand_glob_patterns(args.input)
+            
+            if not matched_paths:
                 if not args.quiet:
-                    print(f"Securely shredding {'directory' if os.path.isdir(args.input) else 'file'}: {args.input}")
+                    print(f"No files or directories match the pattern: {args.input}")
+                exit_code = 1
+            else:
+                # If there are multiple files/dirs to shred, inform the user
+                if len(matched_paths) > 1 and not args.quiet:
+                    print(f"Found {len(matched_paths)} files/directories matching the pattern.")
+                    
+                overall_success = True
                 
-                success = secure_shred_file(args.input, args.shred_passes, args.quiet)
-                if not success:
+                # Process each matched path
+                for path in matched_paths:
+                    if os.path.isdir(path) and not args.recursive:
+                        # Directory detected but recursive flag not provided
+                        if args.quiet:
+                            # In quiet mode, fail immediately without confirmation
+                            if not args.quiet:
+                                print(f"Error: {path} is a directory. Use --recursive to shred directories.")
+                            overall_success = False
+                            continue
+                        else:
+                            # Ask for confirmation
+                            confirm_message = f"WARNING: {path} is a directory but --recursive flag is not specified. " \
+                                            f"Only empty directories will be removed. Continue?"
+                            if request_confirmation(confirm_message):
+                                success = secure_shred_file(path, args.shred_passes, args.quiet)
+                                if not success:
+                                    overall_success = False
+                            else:
+                                print(f"Skipping directory: {path}")
+                                continue
+                    else:
+                        # File or directory with recursive flag
+                        if not args.quiet:
+                            print(f"Securely shredding {'directory' if os.path.isdir(path) else 'file'}: {path}")
+                        
+                        success = secure_shred_file(path, args.shred_passes, args.quiet)
+                        if not success:
+                            overall_success = False
+                
+                if not overall_success:
                     exit_code = 1
     
     except Exception as e:
