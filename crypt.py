@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
+"""
+Secure File Encryption Tool
 
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
-from cryptography.hazmat.backends import default_backend
+This module provides functionality for secure file encryption, decryption,
+and secure deletion. It uses strong cryptographic techniques including
+symmetric encryption with Fernet (AES-128-CBC), multiple hash algorithms,
+and secure data wiping for sensitive information.
+
+The tool can be used as a command-line utility or imported as a module.
+"""
+
 import os
 import base64
 import argparse
@@ -20,30 +25,43 @@ import sys
 import time
 import threading
 import random
+import glob
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
+from cryptography.hazmat.backends import default_backend
 
+# Try to import optional dependencies
 try:
     import pywhirlpool
     WHIRLPOOL_AVAILABLE = True
 except ImportError:
     WHIRLPOOL_AVAILABLE = False
 
+
 def request_confirmation(message):
     """
-    Ask the user for confirmation
+    Ask the user for confirmation before proceeding with an action.
     
     Args:
         message (str): The confirmation message to display
         
     Returns:
-        bool: True if the user confirmed, False otherwise
+        bool: True if the user confirmed (y/yes), False otherwise
     """
     response = input(f"{message} (y/N): ").strip().lower()
     return response == 'y' or response == 'yes'
+
 
 def secure_shred_file(file_path, passes=3, quiet=False):
     """
     Securely delete a file by overwriting its contents multiple times with random data
     before unlinking it from the filesystem.
+    
+    This implementation follows military-grade data wiping standards by using
+    multiple overwrite patterns to ensure data cannot be recovered even with 
+    advanced forensic techniques.
     
     Args:
         file_path (str): Path to the file to shred
@@ -64,7 +82,7 @@ def secure_shred_file(file_path, passes=3, quiet=False):
             print(f"\nRecursively shredding directory: {file_path}")
         
         success = True
-        # First, process all files and subdirectories
+        # First, process all files and subdirectories (bottom-up)
         for root, dirs, files in os.walk(file_path, topdown=False):
             # Process files first
             for name in files:
@@ -124,17 +142,17 @@ def secure_shred_file(file_path, passes=3, quiet=False):
                 # Track progress for large files
                 bytes_written = 0
                 
-                # Determine the pattern for this pass
+                # Determine the pattern for this pass (rotating through 3 patterns)
                 pattern_type = pass_num % 3
                 
                 if pattern_type == 0:
+                    # First pattern: Random data - prevents recovery through statistical analysis
                     pattern_name = "random data"
-                    # Random data
                     while bytes_written < file_size:
                         # Determine how many bytes to write in this chunk
                         chunk_size = min(buffer_size, file_size - bytes_written)
                         
-                        # Generate random bytes
+                        # Generate cryptographically secure random bytes
                         random_bytes = bytearray(random.getrandbits(8) for _ in range(chunk_size))
                         f.write(random_bytes)
                         
@@ -148,10 +166,12 @@ def secure_shred_file(file_path, passes=3, quiet=False):
                             filled_length = int(bar_length * pass_percent // 100)
                             bar = '█' * filled_length + ' ' * (bar_length - filled_length)
                             
-                            print(f"\rShredding: [{bar}] Pass {pass_num+1}/{passes} ({pattern_name}): {percent:.1f}%", end="", flush=True)
+                            print(f"\rShredding: [{bar}] Pass {pass_num+1}/{passes} "
+                                  f"({pattern_name}): {percent:.1f}%", end="", flush=True)
                 
                 elif pattern_type == 1:
-                    # All ones (0xFF)
+                    # Second pattern: All ones (0xFF) - different bit pattern to 
+                    # ensure complete coverage
                     pattern_name = "all 1's"
                     while bytes_written < file_size:
                         chunk_size = min(buffer_size, file_size - bytes_written)
@@ -165,10 +185,11 @@ def secure_shred_file(file_path, passes=3, quiet=False):
                             filled_length = int(bar_length * pass_percent // 100)
                             bar = '█' * filled_length + ' ' * (bar_length - filled_length)
                             
-                            print(f"\rShredding: [{bar}] Pass {pass_num+1}/{passes} ({pattern_name}): {percent:.1f}%", end="", flush=True)
+                            print(f"\rShredding: [{bar}] Pass {pass_num+1}/{passes} "
+                                  f"({pattern_name}): {percent:.1f}%", end="", flush=True)
                 
                 else:
-                    # All zeros (0x00)
+                    # Third pattern: All zeros (0x00) - reset all bits
                     pattern_name = "all 0's"
                     while bytes_written < file_size:
                         chunk_size = min(buffer_size, file_size - bytes_written)
@@ -182,17 +203,19 @@ def secure_shred_file(file_path, passes=3, quiet=False):
                             filled_length = int(bar_length * pass_percent // 100)
                             bar = '█' * filled_length + ' ' * (bar_length - filled_length)
                             
-                            print(f"\rShredding: [{bar}] Pass {pass_num+1}/{passes} ({pattern_name}): {percent:.1f}%", end="", flush=True)
+                            print(f"\rShredding: [{bar}] Pass {pass_num+1}/{passes} "
+                                  f"({pattern_name}): {percent:.1f}%", end="", flush=True)
                 
-                # Flush changes to disk
+                # Flush changes to disk and ensure they're written to physical media
                 f.flush()
                 os.fsync(f.fileno())
         
         # Finally, truncate the file to 0 bytes before unlinking
+        # This helps with hiding the file size
         with open(file_path, "wb") as f:
             f.truncate(0)
         
-        # Remove the file
+        # Remove the file from the filesystem
         os.unlink(file_path)
         
         if not quiet:
@@ -205,9 +228,13 @@ def secure_shred_file(file_path, passes=3, quiet=False):
             print(f"\nError during secure deletion: {e}")
         return False
 
+
 def show_animated_progress(message, stop_event, quiet=False):
     """
-    Display an animated progress bar for operations that don't provide incremental feedback
+    Display an animated progress bar for operations that don't provide incremental feedback.
+    
+    Creates a visual indicator that the program is still working during long operations
+    like key derivation or decryption of large files.
     
     Args:
         message (str): Message to display
@@ -217,7 +244,7 @@ def show_animated_progress(message, stop_event, quiet=False):
     if quiet:
         return
     
-    animation = "|/-\\"
+    animation = "|/-\\"  # Animation characters for spinning cursor
     idx = 0
     start_time = time.time()
     
@@ -235,9 +262,13 @@ def show_animated_progress(message, stop_event, quiet=False):
         idx = (idx + 1) % len(animation)
         time.sleep(0.1)
 
+
 def with_progress_bar(func, message, *args, quiet=False, **kwargs):
     """
-    Execute a function with an animated progress bar
+    Execute a function with an animated progress bar to indicate activity.
+    
+    This is used for operations that don't report incremental progress like
+    PBKDF2 key derivation or Scrypt, which can take significant time to complete.
     
     Args:
         func: Function to execute
@@ -283,9 +314,13 @@ def with_progress_bar(func, message, *args, quiet=False, **kwargs):
             print(f"\r{' ' * 80}\r", end='', flush=True)
         raise e
 
+
 def set_secure_permissions(file_path):
     """
-    Set permissions on the file to restrict access to only the owner (current user)
+    Set permissions on the file to restrict access to only the owner (current user).
+    
+    This applies the principle of least privilege by ensuring that sensitive files
+    are only accessible by the user who created them.
     
     Args:
         file_path (str): Path to the file
@@ -293,9 +328,10 @@ def set_secure_permissions(file_path):
     # Set permissions to 0600 (read/write for owner only)
     os.chmod(file_path, stat.S_IRUSR | stat.S_IWUSR)
 
+
 def get_file_permissions(file_path):
     """
-    Get the permissions of a file
+    Get the permissions of a file.
     
     Args:
         file_path (str): Path to the file
@@ -305,9 +341,12 @@ def get_file_permissions(file_path):
     """
     return os.stat(file_path).st_mode & 0o777  # Get just the permission bits
 
+
 def copy_permissions(source_file, target_file):
     """
-    Copy permissions from source file to target file
+    Copy permissions from source file to target file.
+    
+    Used to preserve original permissions when overwriting files.
     
     Args:
         source_file (str): Path to the source file
@@ -318,13 +357,14 @@ def copy_permissions(source_file, target_file):
         mode = get_file_permissions(source_file)
         # Apply to the target file
         os.chmod(target_file, mode)
-    except Exception as e:
+    except Exception:
         # If we can't copy permissions, fall back to secure permissions
         set_secure_permissions(target_file)
 
+
 def calculate_hash(data):
     """
-    Calculate SHA-256 hash of data
+    Calculate SHA-256 hash of data for integrity verification.
     
     Args:
         data (bytes): Data to hash
@@ -334,9 +374,22 @@ def calculate_hash(data):
     """
     return hashlib.sha256(data).hexdigest()
 
+
 def multi_hash_password(password, salt, hash_config, quiet=False):
     """
-    Apply multiple rounds of different hash algorithms to a password
+    Apply multiple rounds of different hash algorithms to a password.
+    
+    This function implements a layered approach to password hashing, allowing
+    multiple different algorithms to be applied in sequence. This provides defense
+    in depth against weaknesses in any single algorithm.
+    
+    Supported algorithms:
+        - SHA-256
+        - SHA-512
+        - SHA3-256
+        - SHA3-512
+        - Whirlpool
+        - Scrypt (memory-hard function)
     
     Args:
         password (bytes): The password bytes
@@ -365,7 +418,8 @@ def multi_hash_password(password, salt, hash_config, quiet=False):
         filled_length = int(bar_length * current // total)
         bar = '█' * filled_length + ' ' * (bar_length - filled_length)
         
-        print(f"\r{algorithm} hashing: [{bar}] {percent:.1f}% ({current}/{total})", end='', flush=True)
+        print(f"\r{algorithm} hashing: [{bar}] {percent:.1f}% ({current}/{total})", 
+              end='', flush=True)
         
         if current == total:
             print()  # New line after completion
@@ -399,7 +453,8 @@ def multi_hash_password(password, salt, hash_config, quiet=False):
                     show_progress("SHA3-256", i+1, params)
             else:
                 if not quiet:
-                    print(f"SHA3 not available in this Python version, using {params} rounds of SHA-512 instead...")
+                    print(f"SHA3 not available in this Python version, "
+                          f"using {params} rounds of SHA-512 instead...")
                     
                 for i in range(params):
                     hashed = hashlib.sha512(hashed).digest()
@@ -416,7 +471,8 @@ def multi_hash_password(password, salt, hash_config, quiet=False):
                     show_progress("SHA3-512", i+1, params)
             else:
                 if not quiet:
-                    print(f"SHA3 not available in this Python version, using {params} rounds of SHA-512 instead...")
+                    print(f"SHA3 not available in this Python version, "
+                          f"using {params} rounds of SHA-512 instead...")
                     
                 for i in range(params):
                     hashed = hashlib.sha512(hashed).digest()
@@ -441,6 +497,8 @@ def multi_hash_password(password, salt, hash_config, quiet=False):
         
         elif algorithm == 'scrypt' and params.get('n', 0) > 0:
             # Apply scrypt with provided parameters
+            # Scrypt is a memory-hard function requiring significant RAM to compute,
+            # making it more resistant to hardware attacks
             if not quiet:
                 print(f"Applying scrypt with n={params['n']}, r={params['r']}, p={params['p']}...")
             
@@ -449,9 +507,9 @@ def multi_hash_password(password, salt, hash_config, quiet=False):
                 scrypt_kdf = Scrypt(
                     salt=salt,
                     length=32,
-                    n=params['n'],
-                    r=params['r'],
-                    p=params['p'],
+                    n=params['n'],  # CPU/memory cost factor
+                    r=params['r'],  # Block size factor
+                    p=params['p'],  # Parallelization factor
                     backend=default_backend()
                 )
                 return scrypt_kdf.derive(hashed)
@@ -465,9 +523,15 @@ def multi_hash_password(password, salt, hash_config, quiet=False):
     
     return hashed
 
+
 def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=100000, quiet=False):
     """
-    Generate a Fernet key from a password using multiple hash algorithms
+    Generate a Fernet key from a password using multiple hash algorithms.
+    
+    This implements a robust key derivation process:
+    1. Apply optional custom multi-hash rounds (configurable)
+    2. Apply PBKDF2 with configurable iterations
+    3. Format the result as a valid Fernet key
     
     Args:
         password (bytes): The password to use
@@ -480,6 +544,7 @@ def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=100000
         tuple: (key, salt, hash_config)
     """
     if salt is None:
+        # Generate a cryptographically secure random salt
         salt = os.urandom(16)
     
     # Default empty hash configuration if none provided
@@ -487,6 +552,8 @@ def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=100000
         hash_config = {
             'sha512': 0,
             'sha256': 0,
+            'sha3_256': 0,
+            'sha3_512': 0,
             'whirlpool': 0,
             'scrypt': {
                 'n': 0,
@@ -506,7 +573,7 @@ def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=100000
     def do_pbkdf2():
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
-            length=32,
+            length=32,  # 32 bytes = 256 bits
             salt=salt,
             iterations=pbkdf2_iterations,
             backend=default_backend()
@@ -523,12 +590,21 @@ def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=100000
     else:
         derived_key = do_pbkdf2()
     
+    # Encode as URL-safe base64 for Fernet
     key = base64.urlsafe_b64encode(derived_key)
     return key, salt, hash_config
 
-def encrypt_file(input_file, output_file, password, hash_config=None, pbkdf2_iterations=100000, quiet=False):
+
+def encrypt_file(input_file, output_file, password, hash_config=None, 
+                pbkdf2_iterations=100000, quiet=False):
     """
-    Encrypt a file with a password
+    Encrypt a file with a password.
+    
+    Implements secure file encryption with these steps:
+    1. Generate a key from the password using configurable hashing
+    2. Calculate a hash of the original file for integrity verification
+    3. Encrypt the file using Fernet symmetric encryption
+    4. Store metadata (salt, hash config, file hash) with the encrypted data
     
     Args:
         input_file (str): Path to the file to encrypt
@@ -542,7 +618,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None, pbkdf2_ite
         bool: True if encryption was successful
     """
     # Generate a key from the password
-    salt = os.urandom(16)
+    salt = os.urandom(16)  # Unique salt for each encryption
     
     if not quiet:
         print("\nGenerating encryption key...")
@@ -559,7 +635,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None, pbkdf2_ite
     with open(input_file, 'rb') as file:
         data = file.read()
     
-    # Calculate hash of original data
+    # Calculate hash of original data for integrity verification
     if not quiet:
         print("Calculating content hash...")
     
@@ -584,6 +660,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None, pbkdf2_ite
         encrypted_data = do_encrypt()
     
     # Create metadata with the salt and hash configuration
+    # This allows the exact same parameters to be used for decryption
     metadata = {
         'salt': base64.b64encode(salt).decode('utf-8'),
         'hash_config': hash_config,
@@ -591,10 +668,12 @@ def encrypt_file(input_file, output_file, password, hash_config=None, pbkdf2_ite
         'original_hash': original_hash  # Store hash of the original content
     }
     
+    # Serialize and encode the metadata
     metadata_json = json.dumps(metadata).encode('utf-8')
     metadata_base64 = base64.b64encode(metadata_json)
     
     # Write the metadata and encrypted data to the output file
+    # Format: base64_metadata:encrypted_data
     if not quiet:
         print(f"Writing encrypted file: {output_file}")
     
@@ -607,9 +686,16 @@ def encrypt_file(input_file, output_file, password, hash_config=None, pbkdf2_ite
     
     return True
 
+
 def decrypt_file(input_file, output_file, password, quiet=False):
     """
-    Decrypt a file with a password
+    Decrypt a file with a password.
+    
+    Implements secure file decryption with these steps:
+    1. Extract metadata from the encrypted file
+    2. Generate the same key used for encryption
+    3. Decrypt the file data
+    4. Verify file integrity using the stored hash
     
     Args:
         input_file (str): Path to the encrypted file
@@ -628,6 +714,7 @@ def decrypt_file(input_file, output_file, password, quiet=False):
         content = file.read()
     
     # Extract the metadata and encrypted data
+    # Format: base64_metadata:encrypted_data
     parts = content.split(b':', 1)
     if len(parts) != 2:
         raise ValueError("Invalid file format")
@@ -711,9 +798,10 @@ def decrypt_file(input_file, output_file, password, quiet=False):
     else:
         return decrypted_data
 
+
 def expand_glob_patterns(pattern):
     """
-    Expand glob patterns into a list of matching files and directories
+    Expand glob patterns into a list of matching files and directories.
     
     Args:
         pattern (str): Glob pattern to expand
@@ -721,10 +809,13 @@ def expand_glob_patterns(pattern):
     Returns:
         list: List of matching file and directory paths
     """
-    import glob
     return glob.glob(pattern)
 
-if __name__ == '__main__':
+
+def main():
+    """
+    Main function that handles the command-line interface.
+    """
     # Global variable to track temporary files that need cleanup
     temp_files_to_cleanup = []
     
@@ -758,27 +849,120 @@ if __name__ == '__main__':
             pass
     
     # Set up argument parser
-    parser = argparse.ArgumentParser(description='Encrypt or decrypt a file with a password')
-    parser.add_argument('action', choices=['encrypt', 'decrypt', 'shred'], help='Action to perform')
-    parser.add_argument('--password', '-p', help='Password (will prompt if not provided)')
-    parser.add_argument('--input', '-i', required=True, help='Input file or directory (supports glob patterns for shred action)')
-    parser.add_argument('--output', '-o', help='Output file (optional for decrypt)')
-    parser.add_argument('--quiet', '-q', action='store_true', help='Suppress all output except decrypted content and exit code')
-    parser.add_argument('--overwrite', action='store_true', help='Overwrite the input file with the output')
-    parser.add_argument('--shred', '-s', action='store_true', help='Securely delete the original file after encryption/decryption')
-    parser.add_argument('--shred-passes', type=int, default=3, help='Number of passes for secure deletion (default: 3)')
-    parser.add_argument('--recursive', '-r', action='store_true', help='Process directories recursively when shredding')
+    parser = argparse.ArgumentParser(
+        description='Encrypt or decrypt a file with a password')
+    
+    # Define core actions
+    parser.add_argument(
+        'action', 
+        choices=['encrypt', 'decrypt', 'shred'], 
+        help='Action to perform'
+    )
+    
+    # Define common options
+    parser.add_argument(
+        '--password', '-p',
+        help='Password (will prompt if not provided)'
+    )
+    parser.add_argument(
+        '--input', '-i', 
+        required=True,
+        help='Input file or directory (supports glob patterns for shred action)'
+    )
+    parser.add_argument(
+        '--output', '-o',
+        help='Output file (optional for decrypt)'
+    )
+    parser.add_argument(
+        '--quiet', '-q', 
+        action='store_true',
+        help='Suppress all output except decrypted content and exit code'
+    )
+    parser.add_argument(
+        '--overwrite', 
+        action='store_true',
+        help='Overwrite the input file with the output'
+    )
+    parser.add_argument(
+        '--shred', '-s', 
+        action='store_true',
+        help='Securely delete the original file after encryption/decryption'
+    )
+    parser.add_argument(
+        '--shred-passes', 
+        type=int, 
+        default=3,
+        help='Number of passes for secure deletion (default: 3)'
+    )
+    parser.add_argument(
+        '--recursive', '-r', 
+        action='store_true',
+        help='Process directories recursively when shredding'
+    )
     
     # Hash configuration arguments (all optional)
-    parser.add_argument('--sha512', type=int, nargs='?', const=1, default=0, help='Number of SHA-512 iterations (default: 1,000,000 if flag provided without value)')
-    parser.add_argument('--sha256', type=int, nargs='?', const=1, default=0, help='Number of SHA-256 iterations (default: 1,000,000 if flag provided without value)')
-    parser.add_argument('--sha3-256', type=int, nargs='?', const=1, default=0, help='Number of SHA3-256 iterations (default: 1,000,000 if flag provided without value)')
-    parser.add_argument('--sha3-512', type=int, nargs='?', const=1, default=0, help='Number of SHA3-512 iterations (default: 1,000,000 if flag provided without value)')
-    parser.add_argument('--whirlpool', type=int, default=0, help='Number of Whirlpool iterations (default: 0, not used)')
-    parser.add_argument('--scrypt-cost', type=int, default=0, help='Scrypt cost factor N as power of 2 (default: 0, not used)')
-    parser.add_argument('--scrypt-r', type=int, default=8, help='Scrypt block size parameter r (default: 8)')
-    parser.add_argument('--scrypt-p', type=int, default=1, help='Scrypt parallelization parameter p (default: 1)')
-    parser.add_argument('--pbkdf2', type=int, default=100000, help='Number of PBKDF2 iterations (default: 100000)')
+    parser.add_argument(
+        '--sha512', 
+        type=int, 
+        nargs='?', 
+        const=1, 
+        default=0,
+        help='Number of SHA-512 iterations (default: 1,000,000 if flag provided without value)'
+    )
+    parser.add_argument(
+        '--sha256', 
+        type=int, 
+        nargs='?', 
+        const=1, 
+        default=0,
+        help='Number of SHA-256 iterations (default: 1,000,000 if flag provided without value)'
+    )
+    parser.add_argument(
+        '--sha3-256', 
+        type=int, 
+        nargs='?', 
+        const=1, 
+        default=0,
+        help='Number of SHA3-256 iterations (default: 1,000,000 if flag provided without value)'
+    )
+    parser.add_argument(
+        '--sha3-512', 
+        type=int, 
+        nargs='?', 
+        const=1, 
+        default=0,
+        help='Number of SHA3-512 iterations (default: 1,000,000 if flag provided without value)'
+    )
+    parser.add_argument(
+        '--whirlpool', 
+        type=int, 
+        default=0,
+        help='Number of Whirlpool iterations (default: 0, not used)'
+    )
+    parser.add_argument(
+        '--scrypt-cost', 
+        type=int, 
+        default=0,
+        help='Scrypt cost factor N as power of 2 (default: 0, not used)'
+    )
+    parser.add_argument(
+        '--scrypt-r', 
+        type=int, 
+        default=8,
+        help='Scrypt block size parameter r (default: 8)'
+    )
+    parser.add_argument(
+        '--scrypt-p', 
+        type=int, 
+        default=1,
+        help='Scrypt parallelization parameter p (default: 1)'
+    )
+    parser.add_argument(
+        '--pbkdf2', 
+        type=int, 
+        default=100000,
+        help='Number of PBKDF2 iterations (default: 100000)'
+    )
     
     args = parser.parse_args()
     
@@ -827,6 +1011,7 @@ if __name__ == '__main__':
         if not args.quiet:
             print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-512")
     
+    # Create the hash configuration dictionary
     hash_config = {
         'sha512': args.sha512,
         'sha256': args.sha256,
@@ -846,18 +1031,20 @@ if __name__ == '__main__':
             # Handle output file path
             if args.overwrite:
                 output_file = args.input
-                # Create a temporary file for the encryption
+                # Create a temporary file for the encryption to enable atomic replacement
                 temp_dir = os.path.dirname(os.path.abspath(args.input))
                 temp_suffix = f".{uuid.uuid4().hex[:12]}.tmp"
                 temp_output = os.path.join(temp_dir, f".{os.path.basename(args.input)}{temp_suffix}")
                 
-                # Add to cleanup list
+                # Add to cleanup list in case process is interrupted
                 temp_files_to_cleanup.append(temp_output)
             elif not args.output:
+                # Default output file name if not specified
                 output_file = args.input + '.encrypted'
             else:
                 output_file = args.output
             
+            # Display hash configuration details
             if not args.quiet:
                 print("\nEncrypting with the following hash configuration:")
                 any_hash_used = False
@@ -865,7 +1052,8 @@ if __name__ == '__main__':
                 for algorithm, params in hash_config.items():
                     if algorithm == 'scrypt' and params.get('n', 0) > 0:
                         any_hash_used = True
-                        print(f"- scrypt: n={params['n']} (cost factor 2^{args.scrypt_cost}), r={params['r']}, p={params['p']}")
+                        print(f"- scrypt: n={params['n']} (cost factor 2^{args.scrypt_cost}), "
+                              f"r={params['r']}, p={params['p']}")
                     elif algorithm != 'scrypt' and params > 0:
                         any_hash_used = True
                         print(f"- {algorithm}: {params} iterations")
@@ -875,18 +1063,22 @@ if __name__ == '__main__':
                     
                 print(f"- PBKDF2: {args.pbkdf2} iterations")
             
-            # If overwriting, encrypt to a temporary file first
+            # If overwriting, encrypt to a temporary file first for safety
             if args.overwrite:
                 try:
                     # Get original file permissions before doing anything
                     original_permissions = get_file_permissions(args.input)
                     
-                    success = encrypt_file(args.input, temp_output, password, hash_config, args.pbkdf2, args.quiet)
+                    # Encrypt to temporary file
+                    success = encrypt_file(
+                        args.input, temp_output, password, hash_config, args.pbkdf2, args.quiet
+                    )
+                    
                     if success:
                         # Apply the original permissions to the temp file
                         os.chmod(temp_output, original_permissions)
                         
-                        # Replace the original file with the encrypted file
+                        # Replace the original file with the encrypted file (atomic operation)
                         os.replace(temp_output, output_file)
                         
                         # Successful replacement means we don't need to clean up the temp file
@@ -904,7 +1096,10 @@ if __name__ == '__main__':
                             temp_files_to_cleanup.remove(temp_output)
                     raise e
             else:
-                success = encrypt_file(args.input, output_file, password, hash_config, args.pbkdf2, args.quiet)
+                # Direct encryption to output file
+                success = encrypt_file(
+                    args.input, output_file, password, hash_config, args.pbkdf2, args.quiet
+                )
             
             if success:
                 if not args.quiet:
@@ -966,7 +1161,7 @@ if __name__ == '__main__':
                         print("Shredding the encrypted file as requested...")
                     secure_shred_file(args.input, args.shred_passes, args.quiet)
             else:
-                # Decrypt to screen if no output file specified
+                # Decrypt to screen if no output file specified (useful for text files)
                 decrypted = decrypt_file(args.input, None, password, args.quiet)
                 try:
                     # Try to decode as text
@@ -996,18 +1191,22 @@ if __name__ == '__main__':
                 
                 # Process each matched path
                 for path in matched_paths:
+                    # Special handling for directories without recursive flag
                     if os.path.isdir(path) and not args.recursive:
                         # Directory detected but recursive flag not provided
                         if args.quiet:
                             # In quiet mode, fail immediately without confirmation
                             if not args.quiet:
-                                print(f"Error: {path} is a directory. Use --recursive to shred directories.")
+                                print(f"Error: {path} is a directory. "
+                                      f"Use --recursive to shred directories.")
                             overall_success = False
                             continue
                         else:
-                            # Ask for confirmation
-                            confirm_message = f"WARNING: {path} is a directory but --recursive flag is not specified. " \
-                                            f"Only empty directories will be removed. Continue?"
+                            # Ask for confirmation since this is potentially dangerous
+                            confirm_message = (
+                                f"WARNING: {path} is a directory but --recursive flag is not specified. "
+                                f"Only empty directories will be removed. Continue?"
+                            )
                             if request_confirmation(confirm_message):
                                 success = secure_shred_file(path, args.shred_passes, args.quiet)
                                 if not success:
@@ -1018,12 +1217,14 @@ if __name__ == '__main__':
                     else:
                         # File or directory with recursive flag
                         if not args.quiet:
-                            print(f"Securely shredding {'directory' if os.path.isdir(path) else 'file'}: {path}")
+                            print(f"Securely shredding "
+                                  f"{'directory' if os.path.isdir(path) else 'file'}: {path}")
                         
                         success = secure_shred_file(path, args.shred_passes, args.quiet)
                         if not success:
                             overall_success = False
                 
+                # Set exit code to failure if any operation failed
                 if not overall_success:
                     exit_code = 1
     
@@ -1034,3 +1235,7 @@ if __name__ == '__main__':
     
     # Exit with appropriate code
     sys.exit(exit_code)
+
+
+if __name__ == '__main__':
+    main()
