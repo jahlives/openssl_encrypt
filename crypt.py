@@ -1,33 +1,508 @@
-try:
-  import sys
-except ImportError,e:
-  print e.message
-  exit(1)
+#!/usr/bin/env python3
 
-if __name__ == "__main__":
-  if len(sys.argv) > 1 and sys.argv[1] in ('-g', '--gui'):
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
+from cryptography.hazmat.backends import default_backend
+import os
+import base64
+import argparse
+import getpass
+import hashlib
+import json
+import tempfile
+import uuid
+import stat
+import signal
+import atexit
+import sys
+
+try:
+    import pywhirlpool
+    WHIRLPOOL_AVAILABLE = True
+except ImportError:
+    WHIRLPOOL_AVAILABLE = False
+
+def set_secure_permissions(file_path):
+    """
+    Set permissions on the file to restrict access to only the owner (current user)
+    
+    Args:
+        file_path (str): Path to the file
+    """
+    # Set permissions to 0600 (read/write for owner only)
+    os.chmod(file_path, stat.S_IRUSR | stat.S_IWUSR)
+
+def get_file_permissions(file_path):
+    """
+    Get the permissions of a file
+    
+    Args:
+        file_path (str): Path to the file
+        
+    Returns:
+        int: File permissions mode
+    """
+    return os.stat(file_path).st_mode & 0o777  # Get just the permission bits
+
+def copy_permissions(source_file, target_file):
+    """
+    Copy permissions from source file to target file
+    
+    Args:
+        source_file (str): Path to the source file
+        target_file (str): Path to the target file
+    """
     try:
-      from helper.gui import *
-    except ImportError, e:
-      sys.stderr.write('FATAL: ' + e.message + '\n')
-      sys.exit(1)
-    app = cryptGui_tk(None)
-    app.title('CryptGui')
-    img = Tkinter.PhotoImage(file=baseDir + '/favicon.png')
-    app.tk.call('wm', 'iconphoto', app._w, img)
-    app.mainloop()
-  elif len(sys.argv) > 1:
+        # Get the permissions from the source file
+        mode = get_file_permissions(source_file)
+        # Apply to the target file
+        os.chmod(target_file, mode)
+    except Exception as e:
+        # If we can't copy permissions, fall back to secure permissions
+        set_secure_permissions(target_file)
+
+def calculate_hash(data):
+    """
+    Calculate SHA-256 hash of data
+    
+    Args:
+        data (bytes): Data to hash
+        
+    Returns:
+        str: Hexadecimal hash string
+    """
+    return hashlib.sha256(data).hexdigest()
+
+def multi_hash_password(password, salt, hash_config):
+    """
+    Apply multiple rounds of different hash algorithms to a password
+    
+    Args:
+        password (bytes): The password bytes
+        salt (bytes): Salt value to use
+        hash_config (dict): Dictionary with algorithm names as keys and iteration/parameter values
+    
+    Returns:
+        bytes: The hashed password
+    """
+    # Start with the original password + salt
+    hashed = password + salt
+    
+    # Apply each hash algorithm in sequence (only if iterations > 0)
+    for algorithm, params in hash_config.items():
+        if algorithm == 'sha512' and params > 0:
+            for _ in range(params):
+                hashed = hashlib.sha512(hashed).digest()
+        
+        elif algorithm == 'sha256' and params > 0:
+            for _ in range(params):
+                hashed = hashlib.sha256(hashed).digest()
+        
+        elif algorithm == 'whirlpool' and params > 0:
+            if WHIRLPOOL_AVAILABLE:
+                for _ in range(params):
+                    w = pywhirlpool.new(hashed)
+                    hashed = w.digest()
+            else:
+                for _ in range(params):
+                    hashed = hashlib.sha512(hashed).digest()
+        
+        elif algorithm == 'scrypt' and params.get('n', 0) > 0:
+            # Apply scrypt with provided parameters
+            scrypt_kdf = Scrypt(
+                salt=salt,
+                length=32,
+                n=params['n'],
+                r=params['r'],
+                p=params['p'],
+                backend=default_backend()
+            )
+            hashed = scrypt_kdf.derive(hashed)
+    
+    return hashed
+
+def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=100000):
+    """
+    Generate a Fernet key from a password using multiple hash algorithms
+    
+    Args:
+        password (bytes): The password to use
+        salt (bytes, optional): Salt value. If None, a random salt is generated.
+        hash_config (dict, optional): Dictionary of hash algorithms and iterations.
+        pbkdf2_iterations (int): Number of PBKDF2 iterations
+    
+    Returns:
+        tuple: (key, salt, hash_config)
+    """
+    if salt is None:
+        salt = os.urandom(16)
+    
+    # Default empty hash configuration if none provided
+    if hash_config is None:
+        hash_config = {
+            'sha512': 0,
+            'sha256': 0,
+            'whirlpool': 0,
+            'scrypt': {
+                'n': 0,
+                'r': 8,
+                'p': 1
+            }
+        }
+    
+    # First apply our custom multi-hash function (if any hashing is enabled)
+    hashed_password = multi_hash_password(password, salt, hash_config)
+    
+    # Then use PBKDF2HMAC to derive the key
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=pbkdf2_iterations,
+        backend=default_backend()
+    )
+    
+    key = base64.urlsafe_b64encode(kdf.derive(hashed_password))
+    return key, salt, hash_config
+
+def encrypt_file(input_file, output_file, password, hash_config=None, pbkdf2_iterations=100000):
+    """
+    Encrypt a file with a password
+    
+    Args:
+        input_file (str): Path to the file to encrypt
+        output_file (str): Path where to save the encrypted file
+        password (bytes): The password to use for encryption
+        hash_config (dict, optional): Hash configuration dictionary
+        pbkdf2_iterations (int): Number of PBKDF2 iterations
+    
+    Returns:
+        bool: True if encryption was successful
+    """
+    # Generate a key from the password
+    salt = os.urandom(16)
+    key, salt, hash_config = generate_key(password, salt, hash_config, pbkdf2_iterations)
+    
+    # Create a Fernet instance with the key
+    f = Fernet(key)
+    
+    # Read the input file
+    with open(input_file, 'rb') as file:
+        data = file.read()
+    
+    # Calculate hash of original data
+    original_hash = calculate_hash(data)
+    
+    # Encrypt the data
+    encrypted_data = f.encrypt(data)
+    
+    # Create metadata with the salt and hash configuration
+    metadata = {
+        'salt': base64.b64encode(salt).decode('utf-8'),
+        'hash_config': hash_config,
+        'pbkdf2_iterations': pbkdf2_iterations,
+        'original_hash': original_hash  # Store hash of the original content
+    }
+    
+    metadata_json = json.dumps(metadata).encode('utf-8')
+    metadata_base64 = base64.b64encode(metadata_json)
+    
+    # Write the metadata and encrypted data to the output file
+    with open(output_file, 'wb') as file:
+        file.write(metadata_base64 + b':' + encrypted_data)
+    
+    # By default, set secure permissions on the output file
+    # This will be overridden with original permissions when overwriting
+    set_secure_permissions(output_file)
+    
+    return True
+
+def decrypt_file(input_file, output_file, password, quiet=False):
+    """
+    Decrypt a file with a password
+    
+    Args:
+        input_file (str): Path to the encrypted file
+        output_file (str): Path where to save the decrypted file, or None to return data
+        password (bytes): The password to use for decryption
+        quiet (bool): Whether to suppress status messages
+        
+    Returns:
+        bytes or bool: If output_file is None, returns the decrypted data, otherwise returns True
+    """
+    # Read the encrypted file
+    with open(input_file, 'rb') as file:
+        content = file.read()
+    
+    # Extract the metadata and encrypted data
+    parts = content.split(b':', 1)
+    if len(parts) != 2:
+        raise ValueError("Invalid file format")
+    
+    metadata_base64, encrypted_data = parts
+    
     try:
-      from helper.opensslCrypt import *
-    except ImportError, e:
-      sys.stderr.write('FATAL: ' + e.message +'\n')
-      sys.exit(1)
-    app = opensslCrypt(sys.argv[1:])
-  else:
+        # Decode the metadata
+        metadata_json = base64.b64decode(metadata_base64)
+        metadata = json.loads(metadata_json.decode('utf-8'))
+        
+        # Extract parameters from metadata
+        salt = base64.b64decode(metadata['salt'])
+        hash_config = metadata['hash_config']
+        pbkdf2_iterations = metadata.get('pbkdf2_iterations', 100000)  # Default if not present
+        original_hash = metadata.get('original_hash')  # May not exist in older files
+        
+    except (json.JSONDecodeError, KeyError, base64.binascii.Error) as e:
+        raise ValueError(f"Error parsing file metadata: {e}")
+    
+    # Generate the key using the same parameters
+    key, _, _ = generate_key(password, salt, hash_config, pbkdf2_iterations)
+    
+    # Create a Fernet instance with the key
+    f = Fernet(key)
+    
+    # Decrypt the data
     try:
-      from helper.opensslCrypt import *
-    except ImportError, e:
-      sys.stderr.write('FATAL: ' + e.message + '\n')
-      sys.exit(1)
-    app = opensslCrypt('-h')
-  
+        decrypted_data = f.decrypt(encrypted_data)
+    except Exception as e:
+        raise ValueError(f"Decryption failed. Invalid password or corrupted file: {e}")
+    
+    # Verify hash if it was stored in metadata
+    if original_hash:
+        decrypted_hash = calculate_hash(decrypted_data)
+        if decrypted_hash != original_hash:
+            raise ValueError("Hash verification failed. The file may be corrupted or tampered with.")
+        elif not quiet:
+            print("\nHash verification successful: Content integrity verified")
+    elif not quiet:
+        print("\nNote: This file was encrypted without hash verification")
+    
+    # Write the decrypted data to the output file or return it
+    if output_file:
+        with open(output_file, 'wb') as file:
+            file.write(decrypted_data)
+        
+        # By default, set secure permissions on the output file
+        # This will be overridden with original permissions when overwriting
+        set_secure_permissions(output_file)
+        
+        return True
+    else:
+        return decrypted_data
+
+if __name__ == '__main__':
+    # Global variable to track temporary files that need cleanup
+    temp_files_to_cleanup = []
+    
+    def cleanup_temp_files():
+        """Clean up any temporary files that were created but not deleted"""
+        for temp_file in temp_files_to_cleanup:
+            try:
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+                    if not args.quiet:
+                        print(f"Cleaned up temporary file: {temp_file}")
+            except Exception:
+                pass
+    
+    # Register cleanup function to run on normal exit
+    atexit.register(cleanup_temp_files)
+    
+    # Register signal handlers for common termination signals
+    def signal_handler(signum, frame):
+        cleanup_temp_files()
+        # Re-raise the signal to allow the default handler to run
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+    
+    # Register handlers for common termination signals
+    for sig in [signal.SIGINT, signal.SIGTERM, signal.SIGHUP]:
+        try:
+            signal.signal(sig, signal_handler)
+        except AttributeError:
+            # Some signals might not be available on all platforms
+            pass
+    
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description='Encrypt or decrypt a file with a password')
+    parser.add_argument('action', choices=['encrypt', 'decrypt'], help='Action to perform')
+    parser.add_argument('--password', '-p', help='Password (will prompt if not provided)')
+    parser.add_argument('--input', '-i', required=True, help='Input file')
+    parser.add_argument('--output', '-o', help='Output file (optional for decrypt)')
+    parser.add_argument('--quiet', '-q', action='store_true', help='Suppress all output except decrypted content and exit code')
+    parser.add_argument('--overwrite', action='store_true', help='Overwrite the input file with the output')
+    
+    # Hash configuration arguments (all optional)
+    parser.add_argument('--sha512', type=int, default=0, help='Number of SHA-512 iterations (default: 0, not used)')
+    parser.add_argument('--sha256', type=int, default=0, help='Number of SHA-256 iterations (default: 0, not used)')
+    parser.add_argument('--whirlpool', type=int, default=0, help='Number of Whirlpool iterations (default: 0, not used)')
+    parser.add_argument('--scrypt-cost', type=int, default=0, help='Scrypt cost factor N as power of 2 (default: 0, not used)')
+    parser.add_argument('--scrypt-r', type=int, default=8, help='Scrypt block size parameter r (default: 8)')
+    parser.add_argument('--scrypt-p', type=int, default=1, help='Scrypt parallelization parameter p (default: 1)')
+    parser.add_argument('--pbkdf2', type=int, default=100000, help='Number of PBKDF2 iterations (default: 100000)')
+    
+    args = parser.parse_args()
+    
+    # Check for Whirlpool availability if needed and not in quiet mode
+    if args.whirlpool > 0 and not WHIRLPOOL_AVAILABLE and not args.quiet:
+        print("Warning: pywhirlpool module not found. SHA-512 will be used instead.")
+    
+    # Get password
+    password = args.password
+    if not password:
+        # When in quiet mode, don't add the "Enter password: " prompt text
+        if args.quiet:
+            password = getpass.getpass('')
+        else:
+            password = getpass.getpass('Enter password: ')
+    
+    # Convert to bytes
+    password = password.encode()
+    
+    # Create hash configuration dictionary (only include algorithms with iterations > 0)
+    scrypt_n = 2 ** args.scrypt_cost if args.scrypt_cost > 0 else 0
+    
+    hash_config = {
+        'sha512': args.sha512,
+        'sha256': args.sha256,
+        'whirlpool': args.whirlpool,
+        'scrypt': {
+            'n': scrypt_n,
+            'r': args.scrypt_r,
+            'p': args.scrypt_p
+        }
+    }
+    
+    exit_code = 0
+    try:
+        if args.action == 'encrypt':
+            # Handle output file path
+            if args.overwrite:
+                output_file = args.input
+                # Create a temporary file for the encryption
+                temp_dir = os.path.dirname(os.path.abspath(args.input))
+                temp_suffix = f".{uuid.uuid4().hex[:12]}.tmp"
+                temp_output = os.path.join(temp_dir, f".{os.path.basename(args.input)}{temp_suffix}")
+                
+                # Add to cleanup list
+                temp_files_to_cleanup.append(temp_output)
+            elif not args.output:
+                output_file = args.input + '.encrypted'
+            else:
+                output_file = args.output
+            
+            if not args.quiet:
+                print("\nEncrypting with the following hash configuration:")
+                any_hash_used = False
+                
+                for algorithm, params in hash_config.items():
+                    if algorithm == 'scrypt' and params.get('n', 0) > 0:
+                        any_hash_used = True
+                        print(f"- scrypt: n={params['n']} (cost factor 2^{args.scrypt_cost}), r={params['r']}, p={params['p']}")
+                    elif algorithm != 'scrypt' and params > 0:
+                        any_hash_used = True
+                        print(f"- {algorithm}: {params} iterations")
+                
+                if not any_hash_used:
+                    print("- No additional hashing algorithms used")
+                    
+                print(f"- PBKDF2: {args.pbkdf2} iterations")
+            
+            # If overwriting, encrypt to a temporary file first
+            if args.overwrite:
+                try:
+                    # Get original file permissions before doing anything
+                    original_permissions = get_file_permissions(args.input)
+                    
+                    success = encrypt_file(args.input, temp_output, password, hash_config, args.pbkdf2)
+                    if success:
+                        # Apply the original permissions to the temp file
+                        os.chmod(temp_output, original_permissions)
+                        
+                        # Replace the original file with the encrypted file
+                        os.replace(temp_output, output_file)
+                        
+                        # Successful replacement means we don't need to clean up the temp file
+                        temp_files_to_cleanup.remove(temp_output)
+                    else:
+                        # Clean up the temp file if it exists
+                        if os.path.exists(temp_output):
+                            os.remove(temp_output)
+                            temp_files_to_cleanup.remove(temp_output)
+                except Exception as e:
+                    # Clean up the temp file in case of any error
+                    if os.path.exists(temp_output):
+                        os.remove(temp_output)
+                        if temp_output in temp_files_to_cleanup:
+                            temp_files_to_cleanup.remove(temp_output)
+                    raise e
+            else:
+                success = encrypt_file(args.input, output_file, password, hash_config, args.pbkdf2)
+            
+            if success and not args.quiet:
+                print(f"\nFile encrypted successfully: {output_file}")
+        
+        elif args.action == 'decrypt':
+            # Handle output file path for decryption
+            if args.overwrite:
+                output_file = args.input
+                # Create a temporary file for the decryption
+                temp_dir = os.path.dirname(os.path.abspath(args.input))
+                temp_suffix = f".{uuid.uuid4().hex[:12]}.tmp"
+                temp_output = os.path.join(temp_dir, f".{os.path.basename(args.input)}{temp_suffix}")
+                
+                # Add to cleanup list
+                temp_files_to_cleanup.append(temp_output)
+                
+                try:
+                    # Get original file permissions before doing anything
+                    original_permissions = get_file_permissions(args.input)
+                    
+                    # Decrypt to temporary file first
+                    success = decrypt_file(args.input, temp_output, password, args.quiet)
+                    if success:
+                        # Apply the original permissions to the temp file
+                        os.chmod(temp_output, original_permissions)
+                        
+                        # Replace the original file with the decrypted file
+                        os.replace(temp_output, output_file)
+                        
+                        # Successful replacement means we don't need to clean up the temp file
+                        temp_files_to_cleanup.remove(temp_output)
+                    else:
+                        # Clean up the temp file if it exists
+                        if os.path.exists(temp_output):
+                            os.remove(temp_output)
+                            temp_files_to_cleanup.remove(temp_output)
+                except Exception as e:
+                    # Clean up the temp file in case of any error
+                    if os.path.exists(temp_output):
+                        os.remove(temp_output)
+                        if temp_output in temp_files_to_cleanup:
+                            temp_files_to_cleanup.remove(temp_output)
+                    raise e
+            elif args.output:
+                success = decrypt_file(args.input, args.output, password, args.quiet)
+                if success and not args.quiet:
+                    print(f"\nFile decrypted successfully: {args.output}")
+            else:
+                # Decrypt to screen if no output file specified
+                decrypted = decrypt_file(args.input, None, password, args.quiet)
+                try:
+                    # Try to decode as text
+                    if not args.quiet:
+                        print("\nDecrypted content:")
+                    print(decrypted.decode())
+                except UnicodeDecodeError:
+                    if not args.quiet:
+                        print("\nDecrypted successfully, but content is binary and cannot be displayed.")
+    
+    except Exception as e:
+        if not args.quiet:
+            print(f"\nError: {e}")
+        exit_code = 1
+    
+    # Exit with appropriate code
+    sys.exit(exit_code)
