@@ -1,4 +1,80 @@
-#!/usr/bin/env python3
+def show_animated_progress(message, stop_event, quiet=False):
+    """
+    Display an animated progress bar for operations that don't provide incremental feedback
+    
+    Args:
+        message (str): Message to display
+        stop_event (threading.Event): Event to signal when to stop the animation
+        quiet (bool): Whether to suppress progress output
+    """
+    if quiet:
+        return
+    
+    animation = "|/-\\"
+    idx = 0
+    start_time = time.time()
+    
+    while not stop_event.is_set():
+        elapsed = time.time() - start_time
+        minutes, seconds = divmod(int(elapsed), 60)
+        time_str = f"{minutes:02d}:{seconds:02d}"
+        
+        # Create a pulsing bar to show activity
+        bar_length = 30
+        position = int((elapsed % 3) * 10)  # Moves every 0.1 seconds
+        bar = ' ' * position + '█████' + ' ' * (bar_length - 5 - position)
+        
+        print(f"\r{message}: [{bar}] {animation[idx]} {time_str}", end='', flush=True)
+        idx = (idx + 1) % len(animation)
+        time.sleep(0.1)
+
+def with_progress_bar(func, message, *args, quiet=False, **kwargs):
+    """
+    Execute a function with an animated progress bar
+    
+    Args:
+        func: Function to execute
+        message: Message to display
+        quiet: Whether to suppress progress output
+        *args, **kwargs: Arguments to pass to the function
+        
+    Returns:
+        The return value of the function
+    """
+    stop_event = threading.Event()
+    
+    if not quiet:
+        # Start progress thread
+        progress_thread = threading.Thread(
+            target=show_animated_progress,
+            args=(message, stop_event, quiet)
+        )
+        progress_thread.daemon = True
+        progress_thread.start()
+    
+    try:
+        # Call the actual function
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        duration = time.time() - start_time
+        
+        # Stop the progress thread
+        stop_event.set()
+        if not quiet:
+            progress_thread.join()
+            # Clear the current line
+            print(f"\r{' ' * 80}\r", end='', flush=True)
+            print(f"{message} completed in {duration:.2f} seconds")
+            
+        return result
+    except Exception as e:
+        # Stop the progress thread in case of error
+        stop_event.set()
+        if not quiet:
+            progress_thread.join()
+            # Clear the current line
+            print(f"\r{' ' * 80}\r", end='', flush=True)
+        raise e#!/usr/bin/env python3
 
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
@@ -17,6 +93,8 @@ import stat
 import signal
 import atexit
 import sys
+import time
+import threading
 
 try:
     import pywhirlpool
@@ -75,7 +153,7 @@ def calculate_hash(data):
     """
     return hashlib.sha256(data).hexdigest()
 
-def multi_hash_password(password, salt, hash_config):
+def multi_hash_password(password, salt, hash_config, quiet=False):
     """
     Apply multiple rounds of different hash algorithms to a password
     
@@ -83,6 +161,7 @@ def multi_hash_password(password, salt, hash_config):
         password (bytes): The password bytes
         salt (bytes): Salt value to use
         hash_config (dict): Dictionary with algorithm names as keys and iteration/parameter values
+        quiet (bool): Whether to suppress progress output
     
     Returns:
         bytes: The hashed password
@@ -90,40 +169,88 @@ def multi_hash_password(password, salt, hash_config):
     # Start with the original password + salt
     hashed = password + salt
     
+    # Function to display progress for iterative hashing
+    def show_progress(algorithm, current, total):
+        if quiet:
+            return
+        
+        # Only update every 1% or at least every 1000 iterations
+        update_frequency = max(1, min(total // 100, 1000))
+        if current % update_frequency != 0 and current != total:
+            return
+            
+        percent = (current / total) * 100
+        bar_length = 30
+        filled_length = int(bar_length * current // total)
+        bar = '█' * filled_length + ' ' * (bar_length - filled_length)
+        
+        print(f"\r{algorithm} hashing: [{bar}] {percent:.1f}% ({current}/{total})", end='', flush=True)
+        
+        if current == total:
+            print()  # New line after completion
+    
     # Apply each hash algorithm in sequence (only if iterations > 0)
     for algorithm, params in hash_config.items():
         if algorithm == 'sha512' and params > 0:
-            for _ in range(params):
+            if not quiet:
+                print(f"Applying {params} rounds of SHA-512...")
+            
+            for i in range(params):
                 hashed = hashlib.sha512(hashed).digest()
+                show_progress("SHA-512", i+1, params)
         
         elif algorithm == 'sha256' and params > 0:
-            for _ in range(params):
+            if not quiet:
+                print(f"Applying {params} rounds of SHA-256...")
+                
+            for i in range(params):
                 hashed = hashlib.sha256(hashed).digest()
+                show_progress("SHA-256", i+1, params)
         
         elif algorithm == 'whirlpool' and params > 0:
             if WHIRLPOOL_AVAILABLE:
-                for _ in range(params):
+                if not quiet:
+                    print(f"Applying {params} rounds of Whirlpool...")
+                    
+                for i in range(params):
                     w = pywhirlpool.new(hashed)
                     hashed = w.digest()
+                    show_progress("Whirlpool", i+1, params)
             else:
-                for _ in range(params):
+                if not quiet:
+                    print(f"Whirlpool not available, using {params} rounds of SHA-512 instead...")
+                    
+                for i in range(params):
                     hashed = hashlib.sha512(hashed).digest()
+                    show_progress("SHA-512 (fallback)", i+1, params)
         
         elif algorithm == 'scrypt' and params.get('n', 0) > 0:
             # Apply scrypt with provided parameters
-            scrypt_kdf = Scrypt(
-                salt=salt,
-                length=32,
-                n=params['n'],
-                r=params['r'],
-                p=params['p'],
-                backend=default_backend()
+            if not quiet:
+                print(f"Applying scrypt with n={params['n']}, r={params['r']}, p={params['p']}...")
+            
+            # Scrypt doesn't provide progress updates, so use an animated progress bar
+            def do_scrypt():
+                scrypt_kdf = Scrypt(
+                    salt=salt,
+                    length=32,
+                    n=params['n'],
+                    r=params['r'],
+                    p=params['p'],
+                    backend=default_backend()
+                )
+                return scrypt_kdf.derive(hashed)
+                
+            # Run scrypt with progress bar
+            hashed = with_progress_bar(
+                do_scrypt, 
+                "Scrypt processing", 
+                quiet=quiet
             )
-            hashed = scrypt_kdf.derive(hashed)
     
     return hashed
 
-def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=100000):
+def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=100000, quiet=False):
     """
     Generate a Fernet key from a password using multiple hash algorithms
     
@@ -132,6 +259,7 @@ def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=100000
         salt (bytes, optional): Salt value. If None, a random salt is generated.
         hash_config (dict, optional): Dictionary of hash algorithms and iterations.
         pbkdf2_iterations (int): Number of PBKDF2 iterations
+        quiet (bool): Whether to suppress progress output
     
     Returns:
         tuple: (key, salt, hash_config)
@@ -153,21 +281,37 @@ def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=100000
         }
     
     # First apply our custom multi-hash function (if any hashing is enabled)
-    hashed_password = multi_hash_password(password, salt, hash_config)
+    hashed_password = multi_hash_password(password, salt, hash_config, quiet)
     
     # Then use PBKDF2HMAC to derive the key
-    kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=salt,
-        iterations=pbkdf2_iterations,
-        backend=default_backend()
-    )
+    if not quiet and pbkdf2_iterations > 10000:
+        print(f"Applying PBKDF2 with {pbkdf2_iterations} iterations...")
     
-    key = base64.urlsafe_b64encode(kdf.derive(hashed_password))
+    # PBKDF2 doesn't provide progress updates, so use an animated progress bar for long operations
+    def do_pbkdf2():
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt,
+            iterations=pbkdf2_iterations,
+            backend=default_backend()
+        )
+        return kdf.derive(hashed_password)
+    
+    # Only show progress for larger iteration counts
+    if pbkdf2_iterations > 10000 and not quiet:
+        derived_key = with_progress_bar(
+            do_pbkdf2,
+            "PBKDF2 processing",
+            quiet=quiet
+        )
+    else:
+        derived_key = do_pbkdf2()
+    
+    key = base64.urlsafe_b64encode(derived_key)
     return key, salt, hash_config
 
-def encrypt_file(input_file, output_file, password, hash_config=None, pbkdf2_iterations=100000):
+def encrypt_file(input_file, output_file, password, hash_config=None, pbkdf2_iterations=100000, quiet=False):
     """
     Encrypt a file with a password
     
@@ -177,26 +321,52 @@ def encrypt_file(input_file, output_file, password, hash_config=None, pbkdf2_ite
         password (bytes): The password to use for encryption
         hash_config (dict, optional): Hash configuration dictionary
         pbkdf2_iterations (int): Number of PBKDF2 iterations
+        quiet (bool): Whether to suppress progress output
     
     Returns:
         bool: True if encryption was successful
     """
     # Generate a key from the password
     salt = os.urandom(16)
-    key, salt, hash_config = generate_key(password, salt, hash_config, pbkdf2_iterations)
+    
+    if not quiet:
+        print("\nGenerating encryption key...")
+    
+    key, salt, hash_config = generate_key(password, salt, hash_config, pbkdf2_iterations, quiet)
     
     # Create a Fernet instance with the key
     f = Fernet(key)
     
     # Read the input file
+    if not quiet:
+        print(f"Reading file: {input_file}")
+    
     with open(input_file, 'rb') as file:
         data = file.read()
     
     # Calculate hash of original data
+    if not quiet:
+        print("Calculating content hash...")
+    
     original_hash = calculate_hash(data)
     
     # Encrypt the data
-    encrypted_data = f.encrypt(data)
+    if not quiet:
+        print("Encrypting content...")
+    
+    # For large files, use progress bar for encryption
+    def do_encrypt():
+        return f.encrypt(data)
+    
+    # Only show progress for larger files (> 1MB)
+    if len(data) > 1024 * 1024 and not quiet:
+        encrypted_data = with_progress_bar(
+            do_encrypt,
+            "Encrypting data",
+            quiet=quiet
+        )
+    else:
+        encrypted_data = do_encrypt()
     
     # Create metadata with the salt and hash configuration
     metadata = {
@@ -210,6 +380,9 @@ def encrypt_file(input_file, output_file, password, hash_config=None, pbkdf2_ite
     metadata_base64 = base64.b64encode(metadata_json)
     
     # Write the metadata and encrypted data to the output file
+    if not quiet:
+        print(f"Writing encrypted file: {output_file}")
+    
     with open(output_file, 'wb') as file:
         file.write(metadata_base64 + b':' + encrypted_data)
     
@@ -233,6 +406,9 @@ def decrypt_file(input_file, output_file, password, quiet=False):
         bytes or bool: If output_file is None, returns the decrypted data, otherwise returns True
     """
     # Read the encrypted file
+    if not quiet:
+        print(f"\nReading encrypted file: {input_file}")
+    
     with open(input_file, 'rb') as file:
         content = file.read()
     
@@ -254,33 +430,61 @@ def decrypt_file(input_file, output_file, password, quiet=False):
         pbkdf2_iterations = metadata.get('pbkdf2_iterations', 100000)  # Default if not present
         original_hash = metadata.get('original_hash')  # May not exist in older files
         
+        if not quiet:
+            print("Metadata extracted successfully")
+            
     except (json.JSONDecodeError, KeyError, base64.binascii.Error) as e:
         raise ValueError(f"Error parsing file metadata: {e}")
     
     # Generate the key using the same parameters
-    key, _, _ = generate_key(password, salt, hash_config, pbkdf2_iterations)
+    if not quiet:
+        print("Generating decryption key...")
+    
+    key, _, _ = generate_key(password, salt, hash_config, pbkdf2_iterations, quiet)
     
     # Create a Fernet instance with the key
     f = Fernet(key)
     
     # Decrypt the data
     try:
-        decrypted_data = f.decrypt(encrypted_data)
+        if not quiet:
+            print("Decrypting content...")
+        
+        # For large files, use progress bar for decryption
+        def do_decrypt():
+            return f.decrypt(encrypted_data)
+        
+        # Only show progress for larger files (> 1MB)
+        if len(encrypted_data) > 1024 * 1024 and not quiet:
+            decrypted_data = with_progress_bar(
+                do_decrypt,
+                "Decrypting data",
+                quiet=quiet
+            )
+        else:
+            decrypted_data = do_decrypt()
+            
     except Exception as e:
         raise ValueError(f"Decryption failed. Invalid password or corrupted file: {e}")
     
     # Verify hash if it was stored in metadata
     if original_hash:
+        if not quiet:
+            print("Verifying content integrity...")
+        
         decrypted_hash = calculate_hash(decrypted_data)
         if decrypted_hash != original_hash:
             raise ValueError("Hash verification failed. The file may be corrupted or tampered with.")
         elif not quiet:
-            print("\nHash verification successful: Content integrity verified")
+            print("\nHash verification successful: Content integrity verified ✓")
     elif not quiet:
         print("\nNote: This file was encrypted without hash verification")
     
     # Write the decrypted data to the output file or return it
     if output_file:
+        if not quiet:
+            print(f"Writing decrypted file: {output_file}")
+        
         with open(output_file, 'wb') as file:
             file.write(decrypted_data)
         
@@ -416,7 +620,7 @@ if __name__ == '__main__':
                     # Get original file permissions before doing anything
                     original_permissions = get_file_permissions(args.input)
                     
-                    success = encrypt_file(args.input, temp_output, password, hash_config, args.pbkdf2)
+                    success = encrypt_file(args.input, temp_output, password, hash_config, args.pbkdf2, args.quiet)
                     if success:
                         # Apply the original permissions to the temp file
                         os.chmod(temp_output, original_permissions)
@@ -439,7 +643,7 @@ if __name__ == '__main__':
                             temp_files_to_cleanup.remove(temp_output)
                     raise e
             else:
-                success = encrypt_file(args.input, output_file, password, hash_config, args.pbkdf2)
+                success = encrypt_file(args.input, output_file, password, hash_config, args.pbkdf2, args.quiet)
             
             if success and not args.quiet:
                 print(f"\nFile encrypted successfully: {output_file}")
