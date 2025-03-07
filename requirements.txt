@@ -1,0 +1,2 @@
+cryptography>=3.4.0
+pywhirlpool>=0.1.0; platform_system != "Windows"  # Optional dependency for Whirlpool hashing
