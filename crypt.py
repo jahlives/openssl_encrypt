@@ -1,3 +1,129 @@
+def secure_shred_file(file_path, passes=3, quiet=False):
+    """
+    Securely delete a file by overwriting its contents multiple times with random data
+    before unlinking it from the filesystem.
+    
+    Args:
+        file_path (str): Path to the file to shred
+        passes (int): Number of overwrite passes to perform
+        quiet (bool): Whether to suppress status messages
+        
+    Returns:
+        bool: True if shredding was successful
+    """
+    if not os.path.exists(file_path):
+        if not quiet:
+            print(f"File not found: {file_path}")
+        return False
+    
+    try:
+        # Get file size
+        file_size = os.path.getsize(file_path)
+        if file_size == 0:
+            # For empty files, just remove them
+            os.unlink(file_path)
+            if not quiet:
+                print(f"Empty file removed: {file_path}")
+            return True
+        
+        if not quiet:
+            print(f"\nSecurely shredding file: {file_path}")
+            print(f"File size: {file_size} bytes")
+            print(f"Performing {passes} overwrite passes...")
+        
+        # Open the file for binary read/write without truncating
+        with open(file_path, "r+b") as f:
+            # Use a 64KB buffer for efficient overwriting of large files
+            buffer_size = min(65536, file_size)
+            
+            for pass_num in range(passes):
+                # Seek to the beginning of the file
+                f.seek(0)
+                
+                # Track progress for large files
+                bytes_written = 0
+                
+                # Determine the pattern for this pass
+                pattern_type = pass_num % 3
+                
+                if pattern_type == 0:
+                    pattern_name = "random data"
+                    # Random data
+                    while bytes_written < file_size:
+                        # Determine how many bytes to write in this chunk
+                        chunk_size = min(buffer_size, file_size - bytes_written)
+                        
+                        # Generate random bytes
+                        random_bytes = bytearray(random.getrandbits(8) for _ in range(chunk_size))
+                        f.write(random_bytes)
+                        
+                        bytes_written += chunk_size
+                        
+                        # Show progress for large files
+                        if not quiet:
+                            percent = (bytes_written / file_size) * 100
+                            pass_percent = ((pass_num + percent/100) / passes) * 100
+                            bar_length = 30
+                            filled_length = int(bar_length * pass_percent // 100)
+                            bar = '█' * filled_length + ' ' * (bar_length - filled_length)
+                            
+                            print(f"\rShredding: [{bar}] Pass {pass_num+1}/{passes} ({pattern_name}): {percent:.1f}%", end="", flush=True)
+                
+                elif pattern_type == 1:
+                    # All ones (0xFF)
+                    pattern_name = "all 1's"
+                    while bytes_written < file_size:
+                        chunk_size = min(buffer_size, file_size - bytes_written)
+                        f.write(b"\xFF" * chunk_size)
+                        bytes_written += chunk_size
+                        
+                        if not quiet:
+                            percent = (bytes_written / file_size) * 100
+                            pass_percent = ((pass_num + percent/100) / passes) * 100
+                            bar_length = 30
+                            filled_length = int(bar_length * pass_percent // 100)
+                            bar = '█' * filled_length + ' ' * (bar_length - filled_length)
+                            
+                            print(f"\rShredding: [{bar}] Pass {pass_num+1}/{passes} ({pattern_name}): {percent:.1f}%", end="", flush=True)
+                
+                else:
+                    # All zeros (0x00)
+                    pattern_name = "all 0's"
+                    while bytes_written < file_size:
+                        chunk_size = min(buffer_size, file_size - bytes_written)
+                        f.write(b"\x00" * chunk_size)
+                        bytes_written += chunk_size
+                        
+                        if not quiet:
+                            percent = (bytes_written / file_size) * 100
+                            pass_percent = ((pass_num + percent/100) / passes) * 100
+                            bar_length = 30
+                            filled_length = int(bar_length * pass_percent // 100)
+                            bar = '█' * filled_length + ' ' * (bar_length - filled_length)
+                            
+                            print(f"\rShredding: [{bar}] Pass {pass_num+1}/{passes} ({pattern_name}): {percent:.1f}%", end="", flush=True)
+                
+                # Flush changes to disk
+                f.flush()
+                os.fsync(f.fileno())
+        
+        # Finally, truncate the file to 0 bytes before unlinking
+        with open(file_path, "wb") as f:
+            f.truncate(0)
+        
+        # Remove the file
+        os.unlink(file_path)
+        
+        if not quiet:
+            print("\nFile has been securely deleted.")
+        
+        return True
+        
+    except Exception as e:
+        if not quiet:
+            print(f"\nError during secure deletion: {e}")
+        return False
+
 def show_animated_progress(message, stop_event, quiet=False):
     """
     Display an animated progress bar for operations that don't provide incremental feedback
@@ -95,6 +221,7 @@ import atexit
 import sys
 import time
 import threading
+import random
 
 try:
     import pywhirlpool
@@ -531,12 +658,14 @@ if __name__ == '__main__':
     
     # Set up argument parser
     parser = argparse.ArgumentParser(description='Encrypt or decrypt a file with a password')
-    parser.add_argument('action', choices=['encrypt', 'decrypt'], help='Action to perform')
+    parser.add_argument('action', choices=['encrypt', 'decrypt', 'shred'], help='Action to perform')
     parser.add_argument('--password', '-p', help='Password (will prompt if not provided)')
     parser.add_argument('--input', '-i', required=True, help='Input file')
     parser.add_argument('--output', '-o', help='Output file (optional for decrypt)')
     parser.add_argument('--quiet', '-q', action='store_true', help='Suppress all output except decrypted content and exit code')
     parser.add_argument('--overwrite', action='store_true', help='Overwrite the input file with the output')
+    parser.add_argument('--shred', '-s', action='store_true', help='Securely delete the original file after encryption/decryption')
+    parser.add_argument('--shred-passes', type=int, default=3, help='Number of passes for secure deletion (default: 3)')
     
     # Hash configuration arguments (all optional)
     parser.add_argument('--sha512', type=int, default=0, help='Number of SHA-512 iterations (default: 0, not used)')
@@ -553,17 +682,19 @@ if __name__ == '__main__':
     if args.whirlpool > 0 and not WHIRLPOOL_AVAILABLE and not args.quiet:
         print("Warning: pywhirlpool module not found. SHA-512 will be used instead.")
     
-    # Get password
-    password = args.password
-    if not password:
-        # When in quiet mode, don't add the "Enter password: " prompt text
-        if args.quiet:
-            password = getpass.getpass('')
-        else:
-            password = getpass.getpass('Enter password: ')
-    
-    # Convert to bytes
-    password = password.encode()
+    # Get password (only for encrypt/decrypt actions)
+    password = None
+    if args.action in ['encrypt', 'decrypt']:
+        password = args.password
+        if not password:
+            # When in quiet mode, don't add the "Enter password: " prompt text
+            if args.quiet:
+                password = getpass.getpass('')
+            else:
+                password = getpass.getpass('Enter password: ')
+        
+        # Convert to bytes
+        password = password.encode()
     
     # Create hash configuration dictionary (only include algorithms with iterations > 0)
     scrypt_n = 2 ** args.scrypt_cost if args.scrypt_cost > 0 else 0
@@ -645,9 +776,16 @@ if __name__ == '__main__':
             else:
                 success = encrypt_file(args.input, output_file, password, hash_config, args.pbkdf2, args.quiet)
             
-            if success and not args.quiet:
-                print(f"\nFile encrypted successfully: {output_file}")
-        
+            if success:
+                if not args.quiet:
+                    print(f"\nFile encrypted successfully: {output_file}")
+                
+                # If shredding was requested and encryption was successful
+                if args.shred and not args.overwrite:
+                    if not quiet:
+                        print("Shredding the original file as requested...")
+                    secure_shred_file(args.input, args.shred_passes, args.quiet)
+            
         elif args.action == 'decrypt':
             # Handle output file path for decryption
             if args.overwrite:
@@ -691,6 +829,12 @@ if __name__ == '__main__':
                 success = decrypt_file(args.input, args.output, password, args.quiet)
                 if success and not args.quiet:
                     print(f"\nFile decrypted successfully: {args.output}")
+                    
+                # If shredding was requested and decryption was successful
+                if args.shred and success:
+                    if not args.quiet:
+                        print("Shredding the encrypted file as requested...")
+                    secure_shred_file(args.input, args.shred_passes, args.quiet)
             else:
                 # Decrypt to screen if no output file specified
                 decrypted = decrypt_file(args.input, None, password, args.quiet)
@@ -702,6 +846,15 @@ if __name__ == '__main__':
                 except UnicodeDecodeError:
                     if not args.quiet:
                         print("\nDecrypted successfully, but content is binary and cannot be displayed.")
+        
+        elif args.action == 'shred':
+            # Direct shredding of a file without encryption/decryption
+            if not args.quiet:
+                print(f"Securely shredding file: {args.input}")
+            
+            success = secure_shred_file(args.input, args.shred_passes, args.quiet)
+            if not success:
+                exit_code = 1
     
     except Exception as e:
         if not args.quiet:
