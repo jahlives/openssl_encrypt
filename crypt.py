@@ -388,6 +388,23 @@ def multi_hash_password(password, salt, hash_config, quiet=False):
                 hashed = hashlib.sha256(hashed).digest()
                 show_progress("SHA-256", i+1, params)
         
+        elif algorithm == 'sha3' and params > 0:
+            # Make sure SHA3 is available (added in Python 3.6)
+            if hasattr(hashlib, 'sha3_256'):
+                if not quiet:
+                    print(f"Applying {params} rounds of SHA3-256...")
+                    
+                for i in range(params):
+                    hashed = hashlib.sha3_256(hashed).digest()
+                    show_progress("SHA3-256", i+1, params)
+            else:
+                if not quiet:
+                    print(f"SHA3 not available in this Python version, using {params} rounds of SHA-512 instead...")
+                    
+                for i in range(params):
+                    hashed = hashlib.sha512(hashed).digest()
+                    show_progress("SHA-512 (fallback)", i+1, params)
+        
         elif algorithm == 'whirlpool' and params > 0:
             if WHIRLPOOL_AVAILABLE:
                 if not quiet:
@@ -738,6 +755,7 @@ if __name__ == '__main__':
     # Hash configuration arguments (all optional)
     parser.add_argument('--sha512', type=int, nargs='?', const=1, default=0, help='Number of SHA-512 iterations (default: 1,000,000 if flag provided without value)')
     parser.add_argument('--sha256', type=int, nargs='?', const=1, default=0, help='Number of SHA-256 iterations (default: 1,000,000 if flag provided without value)')
+    parser.add_argument('--sha3', type=int, nargs='?', const=1, default=0, help='Number of SHA3-256 iterations (default: 1,000,000 if flag provided without value)')
     parser.add_argument('--whirlpool', type=int, default=0, help='Number of Whirlpool iterations (default: 0, not used)')
     parser.add_argument('--scrypt-cost', type=int, default=0, help='Scrypt cost factor N as power of 2 (default: 0, not used)')
     parser.add_argument('--scrypt-r', type=int, default=8, help='Scrypt block size parameter r (default: 8)')
@@ -770,7 +788,7 @@ if __name__ == '__main__':
     # Set default iterations if SHA algorithms are requested but no iterations provided
     MIN_SHA_ITERATIONS = 1000000
     
-    # If user specified to use SHA-256 or SHA-512 but didn't provide iterations
+    # If user specified to use SHA-256, SHA-512, or SHA3 but didn't provide iterations
     if args.sha256 == 1:  # When flag is provided without value
         args.sha256 = MIN_SHA_ITERATIONS
         if not args.quiet:
@@ -780,10 +798,16 @@ if __name__ == '__main__':
         args.sha512 = MIN_SHA_ITERATIONS
         if not args.quiet:
             print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-512")
+            
+    if args.sha3 == 1:  # When flag is provided without value
+        args.sha3 = MIN_SHA_ITERATIONS
+        if not args.quiet:
+            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-256")
     
     hash_config = {
         'sha512': args.sha512,
         'sha256': args.sha256,
+        'sha3': args.sha3,
         'whirlpool': args.whirlpool,
         'scrypt': {
             'n': scrypt_n,
