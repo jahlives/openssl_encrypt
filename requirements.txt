@@ -1,2 +1,7 @@
 cryptography>=3.4.0
 pywhirlpool>=0.1.0; platform_system != "Windows"  # Optional dependency for Whirlpool hashing
+# GUI dependencies
+tk>=8.6; platform_system != "Windows"  # Tkinter is included with Python on Windows but may need to be installed separately on Linux
+# Test dependencies
+pytest>=7.0.0  # For more advanced test capabilities
+mock>=4.0.0  # For mocking in tests
