@@ -975,11 +975,24 @@ def main():
     if args.action in ['encrypt', 'decrypt']:
         password = args.password
         if not password:
-            # When in quiet mode, don't add the "Enter password: " prompt text
-            if args.quiet:
-                password = getpass.getpass('')
+            # For encryption, require password confirmation to prevent typos
+            if args.action == 'encrypt' and not args.quiet:
+                while True:
+                    password1 = getpass.getpass('Enter password: ')
+                    password2 = getpass.getpass('Confirm password: ')
+                    
+                    if password1 == password2:
+                        password = password1
+                        break
+                    else:
+                        print("Passwords do not match. Please try again.")
+            # For decryption or quiet mode, just ask once
             else:
-                password = getpass.getpass('Enter password: ')
+                # When in quiet mode, don't add the "Enter password: " prompt text
+                if args.quiet:
+                    password = getpass.getpass('')
+                else:
+                    password = getpass.getpass('Enter password: ')
         
         # Convert to bytes
         password = password.encode()
