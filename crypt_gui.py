@@ -1,307 +1,589 @@
 #!/usr/bin/env python3
 """
-Secure File Encryption Tool - Launcher
-
-This script launches the GUI for the secure file encryption tool.
-It also provides a simple CLI interface for generating passwords
-when the GUI is not needed.
+Simple GUI for the encryption tool with the new password generation features.
+This can replace or supplement crypt_gui.py if it's not working.
 """
 
 import os
 import sys
-import subprocess
 import tkinter as tk
-from tkinter import messagebox, simpledialog
-import argparse
-import string
+from tkinter import ttk, filedialog, messagebox, simpledialog
+import subprocess
+import threading
 import random
+import string
 import time
 
-def generate_strong_password(length=16, use_lowercase=True, use_uppercase=True, 
-                           use_digits=True, use_special=True):
-    """
-    Generate a cryptographically strong random password with customizable character sets.
-    
-    Args:
-        length (int): Length of the password to generate
-        use_lowercase (bool): Include lowercase letters
-        use_uppercase (bool): Include uppercase letters
-        use_digits (bool): Include digits
-        use_special (bool): Include special characters
+class CryptGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Secure File Encryption Tool")
+        self.root.geometry("650x500")
+        self.root.minsize(650, 500)
         
-    Returns:
-        str: The generated password
-    """
-    if length < 8:
-        length = 8  # Enforce minimum safe length
-    
-    # Create the character pool based on selected options
-    char_pool = ""
-    required_chars = []
-    
-    if use_lowercase:
-        char_pool += string.ascii_lowercase
-        required_chars.append(random.choice(string.ascii_lowercase))
+        # Configure style
+        self.style = ttk.Style()
+        self.style.configure("TNotebook.Tab", padding=[12, 5])
+        self.style.configure("TButton", padding=[10, 5])
         
-    if use_uppercase:
-        char_pool += string.ascii_uppercase
-        required_chars.append(random.choice(string.ascii_uppercase))
+        # Create notebook (tabs)
+        self.notebook = ttk.Notebook(root)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-    if use_digits:
-        char_pool += string.digits
-        required_chars.append(random.choice(string.digits))
+        # Create tab frames
+        self.encrypt_frame = ttk.Frame(self.notebook)
+        self.decrypt_frame = ttk.Frame(self.notebook)
+        self.shred_frame = ttk.Frame(self.notebook)
+        self.password_frame = ttk.Frame(self.notebook)
         
-    if use_special:
-        char_pool += string.punctuation
-        required_chars.append(random.choice(string.punctuation))
-    
-    # If no options selected, default to alphanumeric
-    if not char_pool:
-        char_pool = string.ascii_lowercase + string.ascii_uppercase + string.digits
-        required_chars = [
-            random.choice(string.ascii_lowercase),
-            random.choice(string.ascii_uppercase),
-            random.choice(string.digits)
-        ]
-    
-    # Ensure we have room for all required characters
-    if len(required_chars) > length:
-        required_chars = required_chars[:length]
-    
-    # Fill remaining length with random characters from the pool
-    remaining_length = length - len(required_chars)
-    password_chars = required_chars + [random.choice(char_pool) for _ in range(remaining_length)]
-    
-    # Shuffle to ensure required characters aren't in predictable positions
-    random.shuffle(password_chars)
-    
-    return ''.join(password_chars)
-
-def display_password_with_timeout(password, timeout_seconds=10):
-    """
-    Display a password for a limited time, then clear it.
-    Simple version without ANSI escapes for GUI compatibility.
-    
-    Args:
-        password (str): The password to display
-        timeout_seconds (int): Number of seconds to display the password
-    """
-    print("\n" + "=" * 60)
-    print(" GENERATED PASSWORD ".center(60, "="))
-    print("=" * 60)
-    print(f"\nPassword: {password}")
-    print("\nThis password will be cleared in {0} seconds.".format(timeout_seconds))
-    print("=" * 60)
-    
-    try:
-        # Countdown timer
-        for remaining in range(timeout_seconds, 0, -1):
-            sys.stdout.write(f"\rTime remaining: {remaining} seconds...")
-            sys.stdout.flush()
-            time.sleep(1)
+        # Add frames to notebook
+        self.notebook.add(self.encrypt_frame, text="Encrypt")
+        self.notebook.add(self.decrypt_frame, text="Decrypt")
+        self.notebook.add(self.shred_frame, text="Shred")
+        self.notebook.add(self.password_frame, text="Password Generator")
         
-        # Clear the countdown line
-        sys.stdout.write("\r" + " " * 40 + "\r")
-        sys.stdout.flush()
+        # Set up the tabs
+        self.setup_encrypt_tab()
+        self.setup_decrypt_tab()
+        self.setup_shred_tab()
+        self.setup_password_tab()
         
-    except KeyboardInterrupt:
-        print("\n\nPassword display aborted by user.")
-    
-    # Instead of ANSI codes, just print a message
-    print("\nThe password has been displayed for the allotted time.")
-    print("For security, it will not be shown again.")
-    print("If you need to see it again, please generate a new password.")
-
-def launch_gui():
-    """Launch the GUI application"""
-    # Check if crypt_gui.py exists
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    gui_script = os.path.join(script_dir, "crypt_gui.py")
-    crypt_script = os.path.join(script_dir, "crypt.py")
-    
-    if not os.path.exists(gui_script):
-        show_error("GUI script not found", f"Could not find {gui_script}")
-        return False
+        # Status bar at the bottom
+        self.status_var = tk.StringVar()
+        self.status_var.set("Ready")
+        self.status_bar = ttk.Label(root, textvariable=self.status_var, 
+                                   relief=tk.SUNKEN, anchor=tk.W)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
         
-    if not os.path.exists(crypt_script):
-        show_error("Crypt script not found", f"Could not find {crypt_script}")
-        return False
+        # Center the window
+        self.center_window()
     
-    # Launch the GUI application
-    try:
-        subprocess.Popen([sys.executable, gui_script])
-        return True
-    except Exception as e:
-        show_error("Launch Error", f"Error launching GUI: {str(e)}")
-        return False
-
-def quick_password_generator():
-    """
-    Launch a simple dialog for quick password generation without
-    starting the full GUI
-    """
-    root = tk.Tk()
-    root.withdraw()  # Hide the main window
+    def center_window(self):
+        """Center the window on the screen"""
+        self.root.update_idletasks()
+        width = self.root.winfo_width()
+        height = self.root.winfo_height()
+        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.root.winfo_screenheight() // 2) - (height // 2)
+        self.root.geometry(f'{width}x{height}+{x}+{y}')
     
-    # Create a simple dialog for password options
-    length = simpledialog.askinteger("Password Length", 
-                                    "Enter password length (8-64):", 
-                                    minvalue=8, maxvalue=64, 
-                                    initialvalue=16)
-    
-    if length is None:  # User cancelled
-        root.destroy()
-        return
-    
-    # Create a dialog for character options
-    option_window = tk.Toplevel(root)
-    option_window.title("Password Options")
-    option_window.geometry("300x220")
-    option_window.resizable(False, False)
-    
-    # Center on screen
-    option_window.update_idletasks()
-    width = option_window.winfo_width()
-    height = option_window.winfo_height()
-    x = (option_window.winfo_screenwidth() // 2) - (width // 2)
-    y = (option_window.winfo_screenheight() // 2) - (height // 2)
-    option_window.geometry(f'+{x}+{y}')
-    
-    # Character set options
-    use_lowercase_var = tk.BooleanVar(value=True)
-    use_uppercase_var = tk.BooleanVar(value=True)
-    use_digits_var = tk.BooleanVar(value=True)
-    use_special_var = tk.BooleanVar(value=True)
-    
-    # Create checkboxes
-    tk.Label(option_window, text="Include these character types:").pack(pady=10)
-    tk.Checkbutton(option_window, text="Lowercase letters (a-z)", 
-                  variable=use_lowercase_var).pack(anchor="w", padx=20)
-    tk.Checkbutton(option_window, text="Uppercase letters (A-Z)", 
-                  variable=use_uppercase_var).pack(anchor="w", padx=20)
-    tk.Checkbutton(option_window, text="Digits (0-9)", 
-                  variable=use_digits_var).pack(anchor="w", padx=20)
-    tk.Checkbutton(option_window, text="Special characters (!@#$%...)", 
-                  variable=use_special_var).pack(anchor="w", padx=20)
-    
-    # Result variables
-    password_result = [None]
-    dialog_completed = [False]
-    
-    def on_generate():
-        # Generate password with selected options
-        password = generate_strong_password(
-            length,
-            use_lowercase_var.get(),
-            use_uppercase_var.get(),
-            use_digits_var.get(),
-            use_special_var.get()
-        )
-        password_result[0] = password
-        dialog_completed[0] = True
-        option_window.destroy()
-    
-    def on_cancel():
-        dialog_completed[0] = True
-        option_window.destroy()
-    
-    # Buttons
-    button_frame = tk.Frame(option_window)
-    button_frame.pack(pady=15)
-    tk.Button(button_frame, text="Generate", command=on_generate, 
-             width=10).pack(side="left", padx=5)
-    tk.Button(button_frame, text="Cancel", command=on_cancel, 
-             width=10).pack(side="left", padx=5)
-    
-    # Wait for dialog to complete
-    option_window.protocol("WM_DELETE_WINDOW", on_cancel)
-    root.wait_window(option_window)
-    
-    # If user generated a password, show it
-    if password_result[0]:
-        # Create a result window
-        result_window = tk.Toplevel(root)
-        result_window.title("Generated Password")
-        result_window.geometry("400x200")
-        result_window.resizable(False, False)
+    def setup_encrypt_tab(self):
+        """Set up the encryption tab"""
+        frame = self.encrypt_frame
         
-        # Center on screen
-        result_window.update_idletasks()
-        width = result_window.winfo_width()
-        height = result_window.winfo_height()
-        x = (result_window.winfo_screenwidth() // 2) - (width // 2)
-        y = (result_window.winfo_screenheight() // 2) - (height // 2)
-        result_window.geometry(f'+{x}+{y}')
+        # Input file
+        input_frame = ttk.LabelFrame(frame, text="Input File")
+        input_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        # Display password
-        tk.Label(result_window, 
-                text="IMPORTANT: SAVE THIS PASSWORD NOW", 
-                font=("Arial", 12, "bold")).pack(pady=10)
+        self.encrypt_input_var = tk.StringVar()
+        ttk.Entry(input_frame, textvariable=self.encrypt_input_var).pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=5, pady=5)
+        ttk.Button(input_frame, text="Browse...", 
+                  command=lambda: self.browse_file(self.encrypt_input_var)).pack(
+                      side=tk.RIGHT, padx=5, pady=5)
         
-        password_frame = tk.Frame(result_window, relief="sunken", borderwidth=1)
-        password_frame.pack(pady=10, padx=20, fill="x")
+        # Output file
+        output_frame = ttk.LabelFrame(frame, text="Output File")
+        output_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        password_var = tk.StringVar(value=password_result[0])
-        password_entry = tk.Entry(password_frame, textvariable=password_var, 
-                                 font=("Courier", 12), justify="center")
-        password_entry.pack(pady=10, padx=10, fill="x")
+        self.encrypt_output_var = tk.StringVar()
+        ttk.Entry(output_frame, textvariable=self.encrypt_output_var).pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=5, pady=5)
+        ttk.Button(output_frame, text="Browse...", 
+                  command=lambda: self.browse_file(self.encrypt_output_var, save=True)).pack(
+                      side=tk.RIGHT, padx=5, pady=5)
+        
+        # Password options
+        password_frame = ttk.LabelFrame(frame, text="Password")
+        password_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.encrypt_password_var = tk.StringVar()
+        ttk.Label(password_frame, text="Password:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        password_entry = ttk.Entry(password_frame, textvariable=self.encrypt_password_var, show="*")
+        password_entry.grid(row=0, column=1, padx=5, pady=5, sticky=tk.EW)
+        
+        self.encrypt_confirm_var = tk.StringVar()
+        ttk.Label(password_frame, text="Confirm:").grid(row=1, column=0, padx=5, pady=5, sticky=tk.W)
+        confirm_entry = ttk.Entry(password_frame, textvariable=self.encrypt_confirm_var, show="*")
+        confirm_entry.grid(row=1, column=1, padx=5, pady=5, sticky=tk.EW)
+        
+        # Add "Generate" button
+        ttk.Button(password_frame, text="Generate Password",
+                  command=self.generate_encrypt_password).grid(
+                      row=0, column=2, rowspan=2, padx=5, pady=5)
+        
+        password_frame.columnconfigure(1, weight=1)
+        
+        # Options 
+        options_frame = ttk.LabelFrame(frame, text="Options")
+        options_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.encrypt_overwrite_var = tk.BooleanVar()
+        ttk.Checkbutton(options_frame, text="Overwrite original file",
+                       variable=self.encrypt_overwrite_var).pack(anchor=tk.W, padx=5, pady=2)
+        
+        self.encrypt_shred_var = tk.BooleanVar()
+        ttk.Checkbutton(options_frame, text="Securely shred original file",
+                       variable=self.encrypt_shred_var).pack(anchor=tk.W, padx=5, pady=2)
+        
+        # Action button
+        button_frame = ttk.Frame(frame)
+        button_frame.pack(fill=tk.X, padx=10, pady=20)
+        
+        ttk.Button(button_frame, text="Encrypt", command=self.run_encrypt).pack(padx=5, pady=5)
+    
+    def setup_decrypt_tab(self):
+        """Set up the decryption tab"""
+        frame = self.decrypt_frame
+        
+        # Input file
+        input_frame = ttk.LabelFrame(frame, text="Encrypted File")
+        input_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.decrypt_input_var = tk.StringVar()
+        ttk.Entry(input_frame, textvariable=self.decrypt_input_var).pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=5, pady=5)
+        ttk.Button(input_frame, text="Browse...", 
+                  command=lambda: self.browse_file(self.decrypt_input_var)).pack(
+                      side=tk.RIGHT, padx=5, pady=5)
+        
+        # Output file
+        output_frame = ttk.LabelFrame(frame, text="Output File")
+        output_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.decrypt_output_var = tk.StringVar()
+        ttk.Entry(output_frame, textvariable=self.decrypt_output_var).pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=5, pady=5)
+        ttk.Button(output_frame, text="Browse...", 
+                  command=lambda: self.browse_file(self.decrypt_output_var, save=True)).pack(
+                      side=tk.RIGHT, padx=5, pady=5)
+        
+        # Display to screen option
+        self.decrypt_to_screen_var = tk.BooleanVar()
+        ttk.Checkbutton(output_frame, text="Display content to screen (for text files)",
+                       variable=self.decrypt_to_screen_var).pack(anchor=tk.W, padx=5, pady=2)
+        
+        # Password entry
+        password_frame = ttk.LabelFrame(frame, text="Password")
+        password_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.decrypt_password_var = tk.StringVar()
+        ttk.Label(password_frame, text="Password:").pack(side=tk.LEFT, padx=5, pady=5)
+        password_entry = ttk.Entry(password_frame, textvariable=self.decrypt_password_var, show="*")
+        password_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5, pady=5)
+        
+        # Options 
+        options_frame = ttk.LabelFrame(frame, text="Options")
+        options_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.decrypt_overwrite_var = tk.BooleanVar()
+        ttk.Checkbutton(options_frame, text="Overwrite encrypted file with decrypted content",
+                       variable=self.decrypt_overwrite_var).pack(anchor=tk.W, padx=5, pady=2)
+        
+        self.decrypt_shred_var = tk.BooleanVar()
+        ttk.Checkbutton(options_frame, text="Securely shred encrypted file after decryption",
+                       variable=self.decrypt_shred_var).pack(anchor=tk.W, padx=5, pady=2)
+        
+        # Action button
+        button_frame = ttk.Frame(frame)
+        button_frame.pack(fill=tk.X, padx=10, pady=20)
+        
+        ttk.Button(button_frame, text="Decrypt", command=self.run_decrypt).pack(padx=5, pady=5)
+    
+    def setup_shred_tab(self):
+        """Set up the secure shredding tab"""
+        frame = self.shred_frame
+        
+        # Input files
+        input_frame = ttk.LabelFrame(frame, text="Files/Directories to Shred")
+        input_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.shred_input_var = tk.StringVar()
+        ttk.Entry(input_frame, textvariable=self.shred_input_var).pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=5, pady=5)
+        ttk.Button(input_frame, text="Browse...", 
+                  command=lambda: self.browse_file(self.shred_input_var, multi=True)).pack(
+                      side=tk.RIGHT, padx=5, pady=5)
+        
+        # Shred options
+        options_frame = ttk.LabelFrame(frame, text="Options")
+        options_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.shred_passes_var = tk.IntVar(value=3)
+        ttk.Label(options_frame, text="Number of passes:").grid(
+            row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        passes_combo = ttk.Combobox(options_frame, textvariable=self.shred_passes_var, 
+                                   values=[1, 3, 7, 12, 20, 35], width=5)
+        passes_combo.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+        
+        self.shred_recursive_var = tk.BooleanVar()
+        ttk.Checkbutton(options_frame, text="Recursively shred directories",
+                       variable=self.shred_recursive_var).grid(
+                           row=1, column=0, columnspan=2, padx=5, pady=5, sticky=tk.W)
+        
+        # Warning
+        warning_frame = ttk.LabelFrame(frame, text="⚠️ WARNING")
+        warning_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        warning_text = ("Securely shredded files CANNOT be recovered! This operation is permanent.\n"
+                        "Please ensure you have selected the correct files before proceeding.")
+        ttk.Label(warning_frame, text=warning_text, foreground="red").pack(padx=10, pady=10)
+        
+        # Action button
+        button_frame = ttk.Frame(frame)
+        button_frame.pack(fill=tk.X, padx=10, pady=20)
+        
+        ttk.Button(button_frame, text="Shred", command=self.run_shred).pack(padx=5, pady=5)
+    
+    def setup_password_tab(self):
+        """Set up the password generation tab"""
+        frame = self.password_frame
+        
+        # Length selection
+        length_frame = ttk.Frame(frame)
+        length_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttk.Label(length_frame, text="Password Length:").pack(side=tk.LEFT, padx=5)
+        self.password_length_var = tk.IntVar(value=16)
+        length_scale = ttk.Scale(length_frame, from_=8, to=64, 
+                              orient=tk.HORIZONTAL, variable=self.password_length_var,
+                              length=300)
+        length_scale.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        
+        length_display = ttk.Label(length_frame, textvariable=self.password_length_var, width=3)
+        length_display.pack(side=tk.LEFT, padx=5)
+        
+        # Character sets
+        charset_frame = ttk.LabelFrame(frame, text="Character Sets")
+        charset_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.use_lowercase_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(charset_frame, text="Lowercase letters (a-z)",
+                       variable=self.use_lowercase_var).pack(anchor=tk.W, padx=5, pady=2)
+        
+        self.use_uppercase_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(charset_frame, text="Uppercase letters (A-Z)",
+                       variable=self.use_uppercase_var).pack(anchor=tk.W, padx=5, pady=2)
+        
+        self.use_digits_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(charset_frame, text="Digits (0-9)",
+                       variable=self.use_digits_var).pack(anchor=tk.W, padx=5, pady=2)
+        
+        self.use_special_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(charset_frame, text="Special characters (!@#$%...)",
+                       variable=self.use_special_var).pack(anchor=tk.W, padx=5, pady=2)
+        
+        # Password display
+        display_frame = ttk.LabelFrame(frame, text="Generated Password")
+        display_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.generated_password_var = tk.StringVar()
+        password_entry = ttk.Entry(display_frame, textvariable=self.generated_password_var,
+                                 font=("Courier", 12), justify=tk.CENTER)
+        password_entry.pack(fill=tk.X, padx=10, pady=10, ipady=5)
         
         # Buttons
-        button_frame = tk.Frame(result_window)
-        button_frame.pack(pady=15)
+        button_frame = ttk.Frame(frame)
+        button_frame.pack(fill=tk.X, padx=10, pady=20)
         
-        def copy_to_clipboard():
-            root.clipboard_clear()
-            root.clipboard_append(password_result[0])
-            tk.Label(result_window, text="Password copied to clipboard!",
-                    fg="green").pack()
+        ttk.Button(button_frame, text="Generate Password", 
+                  command=self.generate_password).pack(side=tk.LEFT, padx=5, pady=5)
         
-        tk.Button(button_frame, text="Copy to Clipboard", 
-                 command=copy_to_clipboard).pack(side="left", padx=5)
-        tk.Button(button_frame, text="Close", 
-                 command=result_window.destroy).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Copy to Clipboard", 
+                  command=self.copy_password_to_clipboard).pack(side=tk.LEFT, padx=5, pady=5)
         
-        # Auto-close warning
-        warning_label = tk.Label(result_window, 
-                               text="This window will close in 30 seconds for security",
-                               fg="red")
-        warning_label.pack(pady=5)
-        
-        # Auto-close timer
-        def update_timer(count):
-            if count > 0:
-                warning_label.config(
-                    text=f"This window will close in {count} seconds for security")
-                result_window.after(1000, update_timer, count-1)
-            else:
-                result_window.destroy()
-        
-        update_timer(30)
-        
-        # Wait for this window to close
-        root.wait_window(result_window)
+        ttk.Button(button_frame, text="Clear", 
+                  command=lambda: self.generated_password_var.set("")).pack(side=tk.LEFT, padx=5, pady=5)
     
-    root.destroy()
+    def browse_file(self, string_var, save=False, multi=False):
+        """Browse for a file and update the StringVar"""
+        if save:
+            filename = filedialog.asksaveasfilename()
+        elif multi:
+            filename = filedialog.askopenfilename(multiple=True)
+            if filename:
+                filename = " ".join(filename)  # Join multiple filenames
+        else:
+            filename = filedialog.askopenfilename()
+        
+        if filename:
+            string_var.set(filename)
+    
+    def generate_strong_password(self, length, use_lowercase=True, use_uppercase=True, 
+                               use_digits=True, use_special=True):
+        """Generate a strong random password"""
+        if length < 8:
+            length = 8  # Enforce minimum safe length
+        
+        # Create the character pool based on selected options
+        char_pool = ""
+        required_chars = []
+        
+        if use_lowercase:
+            char_pool += string.ascii_lowercase
+            required_chars.append(random.choice(string.ascii_lowercase))
+            
+        if use_uppercase:
+            char_pool += string.ascii_uppercase
+            required_chars.append(random.choice(string.ascii_uppercase))
+            
+        if use_digits:
+            char_pool += string.digits
+            required_chars.append(random.choice(string.digits))
+            
+        if use_special:
+            char_pool += string.punctuation
+            required_chars.append(random.choice(string.punctuation))
+        
+        # If no options selected, default to alphanumeric
+        if not char_pool:
+            char_pool = string.ascii_lowercase + string.ascii_uppercase + string.digits
+            required_chars = [
+                random.choice(string.ascii_lowercase),
+                random.choice(string.ascii_uppercase),
+                random.choice(string.digits)
+            ]
+        
+        # Ensure we have room for all required characters
+        if len(required_chars) > length:
+            required_chars = required_chars[:length]
+        
+        # Fill remaining length with random characters from the pool
+        remaining_length = length - len(required_chars)
+        password_chars = required_chars + [random.choice(char_pool) for _ in range(remaining_length)]
+        
+        # Shuffle to ensure required characters aren't in predictable positions
+        random.shuffle(password_chars)
+        
+        return ''.join(password_chars)
+    
+    def generate_password(self):
+        """Generate a password based on the selected options"""
+        length = self.password_length_var.get()
+        use_lowercase = self.use_lowercase_var.get()
+        use_uppercase = self.use_uppercase_var.get()
+        use_digits = self.use_digits_var.get()
+        use_special = self.use_special_var.get()
+        
+        # Ensure at least one character set is selected
+        if not (use_lowercase or use_uppercase or use_digits or use_special):
+            messagebox.showwarning("Warning", "Please select at least one character set.")
+            return
+        
+        # Generate and display the password
+        password = self.generate_strong_password(
+            length, use_lowercase, use_uppercase, use_digits, use_special)
+        self.generated_password_var.set(password)
+        self.status_var.set("Password generated successfully")
+    
+    def generate_encrypt_password(self):
+        """Generate a password for encryption"""
+        length = simpledialog.askinteger("Password Length", 
+                                        "Enter password length (8-64):", 
+                                        minvalue=8, maxvalue=64, 
+                                        initialvalue=16,
+                                        parent=self.root)
+        if length:
+            # Generate password with default options (all character sets)
+            password = self.generate_strong_password(length)
+            self.encrypt_password_var.set(password)
+            self.encrypt_confirm_var.set(password)
+            messagebox.showinfo("Password Generated", 
+                              "A random password has been generated and filled in.\n\n"
+                              "Please save this password in a secure location! "
+                              "If you lose it, you won't be able to decrypt your file.")
+    
+    def copy_password_to_clipboard(self):
+        """Copy the generated password to clipboard"""
+        password = self.generated_password_var.get()
+        if password:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(password)
+            self.status_var.set("Password copied to clipboard")
+        else:
+            self.status_var.set("No password to copy")
+    
+    def run_command(self, cmd, callback=None, show_output=False):
+        """Run a command in a separate thread and update the UI when done"""
+        def run_in_thread():
+            try:
+                self.status_var.set("Running...")
+                
+                # Run the command
+                result = subprocess.run(
+                    cmd, 
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                
+                # Process the result
+                if result.returncode == 0:
+                    status = "Command completed successfully"
+                    
+                    if show_output and result.stdout:
+                        # Display the output in a scrollable window
+                        self.show_output_dialog("Command Output", result.stdout)
+                    elif callback:
+                        callback(result)
+                else:
+                    status = f"Error: {result.stderr}"
+                    messagebox.showerror("Error", f"Command failed:\n{result.stderr}")
+                
+                self.status_var.set(status)
+                
+            except Exception as e:
+                self.status_var.set(f"Error: {str(e)}")
+                messagebox.showerror("Error", str(e))
+        
+        # Start the command in a separate thread
+        threading.Thread(target=run_in_thread, daemon=True).start()
+    
+    def show_output_dialog(self, title, text):
+        """Show a dialog with scrollable text output"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title(title)
+        dialog.geometry("600x400")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Add text widget with scrollbar
+        text_frame = ttk.Frame(dialog)
+        text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        scrollbar = ttk.Scrollbar(text_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        text_widget = tk.Text(text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set)
+        text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=text_widget.yview)
+        
+        # Insert the text
+        text_widget.insert(tk.END, text)
+        text_widget.config(state=tk.DISABLED)  # Make it read-only
+        
+        # Add a close button
+        ttk.Button(dialog, text="Close", command=dialog.destroy).pack(pady=10)
+        
+        # Center the dialog
+        dialog.update_idletasks()
+        width = dialog.winfo_width()
+        height = dialog.winfo_height()
+        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (dialog.winfo_screenheight() // 2) - (height // 2)
+        dialog.geometry(f'{width}x{height}+{x}+{y}')
+    
+    def run_encrypt(self):
+        """Run the encryption command"""
+        input_file = self.encrypt_input_var.get()
+        if not input_file:
+            messagebox.showerror("Error", "Please select an input file.")
+            return
+        
+        password = self.encrypt_password_var.get()
+        confirm = self.encrypt_confirm_var.get()
+        
+        if not password:
+            messagebox.showerror("Error", "Please enter a password.")
+            return
+            
+        if password != confirm:
+            messagebox.showerror("Error", "Passwords do not match.")
+            return
+        
+        output_file = self.encrypt_output_var.get()
+        if not output_file and not self.encrypt_overwrite_var.get():
+            messagebox.showerror("Error", "Please select an output file or enable overwrite.")
+            return
+        
+        # Build the command
+        cmd = [sys.executable, "crypt.py", "encrypt", "-i", input_file]
+        
+        if output_file and not self.encrypt_overwrite_var.get():
+            cmd.extend(["-o", output_file])
+        
+        if self.encrypt_overwrite_var.get():
+            cmd.append("--overwrite")
+        
+        if self.encrypt_shred_var.get():
+            cmd.append("-s")
+        
+        # Add password
+        cmd.extend(["-p", password])
+        
+        # Run the command
+        self.run_command(cmd)
+    
+    def run_decrypt(self):
+        """Run the decryption command"""
+        input_file = self.decrypt_input_var.get()
+        if not input_file:
+            messagebox.showerror("Error", "Please select an input file.")
+            return
+        
+        password = self.decrypt_password_var.get()
+        if not password:
+            messagebox.showerror("Error", "Please enter a password.")
+            return
+        
+        output_file = self.decrypt_output_var.get()
+        show_output = self.decrypt_to_screen_var.get()
+        
+        if not output_file and not self.decrypt_overwrite_var.get() and not show_output:
+            messagebox.showerror("Error", 
+                               "Please select an output file, enable overwrite, or select display to screen.")
+            return
+        
+        # Build the command
+        cmd = [sys.executable, "crypt.py", "decrypt", "-i", input_file]
+        
+        if output_file and not self.decrypt_overwrite_var.get():
+            cmd.extend(["-o", output_file])
+        
+        if self.decrypt_overwrite_var.get():
+            cmd.append("--overwrite")
+        
+        if self.decrypt_shred_var.get():
+            cmd.append("-s")
+        
+        # Add password
+        cmd.extend(["-p", password])
+        
+        # Run the command
+        self.run_command(cmd, show_output=show_output)
+    
+    def run_shred(self):
+        """Run the shred command"""
+        input_files = self.shred_input_var.get()
+        if not input_files:
+            messagebox.showerror("Error", "Please select files or directories to shred.")
+            return
+        
+        # Ask for confirmation
+        if not messagebox.askyesno("Confirm Shred", 
+                                 "WARNING: This operation cannot be undone!\n\n"
+                                 "Are you absolutely sure you want to securely shred "
+                                 f"the selected files or directories?\n\n{input_files}"):
+            return
+        
+        # Build the command
+        cmd = [sys.executable, "crypt.py", "shred", "-i", input_files]
+        
+        if self.shred_recursive_var.get():
+            cmd.append("-r")
+        
+        cmd.extend(["--shred-passes", str(self.shred_passes_var.get())])
+        
+        # Run the command
+        self.run_command(cmd)
 
-def show_error(title, message):
-    """Show an error message dialog"""
-    root = tk.Tk()
-    root.withdraw()  # Hide the main window
-    messagebox.showerror(title, message)
-    root.destroy()
 
 def main():
-    """Main function to parse arguments and launch appropriate interface"""
-    parser = argparse.ArgumentParser(description='Secure File Encryption Tool Launcher')
-    parser.add_argument('--generate-password', action='store_true',
-                      help='Launch quick password generator without full GUI')
-    
-    args = parser.parse_args()
-    
-    if args.generate_password:
-        quick_password_generator()
-    else:
-        launch_gui()
+    """Main entry point for the application"""
+    root = tk.Tk()
+    app = CryptGUI(root)
+    root.mainloop()
+
 
 if __name__ == "__main__":
     main()
