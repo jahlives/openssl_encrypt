@@ -26,6 +26,8 @@ import time
 import threading
 import random
 import glob
+import string
+import time
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -812,6 +814,43 @@ def expand_glob_patterns(pattern):
     return glob.glob(pattern)
 
 
+def generate_strong_password(length):
+    """
+    Generate a cryptographically strong random password.
+    
+    Args:
+        length (int): Length of the password to generate
+        
+    Returns:
+        str: The generated password
+    """
+    if length < 12:
+        length = 12  # Enforce minimum safe length
+        
+    # Define character sets
+    lowercase = string.ascii_lowercase
+    uppercase = string.ascii_uppercase
+    digits = string.digits
+    symbols = string.punctuation
+    
+    # Ensure at least one character from each set
+    password = [
+        random.choice(lowercase),
+        random.choice(uppercase),
+        random.choice(digits),
+        random.choice(symbols)
+    ]
+    
+    # Fill the rest with random characters from all sets
+    all_chars = lowercase + uppercase + digits + symbols
+    password.extend(random.choice(all_chars) for _ in range(length - 4))
+    
+    # Shuffle the password to avoid predictable positions
+    random.shuffle(password)
+    
+    return ''.join(password)
+
+
 def main():
     """
     Main function that handles the command-line interface.
@@ -863,6 +902,12 @@ def main():
     parser.add_argument(
         '--password', '-p',
         help='Password (will prompt if not provided)'
+    )
+    parser.add_argument(
+        '--random',
+        type=int,
+        metavar='LENGTH',
+        help='Generate a random password of specified length for encryption'
     )
     parser.add_argument(
         '--input', '-i', 
@@ -969,11 +1014,33 @@ def main():
     # Check for Whirlpool availability if needed and not in quiet mode
     if args.whirlpool > 0 and not WHIRLPOOL_AVAILABLE and not args.quiet:
         print("Warning: pywhirlpool module not found. SHA-512 will be used instead.")
+        
+    # Validate random password parameter
+    if args.random is not None:
+        if args.action != 'encrypt':
+            parser.error("--random can only be used with the encrypt action")
+        if args.password:
+            parser.error("--password and --random cannot be used together")
+        if args.random < 12:
+            if not args.quiet:
+                print(f"Warning: Random password length increased to 12 (minimum secure length)")
+            args.random = 12
     
     # Get password (only for encrypt/decrypt actions)
     password = None
+    generated_password = None
+    
     if args.action in ['encrypt', 'decrypt']:
         password = args.password
+        
+        # Handle random password generation for encryption
+        if args.action == 'encrypt' and args.random and not password:
+            generated_password = generate_strong_password(args.random)
+            password = generated_password
+            if not args.quiet:
+                print("\nGenerated a random password for encryption.")
+        
+        # If no password provided yet, prompt the user
         if not password:
             # For encryption, require password confirmation to prevent typos
             if args.action == 'encrypt' and not args.quiet:
@@ -1117,6 +1184,41 @@ def main():
             if success:
                 if not args.quiet:
                     print(f"\nFile encrypted successfully: {output_file}")
+                    
+                    # If we used a generated password, display it with a warning
+                    if generated_password:
+                        print("\n" + "!" * 80)
+                        print("IMPORTANT: SAVE THIS PASSWORD NOW")
+                        print("!" * 80)
+                        print(f"\nGenerated Password: {generated_password}")
+                        print("\nWARNING: This is the ONLY time this password will be displayed.")
+                        print("         If you lose it, your data CANNOT be recovered.")
+                        print("         Please write it down or save it in a password manager now.")
+                        print("\nThis message will disappear in 10 seconds...")
+                        
+                        # Wait for 10 seconds or until keyboard interrupt
+                        try:
+                            # Use countdown for visual feedback
+                            for remaining in range(10, 0, -1):
+                                # Overwrite the line with updated countdown
+                                print(f"\rTime remaining: {remaining} seconds...", end="", flush=True)
+                                time.sleep(1)
+                                
+                            # Clear the countdown line
+                            print("\r" + " " * 40 + "\r", end="", flush=True)
+                            
+                            # Clear the password from the screen
+                            # Move cursor up 9 lines and clear each line
+                            print("\033[9A", end="")
+                            for _ in range(9):
+                                print("\033[K\033[1B", end="")
+                            print("\033[K\r", end="", flush=True)
+                            
+                        except KeyboardInterrupt:
+                            # Handle Ctrl+C by clearing the screen immediately
+                            print("\n\nPassword display aborted by user.")
+                            # Clear screen
+                            print("\033[H\033[J", end="", flush=True)
                 
                 # If shredding was requested and encryption was successful
                 if args.shred and not args.overwrite:
