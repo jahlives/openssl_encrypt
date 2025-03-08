@@ -6,6 +6,7 @@ A powerful tool for securely encrypting, decrypting, and shredding files with mi
 
 - **Strong Encryption**: Uses Fernet symmetric encryption (AES-128-CBC) with secure key derivation
 - **Multi-hash Password Protection**: Optional layered hashing with SHA-256, SHA-512, SHA3-256, SHA3-512, Whirlpool, and Scrypt
+- **Password Management**: Password confirmation to prevent typos, random password generation, and standalone password generator
 - **File Integrity Verification**: Built-in hash verification to detect corrupted or tampered files
 - **Secure File Shredding**: Military-grade secure deletion with multi-pass overwriting
 - **Directory Support**: Recursive processing of directories
@@ -83,19 +84,31 @@ python crypt.py ACTION [OPTIONS]
 - `encrypt`: Encrypt a file with a password
 - `decrypt`: Decrypt a file with a password
 - `shred`: Securely delete a file by overwriting its contents
+- `generate-password`: Generate a secure random password
 
 #### Common Options:
 
 | Option | Description |
 |--------|-------------|
-| `-i`, `--input` | Input file or directory (required, supports glob patterns for shred action) |
+| `-i`, `--input` | Input file or directory (required for encrypt/decrypt/shred, supports glob patterns for shred action) |
 | `-o`, `--output` | Output file (optional for decrypt) |
 | `-p`, `--password` | Password (will prompt if not provided) |
+| `--random` | Generate a random password of specified length for encryption |
 | `-q`, `--quiet` | Suppress all output except decrypted content and exit code |
 | `--overwrite` | Overwrite the input file with the output |
 | `-s`, `--shred` | Securely delete the original file after encryption/decryption |
 | `--shred-passes` | Number of passes for secure deletion (default: 3) |
 | `-r`, `--recursive` | Process directories recursively when shredding |
+
+#### Password Generation Options:
+
+| Option | Description |
+|--------|-------------|
+| `--length` | Length of generated password (default: 16) |
+| `--use-digits` | Include digits in generated password |
+| `--use-lowercase` | Include lowercase letters in generated password |
+| `--use-uppercase` | Include uppercase letters in generated password |
+| `--use-special` | Include special characters in generated password |
 
 #### Hash Configuration Options:
 
@@ -124,6 +137,21 @@ python crypt.py decrypt -i file.txt.encrypted -o file.txt
 
 # Decrypt and display contents to screen (for text files)
 python crypt.py decrypt -i config.encrypted
+```
+
+### Password Features
+
+```bash
+# Generate a secure random password
+python crypt.py generate-password
+
+# Generate a custom password (20 chars, only lowercase and digits)
+python crypt.py generate-password --length 20 --use-lowercase --use-digits
+
+# Encrypt with a randomly generated password
+python crypt.py encrypt -i secret.txt --random 16
+
+# The tool will display the generated password for 10 seconds, giving you time to save it
 ```
 
 ### Enhanced Security Options
@@ -178,6 +206,8 @@ python crypt.py shred -i "backup_*.old"
 
 - Use strong, unique passwords! The security of your encrypted files depends primarily on password strength.
 - For maximum security, use multiple hash algorithms and higher iteration counts.
+- When encrypting files, the tool requires password confirmation to prevent typos that could lead to data loss.
+- The `--random` option generates a strong password and displays it for a limited time (10 seconds).
 - Securely shredded files cannot be recovered, even with forensic tools.
 - The `--overwrite` option uses secure techniques to replace the original file.
 - Note that due to SSD, RAID, and file system complications, secure shredding may not completely remove all traces on some storage systems.
@@ -201,6 +231,14 @@ python crypt.py shred -i "backup_*.old"
 2. Truncate the file to zero bytes
 3. Delete the file from the filesystem
 
+### Password Generation Process
+
+1. Creates a cryptographically secure random password using the system's secure random number generator
+2. Ensures inclusion of selected character types (lowercase, uppercase, digits, special characters)
+3. Shuffles the password to avoid predictable patterns
+4. Displays the password with a countdown timer
+5. Securely clears the password from the screen after timeout or user interruption
+
 ## Files Included
 
 - `crypt.py` - Main command-line utility
@@ -213,3 +251,4 @@ python crypt.py shred -i "backup_*.old"
 ## License
 
 [MIT License](LICENSE)
+
