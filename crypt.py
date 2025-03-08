@@ -972,7 +972,6 @@ def main():
     )
     parser.add_argument(
         '--input', '-i', 
-        required=True,
         help='Input file or directory (supports glob patterns for shred action)'
     )
     parser.add_argument(
@@ -1136,6 +1135,10 @@ def main():
         display_password_with_timeout(password)
         # Exit after generating password
         sys.exit(0)
+        
+    # For other actions, input file is required
+    if args.input is None:
+        parser.error("the following arguments are required: --input/-i")
     
     # Get password (only for encrypt/decrypt actions)
     password = None
