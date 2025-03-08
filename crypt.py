@@ -814,41 +814,102 @@ def expand_glob_patterns(pattern):
     return glob.glob(pattern)
 
 
-def generate_strong_password(length):
+def generate_strong_password(length, use_lowercase=True, use_uppercase=True, 
+                         use_digits=True, use_special=True):
     """
-    Generate a cryptographically strong random password.
+    Generate a cryptographically strong random password with customizable character sets.
     
     Args:
         length (int): Length of the password to generate
+        use_lowercase (bool): Include lowercase letters
+        use_uppercase (bool): Include uppercase letters
+        use_digits (bool): Include digits
+        use_special (bool): Include special characters
         
     Returns:
         str: The generated password
     """
-    if length < 12:
-        length = 12  # Enforce minimum safe length
+    if length < 8:
+        length = 8  # Enforce minimum safe length
+    
+    # Create the character pool based on selected options
+    char_pool = ""
+    required_chars = []
+    
+    if use_lowercase:
+        char_pool += string.ascii_lowercase
+        required_chars.append(random.choice(string.ascii_lowercase))
         
-    # Define character sets
-    lowercase = string.ascii_lowercase
-    uppercase = string.ascii_uppercase
-    digits = string.digits
-    symbols = string.punctuation
+    if use_uppercase:
+        char_pool += string.ascii_uppercase
+        required_chars.append(random.choice(string.ascii_uppercase))
+        
+    if use_digits:
+        char_pool += string.digits
+        required_chars.append(random.choice(string.digits))
+        
+    if use_special:
+        char_pool += string.punctuation
+        required_chars.append(random.choice(string.punctuation))
     
-    # Ensure at least one character from each set
-    password = [
-        random.choice(lowercase),
-        random.choice(uppercase),
-        random.choice(digits),
-        random.choice(symbols)
-    ]
+    # If no options selected, default to alphanumeric
+    if not char_pool:
+        char_pool = string.ascii_lowercase + string.ascii_uppercase + string.digits
+        required_chars = [
+            random.choice(string.ascii_lowercase),
+            random.choice(string.ascii_uppercase),
+            random.choice(string.digits)
+        ]
     
-    # Fill the rest with random characters from all sets
-    all_chars = lowercase + uppercase + digits + symbols
-    password.extend(random.choice(all_chars) for _ in range(length - 4))
+    # Ensure we have room for all required characters
+    if len(required_chars) > length:
+        required_chars = required_chars[:length]
     
-    # Shuffle the password to avoid predictable positions
-    random.shuffle(password)
+    # Fill remaining length with random characters from the pool
+    remaining_length = length - len(required_chars)
+    password_chars = required_chars + [random.choice(char_pool) for _ in range(remaining_length)]
     
-    return ''.join(password)
+    # Shuffle to ensure required characters aren't in predictable positions
+    random.shuffle(password_chars)
+    
+    return ''.join(password_chars)
+
+
+def display_password_with_timeout(password, timeout_seconds=10):
+    """
+    Display a password to the screen with a timeout, then clear it.
+    
+    Args:
+        password (str): The password to display
+        timeout_seconds (int): Number of seconds to display the password
+    """
+    print("\n" + "=" * 60)
+    print(" GENERATED PASSWORD ".center(60, "="))
+    print("=" * 60)
+    print(f"\nPassword: {password}")
+    print("\nThis password will be cleared from the screen in {0} seconds.".format(timeout_seconds))
+    print("Press Ctrl+C to clear immediately.")
+    print("=" * 60)
+    
+    try:
+        # Countdown timer
+        for remaining in range(timeout_seconds, 0, -1):
+            print(f"\rTime remaining: {remaining} seconds...", end="", flush=True)
+            time.sleep(1)
+        
+        # Clear the countdown line
+        print("\r" + " " * 40, end="\r", flush=True)
+        
+    except KeyboardInterrupt:
+        # Handle Ctrl+C
+        print("\n\nPassword display aborted by user.", end="", flush=True)
+    
+    finally:
+        # Clear password from screen by moving cursor up and clearing lines
+        print("\033[8A", end="")  # Move up 8 lines
+        for _ in range(8):
+            print("\033[K\033[1B", end="")  # Clear line and move down
+        print("\033[K", end="", flush=True)  # Clear last line
 
 
 def main():
@@ -894,7 +955,7 @@ def main():
     # Define core actions
     parser.add_argument(
         'action', 
-        choices=['encrypt', 'decrypt', 'shred'], 
+        choices=['encrypt', 'decrypt', 'shred', 'generate-password'], 
         help='Action to perform'
     )
     
@@ -1009,6 +1070,34 @@ def main():
         help='Number of PBKDF2 iterations (default: 100000)'
     )
     
+    # Password generation options
+    parser.add_argument(
+        '--length', 
+        type=int, 
+        default=16,
+        help='Length of generated password (default: 16)'
+    )
+    parser.add_argument(
+        '--use-digits', 
+        action='store_true',
+        help='Include digits in generated password'
+    )
+    parser.add_argument(
+        '--use-lowercase', 
+        action='store_true',
+        help='Include lowercase letters in generated password'
+    )
+    parser.add_argument(
+        '--use-uppercase', 
+        action='store_true',
+        help='Include uppercase letters in generated password'
+    )
+    parser.add_argument(
+        '--use-special', 
+        action='store_true',
+        help='Include special characters in generated password'
+    )
+    
     args = parser.parse_args()
     
     # Check for Whirlpool availability if needed and not in quiet mode
@@ -1026,6 +1115,28 @@ def main():
                 print(f"Warning: Random password length increased to 12 (minimum secure length)")
             args.random = 12
     
+    # Check for password generation action
+    if args.action == 'generate-password':
+        # If no character sets are explicitly selected, use all by default
+        if not (args.use_lowercase or args.use_uppercase or args.use_digits or args.use_special):
+            args.use_lowercase = True
+            args.use_uppercase = True
+            args.use_digits = True
+            args.use_special = True
+            
+        # Generate and display the password
+        password = generate_strong_password(
+            args.length,
+            args.use_lowercase,
+            args.use_uppercase,
+            args.use_digits,
+            args.use_special
+        )
+        
+        display_password_with_timeout(password)
+        # Exit after generating password
+        sys.exit(0)
+    
     # Get password (only for encrypt/decrypt actions)
     password = None
     generated_password = None
@@ -1035,7 +1146,13 @@ def main():
         
         # Handle random password generation for encryption
         if args.action == 'encrypt' and args.random and not password:
-            generated_password = generate_strong_password(args.random)
+            generated_password = generate_strong_password(
+                args.random,
+                use_lowercase=True,
+                use_uppercase=True,
+                use_digits=True,
+                use_special=True
+            )
             password = generated_password
             if not args.quiet:
                 print("\nGenerated a random password for encryption.")
@@ -1188,7 +1305,7 @@ def main():
                     # If we used a generated password, display it with a warning
                     if generated_password:
                         print("\n" + "!" * 80)
-                        print("IMPORTANT: SAVE THIS PASSWORD NOW")
+                        print("IMPORTANT: SAVE THIS PASSWORD NOW".center(80))
                         print("!" * 80)
                         print(f"\nGenerated Password: {generated_password}")
                         print("\nWARNING: This is the ONLY time this password will be displayed.")
@@ -1207,18 +1324,17 @@ def main():
                             # Clear the countdown line
                             print("\r" + " " * 40 + "\r", end="", flush=True)
                             
+                        except KeyboardInterrupt:
+                            # Handle Ctrl+C by clearing the screen immediately
+                            print("\n\nPassword display aborted by user.")
+                            
+                        finally:
                             # Clear the password from the screen
                             # Move cursor up 9 lines and clear each line
                             print("\033[9A", end="")
                             for _ in range(9):
                                 print("\033[K\033[1B", end="")
                             print("\033[K\r", end="", flush=True)
-                            
-                        except KeyboardInterrupt:
-                            # Handle Ctrl+C by clearing the screen immediately
-                            print("\n\nPassword display aborted by user.")
-                            # Clear screen
-                            print("\033[H\033[J", end="", flush=True)
                 
                 # If shredding was requested and encryption was successful
                 if args.shred and not args.overwrite:
