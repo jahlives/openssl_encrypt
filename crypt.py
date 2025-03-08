@@ -883,33 +883,60 @@ def display_password_with_timeout(password, timeout_seconds=10):
         password (str): The password to display
         timeout_seconds (int): Number of seconds to display the password
     """
-    print("\n" + "=" * 60)
-    print(" GENERATED PASSWORD ".center(60, "="))
-    print("=" * 60)
-    print(f"\nPassword: {password}")
-    print("\nThis password will be cleared from the screen in {0} seconds.".format(timeout_seconds))
-    print("Press Ctrl+C to clear immediately.")
-    print("=" * 60)
+    # Store the original signal handler
+    original_sigint = signal.getsignal(signal.SIGINT)
+    
+    # Flag to track if Ctrl+C was pressed
+    interrupted = False
+    
+    # Custom signal handler for SIGINT
+    def sigint_handler(signum, frame):
+        nonlocal interrupted
+        interrupted = True
+        # Restore original handler immediately to allow normal Ctrl+C behavior
+        signal.signal(signal.SIGINT, original_sigint)
     
     try:
+        # Set our custom handler
+        signal.signal(signal.SIGINT, sigint_handler)
+        
+        print("\n" + "=" * 60)
+        print(" GENERATED PASSWORD ".center(60, "="))
+        print("=" * 60)
+        print(f"\nPassword: {password}")
+        print("\nThis password will be cleared from the screen in {0} seconds.".format(timeout_seconds))
+        print("Press Ctrl+C to clear immediately.")
+        print("=" * 60)
+        
         # Countdown timer
         for remaining in range(timeout_seconds, 0, -1):
+            if interrupted:
+                break
             print(f"\rTime remaining: {remaining} seconds...", end="", flush=True)
-            time.sleep(1)
+            # Sleep in small increments to check for interruption more frequently
+            for _ in range(10):
+                if interrupted:
+                    break
+                time.sleep(0.1)
         
-        # Clear the countdown line
-        print("\r" + " " * 40, end="\r", flush=True)
-        
-    except KeyboardInterrupt:
-        # Handle Ctrl+C
-        print("\n\nPassword display aborted by user.", end="", flush=True)
-    
     finally:
-        # Clear password from screen by moving cursor up and clearing lines
-        print("\033[8A", end="")  # Move up 8 lines
-        for _ in range(8):
-            print("\033[K\033[1B", end="")  # Clear line and move down
-        print("\033[K", end="", flush=True)  # Clear last line
+        # Restore original signal handler no matter what
+        signal.signal(signal.SIGINT, original_sigint)
+        
+        # Give an indication that we're clearing the screen
+        if interrupted:
+            print("\n\nClearing password from screen (interrupted by user)...")
+        else:
+            print("\n\nClearing password from screen...")
+        
+        # Use system command to clear the screen - this is the most reliable method
+        if sys.platform == 'win32':
+            os.system('cls')  # Windows
+        else:
+            os.system('clear')  # Unix/Linux/MacOS
+        
+        print("Password has been cleared from screen.")
+        print("For additional security, consider clearing your terminal history.")
 
 
 def main():
@@ -1307,37 +1334,62 @@ def main():
                     
                     # If we used a generated password, display it with a warning
                     if generated_password:
-                        print("\n" + "!" * 80)
-                        print("IMPORTANT: SAVE THIS PASSWORD NOW".center(80))
-                        print("!" * 80)
-                        print(f"\nGenerated Password: {generated_password}")
-                        print("\nWARNING: This is the ONLY time this password will be displayed.")
-                        print("         If you lose it, your data CANNOT be recovered.")
-                        print("         Please write it down or save it in a password manager now.")
-                        print("\nThis message will disappear in 10 seconds...")
+                        # Store the original signal handler
+                        original_sigint = signal.getsignal(signal.SIGINT)
                         
-                        # Wait for 10 seconds or until keyboard interrupt
+                        # Flag to track if Ctrl+C was pressed
+                        interrupted = False
+                        
+                        # Custom signal handler for SIGINT
+                        def sigint_handler(signum, frame):
+                            nonlocal interrupted
+                            interrupted = True
+                            # Restore original handler immediately
+                            signal.signal(signal.SIGINT, original_sigint)
+                        
                         try:
-                            # Use countdown for visual feedback
+                            # Set our custom handler
+                            signal.signal(signal.SIGINT, sigint_handler)
+                            
+                            print("\n" + "!" * 80)
+                            print("IMPORTANT: SAVE THIS PASSWORD NOW".center(80))
+                            print("!" * 80)
+                            print(f"\nGenerated Password: {generated_password}")
+                            print("\nWARNING: This is the ONLY time this password will be displayed.")
+                            print("         If you lose it, your data CANNOT be recovered.")
+                            print("         Please write it down or save it in a password manager now.")
+                            print("\nThis message will disappear in 10 seconds...")
+                            
+                            # Wait for 10 seconds or until keyboard interrupt
                             for remaining in range(10, 0, -1):
+                                if interrupted:
+                                    break
                                 # Overwrite the line with updated countdown
                                 print(f"\rTime remaining: {remaining} seconds...", end="", flush=True)
-                                time.sleep(1)
-                                
-                            # Clear the countdown line
-                            print("\r" + " " * 40 + "\r", end="", flush=True)
-                            
-                        except KeyboardInterrupt:
-                            # Handle Ctrl+C by clearing the screen immediately
-                            print("\n\nPassword display aborted by user.")
-                            
+                                # Sleep in small increments to check for interruption more frequently
+                                for _ in range(10):
+                                    if interrupted:
+                                        break
+                                    time.sleep(0.1)
+                        
                         finally:
-                            # Clear the password from the screen
-                            # Move cursor up 9 lines and clear each line
-                            print("\033[9A", end="")
-                            for _ in range(9):
-                                print("\033[K\033[1B", end="")
-                            print("\033[K\r", end="", flush=True)
+                            # Restore original signal handler no matter what
+                            signal.signal(signal.SIGINT, original_sigint)
+                            
+                            # Give an indication that we're clearing the screen
+                            if interrupted:
+                                print("\n\nClearing password from screen (interrupted by user)...")
+                            else:
+                                print("\n\nClearing password from screen...")
+                            
+                            # Use system command to clear the screen
+                            if sys.platform == 'win32':
+                                os.system('cls')  # Windows
+                            else:
+                                os.system('clear')  # Unix/Linux/MacOS
+                            
+                            print("Password has been cleared from screen.")
+                            print("For additional security, consider clearing your terminal history.")
                 
                 # If shredding was requested and encryption was successful
                 if args.shred and not args.overwrite:
