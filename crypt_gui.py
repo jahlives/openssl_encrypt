@@ -18,8 +18,8 @@ class CryptGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Secure File Encryption Tool")
-        self.root.geometry("650x500")
-        self.root.minsize(650, 500)
+        self.root.geometry("650x580")  # Increased height from 550 to 580
+        self.root.minsize(650, 580)    # Increased minimum height as well
         
         # Configure style
         self.style = ttk.Style()
@@ -52,8 +52,17 @@ class CryptGUI:
         self.status_var = tk.StringVar()
         self.status_var.set("Ready")
         self.status_bar = ttk.Label(root, textvariable=self.status_var, 
-                                   relief=tk.SUNKEN, anchor=tk.W)
-        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+                                   relief=tk.SUNKEN, anchor=tk.W, padding=(5, 3))
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X, pady=(5, 5))
+        
+        # Variables for password timeout
+        self.password_timer_id = None
+        self.password_timer_active = False
+        self.countdown_seconds = 0
+        self.countdown_label = None
+        
+        # Bind tab change event to clear password
+        self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
         
         # Center the window
         self.center_window()
@@ -128,9 +137,12 @@ class CryptGUI:
         
         # Action button
         button_frame = ttk.Frame(frame)
-        button_frame.pack(fill=tk.X, padx=10, pady=20)
+        button_frame.pack(fill=tk.X, padx=10, pady=(20, 25))
         
-        ttk.Button(button_frame, text="Encrypt", command=self.run_encrypt).pack(padx=5, pady=5)
+        # Increased button height with more padding
+        encrypt_button = ttk.Button(button_frame, text="Encrypt", command=self.run_encrypt)
+        encrypt_button.pack(padx=5, pady=5)
+        self.style.configure("TButton", padding=[10, 8])  # Slightly increase button padding
     
     def setup_decrypt_tab(self):
         """Set up the decryption tab"""
@@ -282,6 +294,18 @@ class CryptGUI:
                                  font=("Courier", 12), justify=tk.CENTER)
         password_entry.pack(fill=tk.X, padx=10, pady=10, ipady=5)
         
+        # Security notice and countdown
+        security_frame = ttk.Frame(display_frame)
+        security_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        
+        self.countdown_var = tk.StringVar()
+        self.countdown_var.set("Password will be cleared automatically after 20 seconds for security")
+        
+        security_label = ttk.Label(security_frame, textvariable=self.countdown_var, 
+                                 foreground="red", justify=tk.CENTER)
+        security_label.pack(fill=tk.X)
+        self.countdown_label = security_label
+        
         # Buttons
         button_frame = ttk.Frame(frame)
         button_frame.pack(fill=tk.X, padx=10, pady=20)
@@ -293,7 +317,7 @@ class CryptGUI:
                   command=self.copy_password_to_clipboard).pack(side=tk.LEFT, padx=5, pady=5)
         
         ttk.Button(button_frame, text="Clear", 
-                  command=lambda: self.generated_password_var.set("")).pack(side=tk.LEFT, padx=5, pady=5)
+                  command=self.clear_generated_password).pack(side=tk.LEFT, padx=5, pady=5)
     
     def browse_file(self, string_var, save=False, multi=False):
         """Browse for a file and update the StringVar"""
@@ -357,6 +381,53 @@ class CryptGUI:
         
         return ''.join(password_chars)
     
+    def on_tab_changed(self, event):
+        """Handle tab change events"""
+        # Clear the generated password when changing tabs for security
+        if self.password_timer_active:
+            self.clear_generated_password()
+            self.status_var.set("Password cleared for security")
+    
+    def start_password_countdown(self, seconds=20):
+        """Start a countdown timer to clear the password"""
+        # Cancel any existing timer
+        self.cancel_password_timer()
+        
+        self.password_timer_active = True
+        self.countdown_seconds = seconds
+        self.update_countdown_label()
+        
+        # Start the countdown
+        self._countdown_step()
+    
+    def _countdown_step(self):
+        """Update the countdown timer"""
+        if self.countdown_seconds > 0:
+            self.update_countdown_label()
+            self.countdown_seconds -= 1
+            self.password_timer_id = self.root.after(1000, self._countdown_step)
+        else:
+            self.clear_generated_password()
+            self.countdown_var.set("Password has been cleared for security")
+    
+    def update_countdown_label(self):
+        """Update the countdown timer label"""
+        self.countdown_var.set(f"Password will be cleared automatically in {self.countdown_seconds} seconds")
+    
+    def cancel_password_timer(self):
+        """Cancel the password timer if it's running"""
+        if self.password_timer_id:
+            self.root.after_cancel(self.password_timer_id)
+            self.password_timer_id = None
+        self.password_timer_active = False
+    
+    def clear_generated_password(self):
+        """Clear the generated password and reset the timer"""
+        self.generated_password_var.set("")
+        self.cancel_password_timer()
+        if self.countdown_label:
+            self.countdown_var.set("Password will be cleared automatically after 20 seconds for security")
+    
     def generate_password(self):
         """Generate a password based on the selected options"""
         length = self.password_length_var.get()
@@ -375,6 +446,23 @@ class CryptGUI:
             length, use_lowercase, use_uppercase, use_digits, use_special)
         self.generated_password_var.set(password)
         self.status_var.set("Password generated successfully")
+        
+        # Start the countdown timer
+        self.start_password_countdown(20)
+    
+    def copy_password_to_clipboard(self):
+        """Copy the generated password to clipboard"""
+        password = self.generated_password_var.get()
+        if password:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(password)
+            self.status_var.set("Password copied to clipboard")
+            
+            # Reset the countdown timer after copying to give more time
+            if self.password_timer_active:
+                self.start_password_countdown(20)
+        else:
+            self.status_var.set("No password to copy")
     
     def generate_encrypt_password(self):
         """Generate a password for encryption"""
@@ -392,16 +480,6 @@ class CryptGUI:
                               "A random password has been generated and filled in.\n\n"
                               "Please save this password in a secure location! "
                               "If you lose it, you won't be able to decrypt your file.")
-    
-    def copy_password_to_clipboard(self):
-        """Copy the generated password to clipboard"""
-        password = self.generated_password_var.get()
-        if password:
-            self.root.clipboard_clear()
-            self.root.clipboard_append(password)
-            self.status_var.set("Password copied to clipboard")
-        else:
-            self.status_var.set("No password to copy")
     
     def run_command(self, cmd, callback=None, show_output=False):
         """Run a command in a separate thread and update the UI when done"""
@@ -587,4 +665,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
