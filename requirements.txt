@@ -5,3 +5,5 @@ tk>=8.6; platform_system != "Windows"  # Tkinter is included with Python on Wind
 # Test dependencies
 pytest>=7.0.0  # For more advanced test capabilities
 mock>=4.0.0  # For mocking in tests
+# Memory security dependencies
+ctypes-callable>=1.0.0  # For secure memory operations
