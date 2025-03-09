@@ -10,6 +10,8 @@ A powerful tool for securely encrypting, decrypting, and shredding files with mi
 - **File Integrity Verification**: Built-in hash verification to detect corrupted or tampered files
 - **Secure File Shredding**: Military-grade secure deletion with multi-pass overwriting
 - **Directory Support**: Recursive processing of directories
+- **Memory-Secure Processing**: Protection against memory-based attacks and data leakage
+- **Argon2 Support**: Memory-hard key derivation function that won the Password Hashing Competition
 - **Glob Pattern Support**: Batch operations using wildcard patterns
 - **Safe Overwriting**: Secure in-place file replacement with atomic operations
 - **Progress Visualization**: Real-time progress bars for lengthy operations
@@ -29,6 +31,12 @@ A powerful tool for securely encrypting, decrypting, and shredding files with mi
 
 ```bash
 pip install -r requirements.txt
+```
+
+For Argon2 support:
+
+```bash
+pip install argon2-cffi
 ```
 
 ## Usage
@@ -99,6 +107,8 @@ python crypt.py ACTION [OPTIONS]
 | `-s`, `--shred` | Securely delete the original file after encryption/decryption |
 | `--shred-passes` | Number of passes for secure deletion (default: 3) |
 | `-r`, `--recursive` | Process directories recursively when shredding |
+| `--disable-secure-memory` | Disable secure memory handling (not recommended) |
+| `--argon2-time` | Argon2 time cost parameter (default: 0, not used) |
 
 #### Password Generation Options:
 
@@ -123,6 +133,10 @@ python crypt.py ACTION [OPTIONS]
 | `--scrypt-r` | Scrypt block size parameter r (default: 8) |
 | `--scrypt-p` | Scrypt parallelization parameter p (default: 1) |
 | `--pbkdf2` | Number of PBKDF2 iterations (default: 100,000) |
+| `--argon2-time` | Argon2 time cost parameter (default: 0, not used) |
+| `--argon2-memory` | Argon2 memory cost in KB (default: 102400 = 100MB) |
+| `--argon2-parallelism` | Argon2 parallelism parameter (default: 8) | 
+| `--argon2-type` | Argon2 variant to use: argon2i, argon2d, or argon2id (default: argon2id) |
 
 ## Command-Line Examples
 
@@ -165,6 +179,18 @@ python crypt.py encrypt -i secrets.txt --scrypt-cost 15
 
 # Combine multiple hash functions for layered security
 python crypt.py encrypt -i critical.pdf --sha512 --sha3-256 --scrypt-cost 14
+
+# Use Argon2 for state-of-the-art password hashing
+python crypt.py encrypt -i topsecret.zip --argon2-time 3
+
+# Configure Argon2 for maximum security
+python crypt.py encrypt -i classified.db --argon2-time 10 --argon2-memory 1048576 --argon2-parallelism 8
+
+# Use Argon2i for side-channel attack resistance
+python crypt.py encrypt -i sensitive_data.txt --argon2-time 4 --argon2-type argon2i
+
+# Combine Argon2 with other hash functions for defense-in-depth
+python crypt.py encrypt -i ultra_secret.dat --argon2-time 3 --sha3-512 --pbkdf2 200000
 ```
 
 ### Managing Files
@@ -204,13 +230,37 @@ python crypt.py shred -i "backup_*.old"
 
 ## Security Notes
 
-- Use strong, unique passwords! The security of your encrypted files depends primarily on password strength.
-- For maximum security, use multiple hash algorithms and higher iteration counts.
-- When encrypting files, the tool requires password confirmation to prevent typos that could lead to data loss.
-- The `--random` option generates a strong password and displays it for a limited time (10 seconds).
-- Securely shredded files cannot be recovered, even with forensic tools.
-- The `--overwrite` option uses secure techniques to replace the original file.
-- Note that due to SSD, RAID, and file system complications, secure shredding may not completely remove all traces on some storage systems.
+- Use strong, unique passwords! The security of your encrypted files depends primarily on password strength
+- For maximum security, use multiple hash algorithms and higher iteration counts
+- When encrypting files, the tool requires password confirmation to prevent typos that could lead to data loss
+- The `--random` option generates a strong password and displays it for a limited time (10 seconds)
+- Securely shredded files cannot be recovered, even with forensic tools
+- The `--overwrite` option uses secure techniques to replace the original file
+- Note that due to SSD, RAID, and file system complications, secure shredding may not completely remove all traces on some storage systems
+
+### Memory Security
+
+This tool implements several memory security features to protect sensitive data:
+
+- **Secure Buffers**: Password and key material is stored in special memory buffers that are protected against swapping to disk
+- **Memory Wiping**: Sensitive information is immediately wiped from memory when no longer needed
+- **Side-Channel Protection**: Argon2i variant provides additional protection against cache-timing and other side-channel attacks
+- **Defense Against Cold Boot Attacks**: Minimizes the time sensitive data remains in memory
+
+By default, secure memory handling is enabled. It can be disabled with `--disable-secure-memory`, but this is not recommended unless you encounter compatibility issues.
+
+### Argon2 Key Derivation
+
+Argon2 is a state-of-the-art password hashing algorithm designed to be:
+
+- **Memory-Hard**: Requires significant amounts of memory to compute, making hardware-based attacks difficult
+- **Time-Tunable**: Configurable time cost to scale with available resources
+- **Parallelism-Aware**: Can leverage multiple CPU cores for better performance
+
+Three variants are supported:
+- **argon2d**: Provides the highest resistance against GPU cracking attempts (uses data-dependent memory access)
+- **argon2i**: Provides resistance against side-channel attacks (uses data-independent memory access)
+- **argon2id**: A hybrid approach offering good protection against both GPU and side-channel attacks (default)
 
 ## How It Works
 
@@ -219,6 +269,7 @@ python crypt.py shred -i "backup_*.old"
 1. Generate a cryptographic key from your password using:
    - Optional multi-layer password hashing (SHA-256/512, SHA3-256/512, Whirlpool, Scrypt)
    - Final PBKDF2 key derivation
+   - Optional Argon2 memory-hard key derivation
 2. Encrypt the file using Fernet (AES-128-CBC with HMAC)
 3. Store encryption parameters and file integrity hash in the file header
 
@@ -238,6 +289,13 @@ python crypt.py shred -i "backup_*.old"
 3. Shuffles the password to avoid predictable patterns
 4. Displays the password with a countdown timer
 5. Securely clears the password from the screen after timeout or user interruption
+
+### Memory-Secure Processing
+
+1. All sensitive data (passwords, encryption keys) is isolated in protected memory areas
+2. When sensitive operations complete, memory is securely wiped with zeros
+3. Temporary buffers are allocated and freed as needed to minimize exposure
+4. The tool implements defense-in-depth with multiple memory protection techniques
 
 ## Files Included
 
