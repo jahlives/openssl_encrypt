@@ -5,7 +5,7 @@ A powerful tool for securely encrypting, decrypting, and shredding files with mi
 ## Features
 
 - **Strong Encryption**: Uses Fernet symmetric encryption (AES-128-CBC) with secure key derivation
-- **Multi-hash Password Protection**: Optional layered hashing with SHA-256, SHA-512, SHA3-256, SHA3-512, Whirlpool, and Scrypt
+- **Multi-hash Password Protection**: Optional layered hashing with SHA-256, SHA-512, SHA3-256, SHA3-512, Whirlpool, Scrypt and Argon2
 - **Password Management**: Password confirmation to prevent typos, random password generation, and standalone password generator
 - **File Integrity Verification**: Built-in hash verification to detect corrupted or tampered files
 - **Secure File Shredding**: Military-grade secure deletion with multi-pass overwriting
