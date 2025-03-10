@@ -279,7 +279,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
 
     if use_secure_mem:
         try:
-            from modules.secure_memory import secure_buffer, secure_memcpy, secure_memzero
+            from secure_memory import secure_buffer, secure_memcpy, secure_memzero
 
             # Use secure memory approach
             with secure_buffer(len(password) + len(salt), zero=False) as hashed:
@@ -301,10 +301,62 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                                 # Update the main hash buffer
                                 secure_memcpy(hashed, hash_buffer)
                                 show_progress("SHA-512", i + 1, params)
+                    
+                    elif algorithm == 'sha256' and params > 0:
+                        if not quiet:
+                            print(f"Applying {params} rounds of SHA-256...")
 
-                    # Additional hash algorithms follow similar pattern...
-                    # [Implementation for other hash algorithms would go here]
-                    # For brevity, I've omitted the repeated pattern for each algorithm
+                        with secure_buffer(32, zero=False) as hash_buffer:  # SHA-256 produces 32 bytes
+                            for i in range(params):
+                                result = hashlib.sha256(hashed).digest()
+                                secure_memcpy(hash_buffer, result)
+                                secure_memcpy(hashed, hash_buffer)
+                                show_progress("SHA-256", i + 1, params)
+                    
+                    elif algorithm == 'sha3_256' and params > 0:
+                        if not quiet:
+                            print(f"Applying {params} rounds of SHA3-256...")
+
+                        with secure_buffer(32, zero=False) as hash_buffer:  # SHA3-256 produces 32 bytes
+                            for i in range(params):
+                                result = hashlib.sha3_256(hashed).digest()
+                                secure_memcpy(hash_buffer, result)
+                                secure_memcpy(hashed, hash_buffer)
+                                show_progress("SHA3-256", i + 1, params)
+                    
+                    elif algorithm == 'sha3_512' and params > 0:
+                        if not quiet:
+                            print(f"Applying {params} rounds of SHA3-512...")
+
+                        with secure_buffer(64, zero=False) as hash_buffer:  # SHA3-512 produces 64 bytes
+                            for i in range(params):
+                                result = hashlib.sha3_512(hashed).digest()
+                                secure_memcpy(hash_buffer, result)
+                                secure_memcpy(hashed, hash_buffer)
+                                show_progress("SHA3-512", i + 1, params)
+                    
+                    elif algorithm == 'whirlpool' and params > 0:
+                        if not quiet:
+                            print(f"Applying {params} rounds of Whirlpool...")
+
+                        if WHIRLPOOL_AVAILABLE:
+                            with secure_buffer(64, zero=False) as hash_buffer:  # Whirlpool produces 64 bytes
+                                for i in range(params):
+                                    result = pywhirlpool.whirlpool(bytes(hashed)).digest()
+                                    secure_memcpy(hash_buffer, result)
+                                    secure_memcpy(hashed, hash_buffer)
+                                    show_progress("Whirlpool", i + 1, params)
+                        else:
+                            # Fall back to SHA-512 if Whirlpool is not available
+                            if not quiet:
+                                print("Warning: Whirlpool not available, using SHA-512 instead")
+
+                            with secure_buffer(64, zero=False) as hash_buffer:
+                                for i in range(params):
+                                    result = hashlib.sha512(hashed).digest()
+                                    secure_memcpy(hash_buffer, result)
+                                    secure_memcpy(hashed, hash_buffer)
+                                    show_progress("SHA-512 (fallback)", i + 1, params)
 
                     elif algorithm == 'scrypt' and params.get('n', 0) > 0:
                         # Apply scrypt with provided parameters
@@ -416,9 +468,47 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                 for i in range(params):
                     hashed = hashlib.sha512(hashed).digest()
                     show_progress("SHA-512", i + 1, params)
+            
+            elif algorithm == 'sha256' and params > 0:
+                if not quiet:
+                    print(f"Applying {params} rounds of SHA-256...")
 
-            # [Original implementation for other hash algorithms would go here]
-            # For brevity, I've omitted the repeated pattern for each algorithm
+                for i in range(params):
+                    hashed = hashlib.sha256(hashed).digest()
+                    show_progress("SHA-256", i + 1, params)
+            
+            elif algorithm == 'sha3_256' and params > 0:
+                if not quiet:
+                    print(f"Applying {params} rounds of SHA3-256...")
+
+                for i in range(params):
+                    hashed = hashlib.sha3_256(hashed).digest()
+                    show_progress("SHA3-256", i + 1, params)
+            
+            elif algorithm == 'sha3_512' and params > 0:
+                if not quiet:
+                    print(f"Applying {params} rounds of SHA3-512...")
+
+                for i in range(params):
+                    hashed = hashlib.sha3_512(hashed).digest()
+                    show_progress("SHA3-512", i + 1, params)
+            
+            elif algorithm == 'whirlpool' and params > 0:
+                if not quiet:
+                    print(f"Applying {params} rounds of Whirlpool...")
+
+                if WHIRLPOOL_AVAILABLE:
+                    for i in range(params):
+                        hashed = pywhirlpool.whirlpool(hashed).digest()
+                        show_progress("Whirlpool", i + 1, params)
+                else:
+                    # Fall back to SHA-512 if Whirlpool is not available
+                    if not quiet:
+                        print("Warning: Whirlpool not available, using SHA-512 instead")
+                    
+                    for i in range(params):
+                        hashed = hashlib.sha512(hashed).digest()
+                        show_progress("SHA-512 (fallback)", i + 1, params)
 
             elif algorithm == 'scrypt' and params.get('n', 0) > 0:
                 # Apply scrypt with provided parameters

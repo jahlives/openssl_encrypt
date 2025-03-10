@@ -15,12 +15,12 @@ import uuid
 import atexit
 import signal
 import tempfile
+import time
 
 # Import from local modules
 from modules.crypt_core import (
     encrypt_file, decrypt_file, check_argon2_support,
-    get_file_permissions, WHIRLPOOL_AVAILABLE, ARGON2_AVAILABLE, 
-    ARGON2_TYPE_MAP, ARGON2_TYPE_INT_MAP
+    get_file_permissions, WHIRLPOOL_AVAILABLE, ARGON2_AVAILABLE, ARGON2_TYPE_INT_MAP
 )
 from modules.crypt_utils import (
     secure_shred_file, expand_glob_patterns, generate_strong_password,
@@ -42,6 +42,18 @@ def use_secure_memory(args):
         bool: True if secure memory should be used, False otherwise
     """
     return not hasattr(args, 'disable_secure_memory') or not args.disable_secure_memory
+
+
+def debug_hash_config(args, hash_config, message="Hash configuration"):
+    """Debug output for hash configuration"""
+    print(f"\n{message}:")
+    print(f"SHA3-512: args={args.sha3_512}, hash_config={hash_config.get('sha3_512', 'Not set')}")
+    print(f"SHA3-256: args={args.sha3_256}, hash_config={hash_config.get('sha3_256', 'Not set')}")
+    print(f"SHA-512: args={args.sha512}, hash_config={hash_config.get('sha512', 'Not set')}")
+    print(f"SHA-256: args={args.sha256}, hash_config={hash_config.get('sha256', 'Not set')}")
+    print(f"PBKDF2: args={args.pbkdf2}, hash_config={hash_config.get('pbkdf2_iterations', 'Not set')}")
+    print(f"Scrypt: args.cost={args.scrypt_cost}, hash_config.n={hash_config.get('scrypt', {}).get('n', 'Not set')}")
+    print(f"Argon2: args.use_argon2={args.use_argon2}, hash_config.enabled={hash_config.get('argon2', {}).get('enabled', 'Not set')}")
 
 
 def main():
@@ -355,36 +367,7 @@ def main():
     if args.input is None:
         parser.error("the following arguments are required: --input/-i")
 
-    # Update the global variable based on args
-    GLOBAL_USE_SECURE_MEM = use_secure_memory(args)
-
-    # Check for Whirlpool availability if needed and not in quiet mode
-    if args.whirlpool > 0 and not WHIRLPOOL_AVAILABLE and not args.quiet:
-        print("Warning: pywhirlpool module not found. SHA-512 will be used instead.")
-        
-    # Check for Argon2 availability if needed
-    if (args.use_argon2 or args.argon2_preset) and not ARGON2_AVAILABLE:
-        if not args.quiet:
-            print("Warning: argon2-cffi module not found. Argon2 will be disabled.")
-            print("Install with: pip install argon2-cffi")
-        args.use_argon2 = False
-        args.argon2_preset = None
-
-    # Validate random password parameter
-    if args.random is not None:
-        if args.action != 'encrypt':
-            parser.error("--random can only be used with the encrypt action")
-        if args.password:
-            parser.error("--password and --random cannot be used together")
-        if args.random < 12:
-            if not args.quiet:
-                print(f"Warning: Random password length increased to 12 (minimum secure length)")
-            args.random = 12
-
     # Get password (only for encrypt/decrypt actions)
-    password = None
-    generated_password = None
-
     if args.action in ['encrypt', 'decrypt']:
         password = None
         generated_password = None
@@ -496,6 +479,32 @@ def main():
             # Convert to bytes
             password = password.encode()
 
+    # Update the global variable based on args
+    GLOBAL_USE_SECURE_MEM = use_secure_memory(args)
+
+    # Check for Whirlpool availability if needed and not in quiet mode
+    if args.whirlpool > 0 and not WHIRLPOOL_AVAILABLE and not args.quiet:
+        print("Warning: pywhirlpool module not found. SHA-512 will be used instead.")
+        
+    # Check for Argon2 availability if needed
+    if (args.use_argon2 or args.argon2_preset) and not ARGON2_AVAILABLE:
+        if not args.quiet:
+            print("Warning: argon2-cffi module not found. Argon2 will be disabled.")
+            print("Install with: pip install argon2-cffi")
+        args.use_argon2 = False
+        args.argon2_preset = None
+
+    # Validate random password parameter
+    if args.random is not None:
+        if args.action != 'encrypt':
+            parser.error("--random can only be used with the encrypt action")
+        if args.password:
+            parser.error("--password and --random cannot be used together")
+        if args.random < 12:
+            if not args.quiet:
+                print(f"Warning: Random password length increased to 12 (minimum secure length)")
+            args.random = 12
+
     # Set default iterations if SHA algorithms are requested but no iterations provided
     MIN_SHA_ITERATIONS = 1000000
 
@@ -519,6 +528,9 @@ def main():
         args.sha3_512 = MIN_SHA_ITERATIONS
         if not args.quiet:
             print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-512")
+            
+    # Debug output - uncomment if needed
+    # print(f"After flag processing: SHA3-512 value is {args.sha3_512}")
             
     # Handle Argon2 presets if specified
     if args.argon2_preset and ARGON2_AVAILABLE:
@@ -574,7 +586,7 @@ def main():
 
     # Create hash configuration dictionary (only include algorithms with iterations > 0)
     scrypt_n = 2 ** args.scrypt_cost if args.scrypt_cost > 0 else 0
-    
+
     # Create the hash configuration dictionary
     hash_config = {
         'sha512': args.sha512,
@@ -596,6 +608,9 @@ def main():
             'type': ARGON2_TYPE_INT_MAP[args.argon2_type]  # Store integer value for JSON serialization
         }
     }
+
+    # Uncomment this line to debug the hash configuration
+    # debug_hash_config(args, hash_config, "Hash configuration after setup")
 
     exit_code = 0
     try:
@@ -632,9 +647,21 @@ def main():
                               f"memory_cost={params['memory_cost']}KB, "
                               f"parallelism={params['parallelism']}, "
                               f"hash_len={params['hash_len']}")
-                    elif algorithm not in ['scrypt', 'argon2'] and params > 0:
+                    elif algorithm == 'sha3_512' and params > 0:
                         any_hash_used = True
-                        print(f"- {algorithm}: {params} iterations")
+                        print(f"- sha3_512: {params} iterations")
+                    elif algorithm == 'sha3_256' and params > 0:
+                        any_hash_used = True
+                        print(f"- sha3_256: {params} iterations")
+                    elif algorithm == 'sha512' and params > 0:
+                        any_hash_used = True
+                        print(f"- sha512: {params} iterations")
+                    elif algorithm == 'sha256' and params > 0:
+                        any_hash_used = True
+                        print(f"- sha256: {params} iterations")
+                    elif algorithm == 'whirlpool' and params > 0:
+                        any_hash_used = True
+                        print(f"- whirlpool: {params} iterations")
 
                 if not any_hash_used:
                     print("- No additional hashing algorithms used")
