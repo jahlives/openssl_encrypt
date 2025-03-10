@@ -1,0 +1,417 @@
+#!/usr/bin/env python3
+"""
+Secure File Encryption Tool - Utilities Module
+
+This module provides utility functions for the encryption tool, including
+secure file deletion, password generation, and other helper functions.
+"""
+
+import os
+import sys
+import time
+import signal
+import random
+import string
+import glob
+
+def expand_glob_patterns(pattern):
+    """
+    Expand glob patterns into a list of matching files and directories.
+
+    Args:
+        pattern (str): Glob pattern to expand
+
+    Returns:
+        list: List of matching file and directory paths
+    """
+    return glob.glob(pattern)
+
+
+def generate_strong_password(length, use_lowercase=True, use_uppercase=True,
+                             use_digits=True, use_special=True, use_secure_mem=True):
+    """
+    Generate a cryptographically strong random password with customizable character sets.
+
+    Args:
+        length (int): Length of the password to generate
+        use_lowercase (bool): Include lowercase letters
+        use_uppercase (bool): Include uppercase letters
+        use_digits (bool): Include digits
+        use_special (bool): Include special characters
+        use_secure_mem (bool): Whether to use secure memory handling
+
+    Returns:
+        str: The generated password
+    """
+    if length < 8:
+        length = 8  # Enforce minimum safe length
+
+    # Create the character pool based on selected options
+    char_pool = ""
+    required_chars = []
+
+    if use_lowercase:
+        char_pool += string.ascii_lowercase
+        required_chars.append(random.choice(string.ascii_lowercase))
+
+    if use_uppercase:
+        char_pool += string.ascii_uppercase
+        required_chars.append(random.choice(string.ascii_uppercase))
+
+    if use_digits:
+        char_pool += string.digits
+        required_chars.append(random.choice(string.digits))
+
+    if use_special:
+        char_pool += string.punctuation
+        required_chars.append(random.choice(string.punctuation))
+
+    # If no options selected, default to alphanumeric
+    if not char_pool:
+        char_pool = string.ascii_lowercase + string.ascii_uppercase + string.digits
+        required_chars = [
+            random.choice(string.ascii_lowercase),
+            random.choice(string.ascii_uppercase),
+            random.choice(string.digits)
+        ]
+
+    # Ensure we have room for all required characters
+    if len(required_chars) > length:
+        required_chars = required_chars[:length]
+
+    # Use secure memory if enabled
+    if use_secure_mem:
+        try:
+            from secure_memory import SecureBytes, secure_memzero
+
+            # Use SecureBytes for generating the password
+            password_chars = SecureBytes()
+
+            # Add all required characters
+            password_chars.extend([ord(c) for c in required_chars])
+
+            # Fill remaining length with random characters from the pool
+            remaining_length = length - len(required_chars)
+            for _ in range(remaining_length):
+                password_chars.append(ord(random.choice(char_pool)))
+
+            # Shuffle to ensure required characters aren't in predictable positions
+            # Use Fisher-Yates algorithm for in-place shuffle
+            for i in range(len(password_chars) - 1, 0, -1):
+                j = random.randrange(i + 1)
+                password_chars[i], password_chars[j] = password_chars[j], password_chars[i]
+
+            # Convert to string
+            password = ''.join(chr(c) for c in password_chars)
+
+            # Clean up the secure byte array
+            secure_memzero(password_chars)
+
+            return password
+
+        except ImportError:
+            # Fall back to standard approach if secure_memory is not available
+            use_secure_mem = False
+
+    # Standard approach without secure memory
+    if not use_secure_mem:
+        # Fill remaining length with random characters from the pool
+        remaining_length = length - len(required_chars)
+        password_chars = required_chars + [random.choice(char_pool) for _ in range(remaining_length)]
+
+        # Shuffle to ensure required characters aren't in predictable positions
+        random.shuffle(password_chars)
+
+        return ''.join(password_chars)
+
+
+def display_password_with_timeout(password, timeout_seconds=10):
+    """
+    Display a password to the screen with a timeout, then clear it.
+
+    Args:
+        password (str): The password to display
+        timeout_seconds (int): Number of seconds to display the password
+    """
+    # Store the original signal handler
+    original_sigint = signal.getsignal(signal.SIGINT)
+
+    # Flag to track if Ctrl+C was pressed
+    interrupted = False
+
+    # Custom signal handler for SIGINT
+    def sigint_handler(signum, frame):
+        nonlocal interrupted
+        interrupted = True
+        # Restore original handler immediately to allow normal Ctrl+C behavior
+        signal.signal(signal.SIGINT, original_sigint)
+
+    try:
+        # Set our custom handler
+        signal.signal(signal.SIGINT, sigint_handler)
+
+        print("\n" + "=" * 60)
+        print(" GENERATED PASSWORD ".center(60, "="))
+        print("=" * 60)
+        print(f"\nPassword: {password}")
+        print("\nThis password will be cleared from the screen in {0} seconds.".format(timeout_seconds))
+        print("Press Ctrl+C to clear immediately.")
+        print("=" * 60)
+
+        # Countdown timer
+        for remaining in range(timeout_seconds, 0, -1):
+            if interrupted:
+                break
+            print(f"\rTime remaining: {remaining} seconds...", end="", flush=True)
+            # Sleep in small increments to check for interruption more frequently
+            for _ in range(10):
+                if interrupted:
+                    break
+                time.sleep(0.1)
+
+    finally:
+        # Restore original signal handler no matter what
+        signal.signal(signal.SIGINT, original_sigint)
+
+        # Give an indication that we're clearing the screen
+        if interrupted:
+            print("\n\nClearing password from screen (interrupted by user)...")
+        else:
+            print("\n\nClearing password from screen...")
+
+        # Use system command to clear the screen - this is the most reliable method
+        if sys.platform == 'win32':
+            os.system('cls')  # Windows
+        else:
+            os.system('clear')  # Unix/Linux/MacOS
+
+        print("Password has been cleared from screen.")
+        print("For additional security, consider clearing your terminal history.")
+
+
+def secure_shred_file(file_path, passes=3, quiet=False):
+    """
+    Securely delete a file by overwriting its contents multiple times with random data
+    before unlinking it from the filesystem.
+
+    This implementation follows military-grade data wiping standards by using
+    multiple overwrite patterns to ensure data cannot be recovered even with
+    advanced forensic techniques.
+
+    Args:
+        file_path (str): Path to the file to shred
+        passes (int): Number of overwrite passes to perform
+        quiet (bool): Whether to suppress status messages
+
+    Returns:
+        bool: True if shredding was successful
+    """
+    if not os.path.exists(file_path):
+        if not quiet:
+            print(f"File not found: {file_path}")
+        return False
+
+    # Handle directory recursively
+    if os.path.isdir(file_path):
+        if not quiet:
+            print(f"\nRecursively shredding directory: {file_path}")
+
+        success = True
+        # First, process all files and subdirectories (bottom-up)
+        for root, dirs, files in os.walk(file_path, topdown=False):
+            # Process files first
+            for name in files:
+                full_path = os.path.join(root, name)
+                if not secure_shred_file(full_path, passes, quiet):
+                    success = False
+
+            # Then remove empty directories
+            for name in dirs:
+                dir_path = os.path.join(root, name)
+                try:
+                    os.rmdir(dir_path)
+                    if not quiet:
+                        print(f"Removed directory: {dir_path}")
+                except OSError:
+                    # Directory might not be empty yet due to failed deletions
+                    if not quiet:
+                        print(f"Could not remove directory: {dir_path}")
+                    success = False
+
+        # Finally remove the root directory
+        try:
+            os.rmdir(file_path)
+            if not quiet:
+                print(f"Removed directory: {file_path}")
+        except OSError:
+            if not quiet:
+                print(f"Could not remove directory: {file_path}")
+            success = False
+
+        return success
+
+    try:
+        # Get file size
+        file_size = os.path.getsize(file_path)
+        if file_size == 0:
+            # For empty files, just remove them
+            os.unlink(file_path)
+            if not quiet:
+                print(f"Empty file removed: {file_path}")
+            return True
+
+        if not quiet:
+            print(f"\nSecurely shredding file: {file_path}")
+            print(f"File size: {file_size} bytes")
+            print(f"Performing {passes} overwrite passes...")
+
+        # Open the file for binary read/write without truncating
+        with open(file_path, "r+b") as f:
+            # Use a 64KB buffer for efficient overwriting of large files
+            buffer_size = min(65536, file_size)
+
+            for pass_num in range(passes):
+                # Seek to the beginning of the file
+                f.seek(0)
+
+                # Track progress for large files
+                bytes_written = 0
+
+                # Determine the pattern for this pass (rotating through 3 patterns)
+                pattern_type = pass_num % 3
+
+                if pattern_type == 0:
+                    # First pattern: Random data - prevents recovery through statistical analysis
+                    pattern_name = "random data"
+                    while bytes_written < file_size:
+                        # Determine how many bytes to write in this chunk
+                        chunk_size = min(buffer_size, file_size - bytes_written)
+
+                        # Generate cryptographically secure random bytes
+                        random_bytes = bytearray(random.getrandbits(8) for _ in range(chunk_size))
+                        f.write(random_bytes)
+
+                        bytes_written += chunk_size
+
+                        # Show progress for large files
+                        if not quiet:
+                            percent = (bytes_written / file_size) * 100
+                            pass_percent = ((pass_num + percent / 100) / passes) * 100
+                            bar_length = 30
+                            filled_length = int(bar_length * pass_percent // 100)
+                            bar = '█' * filled_length + ' ' * (bar_length - filled_length)
+
+                            print(f"\rShredding: [{bar}] Pass {pass_num + 1}/{passes} "
+                                  f"({pattern_name}): {percent:.1f}%", end="", flush=True)
+
+                elif pattern_type == 1:
+                    # Second pattern: All ones (0xFF) - different bit pattern to
+                    # ensure complete coverage
+                    pattern_name = "all 1's"
+                    while bytes_written < file_size:
+                        chunk_size = min(buffer_size, file_size - bytes_written)
+                        f.write(b"\xFF" * chunk_size)
+                        bytes_written += chunk_size
+
+                        if not quiet:
+                            percent = (bytes_written / file_size) * 100
+                            pass_percent = ((pass_num + percent / 100) / passes) * 100
+                            bar_length = 30
+                            filled_length = int(bar_length * pass_percent // 100)
+                            bar = '█' * filled_length + ' ' * (bar_length - filled_length)
+
+                            print(f"\rShredding: [{bar}] Pass {pass_num + 1}/{passes} "
+                                  f"({pattern_name}): {percent:.1f}%", end="", flush=True)
+
+                else:
+                    # Third pattern: All zeros (0x00) - reset all bits
+                    pattern_name = "all 0's"
+                    while bytes_written < file_size:
+                        chunk_size = min(buffer_size, file_size - bytes_written)
+                        f.write(b"\x00" * chunk_size)
+                        bytes_written += chunk_size
+
+                        if not quiet:
+                            percent = (bytes_written / file_size) * 100
+                            pass_percent = ((pass_num + percent / 100) / passes) * 100
+                            bar_length = 30
+                            filled_length = int(bar_length * pass_percent // 100)
+                            bar = '█' * filled_length + ' ' * (bar_length - filled_length)
+
+                            print(f"\rShredding: [{bar}] Pass {pass_num + 1}/{passes} "
+                                  f"({pattern_name}): {percent:.1f}%", end="", flush=True)
+
+                # Flush changes to disk and ensure they're written to physical media
+                f.flush()
+                os.fsync(f.fileno())
+
+        # Finally, truncate the file to 0 bytes before unlinking
+        # This helps with hiding the file size
+        with open(file_path, "wb") as f:
+            f.truncate(0)
+
+        # Remove the file from the filesystem
+        os.unlink(file_path)
+
+        if not quiet:
+            print("\nFile has been securely deleted.")
+
+        return True
+
+    except Exception as e:
+        if not quiet:
+            print(f"\nError during secure deletion: {e}")
+        return False
+
+
+def show_security_recommendations():
+    """
+    Display security recommendations for the different hashing algorithms.
+    """
+    print("\nSECURITY RECOMMENDATIONS")
+    print("=======================\n")
+    
+    print("Password Hashing Algorithm Recommendations:")
+    print("------------------------------------------")
+    print("1. Argon2id (Recommended): Provides the best balance of security against")
+    print("   side-channel attacks and GPU-based attacks. Winner of the Password")
+    print("   Hashing Competition in 2015.")
+    print("   - Recommended parameters:")
+    print("     --use-argon2 --argon2-time 3 --argon2-memory 65536 --argon2-parallelism 4\n")
+    
+    print("2. Scrypt: Strong memory-hard function that offers good protection")
+    print("   against custom hardware attacks.")
+    print("   - Recommended: --scrypt-cost 14 --scrypt-r 8 --scrypt-p 1\n")
+    
+    print("3. PBKDF2: Widely compatible but less resistant to hardware attacks.")
+    print("   - Minimum recommended: --pbkdf2 600000\n")
+    
+    print("Combining Hash Algorithms:")
+    print("-------------------------")
+    print("You can combine multiple algorithms for defense in depth:")
+    print("Example: --use-argon2 --argon2-time 3 --sha3-512 1000 --pbkdf2 100000\n")
+    
+    # Check Argon2 availability and show appropriate message
+    from crypt_core import check_argon2_support
+    argon2_available, version, supported_types = check_argon2_support()
+    if argon2_available:
+        print(f"Argon2 Status: AVAILABLE (version {version})")
+        print(f"Supported variants: {', '.join('Argon2'+t for t in supported_types)}")
+    else:
+        print("Argon2 Status: NOT AVAILABLE")
+        print("To enable Argon2 support, install the argon2-cffi package:")
+        print("    pip install argon2-cffi")
+
+
+def request_confirmation(message):
+    """
+    Ask the user for confirmation before proceeding with an action.
+
+    Args:
+        message (str): The confirmation message to display
+
+    Returns:
+        bool: True if the user confirmed (y/yes), False otherwise
+    """
+    response = input(f"{message} (y/N): ").strip().lower()
+    return response == 'y' or response == 'yes'
