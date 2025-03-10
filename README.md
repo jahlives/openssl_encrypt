@@ -19,21 +19,21 @@ A powerful tool for securely encrypting, decrypting, and shredding files with mi
 
 ## Files Included
 
-- `crypt.py` - Main command-line utility
-- `crypt_gui.py` - Graphical user interface
-- `modules/crypt.cli.py` - command-line interface
-- `modules/crypt_core.py` - provides the core functionality
-- `modules/crypt_utils.py` - provides utility functions
-- `modules/secure_memory.py` - provides functions for secure memory handling
-- `requirements.txt` - Required Python packages
-- `README.md` - This documentation file
-- `docs/install.md` - installation notes
-- `docs/usage.md` - usage notes
-- `docs/examples.md` - some examples
-- `docs/password-handling.md` - notes about password handling
-- `docs/security-notes.md` - notes about security
-- `tests/unittests.py` - Unit tests for the utility
-- `tests/test_gui.py` - simple test for `tkinter`
+- [crypt.py](crypt.py) - Main command-line utility
+- [crypt_gui.py](crypt_gui.py) - Graphical user interface
+- [modules/crypt.cli.py](modules/crypt.cli.py) - command-line interface
+- [modules/crypt_core.py](modules/crypt_core.py) - provides the core functionality
+- [modules/crypt_utils.py](modules/crypt_utils.py) - provides utility functions
+- [modules/secure_memory.py](modules/secure_memory.py) - provides functions for secure memory handling
+- [requirements.txt](requirements.txt) - Required Python packages
+- [README.md](README.md) - This documentation file
+- [docs/install.md](docs/install.md) - installation notes
+- [docs/usage.md](docs/usage.md) - usage notes
+- [docs/examples.md](docs/examples.md) - some examples
+- [docs/password-handling.md](docs/password-handling.md) - notes about password handling
+- [docs/security-notes.md](docs/security-notes.md) - notes about security
+- [tests/unittests.py](tests/unittests.py) - Unit tests for the utility
+- [tests/test_gui.py](tests/test_gui.py) - simple test for `tkinter`
 
 ## License
 
