@@ -279,7 +279,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
 
     if use_secure_mem:
         try:
-            from secure_memory import secure_buffer, secure_memcpy, secure_memzero
+            from modules.secure_memory import secure_buffer, secure_memcpy, secure_memzero
 
             # Use secure memory approach
             with secure_buffer(len(password) + len(salt), zero=False) as hashed:
@@ -687,12 +687,6 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     """
     Encrypt a file with a password.
 
-    Implements secure file encryption with these steps:
-    1. Generate a key from the password using configurable hashing
-    2. Calculate a hash of the original file for integrity verification
-    3. Encrypt the file using Fernet symmetric encryption
-    4. Store metadata (salt, hash config, file hash) with the encrypted data
-
     Args:
         input_file (str): Path to the file to encrypt
         output_file (str): Path where to save the encrypted file
@@ -737,10 +731,6 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
 
     # For large files, use progress bar for encryption
     def do_encrypt():  
-        # Must declare nonlocal before any usage of the variable
-        nonlocal use_secure_mem
-        
-        # Function body continues here
         return f.encrypt(data)
 
     # Only show progress for larger files (> 1MB)
@@ -753,13 +743,19 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     else:
         encrypted_data = do_encrypt()
 
-    # Create metadata with the salt and hash configuration
-    # This allows the exact same parameters to be used for decryption
+    # Calculate hash of encrypted data
+    if not quiet:
+        print("Calculating encrypted content hash...")
+    
+    encrypted_hash = calculate_hash(encrypted_data)
+
+    # Create metadata with the salt, hash configuration, and both hashes
     metadata = {
         'salt': base64.b64encode(salt).decode('utf-8'),
         'hash_config': hash_config,
         'pbkdf2_iterations': pbkdf2_iterations,
-        'original_hash': original_hash  # Store hash of the original content
+        'original_hash': original_hash,
+        'encrypted_hash': encrypted_hash  # Add hash of encrypted data
     }
 
     # Serialize and encode the metadata
@@ -767,40 +763,23 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     metadata_base64 = base64.b64encode(metadata_json)
 
     # Write the metadata and encrypted data to the output file
-    # Format: base64_metadata:encrypted_data
     if not quiet:
         print(f"Writing encrypted file: {output_file}")
 
     with open(output_file, 'wb') as file:
         file.write(metadata_base64 + b':' + encrypted_data)
 
-    # By default, set secure permissions on the output file
-    # This will be overridden with original permissions when overwriting
+    # Set secure permissions on the output file
     set_secure_permissions(output_file)
 
-    # Clean up sensitive data if using secure memory
-    if use_secure_mem:
-        try:
-            from modules.secure_memory import secure_memzero
-            secure_memzero(key)
-        except ImportError:
-            # Just set to None if secure_memzero is not available
-            key = None
-    else:
-        # Best effort cleanup in standard mode
-        key = None
+    # Clean up
+    key = None
 
     return True
 
 def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=True):
     """
     Decrypt a file with a password.
-
-    Implements secure file decryption with these steps:
-    1. Extract metadata from the encrypted file
-    2. Generate the same key used for encryption
-    3. Decrypt the file data
-    4. Verify file integrity using the stored hash
 
     Args:
         input_file (str): Path to the encrypted file
@@ -820,7 +799,6 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
         content = file.read()
 
     # Extract the metadata and encrypted data
-    # Format: base64_metadata:encrypted_data
     parts = content.split(b':', 1)
     if len(parts) != 2:
         raise ValueError("Invalid file format")
@@ -835,14 +813,39 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
         # Extract parameters from metadata
         salt = base64.b64decode(metadata['salt'])
         hash_config = metadata['hash_config']
-        pbkdf2_iterations = metadata.get('pbkdf2_iterations', 100000)  # Default if not present
-        original_hash = metadata.get('original_hash')  # May not exist in older files
+        pbkdf2_iterations = metadata.get('pbkdf2_iterations', 100000)
+        original_hash = metadata.get('original_hash')
+        encrypted_hash = metadata.get('encrypted_hash')  # May not exist in older files
 
         if not quiet:
             print("Metadata extracted successfully")
 
     except (json.JSONDecodeError, KeyError, base64.binascii.Error) as e:
         raise ValueError(f"Error parsing file metadata: {e}")
+
+    # Verify encrypted data hash if it exists in metadata
+    if encrypted_hash:
+        if not quiet:
+            print("Verifying encrypted content integrity...")
+        
+        actual_encrypted_hash = calculate_hash(encrypted_data)
+        
+        if actual_encrypted_hash != encrypted_hash:
+            if not quiet:
+                print("\n⚠️ WARNING: Encrypted file hash verification failed! ⚠️")
+                print("The encrypted file may be corrupted or may have been tampered with.")
+                
+                # Ask user if they want to proceed with decryption attempt
+                proceed = input("Do you want to attempt decryption anyway? (y/N): ").strip().lower()
+                if proceed != 'y' and proceed != 'yes':
+                    raise ValueError("Decryption aborted due to failed hash verification.")
+            else:
+                # In quiet mode, just raise the error
+                raise ValueError("Encrypted file hash verification failed. The file may be corrupted or tampered with.")
+        elif not quiet:
+            print("✓ Encrypted file integrity verified successfully")
+    elif not quiet:
+        print("Note: This file was encrypted with an older version that does not include encrypted content verification.")
 
     # Generate the key using the same parameters
     if not quiet:
@@ -859,11 +862,7 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
             print("Decrypting content...")
 
         # For large files, use progress bar for decryption
-        def do_decrypt():  
-            # Must declare nonlocal before any usage of the variable
-            nonlocal use_secure_mem
-            
-            # Function body continues here
+        def do_decrypt():
             return f.decrypt(encrypted_data)
 
         # Only show progress for larger files (> 1MB)
@@ -876,105 +875,43 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
         else:
             decrypted_data = do_decrypt()
 
-        # Use secure memory if enabled
-        if use_secure_mem:
-            try:
-                from modules.secure_memory import secure_buffer, secure_memcpy, secure_memzero
+        # Verify hash if it was stored in metadata
+        if original_hash:
+            if not quiet:
+                print("Verifying decrypted content integrity...")
 
-                with secure_buffer(len(decrypted_data), zero=False) as secure_decrypted:
-                    secure_memcpy(secure_decrypted, decrypted_data)
-
-                    # Verify hash if it was stored in metadata
-                    if original_hash:
-                        if not quiet:
-                            print("Verifying content integrity...")
-
-                        decrypted_hash = calculate_hash(secure_decrypted)
-                        if decrypted_hash != original_hash:
-                            secure_memzero(key)
-                            raise ValueError("Hash verification failed. The file may be corrupted or tampered with.")
-                        elif not quiet:
-                            print("\nHash verification successful: Content integrity verified ✓")
-                    elif not quiet:
-                        print("\nNote: This file was encrypted without hash verification")
-
-                    # Write the decrypted data to the output file or return it
-                    if output_file:
-                        if not quiet:
-                            print(f"Writing decrypted file: {output_file}")
-
-                        with open(output_file, 'wb') as file:
-                            file.write(bytes(secure_decrypted))
-
-                        # By default, set secure permissions on the output file
-                        # This will be overridden with original permissions when overwriting
-                        set_secure_permissions(output_file)
-
-                        # Clean up sensitive data
-                        secure_memzero(key)
-
-                        return True
-                    else:
-                        # Need to return a copy of the decrypted data
-                        result = bytes(secure_decrypted)
-
-                        # Clean up sensitive data
-                        secure_memzero(key)
-
-                        return result
-
-            except ImportError:
-                # Fall back to standard method if secure_memory is not available
-                if not quiet:
-                    print("Warning: secure_memory module not available, falling back to standard method")
-                use_secure_mem = False
-
-        # Standard method if secure memory is disabled or not available
-        if not use_secure_mem:
-            # Verify hash if it was stored in metadata
-            if original_hash:
-                if not quiet:
-                    print("Verifying content integrity...")
-
-                decrypted_hash = calculate_hash(decrypted_data)
-                if decrypted_hash != original_hash:
-                    key = None  # Best effort cleanup
-                    raise ValueError("Hash verification failed. The file may be corrupted or tampered with.")
-                elif not quiet:
-                    print("\nHash verification successful: Content integrity verified ✓")
+            decrypted_hash = calculate_hash(decrypted_data)
+            if decrypted_hash != original_hash:
+                # Clean up key
+                key = None
+                raise ValueError("Decrypted content hash verification failed. The file may be corrupted or tampered with.")
             elif not quiet:
-                print("\nNote: This file was encrypted without hash verification")
+                print("\n✓ Decrypted content integrity verified successfully")
+        elif not quiet:
+            print("\nNote: This file was encrypted with an older version that does not include content integrity verification.")
 
-            # Write the decrypted data to the output file or return it
-            if output_file:
-                if not quiet:
-                    print(f"Writing decrypted file: {output_file}")
+        # Write the decrypted data to the output file or return it
+        if output_file:
+            if not quiet:
+                print(f"Writing decrypted file: {output_file}")
 
-                with open(output_file, 'wb') as file:
-                    file.write(decrypted_data)
+            with open(output_file, 'wb') as file:
+                file.write(decrypted_data)
 
-                # By default, set secure permissions on the output file
-                # This will be overridden with original permissions when overwriting
-                set_secure_permissions(output_file)
+            # By default, set secure permissions on the output file
+            set_secure_permissions(output_file)
 
-                # Best effort cleanup
-                key = None
+            # Clear key
+            key = None
 
-                return True
-            else:
-                # Best effort cleanup
-                key = None
-                return decrypted_data
+            return True
+        else:
+            # Clear key
+            key = None
+            
+            return decrypted_data
 
     except Exception as e:
-        # Clean up sensitive data on error
-        if use_secure_mem:
-            try:
-                from modules.secure_memory import secure_memzero
-                secure_memzero(key)
-            except ImportError:
-                key = None
-        else:
-            key = None
+        # Clean up key
+        key = None
         raise ValueError(f"Decryption failed. Invalid password or corrupted file: {e}")
-

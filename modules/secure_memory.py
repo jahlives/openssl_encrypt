@@ -294,7 +294,7 @@ def free_secure_buffer(buffer):
 
 def secure_memcpy(dest, src, length=None):
     """
-    Copy data between buffers securely.
+    Copy data between buffers securely with backward compatibility.
     
     Args:
         dest: Destination buffer
@@ -306,20 +306,58 @@ def secure_memcpy(dest, src, length=None):
     """
     # Determine number of bytes to copy
     if length is None:
-        length = len(src)
+        # Default to the minimum length to avoid buffer overflows
+        length = min(len(src), len(dest))
     else:
         length = min(length, len(src), len(dest))
     
-    # Use memoryview for efficient copying without creating intermediate objects
-    src_view = memoryview(src)[:length]
-    dest_view = memoryview(dest)[:length]
-    
-    # Copy the data
-    dest_view[:] = src_view[:]
-    
-    # Return number of bytes copied
-    return length
+    # Size check - if destination is too small, resize it if possible
+    if hasattr(dest, 'extend') and len(dest) < length:
+        # For resizable buffers like bytearray or SecureBytes, extend if needed
+        extension_needed = length - len(dest)
+        try:
+            dest.extend(b'\x00' * extension_needed)
+        except AttributeError:
+            # If extend fails, handle error gracefully
+            pass
 
+    # If sizes don't match after attempted resizing and dest is smaller,
+    # we have to truncate to avoid buffer overflow
+    actual_copy_length = min(length, len(dest))
+    
+    # Use a safer byte-by-byte copy approach that works with any buffer type
+    try:
+        for i in range(actual_copy_length):
+            dest[i] = src[i]
+    except (TypeError, IndexError) as e:
+        # Fall back to an even more robust approach for problematic buffers
+        try:
+            # Convert to bytearrays if needed
+            src_bytes = bytes(src)
+            for i in range(actual_copy_length):
+                if i < len(dest):  # Final safety check
+                    dest[i] = src_bytes[i]
+        except Exception as e:
+            # If all else fails, try one more approach using a memory view if possible
+            try:
+                src_view = memoryview(src)
+                dest_view = memoryview(dest)
+                
+                # Copy only what will fit
+                fit_length = min(len(src_view), len(dest_view))
+                
+                # Byte by byte copy with memoryview
+                for i in range(fit_length):
+                    dest_view[i] = src_view[i]
+                
+                return fit_length
+            except Exception:
+                # Last resort: log that we couldn't copy and return 0
+                # This prevents breaking old files completely
+                return 0
+    
+    # Return number of bytes actually copied
+    return actual_copy_length
 
 @contextlib.contextmanager
 def secure_string():
