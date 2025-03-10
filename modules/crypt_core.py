@@ -36,13 +36,29 @@ try:
     
     # Map Argon2 type string to the actual type constant
     ARGON2_TYPE_MAP = {
-        'id': 'Type.ID',    # Argon2id (recommended)
-        'i': 'Type.I',      # Argon2i
-        'd': 'Type.D'       # Argon2d
+        'id': Type.ID,    # Argon2id (recommended)
+        'i': Type.I,      # Argon2i
+        'd': Type.D       # Argon2d
+    }
+    
+    # Map for integer representation (JSON serializable)
+    ARGON2_TYPE_INT_MAP = {
+        'id': 2,  # Type.ID.value
+        'i': 1,   # Type.I.value
+        'd': 0    # Type.D.value
+    }
+    
+    # Reverse mapping from int to Type
+    ARGON2_INT_TO_TYPE_MAP = {
+        2: Type.ID,
+        1: Type.I,
+        0: Type.D
     }
 except ImportError:
     ARGON2_AVAILABLE = False
-    ARGON2_TYPE_MAP = {'id': None, 'i': None, 'd': None}  # Placeholder
+    ARGON2_TYPE_MAP = {'id': None, 'i': None, 'd': None}
+    ARGON2_TYPE_INT_MAP = {'id': 2, 'i': 1, 'd': 0}  # Default integer values
+    ARGON2_INT_TO_TYPE_MAP = {}
 
 def check_argon2_support():
     """
@@ -338,6 +354,11 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                         # Argon2 doesn't provide progress updates, so use an animated progress bar
                         def do_argon2():
                             # Use low_level API for more control
+                            # Convert type integer back to enum if needed
+                            argon2_type = params['type']
+                            if ARGON2_AVAILABLE and isinstance(argon2_type, int) and argon2_type in ARGON2_INT_TO_TYPE_MAP:
+                                argon2_type = ARGON2_INT_TO_TYPE_MAP[argon2_type]
+                                
                             result = argon2.low_level.hash_secret_raw(
                                 secret=bytes(hashed),
                                 salt=salt,
@@ -345,7 +366,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                                 memory_cost=params['memory_cost'],
                                 parallelism=params['parallelism'],
                                 hash_len=params['hash_len'],
-                                type=getattr(argon2.low_level, params['type'])
+                                type=argon2_type
                             )
                             
                             # Create a temporary secure buffer for the result
@@ -433,6 +454,11 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                 # Argon2 doesn't provide progress updates, so use an animated progress bar
                 def do_argon2():
                     # Use low_level API for more control
+                    # Convert type integer back to enum if needed
+                    argon2_type = params['type']
+                    if ARGON2_AVAILABLE and isinstance(argon2_type, int) and argon2_type in ARGON2_INT_TO_TYPE_MAP:
+                        argon2_type = ARGON2_INT_TO_TYPE_MAP[argon2_type]
+                        
                     return argon2.low_level.hash_secret_raw(
                         secret=hashed,
                         salt=salt,
@@ -440,7 +466,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                         memory_cost=params['memory_cost'],
                         parallelism=params['parallelism'],
                         hash_len=params['hash_len'],
-                        type=getattr(argon2.low_level, params['type'])
+                        type=argon2_type
                     )
                 
                 # Run Argon2 with progress bar
@@ -861,3 +887,4 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
         else:
             key = None
         raise ValueError(f"Decryption failed. Invalid password or corrupted file: {e}")
+

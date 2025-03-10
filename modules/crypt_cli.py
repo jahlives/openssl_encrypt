@@ -19,7 +19,8 @@ import tempfile
 # Import from local modules
 from modules.crypt_core import (
     encrypt_file, decrypt_file, check_argon2_support,
-    get_file_permissions, WHIRLPOOL_AVAILABLE, ARGON2_AVAILABLE, ARGON2_TYPE_MAP
+    get_file_permissions, WHIRLPOOL_AVAILABLE, ARGON2_AVAILABLE, 
+    ARGON2_TYPE_MAP, ARGON2_TYPE_INT_MAP
 )
 from modules.crypt_utils import (
     secure_shred_file, expand_glob_patterns, generate_strong_password,
@@ -592,7 +593,7 @@ def main():
             'memory_cost': args.argon2_memory,
             'parallelism': args.argon2_parallelism,
             'hash_len': args.argon2_hash_len,
-            'type': ARGON2_TYPE_MAP[args.argon2_type]
+            'type': ARGON2_TYPE_INT_MAP[args.argon2_type]  # Store integer value for JSON serialization
         }
     }
 
@@ -627,7 +628,7 @@ def main():
                               f"r={params['r']}, p={params['p']}")
                     elif algorithm == 'argon2' and params.get('enabled', False):
                         any_hash_used = True
-                        print(f"- Argon2{params['type'].split('.')[-1]}: time_cost={params['time_cost']}, "
+                        print(f"- Argon2{args.argon2_type}: time_cost={params['time_cost']}, "
                               f"memory_cost={params['memory_cost']}KB, "
                               f"parallelism={params['parallelism']}, "
                               f"hash_len={params['hash_len']}")
