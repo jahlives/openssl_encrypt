@@ -82,7 +82,7 @@ def generate_strong_password(length, use_lowercase=True, use_uppercase=True,
     # Use secure memory if enabled
     if use_secure_mem:
         try:
-            from secure_memory import SecureBytes, secure_memzero
+            from modules.secure_memory import SecureBytes, secure_memzero
 
             # Use SecureBytes for generating the password
             password_chars = SecureBytes()

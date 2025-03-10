@@ -391,7 +391,7 @@ def main():
 
         if use_secure_mem:
             try:
-                from secure_memory import secure_string, secure_input, SecureBytes
+                from modules.secure_memory import secure_string, secure_input, SecureBytes
 
                 # Initialize a secure string to hold the password
                 with secure_string() as password_secure:

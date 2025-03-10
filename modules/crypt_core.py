@@ -263,7 +263,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
 
     if use_secure_mem:
         try:
-            from secure_memory import secure_buffer, secure_memcpy, secure_memzero
+            from modules.secure_memory import secure_buffer, secure_memcpy, secure_memzero
 
             # Use secure memory approach
             with secure_buffer(len(password) + len(salt), zero=False) as hashed:
@@ -514,7 +514,7 @@ def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=100000
         if use_secure_mem:
             
             try:
-                from secure_memory import secure_buffer, secure_memcpy
+                from modules.secure_memory import secure_buffer, secure_memcpy
 
                 with secure_buffer(len(hashed_password), zero=False) as secure_hashed_pwd:
                     secure_memcpy(secure_hashed_pwd, hashed_password)
@@ -665,7 +665,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     # Clean up sensitive data if using secure memory
     if use_secure_mem:
         try:
-            from secure_memory import secure_memzero
+            from modules.secure_memory import secure_memzero
             secure_memzero(key)
         except ImportError:
             # Just set to None if secure_memzero is not available
@@ -763,7 +763,7 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
         # Use secure memory if enabled
         if use_secure_mem:
             try:
-                from secure_memory import secure_buffer, secure_memcpy, secure_memzero
+                from modules.secure_memory import secure_buffer, secure_memcpy, secure_memzero
 
                 with secure_buffer(len(decrypted_data), zero=False) as secure_decrypted:
                     secure_memcpy(secure_decrypted, decrypted_data)
@@ -854,7 +854,7 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
         # Clean up sensitive data on error
         if use_secure_mem:
             try:
-                from secure_memory import secure_memzero
+                from modules.secure_memory import secure_memzero
                 secure_memzero(key)
             except ImportError:
                 key = None
