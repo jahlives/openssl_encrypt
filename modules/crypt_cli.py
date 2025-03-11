@@ -31,6 +31,7 @@ from modules.crypt_utils import (
 # Global variable for secure memory handling
 GLOBAL_USE_SECURE_MEM = True  # Default value, will be updated based on args
 
+
 def use_secure_memory(args):
     """
     Determine if secure memory handling should be used.
@@ -47,13 +48,14 @@ def use_secure_memory(args):
 def debug_hash_config(args, hash_config, message="Hash configuration"):
     """Debug output for hash configuration"""
     print(f"\n{message}:")
-    print(f"SHA3-512: args={args.sha3_512}, hash_config={hash_config.get('sha3_512', 'Not set')}")
-    print(f"SHA3-256: args={args.sha3_256}, hash_config={hash_config.get('sha3_256', 'Not set')}")
-    print(f"SHA-512: args={args.sha512}, hash_config={hash_config.get('sha512', 'Not set')}")
-    print(f"SHA-256: args={args.sha256}, hash_config={hash_config.get('sha256', 'Not set')}")
-    print(f"PBKDF2: args={args.pbkdf2}, hash_config={hash_config.get('pbkdf2_iterations', 'Not set')}")
-    print(f"Scrypt: args.cost={args.scrypt_cost}, hash_config.n={hash_config.get('scrypt', {}).get('n', 'Not set')}")
-    print(f"Argon2: args.use_argon2={args.use_argon2}, hash_config.enabled={hash_config.get('argon2', {}).get('enabled', 'Not set')}")
+    print(f"SHA3-512: args={args.sha3_512_rounds}, hash_config={hash_config.get('sha3_512', 'Not set')}")
+    print(f"SHA3-256: args={args.sha3_256_rounds}, hash_config={hash_config.get('sha3_256', 'Not set')}")
+    print(f"SHA-512: args={args.sha512_rounds}, hash_config={hash_config.get('sha512', 'Not set')}")
+    print(f"SHA-256: args={args.sha256_rounds}, hash_config={hash_config.get('sha256', 'Not set')}")
+    print(f"PBKDF2: args={args.pbkdf2_iterations}, hash_config={hash_config.get('pbkdf2_iterations', 'Not set')}")
+    print(f"Scrypt: args.n={args.scrypt_n}, hash_config.n={hash_config.get('scrypt', {}).get('n', 'Not set')}")
+    print(
+        f"Argon2: args.enable_argon2={args.enable_argon2}, hash_config.enabled={hash_config.get('argon2', {}).get('enabled', 'Not set')}")
 
 
 def main():
@@ -161,10 +163,10 @@ def main():
 
     # Group hash configuration arguments for better organization
     hash_group = parser.add_argument_group('Hash Options', 'Configure hashing algorithms for key derivation')
-    
-    # SHA family arguments
+
+    # SHA family arguments - updated to match the template naming
     hash_group.add_argument(
-        '--sha512',
+        '--sha512-rounds',
         type=int,
         nargs='?',
         const=1,
@@ -172,7 +174,7 @@ def main():
         help='Number of SHA-512 iterations (default: 1,000,000 if flag provided without value)'
     )
     hash_group.add_argument(
-        '--sha256',
+        '--sha256-rounds',
         type=int,
         nargs='?',
         const=1,
@@ -180,7 +182,7 @@ def main():
         help='Number of SHA-256 iterations (default: 1,000,000 if flag provided without value)'
     )
     hash_group.add_argument(
-        '--sha3-256',
+        '--sha3-256-rounds',
         type=int,
         nargs='?',
         const=1,
@@ -188,7 +190,7 @@ def main():
         help='Number of SHA3-256 iterations (default: 1,000,000 if flag provided without value)'
     )
     hash_group.add_argument(
-        '--sha3-512',
+        '--sha3-512-rounds',
         type=int,
         nargs='?',
         const=1,
@@ -196,19 +198,27 @@ def main():
         help='Number of SHA3-512 iterations (default: 1,000,000 if flag provided without value)'
     )
     hash_group.add_argument(
-        '--whirlpool',
+        '--whirlpool-rounds',
         type=int,
         default=0,
         help='Number of Whirlpool iterations (default: 0, not used)'
     )
-    
-    # Scrypt parameters group
+
+    # PBKDF2 option - renamed for consistency
+    hash_group.add_argument(
+        '--pbkdf2-iterations',
+        type=int,
+        default=100000,
+        help='Number of PBKDF2 iterations (default: 100000)'
+    )
+
+    # Scrypt parameters group - updated to match the template naming
     scrypt_group = parser.add_argument_group('Scrypt Options', 'Configure Scrypt memory-hard function parameters')
     scrypt_group.add_argument(
-        '--scrypt-cost',
+        '--scrypt-n',
         type=int,
         default=0,
-        help='Scrypt cost factor N as power of 2 (default: 0, not used)'
+        help='Scrypt CPU/memory cost factor N (default: 0, not used. Use power of 2 like 16384)'
     )
     scrypt_group.add_argument(
         '--scrypt-r',
@@ -222,11 +232,19 @@ def main():
         default=1,
         help='Scrypt parallelization parameter p (default: 1)'
     )
-    
-    # Argon2 parameters group
+
+    # Add legacy option for backward compatibility
+    scrypt_group.add_argument(
+        '--scrypt-cost',
+        type=int,
+        default=0,
+        help=argparse.SUPPRESS  # Hidden legacy option
+    )
+
+    # Argon2 parameters group - updated for consistency
     argon2_group = parser.add_argument_group('Argon2 Options', 'Configure Argon2 memory-hard function parameters')
     argon2_group.add_argument(
-        '--use-argon2',
+        '--enable-argon2',
         action='store_true',
         help='Use Argon2 password hashing (requires argon2-cffi package)'
     )
@@ -265,14 +283,20 @@ def main():
         choices=['low', 'medium', 'high', 'paranoid'],
         help='Use predefined Argon2 parameters (overrides other Argon2 settings)'
     )
-    
-    # PBKDF2 option
-    hash_group.add_argument(
-        '--pbkdf2',
-        type=int,
-        default=100000,
-        help='Number of PBKDF2 iterations (default: 100000)'
+
+    # Add legacy option for backward compatibility
+    argon2_group.add_argument(
+        '--use-argon2',
+        action='store_true',
+        help=argparse.SUPPRESS  # Hidden legacy option
     )
+
+    # Legacy options for backward compatibility
+    hash_group.add_argument('--sha512', type=int, nargs='?', const=1, default=0, help=argparse.SUPPRESS)
+    hash_group.add_argument('--sha256', type=int, nargs='?', const=1, default=0, help=argparse.SUPPRESS)
+    hash_group.add_argument('--sha3-256', type=int, nargs='?', const=1, default=0, help=argparse.SUPPRESS)
+    hash_group.add_argument('--sha3-512', type=int, nargs='?', const=1, default=0, help=argparse.SUPPRESS)
+    hash_group.add_argument('--pbkdf2', type=int, default=100000, help=argparse.SUPPRESS)
 
     # Password generation options
     password_group = parser.add_argument_group('Password Generation Options')
@@ -305,21 +329,45 @@ def main():
 
     args = parser.parse_args()
 
+    # Handle legacy options and map to new names
+    # SHA family mappings
+    if not args.sha512_rounds and args.sha512:
+        args.sha512_rounds = args.sha512
+    if not args.sha256_rounds and args.sha256:
+        args.sha256_rounds = args.sha256
+    if not args.sha3_256_rounds and args.sha3_256:
+        args.sha3_256_rounds = args.sha3_256
+    if not args.sha3_512_rounds and args.sha3_512:
+        args.sha3_512_rounds = args.sha3_512
+
+    # PBKDF2 mapping
+    if args.pbkdf2 != 100000:  # Only override if not the default
+        args.pbkdf2_iterations = args.pbkdf2
+
+    # Argon2 mapping
+    if args.use_argon2:
+        args.enable_argon2 = True
+
+    # Handle scrypt_cost conversion to scrypt_n
+    if args.scrypt_cost > 0 and args.scrypt_n == 0:
+        args.scrypt_n = 2 ** args.scrypt_cost
+
     # Check for utility and information actions first
     if args.action == 'security-info':
         show_security_recommendations()
         sys.exit(0)
-        
+
     elif args.action == 'check-argon2':
         argon2_available, version, supported_types = check_argon2_support()
         print("\nARGON2 SUPPORT CHECK")
         print("====================")
         if argon2_available:
             print(f"✓ Argon2 is AVAILABLE (version {version})")
-            print(f"✓ Supported variants: {', '.join('Argon2'+t for t in supported_types)}")
-            
+            print(f"✓ Supported variants: {', '.join('Argon2' + t for t in supported_types)}")
+
             # Try a test hash to verify functionality
             try:
+                import argon2
                 test_hash = argon2.low_level.hash_secret_raw(
                     b"test_password",
                     b"testsalt12345678",
@@ -340,7 +388,7 @@ def main():
             print("\nTo enable Argon2 support, install the argon2-cffi package:")
             print("    pip install argon2-cffi")
         sys.exit(0)
-        
+
     elif args.action == 'generate-password':
         # If no character sets are explicitly selected, use all by default
         if not (args.use_lowercase or args.use_uppercase or args.use_digits or args.use_special):
@@ -483,15 +531,15 @@ def main():
     GLOBAL_USE_SECURE_MEM = use_secure_memory(args)
 
     # Check for Whirlpool availability if needed and not in quiet mode
-    if args.whirlpool > 0 and not WHIRLPOOL_AVAILABLE and not args.quiet:
+    if args.whirlpool_rounds > 0 and not WHIRLPOOL_AVAILABLE and not args.quiet:
         print("Warning: pywhirlpool module not found. SHA-512 will be used instead.")
-        
+
     # Check for Argon2 availability if needed
-    if (args.use_argon2 or args.argon2_preset) and not ARGON2_AVAILABLE:
+    if (args.enable_argon2 or args.argon2_preset) and not ARGON2_AVAILABLE:
         if not args.quiet:
             print("Warning: argon2-cffi module not found. Argon2 will be disabled.")
             print("Install with: pip install argon2-cffi")
-        args.use_argon2 = False
+        args.enable_argon2 = False
         args.argon2_preset = None
 
     # Validate random password parameter
@@ -509,33 +557,30 @@ def main():
     MIN_SHA_ITERATIONS = 1000000
 
     # If user specified to use SHA-256, SHA-512, or SHA3 but didn't provide iterations
-    if args.sha256 == 1:  # When flag is provided without value
-        args.sha256 = MIN_SHA_ITERATIONS
+    if args.sha256_rounds == 1:  # When flag is provided without value
+        args.sha256_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
             print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-256")
 
-    if args.sha512 == 1:  # When flag is provided without value
-        args.sha512 = MIN_SHA_ITERATIONS
+    if args.sha512_rounds == 1:  # When flag is provided without value
+        args.sha512_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
             print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-512")
 
-    if args.sha3_256 == 1:  # When flag is provided without value
-        args.sha3_256 = MIN_SHA_ITERATIONS
+    if args.sha3_256_rounds == 1:  # When flag is provided without value
+        args.sha3_256_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
             print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-256")
 
-    if args.sha3_512 == 1:  # When flag is provided without value
-        args.sha3_512 = MIN_SHA_ITERATIONS
+    if args.sha3_512_rounds == 1:  # When flag is provided without value
+        args.sha3_512_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
             print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-512")
-            
-    # Debug output - uncomment if needed
-    # print(f"After flag processing: SHA3-512 value is {args.sha3_512}")
-            
+
     # Handle Argon2 presets if specified
     if args.argon2_preset and ARGON2_AVAILABLE:
-        args.use_argon2 = True
-        
+        args.enable_argon2 = True
+
         # Define the presets with increasingly stronger parameters
         argon2_presets = {
             'low': {
@@ -567,7 +612,7 @@ def main():
                 'type': 'id'
             }
         }
-        
+
         # Apply the selected preset
         preset = argon2_presets[args.argon2_preset]
         args.argon2_time = preset['time_cost']
@@ -575,7 +620,7 @@ def main():
         args.argon2_parallelism = preset['parallelism']
         args.argon2_hash_len = preset['hash_len']
         args.argon2_type = preset['type']
-        
+
         if not args.quiet:
             print(f"Using Argon2 preset '{args.argon2_preset}' with parameters:")
             print(f"  - Time cost: {args.argon2_time}")
@@ -584,29 +629,27 @@ def main():
             print(f"  - Hash length: {args.argon2_hash_len} bytes")
             print(f"  - Type: Argon2{args.argon2_type}")
 
-    # Create hash configuration dictionary (only include algorithms with iterations > 0)
-    scrypt_n = 2 ** args.scrypt_cost if args.scrypt_cost > 0 else 0
-
     # Create the hash configuration dictionary
     hash_config = {
-        'sha512': args.sha512,
-        'sha256': args.sha256,
-        'sha3_256': args.sha3_256,
-        'sha3_512': args.sha3_512,
-        'whirlpool': args.whirlpool,
+        'sha512': args.sha512_rounds,
+        'sha256': args.sha256_rounds,
+        'sha3_256': args.sha3_256_rounds,
+        'sha3_512': args.sha3_512_rounds,
+        'whirlpool': args.whirlpool_rounds,
         'scrypt': {
-            'n': scrypt_n,
+            'n': args.scrypt_n,
             'r': args.scrypt_r,
             'p': args.scrypt_p
         },
         'argon2': {
-            'enabled': args.use_argon2,
+            'enabled': args.enable_argon2,
             'time_cost': args.argon2_time,
             'memory_cost': args.argon2_memory,
             'parallelism': args.argon2_parallelism,
             'hash_len': args.argon2_hash_len,
             'type': ARGON2_TYPE_INT_MAP[args.argon2_type]  # Store integer value for JSON serialization
-        }
+        },
+        'pbkdf2_iterations': args.pbkdf2_iterations
     }
 
     # Uncomment this line to debug the hash configuration
@@ -625,63 +668,15 @@ def main():
 
                 # Add to cleanup list in case process is interrupted
                 temp_files_to_cleanup.append(temp_output)
-            elif not args.output:
-                # Default output file name if not specified
-                output_file = args.input + '.encrypted'
-            else:
-                output_file = args.output
 
-            # Display hash configuration details
-            if not args.quiet:
-                print("\nEncrypting with the following hash configuration:")
-                any_hash_used = False
-
-                for algorithm, params in hash_config.items():
-                    if algorithm == 'scrypt' and params.get('n', 0) > 0:
-                        any_hash_used = True
-                        print(f"- Scrypt: n={params['n']} (cost factor 2^{args.scrypt_cost}), "
-                              f"r={params['r']}, p={params['p']}")
-                    elif algorithm == 'argon2' and params.get('enabled', False):
-                        any_hash_used = True
-                        print(f"- Argon2{args.argon2_type}: time_cost={params['time_cost']}, "
-                              f"memory_cost={params['memory_cost']}KB, "
-                              f"parallelism={params['parallelism']}, "
-                              f"hash_len={params['hash_len']}")
-                    elif algorithm == 'sha3_512' and params > 0:
-                        any_hash_used = True
-                        print(f"- sha3_512: {params} iterations")
-                    elif algorithm == 'sha3_256' and params > 0:
-                        any_hash_used = True
-                        print(f"- sha3_256: {params} iterations")
-                    elif algorithm == 'sha512' and params > 0:
-                        any_hash_used = True
-                        print(f"- sha512: {params} iterations")
-                    elif algorithm == 'sha256' and params > 0:
-                        any_hash_used = True
-                        print(f"- sha256: {params} iterations")
-                    elif algorithm == 'whirlpool' and params > 0:
-                        any_hash_used = True
-                        print(f"- whirlpool: {params} iterations")
-
-                if not any_hash_used:
-                    print("- No additional hashing algorithms used")
-
-                print(f"- PBKDF2: {args.pbkdf2} iterations")
-
-                if use_secure_mem:
-                    print("- Secure memory handling: Enabled")
-                else:
-                    print("- Secure memory handling: Disabled")
-
-            # If overwriting, encrypt to a temporary file first for safety
-            if args.overwrite:
                 try:
                     # Get original file permissions before doing anything
                     original_permissions = get_file_permissions(args.input)
 
                     # Encrypt to temporary file
                     success = encrypt_file(
-                        args.input, temp_output, password, hash_config, args.pbkdf2, args.quiet, GLOBAL_USE_SECURE_MEM
+                        args.input, temp_output, password, hash_config, args.pbkdf2_iterations, args.quiet,
+                        GLOBAL_USE_SECURE_MEM
                     )
 
                     if success:
@@ -705,10 +700,59 @@ def main():
                         if temp_output in temp_files_to_cleanup:
                             temp_files_to_cleanup.remove(temp_output)
                     raise e
+            elif not args.output:
+                # Default output file name if not specified
+                output_file = args.input + '.encrypted'
             else:
-                # Direct encryption to output file
+                output_file = args.output
+
+            # Display hash configuration details
+            if not args.quiet:
+                print("\nEncrypting with the following hash configuration:")
+                any_hash_used = False
+
+                for algorithm, params in hash_config.items():
+                    if algorithm == 'scrypt' and params.get('n', 0) > 0:
+                        any_hash_used = True
+                        print(f"- Scrypt: n={params['n']}, "
+                              f"r={params['r']}, p={params['p']}")
+                    elif algorithm == 'argon2' and params.get('enabled', False):
+                        any_hash_used = True
+                        print(f"- Argon2{args.argon2_type}: time_cost={params['time_cost']}, "
+                              f"memory_cost={params['memory_cost']}KB, "
+                              f"parallelism={params['parallelism']}, "
+                              f"hash_len={params['hash_len']}")
+                    elif algorithm == 'sha3_512' and params > 0:
+                        any_hash_used = True
+                        print(f"- SHA3-512: {params} iterations")
+                    elif algorithm == 'sha3_256' and params > 0:
+                        any_hash_used = True
+                        print(f"- SHA3-256: {params} iterations")
+                    elif algorithm == 'sha512' and params > 0:
+                        any_hash_used = True
+                        print(f"- SHA-512: {params} iterations")
+                    elif algorithm == 'sha256' and params > 0:
+                        any_hash_used = True
+                        print(f"- SHA-256: {params} iterations")
+                    elif algorithm == 'whirlpool' and params > 0:
+                        any_hash_used = True
+                        print(f"- Whirlpool: {params} iterations")
+                    elif algorithm == 'pbkdf2_iterations':
+                        print(f"- PBKDF2: {params} iterations")
+
+                if not any_hash_used:
+                    print("- No additional hashing algorithms used")
+
+                if use_secure_mem:
+                    print("- Secure memory handling: Enabled")
+                else:
+                    print("- Secure memory handling: Disabled")
+
+            # Direct encryption to output file (when not overwriting)
+            if not args.overwrite:
                 success = encrypt_file(
-                    args.input, output_file, password, hash_config, args.pbkdf2, args.quiet, GLOBAL_USE_SECURE_MEM
+                    args.input, output_file, password, hash_config, args.pbkdf2_iterations, args.quiet,
+                    GLOBAL_USE_SECURE_MEM
                 )
 
             if success:
