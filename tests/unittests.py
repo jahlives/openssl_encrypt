@@ -730,7 +730,7 @@ class TestCommandLineInterfaceAdvanced(unittest.TestCase):
             f.write(os.urandom(1024 * 1024))  # 1MB of random data
         
         # Script path
-        self.script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "crypt.py")
+        self.script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "crypt.py")
         self.assertTrue(os.path.exists(self.script_path), "crypt.py not found")
     
     def tearDown(self):
