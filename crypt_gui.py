@@ -14,39 +14,101 @@ import random
 import string
 import time
 
+# Import the settings module
+try:
+    from crypt_settings import SettingsTab, DEFAULT_CONFIG
+except ImportError:
+    # Fallback if module is not found
+    print("Settings module not found, using default configuration")
+    DEFAULT_CONFIG = {
+        'sha512': 10000,
+        'sha256': 0,
+        'sha3_256': 0,
+        'sha3_512': 0,
+        'whirlpool': 0,
+        'scrypt': {
+            'n': 16384,
+            'r': 8,
+            'p': 1
+        },
+        'argon2': {
+            'enabled': False,
+            'time_cost': 3,
+            'memory_cost': 65536,
+            'parallelism': 4,
+            'hash_len': 32,
+            'type': 'id'
+        },
+        'pbkdf2_iterations': 100000
+    }
+
+
+    # Create a basic fallback settings tab class
+    class SettingsTab:
+        def __init__(self, parent, gui_instance):
+            self.parent = parent
+            self.gui = gui_instance
+            self.config = DEFAULT_CONFIG.copy()
+
+            ttk.Label(self.parent, text="Settings module not available.",
+                      font=("TkDefaultFont", 12, "bold")).pack(pady=20)
+
+        def get_current_config(self):
+            return self.config
+
 class CryptGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Secure File Encryption Tool")
-        self.root.geometry("650x580")  # Increased height from 550 to 580
-        self.root.minsize(650, 580)    # Increased minimum height as well
-        
+        self.root.geometry("650x580")
+        self.root.minsize(650, 580)
+
         # Configure style
         self.style = ttk.Style()
         self.style.configure("TNotebook.Tab", padding=[12, 5])
         self.style.configure("TButton", padding=[10, 5])
-        
+
         # Create notebook (tabs)
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
+
         # Create tab frames
         self.encrypt_frame = ttk.Frame(self.notebook)
         self.decrypt_frame = ttk.Frame(self.notebook)
         self.shred_frame = ttk.Frame(self.notebook)
         self.password_frame = ttk.Frame(self.notebook)
-        
+        self.settings_frame = ttk.Frame(self.notebook)  # New settings frame
+
         # Add frames to notebook
         self.notebook.add(self.encrypt_frame, text="Encrypt")
         self.notebook.add(self.decrypt_frame, text="Decrypt")
         self.notebook.add(self.shred_frame, text="Shred")
         self.notebook.add(self.password_frame, text="Password Generator")
-        
+        self.notebook.add(self.settings_frame, text="Settings")  # Add settings tab
+
         # Set up the tabs
         self.setup_encrypt_tab()
         self.setup_decrypt_tab()
         self.setup_shred_tab()
         self.setup_password_tab()
+        self.setup_settings_tab()  # Initialize settings tab
+
+        # Add text display area for command output
+        self.output_frame = ttk.LabelFrame(root, text="Output")
+        self.output_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Add text widget with scrollbar
+        self.output_text = tk.Text(self.output_frame, wrap=tk.WORD, height=10)
+        self.output_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        scrollbar = ttk.Scrollbar(self.output_frame, command=self.output_text.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.output_text.config(yscrollcommand=scrollbar.set)
+
+        # Clear button for output
+        clear_button = ttk.Button(self.output_frame, text="Clear Output",
+                                  command=lambda: self.output_text.delete(1.0, tk.END))
+        clear_button.pack(pady=5)
         
         # Status bar at the bottom
         self.status_var = tk.StringVar()
@@ -54,6 +116,20 @@ class CryptGUI:
         self.status_bar = ttk.Label(root, textvariable=self.status_var, 
                                    relief=tk.SUNKEN, anchor=tk.W, padding=(5, 3))
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X, pady=(5, 5))
+        # Change the status bar padding to not have bottom padding
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X, pady=(5, 0))
+
+        # Progress bar for hashing and encryption/decryption operations
+        self.progress_var = tk.DoubleVar()
+        self.progress_var.set(0)
+        self.progress_bar = ttk.Progressbar(root, variable=self.progress_var,
+                                            mode="determinate", length=100)
+        self.progress_bar.pack(side=tk.BOTTOM, fill=tk.X, padx=5, pady=(0, 5))
+        self.progress_bar.pack_forget()  # Hide initially
+
+        # Add tracking variables for progress
+        self.current_algorithm = ""
+        self.last_progress_text = ""
         
         # Variables for password timeout
         self.password_timer_id = None
@@ -66,16 +142,21 @@ class CryptGUI:
         
         # Center the window
         self.center_window()
-    
+
+    def setup_settings_tab(self):
+        """Set up the encryption settings tab"""
+        # Initialize the settings tab with the parent frame and a reference to this GUI instance
+        self.settings_tab = SettingsTab(self.settings_frame, self)
+
     def center_window(self):
-        """Center the window on the screen"""
+        """Center the window on the screen and adjust initial size"""
         self.root.update_idletasks()
-        width = self.root.winfo_width()
-        height = self.root.winfo_height()
+        width = max(self.root.winfo_width(), 700)  # Ensure minimum width
+        height = max(self.root.winfo_height(), 650)  # Ensure minimum height
         x = (self.root.winfo_screenwidth() // 2) - (width // 2)
         y = (self.root.winfo_screenheight() // 2) - (height // 2)
         self.root.geometry(f'{width}x{height}+{x}+{y}')
-    
+
     def setup_encrypt_tab(self):
         """Set up the encryption tab"""
         frame = self.encrypt_frame
@@ -480,25 +561,32 @@ class CryptGUI:
                               "A random password has been generated and filled in.\n\n"
                               "Please save this password in a secure location! "
                               "If you lose it, you won't be able to decrypt your file.")
-    
+
     def run_command(self, cmd, callback=None, show_output=False):
         """Run a command in a separate thread and update the UI when done"""
+
         def run_in_thread():
+            # Show the progress bar
+            self.progress_bar.pack(side=tk.BOTTOM, fill=tk.X, padx=5, pady=(0, 5))
+            self.progress_var.set(0)
+
             try:
                 self.status_var.set("Running...")
-                
-                # Run the command
+
+                # Run the command with real-time output parsing
                 result = subprocess.run(
-                    cmd, 
+                    cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    text=True
+                    text=True,
+                    bufsize=1,  # Line buffered
+                    universal_newlines=True
                 )
-                
+
                 # Process the result
                 if result.returncode == 0:
                     status = "Command completed successfully"
-                    
+
                     if show_output and result.stdout:
                         # Display the output in a scrollable window
                         self.show_output_dialog("Command Output", result.stdout)
@@ -507,128 +595,381 @@ class CryptGUI:
                 else:
                     status = f"Error: {result.stderr}"
                     messagebox.showerror("Error", f"Command failed:\n{result.stderr}")
-                
+
                 self.status_var.set(status)
-                
+
             except Exception as e:
                 self.status_var.set(f"Error: {str(e)}")
                 messagebox.showerror("Error", str(e))
-        
+            finally:
+                # Hide the progress bar
+                self.progress_bar.pack_forget()
+                self.progress_var.set(0)
+                self.current_algorithm = ""
+                self.last_progress_text = ""
+
         # Start the command in a separate thread
         threading.Thread(target=run_in_thread, daemon=True).start()
-    
+
+    def run_command_with_progress(self, cmd, callback=None, show_output=False):
+        """Run a command with real-time progress updates in the UI"""
+
+        def run_in_thread():
+            # Show the progress bar
+            self.progress_bar.pack(side=tk.BOTTOM, fill=tk.X, padx=5, pady=(0, 5))
+            self.progress_var.set(0)
+
+            try:
+                self.status_var.set("Running...")
+
+                # Start the process with pipe for stdout to capture output in real-time
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,  # Line buffered
+                    universal_newlines=True
+                )
+
+                # Process output in real-time
+                stdout_lines = []
+                stderr_lines = []
+                important_output_lines = []  # For integrity check results and decrypted content
+
+                # Regular expressions to match different types of progress outputs
+                import re
+                # Match standard hashing progress: "SHA-512 hashing: [████████        ] 40.0% (400000/1000000)"
+                hash_progress_regex = re.compile(r'([\w\-]+) hashing: \[(.*?)\] (\d+\.\d+)% \((\d+)/(\d+)\)')
+                # Match processing messages like "Applying 1000000 rounds of SHA-512..."
+                processing_regex = re.compile(r'Applying (\d+) rounds of ([\w\-]+).*')
+                # Match processing with parameters like "Applying scrypt with n=16384, r=8, p=1..."
+                param_processing_regex = re.compile(r'Applying ([\w\-]+) with.*')
+                # Match processing messages for Argon2 and other memory-hard functions
+                memory_processing_regex = re.compile(r'([\w\-]+) processing')
+                # Match integrity check results
+                integrity_regex = re.compile(r'(✓|⚠️).*integrity.*')
+
+                # Process stdout and update progress
+                for line in iter(process.stdout.readline, ''):
+                    stdout_lines.append(line)
+
+                    # Check if this is an integrity check result or decrypted content
+                    if integrity_regex.search(line) or "Decrypted content:" in line:
+                        important_output_lines.append(line)
+                        # If it's decrypted content, add all subsequent lines too
+                        if "Decrypted content:" in line:
+                            for content_line in iter(process.stdout.readline, ''):
+                                stdout_lines.append(content_line)
+                                important_output_lines.append(content_line)
+                        continue
+
+                    # Check for different types of progress indicators
+                    hash_match = hash_progress_regex.search(line)
+                    processing_match = processing_regex.search(line)
+                    param_match = param_processing_regex.search(line)
+                    memory_match = memory_processing_regex.search(line)
+
+                    if hash_match:
+                        # Standard hashing progress
+                        algorithm, bar, percent, current, total = hash_match.groups()
+                        percent_float = float(percent)
+
+                        # Update progress bar
+                        self.progress_var.set(percent_float)
+
+                        # Update status text with algorithm and percentage
+                        if algorithm != self.current_algorithm:
+                            self.current_algorithm = algorithm
+
+                        progress_text = f"{algorithm} hashing: {percent}% ({current}/{total})"
+                        if progress_text != self.last_progress_text:
+                            self.status_var.set(progress_text)
+                            self.last_progress_text = progress_text
+
+                    elif processing_match:
+                        # Starting a new hashing process
+                        iterations, algorithm = processing_match.groups()
+                        self.current_algorithm = algorithm
+                        progress_text = f"Starting {algorithm} with {iterations} iterations..."
+                        self.status_var.set(progress_text)
+                        self.last_progress_text = progress_text
+                        self.progress_var.set(0)  # Reset progress for new algorithm
+
+                    elif param_match:
+                        # Algorithm with parameters
+                        algorithm = param_match.group(1)
+                        self.current_algorithm = algorithm
+                        progress_text = f"Processing with {algorithm}..."
+                        self.status_var.set(progress_text)
+                        self.last_progress_text = progress_text
+                        self.progress_var.set(0)  # Reset progress for new algorithm
+
+                    elif memory_match:
+                        # Memory-hard functions like Argon2 or Scrypt
+                        algorithm = memory_match.group(1)
+                        self.current_algorithm = algorithm
+                        progress_text = f"{algorithm} in progress..."
+                        self.status_var.set(progress_text)
+                        self.last_progress_text = progress_text
+                        # For these algorithms we use an indeterminate progress
+                        # since they don't report percentage
+                        self.progress_bar.configure(mode="indeterminate")
+                        self.progress_bar.start()
+
+                    # Additional pattern: check for "Key generation" and other processing messages
+                    elif "Key" in line or "Generating" in line or "Encrypting" in line or "Decrypting" in line:
+                        progress_text = line.strip()
+                        self.status_var.set(progress_text)
+                        self.last_progress_text = progress_text
+
+                # Collect any stderr output
+                for line in iter(process.stderr.readline, ''):
+                    stderr_lines.append(line)
+
+                # Wait for the process to complete
+                process.wait()
+
+                # Process the result
+                stdout = ''.join(stdout_lines)
+                stderr = ''.join(stderr_lines)
+                important_output = ''.join(important_output_lines)
+
+                if process.returncode == 0:
+                    status = "Command completed successfully"
+
+                    # Show important output if present
+                    if important_output:
+                        # Clear previous output
+                        self.output_text.delete(1.0, tk.END)
+                        # Add new output
+                        self.output_text.insert(tk.END, important_output)
+                        # Scroll to the beginning
+                        self.output_text.see(1.0)
+                    elif callback:
+                        # Create a simple result object to match subprocess.run
+                        class SimpleResult:
+                            def __init__(self, returncode, stdout, stderr):
+                                self.returncode = returncode
+                                self.stdout = stdout
+                                self.stderr = stderr
+
+                        result = SimpleResult(process.returncode, stdout, stderr)
+                        callback(result)
+                else:
+                    status = f"Error: {stderr}"
+                    # Display error in the output text
+                    self.output_text.delete(1.0, tk.END)
+                    self.output_text.insert(tk.END, f"ERROR:\n{stderr}")
+                    # Also show error dialog
+                    messagebox.showerror("Error", f"Command failed:\n{stderr}")
+
+                self.status_var.set(status)
+
+            except Exception as e:
+                self.status_var.set(f"Error: {str(e)}")
+                messagebox.showerror("Error", str(e))
+            finally:
+                # Stop the progress bar if it's in indeterminate mode
+                self.progress_bar.stop()
+                # Reset to determinate mode
+                self.progress_bar.configure(mode="determinate")
+                # Hide the progress bar
+                self.progress_bar.pack_forget()
+                self.progress_var.set(0)
+                self.current_algorithm = ""
+                self.last_progress_text = ""
+
+        # Start the command in a separate thread
+        threading.Thread(target=run_in_thread, daemon=True).start()
+
     def show_output_dialog(self, title, text):
-        """Show a dialog with scrollable text output"""
-        dialog = tk.Toplevel(self.root)
-        dialog.title(title)
-        dialog.geometry("600x400")
-        dialog.transient(self.root)
-        dialog.grab_set()
-        
-        # Add text widget with scrollbar
-        text_frame = ttk.Frame(dialog)
-        text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        scrollbar = ttk.Scrollbar(text_frame)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        text_widget = tk.Text(text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set)
-        text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.config(command=text_widget.yview)
-        
-        # Insert the text
-        text_widget.insert(tk.END, text)
-        text_widget.config(state=tk.DISABLED)  # Make it read-only
-        
-        # Add a close button
-        ttk.Button(dialog, text="Close", command=dialog.destroy).pack(pady=10)
-        
-        # Center the dialog
-        dialog.update_idletasks()
-        width = dialog.winfo_width()
-        height = dialog.winfo_height()
-        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
-        y = (dialog.winfo_screenheight() // 2) - (height // 2)
-        dialog.geometry(f'{width}x{height}+{x}+{y}')
-    
+        """Show output directly in the main GUI instead of creating a new dialog window"""
+        # Clear previous output
+        self.output_text.delete(1.0, tk.END)
+
+        # Add a title to distinguish different outputs
+        self.output_text.insert(tk.END, f"--- {title} ---\n\n", "title")
+
+        # Add the main output text
+        self.output_text.insert(tk.END, text)
+
+        # Configure the "title" tag to be bold
+        self.output_text.tag_configure("title", font=("TkDefaultFont", 10, "bold"))
+
+        # Scroll to the beginning
+        self.output_text.see(1.0)
+
+        # Make sure the output frame is visible
+        self.output_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Update the status bar
+        self.status_var.set(f"Output displayed: {title}")
+
     def run_encrypt(self):
         """Run the encryption command"""
         input_file = self.encrypt_input_var.get()
         if not input_file:
             messagebox.showerror("Error", "Please select an input file.")
             return
-        
+
         password = self.encrypt_password_var.get()
         confirm = self.encrypt_confirm_var.get()
-        
+
         if not password:
             messagebox.showerror("Error", "Please enter a password.")
             return
-            
+
         if password != confirm:
             messagebox.showerror("Error", "Passwords do not match.")
             return
-        
+
         output_file = self.encrypt_output_var.get()
         if not output_file and not self.encrypt_overwrite_var.get():
             messagebox.showerror("Error", "Please select an output file or enable overwrite.")
             return
-        
+
+        # Get current hash configuration
+        hash_config = self.settings_tab.get_current_config()
+
         # Build the command
         cmd = [sys.executable, "crypt.py", "encrypt", "-i", input_file]
-        
+
         if output_file and not self.encrypt_overwrite_var.get():
             cmd.extend(["-o", output_file])
-        
+
         if self.encrypt_overwrite_var.get():
             cmd.append("--overwrite")
-        
+
         if self.encrypt_shred_var.get():
             cmd.append("-s")
-        
+
         # Add password
         cmd.extend(["-p", password])
-        
+
+        # Add individual hash configuration parameters
+        if hash_config:
+            # Iterative hash algorithms
+            if hash_config.get('sha512', 0) > 0:
+                cmd.extend(["--sha512-rounds", str(hash_config['sha512'])])
+
+            if hash_config.get('sha256', 0) > 0:
+                cmd.extend(["--sha256-rounds", str(hash_config['sha256'])])
+
+            if hash_config.get('sha3_256', 0) > 0:
+                cmd.extend(["--sha3-256-rounds", str(hash_config['sha3_256'])])
+
+            if hash_config.get('sha3_512', 0) > 0:
+                cmd.extend(["--sha3-512-rounds", str(hash_config['sha3_512'])])
+
+            if hash_config.get('whirlpool', 0) > 0:
+                cmd.extend(["--whirlpool-rounds", str(hash_config['whirlpool'])])
+
+            # PBKDF2 iterations
+            cmd.extend(["--pbkdf2-iterations", str(hash_config['pbkdf2_iterations'])])
+
+            # Scrypt parameters
+            if hash_config['scrypt']['n'] > 0:
+                cmd.extend([
+                    "--scrypt-n", str(hash_config['scrypt']['n']),
+                    "--scrypt-r", str(hash_config['scrypt']['r']),
+                    "--scrypt-p", str(hash_config['scrypt']['p'])
+                ])
+
+            # Argon2 parameters
+            if hash_config['argon2']['enabled']:
+                cmd.extend([
+                    "--enable-argon2",
+                    "--argon2-time", str(hash_config['argon2']['time_cost']),
+                    "--argon2-memory", str(hash_config['argon2']['memory_cost']),
+                    "--argon2-parallelism", str(hash_config['argon2']['parallelism']),
+                    "--argon2-hash-len", str(hash_config['argon2']['hash_len']),
+                    "--argon2-type", hash_config['argon2']['type']
+                ])
+
         # Run the command
-        self.run_command(cmd)
-    
+        self.run_command_with_progress(cmd)
+
     def run_decrypt(self):
         """Run the decryption command"""
         input_file = self.decrypt_input_var.get()
         if not input_file:
             messagebox.showerror("Error", "Please select an input file.")
             return
-        
+
         password = self.decrypt_password_var.get()
         if not password:
             messagebox.showerror("Error", "Please enter a password.")
             return
-        
+
         output_file = self.decrypt_output_var.get()
         show_output = self.decrypt_to_screen_var.get()
-        
+
         if not output_file and not self.decrypt_overwrite_var.get() and not show_output:
-            messagebox.showerror("Error", 
-                               "Please select an output file, enable overwrite, or select display to screen.")
+            messagebox.showerror("Error",
+                                 "Please select an output file, enable overwrite, or select display to screen.")
             return
-        
+
+        # Get current hash configuration
+        hash_config = self.settings_tab.get_current_config()
+
         # Build the command
         cmd = [sys.executable, "crypt.py", "decrypt", "-i", input_file]
-        
+
         if output_file and not self.decrypt_overwrite_var.get():
             cmd.extend(["-o", output_file])
-        
+
         if self.decrypt_overwrite_var.get():
             cmd.append("--overwrite")
-        
+
         if self.decrypt_shred_var.get():
             cmd.append("-s")
-        
+
         # Add password
         cmd.extend(["-p", password])
-        
+
+        # Add individual hash configuration parameters
+        if hash_config:
+            # Iterative hash algorithms
+            if hash_config.get('sha512', 0) > 0:
+                cmd.extend(["--sha512-rounds", str(hash_config['sha512'])])
+
+            if hash_config.get('sha256', 0) > 0:
+                cmd.extend(["--sha256-rounds", str(hash_config['sha256'])])
+
+            if hash_config.get('sha3_256', 0) > 0:
+                cmd.extend(["--sha3-256-rounds", str(hash_config['sha3_256'])])
+
+            if hash_config.get('sha3_512', 0) > 0:
+                cmd.extend(["--sha3-512-rounds", str(hash_config['sha3_512'])])
+
+            if hash_config.get('whirlpool', 0) > 0:
+                cmd.extend(["--whirlpool-rounds", str(hash_config['whirlpool'])])
+
+            # PBKDF2 iterations
+            cmd.extend(["--pbkdf2-iterations", str(hash_config['pbkdf2_iterations'])])
+
+            # Scrypt parameters
+            if hash_config['scrypt']['n'] > 0:
+                cmd.extend([
+                    "--scrypt-n", str(hash_config['scrypt']['n']),
+                    "--scrypt-r", str(hash_config['scrypt']['r']),
+                    "--scrypt-p", str(hash_config['scrypt']['p'])
+                ])
+
+            # Argon2 parameters
+            if hash_config['argon2']['enabled']:
+                cmd.extend([
+                    "--enable-argon2",
+                    "--argon2-time", str(hash_config['argon2']['time_cost']),
+                    "--argon2-memory", str(hash_config['argon2']['memory_cost']),
+                    "--argon2-parallelism", str(hash_config['argon2']['parallelism']),
+                    "--argon2-hash-len", str(hash_config['argon2']['hash_len']),
+                    "--argon2-type", hash_config['argon2']['type']
+                ])
+
         # Run the command
-        self.run_command(cmd, show_output=show_output)
+        self.run_command_with_progress(cmd, show_output=show_output)
     
     def run_shred(self):
         """Run the shred command"""
@@ -653,7 +994,7 @@ class CryptGUI:
         cmd.extend(["--shred-passes", str(self.shred_passes_var.get())])
         
         # Run the command
-        self.run_command(cmd)
+        self.run_command_with_progress(cmd)
 
 
 def main():
@@ -665,3 +1006,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
