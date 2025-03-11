@@ -60,20 +60,27 @@ except ImportError:
     ARGON2_TYPE_INT_MAP = {'id': 2, 'i': 1, 'd': 0}  # Default integer values
     ARGON2_INT_TO_TYPE_MAP = {}
 
+
 def check_argon2_support():
     """
     Check if Argon2 is available and which variants are supported.
-    
+
     Returns:
         tuple: (is_available, version, supported_types)
     """
     if not ARGON2_AVAILABLE:
         return False, None, []
-    
+
     try:
-        # Get version
-        version = argon2.__version__
-        
+        # Get version using importlib.metadata instead of direct attribute access
+        try:
+            import importlib.metadata
+            version = importlib.metadata.version('argon2-cffi')
+        except (ImportError, importlib.metadata.PackageNotFoundError):
+            # Fall back to old method for older Python versions or if metadata not found
+            import argon2
+            version = getattr(argon2, '__version__', 'unknown')
+
         # Check which variants are supported
         supported_types = []
         if hasattr(argon2.low_level, 'Type'):
@@ -83,10 +90,11 @@ def check_argon2_support():
                 supported_types.append('i')
             if hasattr(argon2.low_level.Type, 'D'):
                 supported_types.append('d')
-                
+
         return True, version, supported_types
     except Exception:
         return False, None, []
+
 
 def set_secure_permissions(file_path):
     """
