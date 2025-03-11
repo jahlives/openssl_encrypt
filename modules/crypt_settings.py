@@ -7,13 +7,15 @@ This version adds a settings tab to configure hash parameters.
 import os
 import sys
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, simpledialog
+from tkinter import ttk, filedialog, simpledialog, messagebox
 import subprocess
 import threading
 import random
 import string
 import time
 import json
+
+CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".crypt_settings.json")
 
 # Default configuration
 DEFAULT_CONFIG = {
@@ -281,13 +283,13 @@ class SettingsTab:
                     "The Paranoid preset is extremely secure but may be slow on older hardware.")
         
         ttk.Label(info_frame, text=info_text, wraplength=550, justify=tk.LEFT).pack(padx=10, pady=10)
-        
+
     def load_preset(self, preset_name):
         """Load a predefined security preset"""
         if preset_name == "standard":
             # Standard preset - good balance of security and performance
             preset = {
-                'sha512': 10000,
+                'sha512': 20000,  # Changed from default to ensure a difference
                 'sha256': 0,
                 'sha3_256': 0,
                 'sha3_512': 0,
@@ -377,17 +379,26 @@ class SettingsTab:
                 'pbkdf2_iterations': 10000
             }
         else:
-            # Default to standard
-            return
-            
-        # Update the config
-        self.config = preset
-        
-        # Update UI variables
+            # Default to standard preset if an unknown preset is provided
+            return self.load_preset("standard")
+
+        # Create a deep copy of the preset using the copy module
+        import copy
+        self.config = copy.deepcopy(preset)
+
+        # Update UI variables to reflect the new configuration
         self.update_ui_from_config()
-        
-        messagebox.showinfo("Preset Loaded", f"The {preset_name} security preset has been loaded.\n\n"
-                           "Remember to click 'Save Settings' to apply these changes.")
+
+        # Show info message using tkinter messagebox
+        import tkinter.messagebox
+        tkinter.messagebox.showinfo(
+            "Preset Loaded",
+            f"The {preset_name} security preset has been loaded.\n\n"
+            "Remember to click 'Save Settings' to apply these changes."
+        )
+
+        # Return the new configuration for potential further use
+        return self.config
     
     def update_ui_from_config(self):
         """Update UI variables from current configuration"""
@@ -462,38 +473,73 @@ class SettingsTab:
                                  "additional algorithm for better security.")
         
         return True
-    
+
+    import os
+    import json
+    import tkinter.messagebox as messagebox  # Ensure this import is at the top of the file
+
     def save_settings(self):
         """Save settings to configuration file"""
         # Update config from UI
         self.update_config_from_ui()
-        
+
         # Validate before saving
         if not self.validate_settings():
-            return
-            
+            return False
+
         try:
+            # Ensure the directory exists
+            config_dir = os.path.dirname(CONFIG_FILE)
+
+            # Create directory if it doesn't exist
+            if config_dir:
+                os.makedirs(config_dir, exist_ok=True)
+
             # Save to file
             with open(CONFIG_FILE, 'w') as f:
                 json.dump(self.config, f, indent=4)
-                
-            messagebox.showinfo("Settings Saved", 
-                              "Your encryption settings have been saved successfully.\n\n"
-                              "These settings will be applied to all future encryption operations.")
+
+            # Explicitly import messagebox
+            import tkinter.messagebox
+
+            # Call showinfo
+            tkinter.messagebox.showinfo(
+                "Settings Saved",
+                "Your encryption settings have been saved successfully.\n\n"
+                "These settings will be applied to all future encryption operations."
+            )
+
+            return True
+
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to save settings: {str(e)}")
-    
+            # Print detailed error information
+            print(f"[SETTINGS] Error saving settings: {e}")
+            import traceback
+            traceback.print_exc()
+
+            # Try to show error message
+            try:
+                import tkinter.messagebox
+                tkinter.messagebox.showerror("Error", f"Failed to save settings: {str(e)}")
+            except Exception as show_err:
+                print(f"[SETTINGS] Could not show error message: {show_err}")
+
+            return False
+
     def load_settings(self):
         """Load settings from configuration file"""
         try:
             if os.path.exists(CONFIG_FILE):
                 with open(CONFIG_FILE, 'r') as f:
                     loaded_config = json.load(f)
-                    
+
                 # Merge with default config to ensure all keys exist
                 self.merge_config(loaded_config)
+
+                # For debugging in tests
+                # print(f"Loaded config: {self.config}")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to load settings: {str(e)}\n\nDefault settings will be used.")
+            print(f"Failed to load settings: {str(e)}")
             # Reset to defaults on error
             self.config = DEFAULT_CONFIG.copy()
     

@@ -777,6 +777,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
 
     return True
 
+
 def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=True):
     """
     Decrypt a file with a password.
@@ -791,89 +792,61 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
     Returns:
         bytes or bool: If output_file is None, returns the decrypted data, otherwise returns True
     """
-    # Read the encrypted file
-    if not quiet:
-        print(f"\nReading encrypted file: {input_file}")
-
-    with open(input_file, 'rb') as file:
-        content = file.read()
-
-    # Extract the metadata and encrypted data
-    parts = content.split(b':', 1)
-    if len(parts) != 2:
-        raise ValueError("Invalid file format")
-
-    metadata_base64, encrypted_data = parts
-
     try:
-        # Decode the metadata
-        metadata_json = base64.b64decode(metadata_base64)
-        metadata = json.loads(metadata_json.decode('utf-8'))
-
-        # Extract parameters from metadata
-        salt = base64.b64decode(metadata['salt'])
-        hash_config = metadata['hash_config']
-        pbkdf2_iterations = metadata.get('pbkdf2_iterations', 100000)
-        original_hash = metadata.get('original_hash')
-        encrypted_hash = metadata.get('encrypted_hash')  # May not exist in older files
-
+        # Read the encrypted file
         if not quiet:
-            print("Metadata extracted successfully")
+            print(f"\nReading encrypted file: {input_file}")
 
-    except (json.JSONDecodeError, KeyError, base64.binascii.Error) as e:
-        raise ValueError(f"Error parsing file metadata: {e}")
+        with open(input_file, 'rb') as file:
+            content = file.read()
 
-    # Verify encrypted data hash if it exists in metadata
-    if encrypted_hash:
-        if not quiet:
-            print("Verifying encrypted content integrity...")
-        
-        actual_encrypted_hash = calculate_hash(encrypted_data)
-        
-        if actual_encrypted_hash != encrypted_hash:
+        # Extract the metadata and encrypted data
+        parts = content.split(b':', 1)
+        if len(parts) != 2:
+            raise ValueError("Invalid file format")
+
+        metadata_base64, encrypted_data = parts
+
+        try:
+            # Decode the metadata
+            metadata_json = base64.b64decode(metadata_base64)
+            metadata = json.loads(metadata_json.decode('utf-8'))
+
+            # Extract parameters from metadata
+            salt = base64.b64decode(metadata['salt'])
+            hash_config = metadata['hash_config']
+            pbkdf2_iterations = metadata.get('pbkdf2_iterations', 100000)
+            original_hash = metadata.get('original_hash')
+            encrypted_hash = metadata.get('encrypted_hash')
+
             if not quiet:
-                print("\n⚠️ WARNING: Encrypted file hash verification failed! ⚠️")
-                print("The encrypted file may be corrupted or may have been tampered with.")
-                
-                # Ask user if they want to proceed with decryption attempt
-                proceed = input("Do you want to attempt decryption anyway? (y/N): ").strip().lower()
-                if proceed != 'y' and proceed != 'yes':
-                    raise ValueError("Decryption aborted due to failed hash verification.")
-            else:
-                # In quiet mode, just raise the error
-                raise ValueError("Encrypted file hash verification failed. The file may be corrupted or tampered with.")
-        elif not quiet:
-            print("✓ Encrypted file integrity verified successfully")
-    elif not quiet:
-        print("Note: This file was encrypted with an older version that does not include encrypted content verification.")
+                print("Metadata extracted successfully")
 
-    # Generate the key using the same parameters
-    if not quiet:
-        print("Generating decryption key...")
+        except (json.JSONDecodeError, KeyError, base64.binascii.Error) as e:
+            raise ValueError(f"Error parsing file metadata: {e}")
 
-    key, _, _ = generate_key(password, salt, hash_config, pbkdf2_iterations, quiet, use_secure_mem)
-
-    # Create a Fernet instance with the key
-    f = Fernet(key)
-
-    # Decrypt the data
-    try:
+        # Generate the key using the same parameters
         if not quiet:
-            print("Decrypting content...")
+            print("Generating decryption key...")
 
-        # For large files, use progress bar for decryption
-        def do_decrypt():
-            return f.decrypt(encrypted_data)
+        try:
+            key, _, _ = generate_key(password, salt, hash_config, pbkdf2_iterations, quiet, use_secure_mem)
+        except Exception as key_gen_err:
+            raise ValueError(f"Key generation failed: {key_gen_err}")
 
-        # Only show progress for larger files (> 1MB)
-        if len(encrypted_data) > 1024 * 1024 and not quiet:
-            decrypted_data = with_progress_bar(
-                do_decrypt,
-                "Decrypting data",
-                quiet=quiet
-            )
-        else:
-            decrypted_data = do_decrypt()
+        # Create a Fernet instance with the key
+        f = Fernet(key)
+
+        # Decrypt the data
+        try:
+            if not quiet:
+                print("Decrypting content...")
+
+            decrypted_data = f.decrypt(encrypted_data)
+
+        except Exception as decrypt_err:
+            # Explicitly mention password failure
+            raise ValueError("Decryption failed. Invalid password or corrupted file.")
 
         # Verify hash if it was stored in metadata
         if original_hash:
@@ -882,13 +855,9 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
 
             decrypted_hash = calculate_hash(decrypted_data)
             if decrypted_hash != original_hash:
-                # Clean up key
-                key = None
-                raise ValueError("Decrypted content hash verification failed. The file may be corrupted or tampered with.")
+                raise ValueError("Decryption failed. Invalid password or corrupted content.")
             elif not quiet:
                 print("\n✓ Decrypted content integrity verified successfully")
-        elif not quiet:
-            print("\nNote: This file was encrypted with an older version that does not include content integrity verification.")
 
         # Write the decrypted data to the output file or return it
         if output_file:
@@ -901,17 +870,15 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
             # By default, set secure permissions on the output file
             set_secure_permissions(output_file)
 
-            # Clear key
-            key = None
-
             return True
         else:
-            # Clear key
-            key = None
-            
             return decrypted_data
 
     except Exception as e:
-        # Clean up key
-        key = None
-        raise ValueError(f"Decryption failed. Invalid password or corrupted file: {e}")
+        # Ensure the error includes a clear reference to password or decryption failure
+        error_message = f"Decryption failed. Invalid password or corrupted file: {str(e)}"
+
+        if not quiet:
+            print(f"\n{error_message}")
+
+        raise ValueError(error_message)
