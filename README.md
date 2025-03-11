@@ -2,6 +2,11 @@
 
 A powerful tool for securely encrypting, decrypting, and shredding files with military-grade cryptography and multi-layer password hashing.
 
+## History
+
+The project is historically named `openssl-encrypt` because it once was a python script wrapper around openssl. But that did not work anymore with recent python versions.
+Therefore I decided to do a complete rewrite in pure python also using modern cipher and hashes. So the projectname is a "homage" to the root of all :-)
+
 ## Features
 
 - **Strong Encryption**: Uses Fernet symmetric encryption (AES-128-CBC) with secure key derivation
