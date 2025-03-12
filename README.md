@@ -9,8 +9,8 @@ Therefore I decided to do a complete rewrite in pure python also using modern ci
 
 ## Features
 
-- **Strong Encryption**: Uses Fernet symmetric encryption (AES-128-CBC) with secure key derivation \ 
-  because of this "restriction" in Fernet \ 
+- **Strong Encryption**: Uses Fernet symmetric encryption (AES-128-CBC) with secure key derivation \
+  Because of this "restriction" in Fernet
   ```
   Fernet is designed so that it doesn’t expose unauthenticated bytes. 
   Because of this, the entire message contents must be able to fit in the available memory. 
