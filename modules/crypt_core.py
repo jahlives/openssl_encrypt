@@ -21,6 +21,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 from cryptography.hazmat.backends import default_backend
 
+DEBUG_MODE = True  # Set to True to enable detailed debugging
 # Try to import optional dependencies
 try:
     import pywhirlpool
@@ -95,6 +96,268 @@ def check_argon2_support():
     except Exception:
         return False, None, []
 
+
+def decrypt_with_algorithm_debug(encrypted_data, key):
+    """Debug version with extensive logging"""
+    # Add the missing imports
+    import base64
+
+    print("\n=== DEBUG: decrypt_with_algorithm called ===")
+    print(f"Encrypted data length: {len(encrypted_data)} bytes")
+    print(f"Key length: {len(key)} bytes")
+
+    # Show the first few bytes of encrypted data to help identify format
+    preview = encrypted_data[:50]
+    print(f"Data preview: {preview}")
+
+    # Check if data contains a colon (algorithm separator)
+    has_colon = b':' in encrypted_data
+    print(f"Contains ':' separator: {has_colon}")
+
+    # Attempt algorithm detection
+    if has_colon:
+        parts = encrypted_data.split(b':', 2)
+        print(f"Split result: {len(parts)} parts")
+
+        if len(parts) >= 2:
+            try:
+                algorithm = parts[0].decode('ascii')
+                print(f"Detected algorithm: {algorithm}")
+
+                if algorithm == 'fernet':
+                    print("Attempting Fernet decryption...")
+                    from cryptography.fernet import Fernet
+                    f = Fernet(key)
+                    result = f.decrypt(parts[1])
+                    print(f"Fernet decryption successful! Result length: {len(result)} bytes")
+                    return result
+
+                elif algorithm == 'aes-gcm':
+                    print("Attempting AES-GCM decryption...")
+                    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+                    if len(parts) != 3:
+                        print(f"ERROR: Invalid AES-GCM format, expected 3 parts, got {len(parts)}")
+                        raise ValueError("Invalid AES-GCM data format")
+
+                    nonce = parts[1]
+                    ciphertext = parts[2]
+                    print(f"Nonce length: {len(nonce)} bytes")
+                    print(f"Ciphertext length: {len(ciphertext)} bytes")
+
+                    # Adjust key if needed
+                    original_key_len = len(key)
+                    if len(key) != 32:
+                        key = key[:32] if len(key) > 32 else key.ljust(32, b'\0')
+                        print(f"Adjusted key length from {original_key_len} to {len(key)} bytes")
+
+                    # Create the cipher and decrypt
+                    aesgcm = AESGCM(key)
+                    result = aesgcm.decrypt(nonce, ciphertext, None)
+                    print(f"AES-GCM decryption successful! Result length: {len(result)} bytes")
+                    return result
+
+                elif algorithm == 'chacha20-poly1305':
+                    print("Attempting ChaCha20-Poly1305 decryption...")
+                    from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+
+                    if len(parts) != 3:
+                        print(f"ERROR: Invalid ChaCha20-Poly1305 format, expected 3 parts, got {len(parts)}")
+                        raise ValueError("Invalid ChaCha20-Poly1305 data format")
+
+                    nonce = parts[1]
+                    ciphertext = parts[2]
+                    print(f"Nonce length: {len(nonce)} bytes")
+                    print(f"Ciphertext length: {len(ciphertext)} bytes")
+
+                    # Adjust key if needed
+                    original_key_len = len(key)
+                    if len(key) != 32:
+                        key = key[:32] if len(key) > 32 else key.ljust(32, b'\0')
+                        print(f"Adjusted key length from {original_key_len} to {len(key)} bytes")
+
+                    # Create the cipher and decrypt
+                    chacha = ChaCha20Poly1305(key)
+                    result = chacha.decrypt(nonce, ciphertext, None)
+                    print(f"ChaCha20-Poly1305 decryption successful! Result length: {len(result)} bytes")
+                    return result
+
+                else:
+                    print(f"ERROR: Unknown algorithm '{algorithm}'")
+
+            except Exception as e:
+                print(f"ERROR in algorithm-specific decryption: {str(e)}")
+                print("Falling back to legacy Fernet decryption...")
+
+    # Legacy format or fallback
+    print("Attempting legacy Fernet decryption...")
+    try:
+        from cryptography.fernet import Fernet
+        f = Fernet(key)
+        result = f.decrypt(encrypted_data)
+        print(f"Legacy Fernet decryption successful! Result length: {len(result)} bytes")
+        return result
+    except Exception as e:
+        print(f"ERROR in legacy Fernet decryption: {str(e)}")
+        raise ValueError(f"All decryption methods failed: {e}")
+
+
+def decrypt_file_debug(input_file, output_file, password, quiet=False, use_secure_mem=True):
+    """Debug version with extensive logging"""
+    import json
+    import base64
+    print("\n======= DEBUG: decrypt_file_debug called =======")
+    print(f"Input file: {input_file}")
+    print(f"Output file: {output_file}")
+    print(f"Password length: {len(password)} bytes")
+    print(f"Secure memory: {use_secure_mem}")
+
+    try:
+        # Read the encrypted file
+        print(f"Reading encrypted file: {input_file}")
+
+        try:
+            with open(input_file, 'rb') as file:
+                content = file.read()
+            print(f"Successfully read {len(content)} bytes from file")
+        except Exception as read_err:
+            print(f"ERROR reading file: {str(read_err)}")
+            raise
+
+        # Check for metadata format
+        has_metadata = b':' in content
+        print(f"File contains metadata separator: {has_metadata}")
+
+        if not has_metadata:
+            print("File doesn't contain standard metadata format. Attempting legacy decryption.")
+            # Try direct decryption without metadata
+            try:
+                import hashlib
+                import base64
+
+                print("Generating key for legacy decryption...")
+                key = base64.urlsafe_b64encode(hashlib.sha256(password).digest())
+                print(f"Generated key length: {len(key)} bytes")
+
+                decrypted_data = decrypt_with_algorithm_debug(content, key)
+
+                # Write or return the decrypted data
+                if output_file:
+                    print(f"Writing decrypted data to: {output_file}")
+                    with open(output_file, 'wb') as f:
+                        f.write(decrypted_data)
+                    print(f"Successfully wrote {len(decrypted_data)} bytes")
+                    return True
+                else:
+                    print("No output file specified, returning decrypted data")
+                    return decrypted_data
+
+            except Exception as legacy_err:
+                print(f"ERROR in legacy decryption: {str(legacy_err)}")
+                raise
+
+        # Extract the metadata and encrypted data
+        parts = content.split(b':', 1)
+        if len(parts) != 2:
+            print(f"ERROR: Expected 2 parts after splitting, but got {len(parts)}")
+            raise ValueError("Invalid file format")
+
+        metadata_base64, encrypted_data = parts
+        print(f"Metadata length: {len(metadata_base64)} bytes")
+        print(f"Encrypted data length: {len(encrypted_data)} bytes")
+
+        # Decode the metadata
+        try:
+            print("Decoding metadata...")
+            metadata_json = base64.b64decode(metadata_base64)
+            metadata = json.loads(metadata_json.decode('utf-8'))
+
+            # Extract parameters
+            print("Extracting parameters from metadata...")
+            salt = base64.b64decode(metadata['salt'])
+            hash_config = metadata.get('hash_config', {})
+            pbkdf2_iterations = metadata.get('pbkdf2_iterations', 100000)
+            original_hash = metadata.get('original_hash')
+            encryption_algorithm = metadata.get('encryption_algorithm', 'fernet')
+
+            print(f"Salt length: {len(salt)} bytes")
+            print(f"PBKDF2 iterations: {pbkdf2_iterations}")
+            print(f"Encryption algorithm: {encryption_algorithm}")
+            print(f"Original hash present: {original_hash is not None}")
+
+            # Print hash config summary
+            print("Hash configuration:")
+            for algo, value in hash_config.items():
+                if isinstance(value, dict):
+                    print(f"  {algo}: {json.dumps(value)}")
+                else:
+                    print(f"  {algo}: {value}")
+
+        except Exception as metadata_err:
+            print(f"ERROR parsing metadata: {str(metadata_err)}")
+            raise ValueError(f"Error parsing file metadata: {metadata_err}")
+
+        # Generate the key
+        print("\nGenerating decryption key...")
+        try:
+            key, _, _ = generate_key(password, salt, hash_config, pbkdf2_iterations, quiet, use_secure_mem)
+            print(f"Key generation successful, key length: {len(key)} bytes")
+        except Exception as key_err:
+            print(f"ERROR generating key: {str(key_err)}")
+            raise
+
+        # Decrypt the data
+        print("\nDecrypting data...")
+        try:
+            decrypted_data = decrypt_with_algorithm_debug(encrypted_data, key)
+            print(f"Decryption successful! Data length: {len(decrypted_data)} bytes")
+        except Exception as decrypt_err:
+            print(f"ERROR during decryption: {str(decrypt_err)}")
+            raise
+
+        # Verify hash if available
+        if original_hash:
+            print("\nVerifying content integrity...")
+            decrypted_hash = calculate_hash(decrypted_data)
+
+            print(f"Original hash: {original_hash}")
+            print(f"Computed hash: {decrypted_hash}")
+
+            if decrypted_hash != original_hash:
+                print("ERROR: Hash verification failed!")
+                raise ValueError("Content integrity check failed - hash mismatch")
+            else:
+                print("Hash verification successful!")
+
+        # Write output or return the data
+        if output_file:
+            print(f"\nWriting decrypted data to: {output_file}")
+            with open(output_file, 'wb') as file:
+                file.write(decrypted_data)
+            print(f"Successfully wrote {len(decrypted_data)} bytes")
+
+            try:
+                print("Setting secure permissions on output file")
+                set_secure_permissions(output_file)
+            except Exception as perm_err:
+                print(f"WARNING: Could not set permissions: {str(perm_err)}")
+
+            return True
+        else:
+            print("\nNo output file specified, returning decrypted data")
+            print(f"First 100 bytes preview: {decrypted_data[:100]}")
+            return decrypted_data
+
+    except Exception as e:
+        error_message = f"Decryption failed: {str(e)}"
+        print(f"\nCRITICAL ERROR: {error_message}")
+
+        # Print full exception traceback for debugging
+        import traceback
+        print("\nTraceback:")
+        traceback.print_exc()
+
+        raise ValueError(error_message)
 
 def set_secure_permissions(file_path):
     """
@@ -690,10 +953,165 @@ def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=100000
 
     return derived_key, salt, hash_config
 
-def encrypt_file(input_file, output_file, password, hash_config=None,
-                 pbkdf2_iterations=100000, quiet=False, use_secure_mem=True):
+
+def encrypt_with_algorithm(data, key, algorithm='fernet'):
     """
-    Encrypt a file with a password.
+    Encrypt data using the specified algorithm.
+
+    Args:
+        data (bytes): Data to encrypt
+        key (bytes): Key derived from password (must be appropriate length for algorithm)
+        algorithm (str): Algorithm to use ('fernet', 'aes-gcm', or 'chacha20-poly1305')
+
+    Returns:
+        bytes: Encrypted data including necessary metadata
+    """
+    if algorithm == 'fernet':
+        # Use original Fernet implementation
+        from cryptography.fernet import Fernet
+        f = Fernet(key)
+        return b'fernet:' + f.encrypt(data)
+
+    elif algorithm == 'aes-gcm':
+        # AES-GCM implementation
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        # For AES-GCM, we need a 256-bit key (32 bytes)
+        if len(key) != 32:
+            # Use the first 32 bytes or pad if needed
+            key = key[:32] if len(key) > 32 else key.ljust(32, b'\0')
+
+        # Generate a random 96-bit (12-byte) nonce/IV
+        nonce = os.urandom(12)
+
+        # Create the cipher and encrypt
+        aesgcm = AESGCM(key)
+        ciphertext = aesgcm.encrypt(nonce, data, None)  # No associated data
+
+        # Return format: algorithm:nonce:ciphertext
+        return b'aes-gcm:' + nonce + b':' + ciphertext
+
+    elif algorithm == 'chacha20-poly1305':
+        # ChaCha20-Poly1305 implementation
+        from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+        # For ChaCha20-Poly1305, we need a 256-bit key (32 bytes)
+        if len(key) != 32:
+            # Use the first 32 bytes or pad if needed
+            key = key[:32] if len(key) > 32 else key.ljust(32, b'\0')
+
+        # Generate a random 96-bit (12-byte) nonce
+        nonce = os.urandom(12)
+
+        # Create the cipher and encrypt
+        chacha = ChaCha20Poly1305(key)
+        ciphertext = chacha.encrypt(nonce, data, None)  # No associated data
+
+        # Return format: algorithm:nonce:ciphertext
+        return b'chacha20-poly1305:' + nonce + b':' + ciphertext
+
+    else:
+        raise ValueError(f"Unsupported encryption algorithm: {algorithm}")
+
+
+def decrypt_with_algorithm(encrypted_data, key):
+    """
+    Decrypt data using the appropriate algorithm.
+    This version focuses on maximum compatibility with older formats.
+
+    Args:
+        encrypted_data (bytes): Encrypted data
+        key (bytes): Key derived from password
+
+    Returns:
+        bytes: Decrypted data
+    """
+    # First, try the simplest approach: straight Fernet decryption
+    # This handles legacy files that don't have any algorithm prefix
+    try:
+        from cryptography.fernet import Fernet
+        f = Fernet(key)
+        return f.decrypt(encrypted_data)
+    except Exception as e:
+        # If simple Fernet fails, try parsing for algorithm info
+        pass
+
+    # Now try with algorithm prefix parsing
+    if b':' in encrypted_data:
+        parts = encrypted_data.split(b':', 2)
+
+        try:
+            if len(parts) >= 2:
+                algorithm = parts[0].decode('ascii')
+
+                if algorithm == 'fernet':
+                    from cryptography.fernet import Fernet
+                    f = Fernet(key)
+                    return f.decrypt(parts[1])
+
+                elif algorithm == 'aes-gcm' and len(parts) == 3:
+                    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+                    nonce, ciphertext = parts[1], parts[2]
+
+                    # Ensure key is the right size (32 bytes)
+                    if len(key) != 32:
+                        key = key[:32] if len(key) > 32 else key.ljust(32, b'\0')
+
+                    aesgcm = AESGCM(key)
+                    return aesgcm.decrypt(nonce, ciphertext, None)
+
+                elif algorithm == 'chacha20-poly1305' and len(parts) == 3:
+                    from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+                    nonce, ciphertext = parts[1], parts[2]
+
+                    # Ensure key is the right size (32 bytes)
+                    if len(key) != 32:
+                        key = key[:32] if len(key) > 32 else key.ljust(32, b'\0')
+
+                    chacha = ChaCha20Poly1305(key)
+                    return chacha.decrypt(nonce, ciphertext, None)
+        except Exception as e:
+            # If algorithm-specific decryption fails, continue to next approach
+            pass
+
+    # Final fallback: try forced approaches with specific algorithms
+    # Try AES-GCM as last resort
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        # Ensure key is the right size (32 bytes)
+        key_32 = key[:32] if len(key) > 32 else key.ljust(32, b'\0')
+
+        # Assume the first 12 bytes might be a nonce
+        nonce = encrypted_data[:12]
+        ciphertext = encrypted_data[12:]
+
+        aesgcm = AESGCM(key_32)
+        return aesgcm.decrypt(nonce, ciphertext, None)
+    except Exception:
+        pass
+
+    # Try ChaCha20-Poly1305 as last resort
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+        # Ensure key is the right size (32 bytes)
+        key_32 = key[:32] if len(key) > 32 else key.ljust(32, b'\0')
+
+        # Assume the first 12 bytes might be a nonce
+        nonce = encrypted_data[:12]
+        ciphertext = encrypted_data[12:]
+
+        chacha = ChaCha20Poly1305(key_32)
+        return chacha.decrypt(nonce, ciphertext, None)
+    except Exception:
+        pass
+
+    # If all else fails, raise an error
+    raise ValueError("Failed to decrypt with any algorithm")
+
+
+def encrypt_file(input_file, output_file, password, hash_config=None,
+                 pbkdf2_iterations=100000, quiet=False, use_secure_mem=True,
+                 encryption_algorithm='fernet'):
+    """
+    Encrypt a file with a password using the specified algorithm.
 
     Args:
         input_file (str): Path to the file to encrypt
@@ -703,6 +1121,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         pbkdf2_iterations (int): Number of PBKDF2 iterations
         quiet (bool): Whether to suppress progress output
         use_secure_mem (bool): Whether to use secure memory handling
+        encryption_algorithm (str): Algorithm to use ('fernet', 'aes-gcm', or 'chacha20-poly1305')
 
     Returns:
         bool: True if encryption was successful
@@ -711,14 +1130,11 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     salt = os.urandom(16)  # Unique salt for each encryption
 
     if not quiet:
-        print("\nGenerating encryption key...")
+        print(f"\nGenerating encryption key using {encryption_algorithm}...")
 
     key, salt, hash_config = generate_key(
         password, salt, hash_config, pbkdf2_iterations, quiet, use_secure_mem
     )
-
-    # Create a Fernet instance with the key
-    f = Fernet(key)
 
     # Read the input file
     if not quiet:
@@ -733,13 +1149,13 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
 
     original_hash = calculate_hash(data)
 
-    # Encrypt the data
+    # Encrypt the data with selected algorithm
     if not quiet:
-        print("Encrypting content...")
+        print(f"Encrypting content with {encryption_algorithm}...")
 
     # For large files, use progress bar for encryption
-    def do_encrypt():  
-        return f.encrypt(data)
+    def do_encrypt():
+        return encrypt_with_algorithm(data, key, encryption_algorithm)
 
     # Only show progress for larger files (> 1MB)
     if len(data) > 1024 * 1024 and not quiet:
@@ -754,7 +1170,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     # Calculate hash of encrypted data
     if not quiet:
         print("Calculating encrypted content hash...")
-    
+
     encrypted_hash = calculate_hash(encrypted_data)
 
     # Create metadata with the salt, hash configuration, and both hashes
@@ -763,7 +1179,8 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         'hash_config': hash_config,
         'pbkdf2_iterations': pbkdf2_iterations,
         'original_hash': original_hash,
-        'encrypted_hash': encrypted_hash  # Add hash of encrypted data
+        'encrypted_hash': encrypted_hash,  # Add hash of encrypted data
+        'encryption_algorithm': encryption_algorithm  # Add the algorithm used
     }
 
     # Serialize and encode the metadata
@@ -788,7 +1205,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
 
 def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=True):
     """
-    Decrypt a file with a password.
+    Decrypt a file with a password, automatically detecting the encryption algorithm.
 
     Args:
         input_file (str): Path to the encrypted file
@@ -811,12 +1228,29 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
         # Extract the metadata and encrypted data
         parts = content.split(b':', 1)
         if len(parts) != 2:
-            raise ValueError("Invalid file format")
+            if not quiet:
+                print("Warning: File doesn't contain standard metadata format. Attempting legacy decryption.")
+            # Try direct decryption for legacy files
+            try:
+                key = base64.urlsafe_b64encode(hashlib.sha256(password).digest())
+                decrypted_data = decrypt_with_algorithm(content, key)
+
+                # Write or return the decrypted data
+                if output_file:
+                    with open(output_file, 'wb') as f:
+                        f.write(decrypted_data)
+                    if not quiet:
+                        print(f"File decrypted successfully: {output_file}")
+                    return True
+                else:
+                    return decrypted_data
+            except Exception as e:
+                raise ValueError(f"Legacy decryption failed: {e}")
 
         metadata_base64, encrypted_data = parts
 
+        # Decode the metadata
         try:
-            # Decode the metadata
             metadata_json = base64.b64decode(metadata_base64)
             metadata = json.loads(metadata_json.decode('utf-8'))
 
@@ -827,8 +1261,11 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
             original_hash = metadata.get('original_hash')
             encrypted_hash = metadata.get('encrypted_hash')
 
+            # Get the encryption algorithm if present, default to fernet
+            encryption_algorithm = metadata.get('encryption_algorithm', 'fernet')
+
             if not quiet:
-                print("Metadata extracted successfully")
+                print(f"Metadata extracted successfully (algorithm: {encryption_algorithm})")
 
         except (json.JSONDecodeError, KeyError, base64.binascii.Error) as e:
             raise ValueError(f"Error parsing file metadata: {e}")
@@ -842,19 +1279,16 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
         except Exception as key_gen_err:
             raise ValueError(f"Key generation failed: {key_gen_err}")
 
-        # Create a Fernet instance with the key
-        f = Fernet(key)
-
-        # Decrypt the data
+        # Decrypt the data using the appropriate algorithm
         try:
             if not quiet:
-                print("Decrypting content...")
+                print(f"Decrypting content using {encryption_algorithm}...")
 
-            decrypted_data = f.decrypt(encrypted_data)
+            decrypted_data = decrypt_with_algorithm(encrypted_data, key)
 
         except Exception as decrypt_err:
             # Explicitly mention password failure
-            raise ValueError("Decryption failed. Invalid password or corrupted file.")
+            raise ValueError(f"Decryption failed: {decrypt_err}. Invalid password or corrupted file.")
 
         # Verify hash if it was stored in metadata
         if original_hash:
@@ -863,7 +1297,7 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
 
             decrypted_hash = calculate_hash(decrypted_data)
             if decrypted_hash != original_hash:
-                raise ValueError("Decryption failed. Invalid password or corrupted content.")
+                raise ValueError("Decryption failed. Content integrity check failed - hash mismatch.")
             elif not quiet:
                 print("\n✓ Decrypted content integrity verified successfully")
 
@@ -884,9 +1318,9 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
 
     except Exception as e:
         # Ensure the error includes a clear reference to password or decryption failure
-        error_message = f"Decryption failed. Invalid password or corrupted file: {str(e)}"
+        error_message = f"Decryption failed: {str(e)}"
 
         if not quiet:
-            print(f"\n{error_message}")
+            print(f"\nERROR: {error_message}")
 
         raise ValueError(error_message)

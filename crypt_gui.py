@@ -829,8 +829,9 @@ class CryptGUI:
             messagebox.showerror("Error", "Please select an output file or enable overwrite.")
             return
 
-        # Get current hash configuration
+        # Get current hash configuration and encryption algorithm
         hash_config = self.settings_tab.get_current_config()
+        encryption_algorithm = hash_config.get('encryption_algorithm', 'fernet')
 
         # Build the command
         cmd = [sys.executable, "crypt.py", "encrypt", "-i", input_file]
@@ -846,6 +847,9 @@ class CryptGUI:
 
         # Add password
         cmd.extend(["-p", password])
+
+        # Add encryption algorithm
+        cmd.extend(["--algorithm", encryption_algorithm])
 
         # Add individual hash configuration parameters
         if hash_config:
