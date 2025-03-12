@@ -25,6 +25,7 @@ DEBUG_MODE = True  # Set to True to enable detailed debugging
 # Try to import optional dependencies
 try:
     import pywhirlpool
+
     WHIRLPOOL_AVAILABLE = True
 except ImportError:
     WHIRLPOOL_AVAILABLE = False
@@ -33,22 +34,23 @@ except ImportError:
 try:
     import argon2
     from argon2.low_level import hash_secret_raw, Type
+
     ARGON2_AVAILABLE = True
-    
+
     # Map Argon2 type string to the actual type constant
     ARGON2_TYPE_MAP = {
-        'id': Type.ID,    # Argon2id (recommended)
-        'i': Type.I,      # Argon2i
-        'd': Type.D       # Argon2d
+        'id': Type.ID,  # Argon2id (recommended)
+        'i': Type.I,  # Argon2i
+        'd': Type.D  # Argon2d
     }
-    
+
     # Map for integer representation (JSON serializable)
     ARGON2_TYPE_INT_MAP = {
         'id': 2,  # Type.ID.value
-        'i': 1,   # Type.I.value
-        'd': 0    # Type.D.value
+        'i': 1,  # Type.I.value
+        'd': 0  # Type.D.value
     }
-    
+
     # Reverse mapping from int to Type
     ARGON2_INT_TO_TYPE_MAP = {
         2: Type.ID,
@@ -359,6 +361,7 @@ def decrypt_file_debug(input_file, output_file, password, quiet=False, use_secur
 
         raise ValueError(error_message)
 
+
 def set_secure_permissions(file_path):
     """
     Set permissions on the file to restrict access to only the owner (current user).
@@ -372,6 +375,7 @@ def set_secure_permissions(file_path):
     # Set permissions to 0600 (read/write for owner only)
     os.chmod(file_path, stat.S_IRUSR | stat.S_IWUSR)
 
+
 def get_file_permissions(file_path):
     """
     Get the permissions of a file.
@@ -383,6 +387,7 @@ def get_file_permissions(file_path):
         int: File permissions mode
     """
     return os.stat(file_path).st_mode & 0o777  # Get just the permission bits
+
 
 def copy_permissions(source_file, target_file):
     """
@@ -403,6 +408,7 @@ def copy_permissions(source_file, target_file):
         # If we can't copy permissions, fall back to secure permissions
         set_secure_permissions(target_file)
 
+
 def calculate_hash(data):
     """
     Calculate SHA-256 hash of data for integrity verification.
@@ -414,6 +420,7 @@ def calculate_hash(data):
         str: Hexadecimal hash string
     """
     return hashlib.sha256(data).hexdigest()
+
 
 def show_animated_progress(message, stop_event, quiet=False):
     """
@@ -447,6 +454,7 @@ def show_animated_progress(message, stop_event, quiet=False):
         print(f"\r{message}: [{bar}] {animation[idx]} {time_str}", end='', flush=True)
         idx = (idx + 1) % len(animation)
         time.sleep(0.1)
+
 
 def with_progress_bar(func, message, *args, quiet=False, **kwargs):
     """
@@ -498,6 +506,7 @@ def with_progress_bar(func, message, *args, quiet=False, **kwargs):
             # Clear the current line
             print(f"\r{' ' * 80}\r", end='', flush=True)
         raise e
+
 
 def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem=True):
     """
@@ -572,7 +581,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                                 # Update the main hash buffer
                                 secure_memcpy(hashed, hash_buffer)
                                 show_progress("SHA-512", i + 1, params)
-                    
+
                     elif algorithm == 'sha256' and params > 0:
                         if not quiet:
                             print(f"Applying {params} rounds of SHA-256...")
@@ -583,7 +592,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                                 secure_memcpy(hash_buffer, result)
                                 secure_memcpy(hashed, hash_buffer)
                                 show_progress("SHA-256", i + 1, params)
-                    
+
                     elif algorithm == 'sha3_256' and params > 0:
                         if not quiet:
                             print(f"Applying {params} rounds of SHA3-256...")
@@ -594,7 +603,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                                 secure_memcpy(hash_buffer, result)
                                 secure_memcpy(hashed, hash_buffer)
                                 show_progress("SHA3-256", i + 1, params)
-                    
+
                     elif algorithm == 'sha3_512' and params > 0:
                         if not quiet:
                             print(f"Applying {params} rounds of SHA3-512...")
@@ -605,7 +614,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                                 secure_memcpy(hash_buffer, result)
                                 secure_memcpy(hashed, hash_buffer)
                                 show_progress("SHA3-512", i + 1, params)
-                    
+
                     elif algorithm == 'whirlpool' and params > 0:
                         if not quiet:
                             print(f"Applying {params} rounds of Whirlpool...")
@@ -666,22 +675,23 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                             "Scrypt processing",
                             quiet=quiet
                         )
-                    
+
                     elif algorithm == 'argon2' and params.get('enabled', False) and ARGON2_AVAILABLE:
                         # Apply Argon2 with provided parameters
                         if not quiet:
                             print(f"Applying Argon2 with time_cost={params['time_cost']}, "
                                   f"memory_cost={params['memory_cost']}, parallelism={params['parallelism']}, "
                                   f"hash_len={params['hash_len']}...")
-                        
+
                         # Argon2 doesn't provide progress updates, so use an animated progress bar
                         def do_argon2():
                             # Use low_level API for more control
                             # Convert type integer back to enum if needed
                             argon2_type = params['type']
-                            if ARGON2_AVAILABLE and isinstance(argon2_type, int) and argon2_type in ARGON2_INT_TO_TYPE_MAP:
+                            if ARGON2_AVAILABLE and isinstance(argon2_type,
+                                                               int) and argon2_type in ARGON2_INT_TO_TYPE_MAP:
                                 argon2_type = ARGON2_INT_TO_TYPE_MAP[argon2_type]
-                                
+
                             result = argon2.low_level.hash_secret_raw(
                                 secret=bytes(hashed),
                                 salt=salt,
@@ -691,7 +701,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                                 hash_len=params['hash_len'],
                                 type=argon2_type
                             )
-                            
+
                             # Create a temporary secure buffer for the result
                             with secure_buffer(params['hash_len'], zero=False) as argon2_result:
                                 secure_memcpy(argon2_result, result)
@@ -705,7 +715,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                                     # Copy result to the output buffer
                                     secure_memcpy(hashed, argon2_result, params['hash_len'])
                                     return hashed
-                        
+
                         # Run Argon2 with progress bar
                         hashed = with_progress_bar(
                             do_argon2,
@@ -739,7 +749,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                 for i in range(params):
                     hashed = hashlib.sha512(hashed).digest()
                     show_progress("SHA-512", i + 1, params)
-            
+
             elif algorithm == 'sha256' and params > 0:
                 if not quiet:
                     print(f"Applying {params} rounds of SHA-256...")
@@ -747,7 +757,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                 for i in range(params):
                     hashed = hashlib.sha256(hashed).digest()
                     show_progress("SHA-256", i + 1, params)
-            
+
             elif algorithm == 'sha3_256' and params > 0:
                 if not quiet:
                     print(f"Applying {params} rounds of SHA3-256...")
@@ -755,7 +765,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                 for i in range(params):
                     hashed = hashlib.sha3_256(hashed).digest()
                     show_progress("SHA3-256", i + 1, params)
-            
+
             elif algorithm == 'sha3_512' and params > 0:
                 if not quiet:
                     print(f"Applying {params} rounds of SHA3-512...")
@@ -763,7 +773,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                 for i in range(params):
                     hashed = hashlib.sha3_512(hashed).digest()
                     show_progress("SHA3-512", i + 1, params)
-            
+
             elif algorithm == 'whirlpool' and params > 0:
                 if not quiet:
                     print(f"Applying {params} rounds of Whirlpool...")
@@ -776,7 +786,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                     # Fall back to SHA-512 if Whirlpool is not available
                     if not quiet:
                         print("Warning: Whirlpool not available, using SHA-512 instead")
-                    
+
                     for i in range(params):
                         hashed = hashlib.sha512(hashed).digest()
                         show_progress("SHA-512 (fallback)", i + 1, params)
@@ -804,14 +814,14 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                     "Scrypt processing",
                     quiet=quiet
                 )
-            
+
             elif algorithm == 'argon2' and params.get('enabled', False) and ARGON2_AVAILABLE:
                 # Apply Argon2 with provided parameters
                 if not quiet:
                     print(f"Applying Argon2 with time_cost={params['time_cost']}, "
                           f"memory_cost={params['memory_cost']}, parallelism={params['parallelism']}, "
                           f"hash_len={params['hash_len']}...")
-                
+
                 # Argon2 doesn't provide progress updates, so use an animated progress bar
                 def do_argon2():
                     # Use low_level API for more control
@@ -819,7 +829,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                     argon2_type = params['type']
                     if ARGON2_AVAILABLE and isinstance(argon2_type, int) and argon2_type in ARGON2_INT_TO_TYPE_MAP:
                         argon2_type = ARGON2_INT_TO_TYPE_MAP[argon2_type]
-                        
+
                     return argon2.low_level.hash_secret_raw(
                         secret=hashed,
                         salt=salt,
@@ -829,7 +839,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                         hash_len=params['hash_len'],
                         type=argon2_type
                     )
-                
+
                 # Run Argon2 with progress bar
                 hashed = with_progress_bar(
                     do_argon2,
@@ -838,6 +848,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                 )
 
         return hashed
+
 
 def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=100000, quiet=False, use_secure_mem=True):
     """
@@ -897,9 +908,9 @@ def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=100000
     def do_pbkdf2():
         # Initialize use_secure_mem for the nested function scope
         nonlocal use_secure_mem
-        
+
         if use_secure_mem:
-            
+
             try:
                 from modules.secure_memory import secure_buffer, secure_memcpy
 
@@ -1037,19 +1048,19 @@ def decrypt_with_algorithm(encrypted_data, key):
     # Now try with algorithm prefix parsing
     if b':' in encrypted_data:
         parts = encrypted_data.split(b':', 2)
-
         try:
             if len(parts) >= 2:
-                algorithm = parts[0].decode('ascii')
-
+                algorithm = parts[1].decode('ascii')
                 if algorithm == 'fernet':
                     from cryptography.fernet import Fernet
                     f = Fernet(key)
-                    return f.decrypt(parts[1])
+                    return f.decrypt(parts[2])
 
                 elif algorithm == 'aes-gcm' and len(parts) == 3:
                     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-                    nonce, ciphertext = parts[1], parts[2]
+                    metadata = json.loads(base64.b64decode(parts[0]))
+                    nonce, ciphertext = base64.b64decode(metadata['salt']), parts[2]
+                    print(nonce)
 
                     # Ensure key is the right size (32 bytes)
                     if len(key) != 32:
@@ -1082,7 +1093,6 @@ def decrypt_with_algorithm(encrypted_data, key):
         # Assume the first 12 bytes might be a nonce
         nonce = encrypted_data[:12]
         ciphertext = encrypted_data[12:]
-
         aesgcm = AESGCM(key_32)
         return aesgcm.decrypt(nonce, ciphertext, None)
     except Exception:
@@ -1226,8 +1236,9 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
             content = file.read()
 
         # Extract the metadata and encrypted data
-        parts = content.split(b':', 1)
-        if len(parts) != 2:
+        parts = content.split(b':', 2)
+        print(len(parts))
+        if len(parts) != 3:
             if not quiet:
                 print("Warning: File doesn't contain standard metadata format. Attempting legacy decryption.")
             # Try direct decryption for legacy files
@@ -1247,13 +1258,13 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
             except Exception as e:
                 raise ValueError(f"Legacy decryption failed: {e}")
 
-        metadata_base64, encrypted_data = parts
+        metadata_base64, algorithm, data = parts
 
         # Decode the metadata
         try:
             metadata_json = base64.b64decode(metadata_base64)
             metadata = json.loads(metadata_json.decode('utf-8'))
-
+            print(metadata)
             # Extract parameters from metadata
             salt = base64.b64decode(metadata['salt'])
             hash_config = metadata['hash_config']
@@ -1283,7 +1294,8 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
         try:
             if not quiet:
                 print(f"Decrypting content using {encryption_algorithm}...")
-
+            #print (parts[0] + b":" + parts[1] +b":" + base64.b64encode(parts[2]))
+            encrypted_data = parts[0] + b":" + parts[1] +b":" + base64.b64encode(parts[2])
             decrypted_data = decrypt_with_algorithm(encrypted_data, key)
 
         except Exception as decrypt_err:
