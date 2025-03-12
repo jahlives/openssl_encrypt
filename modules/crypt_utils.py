@@ -352,19 +352,23 @@ def show_security_recommendations():
     print("   side-channel attacks and GPU-based attacks. Winner of the Password")
     print("   Hashing Competition in 2015.")
     print("   - Recommended parameters:")
-    print("     --use-argon2 --argon2-time 3 --argon2-memory 65536 --argon2-parallelism 4\n")
+    print("     --enable-argon2 --argon2-time 3 --argon2-memory 65536 --argon2-parallelism 4\n")
 
     print("2. Scrypt: Strong memory-hard function that offers good protection")
     print("   against custom hardware attacks.")
-    print("   - Recommended: --scrypt-cost 14 --scrypt-r 8 --scrypt-p 1\n")
+    print("   - Recommended: --scrypt-n 16384 --scrypt-r 8 --scrypt-p 1\n")
 
-    print("3. PBKDF2: Widely compatible but less resistant to hardware attacks.")
-    print("   - Minimum recommended: --pbkdf2 600000\n")
+    print("3. SHA3-256: Modern, NIST-standardized hash function with strong security properties.")
+    print("   More resistant to length extension attacks than SHA-2 family (SHA-256/SHA-512).")
+    print("   - Recommended: --sha3-256-rounds 10000 to 50000 for good security\n")
+
+    print("4. PBKDF2: Widely compatible but less resistant to hardware attacks.")
+    print("   - Minimum recommended: --pbkdf2-iterations 600000\n")
 
     print("Combining Hash Algorithms:")
     print("-------------------------")
     print("You can combine multiple algorithms for defense in depth:")
-    print("Example: --use-argon2 --argon2-time 3 --sha3-512 1000 --pbkdf2 100000\n")
+    print("Example: --enable-argon2 --argon2-time 3 --sha3-256-rounds 10000 --pbkdf2-iterations 100000\n")
 
     # Check Argon2 availability and show appropriate message
     from modules.crypt_core import check_argon2_support
