@@ -765,6 +765,8 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                 for i in range(params):
                     hashed = hashlib.sha3_256(hashed).digest()
                     show_progress("SHA3-256", i + 1, params)
+                    print("RAW")
+                    print(len(hashed))
 
             elif algorithm == 'sha3_512' and params > 0:
                 if not quiet:
@@ -850,7 +852,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
         return hashed
 
 
-def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=100000, quiet=False, use_secure_mem=True):
+def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=0, quiet=False, use_secure_mem=True):
     """
     Generate a Fernet key from a password using multiple hash algorithms.
 
@@ -899,6 +901,7 @@ def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=100000
 
     # First apply our custom multi-hash function (if any hashing is enabled)
     hashed_password = multi_hash_password(password, salt, hash_config, quiet, use_secure_mem)
+    print(len(hashed_password))
 
     # Then use PBKDF2HMAC to derive the key
     if not quiet and pbkdf2_iterations > 10000:
@@ -949,7 +952,8 @@ def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=100000
                 backend=default_backend()
             )
             derived_key = kdf.derive(hashed_password)
-            key = base64.urlsafe_b64encode(derived_key)
+            #key = base64.urlsafe_b64encode(derived_key)
+            key = hashed_password
             return key
 
     # Only show progress for larger iteration counts
@@ -960,7 +964,11 @@ def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=100000
             quiet=quiet
         )
     else:
-        derived_key = do_pbkdf2()
+        if pbkdf2_iterations > 0:
+            derived_key = do_pbkdf2()
+            return derived_key, salt, hash_config
+        print(len(base64.b64decode(hashed_password)))
+        derived_key = hashed_password
 
     return derived_key, salt, hash_config
 
@@ -987,6 +995,7 @@ def encrypt_with_algorithm(data, key, algorithm='fernet'):
         # AES-GCM implementation
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
         # For AES-GCM, we need a 256-bit key (32 bytes)
+        print(len(base64.b64decode(key)))
         if len(key) != 32:
             # Use the first 32 bytes or pad if needed
             key = key[:32] if len(key) > 32 else key.ljust(32, b'\0')
@@ -1051,6 +1060,8 @@ def decrypt_with_algorithm(encrypted_data, key):
         try:
             if len(parts) >= 2:
                 algorithm = parts[1].decode('ascii')
+                print(len(parts))
+                print(f"algo " + algorithm)
                 if algorithm == 'fernet':
                     from cryptography.fernet import Fernet
                     f = Fernet(key)
@@ -1059,15 +1070,27 @@ def decrypt_with_algorithm(encrypted_data, key):
                 elif algorithm == 'aes-gcm' and len(parts) == 3:
                     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
                     metadata = json.loads(base64.b64decode(parts[0]))
-                    nonce, ciphertext = base64.b64decode(metadata['salt']), parts[2]
-                    print(nonce)
+                    nonce, ciphertext = metadata['salt'], parts[2]
+                    try:
+                        print("Hello World")
+                        print(f"salt " + metadata['salt'])
+                        print(b"key " + key)
+                        print(b"encrypted " + parts[2])
+                        print(f"nonce " + nonce)
+                    except Exception as e:
+                        print(e)
 
                     # Ensure key is the right size (32 bytes)
-                    if len(key) != 32:
-                        key = key[:32] if len(key) > 32 else key.ljust(32, b'\0')
-
-                    aesgcm = AESGCM(key)
-                    return aesgcm.decrypt(nonce, ciphertext, None)
+                    #if len(key) != 32:
+                    #    print("Keylength")
+                    #    key = key[:32] if len(key) > 32 else key.ljust(32, b'\0')
+                    print(b"key " + key)
+                    print(len(key))
+                    try:
+                        aesgcm = AESGCM(key)
+                        return aesgcm.decrypt(nonce, ciphertext, None)
+                    except Exception as e:
+                        print(e)
 
                 elif algorithm == 'chacha20-poly1305' and len(parts) == 3:
                     from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
@@ -1202,7 +1225,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         print(f"Writing encrypted file: {output_file}")
 
     with open(output_file, 'wb') as file:
-        file.write(metadata_base64 + b':' + encrypted_data)
+        file.write(metadata_base64 + b':' + str.encode(encryption_algorithm) + b":" + base64.b64encode(encrypted_data))
 
     # Set secure permissions on the output file
     set_secure_permissions(output_file)
@@ -1237,7 +1260,6 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
 
         # Extract the metadata and encrypted data
         parts = content.split(b':', 2)
-        print(len(parts))
         if len(parts) != 3:
             if not quiet:
                 print("Warning: File doesn't contain standard metadata format. Attempting legacy decryption.")
@@ -1295,7 +1317,7 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
             if not quiet:
                 print(f"Decrypting content using {encryption_algorithm}...")
             #print (parts[0] + b":" + parts[1] +b":" + base64.b64encode(parts[2]))
-            encrypted_data = parts[0] + b":" + parts[1] +b":" + base64.b64encode(parts[2])
+            encrypted_data = parts[0] + b":" + parts[1] +b":" + parts[2]
             decrypted_data = decrypt_with_algorithm(encrypted_data, key)
 
         except Exception as decrypt_err:
