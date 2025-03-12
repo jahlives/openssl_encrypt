@@ -22,7 +22,7 @@ DEFAULT_CONFIG = {
     # Hash iterations
     'sha512': 10000,
     'sha256': 0,
-    'sha3_256': 0,
+    'sha3_256': 10000,  # Enable SHA3-256 by default with 10000 iterations
     'sha3_512': 0,
     'whirlpool': 0,
     # Scrypt parameters
@@ -59,43 +59,43 @@ class SettingsTab:
         
         # Setup the tab
         self.setup_tab()
-        
+
     def setup_tab(self):
         """Set up the settings tab UI"""
         # Create a frame with scrollbar for many settings
         main_frame = ttk.Frame(self.parent)
         main_frame.pack(fill=tk.BOTH, expand=True)
-        
+
         # Add a canvas with scrollbar for scrolling if needed
         canvas = tk.Canvas(main_frame)
         scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
-        
+
         scrollable_frame.bind(
             "<Configure>",
             lambda e: canvas.configure(
                 scrollregion=canvas.bbox("all")
             )
         )
-        
+
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-        
+
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
-        
+
         # Settings header
-        ttk.Label(scrollable_frame, text="Hash Algorithm Settings", 
-                 font=("TkDefaultFont", 12, "bold")).pack(pady=(10, 5), padx=10, anchor=tk.W)
+        ttk.Label(scrollable_frame, text="Hash Algorithm Settings",
+                  font=("TkDefaultFont", 12, "bold")).pack(pady=(10, 5), padx=10, anchor=tk.W)
         ttk.Separator(scrollable_frame, orient='horizontal').pack(fill=tk.X, padx=10, pady=5)
-        
+
         # Iterative hash settings
         hash_frame = ttk.LabelFrame(scrollable_frame, text="Iterative Hash Algorithms")
         hash_frame.pack(fill=tk.X, expand=True, padx=10, pady=5)
-        
+
         # Create variables for iterative hashes
         self.hash_vars = {}
-        
+
         # SHA-512
         row = 0
         ttk.Label(hash_frame, text="SHA-512 rounds:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
@@ -103,7 +103,7 @@ class SettingsTab:
         ttk.Entry(hash_frame, textvariable=self.hash_vars['sha512'], width=10).grid(
             row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(hash_frame, text="(0 to disable)").grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
-        
+
         # SHA-256
         row += 1
         ttk.Label(hash_frame, text="SHA-256 rounds:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
@@ -111,15 +111,22 @@ class SettingsTab:
         ttk.Entry(hash_frame, textvariable=self.hash_vars['sha256'], width=10).grid(
             row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(hash_frame, text="(0 to disable)").grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
-        
-        # SHA3-256
+
+        # SHA3-256 - Enhanced with tooltip/help text
         row += 1
         ttk.Label(hash_frame, text="SHA3-256 rounds:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
         self.hash_vars['sha3_256'] = tk.IntVar(value=self.config['sha3_256'])
         ttk.Entry(hash_frame, textvariable=self.hash_vars['sha3_256'], width=10).grid(
             row=row, column=1, sticky=tk.W, padx=5, pady=5)
-        ttk.Label(hash_frame, text="(0 to disable)").grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
-        
+        sha3_256_help = ttk.Label(hash_frame, text="(Recommended: 10000+)", foreground="blue")
+        sha3_256_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+
+        # Add tooltip functionality for SHA3-256
+        self.create_tooltip(sha3_256_help,
+                            "SHA3-256 is a modern, NIST-standardized hash function with improved security "
+                            "compared to SHA-2. It's resistant to length extension attacks and recommended "
+                            "for new implementations.")
+
         # SHA3-512
         row += 1
         ttk.Label(hash_frame, text="SHA3-512 rounds:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
@@ -127,7 +134,7 @@ class SettingsTab:
         ttk.Entry(hash_frame, textvariable=self.hash_vars['sha3_512'], width=10).grid(
             row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(hash_frame, text="(0 to disable)").grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
-        
+
         # Whirlpool
         row += 1
         ttk.Label(hash_frame, text="Whirlpool rounds:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
@@ -135,7 +142,7 @@ class SettingsTab:
         ttk.Entry(hash_frame, textvariable=self.hash_vars['whirlpool'], width=10).grid(
             row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(hash_frame, text="(0 to disable)").grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
-        
+
         # PBKDF2 settings
         row += 1
         ttk.Label(hash_frame, text="PBKDF2 iterations:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
@@ -143,13 +150,13 @@ class SettingsTab:
         ttk.Entry(hash_frame, textvariable=self.hash_vars['pbkdf2_iterations'], width=10).grid(
             row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(hash_frame, text="(min 10000 recommended)").grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
-        
+
         # Scrypt settings
         scrypt_frame = ttk.LabelFrame(scrollable_frame, text="Scrypt Settings (Memory-Hard Function)")
         scrypt_frame.pack(fill=tk.X, expand=True, padx=10, pady=5)
-        
+
         self.scrypt_vars = {}
-        
+
         # CPU/Memory cost factor (N)
         row = 0
         ttk.Label(scrypt_frame, text="CPU/Memory cost (N):").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
@@ -159,7 +166,7 @@ class SettingsTab:
         n_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(scrypt_frame, text="(0 to disable, must be power of 2)").grid(
             row=row, column=2, sticky=tk.W, padx=5, pady=5)
-        
+
         # Block size (r)
         row += 1
         ttk.Label(scrypt_frame, text="Block size (r):").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
@@ -168,7 +175,7 @@ class SettingsTab:
         r_combo = ttk.Combobox(scrypt_frame, textvariable=self.scrypt_vars['r'], values=r_values, width=10)
         r_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(scrypt_frame, text="(8 is standard)").grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
-        
+
         # Parallelization (p)
         row += 1
         ttk.Label(scrypt_frame, text="Parallelization (p):").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
@@ -177,121 +184,156 @@ class SettingsTab:
         p_combo = ttk.Combobox(scrypt_frame, textvariable=self.scrypt_vars['p'], values=p_values, width=10)
         p_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(scrypt_frame, text="(1 is standard)").grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
-        
+
         # Argon2 settings
         argon2_frame = ttk.LabelFrame(scrollable_frame, text="Argon2 Settings (Memory-Hard Function)")
         argon2_frame.pack(fill=tk.X, expand=True, padx=10, pady=5)
-        
+
         self.argon2_vars = {}
-        
+
         # Enable Argon2
         row = 0
         self.argon2_vars['enabled'] = tk.BooleanVar(value=self.config['argon2']['enabled'])
         ttk.Checkbutton(argon2_frame, text="Enable Argon2", variable=self.argon2_vars['enabled']).grid(
             row=row, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5)
-        
+
         # Argon2 variant
         row += 1
         ttk.Label(argon2_frame, text="Variant:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
         self.argon2_vars['type'] = tk.StringVar(value=self.config['argon2']['type'])
         variant_values = ['id', 'i', 'd']
-        variant_combo = ttk.Combobox(argon2_frame, textvariable=self.argon2_vars['type'], 
-                                    values=variant_values, width=10)
+        variant_combo = ttk.Combobox(argon2_frame, textvariable=self.argon2_vars['type'],
+                                     values=variant_values, width=10)
         variant_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(argon2_frame, text="(id is recommended for most uses)").grid(
             row=row, column=2, sticky=tk.W, padx=5, pady=5)
-        
+
         # Time cost
         row += 1
         ttk.Label(argon2_frame, text="Time cost:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
         self.argon2_vars['time_cost'] = tk.IntVar(value=self.config['argon2']['time_cost'])
         time_values = [1, 2, 3, 4, 6, 8, 10, 12, 16]
-        time_combo = ttk.Combobox(argon2_frame, textvariable=self.argon2_vars['time_cost'], 
-                                 values=time_values, width=10)
+        time_combo = ttk.Combobox(argon2_frame, textvariable=self.argon2_vars['time_cost'],
+                                  values=time_values, width=10)
         time_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(argon2_frame, text="(higher is slower but more secure)").grid(
             row=row, column=2, sticky=tk.W, padx=5, pady=5)
-        
+
         # Memory cost
         row += 1
         ttk.Label(argon2_frame, text="Memory cost (KB):").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
         self.argon2_vars['memory_cost'] = tk.IntVar(value=self.config['argon2']['memory_cost'])
         memory_values = [8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576]
-        memory_combo = ttk.Combobox(argon2_frame, textvariable=self.argon2_vars['memory_cost'], 
-                                   values=memory_values, width=10)
+        memory_combo = ttk.Combobox(argon2_frame, textvariable=self.argon2_vars['memory_cost'],
+                                    values=memory_values, width=10)
         memory_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(argon2_frame, text="(65536 = 64MB, higher is more secure)").grid(
             row=row, column=2, sticky=tk.W, padx=5, pady=5)
-        
+
         # Parallelism
         row += 1
         ttk.Label(argon2_frame, text="Parallelism:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
         self.argon2_vars['parallelism'] = tk.IntVar(value=self.config['argon2']['parallelism'])
         parallel_values = [1, 2, 4, 8, 16]
-        parallel_combo = ttk.Combobox(argon2_frame, textvariable=self.argon2_vars['parallelism'], 
-                                     values=parallel_values, width=10)
+        parallel_combo = ttk.Combobox(argon2_frame, textvariable=self.argon2_vars['parallelism'],
+                                      values=parallel_values, width=10)
         parallel_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(argon2_frame, text="(should match number of CPU cores)").grid(
             row=row, column=2, sticky=tk.W, padx=5, pady=5)
-        
+
         # Hash length
         row += 1
         ttk.Label(argon2_frame, text="Hash length:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
         self.argon2_vars['hash_len'] = tk.IntVar(value=self.config['argon2']['hash_len'])
         hash_len_values = [16, 24, 32, 48, 64]
-        hash_len_combo = ttk.Combobox(argon2_frame, textvariable=self.argon2_vars['hash_len'], 
-                                     values=hash_len_values, width=10)
+        hash_len_combo = ttk.Combobox(argon2_frame, textvariable=self.argon2_vars['hash_len'],
+                                      values=hash_len_values, width=10)
         hash_len_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(argon2_frame, text="(32 is standard)").grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
-        
+
         # Presets section
         presets_frame = ttk.LabelFrame(scrollable_frame, text="Security Presets")
         presets_frame.pack(fill=tk.X, expand=True, padx=10, pady=5)
-        
+
         # Preset buttons
         preset_row = ttk.Frame(presets_frame)
         preset_row.pack(fill=tk.X, padx=5, pady=5)
-        
-        ttk.Button(preset_row, text="Standard", 
-                  command=lambda: self.load_preset("standard")).pack(side=tk.LEFT, padx=5)
-        ttk.Button(preset_row, text="High Security", 
-                  command=lambda: self.load_preset("high")).pack(side=tk.LEFT, padx=5)
-        ttk.Button(preset_row, text="Paranoid", 
-                  command=lambda: self.load_preset("paranoid")).pack(side=tk.LEFT, padx=5)
-        ttk.Button(preset_row, text="Legacy", 
-                  command=lambda: self.load_preset("legacy")).pack(side=tk.LEFT, padx=5)
-        
+
+        ttk.Button(preset_row, text="Standard",
+                   command=lambda: self.load_preset("standard")).pack(side=tk.LEFT, padx=5)
+        ttk.Button(preset_row, text="High Security",
+                   command=lambda: self.load_preset("high")).pack(side=tk.LEFT, padx=5)
+        ttk.Button(preset_row, text="Paranoid",
+                   command=lambda: self.load_preset("paranoid")).pack(side=tk.LEFT, padx=5)
+        ttk.Button(preset_row, text="Legacy",
+                   command=lambda: self.load_preset("legacy")).pack(side=tk.LEFT, padx=5)
+
         # Action buttons
         button_frame = ttk.Frame(scrollable_frame)
         button_frame.pack(fill=tk.X, padx=10, pady=20)
-        
-        ttk.Button(button_frame, text="Save Settings", 
-                  command=self.save_settings).pack(side=tk.LEFT, padx=5, pady=5)
-        ttk.Button(button_frame, text="Reset to Defaults", 
-                  command=self.reset_to_defaults).pack(side=tk.LEFT, padx=5, pady=5)
-        ttk.Button(button_frame, text="Test Settings", 
-                  command=self.test_settings).pack(side=tk.LEFT, padx=5, pady=5)
-        
+
+        ttk.Button(button_frame, text="Save Settings",
+                   command=self.save_settings).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(button_frame, text="Reset to Defaults",
+                   command=self.reset_to_defaults).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(button_frame, text="Test Settings",
+                   command=self.test_settings).pack(side=tk.LEFT, padx=5, pady=5)
+
         # Information section
         info_frame = ttk.LabelFrame(scrollable_frame, text="Information")
         info_frame.pack(fill=tk.X, expand=True, padx=10, pady=5)
-        
+
         info_text = ("These settings control how your passwords are processed during encryption.\n"
-                    "Higher values provide better security but slower performance.\n\n"
-                    "For most users, the Standard preset is recommended.\n"
-                    "For sensitive data, consider the High Security preset.\n"
-                    "The Paranoid preset is extremely secure but may be slow on older hardware.")
-        
+                     "Higher values provide better security but slower performance.\n\n"
+                     "For most users, the Standard preset is recommended.\n"
+                     "For sensitive data, consider the High Security preset.\n"
+                     "The Paranoid preset is extremely secure but may be slow on older hardware.\n\n"
+                     "SHA3-256 is recommended as a modern, secure hash algorithm.")
+
         ttk.Label(info_frame, text=info_text, wraplength=550, justify=tk.LEFT).pack(padx=10, pady=10)
+
+    def create_tooltip(self, widget, text):
+        """Create a tooltip for a given widget with the provided text"""
+
+        # This is a simple implementation - will show tooltip on hover
+        def enter(event):
+            # Create a toplevel window
+            tooltip = tk.Toplevel(self.parent)
+            # No window manager decorations
+            tooltip.wm_overrideredirect(True)
+
+            # Position tooltip near the widget
+            x = widget.winfo_rootx() + 20
+            y = widget.winfo_rooty() + 20
+            tooltip.wm_geometry(f"+{x}+{y}")
+
+            # Create the tooltip content
+            label = ttk.Label(tooltip, text=text, justify=tk.LEFT,
+                              background="#FFFFDD", relief=tk.SOLID, borderwidth=1,
+                              wraplength=300)
+            label.pack(padx=5, pady=5)
+
+            # Store the tooltip window
+            widget.tooltip = tooltip
+
+        def leave(event):
+            # Destroy the tooltip when the mouse leaves
+            if hasattr(widget, "tooltip"):
+                widget.tooltip.destroy()
+                delattr(widget, "tooltip")
+
+        # Bind the events to the widget
+        widget.bind("<Enter>", enter)
+        widget.bind("<Leave>", leave)
 
     def load_preset(self, preset_name):
         """Load a predefined security preset"""
         if preset_name == "standard":
             # Standard preset - good balance of security and performance
             preset = {
-                'sha512': 20000,  # Changed from default to ensure a difference
+                'sha512': 10000,
                 'sha256': 0,
-                'sha3_256': 0,
+                'sha3_256': 10000,  # Added SHA3-256 as a primary hash
                 'sha3_512': 0,
                 'whirlpool': 0,
                 'scrypt': {
@@ -314,8 +356,8 @@ class SettingsTab:
             preset = {
                 'sha512': 50000,
                 'sha256': 0,
+                'sha3_256': 20000,  # Added higher SHA3-256 iteration count
                 'sha3_512': 5000,
-                'sha3_256': 0,
                 'whirlpool': 0,
                 'scrypt': {
                     'n': 65536,
@@ -337,8 +379,8 @@ class SettingsTab:
             preset = {
                 'sha512': 100000,
                 'sha256': 10000,
+                'sha3_256': 50000,  # Higher SHA3-256 iterations for paranoid preset
                 'sha3_512': 10000,
-                'sha3_256': 10000,
                 'whirlpool': 5000,
                 'scrypt': {
                     'n': 262144,
@@ -566,19 +608,19 @@ class SettingsTab:
             messagebox.showinfo("Settings Reset", 
                               "All settings have been reset to their default values.\n\n"
                               "Click 'Save Settings' to apply these changes.")
-    
+
     def test_settings(self):
         """Test current settings on a small sample to estimate performance"""
         # Update config from UI
         self.update_config_from_ui()
-        
+
         # Show a simple estimate
         message = (
             "Based on your current settings, here's a rough performance estimate:\n\n"
             "SHA-512: {sha512} rounds\n"
             "SHA-256: {sha256} rounds\n"
+            "SHA3-256: {sha3_256} rounds {sha3_recommended}\n"  # Added recommendation indicator
             "SHA3-512: {sha3_512} rounds\n"
-            "SHA3-256: {sha3_256} rounds\n"
             "Whirlpool: {whirlpool} rounds\n"
             "Scrypt: {scrypt_enabled} (N={scrypt_n}, r={scrypt_r}, p={scrypt_p})\n"
             "Argon2: {argon2_enabled} (t={argon2_t}, m={argon2_m}KB, p={argon2_p})\n"
@@ -586,8 +628,11 @@ class SettingsTab:
         ).format(
             sha512=self.config['sha512'],
             sha256=self.config['sha256'],
-            sha3_512=self.config['sha3_512'],
             sha3_256=self.config['sha3_256'],
+            # Add recommendation indicator for SHA3-256
+            sha3_recommended="★ (recommended)" if self.config[
+                                                      'sha3_256'] > 0 else "- consider enabling for better security",
+            sha3_512=self.config['sha3_512'],
             whirlpool=self.config['whirlpool'],
             scrypt_enabled="Enabled" if self.config['scrypt']['n'] > 0 else "Disabled",
             scrypt_n=self.config['scrypt']['n'],
@@ -599,10 +644,18 @@ class SettingsTab:
             argon2_p=self.config['argon2']['parallelism'],
             pbkdf2=self.config['pbkdf2_iterations']
         )
-        
+
+        # Add note about SHA3-256
+        if self.config['sha3_256'] == 0:
+            message += (
+                "Security Note: SHA3-256 is a modern hash function standardized by NIST. It offers\n"
+                "improved security over older hash functions. Consider enabling it with at least\n"
+                "10,000 rounds for better protection.\n\n"
+            )
+
         # Estimate performance
         performance_level = self.estimate_performance_level()
-        
+
         if performance_level == "light":
             message += "Performance Impact: Light ✓\nEncryption and decryption should be fast."
         elif performance_level == "moderate":
@@ -611,35 +664,37 @@ class SettingsTab:
             message += "Performance Impact: Heavy ⚠️⚠️\nEncryption and decryption may take 10+ seconds."
         else:  # intensive
             message += "Performance Impact: Intensive ⚠️⚠️⚠️\nEncryption and decryption may take 30+ seconds or more."
-            
+
         messagebox.showinfo("Settings Performance Estimate", message)
-    
+
     def estimate_performance_level(self):
         """Estimate the performance impact of current settings"""
         # Calculate a rough score based on the settings
         score = 0
-        
+
         # Score iterative hashes
         score += self.config['sha512'] / 10000
         score += self.config['sha256'] / 10000
-        score += self.config['sha3_256'] / 10000
+        # SHA3-256 is slightly more efficient than SHA-256
+        score += self.config['sha3_256'] / 12000  # Adjusted weight for SHA3-256
         score += self.config['sha3_512'] / 10000
         score += self.config['whirlpool'] / 5000
-        
+
         # Score PBKDF2
         score += self.config['pbkdf2_iterations'] / 50000
-        
+
         # Score Scrypt (higher impact)
         if self.config['scrypt']['n'] > 0:
             # Logarithmic scale since Scrypt impact grows quickly with N
-            score += (2 * (self.config['scrypt']['n'] / 8192)) * (self.config['scrypt']['r'] / 8) * self.config['scrypt']['p']
-        
+            score += (2 * (self.config['scrypt']['n'] / 8192)) * (self.config['scrypt']['r'] / 8) * \
+                     self.config['scrypt']['p']
+
         # Score Argon2 (higher impact)
         if self.config['argon2']['enabled']:
             score += (2 * (self.config['argon2']['memory_cost'] / 65536)) * \
-                    (self.config['argon2']['time_cost'] / 3) * \
-                    (self.config['argon2']['parallelism'] / 4)
-        
+                     (self.config['argon2']['time_cost'] / 3) * \
+                     (self.config['argon2']['parallelism'] / 4)
+
         # Determine performance level
         if score < 5:
             return "light"
