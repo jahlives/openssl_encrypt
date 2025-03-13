@@ -70,93 +70,6 @@ class EncryptionAlgorithm(Enum):
     AES_GCM = "aes-gcm"
     CHACHA20_POLY1305 = "chacha20-poly1305"
 
-
-def encrypt_with_algorithm(data, key, algorithm=EncryptionAlgorithm.FERNET):
-    """
-    Encrypt data using the specified algorithm.
-
-    Args:
-        data (bytes): Data to encrypt
-        key (bytes): Encryption key
-        algorithm (EncryptionAlgorithm): Encryption algorithm to use
-
-    Returns:
-        bytes: Encrypted data with metadata
-    """
-    if algorithm == EncryptionAlgorithm.FERNET:
-        f = Fernet(key)
-        encrypted = f.encrypt(data)
-        metadata = {
-            'encryption_algorithm': algorithm.value,
-            'salt': None,  # Fernet handles its own salt
-            'encrypted_hash': calculate_hash(encrypted)
-        }
-    else:
-        # Generate a random salt/nonce
-        salt = os.urandom(16)  # 16 bytes for AES-GCM, we'll use first 12 for ChaCha20-Poly1305
-
-        if algorithm == EncryptionAlgorithm.AES_GCM:
-            cipher = AESGCM(key)
-            encrypted = cipher.encrypt(salt[:12], data, None)
-        else:  # ChaCha20-Poly1305
-            cipher = ChaCha20Poly1305(key)
-            encrypted = cipher.encrypt(salt[:12], data, None)
-
-        metadata = {
-            'encryption_algorithm': algorithm.value,
-            'salt': base64.b64encode(salt).decode('utf-8'),
-            'encrypted_hash': calculate_hash(encrypted)
-        }
-
-    # Encode metadata and combine with encrypted data
-    metadata_bytes = base64.b64encode(json.dumps(metadata).encode())
-    return metadata_bytes + b':' + base64.b64encode(encrypted)
-
-
-def decrypt_with_algorithm(encrypted_data, key):
-    """
-    Decrypt data using the appropriate algorithm.
-
-    Args:
-        encrypted_data (bytes): Encrypted data
-        key (bytes): Decryption key
-
-    Returns:
-        bytes: Decrypted data
-    """
-    try:
-        # Split metadata and encrypted data
-        metadata_b64, encrypted_b64 = encrypted_data.split(b':', 1)
-        metadata = json.loads(base64.b64decode(metadata_b64))
-        encrypted = base64.b64decode(encrypted_b64)
-
-        # Verify encrypted data hash
-        if calculate_hash(encrypted) != metadata['encrypted_hash']:
-            raise ValueError("Encrypted data hash mismatch")
-
-        algorithm = metadata['encryption_algorithm']
-
-        if algorithm == EncryptionAlgorithm.FERNET.value:
-            f = Fernet(key)
-            return f.decrypt(encrypted)
-
-        elif algorithm == EncryptionAlgorithm.AES_GCM.value:
-            cipher = AESGCM(key)
-            salt = base64.b64decode(metadata['salt'])
-            return cipher.decrypt(salt[:12], encrypted, None)
-
-        elif algorithm == EncryptionAlgorithm.CHACHA20_POLY1305.value:
-            cipher = ChaCha20Poly1305(key)
-            salt = base64.b64decode(metadata['salt'])
-            return cipher.decrypt(salt[:12], encrypted, None)
-
-        else:
-            raise ValueError(f"Unsupported encryption algorithm: {algorithm}")
-
-    except Exception as e:
-        raise ValueError(f"Decryption failed: {str(e)}")
-
-
 def check_argon2_support():
     """
     Check if Argon2 is available and which variants are supported.
@@ -190,7 +103,6 @@ def check_argon2_support():
         return True, version, supported_types
     except Exception:
         return False, None, []
-
 
 def set_secure_permissions(file_path):
     """
