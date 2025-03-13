@@ -20,7 +20,9 @@ import time
 # Import from local modules
 from modules.crypt_core import (
     encrypt_file, decrypt_file, check_argon2_support,
-    get_file_permissions, WHIRLPOOL_AVAILABLE, ARGON2_AVAILABLE, ARGON2_TYPE_INT_MAP
+    get_file_permissions, WHIRLPOOL_AVAILABLE, ARGON2_AVAILABLE, ARGON2_TYPE_INT_MAP,
+    EncryptionAlgorithm
+
 )
 from modules.crypt_utils import (
     secure_shred_file, expand_glob_patterns, generate_strong_password,
@@ -106,6 +108,16 @@ def main():
         choices=['encrypt', 'decrypt', 'shred', 'generate-password', 'security-info', 'check-argon2'],
         help='Action to perform: encrypt/decrypt files, shred data, generate passwords, '
              'show security recommendations, or check Argon2 support'
+    )
+
+    parser.add_argument(
+        '--algorithm',
+        type=str,
+        choices=[algo.value for algo in EncryptionAlgorithm],
+        default=EncryptionAlgorithm.FERNET.value,
+        help='Encryption algorithm to use: fernet (default, Fernet from cryptography, good general choice), '
+             'aes-gcm (AES-256 in GCM mode, high security, widely trusted), '
+             'chacha20-poly1305 (modern AEAD cipher, excellent performance)'
     )
 
     # Define common options
@@ -676,7 +688,7 @@ def main():
                     # Encrypt to temporary file
                     success = encrypt_file(
                         args.input, temp_output, password, hash_config, args.pbkdf2_iterations, args.quiet,
-                        GLOBAL_USE_SECURE_MEM
+                        GLOBAL_USE_SECURE_MEM, algorithm=args.algorithm
                     )
 
                     if success:
