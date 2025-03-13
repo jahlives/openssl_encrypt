@@ -20,7 +20,9 @@ import time
 # Import from local modules
 from modules.crypt_core import (
     encrypt_file, decrypt_file, check_argon2_support,
-    get_file_permissions, WHIRLPOOL_AVAILABLE, ARGON2_AVAILABLE, ARGON2_TYPE_INT_MAP
+    get_file_permissions, WHIRLPOOL_AVAILABLE, ARGON2_AVAILABLE, ARGON2_TYPE_INT_MAP,
+    EncryptionAlgorithm
+
 )
 from modules.crypt_utils import (
     secure_shred_file, expand_glob_patterns, generate_strong_password,
@@ -108,6 +110,16 @@ def main():
              'show security recommendations, or check Argon2 support'
     )
 
+    parser.add_argument(
+        '--algorithm',
+        type=str,
+        choices=[algo.value for algo in EncryptionAlgorithm],
+        default=EncryptionAlgorithm.FERNET.value,
+        help='Encryption algorithm to use: fernet (default, Fernet from cryptography, good general choice), '
+             'aes-gcm (AES-256 in GCM mode, high security, widely trusted), '
+             'chacha20-poly1305 (modern AEAD cipher, excellent performance)'
+    )
+
     # Define common options
     parser.add_argument(
         '--password', '-p',
@@ -159,25 +171,6 @@ def main():
         '--disable-secure-memory',
         action='store_true',
         help='Disable secure memory handling (not recommended)'
-    )
-
-    # Add encryption algorithm options
-    encryption_group = parser.add_argument_group('Encryption Algorithm Options', 'Configure the encryption algorithm')
-    encryption_group.add_argument(
-        '--algorithm',
-        choices=['fernet', 'aes-gcm', 'chacha20-poly1305'],
-        default='fernet',
-        help='Encryption algorithm to use (default: fernet)'
-    )
-    encryption_group.add_argument(
-        '--use-aes-gcm',
-        action='store_true',
-        help='Use AES-GCM encryption (shorthand for --algorithm aes-gcm)'
-    )
-    encryption_group.add_argument(
-        '--use-chacha20',
-        action='store_true',
-        help='Use ChaCha20-Poly1305 encryption (shorthand for --algorithm chacha20-poly1305)'
     )
 
     # Group hash configuration arguments for better organization
@@ -370,13 +363,6 @@ def main():
     # Handle scrypt_cost conversion to scrypt_n
     if args.scrypt_cost > 0 and args.scrypt_n == 0:
         args.scrypt_n = 2 ** args.scrypt_cost
-
-    # Determine encryption algorithm
-    encryption_algorithm = args.algorithm
-    if args.use_aes_gcm:
-        encryption_algorithm = 'aes-gcm'
-    elif args.use_chacha20:
-        encryption_algorithm = 'chacha20-poly1305'
 
     # Check for utility and information actions first
     if args.action == 'security-info':
@@ -678,9 +664,6 @@ def main():
         'pbkdf2_iterations': args.pbkdf2_iterations
     }
 
-    # Add encryption algorithm to hash_config
-    hash_config['encryption_algorithm'] = encryption_algorithm
-
     # Uncomment this line to debug the hash configuration
     # debug_hash_config(args, hash_config, "Hash configuration after setup")
 
@@ -705,7 +688,7 @@ def main():
                     # Encrypt to temporary file
                     success = encrypt_file(
                         args.input, temp_output, password, hash_config, args.pbkdf2_iterations, args.quiet,
-                        GLOBAL_USE_SECURE_MEM, encryption_algorithm
+                        GLOBAL_USE_SECURE_MEM, algorithm=args.algorithm
                     )
 
                     if success:
@@ -737,8 +720,7 @@ def main():
 
             # Display hash configuration details
             if not args.quiet:
-                print("\nEncrypting with the following configuration:")
-                print(f"- Encryption algorithm: {encryption_algorithm}")
+                print("\nEncrypting with the following hash configuration:")
                 any_hash_used = False
 
                 for algorithm, params in hash_config.items():
@@ -782,7 +764,7 @@ def main():
             if not args.overwrite:
                 success = encrypt_file(
                     args.input, output_file, password, hash_config, args.pbkdf2_iterations, args.quiet,
-                    GLOBAL_USE_SECURE_MEM, encryption_algorithm
+                    GLOBAL_USE_SECURE_MEM
                 )
 
             if success:
@@ -848,37 +830,15 @@ def main():
                             print("Password has been cleared from screen.")
                             print("For additional security, consider clearing your terminal history.")
 
-                            # If shredding was requested and encryption was successful
-                        if args.shred and not args.overwrite:
-                            if not args.quiet:
-                                print("Shredding the original file as requested...")
-                            secure_shred_file(args.input, args.shred_passes, args.quiet)
+                # If shredding was requested and encryption was successful
+                if args.shred and not args.overwrite:
+                    if not args.quiet:
+                        print("Shredding the original file as requested...")
+                    secure_shred_file(args.input, args.shred_passes, args.quiet)
 
         elif args.action == 'decrypt':
             # Handle output file path for decryption
-            # Check for debug mode
-            debug_mode = os.environ.get('DEBUG_CRYPT', '0') == '1'
-            if debug_mode:
-                print("=== DEBUG MODE ENABLED ===")
-                # Use debug versions of decrypt functions
-                from modules.crypt_core import decrypt_file_debug
-
-                if args.output:
-                    success = decrypt_file_debug(args.input, args.output, password, args.quiet, GLOBAL_USE_SECURE_MEM)
-                    if success and not args.quiet:
-                        print(f"\nDEBUG: File decrypted successfully: {args.output}")
-                else:
-                    # Decrypt to screen
-                    decrypted = decrypt_file_debug(args.input, None, password, args.quiet, GLOBAL_USE_SECURE_MEM)
-                    try:
-                        # Try to decode as text
-                        if not args.quiet:
-                            print("\nDecrypted content:")
-                        print(decrypted.decode())
-                    except UnicodeDecodeError:
-                        if not args.quiet:
-                            print("\nDecrypted successfully, but content is binary and cannot be displayed.")
-            elif args.overwrite:
+            if args.overwrite:
                 output_file = args.input
                 # Create a temporary file for the decryption
                 temp_dir = os.path.dirname(os.path.abspath(args.input))
@@ -893,8 +853,7 @@ def main():
                     original_permissions = get_file_permissions(args.input)
 
                     # Decrypt to temporary file first
-                    success = decrypt_file(args.input, temp_output, password, args.quiet,
-                                                           GLOBAL_USE_SECURE_MEM)
+                    success = decrypt_file(args.input, temp_output, password, args.quiet, GLOBAL_USE_SECURE_MEM)
                     if success:
                         # Apply the original permissions to the temp file
                         os.chmod(temp_output, original_permissions)
@@ -917,8 +876,7 @@ def main():
                             temp_files_to_cleanup.remove(temp_output)
                     raise e
             elif args.output:
-                success = decrypt_file(args.input, args.output, password, args.quiet,
-                                                       GLOBAL_USE_SECURE_MEM)
+                success = decrypt_file(args.input, args.output, password, args.quiet, GLOBAL_USE_SECURE_MEM)
                 if success and not args.quiet:
                     print(f"\nFile decrypted successfully: {args.output}")
 
@@ -937,8 +895,7 @@ def main():
                     print(decrypted.decode())
                 except UnicodeDecodeError:
                     if not args.quiet:
-                        print(
-                            "\nDecrypted successfully, but content is binary and cannot be displayed.")
+                        print("\nDecrypted successfully, but content is binary and cannot be displayed.")
 
         elif args.action == 'shred':
             # Direct shredding of files or directories without encryption/decryption
@@ -966,7 +923,7 @@ def main():
                             # In quiet mode, fail immediately without confirmation
                             if not args.quiet:
                                 print(f"Error: {path} is a directory. "
-                                        f"Use --recursive to shred directories.")
+                                      f"Use --recursive to shred directories.")
                             overall_success = False
                             continue
                         else:
@@ -986,7 +943,7 @@ def main():
                         # File or directory with recursive flag
                         if not args.quiet:
                             print(f"Securely shredding "
-                                    f"{'directory' if os.path.isdir(path) else 'file'}: {path}")
+                                  f"{'directory' if os.path.isdir(path) else 'file'}: {path}")
 
                         success = secure_shred_file(path, args.shred_passes, args.quiet)
                         if not success:
@@ -1001,8 +958,8 @@ def main():
             print(f"\nError: {e}")
         exit_code = 1
 
-        # Exit with appropriate code
-        sys.exit(exit_code)
+    # Exit with appropriate code
+    sys.exit(exit_code)
 
 
 if __name__ == '__main__':
