@@ -143,6 +143,91 @@ class CryptGUI:
         # Center the window
         self.center_window()
 
+    def encrypt_file_wrapper(self):
+        try:
+            # Get input values
+            input_file = self.encrypt_input_var.get()
+            output_file = self.encrypt_output_var.get()
+            password = self.encrypt_password_var.get()
+            confirm_password = self.encrypt_confirm_var.get()
+            algorithm = self.encrypt_algorithm_var.get()
+            should_shred = self.encrypt_shred_var.get()
+            should_overwrite = self.encrypt_overwrite_var.get()
+            hash_config = self.settings_tab.get_current_config()
+
+            # Validate inputs
+            if not input_file:
+                self.status_var.set("Error: No input file selected")
+                return False
+
+            if not password:
+                self.status_var.set("Error: Password is required")
+                return False
+
+            if password != confirm_password:
+                self.status_var.set("Error: Passwords do not match")
+                return False
+
+
+
+            # Prepare command
+            cmd = ["python", "crypt.py", "encrypt",
+                   "--input", input_file,
+                   "--output", output_file,
+                   "--password", password,
+                   "--algorithm", algorithm]
+
+            for key, value in hash_config.items():
+                if 'scrypt' == key:
+                    continue
+                elif 'scrypt_n' == key:
+                    cmd.extend(['--scrypt-n', str(value)])
+                elif 'scrypt_r' == key:
+                    cmd.extend(['--scrypt-r', str(value)])
+                elif 'scrypt_p' == key:
+                    cmd.extend(['--scrypt-p', str(value)])
+                elif 'argon2' == key:
+                    cmd.extend([f"--enable-argon2"])
+                elif 'sha3_256' == key:
+                    cmd.extend([f"--sha3-256-rounds", str(value)])
+                elif 'sha3_512' == key:
+                    cmd.extend([f"--sha3-512-rounds", str(value)])
+                elif 'sha256' == key:
+                    cmd.extend([f"--sha256-rounds", str(value)])
+                elif 'sha512' == key:
+                    cmd.extend([f"--sha512-rounds", str(value)])
+                elif 'pbkdf2_iterations' == key:
+                    cmd.extend([f"--pbkdf2-iterations", str(value)])
+                else:
+                    cmd.extend([f'--{key}', str(value)])
+
+            if not output_file and not should_overwrite:
+                # If no output file specified, use input file with .enc extension
+                cmd.extend([f'-- output', input_file + '.enc'])
+                self.encrypt_output_var.set(output_file)
+
+            if should_shred:
+                cmd.append("--shred")
+            if should_overwrite:
+                cmd.append("--overwrite")
+
+            # Update status
+            self.status_var.set(f"Encrypting file: {input_file}")
+            self.progress_var.set(0)
+            self.progress_bar["maximum"] = 100
+
+            try:
+                # Run the CLI command
+                self.run_command_with_progress(cmd)
+            except Exception as e:
+                self.status_var.set(f"Error: {str(e)}")
+                messagebox.showerror("Encryption Error", str(e))
+
+        except Exception as e:
+            self.status_var.set(f"Error: {str(e)}")
+            messagebox.showerror("Encryption Error", str(e))
+
+
     def setup_settings_tab(self):
         """Set up the encryption settings tab"""
         # Initialize the settings tab with the parent frame and a reference to this GUI instance
@@ -159,72 +244,145 @@ class CryptGUI:
 
     def setup_encrypt_tab(self):
         """Set up the encryption tab"""
-        frame = self.encrypt_frame
-        
-        # Input file
-        input_frame = ttk.LabelFrame(frame, text="Input File")
-        input_frame.pack(fill=tk.X, padx=10, pady=10)
-        
+        # Input group
+        input_group = ttk.LabelFrame(self.encrypt_frame, text="Input", padding=5)
+        input_group.pack(fill="x", padx=5, pady=5)
+
+        # Input file entry and browse button
+        input_frame = ttk.Frame(input_group)
+        input_frame.pack(fill="x", padx=5, pady=2)
+
         self.encrypt_input_var = tk.StringVar()
-        ttk.Entry(input_frame, textvariable=self.encrypt_input_var).pack(
-            side=tk.LEFT, fill=tk.X, expand=True, padx=5, pady=5)
-        ttk.Button(input_frame, text="Browse...", 
-                  command=lambda: self.browse_file(self.encrypt_input_var)).pack(
-                      side=tk.RIGHT, padx=5, pady=5)
-        
-        # Output file
-        output_frame = ttk.LabelFrame(frame, text="Output File")
-        output_frame.pack(fill=tk.X, padx=10, pady=10)
-        
+        input_entry = ttk.Entry(input_frame, textvariable=self.encrypt_input_var)
+        input_entry.pack(side="left", fill="x", expand=True)
+
+        browse_button = ttk.Button(
+            input_frame,
+            text="Browse",
+            command=lambda: self.browse_file(
+                self.encrypt_input_var, file_type="input"
+            )
+        )
+        browse_button.pack(side="right", padx=(5, 0))
+
+        # Output group
+        output_group = ttk.LabelFrame(self.encrypt_frame, text="Output", padding=5)
+        output_group.pack(fill="x", padx=5, pady=5)
+
+        # Output file entry and browse button
+        output_frame = ttk.Frame(output_group)
+        output_frame.pack(fill="x", padx=5, pady=2)
+
         self.encrypt_output_var = tk.StringVar()
-        ttk.Entry(output_frame, textvariable=self.encrypt_output_var).pack(
-            side=tk.LEFT, fill=tk.X, expand=True, padx=5, pady=5)
-        ttk.Button(output_frame, text="Browse...", 
-                  command=lambda: self.browse_file(self.encrypt_output_var, save=True)).pack(
-                      side=tk.RIGHT, padx=5, pady=5)
-        
-        # Password options
-        password_frame = ttk.LabelFrame(frame, text="Password")
-        password_frame.pack(fill=tk.X, padx=10, pady=10)
-        
+        output_entry = ttk.Entry(output_frame, textvariable=self.encrypt_output_var)
+        output_entry.pack(side="left", fill="x", expand=True)
+
+        browse_button = ttk.Button(
+            output_frame,
+            text="Browse",
+            command=lambda: self.browse_file(
+                self.encrypt_output_var, file_type="output"
+            )
+        )
+        browse_button.pack(side="right", padx=(5, 0))
+
+        # Password group
+        password_group = ttk.LabelFrame(self.encrypt_frame, text="Password", padding=5)
+        password_group.pack(fill="x", padx=5, pady=5)
+
+        # Password entry
         self.encrypt_password_var = tk.StringVar()
-        ttk.Label(password_frame, text="Password:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
-        password_entry = ttk.Entry(password_frame, textvariable=self.encrypt_password_var, show="*")
-        password_entry.grid(row=0, column=1, padx=5, pady=5, sticky=tk.EW)
-        
+        password_entry = ttk.Entry(
+            password_group, textvariable=self.encrypt_password_var, show="*"
+        )
+        password_entry.pack(fill="x", padx=5, pady=2)
+
+        # Confirm password entry
         self.encrypt_confirm_var = tk.StringVar()
-        ttk.Label(password_frame, text="Confirm:").grid(row=1, column=0, padx=5, pady=5, sticky=tk.W)
-        confirm_entry = ttk.Entry(password_frame, textvariable=self.encrypt_confirm_var, show="*")
-        confirm_entry.grid(row=1, column=1, padx=5, pady=5, sticky=tk.EW)
-        
-        # Add "Generate" button
-        ttk.Button(password_frame, text="Generate Password",
-                  command=self.generate_encrypt_password).grid(
-                      row=0, column=2, rowspan=2, padx=5, pady=5)
-        
-        password_frame.columnconfigure(1, weight=1)
-        
-        # Options 
-        options_frame = ttk.LabelFrame(frame, text="Options")
-        options_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        self.encrypt_overwrite_var = tk.BooleanVar()
-        ttk.Checkbutton(options_frame, text="Overwrite original file",
-                       variable=self.encrypt_overwrite_var).pack(anchor=tk.W, padx=5, pady=2)
-        
-        self.encrypt_shred_var = tk.BooleanVar()
-        ttk.Checkbutton(options_frame, text="Securely shred original file",
-                       variable=self.encrypt_shred_var).pack(anchor=tk.W, padx=5, pady=2)
-        
-        # Action button
-        button_frame = ttk.Frame(frame)
-        button_frame.pack(fill=tk.X, padx=10, pady=(20, 25))
-        
-        # Increased button height with more padding
-        encrypt_button = ttk.Button(button_frame, text="Encrypt", command=self.run_encrypt)
-        encrypt_button.pack(padx=5, pady=5)
-        self.style.configure("TButton", padding=[10, 8])  # Slightly increase button padding
-    
+        confirm_entry = ttk.Entry(
+            password_group, textvariable=self.encrypt_confirm_var, show="*"
+        )
+        confirm_entry.pack(fill="x", padx=5, pady=2)
+
+        # Algorithm group
+        algorithm_group = ttk.LabelFrame(self.encrypt_frame, text="Encryption Algorithm", padding=5)
+        algorithm_group.pack(fill="x", padx=5, pady=5)
+
+        # Create the dropdown menu
+        algorithms = [
+            ("fernet", "AES-128-CBC"),
+            ("aes-gcm", "AES-GCM"),
+            ("chacha20-poly1305", "ChaCha20Poly1305")
+        ]
+
+        self.encrypt_algorithm_var = tk.StringVar(value="fernet")  # default to fernet
+        algorithm_menu = ttk.OptionMenu(
+            algorithm_group,
+            self.encrypt_algorithm_var,
+            algorithms[0][0],  # default value
+            *[algo[0] for algo in algorithms],  # values
+            style="Custom.TMenubutton"
+        )
+        algorithm_menu.pack(fill="x", padx=5, pady=2)
+
+        # Add a label to show the full name
+        algorithm_label = ttk.Label(algorithm_group, text=algorithms[0][1])
+        self.encrypt_algorithm_var.trace('w', lambda *args: algorithm_label.configure(
+            text=dict(algorithms)[self.encrypt_algorithm_var.get()]
+        ))
+        algorithm_label.pack(fill="x", padx=5, pady=2)
+
+        # Options group
+        options_group = ttk.LabelFrame(self.encrypt_frame, text="Options", padding=5)
+        options_group.pack(fill="x", padx=5, pady=5)
+
+        # Overwrite existing file checkbox
+        self.encrypt_overwrite_var = tk.BooleanVar(value=False)
+        overwrite_check = ttk.Checkbutton(
+            options_group,
+            text="Overwrite existing file",
+            variable=self.encrypt_overwrite_var
+        )
+        overwrite_check.pack(fill="x", padx=5, pady=2)
+
+        # Shred original file checkbox
+        self.encrypt_shred_var = tk.BooleanVar(value=False)
+        shred_check = ttk.Checkbutton(
+            options_group,
+            text="Shred original file",
+            variable=self.encrypt_shred_var
+        )
+        shred_check.pack(fill="x", padx=5, pady=2)
+
+        # Button frame
+        button_frame = ttk.Frame(self.encrypt_frame)
+        button_frame.pack(fill="x", padx=5, pady=5)
+
+        # Encrypt button
+        encrypt_button = ttk.Button(
+            button_frame,
+            text="Encrypt",
+            command=lambda: self.root.after(
+                100, self.encrypt_file_wrapper
+            )
+        )
+        encrypt_button.pack(side="left", fill="x", expand=True, padx=5)
+
+        # Clear button
+        clear_button = ttk.Button(
+            button_frame,
+            text="Clear",
+            command=lambda: [
+                var.set('') for var in [
+                    self.encrypt_input_var,
+                    self.encrypt_output_var,
+                    self.encrypt_password_var,
+                    self.encrypt_confirm_var
+                ]
+            ]
+        )
+        clear_button.pack(side="left", fill="x", expand=True, padx=5)
+
     def setup_decrypt_tab(self):
         """Set up the decryption tab"""
         frame = self.decrypt_frame
@@ -400,7 +558,7 @@ class CryptGUI:
         ttk.Button(button_frame, text="Clear", 
                   command=self.clear_generated_password).pack(side=tk.LEFT, padx=5, pady=5)
     
-    def browse_file(self, string_var, save=False, multi=False):
+    def browse_file(self, string_var, save=False, multi=False, file_type=None):
         """Browse for a file and update the StringVar"""
         if save:
             filename = filedialog.asksaveasfilename()
