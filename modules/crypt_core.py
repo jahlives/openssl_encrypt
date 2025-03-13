@@ -648,9 +648,8 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
     use_argon2 = argon2_available
 
     # If hash_config has argon2 section with enabled explicitly set to False, honor that
-    if hash_config and 'argon2' in hash_config and 'enabled' in hash_config['argon2']:
-        use_argon2 = hash_config['argon2']['enabled']
-
+    #if hash_config and 'argon2' in hash_config and 'enabled' in hash_config['argon2']:
+    #    use_argon2 = hash_config['argon2']['enabled']
     if use_argon2:
         # Use Argon2 for key derivation
         if not quiet:
@@ -672,15 +671,27 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
             argon2_type = Type.ID
 
         try:
-            key = argon2.low_level.hash_secret_raw(
-                secret=hashed_password,  # Use the potentially hashed password
-                salt=salt,
-                time_cost=time_cost,
-                memory_cost=memory_cost,
-                parallelism=parallelism,
-                hash_len=hash_len,
-                type=argon2_type
-            )
+            if algorithm == EncryptionAlgorithm.FERNET.value:
+                key = base64.urlsafe_b64encode(
+                    argon2.low_level.hash_secret_raw(
+                    secret=hashed_password,  # Use the potentially hashed password
+                    salt=salt,
+                    time_cost=time_cost,
+                    memory_cost=memory_cost,
+                    parallelism=parallelism,
+                    hash_len=hash_len,
+                    type=argon2_type
+                ))
+            else:
+                key = argon2.low_level.hash_secret_raw(
+                    secret=hashed_password,  # Use the potentially hashed password
+                    salt=salt,
+                    time_cost=time_cost,
+                    memory_cost=memory_cost,
+                    parallelism=parallelism,
+                    hash_len=hash_len,
+                    type=argon2_type
+                )
 
             # Update hash_config to reflect that Argon2 was used
             if hash_config is None:
