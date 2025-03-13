@@ -9,7 +9,14 @@ Therefore I decided to do a complete rewrite in pure python also using modern ci
 
 ## Features
 
-- **Strong Encryption**: Uses Fernet symmetric encryption (AES-128-CBC) with secure key derivation
+- **Strong Encryption**: Uses Fernet symmetric encryption (AES-128-CBC) with secure key derivation \
+  Because of this "restriction" in Fernet
+  ```
+  Fernet is designed so that it doesn’t expose unauthenticated bytes. 
+  Because of this, the entire message contents must be able to fit in the available memory. 
+  This makes Fernet unsuitable for encrypting very large files.
+  ```
+  I started to implement "AES-GCM" and "ChaCha20" in the current dev branch
 - **Multi-hash Password Protection**: Optional layered hashing with SHA-256, SHA-512, SHA3-256, SHA3-512, Whirlpool, Scrypt and Argon2
 - **Password Management**: Password confirmation to prevent typos, random password generation, and standalone password generator
 - **File Integrity Verification**: Built-in hash verification to detect corrupted or tampered files
