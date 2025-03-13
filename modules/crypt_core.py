@@ -852,7 +852,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
         return hashed
 
 
-def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=0, quiet=False, use_secure_mem=True):
+def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=100000, quiet=False, use_secure_mem=True):
     """
     Generate a Fernet key from a password using multiple hash algorithms.
 
@@ -875,7 +875,6 @@ def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=0, qui
     if salt is None:
         # Generate a cryptographically secure random salt
         salt = os.urandom(16)
-
     # Default empty hash configuration if none provided
     if hash_config is None:
         hash_config = {
@@ -901,7 +900,6 @@ def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=0, qui
 
     # First apply our custom multi-hash function (if any hashing is enabled)
     hashed_password = multi_hash_password(password, salt, hash_config, quiet, use_secure_mem)
-    print(len(hashed_password))
 
     # Then use PBKDF2HMAC to derive the key
     if not quiet and pbkdf2_iterations > 10000:
@@ -952,24 +950,18 @@ def generate_key(password, salt=None, hash_config=None, pbkdf2_iterations=0, qui
                 backend=default_backend()
             )
             derived_key = kdf.derive(hashed_password)
-            #key = base64.urlsafe_b64encode(derived_key)
-            key = hashed_password
+            key = base64.urlsafe_b64encode(derived_key)
             return key
 
     # Only show progress for larger iteration counts
-    if pbkdf2_iterations > 10000 and not quiet:
+    if pbkdf2_iterations > 0 and not quiet:
         derived_key = with_progress_bar(
             do_pbkdf2,
             "PBKDF2 processing",
             quiet=quiet
         )
-    else:
-        if pbkdf2_iterations > 0:
-            derived_key = do_pbkdf2()
-            return derived_key, salt, hash_config
-        print(len(base64.b64decode(hashed_password)))
-        derived_key = hashed_password
-
+    hashed = hashlib.sha3_256(derived_key).digest()
+    derived_key = hashed
     return derived_key, salt, hash_config
 
 
@@ -989,13 +981,12 @@ def encrypt_with_algorithm(data, key, algorithm='fernet'):
         # Use original Fernet implementation
         from cryptography.fernet import Fernet
         f = Fernet(key)
-        return b'fernet:' + f.encrypt(data)
+        return f.encrypt(data)
 
     elif algorithm == 'aes-gcm':
         # AES-GCM implementation
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
         # For AES-GCM, we need a 256-bit key (32 bytes)
-        print(len(base64.b64decode(key)))
         if len(key) != 32:
             # Use the first 32 bytes or pad if needed
             key = key[:32] if len(key) > 32 else key.ljust(32, b'\0')
@@ -1008,7 +999,7 @@ def encrypt_with_algorithm(data, key, algorithm='fernet'):
         ciphertext = aesgcm.encrypt(nonce, data, None)  # No associated data
 
         # Return format: algorithm:nonce:ciphertext
-        return b'aes-gcm:' + nonce + b':' + ciphertext
+        return ciphertext
 
     elif algorithm == 'chacha20-poly1305':
         # ChaCha20-Poly1305 implementation
@@ -1026,7 +1017,7 @@ def encrypt_with_algorithm(data, key, algorithm='fernet'):
         ciphertext = chacha.encrypt(nonce, data, None)  # No associated data
 
         # Return format: algorithm:nonce:ciphertext
-        return b'chacha20-poly1305:' + nonce + b':' + ciphertext
+        return ciphertext
 
     else:
         raise ValueError(f"Unsupported encryption algorithm: {algorithm}")
@@ -1056,46 +1047,94 @@ def decrypt_with_algorithm(encrypted_data, key):
 
     # Now try with algorithm prefix parsing
     if b':' in encrypted_data:
-        parts = encrypted_data.split(b':', 2)
+        parts = encrypted_data.split(b':', 1)
         try:
-            if len(parts) >= 2:
-                algorithm = parts[1].decode('ascii')
-                print(len(parts))
-                print(f"algo " + algorithm)
+            if len(parts) == 2:
+                metadata = json.loads(base64.b64decode(parts[0]))
+                print(f"Parsed metadata: {metadata}")
+                algorithm, ciphertext = metadata['encryption_algorithm'], base64.b64decode(parts[1])
+                # Verify ciphertext hash
+                computed_hash = hashlib.sha256(ciphertext).hexdigest()
+                expected_hash = metadata['encrypted_hash']
+                print(f"Expected ciphertext hash: {expected_hash}")
+                print(f"Computed ciphertext hash: {computed_hash}")
+                print(f"Hashes match: {computed_hash == expected_hash}")
+
+                nonce = base64.b64decode(metadata['salt']) if isinstance(metadata['salt'], str) else metadata['salt']
+
                 if algorithm == 'fernet':
                     from cryptography.fernet import Fernet
                     f = Fernet(key)
-                    return f.decrypt(parts[2])
+                    return f.decrypt(parts[1])
 
-                elif algorithm == 'aes-gcm' and len(parts) == 3:
+                elif algorithm == 'aes-gcm' and len(parts) == 2:
                     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-                    metadata = json.loads(base64.b64decode(parts[0]))
-                    nonce, ciphertext = metadata['salt'], parts[2]
-                    try:
-                        print("Hello World")
-                        print(f"salt " + metadata['salt'])
-                        print(b"key " + key)
-                        print(b"encrypted " + parts[2])
-                        print(f"nonce " + nonce)
-                    except Exception as e:
-                        print(e)
 
-                    # Ensure key is the right size (32 bytes)
-                    #if len(key) != 32:
-                    #    print("Keylength")
-                    #    key = key[:32] if len(key) > 32 else key.ljust(32, b'\0')
-                    print(b"key " + key)
-                    print(len(key))
-                    try:
-                        aesgcm = AESGCM(key)
-                        return aesgcm.decrypt(nonce, ciphertext, None)
-                    except Exception as e:
-                        print(e)
+                    print("entering aes-gcm block")
 
-                elif algorithm == 'chacha20-poly1305' and len(parts) == 3:
+                    # Decode base64 encrypted data
+                    encrypted_bytes = base64.b64decode(parts[1])
+                    config_b64, encrypted_data = "eyJzYWx0IjogIjREMFk5Y3Rtbm80cjlmdlkxd1JKUGc9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMCwgInNoYTI1NiI6IDAsICJzaGEzXzI1NiI6IDAsICJzaGEzXzUxMiI6IDAsICJ3aGlybHBvb2wiOiAwLCAic2NyeXB0IjogeyJuIjogMCwgInIiOiA4LCAicCI6IDF9LCAiYXJnb24yIjogeyJlbmFibGVkIjogZmFsc2UsICJ0aW1lX2Nvc3QiOiAzLCAibWVtb3J5X2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgImhhc2hfbGVuIjogMzIsICJ0eXBlIjogMn0sICJwYmtkZjJfaXRlcmF0aW9ucyI6IDEwMDAwMCwgImVuY3J5cHRpb25fYWxnb3JpdGhtIjogImFlcy1nY20ifSwgInBia2RmMl9pdGVyYXRpb25zIjogMTAwMDAwLCAib3JpZ2luYWxfaGFzaCI6ICJkMmE4NGY0YjhiNjUwOTM3ZWM4ZjczY2Q4YmUyYzc0YWRkNWE5MTFiYTY0ZGYyNzQ1OGVkODIyOWRhODA0YTI2IiwgImVuY3J5cHRlZF9oYXNoIjogImZjMWE1ZmM4YWUyNmNlOWI2NWY4ZjVjMmM3ZDgzMjZlMGVhZWY4MWUxNGExNjRiOTk2ODMwNDU2OWU0YmQ4NzQiLCAiZW5jcnlwdGlvbl9hbGdvcml0aG0iOiAiYWVzLWdjbSJ9:r2v7f3CJ76JnwusadYLq2x3z/fYiBQva/9+NgA==".split(
+                        ":")
+
+                    # Parse config
+                    config = json.loads(base64.b64decode(config_b64))
+
+                    # Get salt and derive key
+                    salt = base64.b64decode(config['salt'])
+                    kdf = PBKDF2HMAC(
+                        algorithm=hashes.SHA256(),
+                        length=32,
+                        salt=salt,
+                        iterations=config['pbkdf2_iterations']
+                    )
+                    key = kdf.derive("1234".encode())
+                    key = hashlib.sha3_256(key).digest()
+
+                    # Decode encrypted data
+                    encrypted_bytes = base64.b64decode(encrypted_data)
+
+                    print(f"Salt: {salt.hex()}")
+                    print(f"Key: {key.hex()}")
+                    print(f"Encrypted data ({len(encrypted_bytes)} bytes): {encrypted_bytes.hex()}")
+
+                    # Try decryption with proper tag handling
+                    aesgcm = AESGCM(key)
+                    nonce = salt[:12]  # Use first 12 bytes of salt as nonce
+
+                    # Split data into ciphertext and tag
+                    ciphertext = encrypted_bytes[:-16]  # Everything except last 16 bytes
+                    tag = encrypted_bytes[-16:]  # Last 16 bytes
+
+                    print(f"\nTrying decryption with:")
+                    print(f"Nonce (12 bytes): {nonce.hex()}")
+                    print(f"Ciphertext ({len(ciphertext)} bytes): {ciphertext.hex()}")
+                    print(f"Tag (16 bytes): {tag.hex()}")
+
+                    try:
+                        # Combine ciphertext and tag for decryption
+                        decrypted = aesgcm.decrypt(nonce, encrypted_bytes, associated_data=None)
+                        print("\nSuccess!")
+                        print(f"Decrypted (hex): {decrypted.hex()}")
+                        try:
+                            print(f"Decrypted (utf-8): {decrypted.decode('utf-8')}")
+                        except UnicodeDecodeError:
+                            print("Could not decode as UTF-8")
+                    except Exception as e:
+                        print(f"Decryption failed: {repr(e)}")
+
+
+
+
+
+
+
+
+
+
+
+                elif algorithm == 'chacha20-poly1305' and len(parts) == 2:
                     from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-                    nonce, ciphertext = parts[1], parts[2]
-
                     # Ensure key is the right size (32 bytes)
                     if len(key) != 32:
                         key = key[:32] if len(key) > 32 else key.ljust(32, b'\0')
@@ -1104,21 +1143,26 @@ def decrypt_with_algorithm(encrypted_data, key):
                     return chacha.decrypt(nonce, ciphertext, None)
         except Exception as e:
             # If algorithm-specific decryption fails, continue to next approach
-            pass
+            print(e)
 
     # Final fallback: try forced approaches with specific algorithms
     # Try AES-GCM as last resort
     try:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+        print("entering default aes-gcm block")
         # Ensure key is the right size (32 bytes)
         key_32 = key[:32] if len(key) > 32 else key.ljust(32, b'\0')
 
         # Assume the first 12 bytes might be a nonce
         nonce = encrypted_data[:12]
         ciphertext = encrypted_data[12:]
+        print(f"fallback nonce length: {len(nonce)}")
+        print(f"fallback ciphertext length: {len(ciphertext)}")
         aesgcm = AESGCM(key_32)
         return aesgcm.decrypt(nonce, ciphertext, None)
-    except Exception:
+    except Exception as e:
+        print(f"Fallback decryption error: {repr(e)}")
         pass
 
     # Try ChaCha20-Poly1305 as last resort
@@ -1225,7 +1269,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         print(f"Writing encrypted file: {output_file}")
 
     with open(output_file, 'wb') as file:
-        file.write(metadata_base64 + b':' + str.encode(encryption_algorithm) + b":" + base64.b64encode(encrypted_data))
+        file.write(metadata_base64 + b':' + base64.b64encode(encrypted_data))
 
     # Set secure permissions on the output file
     set_secure_permissions(output_file)
@@ -1259,8 +1303,8 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
             content = file.read()
 
         # Extract the metadata and encrypted data
-        parts = content.split(b':', 2)
-        if len(parts) != 3:
+        parts = content.split(b':', 1)
+        if len(parts) != 2:
             if not quiet:
                 print("Warning: File doesn't contain standard metadata format. Attempting legacy decryption.")
             # Try direct decryption for legacy files
@@ -1280,7 +1324,7 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
             except Exception as e:
                 raise ValueError(f"Legacy decryption failed: {e}")
 
-        metadata_base64, algorithm, data = parts
+        metadata_base64, data = parts
 
         # Decode the metadata
         try:
@@ -1316,8 +1360,8 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
         try:
             if not quiet:
                 print(f"Decrypting content using {encryption_algorithm}...")
-            #print (parts[0] + b":" + parts[1] +b":" + base64.b64encode(parts[2]))
-            encrypted_data = parts[0] + b":" + parts[1] +b":" + parts[2]
+            encrypted_data = parts[0] + b":" + parts[1]
+            print(encrypted_data)
             decrypted_data = decrypt_with_algorithm(encrypted_data, key)
 
         except Exception as decrypt_err:
