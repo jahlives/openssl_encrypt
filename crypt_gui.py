@@ -61,7 +61,7 @@ class CryptGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Secure File Encryption Tool")
-        self.root.geometry("650x580")
+        self.root.geometry("650x1200")
         self.root.minsize(650, 580)
 
         # Configure style
@@ -106,15 +106,18 @@ class CryptGUI:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.output_text.config(yscrollcommand=scrollbar.set)
 
+        # Button frame for Clear and Copy buttons
+        button_frame = ttk.Frame(root)
+        button_frame.pack(fill=tk.X, padx=10, pady=5)
+
         # Clear button for output
-        clear_button = ttk.Button(self.output_frame, text="Clear Output",
+        clear_button = ttk.Button(button_frame, text="Clear Output",
                                   command=lambda: self.output_text.delete(1.0, tk.END))
-        clear_button.pack(pady=5)
+        clear_button.pack(side=tk.LEFT, padx=5)
 
-        button_frame = ttk.Frame(self.output_frame)
-        button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=5)
-
-        copy_button = ttk.Button(button_frame, text="Copy to Clipboard", command=self.copy_to_clipboard)
+        # Copy to clipboard button
+        copy_button = ttk.Button(button_frame, text="Copy to Clipboard",
+                                 command=self.copy_to_clipboard)
         copy_button.pack(side=tk.LEFT, padx=5)
 
         # Status bar at the bottom
@@ -152,16 +155,8 @@ class CryptGUI:
 
     def copy_to_clipboard(self):
         """Copy the contents of the output text widget to clipboard"""
-        self.root.clipboard_append(text_content)  # Add the text to clipboard
+        self.root.clipboard_append(output_text)  # Add the text to clipboard
         self.root.update()  # Make sure the clipboard content is available after the function returns
-
-    def encrypt_file_wrapper(self):
-        try:
-            self.run_encrypt()
-        except Exception as e:
-            self.status_var.set(f"Error: {str(e)}")
-            messagebox.showerror("Encryption Error", str(e))
-
 
     def setup_settings_tab(self):
         """Set up the encryption settings tab"""
@@ -298,7 +293,7 @@ class CryptGUI:
             button_frame,
             text="Encrypt",
             command=lambda: self.root.after(
-                100, self.encrypt_file_wrapper
+                100, self.run_encrypt
             )
         )
         encrypt_button.pack(side="left", fill="x", expand=True, padx=5)
@@ -369,12 +364,35 @@ class CryptGUI:
         self.decrypt_shred_var = tk.BooleanVar()
         ttk.Checkbutton(options_frame, text="Securely shred encrypted file after decryption",
                        variable=self.decrypt_shred_var).pack(anchor=tk.W, padx=5, pady=2)
-        
-        # Action button
-        button_frame = ttk.Frame(frame)
-        button_frame.pack(fill=tk.X, padx=10, pady=20)
-        
-        ttk.Button(button_frame, text="Decrypt", command=self.run_decrypt).pack(padx=5, pady=5)
+
+        # Button frame
+        button_frame = ttk.Frame(self.decrypt_frame)
+        button_frame.pack(fill="x", padx=5, pady=5)
+
+        # Encrypt button
+        decrypt_button = ttk.Button(
+            button_frame,
+            text="Decrypt",
+            command=lambda: self.root.after(
+                100, self.run_decrypt
+            )
+        )
+        decrypt_button.pack(side="left", fill="x", expand=True, padx=5)
+
+        # Clear button
+        clear_button = ttk.Button(
+            button_frame,
+            text="Clear",
+            command=lambda: [
+                var.set('') for var in [
+                    self.encrypt_input_var,
+                    self.encrypt_output_var,
+                    self.encrypt_password_var,
+                    self.encrypt_confirm_var
+                ]
+            ]
+        )
+        clear_button.pack(side="left", fill="x", expand=True, padx=5)
     
     def setup_shred_tab(self):
         """Set up the secure shredding tab"""
