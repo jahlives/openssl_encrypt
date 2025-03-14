@@ -1065,46 +1065,6 @@ class CryptGUI:
         # Add password
         cmd.extend(["-p", password])
 
-        # Add individual hash configuration parameters
-        if hash_config:
-            # Iterative hash algorithms
-            if hash_config.get('sha512', 0) > 0:
-                cmd.extend(["--sha512-rounds", str(hash_config['sha512'])])
-
-            if hash_config.get('sha256', 0) > 0:
-                cmd.extend(["--sha256-rounds", str(hash_config['sha256'])])
-
-            if hash_config.get('sha3_256', 0) > 0:
-                cmd.extend(["--sha3-256-rounds", str(hash_config['sha3_256'])])
-
-            if hash_config.get('sha3_512', 0) > 0:
-                cmd.extend(["--sha3-512-rounds", str(hash_config['sha3_512'])])
-
-            if hash_config.get('whirlpool', 0) > 0:
-                cmd.extend(["--whirlpool-rounds", str(hash_config['whirlpool'])])
-
-            # PBKDF2 iterations
-            cmd.extend(["--pbkdf2-iterations", str(hash_config['pbkdf2_iterations'])])
-
-            # Scrypt parameters
-            if hash_config['scrypt']['n'] > 0:
-                cmd.extend([
-                    "--scrypt-n", str(hash_config['scrypt']['n']),
-                    "--scrypt-r", str(hash_config['scrypt']['r']),
-                    "--scrypt-p", str(hash_config['scrypt']['p'])
-                ])
-
-            # Argon2 parameters
-            if hash_config['argon2']['enabled']:
-                cmd.extend([
-                    "--enable-argon2",
-                    "--argon2-time", str(hash_config['argon2']['time_cost']),
-                    "--argon2-memory", str(hash_config['argon2']['memory_cost']),
-                    "--argon2-parallelism", str(hash_config['argon2']['parallelism']),
-                    "--argon2-hash-len", str(hash_config['argon2']['hash_len']),
-                    "--argon2-type", hash_config['argon2']['type']
-                ])
-
         # Run the command
         self.output_text.insert(tk.END, f" ".join(cmd) + "\n")
         self.output_text.see(tk.END)  # Scroll to the bottom
