@@ -7,6 +7,7 @@ This can replace or supplement crypt_gui.py if it's not working.
 import os
 import sys
 import tkinter as tk
+from time import sleep
 from tkinter import ttk, filedialog, messagebox, simpledialog
 import subprocess
 import threading
@@ -109,7 +110,13 @@ class CryptGUI:
         clear_button = ttk.Button(self.output_frame, text="Clear Output",
                                   command=lambda: self.output_text.delete(1.0, tk.END))
         clear_button.pack(pady=5)
-        
+
+        button_frame = ttk.Frame(self.output_frame)
+        button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=5)
+
+        copy_button = ttk.Button(button_frame, text="Copy to Clipboard", command=self.copy_to_clipboard)
+        copy_button.pack(side=tk.LEFT, padx=5)
+
         # Status bar at the bottom
         self.status_var = tk.StringVar()
         self.status_var.set("Ready")
@@ -143,86 +150,14 @@ class CryptGUI:
         # Center the window
         self.center_window()
 
+    def copy_to_clipboard(self):
+        """Copy the contents of the output text widget to clipboard"""
+        self.root.clipboard_append(text_content)  # Add the text to clipboard
+        self.root.update()  # Make sure the clipboard content is available after the function returns
+
     def encrypt_file_wrapper(self):
         try:
-            # Get input values
-            input_file = self.encrypt_input_var.get()
-            output_file = self.encrypt_output_var.get()
-            password = self.encrypt_password_var.get()
-            confirm_password = self.encrypt_confirm_var.get()
-            algorithm = self.encrypt_algorithm_var.get()
-            should_shred = self.encrypt_shred_var.get()
-            should_overwrite = self.encrypt_overwrite_var.get()
-            hash_config = self.settings_tab.get_current_config()
-
-            # Validate inputs
-            if not input_file:
-                self.status_var.set("Error: No input file selected")
-                return False
-
-            if not password:
-                self.status_var.set("Error: Password is required")
-                return False
-
-            if password != confirm_password:
-                self.status_var.set("Error: Passwords do not match")
-                return False
-
-
-
-            # Prepare command
-            cmd = ["python", "crypt.py", "encrypt",
-                   "--input", input_file,
-                   "--output", output_file,
-                   "--password", password,
-                   "--algorithm", algorithm]
-
-            for key, value in hash_config.items():
-                if 'scrypt' == key:
-                    continue
-                elif 'scrypt_n' == key:
-                    cmd.extend(['--scrypt-n', str(value)])
-                elif 'scrypt_r' == key:
-                    cmd.extend(['--scrypt-r', str(value)])
-                elif 'scrypt_p' == key:
-                    cmd.extend(['--scrypt-p', str(value)])
-                elif 'argon2' == key:
-                    cmd.extend([f"--enable-argon2"])
-                elif 'sha3_256' == key:
-                    cmd.extend([f"--sha3-256-rounds", str(value)])
-                elif 'sha3_512' == key:
-                    cmd.extend([f"--sha3-512-rounds", str(value)])
-                elif 'sha256' == key:
-                    cmd.extend([f"--sha256-rounds", str(value)])
-                elif 'sha512' == key:
-                    cmd.extend([f"--sha512-rounds", str(value)])
-                elif 'pbkdf2_iterations' == key:
-                    cmd.extend([f"--pbkdf2-iterations", str(value)])
-                else:
-                    cmd.extend([f'--{key}', str(value)])
-
-            if not output_file and not should_overwrite:
-                # If no output file specified, use input file with .enc extension
-                cmd.extend([f'-- output', input_file + '.enc'])
-                self.encrypt_output_var.set(output_file)
-
-            if should_shred:
-                cmd.append("--shred")
-            if should_overwrite:
-                cmd.append("--overwrite")
-
-            # Update status
-            self.status_var.set(f"Encrypting file: {input_file}")
-            self.progress_var.set(0)
-            self.progress_bar["maximum"] = 100
-
-            try:
-                # Run the CLI command
-                self.run_command_with_progress(cmd)
-            except Exception as e:
-                self.status_var.set(f"Error: {str(e)}")
-                messagebox.showerror("Encryption Error", str(e))
-
+            self.run_encrypt()
         except Exception as e:
             self.status_var.set(f"Error: {str(e)}")
             messagebox.showerror("Encryption Error", str(e))
@@ -966,6 +901,8 @@ class CryptGUI:
 
     def run_encrypt(self):
         """Run the encryption command"""
+        self.output_text.delete('1.0', tk.END)  # Clear output before starting
+        self.root.update_idletasks()
         input_file = self.encrypt_input_var.get()
         if not input_file:
             messagebox.showerror("Error", "Please select an input file.")
@@ -989,7 +926,7 @@ class CryptGUI:
 
         # Get current hash configuration and encryption algorithm
         hash_config = self.settings_tab.get_current_config()
-        encryption_algorithm = hash_config.get('encryption_algorithm', 'fernet')
+        encryption_algorithm = self.encrypt_algorithm_var.get()
 
         # Build the command
         cmd = [sys.executable, "crypt.py", "encrypt", "-i", input_file]
@@ -1050,10 +987,48 @@ class CryptGUI:
                 ])
 
         # Run the command
-        self.run_command_with_progress(cmd)
+        self.output_text.insert(tk.END, f" ".join(cmd) + "\n")
+        self.output_text.see(tk.END)  # Scroll to the bottom
+        self.root.update_idletasks()
+        try:
+            self.disable_buttons()
+            self.run_command_with_progress(cmd)
+            self.enable_buttons()
+        finally:
+            self.enable_buttons()
+
+    def disable_buttons(self):
+        """Disable all buttons during processing"""
+        # Find all buttons and disable them
+        for child in self.root.winfo_children():
+            self._disable_widget_recursive(child)
+
+    def enable_buttons(self):
+        """Re-enable all buttons after processing"""
+        # Find all buttons and enable them
+        for child in self.root.winfo_children():
+            self._enable_widget_recursive(child)
+
+    def _disable_widget_recursive(self, widget):
+        """Recursively disable all buttons in a widget"""
+        if isinstance(widget, (ttk.Button, tk.Button)):
+            widget['state'] = 'disabled'
+        # Also check child widgets (for frames, notebooks, etc)
+        for child in widget.winfo_children():
+            self._disable_widget_recursive(child)
+
+    def _enable_widget_recursive(self, widget):
+        """Recursively enable all buttons in a widget"""
+        if isinstance(widget, (ttk.Button, tk.Button)):
+            widget['state'] = 'normal'
+        # Also check child widgets (for frames, notebooks, etc)
+        for child in widget.winfo_children():
+            self._enable_widget_recursive(child)
 
     def run_decrypt(self):
         """Run the decryption command"""
+        self.output_text.delete('1.0', tk.END)  # Clear output before starting
+        self.root.update_idletasks()
         input_file = self.decrypt_input_var.get()
         if not input_file:
             messagebox.showerror("Error", "Please select an input file.")
@@ -1131,7 +1106,15 @@ class CryptGUI:
                 ])
 
         # Run the command
-        self.run_command_with_progress(cmd, show_output=show_output)
+        self.output_text.insert(tk.END, f" ".join(cmd) + "\n")
+        self.output_text.see(tk.END)  # Scroll to the bottom
+        self.root.update_idletasks()
+        try:
+            self.disable_buttons()
+            self.run_command_with_progress(cmd, show_output=show_output)
+            self.enable_buttons()
+        finally:
+            self.enable_buttons()
     
     def run_shred(self):
         """Run the shred command"""
