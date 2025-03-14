@@ -27,6 +27,6 @@ locally before encrypting important files. Better safe than sorry ;-)
 pip install pytest
 pytest unittests/unittests.pytest
 ```
-They all must pass or else open an issue here :-) \
+They all must pass or [else open an issue here](mailto:tobster+world-openssl-encrypt-2-issue-+gitlab@brain-force.ch) :-) \
 Another recommendation is to avoid the `--overwrite` parameter first when encrypting \
 and verify first that the file can be decrypted
