@@ -16,7 +16,7 @@ Therefore I decided to do a complete rewrite in pure python also using modern ci
   Because of this, the entire message contents must be able to fit in the available memory. 
   This makes Fernet unsuitable for encrypting very large files.
   ```
-  I started to implement "AES-GCM" and "ChaCha20" in the current dev branch
+  therefore "AES-GCM" and "ChaCha20" are now available in the final [release candidate](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/v1.0-rc-4-final)
 - **Multi-hash Password Protection**: Optional layered hashing with SHA-256, SHA-512, SHA3-256, SHA3-512, Whirlpool, Scrypt and Argon2
 - **Password Management**: Password confirmation to prevent typos, random password generation, and standalone password generator
 - **File Integrity Verification**: Built-in hash verification to detect corrupted or tampered files
