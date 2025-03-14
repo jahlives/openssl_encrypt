@@ -360,37 +360,47 @@ class TestCryptCore(unittest.TestCase):
     def test_multi_hash_password(self):
         """Test multi-hash password function with various algorithms."""
         salt = os.urandom(16)
-        
+
         # Test with SHA-256
         config1 = {**self.basic_hash_config, 'sha256': 100}
         hashed1 = multi_hash_password(self.test_password, salt, config1, quiet=True)
         self.assertIsNotNone(hashed1)
+        hashed2 = multi_hash_password(self.test_password, salt, config1, quiet=True)
+        self.assertEqual(hashed1, hashed2)
         
         # Test with SHA-512
         config2 = {**self.basic_hash_config, 'sha512': 100}
-        hashed2 = multi_hash_password(self.test_password, salt, config2, quiet=True)
-        self.assertIsNotNone(hashed2)
+        hashed3 = multi_hash_password(self.test_password, salt, config2, quiet=True)
+        self.assertIsNotNone(hashed3)
+        hashed4 = multi_hash_password(self.test_password, salt, config2, quiet=True)
+        self.assertEqual(hashed3, hashed4)
         
         # Results should be different
-        self.assertNotEqual(hashed1, hashed2)
+        self.assertNotEqual(hashed1, hashed3)
         
         # Test with SHA3-256 if available
         config3 = {**self.basic_hash_config, 'sha3_256': 100}
-        hashed3 = multi_hash_password(self.test_password, salt, config3, quiet=True)
-        self.assertIsNotNone(hashed3)
+        hashed5 = multi_hash_password(self.test_password, salt, config3, quiet=True)
+        self.assertIsNotNone(hashed5)
+        hashed6 = multi_hash_password(self.test_password, salt, config3, quiet=True)
+        self.assertEqual(hashed5, hashed6)
         
         # Test with Scrypt
         config4 = {**self.basic_hash_config}
         config4['scrypt']['n'] = 1024  # Low value for testing
-        hashed4 = multi_hash_password(self.test_password, salt, config4, quiet=True)
-        self.assertIsNotNone(hashed4)
+        hashed7 = multi_hash_password(self.test_password, salt, config4, quiet=True)
+        self.assertIsNotNone(hashed7)
+        hashed8 = multi_hash_password(self.test_password, salt, config4, quiet=True)
+        self.assertEqual(hashed7, hashed8)
         
         # Test with Argon2 if available
         if ARGON2_AVAILABLE:
             config5 = {**self.basic_hash_config}
             config5['argon2']['enabled'] = True
-            hashed5 = multi_hash_password(self.test_password, salt, config5, quiet=True)
-            self.assertIsNotNone(hashed5)
+            hashed9 = multi_hash_password(self.test_password, salt, config5, quiet=True)
+            self.assertIsNotNone(hashed9)
+            hashed10 = multi_hash_password(self.test_password, salt, config5, quiet=True)
+            self.assertEqual(hashed9, hashed10)
 
     def test_existing_decryption(self):
         for type in ['fernet']:
