@@ -89,11 +89,11 @@ class TestCryptCore(unittest.TestCase):
                 'p': 1
             },
             'argon2': {
-                'enabled': ARGON2_AVAILABLE,
+                'enabled': True,
                 'time_cost': 1,  # Low time cost for tests
                 'memory_cost': 8192,  # Lower memory for tests
                 'parallelism': 1,
-                'hash_len': 16,
+                'hash_len': 32,
                 'type': 2  # Argon2id
             },
             'pbkdf2_iterations': 1000  # Use low value for faster tests
@@ -239,11 +239,11 @@ class TestCryptCore(unittest.TestCase):
                 'p': 1
             },
             'argon2': {
-                'enabled': False,  # Disable Argon2 for this test to simplify
+                'enabled': True,  # Disable Argon2 for this test to simplify
                 'time_cost': 1,
                 'memory_cost': 8192,
                 'parallelism': 1,
-                'hash_len': 16,
+                'hash_len': 32,
                 'type': 2
             },
             'pbkdf2_iterations': 1000  # Reduced for testing
@@ -343,59 +343,79 @@ class TestCryptCore(unittest.TestCase):
             self.test_password, salt, self.basic_hash_config,
             pbkdf2_iterations=1000, quiet=True
         )
+        key2, _, _ = generate_key(
+            self.test_password, salt, self.basic_hash_config,
+            pbkdf2_iterations=1000, quiet=True
+        )
         self.assertIsNotNone(key1)
+        self.assertEqual(key1, key2)
         
         # Test with stronger configuration
         if ARGON2_AVAILABLE:
-            key2, _, _ = generate_key(
+            key3, _, _ = generate_key(
                 self.test_password, salt, self.strong_hash_config,
                 pbkdf2_iterations=1000, quiet=True
             )
-            self.assertIsNotNone(key2)
+            key4, _, _ = generate_key(
+                self.test_password, salt, self.strong_hash_config,
+                pbkdf2_iterations=1000, quiet=True
+            )
+            self.assertIsNotNone(key3)
+            self.assertEqual(key3, key4)
             
             # Keys should be different with different configs
             if ARGON2_AVAILABLE and self.strong_hash_config['argon2']['enabled']:
-                self.assertNotEqual(key1, key2)
+                self.assertNotEqual(key1, key3)
 
     def test_multi_hash_password(self):
         """Test multi-hash password function with various algorithms."""
         salt = os.urandom(16)
-        
+
         # Test with SHA-256
         config1 = {**self.basic_hash_config, 'sha256': 100}
         hashed1 = multi_hash_password(self.test_password, salt, config1, quiet=True)
         self.assertIsNotNone(hashed1)
+        hashed2 = multi_hash_password(self.test_password, salt, config1, quiet=True)
+        self.assertEqual(hashed1, hashed2)
         
         # Test with SHA-512
         config2 = {**self.basic_hash_config, 'sha512': 100}
-        hashed2 = multi_hash_password(self.test_password, salt, config2, quiet=True)
-        self.assertIsNotNone(hashed2)
+        hashed3 = multi_hash_password(self.test_password, salt, config2, quiet=True)
+        self.assertIsNotNone(hashed3)
+        hashed4 = multi_hash_password(self.test_password, salt, config2, quiet=True)
+        self.assertEqual(hashed3, hashed4)
         
         # Results should be different
-        self.assertNotEqual(hashed1, hashed2)
+        self.assertNotEqual(hashed1, hashed3)
         
         # Test with SHA3-256 if available
         config3 = {**self.basic_hash_config, 'sha3_256': 100}
-        hashed3 = multi_hash_password(self.test_password, salt, config3, quiet=True)
-        self.assertIsNotNone(hashed3)
+        hashed5 = multi_hash_password(self.test_password, salt, config3, quiet=True)
+        self.assertIsNotNone(hashed5)
+        hashed6 = multi_hash_password(self.test_password, salt, config3, quiet=True)
+        self.assertEqual(hashed5, hashed6)
         
         # Test with Scrypt
         config4 = {**self.basic_hash_config}
         config4['scrypt']['n'] = 1024  # Low value for testing
-        hashed4 = multi_hash_password(self.test_password, salt, config4, quiet=True)
-        self.assertIsNotNone(hashed4)
+        hashed7 = multi_hash_password(self.test_password, salt, config4, quiet=True)
+        self.assertIsNotNone(hashed7)
+        hashed8 = multi_hash_password(self.test_password, salt, config4, quiet=True)
+        self.assertEqual(hashed7, hashed8)
         
         # Test with Argon2 if available
         if ARGON2_AVAILABLE:
             config5 = {**self.basic_hash_config}
             config5['argon2']['enabled'] = True
-            hashed5 = multi_hash_password(self.test_password, salt, config5, quiet=True)
-            self.assertIsNotNone(hashed5)
+            hashed9 = multi_hash_password(self.test_password, salt, config5, quiet=True)
+            self.assertIsNotNone(hashed9)
+            hashed10 = multi_hash_password(self.test_password, salt, config5, quiet=True)
+            self.assertEqual(hashed9, hashed10)
 
     def test_existing_decryption(self):
-        for type in ['fernet']:
+        for type in ['fernet','aes-gcm','chacha20-poly1305']:
             try:
-                decrypted_data = decrypt_file(input_file="./test/test1_" + type + ".txt", output_file=None, password=b"1234")
+                decrypted_data = decrypt_file(input_file="./unittests/test1_" + type + ".txt", output_file=None, password=b"1234")
                 print(f"\nDecryption result: {decrypted_data}")
 
                 # Only assert if we actually got data back
@@ -405,9 +425,9 @@ class TestCryptCore(unittest.TestCase):
                 self.assertEqual(decrypted_data, b'Hello World\n')
 
             except Exception as e:
-                print(f"\nDecryption failed: {str(e)}")
+                print(f"\nDecryption failed for {type}: {str(e)}")
                 # Re-raise the exception to make the test fail
-                raise AssertionError(f"Decryption failed: {str(e)}")
+                raise AssertionError(f"Decryption failed for {type}: {str(e)}")
 
 
 class TestCryptUtils(unittest.TestCase):
