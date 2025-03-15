@@ -242,7 +242,8 @@ class CryptGUI:
         algorithms = [
             ("fernet", "AES-128-CBC"),
             ("aes-gcm", "AES-GCM"),
-            ("chacha20-poly1305", "ChaCha20Poly1305")
+            ("chacha20-poly1305", "ChaCha20Poly1305"),
+            ("aes-siv", "AES-SIV")
         ]
 
         self.encrypt_algorithm_var = tk.StringVar(value="fernet")  # default to fernet
