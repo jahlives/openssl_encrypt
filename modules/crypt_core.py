@@ -806,7 +806,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                 return nonce + cipher.encrypt(nonce[:12], data, None)
             elif algorithm == EncryptionAlgorithm.AES_SIV:
                 cipher = AESSIV(key)
-                return nonce + cipher.encrypt(data + nonce[:12], None)
+                return nonce[:12] + cipher.encrypt(data, None)
             elif algorithm == EncryptionAlgorithm.CHACHA20_POLY1305:  # ChaCha20-Poly1305
                 cipher = ChaCha20Poly1305(key)
                 return nonce + cipher.encrypt(nonce[:12], data, None)
@@ -939,7 +939,7 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
                 return cipher.decrypt(nonce[:12], ciphertext, None)
             elif algorithm == EncryptionAlgorithm.AES_SIV.value:
                 cipher = AESSIV(key)
-                return cipher.decrypt(encrypted_data, None)
+                return cipher.decrypt(encrypted_data[12:], None)
             else:
                 raise ValueError(f"Unsupported encryption algorithm: {algorithm}")
 
