@@ -21,7 +21,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305, AESSIV
 
 
 # Try to import optional dependencies
@@ -69,6 +69,7 @@ class EncryptionAlgorithm(Enum):
     FERNET = "fernet"
     AES_GCM = "aes-gcm"
     CHACHA20_POLY1305 = "chacha20-poly1305"
+    AES_SIV = "aes-siv"
 
 def check_argon2_support():
     """
@@ -622,6 +623,8 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
         key_length = 32  # AES-256-GCM requires 32 bytes
     elif algorithm == EncryptionAlgorithm.CHACHA20_POLY1305.value:
         key_length = 32  # ChaCha20-Poly1305 requires 32 bytes
+    elif algorithm == EncryptionAlgorithm.AES_SIV.value:
+        key_length = 64
     else:
         raise ValueError(f"Unsupported algorithm: {algorithm}")
 
@@ -798,13 +801,18 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         else:
             # Generate a random nonce
             nonce = os.urandom(16)  # 16 bytes for AES-GCM and ChaCha20-Poly1305
-
             if algorithm == EncryptionAlgorithm.AES_GCM:
                 cipher = AESGCM(key)
                 return nonce + cipher.encrypt(nonce[:12], data, None)
-            else:  # ChaCha20-Poly1305
+            elif algorithm == EncryptionAlgorithm.AES_SIV:
+                cipher = AESSIV(key)
+                return nonce[:12] + cipher.encrypt(data, None)
+            elif algorithm == EncryptionAlgorithm.CHACHA20_POLY1305:  # ChaCha20-Poly1305
                 cipher = ChaCha20Poly1305(key)
                 return nonce + cipher.encrypt(nonce[:12], data, None)
+            else:
+                print(f"Unknown algorithm " + algorithm.value + f"supplied")
+                return false
 
     # Only show progress for larger files (> 1MB)
     if len(data) > 1024 * 1024 and not quiet:
@@ -929,6 +937,9 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
             elif algorithm == EncryptionAlgorithm.CHACHA20_POLY1305.value:
                 cipher = ChaCha20Poly1305(key)
                 return cipher.decrypt(nonce[:12], ciphertext, None)
+            elif algorithm == EncryptionAlgorithm.AES_SIV.value:
+                cipher = AESSIV(key)
+                return cipher.decrypt(encrypted_data[12:], None)
             else:
                 raise ValueError(f"Unsupported encryption algorithm: {algorithm}")
 
