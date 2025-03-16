@@ -243,12 +243,12 @@ def main():
         action='store_true',
         help='Use Scrypt password hashing (requires scrypt package)'
     )
-    scrypt_group.add_argument(
-        'scrypt-rounds',
-        type=int,
-        default=0,
-        help='round of iterated scrypt hashes (default: 0)'
-    )
+    # scrypt_group.add_argument(
+    #     'scrypt-rounds',
+    #     type=int,
+    #     default=0,
+    #     help='round of iterated scrypt hashes (default: 0)'
+    # )
     scrypt_group.add_argument(
         '--scrypt-n',
         type=int,
