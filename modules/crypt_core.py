@@ -22,6 +22,8 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305, AESSIV
+import bcrypt
+
 
 
 # Try to import optional dependencies
@@ -387,6 +389,31 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                                     secure_memcpy(hashed, hash_buffer)
                                     show_progress("SHA-512 (fallback)", i + 1, params)
 
+                    elif algorithm == 'bcrypt' and params.get('rounds', 0) > 0:
+                        if not quiet:
+                            print(f"Applying bcrypt with rounds={params['rounds']}...")
+
+                        def do_bcrypt():
+
+                            # Create a temporary secure buffer for the result
+                            with secure_buffer(60, zero=False) as bcrypt_result:
+                                for i in range(params['rounds']):
+                                    # Generate new salt for each iteration
+                                    current_salt = bcrypt.gensalt()
+                                    result = bcrypt.hashpw(bytes(hashed), current_salt)
+
+                                    # Update the buffers
+                                    secure_memcpy(hash_buffer, result)
+                                    secure_memcpy(result, hash_buffer)
+                                    show_progress("Bcrypt", i + 1, params['rounds'])
+
+                        # Run bcrypt with progress bar
+                        hashed = with_progress_bar(
+                            do_bcrypt,
+                            "Bcrypt processing",
+                            quiet=quiet
+                        )
+
                     elif algorithm == 'scrypt' and params.get('n', 0) > 0:
                         # Apply scrypt with provided parameters
                         if not quiet:
@@ -424,6 +451,8 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                             "Scrypt processing",
                             quiet=quiet
                         )
+
+
 
                     elif algorithm == 'argon2' and params.get('enabled', False) and ARGON2_AVAILABLE:
                         # Apply Argon2 with provided parameters
@@ -539,6 +568,17 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                     for i in range(params):
                         hashed = hashlib.sha512(hashed).digest()
                         show_progress("SHA-512 (fallback)", i + 1, params)
+
+            elif algorithm == 'bcrypt' and params.get('rounds', 0) > 0:
+                if not quiet:
+                    print(f"Applying {params['rounds']} rounds of bcrypt...")
+
+                for i in range(params['rounds']):
+                    # Generate new salt for each iteration
+                    current_salt = bcrypt.gensalt()
+                    hashed = bcrypt.hashpw(hashed, current_salt)
+                    show_progress("Bcrypt", i + 1, params['rounds'])
+                return hashed
 
             elif algorithm == 'scrypt' and params.get('n', 0) > 0:
                 # Apply scrypt with provided parameters
