@@ -223,9 +223,32 @@ def main():
         default=100000,
         help='Number of PBKDF2 iterations (default: 100000)'
     )
-
+    # Bcrypt parameters group
+    bcrypt_group = parser.add_argument_group('Bcrypt Options', 'Configure Bcrypt memory-hard function parameters')
+    bcrypt_group.add_argument(
+        '--enable-bcrypt',
+        action='store_true',
+        help='Use Bcrypt password hashing (requires bcrypt package)'
+    )
+    bcrypt_group.add_argument(
+        '--bcrypt-rounds',
+        type=int,
+        default=0,
+        help='Number of rounds for Bcrypt (default: 0)'
+    )
     # Scrypt parameters group - updated to match the template naming
     scrypt_group = parser.add_argument_group('Scrypt Options', 'Configure Scrypt memory-hard function parameters')
+    scrypt_group.add_argument(
+        '--enable-scrypt',
+        action='store_true',
+        help='Use Scrypt password hashing (requires scrypt package)'
+    )
+    scrypt_group.add_argument(
+        'scrypt-rounds',
+        type=int,
+        default=0,
+        help='round of iterated scrypt hashes (default: 0)'
+    )
     scrypt_group.add_argument(
         '--scrypt-n',
         type=int,
@@ -259,6 +282,12 @@ def main():
         '--enable-argon2',
         action='store_true',
         help='Use Argon2 password hashing (requires argon2-cffi package)'
+    )
+    argon2_group.add_argument(
+        '--argon2-rounds',
+        type=int,
+        default=0,
+        help='Number of Argon2 iterations (default: 0)'
     )
     argon2_group.add_argument(
         '--argon2-time',
