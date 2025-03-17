@@ -33,10 +33,6 @@ DEFAULT_CONFIG = {
         'r': 8,      # Block size
         'p': 1       # Parallelization factor
     },
-    'bcrpt': {
-        'enabled': False,
-        'rounds': 100
-    },
     # Argon2 parameters
     'argon2': {
         'enabled': False,
