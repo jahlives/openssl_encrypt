@@ -413,9 +413,9 @@ class TestCryptCore(unittest.TestCase):
             self.assertEqual(hashed9, hashed10)
 
     def test_existing_decryption(self):
-        for type in ['fernet','aes-gcm','chacha20-poly1305']:
+        for name in os.listdir('./unittests/testfiles'):
             try:
-                decrypted_data = decrypt_file(input_file="./unittests/test1_" + type + ".txt", output_file=None, password=b"1234")
+                decrypted_data = decrypt_file(input_file="./unittests/testfiles/" + name, output_file=None, password=b"1234")
                 print(f"\nDecryption result: {decrypted_data}")
 
                 # Only assert if we actually got data back
