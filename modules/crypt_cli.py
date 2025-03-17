@@ -227,6 +227,11 @@ def main():
     # Scrypt parameters group - updated to match the template naming
     scrypt_group = parser.add_argument_group('Scrypt Options', 'Configure Scrypt memory-hard function parameters')
     scrypt_group.add_argument(
+        '--enable-scrypt',
+        action='store_true',
+        help='Use Scrypt password hashing (requires scrypt package)'
+    )
+    scrypt_group.add_argument(
         '--scrypt-n',
         type=int,
         default=0,
@@ -574,6 +579,7 @@ def main():
         if not args.quiet:
             print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-256")
 
+
     if args.sha512_rounds == 1:  # When flag is provided without value
         args.sha512_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
@@ -649,6 +655,7 @@ def main():
         'sha3_512': args.sha3_512_rounds,
         'whirlpool': args.whirlpool_rounds,
         'scrypt': {
+            'enabled': args.enable_scrypt,
             'n': args.scrypt_n,
             'r': args.scrypt_r,
             'p': args.scrypt_p

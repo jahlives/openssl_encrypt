@@ -22,6 +22,8 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305, AESSIV
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import padding
 
 
 # Try to import optional dependencies
@@ -70,6 +72,26 @@ class EncryptionAlgorithm(Enum):
     AES_GCM = "aes-gcm"
     CHACHA20_POLY1305 = "chacha20-poly1305"
     AES_SIV = "aes-siv"
+    CAMELLIA = "camellia"
+
+class CamelliaCipher:
+    def __init__(self, key):
+        self.key = key
+
+    def encrypt(self, nonce, data, associated_data=None):
+        cipher = Cipher(algorithms.Camellia(self.key), modes.CBC(nonce))
+        encryptor = cipher.encryptor()
+        padder = padding.PKCS7(algorithms.Camellia.block_size).padder()
+        padded_data = padder.update(data) + padder.finalize()
+        return encryptor.update(padded_data) + encryptor.finalize()
+
+    def decrypt(self, nonce, data, associated_data=None):
+        cipher = Cipher(algorithms.Camellia(self.key), modes.CBC(nonce))
+        decryptor = cipher.decryptor()
+        padded_data = decryptor.update(data) + decryptor.finalize()
+        unpadder = padding.PKCS7(algorithms.Camellia.block_size).unpadder()
+        return unpadder.update(padded_data) + unpadder.finalize()
+
 
 def check_argon2_support():
     """
@@ -625,6 +647,8 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
         key_length = 32  # ChaCha20-Poly1305 requires 32 bytes
     elif algorithm == EncryptionAlgorithm.AES_SIV.value:
         key_length = 64
+    elif algorithm == EncryptionAlgorithm.CAMELLIA.value:
+        key_length = 32
     else:
         raise ValueError(f"Unsupported algorithm: {algorithm}")
 
@@ -810,9 +834,12 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
             elif algorithm == EncryptionAlgorithm.CHACHA20_POLY1305:  # ChaCha20-Poly1305
                 cipher = ChaCha20Poly1305(key)
                 return nonce + cipher.encrypt(nonce[:12], data, None)
+            elif algorithm == EncryptionAlgorithm.CAMELLIA:
+                cipher = CamelliaCipher(key)
+                return nonce + cipher.encrypt(nonce, data, None)
             else:
                 print(f"Unknown algorithm " + algorithm.value + f"supplied")
-                return false
+                return False
 
     # Only show progress for larger files (> 1MB)
     if len(data) > 1024 * 1024 and not quiet:
@@ -940,6 +967,9 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
             elif algorithm == EncryptionAlgorithm.AES_SIV.value:
                 cipher = AESSIV(key)
                 return cipher.decrypt(encrypted_data[12:], None)
+            elif algorithm == EncryptionAlgorithm.CAMELLIA.value:
+                cipher = CamelliaCipher(key)
+                return cipher.decrypt(nonce, ciphertext, None)
             else:
                 raise ValueError(f"Unsupported encryption algorithm: {algorithm}")
 
