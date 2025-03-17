@@ -22,7 +22,9 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305, AESSIV
-from  cryptography.hazmat.primitives.ciphers.algorithms import Camellia
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import padding
+
 
 # Try to import optional dependencies
 try:
@@ -71,6 +73,25 @@ class EncryptionAlgorithm(Enum):
     CHACHA20_POLY1305 = "chacha20-poly1305"
     AES_SIV = "aes-siv"
     CAMELLIA = "camellia"
+
+class CamelliaCipher:
+    def __init__(self, key):
+        self.key = key
+
+    def encrypt(self, nonce, data, associated_data=None):
+        cipher = Cipher(algorithms.Camellia(self.key), modes.CBC(nonce))
+        encryptor = cipher.encryptor()
+        padder = padding.PKCS7(algorithms.Camellia.block_size).padder()
+        padded_data = padder.update(data) + padder.finalize()
+        return encryptor.update(padded_data) + encryptor.finalize()
+
+    def decrypt(self, nonce, data, associated_data=None):
+        cipher = Cipher(algorithms.Camellia(self.key), modes.CBC(nonce))
+        decryptor = cipher.decryptor()
+        padded_data = decryptor.update(data) + decryptor.finalize()
+        unpadder = padding.PKCS7(algorithms.Camellia.block_size).unpadder()
+        return unpadder.update(padded_data) + unpadder.finalize()
+
 
 def check_argon2_support():
     """
@@ -814,20 +835,8 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                 cipher = ChaCha20Poly1305(key)
                 return nonce + cipher.encrypt(nonce[:12], data, None)
             elif algorithm == EncryptionAlgorithm.CAMELLIA:
-                from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-                from cryptography.hazmat.primitives import padding
-                cipher = Cipher(
-                    algorithms.Camellia(key),
-                    modes.CBC(nonce),
-                    backend=default_backend()
-                )
-                encryptor = cipher.encryptor()
-                # Add padding (PKCS7)
-                padder = padding.PKCS7(algorithms.Camellia.block_size).padder()
-                padded_data = padder.update(data) + padder.finalize()
-
-                # Encrypt the data
-                return nonce + encryptor.update(padded_data) + encryptor.finalize()
+                cipher = CamelliaCipher(key)
+                return nonce + cipher.encrypt(nonce, data, None)
             else:
                 print(f"Unknown algorithm " + algorithm.value + f"supplied")
                 return False
@@ -959,21 +968,8 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
                 cipher = AESSIV(key)
                 return cipher.decrypt(encrypted_data[12:], None)
             elif algorithm == EncryptionAlgorithm.CAMELLIA.value:
-                from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-                from cryptography.hazmat.primitives import padding
-                # Create Camellia cipher in CBC mode
-                cipher = Cipher(
-                    algorithms.Camellia(key),
-                    modes.CBC(nonce),
-                    backend=default_backend()
-                )
-                # Create decryptor
-                decryptor = cipher.decryptor()
-                # Decrypt the padded data
-                padded_data = decryptor.update(ciphertext) + decryptor.finalize()
-                # Remove padding
-                unpadder = padding.PKCS7(algorithms.Camellia.block_size).unpadder()
-                return unpadder.update(padded_data) + unpadder.finalize()
+                cipher = CamelliaCipher(key)
+                return cipher.decrypt(nonce, ciphertext, None)
             else:
                 raise ValueError(f"Unsupported encryption algorithm: {algorithm}")
 
