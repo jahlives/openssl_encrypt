@@ -1,0 +1,8 @@
+image: python:3.13-alpine
+test:
+  stage: test
+  before_script:
+    - pip install -r requirements.txt --break-system-packages
+    - pip install pytest --break-system-packages
+  script:
+    - /home/gitlab-runner/.local/bin/pytest unittests/unittests.py -v -s

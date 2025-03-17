@@ -21,7 +21,9 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305, AESSIV
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import padding
 
 
 # Try to import optional dependencies
@@ -69,6 +71,27 @@ class EncryptionAlgorithm(Enum):
     FERNET = "fernet"
     AES_GCM = "aes-gcm"
     CHACHA20_POLY1305 = "chacha20-poly1305"
+    AES_SIV = "aes-siv"
+    CAMELLIA = "camellia"
+
+class CamelliaCipher:
+    def __init__(self, key):
+        self.key = key
+
+    def encrypt(self, nonce, data, associated_data=None):
+        cipher = Cipher(algorithms.Camellia(self.key), modes.CBC(nonce))
+        encryptor = cipher.encryptor()
+        padder = padding.PKCS7(algorithms.Camellia.block_size).padder()
+        padded_data = padder.update(data) + padder.finalize()
+        return encryptor.update(padded_data) + encryptor.finalize()
+
+    def decrypt(self, nonce, data, associated_data=None):
+        cipher = Cipher(algorithms.Camellia(self.key), modes.CBC(nonce))
+        decryptor = cipher.decryptor()
+        padded_data = decryptor.update(data) + decryptor.finalize()
+        unpadder = padding.PKCS7(algorithms.Camellia.block_size).unpadder()
+        return unpadder.update(padded_data) + unpadder.finalize()
+
 
 def check_argon2_support():
     """
@@ -386,90 +409,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                                     secure_memcpy(hashed, hash_buffer)
                                     show_progress("SHA-512 (fallback)", i + 1, params)
 
-                    elif algorithm == 'scrypt' and params.get('n', 0) > 0:
-                        # Apply scrypt with provided parameters
-                        if not quiet:
-                            print(f"Applying scrypt with n={params['n']}, r={params['r']}, p={params['p']}...")
 
-                        # Scrypt doesn't provide progress updates, so use an animated progress bar
-                        def do_scrypt():
-                            scrypt_kdf = Scrypt(
-                                salt=salt,
-                                length=32,
-                                n=params['n'],  # CPU/memory cost factor
-                                r=params['r'],  # Block size factor
-                                p=params['p'],  # Parallelization factor
-                                backend=default_backend()
-                            )
-                            result = scrypt_kdf.derive(bytes(hashed))
-
-                            # Create a temporary secure buffer for the result
-                            with secure_buffer(32, zero=False) as scrypt_result:
-                                secure_memcpy(scrypt_result, result)
-                                # Resize the output buffer if needed
-                                if len(hashed) < 32:
-                                    # Not ideal to create a new buffer, but necessary if original is too small
-                                    new_hashed = bytearray(32)
-                                    secure_memcpy(new_hashed, scrypt_result)
-                                    return new_hashed
-                                else:
-                                    # Copy result to the output buffer
-                                    secure_memcpy(hashed, scrypt_result, 32)
-                                    return hashed
-
-                        # Run scrypt with progress bar
-                        hashed = with_progress_bar(
-                            do_scrypt,
-                            "Scrypt processing",
-                            quiet=quiet
-                        )
-
-                    elif algorithm == 'argon2' and params.get('enabled', False) and ARGON2_AVAILABLE:
-                        # Apply Argon2 with provided parameters
-                        if not quiet:
-                            print(f"Applying Argon2 with time_cost={params['time_cost']}, "
-                                  f"memory_cost={params['memory_cost']}, parallelism={params['parallelism']}, "
-                                  f"hash_len={params['hash_len']}...")
-
-                        # Argon2 doesn't provide progress updates, so use an animated progress bar
-                        def do_argon2():
-                            # Use low_level API for more control
-                            # Convert type integer back to enum if needed
-                            argon2_type = params['type']
-                            if ARGON2_AVAILABLE and isinstance(argon2_type,
-                                                               int) and argon2_type in ARGON2_INT_TO_TYPE_MAP:
-                                argon2_type = ARGON2_INT_TO_TYPE_MAP[argon2_type]
-
-                            result = argon2.low_level.hash_secret_raw(
-                                secret=bytes(hashed),
-                                salt=salt,
-                                time_cost=params['time_cost'],
-                                memory_cost=params['memory_cost'],
-                                parallelism=params['parallelism'],
-                                hash_len=params['hash_len'],
-                                type=argon2_type
-                            )
-
-                            # Create a temporary secure buffer for the result
-                            with secure_buffer(params['hash_len'], zero=False) as argon2_result:
-                                secure_memcpy(argon2_result, result)
-                                # Resize the output buffer if needed
-                                if len(hashed) < params['hash_len']:
-                                    # Not ideal to create a new buffer, but necessary if original is too small
-                                    new_hashed = bytearray(params['hash_len'])
-                                    secure_memcpy(new_hashed, argon2_result)
-                                    return new_hashed
-                                else:
-                                    # Copy result to the output buffer
-                                    secure_memcpy(hashed, argon2_result, params['hash_len'])
-                                    return hashed
-
-                        # Run Argon2 with progress bar
-                        hashed = with_progress_bar(
-                            do_argon2,
-                            "Argon2 processing",
-                            quiet=quiet
-                        )
 
                 # Create a new bytes object with the final result
                 # We need to convert to bytes for compatibility with the rest of the code
@@ -538,63 +478,6 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                     for i in range(params):
                         hashed = hashlib.sha512(hashed).digest()
                         show_progress("SHA-512 (fallback)", i + 1, params)
-
-            elif algorithm == 'scrypt' and params.get('n', 0) > 0:
-                # Apply scrypt with provided parameters
-                if not quiet:
-                    print(f"Applying scrypt with n={params['n']}, r={params['r']}, p={params['p']}...")
-
-                # Scrypt doesn't provide progress updates, so use an animated progress bar
-                def do_scrypt():
-                    scrypt_kdf = Scrypt(
-                        salt=salt,
-                        length=32,
-                        n=params['n'],
-                        r=params['r'],
-                        p=params['p'],
-                        backend=default_backend()
-                    )
-                    return scrypt_kdf.derive(hashed)
-
-                # Run scrypt with progress bar
-                hashed = with_progress_bar(
-                    do_scrypt,
-                    "Scrypt processing",
-                    quiet=quiet
-                )
-
-            elif algorithm == 'argon2' and params.get('enabled', False) and ARGON2_AVAILABLE:
-                # Apply Argon2 with provided parameters
-                if not quiet:
-                    print(f"Applying Argon2 with time_cost={params['time_cost']}, "
-                          f"memory_cost={params['memory_cost']}, parallelism={params['parallelism']}, "
-                          f"hash_len={params['hash_len']}...")
-
-                # Argon2 doesn't provide progress updates, so use an animated progress bar
-                def do_argon2():
-                    # Use low_level API for more control
-                    # Convert type integer back to enum if needed
-                    argon2_type = params['type']
-                    if ARGON2_AVAILABLE and isinstance(argon2_type, int) and argon2_type in ARGON2_INT_TO_TYPE_MAP:
-                        argon2_type = ARGON2_INT_TO_TYPE_MAP[argon2_type]
-
-                    return argon2.low_level.hash_secret_raw(
-                        secret=hashed,
-                        salt=salt,
-                        time_cost=params['time_cost'],
-                        memory_cost=params['memory_cost'],
-                        parallelism=params['parallelism'],
-                        hash_len=params['hash_len'],
-                        type=argon2_type
-                    )
-
-                # Run Argon2 with progress bar
-                hashed = with_progress_bar(
-                    do_argon2,
-                    "Argon2 processing",
-                    quiet=quiet
-                )
-
         return hashed
 
 
@@ -615,6 +498,26 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
     Returns:
         tuple: (key, salt, hash_config)
     """
+    def show_progress(algorithm, current, total):
+        if quiet:
+            return
+
+        # Update more frequently for better visual feedback
+        update_frequency = max(1, min(total // 100, 100))  # Update at least every 100 iterations
+        if current % update_frequency != 0 and current != total:
+            return
+
+        percent = (current / total) * 100
+        bar_length = 30
+        filled_length = int(bar_length * current // total)
+        bar = '█' * filled_length + ' ' * (bar_length - filled_length)
+
+        print(f"\r{algorithm} hashing: [{bar}] {percent:.1f}% ({current}/{total})",
+              end='', flush=True)
+
+        if current == total:
+            print()  # New line after completion
+
     # Determine required key length based on algorithm
     if algorithm == EncryptionAlgorithm.FERNET.value:
         key_length = 32  # Fernet requires 32 bytes that will be base64 encoded
@@ -622,6 +525,10 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
         key_length = 32  # AES-256-GCM requires 32 bytes
     elif algorithm == EncryptionAlgorithm.CHACHA20_POLY1305.value:
         key_length = 32  # ChaCha20-Poly1305 requires 32 bytes
+    elif algorithm == EncryptionAlgorithm.AES_SIV.value:
+        key_length = 64
+    elif algorithm == EncryptionAlgorithm.CAMELLIA.value:
+        key_length = 32
     else:
         raise ValueError(f"Unsupported algorithm: {algorithm}")
 
@@ -645,12 +552,16 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
 
     # Determine if we should use Argon2
     # Only don't use Argon2 if it's explicitly disabled (enabled=False) in hash_config
-    use_argon2 = argon2_available
+    use_argon2 = hash_config.get('argon2', {}).get('enabled', False)
+    use_scrypt = hash_config.get('scrypt', {}).get('enabled', False)
+    use_pbkdf2 = hash_config.get('pbkdf2', {}).get('pbkdf2-iterations', 100000)
 
     # If hash_config has argon2 section with enabled explicitly set to False, honor that
     #if hash_config and 'argon2' in hash_config and 'enabled' in hash_config['argon2']:
     #    use_argon2 = hash_config['argon2']['enabled']
     if use_argon2:
+        derived_key = hashed_password
+        derived_salt = salt
         # Use Argon2 for key derivation
         if not quiet:
             print("Using Argon2 for key derivation...")
@@ -671,28 +582,20 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
             argon2_type = Type.ID
 
         try:
-            if algorithm == EncryptionAlgorithm.FERNET.value:
-                key = base64.urlsafe_b64encode(
-                    argon2.low_level.hash_secret_raw(
+            for i in range(hash_config.get('argon2', {}).get('rounds', 1)):
+                round_salt = derived_salt + str(i).encode()
+                hashed_password = argon2.low_level.hash_secret_raw(
                     secret=hashed_password,  # Use the potentially hashed password
-                    salt=salt,
-                    time_cost=time_cost,
-                    memory_cost=memory_cost,
-                    parallelism=parallelism,
-                    hash_len=hash_len,
-                    type=argon2_type
-                ))
-            else:
-                key = argon2.low_level.hash_secret_raw(
-                    secret=hashed_password,  # Use the potentially hashed password
-                    salt=salt,
+                    salt=round_salt,
                     time_cost=time_cost,
                     memory_cost=memory_cost,
                     parallelism=parallelism,
                     hash_len=hash_len,
                     type=argon2_type
                 )
-
+                derived_salt = hashed_password[:16]
+                show_progress("Argon2", i + 1, hash_config.get('argon2', {}).get('rounds', 1))
+            key = hashed_password
             # Update hash_config to reflect that Argon2 was used
             if hash_config is None:
                 hash_config = {}
@@ -704,38 +607,47 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
             hash_config['argon2']['parallelism'] = parallelism
             hash_config['argon2']['hash_len'] = hash_len
             hash_config['argon2']['type'] = type_int
-
         except Exception as e:
             if not quiet:
                 print(f"Argon2 key derivation failed: {str(e)}. Falling back to PBKDF2.")
             # Fall back to PBKDF2 if Argon2 fails
             use_argon2 = False
-
-    # Use PBKDF2 if Argon2 is not available or fails
-    if not use_argon2:
+    if use_scrypt:
+        derived_key = hashed_password
+        derived_salt = salt
         if not quiet:
-            print(f"Using PBKDF2 with {pbkdf2_iterations} iterations...")
-
-        # For Fernet, we need to base64 encode the key later
-        if algorithm == EncryptionAlgorithm.FERNET.value:
-            key = base64.urlsafe_b64encode(
-                PBKDF2HMAC(
-                    algorithm=hashes.SHA256(),
-                    length=key_length,
-                    salt=salt,
-                    iterations=pbkdf2_iterations,
-                    backend=default_backend()
-                ).derive(hashed_password)  # Use the potentially hashed password
+            print("Using Scrypt for key derivation...")
+        for i in range(hash_config.get('scrypt', {}).get('rounds', 1)):
+            round_salt = derived_salt + str(i).encode()
+            scrypt_kdf = Scrypt(
+                salt=round_salt,
+                length=32,
+                n=hash_config['scrypt']['n'],  # CPU/memory cost factor
+                r=hash_config['scrypt']['r'],  # Block size factor
+                p=hash_config['scrypt']['p'],  # Parallelization factor
+                backend=default_backend()
             )
-        else:
-            # For other algorithms, return raw bytes
-            key = PBKDF2HMAC(
+            derived_key = scrypt_kdf.derive(derived_key)
+            derived_salt = derived_key[:16]
+            show_progress("Scrypt", i + 1, hash_config.get('scrypt', {}).get('rounds', 1))
+        key = derived_key
+    print(f'pbkdf2 ' + str(use_pbkdf2))
+    if use_pbkdf2:
+        derived_salt = salt
+        for i in range(use_pbkdf2):
+            round_salt = derived_salt + str(i).encode()
+            hashed_password = PBKDF2HMAC(
                 algorithm=hashes.SHA256(),
                 length=key_length,
-                salt=salt,
-                iterations=pbkdf2_iterations,
+                salt=round_salt,
+                iterations=1,
                 backend=default_backend()
             ).derive(hashed_password)  # Use the potentially hashed password
+            derived_salt = hashed_password[:16]
+            show_progress("PBKDF2", i + 1, use_pbkdf2)
+        key = hashed_password
+    if algorithm == EncryptionAlgorithm.FERNET.value:
+         key = base64.urlsafe_b64encode(key)
 
     return key, salt, hash_config
 
@@ -798,13 +710,21 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         else:
             # Generate a random nonce
             nonce = os.urandom(16)  # 16 bytes for AES-GCM and ChaCha20-Poly1305
-
             if algorithm == EncryptionAlgorithm.AES_GCM:
                 cipher = AESGCM(key)
                 return nonce + cipher.encrypt(nonce[:12], data, None)
-            else:  # ChaCha20-Poly1305
+            elif algorithm == EncryptionAlgorithm.AES_SIV:
+                cipher = AESSIV(key)
+                return nonce[:12] + cipher.encrypt(data, None)
+            elif algorithm == EncryptionAlgorithm.CHACHA20_POLY1305:  # ChaCha20-Poly1305
                 cipher = ChaCha20Poly1305(key)
                 return nonce + cipher.encrypt(nonce[:12], data, None)
+            elif algorithm == EncryptionAlgorithm.CAMELLIA:
+                cipher = CamelliaCipher(key)
+                return nonce + cipher.encrypt(nonce, data, None)
+            else:
+                print(f"Unknown algorithm " + algorithm.value + f"supplied")
+                return False
 
     # Only show progress for larger files (> 1MB)
     if len(data) > 1024 * 1024 and not quiet:
@@ -829,9 +749,9 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         'pbkdf2_iterations': pbkdf2_iterations,
         'original_hash': original_hash,
         'encrypted_hash': encrypted_hash,
-        'algorithm': algorithm.value  # Add the encryption algorithm used
+        'algorithm': algorithm.value  # Add the encryption algorithm
     }
-
+    # If scrypt is used, add rounds to hash_config
     # Serialize and encode the metadata
     metadata_json = json.dumps(metadata).encode('utf-8')
     metadata_base64 = base64.b64encode(metadata_json)
@@ -929,6 +849,12 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
             elif algorithm == EncryptionAlgorithm.CHACHA20_POLY1305.value:
                 cipher = ChaCha20Poly1305(key)
                 return cipher.decrypt(nonce[:12], ciphertext, None)
+            elif algorithm == EncryptionAlgorithm.AES_SIV.value:
+                cipher = AESSIV(key)
+                return cipher.decrypt(encrypted_data[12:], None)
+            elif algorithm == EncryptionAlgorithm.CAMELLIA.value:
+                cipher = CamelliaCipher(key)
+                return cipher.decrypt(nonce, ciphertext, None)
             else:
                 raise ValueError(f"Unsupported encryption algorithm: {algorithm}")
 
