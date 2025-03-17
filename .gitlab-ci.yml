@@ -1,0 +1,9 @@
+pytest:
+  stage: test
+  script:
+    - pytest unittests/unittests.py -v -s
+#--junitxml=report.xml
+  artifacts:
+    when: always
+#    reports:
+#      junit: report.xml
