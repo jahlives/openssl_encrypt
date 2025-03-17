@@ -223,19 +223,7 @@ def main():
         default=100000,
         help='Number of PBKDF2 iterations (default: 100000)'
     )
-    # Bcrypt parameters group
-    bcrypt_group = parser.add_argument_group('Bcrypt Options', 'Configure Bcrypt memory-hard function parameters')
-    bcrypt_group.add_argument(
-        '--enable-bcrypt',
-        action='store_true',
-        help='Use Bcrypt password hashing (requires bcrypt package)'
-    )
-    bcrypt_group.add_argument(
-        '--bcrypt-rounds',
-        type=int,
-        default=0,
-        help='Number of rounds for Bcrypt (default: 0)'
-    )
+
     # Scrypt parameters group - updated to match the template naming
     scrypt_group = parser.add_argument_group('Scrypt Options', 'Configure Scrypt memory-hard function parameters')
     scrypt_group.add_argument(
@@ -243,12 +231,6 @@ def main():
         action='store_true',
         help='Use Scrypt password hashing (requires scrypt package)'
     )
-    # scrypt_group.add_argument(
-    #     'scrypt-rounds',
-    #     type=int,
-    #     default=0,
-    #     help='round of iterated scrypt hashes (default: 0)'
-    # )
     scrypt_group.add_argument(
         '--scrypt-n',
         type=int,
@@ -282,12 +264,6 @@ def main():
         '--enable-argon2',
         action='store_true',
         help='Use Argon2 password hashing (requires argon2-cffi package)'
-    )
-    argon2_group.add_argument(
-        '--argon2-rounds',
-        type=int,
-        default=0,
-        help='Number of Argon2 iterations (default: 0)'
     )
     argon2_group.add_argument(
         '--argon2-time',
@@ -603,6 +579,7 @@ def main():
         if not args.quiet:
             print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-256")
 
+
     if args.sha512_rounds == 1:  # When flag is provided without value
         args.sha512_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
@@ -678,6 +655,7 @@ def main():
         'sha3_512': args.sha3_512_rounds,
         'whirlpool': args.whirlpool_rounds,
         'scrypt': {
+            'enabled': args.enable_scrypt,
             'n': args.scrypt_n,
             'r': args.scrypt_r,
             'p': args.scrypt_p

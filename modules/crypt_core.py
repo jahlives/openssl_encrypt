@@ -22,9 +22,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305, AESSIV
-import bcrypt
-
-
+from  cryptography.hazmat.primitives.ciphers.algorithms import Camellia
 
 # Try to import optional dependencies
 try:
@@ -72,6 +70,7 @@ class EncryptionAlgorithm(Enum):
     AES_GCM = "aes-gcm"
     CHACHA20_POLY1305 = "chacha20-poly1305"
     AES_SIV = "aes-siv"
+    CAMELLIA = "camellia"
 
 def check_argon2_support():
     """
@@ -389,31 +388,6 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                                     secure_memcpy(hashed, hash_buffer)
                                     show_progress("SHA-512 (fallback)", i + 1, params)
 
-                    elif algorithm == 'bcrypt' and params.get('rounds', 0) > 0:
-                        if not quiet:
-                            print(f"Applying bcrypt with rounds={params['rounds']}...")
-
-                        def do_bcrypt():
-
-                            # Create a temporary secure buffer for the result
-                            with secure_buffer(60, zero=False) as bcrypt_result:
-                                for i in range(params['rounds']):
-                                    # Generate new salt for each iteration
-                                    current_salt = bcrypt.gensalt()
-                                    result = bcrypt.hashpw(bytes(hashed), current_salt)
-
-                                    # Update the buffers
-                                    secure_memcpy(hash_buffer, result)
-                                    secure_memcpy(result, hash_buffer)
-                                    show_progress("Bcrypt", i + 1, params['rounds'])
-
-                        # Run bcrypt with progress bar
-                        hashed = with_progress_bar(
-                            do_bcrypt,
-                            "Bcrypt processing",
-                            quiet=quiet
-                        )
-
                     elif algorithm == 'scrypt' and params.get('n', 0) > 0:
                         # Apply scrypt with provided parameters
                         if not quiet:
@@ -451,8 +425,6 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                             "Scrypt processing",
                             quiet=quiet
                         )
-
-
 
                     elif algorithm == 'argon2' and params.get('enabled', False) and ARGON2_AVAILABLE:
                         # Apply Argon2 with provided parameters
@@ -569,17 +541,6 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                         hashed = hashlib.sha512(hashed).digest()
                         show_progress("SHA-512 (fallback)", i + 1, params)
 
-            elif algorithm == 'bcrypt' and params.get('rounds', 0) > 0:
-                if not quiet:
-                    print(f"Applying {params['rounds']} rounds of bcrypt...")
-
-                for i in range(params['rounds']):
-                    # Generate new salt for each iteration
-                    current_salt = bcrypt.gensalt()
-                    hashed = bcrypt.hashpw(hashed, current_salt)
-                    show_progress("Bcrypt", i + 1, params['rounds'])
-                return hashed
-
             elif algorithm == 'scrypt' and params.get('n', 0) > 0:
                 # Apply scrypt with provided parameters
                 if not quiet:
@@ -665,6 +626,8 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
         key_length = 32  # ChaCha20-Poly1305 requires 32 bytes
     elif algorithm == EncryptionAlgorithm.AES_SIV.value:
         key_length = 64
+    elif algorithm == EncryptionAlgorithm.CAMELLIA.value:
+        key_length = 32
     else:
         raise ValueError(f"Unsupported algorithm: {algorithm}")
 
@@ -850,9 +813,24 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
             elif algorithm == EncryptionAlgorithm.CHACHA20_POLY1305:  # ChaCha20-Poly1305
                 cipher = ChaCha20Poly1305(key)
                 return nonce + cipher.encrypt(nonce[:12], data, None)
+            elif algorithm == EncryptionAlgorithm.CAMELLIA:
+                from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+                from cryptography.hazmat.primitives import padding
+                cipher = Cipher(
+                    algorithms.Camellia(key),
+                    modes.CBC(nonce),
+                    backend=default_backend()
+                )
+                encryptor = cipher.encryptor()
+                # Add padding (PKCS7)
+                padder = padding.PKCS7(algorithms.Camellia.block_size).padder()
+                padded_data = padder.update(data) + padder.finalize()
+
+                # Encrypt the data
+                return nonce + encryptor.update(padded_data) + encryptor.finalize()
             else:
                 print(f"Unknown algorithm " + algorithm.value + f"supplied")
-                return false
+                return False
 
     # Only show progress for larger files (> 1MB)
     if len(data) > 1024 * 1024 and not quiet:
@@ -980,6 +958,22 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
             elif algorithm == EncryptionAlgorithm.AES_SIV.value:
                 cipher = AESSIV(key)
                 return cipher.decrypt(encrypted_data[12:], None)
+            elif algorithm == EncryptionAlgorithm.CAMELLIA.value:
+                from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+                from cryptography.hazmat.primitives import padding
+                # Create Camellia cipher in CBC mode
+                cipher = Cipher(
+                    algorithms.Camellia(key),
+                    modes.CBC(nonce),
+                    backend=default_backend()
+                )
+                # Create decryptor
+                decryptor = cipher.decryptor()
+                # Decrypt the padded data
+                padded_data = decryptor.update(ciphertext) + decryptor.finalize()
+                # Remove padding
+                unpadder = padding.PKCS7(algorithms.Camellia.block_size).unpadder()
+                return unpadder.update(padded_data) + unpadder.finalize()
             else:
                 raise ValueError(f"Unsupported encryption algorithm: {algorithm}")
 
