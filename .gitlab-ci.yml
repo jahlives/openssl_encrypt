@@ -5,4 +5,4 @@ test:
     - pip install -r requirements.txt --break-system-packages
     - pip install pytest --break-system-packages
   script:
-    - pytest unitests/unitests.py -v -s
+    - /home/gitlab-runner/.local/bin/pytest unitests/unitests.py -v -s
