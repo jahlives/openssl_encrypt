@@ -119,7 +119,6 @@ def main():
              'aes-gcm (AES-256 in GCM mode, high security, widely trusted), '
              'chacha20-poly1305 (modern AEAD cipher, excellent performance)'
     )
-
     # Define common options
     parser.add_argument(
         '--password', '-p',
@@ -145,7 +144,7 @@ def main():
         help='Suppress all output except decrypted content and exit code'
     )
     parser.add_argument(
-        '--overwrite',
+        '--overwrite', '-f',
         action='store_true',
         help='Overwrite the input file with the output'
     )
@@ -229,12 +228,19 @@ def main():
     scrypt_group.add_argument(
         '--enable-scrypt',
         action='store_true',
-        help='Use Scrypt password hashing (requires scrypt package)'
+        help='Use Scrypt password hashing (requires scrypt package)',
+        default=False
+    )
+    scrypt_group.add_argument(
+        '--scrypt-rounds',
+        type=int,
+        default=1,
+        help='Use scrypt rounds for interating (default: 1)'
     )
     scrypt_group.add_argument(
         '--scrypt-n',
         type=int,
-        default=0,
+        default=128,
         help='Scrypt CPU/memory cost factor N (default: 0, not used. Use power of 2 like 16384)'
     )
     scrypt_group.add_argument(
@@ -263,7 +269,14 @@ def main():
     argon2_group.add_argument(
         '--enable-argon2',
         action='store_true',
-        help='Use Argon2 password hashing (requires argon2-cffi package)'
+        help='Use Argon2 password hashing (requires argon2-cffi package)',
+        default=True
+    )
+    argon2_group.add_argument(
+        '--argon2-rounds',
+        type=int,
+        default=1,
+        help='Argon2 time cost parameter (default: 1)'
     )
     argon2_group.add_argument(
         '--argon2-time',
@@ -658,7 +671,8 @@ def main():
             'enabled': args.enable_scrypt,
             'n': args.scrypt_n,
             'r': args.scrypt_r,
-            'p': args.scrypt_p
+            'p': args.scrypt_p,
+            'rounds': args.scrypt_rounds
         },
         'argon2': {
             'enabled': args.enable_argon2,
@@ -666,7 +680,8 @@ def main():
             'memory_cost': args.argon2_memory,
             'parallelism': args.argon2_parallelism,
             'hash_len': args.argon2_hash_len,
-            'type': ARGON2_TYPE_INT_MAP[args.argon2_type]  # Store integer value for JSON serialization
+            'type': ARGON2_TYPE_INT_MAP[args.argon2_type],  # Store integer value for JSON serialization
+            'rounds': args.argon2_rounds
         },
         'pbkdf2_iterations': args.pbkdf2_iterations
     }
@@ -844,6 +859,46 @@ def main():
                     secure_shred_file(args.input, args.shred_passes, args.quiet)
 
         elif args.action == 'decrypt':
+            if not args.quiet:
+                print("\nDecrypting with the following hash configuration:")
+                any_hash_used = False
+
+                for algorithm, params in hash_config.items():
+                    if algorithm == 'scrypt' and params.get('n', 0) > 0:
+                        any_hash_used = True
+                        print(f"- Scrypt: n={params['n']}, "
+                              f"r={params['r']}, p={params['p']}")
+                    elif algorithm == 'argon2' and params.get('enabled', False):
+                        any_hash_used = True
+                        print(f"- Argon2{args.argon2_type}: time_cost={params['time_cost']}, "
+                              f"memory_cost={params['memory_cost']}KB, "
+                              f"parallelism={params['parallelism']}, "
+                              f"hash_len={params['hash_len']}")
+                    elif algorithm == 'sha3_512' and params > 0:
+                        any_hash_used = True
+                        print(f"- SHA3-512: {params} iterations")
+                    elif algorithm == 'sha3_256' and params > 0:
+                        any_hash_used = True
+                        print(f"- SHA3-256: {params} iterations")
+                    elif algorithm == 'sha512' and params > 0:
+                        any_hash_used = True
+                        print(f"- SHA-512: {params} iterations")
+                    elif algorithm == 'sha256' and params > 0:
+                        any_hash_used = True
+                        print(f"- SHA-256: {params} iterations")
+                    elif algorithm == 'whirlpool' and params > 0:
+                        any_hash_used = True
+                        print(f"- Whirlpool: {params} iterations")
+                    elif algorithm == 'pbkdf2_iterations':
+                        print(f"- PBKDF2: {params} iterations")
+
+                if not any_hash_used:
+                    print("- No additional hashing algorithms used")
+
+                if use_secure_mem:
+                    print("- Secure memory handling: Enabled")
+                else:
+                    print("- Secure memory handling: Disabled")
             # Handle output file path for decryption
             if args.overwrite:
                 output_file = args.input
