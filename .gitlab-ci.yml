@@ -3,6 +3,6 @@ test:
   stage: test
   before_script:
     - pip install -r requirements.txt --break-system-packages
-    - pip install pytest -break-system-packages
+    - pip install pytest --break-system-packages
   script:
     - pytest unitests/unitests.py -v -s
