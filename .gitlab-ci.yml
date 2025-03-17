@@ -1,9 +1,8 @@
-pytest:
+image: python:3.13
+test:
   stage: test
+  before_script:
+    - pip install -r requirements.txt
+    - pip install pytest
   script:
-    - pytest unittests/unittests.py -v -s
-#--junitxml=report.xml
-  artifacts:
-    when: always
-#    reports:
-#      junit: report.xml
+    - pytest unitests/unitests.py -v -s
