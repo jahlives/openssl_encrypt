@@ -15,6 +15,7 @@ import stat
 import time
 import threading
 import random
+import secrets
 from enum import Enum
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
@@ -597,6 +598,8 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
                 derived_salt = hashed_password[:16]
                 show_progress("Argon2", i + 1, hash_config.get('argon2', {}).get('rounds', 1))
             key = hashed_password
+            secure_memzero(derived_key)
+            secure_memzero(derived_salt)
             # Update hash_config to reflect that Argon2 was used
             if hash_config is None:
                 hash_config = {}
@@ -632,6 +635,8 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
             derived_salt = derived_key[:16]
             show_progress("Scrypt", i + 1, hash_config.get('scrypt', {}).get('rounds', 1))
         key = derived_key
+        secure_memzero(derived_key)
+        secure_memzero(derived_salt)
     if use_pbkdf2:
         derived_salt = salt
         for i in range(use_pbkdf2):
@@ -646,13 +651,16 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
             derived_salt = hashed_password[:16]
             show_progress("PBKDF2", i + 1, use_pbkdf2)
         key = hashed_password
+        secure_memzero(derived_salt)
     if algorithm == EncryptionAlgorithm.FERNET.value:
          key = base64.urlsafe_b64encode(key)
     try:
         return key, salt, hash_config
-    finally: secure_memzero(password)
-
-
+    finally:
+        secure_memzero(password)
+        secure_memzero(hashed_password)
+        secure_memzero(salt)
+        secure_memzero(key)
 
 def encrypt_file(input_file, output_file, password, hash_config=None,
                  pbkdf2_iterations=100000, quiet=False, use_secure_mem=True,
@@ -677,7 +685,8 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         algorithm = EncryptionAlgorithm(algorithm)
 
     # Generate a key from the password
-    salt = os.urandom(16)  # Unique salt for each encryption
+    #salt = os.urandom(16)  # Unique salt for each encryption
+    salt = secrets.token_urlsafe(16)
 
     if not quiet:
         print("\nGenerating encryption key...")
@@ -710,7 +719,8 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
             return f.encrypt(data)
         else:
             # Generate a random nonce
-            nonce = os.urandom(16)  # 16 bytes for AES-GCM and ChaCha20-Poly1305
+            #nonce = os.urandom(16)  # 16 bytes for AES-GCM and ChaCha20-Poly1305
+            nonce = secrets.token_bytes(16)
             if algorithm == EncryptionAlgorithm.AES_GCM:
                 cipher = AESGCM(key)
                 return nonce + cipher.encrypt(nonce[:12], data, None)
@@ -774,9 +784,11 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     key = None
     try:
         return True
-    finally: secure_memzero(key)
-
-
+    finally:
+        secure_memzero(key)
+        secure_memzero(data)
+        secure_memzero(encrypted_data)
+        secure_memzero(encrypted_hash)
 
 def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=True):
     """
@@ -895,5 +907,7 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
     key = None
     try:
         return True
-    finally: secure_memzero(key)
-
+    finally:
+        secure_memzero(key)
+        secure_memzero(decrypted_data)
+        secure_memzero(file_content)
