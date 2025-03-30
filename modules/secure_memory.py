@@ -96,6 +96,18 @@ def secure_memzero(data):
     except Exception as e:
         raise RuntimeError(f"Failed to securely zero memory: {e}") from e
 
+def secure_wipe(data):
+    if isinstance(data, bytes):
+        length = len(data)
+        # Overwrite with random data
+        for _ in range(3):  # Multiple overwrites for security
+            data_view = memoryview(data)
+            data_view[:] = secrets.token_bytes(length)
+    elif isinstance(data, bytearray):
+        length = len(data)
+        for _ in range(3):
+            data[:] = secrets.token_bytes(length)
+
 
 class SecureBytes(bytearray):
     """
