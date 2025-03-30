@@ -638,7 +638,7 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
     if use_pbkdf2:
         derived_salt = salt
         for i in range(use_pbkdf2):
-            round_salt = derived_salt + str(i).encode()
+            round_salt = derived_salt + str(i).encode('utf-8')
             hashed_password = PBKDF2HMAC(
                 algorithm=hashes.SHA256(),
                 length=key_length,
@@ -649,14 +649,12 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
             derived_salt = hashed_password[:16]
             show_progress("PBKDF2", i + 1, use_pbkdf2)
         key = hashed_password
-        secure_memzero(derived_salt)
     if algorithm == EncryptionAlgorithm.FERNET.value:
          key = base64.urlsafe_b64encode(key)
     try:
         return key, salt, hash_config
     finally:
         if use_secure_mem:
-            secure_memzero(derived_key)
             secure_memzero(derived_salt)
             secure_memzero(password)
             secure_memzero(hashed_password)
@@ -688,7 +686,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         algorithm = EncryptionAlgorithm(algorithm)
 
     # Generate a key from the password
-    salt = secrets.token_urlsafe(16) # Unique salt for each encryption
+    salt = secrets.token_bytes(16) # Unique salt for each encryption
 
     if not quiet:
         print("\nGenerating encryption key...")
