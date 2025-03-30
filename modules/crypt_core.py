@@ -25,6 +25,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 
+from modules.secure_memory import secure_memzero
 
 # Try to import optional dependencies
 try:
@@ -631,7 +632,6 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
             derived_salt = derived_key[:16]
             show_progress("Scrypt", i + 1, hash_config.get('scrypt', {}).get('rounds', 1))
         key = derived_key
-    print(f'pbkdf2 ' + str(use_pbkdf2))
     if use_pbkdf2:
         derived_salt = salt
         for i in range(use_pbkdf2):
@@ -648,8 +648,9 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
         key = hashed_password
     if algorithm == EncryptionAlgorithm.FERNET.value:
          key = base64.urlsafe_b64encode(key)
-
-    return key, salt, hash_config
+    try:
+        return key, salt, hash_config
+    finally: secure_memzero(password)
 
 
 
@@ -771,8 +772,9 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
 
     # Clean up
     key = None
-
-    return True
+    try:
+        return True
+    finally: secure_memzero(key)
 
 
 
@@ -891,7 +893,7 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
 
     # Clean up
     key = None
-
-    return True
-
+    try:
+        return True
+    finally: secure_memzero(key)
 
