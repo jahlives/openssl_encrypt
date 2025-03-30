@@ -26,7 +26,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 
-from modules.secure_memory import secure_memzero
+from modules.secure_memory import secure_memzero, secure_wipe
 
 # Try to import optional dependencies
 try:
@@ -332,7 +332,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
 
     if use_secure_mem:
         try:
-            from modules.secure_memory import secure_buffer, secure_memcpy, secure_memzero
+            from modules.secure_memory import secure_buffer, secure_memcpy, secure_memzero, secure_wipe
 
             # Use secure memory approach
             with secure_buffer(len(password) + len(salt), zero=False) as hashed:
@@ -598,6 +598,8 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
                 derived_salt = hashed_password[:16]
                 show_progress("Argon2", i + 1, hash_config.get('argon2', {}).get('rounds', 1))
             key = hashed_password
+            secure_wipe(derived_key)
+            secure_wipe(derived_salt)
             secure_memzero(derived_key)
             secure_memzero(derived_salt)
             # Update hash_config to reflect that Argon2 was used
@@ -635,6 +637,8 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
             derived_salt = derived_key[:16]
             show_progress("Scrypt", i + 1, hash_config.get('scrypt', {}).get('rounds', 1))
         key = derived_key
+        secure_wipe(derived_key)
+        secure_wipe(derived_salt)
         secure_memzero(derived_key)
         secure_memzero(derived_salt)
     if use_pbkdf2:
@@ -651,12 +655,17 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
             derived_salt = hashed_password[:16]
             show_progress("PBKDF2", i + 1, use_pbkdf2)
         key = hashed_password
+        secure_wipe(derived_key)
         secure_memzero(derived_salt)
     if algorithm == EncryptionAlgorithm.FERNET.value:
          key = base64.urlsafe_b64encode(key)
     try:
         return key, salt, hash_config
     finally:
+        secure_wipe(password)
+        secure_wipe(hashed_password)
+        secure_wipe(salt)
+        secure_wipe(key)
         secure_memzero(password)
         secure_memzero(hashed_password)
         secure_memzero(salt)
@@ -685,8 +694,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         algorithm = EncryptionAlgorithm(algorithm)
 
     # Generate a key from the password
-    #salt = os.urandom(16)  # Unique salt for each encryption
-    salt = secrets.token_urlsafe(16)
+    salt = secrets.token_urlsafe(16) # Unique salt for each encryption
 
     if not quiet:
         print("\nGenerating encryption key...")
@@ -719,8 +727,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
             return f.encrypt(data)
         else:
             # Generate a random nonce
-            #nonce = os.urandom(16)  # 16 bytes for AES-GCM and ChaCha20-Poly1305
-            nonce = secrets.token_bytes(16)
+            nonce = secrets.token_bytes(16) # 16 bytes for AES-GCM and ChaCha20-Poly1305
             if algorithm == EncryptionAlgorithm.AES_GCM:
                 cipher = AESGCM(key)
                 return nonce + cipher.encrypt(nonce[:12], data, None)
@@ -785,6 +792,10 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     try:
         return True
     finally:
+        secure_wipe(key)
+        secure_wipe(data)
+        secure_wipe(encrypted_data)
+        secure_wipe(encrypted_hash)
         secure_memzero(key)
         secure_memzero(data)
         secure_memzero(encrypted_data)
