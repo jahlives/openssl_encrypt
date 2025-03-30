@@ -108,6 +108,10 @@ def secure_memzero(data):
     if data is None:
         return
 
+    if isinstance(data, str):
+        data = data.encode('utf-8')
+
+
     # Simplified zeroing during shutdown
     try:
         if isinstance(data, (bytearray, memoryview)):
@@ -126,7 +130,11 @@ def secure_memzero(data):
             raise TypeError("Cannot wipe readonly memory view")
         target_data = bytearray(data)
     else:
-        raise TypeError("Data must be SecureBytes, bytes, bytearray, or memoryview")
+        try:
+            # Try to convert other types to bytes first
+            target_data = bytearray(bytes(data))
+        except:
+            raise TypeError("Data must be SecureBytes, bytes, bytearray, memoryview, or convertible to bytes")
 
     length = len(target_data)
 
