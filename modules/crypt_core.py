@@ -26,7 +26,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 
-from modules.secure_memory import secure_memzero, secure_wipe
+from modules.secure_memory import secure_memzero
 
 # Try to import optional dependencies
 try:
@@ -332,7 +332,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
 
     if use_secure_mem:
         try:
-            from modules.secure_memory import secure_buffer, secure_memcpy, secure_memzero, secure_wipe
+            from modules.secure_memory import secure_buffer, secure_memcpy, secure_memzero
 
             # Use secure memory approach
             with secure_buffer(len(password) + len(salt), zero=False) as hashed:
@@ -598,8 +598,6 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
                 derived_salt = hashed_password[:16]
                 show_progress("Argon2", i + 1, hash_config.get('argon2', {}).get('rounds', 1))
             key = hashed_password
-            secure_wipe(derived_key)
-            secure_wipe(derived_salt)
             secure_memzero(derived_key)
             secure_memzero(derived_salt)
             # Update hash_config to reflect that Argon2 was used
@@ -637,10 +635,6 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
             derived_salt = derived_key[:16]
             show_progress("Scrypt", i + 1, hash_config.get('scrypt', {}).get('rounds', 1))
         key = derived_key
-        secure_wipe(derived_key)
-        secure_wipe(derived_salt)
-        secure_memzero(derived_key)
-        secure_memzero(derived_salt)
     if use_pbkdf2:
         derived_salt = salt
         for i in range(use_pbkdf2):
@@ -655,21 +649,21 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
             derived_salt = hashed_password[:16]
             show_progress("PBKDF2", i + 1, use_pbkdf2)
         key = hashed_password
-        secure_wipe(derived_key)
         secure_memzero(derived_salt)
     if algorithm == EncryptionAlgorithm.FERNET.value:
          key = base64.urlsafe_b64encode(key)
     try:
         return key, salt, hash_config
     finally:
-        secure_wipe(password)
-        secure_wipe(hashed_password)
-        secure_wipe(salt)
-        secure_wipe(key)
-        secure_memzero(password)
-        secure_memzero(hashed_password)
-        secure_memzero(salt)
-        secure_memzero(key)
+        if use_secure_mem:
+            secure_memzero(derived_key)
+            secure_memzero(derived_salt)
+            secure_memzero(password)
+            secure_memzero(hashed_password)
+            secure_memzero(salt)
+            secure_memzero(key)
+        else:
+            return True
 
 def encrypt_file(input_file, output_file, password, hash_config=None,
                  pbkdf2_iterations=100000, quiet=False, use_secure_mem=True,
@@ -792,14 +786,13 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     try:
         return True
     finally:
-        secure_wipe(key)
-        secure_wipe(data)
-        secure_wipe(encrypted_data)
-        secure_wipe(encrypted_hash)
-        secure_memzero(key)
-        secure_memzero(data)
-        secure_memzero(encrypted_data)
-        secure_memzero(encrypted_hash)
+        if use_secure_mem:
+            secure_memzero(key)
+            secure_memzero(data)
+            secure_memzero(encrypted_data)
+            secure_memzero(encrypted_hash)
+        else:
+            return True
 
 def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=True):
     """
@@ -919,6 +912,9 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
     try:
         return True
     finally:
-        secure_memzero(key)
-        secure_memzero(decrypted_data)
-        secure_memzero(file_content)
+        if use_secure_mem:
+            secure_memzero(key)
+            secure_memzero(decrypted_data)
+            secure_memzero(file_content)
+        else:
+            return True
