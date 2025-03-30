@@ -15,6 +15,7 @@ import stat
 import time
 import threading
 import random
+import secrets
 from enum import Enum
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
@@ -25,6 +26,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 
+from modules.secure_memory import secure_memzero
 
 # Try to import optional dependencies
 try:
@@ -596,6 +598,8 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
                 derived_salt = hashed_password[:16]
                 show_progress("Argon2", i + 1, hash_config.get('argon2', {}).get('rounds', 1))
             key = hashed_password
+            secure_memzero(derived_key)
+            secure_memzero(derived_salt)
             # Update hash_config to reflect that Argon2 was used
             if hash_config is None:
                 hash_config = {}
@@ -631,11 +635,10 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
             derived_salt = derived_key[:16]
             show_progress("Scrypt", i + 1, hash_config.get('scrypt', {}).get('rounds', 1))
         key = derived_key
-    print(f'pbkdf2 ' + str(use_pbkdf2))
     if use_pbkdf2:
         derived_salt = salt
         for i in range(use_pbkdf2):
-            round_salt = derived_salt + str(i).encode()
+            round_salt = derived_salt + str(i).encode('utf-8')
             hashed_password = PBKDF2HMAC(
                 algorithm=hashes.SHA256(),
                 length=key_length,
@@ -648,10 +651,17 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
         key = hashed_password
     if algorithm == EncryptionAlgorithm.FERNET.value:
          key = base64.urlsafe_b64encode(key)
-
-    return key, salt, hash_config
-
-
+    try:
+        return key, salt, hash_config
+    finally:
+        if use_secure_mem:
+            secure_memzero(derived_salt)
+            secure_memzero(password)
+            secure_memzero(hashed_password)
+            secure_memzero(salt)
+            secure_memzero(key)
+        else:
+            return True
 
 def encrypt_file(input_file, output_file, password, hash_config=None,
                  pbkdf2_iterations=100000, quiet=False, use_secure_mem=True,
@@ -676,7 +686,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         algorithm = EncryptionAlgorithm(algorithm)
 
     # Generate a key from the password
-    salt = os.urandom(16)  # Unique salt for each encryption
+    salt = secrets.token_bytes(16) # Unique salt for each encryption
 
     if not quiet:
         print("\nGenerating encryption key...")
@@ -709,7 +719,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
             return f.encrypt(data)
         else:
             # Generate a random nonce
-            nonce = os.urandom(16)  # 16 bytes for AES-GCM and ChaCha20-Poly1305
+            nonce = secrets.token_bytes(16) # 16 bytes for AES-GCM and ChaCha20-Poly1305
             if algorithm == EncryptionAlgorithm.AES_GCM:
                 cipher = AESGCM(key)
                 return nonce + cipher.encrypt(nonce[:12], data, None)
@@ -771,10 +781,16 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
 
     # Clean up
     key = None
-
-    return True
-
-
+    try:
+        return True
+    finally:
+        if use_secure_mem:
+            secure_memzero(key)
+            secure_memzero(data)
+            secure_memzero(encrypted_data)
+            secure_memzero(encrypted_hash)
+        else:
+            return True
 
 def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=True):
     """
@@ -891,7 +907,12 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
 
     # Clean up
     key = None
-
-    return True
-
-
+    try:
+        return True
+    finally:
+        if use_secure_mem:
+            secure_memzero(key)
+            secure_memzero(decrypted_data)
+            secure_memzero(file_content)
+        else:
+            return True

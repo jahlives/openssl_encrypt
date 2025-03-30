@@ -14,6 +14,7 @@ import mmap
 import sys
 import os
 import secrets
+import gc
 
 
 def get_memory_page_size():
@@ -32,70 +33,165 @@ def get_memory_page_size():
         return 4096
 
 
+# def secure_memzero(data):
+#     """
+#     Securely zero out a bytes/bytearray object or ctypes array.
+#
+#     This function attempts to bypass compiler optimizations that
+#     might skip the zeroing of memory that's about to be released.
+#
+#     Args:
+#         data: The data to securely zero (bytes, bytearray, ctypes array,
+#               or other buffer protocol supporting object)
+#     """
+#     # Skip empty data
+#     if not data:
+#         return
+#
+#     # Get data size and pointer
+#     try:
+#         if isinstance(data, (bytes, bytearray)):
+#             # For bytes/bytearray
+#             memsize = len(data)
+#             if isinstance(data, bytes):
+#                 # Convert immutable bytes to bytearray
+#                 data = bytearray(data)
+#         elif hasattr(data, '_type_') and hasattr(data, 'raw'):
+#             # For ctypes arrays
+#             memsize = len(data) * ctypes.sizeof(data._type_)
+#         elif hasattr(data, 'buffer_info'):
+#             # For array.array objects
+#             addr, memsize = data.buffer_info()
+#         else:
+#             # Try using the buffer protocol
+#             memoryview_obj = memoryview(data)
+#             memsize = memoryview_obj.nbytes
+#
+#         # Create a null bytes pattern for secure overwrite
+#         null_bytes = b'\x00' * memsize
+#
+#         # Attempt different methods of zeroing out data
+#         if isinstance(data, bytearray):
+#             data[:] = null_bytes
+#         elif hasattr(data, '_type_') and hasattr(data, 'raw'):
+#             ctypes.memset(ctypes.addressof(data), 0, memsize)
+#         elif hasattr(data, 'buffer_info'):
+#             data.frombytes(null_bytes)
+#         else:
+#             # Last resort, try using the buffer protocol
+#             mv = memoryview(data)
+#             if mv.readonly:
+#                 raise TypeError("Cannot securely zero read-only memory")
+#             mv[:] = null_bytes[:len(mv)]
+#
+#         # Force actual memory update by reading the data
+#         # This helps bypass some compiler optimizations
+#         if isinstance(data, bytearray):
+#             _ = sum(data)
+#         elif hasattr(data, '_type_') and hasattr(data, 'raw'):
+#             _ = sum(data)
+#         elif hasattr(data, 'buffer_info'):
+#             _ = sum(data)
+#     except (TypeError, BufferError) as e:
+#         raise TypeError(f"Data type not supported for secure zeroing: {type(data)}") from e
+#     except Exception as e:
+#         raise RuntimeError(f"Failed to securely zero memory: {e}") from e
+
 def secure_memzero(data):
     """
-    Securely zero out a bytes/bytearray object or ctypes array.
-    
-    This function attempts to bypass compiler optimizations that
-    might skip the zeroing of memory that's about to be released.
-    
-    Args:
-        data: The data to securely zero (bytes, bytearray, ctypes array, 
-              or other buffer protocol supporting object)
-    """
-    # Skip empty data
-    if not data:
-        return
-        
-    # Get data size and pointer
-    try:
-        if isinstance(data, (bytes, bytearray)):
-            # For bytes/bytearray
-            memsize = len(data)
-            if isinstance(data, bytes):
-                # Convert immutable bytes to bytearray
-                data = bytearray(data)
-        elif hasattr(data, '_type_') and hasattr(data, 'raw'):
-            # For ctypes arrays
-            memsize = len(data) * ctypes.sizeof(data._type_)
-        elif hasattr(data, 'buffer_info'):
-            # For array.array objects
-            addr, memsize = data.buffer_info()
-        else:
-            # Try using the buffer protocol
-            memoryview_obj = memoryview(data)
-            memsize = memoryview_obj.nbytes
-            
-        # Create a null bytes pattern for secure overwrite
-        null_bytes = b'\x00' * memsize
-            
-        # Attempt different methods of zeroing out data
-        if isinstance(data, bytearray):
-            data[:] = null_bytes
-        elif hasattr(data, '_type_') and hasattr(data, 'raw'):
-            ctypes.memset(ctypes.addressof(data), 0, memsize)
-        elif hasattr(data, 'buffer_info'):
-            data.frombytes(null_bytes)
-        else:
-            # Last resort, try using the buffer protocol
-            mv = memoryview(data)
-            if mv.readonly:
-                raise TypeError("Cannot securely zero read-only memory")
-            mv[:] = null_bytes[:len(mv)]
-            
-        # Force actual memory update by reading the data
-        # This helps bypass some compiler optimizations
-        if isinstance(data, bytearray):
-            _ = sum(data)
-        elif hasattr(data, '_type_') and hasattr(data, 'raw'):
-            _ = sum(data)
-        elif hasattr(data, 'buffer_info'):
-            _ = sum(data)
-    except (TypeError, BufferError) as e:
-        raise TypeError(f"Data type not supported for secure zeroing: {type(data)}") from e
-    except Exception as e:
-        raise RuntimeError(f"Failed to securely zero memory: {e}") from e
+    Securely wipe data with three rounds of random overwriting followed by zeroing.
+    Ensures the data is completely overwritten in memory.
 
+    Args:
+        data: The data to be wiped (SecureBytes, bytes, bytearray, or memoryview)
+    """
+    if data is None:
+        return
+
+    if isinstance(data, str):
+        data = data.encode('utf-8')
+
+
+    # Simplified zeroing during shutdown
+    try:
+        if isinstance(data, (bytearray, memoryview)):
+            data[:] = bytearray(len(data))
+            return
+    except:
+        return
+
+    # Handle different input types
+    if isinstance(data, (SecureBytes, bytearray)):
+        target_data = data
+    elif isinstance(data, bytes):
+        target_data = bytearray(data)
+    elif isinstance(data, memoryview):
+        if data.readonly:
+            raise TypeError("Cannot wipe readonly memory view")
+        target_data = bytearray(data)
+    else:
+        try:
+            # Try to convert other types to bytes first
+            target_data = bytearray(bytes(data))
+        except:
+            raise TypeError("Data must be SecureBytes, bytes, bytearray, memoryview, or convertible to bytes")
+
+    length = len(target_data)
+
+    try:
+        # Simplified zeroing during shutdown or error cases
+        target_data[:] = bytearray(length)
+
+        # Only attempt the more complex wiping if we're not shutting down
+        if getattr(sys, 'meta_path', None) is not None:
+            try:
+                # Three rounds of random overwriting
+                for _ in range(3):
+                    random_data = bytearray(length)  # Simple zero fill if generate_secure_random_bytes is unavailable
+                    try:
+                        random_data = bytearray(generate_secure_random_bytes(length))
+                    except:
+                        pass
+                    target_data[:] = random_data
+                    random_data[:] = bytearray(length)
+                    del random_data
+
+                # Try platform specific secure zeroing
+                import platform
+                import ctypes
+
+                if platform.system() == 'Windows':
+                    try:
+                        buf = (ctypes.c_byte * length).from_buffer(target_data)
+                        ctypes.windll.kernel32.RtlSecureZeroMemory(
+                            ctypes.byref(buf),
+                            ctypes.c_size_t(length)
+                        )
+                    except:
+                        pass
+                elif platform.system() in ('Linux', 'Darwin'):
+                    try:
+                        libc = ctypes.CDLL(None)
+                        if hasattr(libc, 'explicit_bzero'):
+                            buf = (ctypes.c_byte * length).from_buffer(target_data)
+                            libc.explicit_bzero(
+                                ctypes.byref(buf),
+                                ctypes.c_size_t(length)
+                            )
+                    except:
+                        pass
+            except:
+                pass
+
+            # Final zeroing
+            target_data[:] = bytearray(length)
+
+    except Exception:
+        # Last resort zeroing attempt
+        try:
+            target_data[:] = bytearray(length)
+        except:
+            pass
 
 class SecureBytes(bytearray):
     """

@@ -499,7 +499,8 @@ def main():
                         # For decryption or quiet mode, just ask once
                         else:
                             # When in quiet mode, don't add the "Enter password: " prompt text
-                            prompt = '' if args.quiet else 'Enter password: '
+                            #prompt = '' if args.quiet else 'Enter password: '
+                            prompt = 'Enter password: '
                             pwd = getpass.getpass(prompt).encode()
                             password_secure.extend(pwd)
                             # Securely clear the temporary buffer
