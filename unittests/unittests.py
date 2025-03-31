@@ -20,6 +20,9 @@ from unittest import mock
 from pathlib import Path
 from cryptography.fernet import InvalidToken
 import base64
+from unittest.mock import patch
+from io import StringIO, BytesIO
+
 
 # Add the parent directory to the path to allow imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -428,6 +431,37 @@ class TestCryptCore(unittest.TestCase):
                 print(f"\nDecryption failed for {type}: {str(e)}")
                 # Re-raise the exception to make the test fail
                 raise AssertionError(f"Decryption failed for {type}: {str(e)}")
+
+    def test_decrypt_stdin(self):
+        encrypted_content = (
+            b'eyJzYWx0IjogIlFzeGNkQ3UrRmp4TU5KVHdRZjlReUE9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIj'
+            b'ogMCwgInNoYTI1NiI6IDAsICJzaGEzXzI1NiI6IDAsICJzaGEzXzUxMiI6IDAsICJ3aGlybHBvb2wiOiAw'
+            b'LCAic2NyeXB0IjogeyJlbmFibGVkIjogZmFsc2UsICJuIjogMTI4LCAiciI6IDgsICJwIjogMSwgInJvdW'
+            b'5kcyI6IDF9LCAiYXJnb24yIjogeyJlbmFibGVkIjogdHJ1ZSwgInRpbWVfY29zdCI6IDMsICJtZW1vcnlf'
+            b'Y29zdCI6IDY1NTM2LCAicGFyYWxsZWxpc20iOiA0LCAiaGFzaF9sZW4iOiA2NCwgInR5cGUiOiAyLCAic'
+            b'm91bmRzIjogMX0sICJwYmtkZjJfaXRlcmF0aW9ucyI6IDEwMDAwMCwgInR5cGUiOiAiaWQifSwgInBia2'
+            b'RmMl9pdGVyYXRpb25zIjogMTAwMDAwLCAib3JpZ2luYWxfaGFzaCI6ICJkMmE4NGY0YjhiNjUwOTM3ZWM4'
+            b'ZjczY2Q4YmUyYzc0YWRkNWE5MTFiYTY0ZGYyNzQ1OGVkODIyOWRhODA0YTI2IiwgImVuY3J5cHRlZF9oY'
+            b'XNoIjogIjU1Y2ZhMDk1MjI4ODQ2NmY2YjE1NDQyMmNiNTQzZTkyY2NlODY4MjZlMjAyODRiYWI1NDEwMD'
+            b'Y1MmRlZWFhNzYiLCAiYWxnb3JpdGhtIjogImFlcy1zaXYifQ==:dg0p7BCm2JulA33IBQrNQdCzWozU1V'
+            b'bdgdent8EmPIfTOKWSSj3B4g=='
+        )
+        mock_file = BytesIO(encrypted_content)
+
+        def mock_open(file, mode='r'):
+            if file == '/dev/stdin' and 'b' in mode:
+                return mock_file
+            return open(file, mode)
+
+        with patch('builtins.open', mock_open):
+            decrypted = decrypt_file(
+                input_file='/dev/stdin',
+                output_file=None,
+                password=b"1234",
+                quiet=True
+            )
+
+        self.assertEqual(decrypted, b'Hello World\n')
 
 
 class TestCryptUtils(unittest.TestCase):
