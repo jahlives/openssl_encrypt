@@ -500,9 +500,10 @@ def main():
                         else:
                             # When in quiet mode, don't add the "Enter password: " prompt text
                             #prompt = '' if args.quiet else 'Enter password: '
-                            prompt = 'Enter password: '
-                            pwd = getpass.getpass(prompt).encode()
-                            password_secure.extend(pwd)
+                            pwd = getpass.getpass('Enter password: ')
+                            sys.stdout.write('\033[A\033[K')  # Move up one line and clear it
+                            sys.stdout.flush()
+                            password_secure.extend(pwd.encode('utf-8'))
                             # Securely clear the temporary buffer
                             pwd = b'\x00' * len(pwd)
 
@@ -955,7 +956,7 @@ def main():
                     # Try to decode as text
                     if not args.quiet:
                         print("\nDecrypted content:")
-                    print(decrypted.decode())
+                    print(decrypted.decode().rstrip())
                 except UnicodeDecodeError:
                     if not args.quiet:
                         print("\nDecrypted successfully, but content is binary and cannot be displayed.")
