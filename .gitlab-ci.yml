@@ -5,8 +5,8 @@ default:
       - .pip-cache/
   before_script:
     - python3 --version
-    - pip install --upgrade pip
-    - pip install build twine
+    - pip install --upgrade pip --break-system-packages
+    - pip install build twine --break-system-packages
 
 stages:
   - test
@@ -41,7 +41,7 @@ build:
 publish:
   stage: publish
   script:
-    - pip install --upgrade twine
+    - pip install --upgrade twine --break-system-packages
     - echo "Attempting to publish with CI_JOB_TOKEN..."
     - TWINE_PASSWORD=${CI_JOB_TOKEN} TWINE_USERNAME=gitlab-ci-token python3 -m twine upload --verbose --repository-url "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi" dist/*
   rules:
@@ -52,7 +52,7 @@ publish-pypi:
   stage: publish
   image: python:3.13-alpine
   script:
-    - pip install build twine
+    - pip install build twine --break-system-packages
     - python3 -m build
     - TWINE_PASSWORD=${PYPI_API_TOKEN} TWINE_USERNAME=__token__ python3 -m twine upload testpypi dist/*
   rules:
