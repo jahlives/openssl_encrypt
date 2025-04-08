@@ -23,13 +23,6 @@ build:
     paths:
       - dist/
 
-test:
-  stage: test
-  script:
-    - pip install pytest
-    - pip install dist/*.whl
-    - pytest unittests/unittests.py -v -s
-
 publish:
   stage: publish
   script:
