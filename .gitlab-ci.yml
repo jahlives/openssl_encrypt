@@ -34,18 +34,17 @@ publish:
       project_id = os.environ.get("CI_PROJECT_ID")
       token = os.environ.get("PROJECT_ACCESS_TOKEN")
       api_url = os.environ.get("CI_API_V4_URL")
-      job_token = os.environ.get("CI_JOB_TOKEN")
       
-      # Try using the GitLab Job Token approach for PyPI packages
+      # Try using the project access token with the multipart upload
       for pkg in glob.glob("dist/*"):
           print(f"Uploading {pkg}...")
           files = {'file': open(pkg, 'rb')}
           
-          # Use multipart/form-data which is what twine would use
+          # Use multipart/form-data approach for PyPI packages
           resp = requests.post(
               f"{api_url}/projects/{project_id}/packages/pypi",
               headers={
-                  "JOB-TOKEN": job_token
+                  "PRIVATE-TOKEN": token
               },
               files=files
           )
