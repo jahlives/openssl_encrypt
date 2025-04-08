@@ -22,7 +22,7 @@ test:
     - pip install -r requirements.txt --break-system-packages
     - pip install pytest --break-system-packages
   script:
-    - pytest openssl_encrypt/unittests/unittests.py -v -s
+    - python3 -m pytest openssl_encrypt/unittests/unittests.py -v -s
   rules:
     - if: $CI_COMMIT_BRANCH == "dev"
     - if: $CI_COMMIT_BRANCH == "main"

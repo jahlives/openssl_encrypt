@@ -17,7 +17,7 @@ import time
 
 # Import the settings module
 try:
-    from modules.crypt_settings import SettingsTab, DEFAULT_CONFIG
+    from .modules.crypt_settings import SettingsTab, DEFAULT_CONFIG
 except ImportError:
     # Fallback if module is not found
     print("Settings module not found, using default configuration")
