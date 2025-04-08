@@ -27,11 +27,17 @@ publish:
   stage: publish
   script:
     - apk add --no-cache curl
-    - echo "Attempting direct API upload for debugging..."
+    - pip install requests
     - >
-      curl --verbose
-      --header "PRIVATE-TOKEN: ${PROJECT_ACCESS_TOKEN}"
-      --upload-file dist/$(ls dist/ | grep .whl)
-      "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi"
-#  rules:
-#    - if: $CI_COMMIT_TAG
+      python -c '
+      import os, requests, glob
+      for pkg in glob.glob("dist/*"):
+          with open(pkg, "rb") as f:
+              resp = requests.put(
+                  f"{os.environ["CI_API_V4_URL"]}/projects/{os.environ["CI_PROJECT_ID"]}/packages/pypi",
+                  headers={"PRIVATE-TOKEN": os.environ["PROJECT_ACCESS_TOKEN"]},
+                  files={"file": f}
+              )
+              print(f"Upload response for {pkg}: {resp.status_code}")
+              print(resp.text)
+      '
