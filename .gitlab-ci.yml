@@ -47,15 +47,25 @@ publish:
       # Proper endpoint for PyPI package uploads
       for pkg in glob.glob("dist/*"):
           print(f"Uploading {pkg}...")
+          filename = os.path.basename(pkg)
+          
+          # Set proper content type based on file extension
+          content_type = "application/octet-stream"
+          if pkg.endswith(".whl"):
+              content_type = "application/x-wheel+zip"
+          elif pkg.endswith(".tar.gz"):
+              content_type = "application/x-tar"
+          
           with open(pkg, "rb") as f:
-              if pkg.endswith(".whl"):
-                  filename = os.path.basename(pkg)
-                  resp = requests.put(
-                      f"{api_url}/projects/{project_id}/packages/pypi/files/{filename}",
-                      headers={"PRIVATE-TOKEN": token},
-                      data=f
-                  )
-                  print(f"Upload response: {resp.status_code}")
-                  print(resp.text)
+              resp = requests.put(
+                  f"{api_url}/projects/{project_id}/packages/pypi/files/{filename}",
+                  headers={
+                      "PRIVATE-TOKEN": token,
+                      "Content-Type": content_type
+                  },
+                  data=f.read()
+              )
+              print(f"Upload response for {filename}: {resp.status_code}")
+              print(resp.text)
       EOF
     - python upload_package.py
