@@ -33,7 +33,7 @@ test:
 build:
   stage: build
   script:
-    - python -m build
+    - python3 -m build
   artifacts:
     paths:
       - dist/
