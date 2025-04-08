@@ -26,6 +26,12 @@ build:
 publish:
   stage: publish
   script:
-    - TWINE_PASSWORD=${PROJECT_ACCESS_TOKEN} TWINE_USERNAME=Tobi  python -m twine upload --repository-url ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi dist/*
+    - apk add --no-cache curl
+    - echo "Attempting direct API upload for debugging..."
+    - >
+      curl --verbose
+      --header "PRIVATE-TOKEN: ${PROJECT_ACCESS_TOKEN}"
+      --upload-file dist/$(ls dist/ | grep .whl)
+      "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi"
 #  rules:
 #    - if: $CI_COMMIT_TAG
