@@ -90,3 +90,9 @@ python crypt.py ACTION [OPTIONS]
 | `--argon2-memory` | Argon2 memory cost in KB (default: 102400 = 100MB) |
 | `--argon2-parallelism` | Argon2 parallelism parameter (default: 8) | 
 | `--argon2-type` | Argon2 variant to use: argon2i, argon2d, or argon2id (default: argon2id) |
+
+#### read input from stdin
+It can be helpful to get the decrypted content from stdin (ex when encrypted content is from wallet). Here a sample of reading data from `kdewallet`
+```
+kwallet-query -f "Secret Service" -r KeePassCrypt -v kdewallet | python crypt.py decrypt --input /dev/stdin -q
+```
