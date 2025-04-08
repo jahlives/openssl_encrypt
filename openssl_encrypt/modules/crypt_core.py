@@ -26,7 +26,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 
-from .modules.secure_memory import secure_memzero
+from .secure_memory import secure_memzero
 
 # Try to import optional dependencies
 try:
@@ -332,7 +332,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
 
     if use_secure_mem:
         try:
-            from .modules.secure_memory import secure_buffer, secure_memcpy, secure_memzero
+            from .secure_memory import secure_buffer, secure_memcpy, secure_memzero
 
             # Use secure memory approach
             with secure_buffer(len(password) + len(salt), zero=False) as hashed:
