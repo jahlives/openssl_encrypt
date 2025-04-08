@@ -40,6 +40,9 @@ build:
 
 publish:
   stage: publish
+  needs:
+    - job: build
+      artifacts: true
   script:
     - pip install --upgrade twine --break-system-packages
     - echo "Attempting to publish with CI_JOB_TOKEN..."
@@ -51,6 +54,9 @@ publish:
 publish-pypi:
   stage: publish
   image: python:3.13-alpine
+  needs:
+    - job: build
+      artifacts: true
   script:
     - pip install build twine --break-system-packages
     - TWINE_PASSWORD=${PYPI_API_TOKEN} TWINE_USERNAME=__token__ python3 -m twine upload --repository-url https://test.pypi.org/legacy/ dist/*
