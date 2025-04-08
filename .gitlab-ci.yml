@@ -57,7 +57,6 @@ publish-pypi-test:
   needs:
     - job: build
       artifacts: true
-    - job: publish
   script:
     - pip install build twine --break-system-packages
     - TWINE_PASSWORD=${PYPI_API_TOKEN} TWINE_USERNAME=__token__ python3 -m twine upload --repository-url https://test.pypi.org/legacy/ dist/*
@@ -72,8 +71,6 @@ publish-pypi-prod:
   needs:
     - job: build
       artifacts: true
-    - job: publish
-    - job: publish-pypi-test
   script:
     - pip install build twine --break-system-packages
     - TWINE_PASSWORD=${PYPI_API_TOKEN_PROD} TWINE_USERNAME=__token__ python3 -m twine upload dist/*
