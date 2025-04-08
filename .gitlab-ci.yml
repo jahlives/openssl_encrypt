@@ -30,16 +30,32 @@ publish:
     - pip install requests
     - |
       cat > upload_package.py << 'EOF'
-      import os, requests, glob
+      import os, requests, glob, json
+      
+      project_id = os.environ.get("CI_PROJECT_ID")
+      token = os.environ.get("PROJECT_ACCESS_TOKEN")
+      api_url = os.environ.get("CI_API_V4_URL")
+      
+      # List packages first to see what's there
+      list_resp = requests.get(
+          f"{api_url}/projects/{project_id}/packages",
+          headers={"PRIVATE-TOKEN": token}
+      )
+      print(f"Current packages list response: {list_resp.status_code}")
+      print(list_resp.text)
+      
+      # Proper endpoint for PyPI package uploads
       for pkg in glob.glob("dist/*"):
           print(f"Uploading {pkg}...")
           with open(pkg, "rb") as f:
-              resp = requests.put(
-                  f"{os.environ.get('CI_API_V4_URL')}/projects/{os.environ.get('CI_PROJECT_ID')}/packages/pypi",
-                  headers={"PRIVATE-TOKEN": os.environ.get("PROJECT_ACCESS_TOKEN")},
-                  files={"file": f}
-              )
-              print(f"Upload response: {resp.status_code}")
-              print(resp.text)
+              if pkg.endswith(".whl"):
+                  filename = os.path.basename(pkg)
+                  resp = requests.put(
+                      f"{api_url}/projects/{project_id}/packages/pypi/files/{filename}",
+                      headers={"PRIVATE-TOKEN": token},
+                      data=f
+                  )
+                  print(f"Upload response: {resp.status_code}")
+                  print(resp.text)
       EOF
     - python upload_package.py
