@@ -28,16 +28,17 @@ publish:
   script:
     - apk add --no-cache curl
     - pip install requests
-    - >
-      python -c '
-      import os, requests, glob
-      for pkg in glob.glob("dist/*"):
-          with open(pkg, "rb") as f:
-              resp = requests.put(
-                  f"{os.environ["CI_API_V4_URL"]}/projects/{os.environ["CI_PROJECT_ID"]}/packages/pypi",
-                  headers={"PRIVATE-TOKEN": os.environ["PROJECT_ACCESS_TOKEN"]},
-                  files={"file": f}
-              )
-              print(f"Upload response for {pkg}: {resp.status_code}")
-              print(resp.text)
-      '
+    - echo '
+import os, requests, glob
+for pkg in glob.glob("dist/*"):
+    print(f"Uploading {pkg}...")
+    with open(pkg, "rb") as f:
+        resp = requests.put(
+            f"{os.environ.get(\"CI_API_V4_URL\")}/projects/{os.environ.get(\"CI_PROJECT_ID\")}/packages/pypi",
+            headers={"PRIVATE-TOKEN": os.environ.get("PROJECT_ACCESS_TOKEN")},
+            files={"file": f}
+        )
+        print(f"Upload response: {resp.status_code}")
+        print(resp.text)
+' > upload_package.py
+    - python upload_package.py
