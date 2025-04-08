@@ -26,29 +26,6 @@ build:
 publish:
   stage: publish
   script:
-    - apk add --no-cache curl
-    - |
-      cat > upload_package.py << 'EOF'
-      import os, requests, glob, json
-      
-      project_id = os.environ.get("CI_PROJECT_ID")
-      token = os.environ.get("PROJECT_ACCESS_TOKEN")
-      api_url = os.environ.get("CI_API_V4_URL")
-      
-      # Try using the project access token with the multipart upload
-      for pkg in glob.glob("dist/*"):
-          print(f"Uploading {pkg}...")
-          files = {'file': open(pkg, 'rb')}
-          
-          # Use multipart/form-data approach for PyPI packages
-          resp = requests.post(
-              f"{api_url}/projects/{project_id}/packages/pypi",
-              headers={
-                  "PRIVATE-TOKEN": token
-              },
-              files=files
-          )
-          print(f"Upload response for {os.path.basename(pkg)}: {resp.status_code}")
-          print(resp.text)
-      EOF
-    - python upload_package.py
+    - pip install --upgrade twine
+    - echo "Attempting to publish with CI_JOB_TOKEN..."
+    - TWINE_PASSWORD=${CI_JOB_TOKEN} TWINE_USERNAME=gitlab-ci-token python -m twine upload --verbose --repository-url "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi/simple" dist/*
