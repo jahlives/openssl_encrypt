@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="openssl_encrypt",
-    version="1.0.1",
+    version="1.1.0",
     install_requires=[
         # List your dependencies here, for example:
         # "cryptography>=3.4.0",
