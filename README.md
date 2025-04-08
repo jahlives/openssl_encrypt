@@ -5,6 +5,10 @@ The project is historically named `openssl-encrypt` because it once was a python
 Therefore I decided to do a complete rewrite in pure python also using modern cipher and hashes. So the projectname is a "homage" to the root of all :-)
 
 **Important note**: although `whirlpool` is supported by this tool, I do not recommend using this hashing algorithm. That is because building `whirlpool` via pip fails on recent Python versions (>= Python 3.12). If you want to use it you should have a look at [pyenv](https://github.com/pyenv/pyenv) which allows multiple Python versions to exist in peaceful co-existence. `whirlpool` will remain in the code also in future versions of this application
+## Issues
+you can create issues by [sending mail](mailto:issue+world-openssl-encrypt-2-issue-+gitlab@rm-rf.ch) to the linked address
+
+**Important due to latest changes in version 1.0.1 older encrypted files cannot be decrypted anymore (see [this ticket](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/issues/10))**
 ## Features
 - **Strong Encryption**: Uses Fernet symmetric encryption (AES-128-CBC) with secure key derivation \
   Because of this "restriction" in Fernet
