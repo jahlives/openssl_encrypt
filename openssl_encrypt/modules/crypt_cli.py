@@ -18,13 +18,13 @@ import tempfile
 import time
 
 # Import from local modules
-from modules.crypt_core import (
+from .crypt_core import (
     encrypt_file, decrypt_file, check_argon2_support,
     get_file_permissions, WHIRLPOOL_AVAILABLE, ARGON2_AVAILABLE, ARGON2_TYPE_INT_MAP,
     EncryptionAlgorithm
 
 )
-from modules.crypt_utils import (
+from .crypt_utils import (
     secure_shred_file, expand_glob_patterns, generate_strong_password,
     display_password_with_timeout, show_security_recommendations,
     request_confirmation
@@ -453,7 +453,7 @@ def main():
 
         if use_secure_mem:
             try:
-                from modules.secure_memory import secure_string, secure_input, SecureBytes
+                from .secure_memory import secure_string, secure_input, SecureBytes
 
                 # Initialize a secure string to hold the password
                 with secure_string() as password_secure:

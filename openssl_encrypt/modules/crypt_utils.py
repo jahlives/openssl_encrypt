@@ -82,7 +82,7 @@ def generate_strong_password(length, use_lowercase=True, use_uppercase=True,
     # Use secure memory if enabled
     if use_secure_mem:
         try:
-            from modules.secure_memory import SecureBytes, secure_memzero
+            from .secure_memory import SecureBytes, secure_memzero
 
             # Use SecureBytes for generating the password
             password_chars = SecureBytes()
@@ -371,7 +371,7 @@ def show_security_recommendations():
     print("Example: --enable-argon2 --argon2-time 3 --sha3-256-rounds 10000 --pbkdf2-iterations 100000\n")
 
     # Check Argon2 availability and show appropriate message
-    from modules.crypt_core import check_argon2_support
+    from .crypt_core import check_argon2_support
     argon2_available, version, supported_types = check_argon2_support()
     if argon2_available:
         print(f"Argon2 Status: AVAILABLE (version {version})")
