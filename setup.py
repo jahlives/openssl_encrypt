@@ -10,16 +10,27 @@ setup(
     name="openssl_encrypt",
     version="1.1.0",
     install_requires=[
-        # List your dependencies here, for example:
-        # "cryptography>=3.4.0",
+        "cryptography>=42.0.0",
+        "argon2-cffi>=23.1.0",
+        "bcrypt~=4.3.0",
+        "pywin32>=306; sys_platform == 'win32'",  # Windows-specific dependency
     ],
-    packages=find_packages(exclude=["__pycache__", "*.pyc"]),
+    extras_require={
+        "dev": [
+            "pytest>=8.0.0",
+            "pytest-cov>=4.1.0",
+            "black>=24.1.0",
+            "pylint>=3.0.0",
+        ],
+    },
+    packages=find_packages(),
     include_package_data=True,
     author="Tobi",
     author_email="jahlives@gmx.ch",
     description="A package for secure file encryption and decryption based on modern ciphers",
-    keywords="encryption, openssl, security",
     long_description=long_description,
+    long_description_content_type="text/markdown",
+    keywords="encryption, openssl, security",
     url="https://gitlab.com/world/openssl_encrypt",
     classifiers=[
         "Development Status :: 3 - Alpha",
