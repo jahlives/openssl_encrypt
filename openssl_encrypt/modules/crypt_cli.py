@@ -321,6 +321,48 @@ def main():
         help=argparse.SUPPRESS  # Hidden legacy option
     )
 
+    balloon_group = parser.add_argument_group('Balloon Hashing options')
+    balloon_group.add_argument(
+        '--enable-balloon',
+        action='store_true',
+        help='Enable Balloon Hashing KDF'  # Hidden legacy option''
+    )
+    balloon_group.add_argument(
+        '--balloon-time-cost',
+        type=int,
+        default=3,
+        help='Time cost parameter for Balloon hashing - controls computational complexity. Higher values increase security but also processing time.'
+    )
+    balloon_group.add_argument(
+        '--balloon-space-cost',
+        type=int,
+        default=65536,
+        help='Space cost parameter for Balloon hashing in bytes - controls memory usage. Higher values increase security but require more memory.'
+    )
+    balloon_group.add_argument(
+        '--balloon-parallelism',
+        type=int,
+        default=4,
+        help='Parallelism parameter for Balloon hashing - controls number of parallel threads. Higher values can improve performance on multi-core systems.'
+    )
+    balloon_group.add_argument(
+        '--balloon-rounds',
+        type=int,
+        default=2,
+        help='Number of rounds for Balloon hashing. More rounds increase security but also processing time.'
+    )
+    balloon_group.add_argument(
+        '--balloon-hash-len',
+        type=int,
+        default=32,
+        help='Length of the final hash output in bytes for Balloon hashing.'
+    )
+    balloon_group.add_argument(
+        '--use-balloon',
+        action='store_true',
+        help=argparse.SUPPRESS  # Hidden legacy option'
+    )
+
     # Legacy options for backward compatibility
     hash_group.add_argument('--sha512', type=int, nargs='?', const=1, default=0, help=argparse.SUPPRESS)
     hash_group.add_argument('--sha256', type=int, nargs='?', const=1, default=0, help=argparse.SUPPRESS)
@@ -377,6 +419,9 @@ def main():
     # Argon2 mapping
     if args.use_argon2:
         args.enable_argon2 = True
+
+    if args.enable_balloon:
+        args.use_balloon = True
 
     # Handle scrypt_cost conversion to scrypt_n
     if args.scrypt_cost > 0 and args.scrypt_n == 0:
@@ -684,6 +729,14 @@ def main():
             'hash_len': args.argon2_hash_len,
             'type': ARGON2_TYPE_INT_MAP[args.argon2_type],  # Store integer value for JSON serialization
             'rounds': args.argon2_rounds
+        },
+        'balloon': {
+            'enabled': args.enable_balloon,
+            'time_cost': args.balloon_time_cost,
+            'space_cost': args.balloon_space_cost,
+            'parallelism': args.balloon_parallelism,
+            'rounds': args.balloon_rounds
+
         },
         'pbkdf2_iterations': args.pbkdf2_iterations
     }
