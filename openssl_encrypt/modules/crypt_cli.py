@@ -795,48 +795,6 @@ def main():
             else:
                 output_file = args.output
 
-            # Display hash configuration details
-            if not args.quiet:
-                print("\nEncrypting with the following hash configuration:")
-                any_hash_used = False
-
-                for algorithm, params in hash_config.items():
-                    if algorithm == 'scrypt' and params.get('n', 0) > 0:
-                        any_hash_used = True
-                        print(f"- Scrypt: n={params['n']}, "
-                              f"r={params['r']}, p={params['p']}")
-                    elif algorithm == 'argon2' and params.get('enabled', False):
-                        any_hash_used = True
-                        print(f"- Argon2{args.argon2_type}: time_cost={params['time_cost']}, "
-                              f"memory_cost={params['memory_cost']}KB, "
-                              f"parallelism={params['parallelism']}, "
-                              f"hash_len={params['hash_len']}")
-                    elif algorithm == 'sha3_512' and params > 0:
-                        any_hash_used = True
-                        print(f"- SHA3-512: {params} iterations")
-                    elif algorithm == 'sha3_256' and params > 0:
-                        any_hash_used = True
-                        print(f"- SHA3-256: {params} iterations")
-                    elif algorithm == 'sha512' and params > 0:
-                        any_hash_used = True
-                        print(f"- SHA-512: {params} iterations")
-                    elif algorithm == 'sha256' and params > 0:
-                        any_hash_used = True
-                        print(f"- SHA-256: {params} iterations")
-                    elif algorithm == 'whirlpool' and params > 0:
-                        any_hash_used = True
-                        print(f"- Whirlpool: {params} iterations")
-                    elif algorithm == 'pbkdf2_iterations':
-                        print(f"- PBKDF2: {params} iterations")
-
-                if not any_hash_used:
-                    print("- No additional hashing algorithms used")
-
-                if use_secure_mem:
-                    print("- Secure memory handling: Enabled")
-                else:
-                    print("- Secure memory handling: Disabled")
-
             # Direct encryption to output file (when not overwriting)
             if not args.overwrite:
                 success = encrypt_file(
@@ -914,47 +872,6 @@ def main():
                     secure_shred_file(args.input, args.shred_passes, args.quiet)
 
         elif args.action == 'decrypt':
-            if not args.quiet:
-                print("\nDecrypting with the following hash configuration:")
-                any_hash_used = False
-
-                for algorithm, params in hash_config.items():
-                    if algorithm == 'scrypt' and params.get('n', 0) > 0:
-                        any_hash_used = True
-                        print(f"- Scrypt: n={params['n']}, "
-                              f"r={params['r']}, p={params['p']}")
-                    elif algorithm == 'argon2' and params.get('enabled', False):
-                        any_hash_used = True
-                        print(f"- Argon2{args.argon2_type}: time_cost={params['time_cost']}, "
-                              f"memory_cost={params['memory_cost']}KB, "
-                              f"parallelism={params['parallelism']}, "
-                              f"hash_len={params['hash_len']}")
-                    elif algorithm == 'sha3_512' and params > 0:
-                        any_hash_used = True
-                        print(f"- SHA3-512: {params} iterations")
-                    elif algorithm == 'sha3_256' and params > 0:
-                        any_hash_used = True
-                        print(f"- SHA3-256: {params} iterations")
-                    elif algorithm == 'sha512' and params > 0:
-                        any_hash_used = True
-                        print(f"- SHA-512: {params} iterations")
-                    elif algorithm == 'sha256' and params > 0:
-                        any_hash_used = True
-                        print(f"- SHA-256: {params} iterations")
-                    elif algorithm == 'whirlpool' and params > 0:
-                        any_hash_used = True
-                        print(f"- Whirlpool: {params} iterations")
-                    elif algorithm == 'pbkdf2_iterations':
-                        print(f"- PBKDF2: {params} iterations")
-
-                if not any_hash_used:
-                    print("- No additional hashing algorithms used")
-
-                if use_secure_mem:
-                    print("- Secure memory handling: Enabled")
-                else:
-                    print("- Secure memory handling: Disabled")
-            # Handle output file path for decryption
             if args.overwrite:
                 output_file = args.input
                 # Create a temporary file for the decryption

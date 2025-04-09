@@ -817,6 +817,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
 
     # Create metadata with all necessary information
     metadata = {
+        'format_version': 2,
         'salt': base64.b64encode(salt).decode('utf-8'),
         'hash_config': hash_config,
         'pbkdf2_iterations': pbkdf2_iterations,
@@ -886,13 +887,23 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
         raise ValueError(f"Invalid file format: {str(e)}")
 
     # Extract necessary information from metadata
+    format_version = metadata.get('format_version', 1)
     salt = base64.b64decode(metadata['salt'])
     hash_config = metadata.get('hash_config')
-    pbkdf2_iterations = metadata.get('pbkdf2_iterations', 100000)
+    if format_version == 1:
+        pbkdf2_iterations = metadata.get('pbkdf2_iterations', 100000)
+    elif format_version == 2:
+        pbkdf2_iterations = 0
+    else:
+        raise ValueError(f"Unsupported file format version: {format_version}")
+    original_hash = metadata['original_hash']
+    encrypted_hash = metadata['encrypted_hash']
+    algorithm = metadata['algorithm']
     original_hash = metadata.get('original_hash')
     encrypted_hash = metadata.get('encrypted_hash')
     algorithm = metadata.get('algorithm',
                              EncryptionAlgorithm.FERNET.value)  # Default to Fernet for backward compatibility
+
 
     print_hash_config(
         hash_config,
