@@ -17,6 +17,52 @@ stages:
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
 
+build_balloon_hashing:
+  stage: prepare
+  image: python:3.9
+  script:
+    - apt-get update && apt-get install -y git
+    - git clone https://github.com/nachonavarro/balloon-hashing.git
+    - cd balloon-hashing
+    - git checkout 8e28a78
+    - ls -la  # Let's see what files exist
+    - mkdir -p balloon_hashing
+    - cp *.py balloon_hashing/
+    - touch balloon_hashing/__init__.py
+    # Create a setup.py based on files we found
+    - |
+      cat > setup.py << 'EOF'
+      from setuptools import setup, find_packages
+
+      setup(
+          name="balloon-hashing",
+          version="0.1.0",
+          description="Implementation of the Balloon password hashing function",
+          author="Nacho Navarro",
+          author_email="nachonavarro@example.com",
+          url="https://github.com/nachonavarro/balloon-hashing",
+          packages=["balloon_hashing"],
+          classifiers=[
+              "Programming Language :: Python :: 3",
+              "License :: OSI Approved :: MIT License",
+              "Operating System :: OS Independent",
+          ],
+          python_requires=">=3.6",
+      )
+      EOF
+    - pip install wheel
+    - python setup.py bdist_wheel
+    - pip install twine
+    - TWINE_USERNAME=${CI_JOB_TOKEN} TWINE_PASSWORD=${CI_JOB_TOKEN} twine upload --repository-url ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi dist/*
+    # Update your requirements.txt to use the package from GitLab
+    - cd ..
+    - sed -i 's|git+https://github.com/nachonavarro/balloon-hashing.git@8e28a78|balloon-hashing==0.1.0|g' requirements.txt
+    - echo "--extra-index-url ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi/simple" | cat - requirements.txt > temp && mv temp requirements.txt
+  artifacts:
+    paths:
+      - requirements.txt
+      - balloon-hashing/dist/*.whl
+
 test:
   stage: test
   image: python:3.13
