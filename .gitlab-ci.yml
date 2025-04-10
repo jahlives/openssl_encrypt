@@ -48,10 +48,12 @@ publish:
   script:
     - pip install --upgrade twine --break-system-packages
     - echo "Attempting to publish with CI_JOB_TOKEN..."
-    - TWINE_PASSWORD=${PROJECT_ACCESS_TOKEN} TWINE_USERNAME=gitlab-ci-token python3 -m twine upload --verbose --repository-url "https://gitlab.rm-rf.ch:5050/world/openssl_encrypt/-/packages/pypi" dist/*
-#"${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi" dist/*
+    - TWINE_PASSWORD=${PROJECT_ACCESS_TOKEN} TWINE_USERNAME=gitlab-ci-token python3 -m twine upload --verbose --repository-url "https://registry.rm-rf.ch/projects/${CI_PROJECT_ID}/packages/pypi" dist/*
   rules:
     - if: $CI_COMMIT_TAG
+      when: always
+    - when: manual
+      allow_failure: true
 
 publish-pypi-test:
   stage: publish
