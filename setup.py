@@ -8,11 +8,10 @@ with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name="openssl_encrypt",
-    version="0.2.3",
+    version="0.2.4",
     install_requires=[
         "cryptography>=42.0.0",
         "argon2-cffi>=23.1.0",
-        "bcrypt~=4.3.0",
         "pywin32>=306; sys_platform == 'win32'",  # Windows-specific dependency
     ],
     extras_require={
@@ -30,13 +29,20 @@ setup(
     description="A package for secure file encryption and decryption based on modern ciphers",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    keywords="encryption, openssl, security",
+    keywords="encryption, decryption, random-password, secure shredding, security",
     url="https://gitlab.com/world/openssl_encrypt",
     classifiers=[
-        "Development Status :: 3 - Alpha",
-        "Intended Audience :: Developers",
+        "Development Status :: 5 - Production/Stable",
+    	"Intended Audience :: Developers",
+    	"Intended Audience :: End Users/Desktop",
+    	"Intended Audience :: Information Technology",
+    	"Intended Audience :: System Administrators",
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
+	"Topic :: Security",
+	"Topic :: Security :: Cryptography",
+    	"Topic :: Utilities",
+    	"Operating System :: OS Independent",
     ],
-    python_requires=">=3.6",
+    python_requires=">=3.9",
 )

@@ -9,6 +9,7 @@ default:
     - pip install build twine --break-system-packages
 
 stages:
+  - prepare
   - test
   - build
   - publish
@@ -37,6 +38,7 @@ build:
       - dist/
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
 
 publish:
   stage: publish
@@ -46,9 +48,8 @@ publish:
   script:
     - pip install --upgrade twine --break-system-packages
     - echo "Attempting to publish with CI_JOB_TOKEN..."
-    - TWINE_PASSWORD=${CI_JOB_TOKEN} TWINE_USERNAME=gitlab-ci-token python3 -m twine upload --verbose --repository-url "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi" dist/*
+    - TWINE_PASSWORD=${PROJECT_ACCESS_TOKEN} TWINE_USERNAME=gitlab-ci-token python3 -m twine upload --verbose --repository-url "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi" dist/*
   rules:
-    - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_TAG
 
 publish-pypi-test:
@@ -62,8 +63,6 @@ publish-pypi-test:
     - TWINE_PASSWORD=${PYPI_API_TOKEN} TWINE_USERNAME=__token__ python3 -m twine upload --repository-url https://test.pypi.org/legacy/ dist/*
   rules:
     - if: $CI_COMMIT_TAG
-    - if: $CI_COMMIT_BRANCH == "main"
-
 
 publish-pypi-prod:
   stage: publish
@@ -76,4 +75,3 @@ publish-pypi-prod:
     - TWINE_PASSWORD=${PYPI_API_TOKEN_PROD} TWINE_USERNAME=__token__ python3 -m twine upload dist/*
   rules:
     - if: $CI_COMMIT_TAG
-    - if: $CI_COMMIT_BRANCH == "main"
