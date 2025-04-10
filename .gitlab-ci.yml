@@ -25,8 +25,29 @@ build_balloon_hashing:
     - git clone https://github.com/nachonavarro/balloon-hashing.git
     - cd balloon-hashing
     - git checkout 8e28a78
+    - |
+      cat > setup.py << 'EOF'
+      from setuptools import setup, find_packages
+
+      setup(
+          name="balloon-hashing",
+          version="0.1.0",
+          description="Implementation of the Balloon password hashing function",
+          author="Nacho Navarro",
+          author_email="nachonavarro@example.com",
+          url="https://github.com/nachonavarro/balloon-hashing",
+          packages=find_packages(include=["balloon"]),
+          classifiers=[
+              "Programming Language :: Python :: 3",
+              "License :: OSI Approved :: MIT License",
+              "Operating System :: OS Independent",
+          ],
+          python_requires=">=3.6",
+      )
+      EOF
+    - touch balloon/__init__.py
     - pip install build wheel twine
-    - python -m build --wheel
+    - python setup.py bdist_wheel
     - TWINE_USERNAME=${CI_JOB_TOKEN} TWINE_PASSWORD=${CI_JOB_TOKEN} twine upload --repository-url ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi dist/*
   artifacts:
     paths:
