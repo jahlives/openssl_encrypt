@@ -19,6 +19,7 @@ variables:
 test:
   stage: test
   before_script:
+    - apk add git
     - pip install -r requirements.txt --break-system-packages
     - pip install pytest --break-system-packages
   script:
