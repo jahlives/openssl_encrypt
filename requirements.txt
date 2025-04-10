@@ -2,14 +2,15 @@
 cryptography>=42.0.0
 argon2-cffi>=23.1.0
 # does not build on python 3.13
-#whirlpool>=0.3 ; python_version < '3.12'
+whirlpool>=0.3 ; python_version < '3.12'
+bcrypt~=4.3.0
+git+https://github.com/nachonavarro/balloon-hashing.git@8e28a78
 
 # Windows-specific dependencies
 pywin32>=306; sys_platform == 'win32'
 
 # Development tools (commented out by default)
-# pytest>=8.0.0
-# pytest-cov>=4.1.0
-# black>=24.1.0
-# pylint>=3.0.0
-bcrypt~=4.3.0
+pytest>=8.0.0
+pytest-cov>=4.1.0
+black>=24.1.0
+pylint>=3.0.0
