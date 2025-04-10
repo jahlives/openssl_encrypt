@@ -4,9 +4,7 @@ argon2-cffi>=23.1.0
 # does not build on python 3.13
 whirlpool>=0.3 ; python_version < '3.12'
 bcrypt~=4.3.0
---index-url https://gitlab.rm-rf.ch/world/openssl_encrypt/-/packages/pypi/simple
-balloon-hashing==0.1.0
-
+git+https://github.com/nachonavarro/balloon-hashing.git@8e28a78
 # Windows-specific dependencies
 pywin32>=306; sys_platform == 'win32'
 

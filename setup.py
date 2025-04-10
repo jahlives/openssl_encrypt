@@ -13,7 +13,7 @@ setup(
         "cryptography>=42.0.0",
         "argon2-cffi>=23.1.0",
         "pywin32>=306; sys_platform == 'win32'",  # Windows-specific dependency
-        "balloon-hashing==0.1.0",
+        "git+https://github.com/nachonavarro/balloon-hashing.git@8e28a78",
     ],
     extras_require={
         "dev": [
