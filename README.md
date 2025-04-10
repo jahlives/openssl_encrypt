@@ -30,28 +30,24 @@ you can create issues by [sending mail](mailto:issue+world-openssl-encrypt-2-iss
 - **Progress Visualization**: Real-time progress bars for lengthy operations
 - **Graphical User Interface**: User-friendly GUI for all operations
 ## Files Included
-- [crypt.py](crypt.py) - Main command-line utility
-- [crypt_gui.py](crypt_gui.py) - Graphical user interface
-- [modules/crypt.cli.py](modules/crypt.cli.py) - command-line interface
-- [modules/crypt_core.py](modules/crypt_core.py) - provides the core functionality
-- [modules/crypt_utils.py](modules/crypt_utils.py) - provides utility functions
-- [modules/secure_memory.py](modules/secure_memory.py) - provides functions for secure memory handling
-- [requirements.txt](requirements.txt) - Required Python packages
-- [README.md](README.md) - This documentation file
-- [docs/install.md](docs/install.md) - installation notes
-- [docs/usage.md](docs/usage.md) - usage notes
-- [docs/examples.md](docs/examples.md) - some examples
-- [docs/password-handling.md](docs/password-handling.md) - notes about password handling
-- [docs/security-notes.md](docs/security-notes.md) - notes about security
-- [unittests/unittests.py](unittests/unittests.py) - Unit tests for the utility
-- [unittests/test_gui.py](unittests/test_gui.py) - simple test for `tkinter`
-- [unittests/test1_aes-gcm.txt](unittests/test1_aes-gcm.txt) - testfile for `aes-gcm` encryption
-- [unittests/test1_chacha20-poly1305.txt](unittests/test1_chacha20-poly1305.txt) - testfile for `chacha20-poly1305` encryption
-- [unittests/test1_fernet.txt](unittests/test1_fernet.txt) - testfile for `fernet` encryption
-- [unittests/test1_gui_aes-gcm.txt](unittests/test1_gui_aes-gcm.txt) - testfile for `aes-gcm` encryption of GUI
-- [unittests/test1_gui_chacha20-poly1305.txt](unittests/test1_gui_chacha20-poly1305.txt) - testfile for `chacha20-poly1305` encryption in GUI
+- [crypt.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/crypt.py) - Main command-line utility
+- [crypt_gui.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/crypt_gui.py) - Graphical user interface
+- [modules/crypt.cli.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/modules/crypt.cli.py) - command-line interface
+- [modules/crypt_core.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/modules/crypt_core.py) - provides the core functionality
+- [modules/crypt_utils.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/modules/crypt_utils.py) - provides utility functions
+- [modules/secure_memory.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/modules/secure_memory.py) - provides functions for secure memory handling
+- [requirements.txt](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/requirements.txt) - Required Python packages
+- [README.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/README.md) - This documentation file
+- [docs/install.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/install.md) - installation notes
+- [docs/usage.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/usage.md) - usage notes
+- [docs/examples.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/examples.md) - some examples
+- [docs/password-handling.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/password-handling.md) - notes about password handling
+- [docs/security-notes.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/security-notes.md) - notes about security
+- [unittests/unittests.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/unittests/unittests.py) - Unit tests for the utility
+- [unittests/test_gui.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/unittests/test_gui.py) - simple test for `tkinter`
+- [unittests/testfiles](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/unittests/testfiles) - testfiles for `unittests` encryption
 
-all test1_*.txt files are ecrypted with password `1234` for your testing
+all testfile files are ecrypted with password `1234` for your testing
 ## License
 
 [MIT License](LICENSE)

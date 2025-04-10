@@ -26,7 +26,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 
-from modules.secure_memory import secure_memzero
+from .secure_memory import secure_memzero
 
 # Try to import optional dependencies
 try:
@@ -68,6 +68,13 @@ except ImportError:
     ARGON2_TYPE_MAP = {'id': None, 'i': None, 'd': None}
     ARGON2_TYPE_INT_MAP = {'id': 2, 'i': 1, 'd': 0}  # Default integer values
     ARGON2_INT_TO_TYPE_MAP = {}
+
+try:
+    from .balloon import balloon_m
+    BALLOON_HASH_AVAILABLE = True
+except ImportError:
+    BALLOON_HASH_AVAILABLE = False
+
 
 class EncryptionAlgorithm(Enum):
     FERNET = "fernet"
@@ -332,7 +339,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
 
     if use_secure_mem:
         try:
-            from modules.secure_memory import secure_buffer, secure_memcpy, secure_memzero
+            from .secure_memory import secure_buffer, secure_memcpy, secure_memzero
 
             # Use secure memory approach
             with secure_buffer(len(password) + len(salt), zero=False) as hashed:
@@ -557,6 +564,7 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
     use_argon2 = hash_config.get('argon2', {}).get('enabled', False)
     use_scrypt = hash_config.get('scrypt', {}).get('enabled', False)
     use_pbkdf2 = hash_config.get('pbkdf2', {}).get('pbkdf2-iterations', 100000)
+    use_balloon = hash_config.get('balloon', {}).get('enabled', False)
 
     # If hash_config has argon2 section with enabled explicitly set to False, honor that
     #if hash_config and 'argon2' in hash_config and 'enabled' in hash_config['argon2']:
@@ -616,6 +624,51 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
                 print(f"Argon2 key derivation failed: {str(e)}. Falling back to PBKDF2.")
             # Fall back to PBKDF2 if Argon2 fails
             use_argon2 = False
+
+    if use_balloon:
+        derived_key = hashed_password
+        derived_salt = salt
+        if not quiet:
+            print("Using Balloon-Hashing for key derivation...")
+        balloon_config = hash_config.get('balloon', {}) if hash_config else {}
+        time_cost = balloon_config.get('time_cost', 3)
+        space_cost = balloon_config.get('space_cost', 65536)  # renamed from memory_cost
+        parallelism = balloon_config.get('parallelism', 4)
+        hash_len = key_length
+
+        try:
+            for i in range(hash_config.get('balloon', {}).get('rounds', 1)):
+                round_salt = derived_salt + str(i).encode()
+                hashed_password = balloon_m(
+                    password=hashed_password,  # Use the potentially hashed password
+                    salt=str(round_salt),
+                    time_cost=time_cost,
+                    space_cost=space_cost,  # renamed from memory_cost
+                    parallel_cost=parallelism
+                )
+                derived_salt = hashed_password[:16]
+                show_progress("Balloon", i + 1, hash_config.get('balloon', {}).get('rounds', 1))
+            key = hashed_password
+            secure_memzero(derived_key)
+            secure_memzero(derived_salt)
+
+            # Update hash_config
+            if hash_config is None:
+                hash_config = {}
+            if 'balloon' not in hash_config:
+                hash_config['balloon'] = {}
+            hash_config['balloon'].update({
+                'enabled': True,
+                'time_cost': time_cost,
+                'space_cost': space_cost,  # renamed from memory_cost
+                'parallelism': parallelism,
+                'hash_len': hash_len
+            })
+        except Exception as e:
+            if not quiet:
+                print(f"Balloon key derivation failed: {str(e)}. Falling back to PBKDF2.")
+            use_argon2 = False  # Consider falling back to PBKDF2
+
     if use_scrypt:
         derived_key = hashed_password
         derived_salt = salt
@@ -691,6 +744,16 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     if not quiet:
         print("\nGenerating encryption key...")
     algorithm_value = algorithm.value if isinstance(algorithm, EncryptionAlgorithm) else algorithm
+
+    print_hash_config(
+        hash_config,
+        encryption_algo=algorithm_value,
+        salt=salt,
+        quiet=quiet,
+        use_secure_mem=use_secure_mem,
+        kind='encrypt'
+    )
+
     key, salt, hash_config = generate_key(
         password, salt, hash_config, pbkdf2_iterations, quiet, use_secure_mem, algorithm_value
     )
@@ -754,6 +817,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
 
     # Create metadata with all necessary information
     metadata = {
+        'format_version': 2,
         'salt': base64.b64encode(salt).decode('utf-8'),
         'hash_config': hash_config,
         'pbkdf2_iterations': pbkdf2_iterations,
@@ -823,13 +887,32 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
         raise ValueError(f"Invalid file format: {str(e)}")
 
     # Extract necessary information from metadata
+    format_version = metadata.get('format_version', 1)
     salt = base64.b64decode(metadata['salt'])
     hash_config = metadata.get('hash_config')
-    pbkdf2_iterations = metadata.get('pbkdf2_iterations', 100000)
+    if format_version == 1:
+        pbkdf2_iterations = metadata.get('pbkdf2_iterations', 100000)
+    elif format_version == 2:
+        pbkdf2_iterations = 0
+    else:
+        raise ValueError(f"Unsupported file format version: {format_version}")
+    original_hash = metadata['original_hash']
+    encrypted_hash = metadata['encrypted_hash']
+    algorithm = metadata['algorithm']
     original_hash = metadata.get('original_hash')
     encrypted_hash = metadata.get('encrypted_hash')
     algorithm = metadata.get('algorithm',
                              EncryptionAlgorithm.FERNET.value)  # Default to Fernet for backward compatibility
+
+
+    print_hash_config(
+        hash_config,
+        encryption_algo=metadata.get('algorithm', 'fernet'),
+        salt=metadata.get('salt'),
+        quiet=quiet,
+        use_secure_mem=use_secure_mem,
+        kind='decrypt'
+    )
 
     # Verify the hash of encrypted data
     if encrypted_hash:
@@ -916,3 +999,79 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
             secure_memzero(file_content)
         else:
             return True
+
+
+def get_organized_hash_config(hash_config, encryption_algo=None, salt=None):
+    organized_config = {
+        'encryption': {
+            'algorithm': encryption_algo,
+            'salt': salt
+        },
+        'kdfs': {},
+        'hashes': {}
+    }
+
+    # Define which algorithms are KDFs and which are hashes
+    kdf_algorithms = ['scrypt', 'argon2', 'balloon', 'pbkdf2_iterations']
+    hash_algorithms = ['sha3_512', 'sha3_256', 'sha512', 'sha256', 'whirlpool']
+
+    # Organize the config
+    for algo, params in hash_config.items():
+        if algo in kdf_algorithms:
+            if isinstance(params, dict):
+                if params.get('enabled', False):
+                    organized_config['kdfs'][algo] = params
+            elif algo == 'pbkdf2_iterations' and params > 0:
+                organized_config['kdfs'][algo] = params
+        elif algo in hash_algorithms and params > 0:
+            organized_config['hashes'][algo] = params
+
+    return organized_config
+
+
+def print_hash_config(hash_config, encryption_algo=None, salt=None, quiet=False, use_secure_mem=True, kind='decrypt'):
+    if quiet:
+        return
+    if use_secure_mem:
+        print("- Secure memory handling: Enabled")
+    else:
+        print("- Secure memory handling: Disabled")
+    organized = get_organized_hash_config(hash_config, encryption_algo, salt)
+
+    if kind == 'decrypt':
+        print("\nDecrypting with the following configuration:")
+    else:
+        print("\nEncrypting with the following configuration:")
+
+    # Print Hashes
+    print("  Hash Functions:")
+    if not organized['hashes']:
+        print("    - No additional hashing algorithms used")
+    else:
+        for algo, iterations in organized['hashes'].items():
+            print(f"    - {algo.upper()}: {iterations} iterations")
+    # Print KDFs
+    print("  Key Derivation Functions:")
+    if not organized['kdfs']:
+        print("    - No KDFs used")
+    else:
+        for algo, params in organized['kdfs'].items():
+            if algo == 'scrypt':
+                print(f"    - Scrypt: n={params['n']}, r={params['r']}, p={params['p']}")
+            elif algo == 'argon2':
+                print(f"    - Argon2: time_cost={params['time_cost']}, "
+                      f"memory_cost={params['memory_cost']}KB, "
+                      f"parallelism={params['parallelism']}, "
+                      f"hash_len={params['hash_len']}")
+            elif algo == 'balloon':
+                print(f"    - Balloon: time_cost={params['time_cost']}, "
+                      f"space_cost={params['space_cost']}, "
+                      f"parallelism={params['parallelism']}, "
+                      f"rounds={params['rounds']}")
+            elif algo == 'pbkdf2_iterations':
+                print(f"    - PBKDF2: {params} iterations")
+    print("  Encryption:")
+    print(f"    - Algorithm: {encryption_algo or 'Not specified'}")
+    salt_str = base64.b64encode(salt).decode('utf-8') if isinstance(salt, bytes) else salt
+    print(f"    - Salt: {salt_str or 'Not specified'}")
+    print('')
