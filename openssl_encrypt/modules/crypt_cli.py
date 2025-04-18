@@ -16,6 +16,9 @@ import atexit
 import signal
 import tempfile
 import time
+from enum import Enum
+from typing import Dict, Any
+
 
 # Import from local modules
 from .crypt_core import (
@@ -59,6 +62,110 @@ def debug_hash_config(args, hash_config, message="Hash configuration"):
     print(
         f"Argon2: args.enable_argon2={args.enable_argon2}, hash_config.enabled={hash_config.get('argon2', {}).get('enabled', 'Not set')}")
 
+class SecurityTemplate(Enum):
+    STANDARD = "standard"
+    PARANOID = "paranoid"
+    QUICK = "quick"
+
+
+def get_template_config(template: SecurityTemplate) -> Dict[str, Any]:
+    """
+    Returns predefined hash configurations matching your metadata structure.
+    """
+    templates = {
+        SecurityTemplate.QUICK: {
+            "hash_config": {
+                "sha512": 0,
+                "sha256": 1000,
+                "sha3_256": 0,
+                "sha3_512": 10000,
+                "whirlpool": 0,
+                "scrypt": {
+                    "enabled": False,
+                    "n": 128,
+                    "r": 8,
+                    "p": 1,
+                    "rounds": 1000
+                },
+                "argon2": {
+                    "enabled": False,
+                    "time_cost": 2,
+                    "memory_cost": 65536,  # 64MB
+                    "parallelism": 4,
+                    "hash_len": 32,
+                    "type": 2,
+                    "rounds": 10
+                },
+                "pbkdf2_iterations": 10000,
+                "type": "id",
+                "algorithm": "camellia"
+            }
+        },
+        SecurityTemplate.STANDARD: {
+            "hash_config": {
+                "sha512": 0,
+                "sha256": 0,
+                "sha3_256": 0,
+                "sha3_512": 1000000,
+                "whirlpool": 0,
+                "scrypt": {
+                    "enabled": True,
+                    "n": 128,
+                    "r": 8,
+                    "p": 1,
+                    "rounds": 10000
+                },
+                "argon2": {
+                    "enabled": True,
+                    "time_cost": 3,
+                    "memory_cost": 65536,
+                    "parallelism": 4,
+                    "hash_len": 32,
+                    "type": 2,
+                    "rounds": 100
+                },
+                "pbkdf2_iterations": 0,
+                "type": "id",
+                "algorithm": "fernet"
+            }
+        },
+        SecurityTemplate.PARANOID: {
+            "hash_config": {
+                "sha512": 10000,
+                "sha256": 10000,
+                "sha3_256": 10000,
+                "sha3_512": 2000000,
+                "scrypt": {
+                    "enabled": True,
+                    "n": 256,
+                    "r": 16,
+                    "p": 2,
+                    "rounds": 20000
+                },
+                "argon2": {
+                    "enabled": True,
+                    "time_cost": 4,
+                    "memory_cost": 131072,  # 128MB
+                    "parallelism": 8,
+                    "hash_len": 64,
+                    "type": 2,
+                    "rounds": 200
+                },
+                "balloon": {
+                    "enabled": True,
+                    "time_cost": 3,
+                    "space_cost": 65536,
+                    "parallelism": 4,
+                    "hash_len": 64,
+                    "rounds": 5
+                },
+                "pbkdf2_iterations": 0,
+                "type": "id"
+            }
+        }
+    }
+
+    return templates.get(template, {})
 
 def main():
     """
@@ -101,6 +208,24 @@ def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(
         description='Encrypt or decrypt a file with a password')
+
+    # Template selection group
+    template_group = parser.add_mutually_exclusive_group()
+    template_group.add_argument(
+        '--quick',
+        action='store_true',
+        help='Use quick but secure configuration'
+    )
+    template_group.add_argument(
+        '--standard',
+        action='store_true',
+        help='Use standard security configuration (default)'
+    )
+    template_group.add_argument(
+        '--paranoid',
+        action='store_true',
+        help='Use maximum security configuration'
+    )
 
     # Define core actions
     parser.add_argument(
@@ -708,38 +833,50 @@ def main():
             print(f"  - Type: Argon2{args.argon2_type}")
 
     # Create the hash configuration dictionary
-    hash_config = {
-        'sha512': args.sha512_rounds,
-        'sha256': args.sha256_rounds,
-        'sha3_256': args.sha3_256_rounds,
-        'sha3_512': args.sha3_512_rounds,
-        'whirlpool': args.whirlpool_rounds,
-        'scrypt': {
-            'enabled': args.enable_scrypt,
-            'n': args.scrypt_n,
-            'r': args.scrypt_r,
-            'p': args.scrypt_p,
-            'rounds': args.scrypt_rounds
-        },
-        'argon2': {
-            'enabled': args.enable_argon2,
-            'time_cost': args.argon2_time,
-            'memory_cost': args.argon2_memory,
-            'parallelism': args.argon2_parallelism,
-            'hash_len': args.argon2_hash_len,
-            'type': ARGON2_TYPE_INT_MAP[args.argon2_type],  # Store integer value for JSON serialization
-            'rounds': args.argon2_rounds
-        },
-        'balloon': {
-            'enabled': args.enable_balloon,
-            'time_cost': args.balloon_time_cost,
-            'space_cost': args.balloon_space_cost,
-            'parallelism': args.balloon_parallelism,
-            'rounds': args.balloon_rounds
+    if args.paranoid or args.quick or args.standard:
+        if args.paranoid:
+            hash_config = get_template_config(SecurityTemplate.PARANOID)
+            setattr(args, 'algorithm', 'aes-gcm')
+        elif args.quick:
+            hash_config = get_template_config(SecurityTemplate.QUICK)
+            setattr(args, 'algorithm', 'camellia')
+        elif args.standard:
+            hash_config = get_template_config(SecurityTemplate.STANDARD)
+            setattr(args, 'algorithm', 'fernet')
+        hash_config = hash_config['hash_config']
+    else:
+        hash_config = {
+            'sha512': args.sha512_rounds,
+            'sha256': args.sha256_rounds,
+            'sha3_256': args.sha3_256_rounds,
+            'sha3_512': args.sha3_512_rounds,
+            'whirlpool': args.whirlpool_rounds,
+            'scrypt': {
+                'enabled': args.enable_scrypt,
+                'n': args.scrypt_n,
+                'r': args.scrypt_r,
+                'p': args.scrypt_p,
+                'rounds': args.scrypt_rounds
+            },
+            'argon2': {
+                'enabled': args.enable_argon2,
+                'time_cost': args.argon2_time,
+                'memory_cost': args.argon2_memory,
+                'parallelism': args.argon2_parallelism,
+                'hash_len': args.argon2_hash_len,
+                'type': ARGON2_TYPE_INT_MAP[args.argon2_type],  # Store integer value for JSON serialization
+                'rounds': args.argon2_rounds
+            },
+            'balloon': {
+                'enabled': args.enable_balloon,
+                'time_cost': args.balloon_time_cost,
+                'space_cost': args.balloon_space_cost,
+                'parallelism': args.balloon_parallelism,
+                'rounds': args.balloon_rounds
 
-        },
-        'pbkdf2_iterations': args.pbkdf2_iterations
-    }
+            },
+            'pbkdf2_iterations': args.pbkdf2_iterations
+        }
 
     # Uncomment this line to debug the hash configuration
     # debug_hash_config(args, hash_config, "Hash configuration after setup")
