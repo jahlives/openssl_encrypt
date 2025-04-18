@@ -787,11 +787,9 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
 
     # Generate a key from the password
     salt = secrets.token_bytes(16) # Unique salt for each encryption
-
     if not quiet:
         print("\nGenerating encryption key...")
     algorithm_value = algorithm.value if isinstance(algorithm, EncryptionAlgorithm) else algorithm
-
     print_hash_config(
         hash_config,
         encryption_algo=algorithm_value,
