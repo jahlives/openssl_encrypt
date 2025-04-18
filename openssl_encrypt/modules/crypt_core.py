@@ -25,6 +25,10 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305, AESSIV
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
+import random
+import time
+from functools import wraps
+
 
 from .secure_memory import (
     SecureBytes,
@@ -113,6 +117,31 @@ class CamelliaCipher:
         result = unpadder.update(padded_data) + unpadder.finalize()
         secure_memzero(padded_data)  # Clear the padded data from memory
         return result
+
+
+def add_timing_jitter(func):
+    """
+    Adds random timing jitter to function execution to help prevent timing attacks.
+
+    Args:
+        func: The function to wrap with timing jitter
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        # Add random delay between 1 and 10 milliseconds
+        jitter = random.uniform(0.001, 0.01)
+        time.sleep(jitter)
+
+        result = func(*args, **kwargs)
+
+        # Add another random delay after execution
+        jitter = random.uniform(0.001, 0.01)
+        time.sleep(jitter)
+
+        return result
+
+    return wrapper
 
 
 def check_argon2_support():
@@ -294,7 +323,7 @@ def with_progress_bar(func, message, *args, quiet=False, **kwargs):
             print(f"\r{' ' * 80}\r", end='', flush=True)
         raise e
 
-
+@add_timing_jitter
 def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem=True):
     """
     Apply multiple rounds of different hash algorithms to a password.
@@ -501,7 +530,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
         return hashed
 
 
-
+@add_timing_jitter
 def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=False, use_secure_mem=True,
                  algorithm=EncryptionAlgorithm.FERNET.value):
     """

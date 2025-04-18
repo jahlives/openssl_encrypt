@@ -15,6 +15,9 @@ import sys
 import os
 import secrets
 import gc
+import random
+import time
+
 
 
 def get_memory_page_size():
@@ -31,71 +34,6 @@ def get_memory_page_size():
     else:
         # Default to 4KB if we can't determine it
         return 4096
-
-
-# def secure_memzero(data):
-#     """
-#     Securely zero out a bytes/bytearray object or ctypes array.
-#
-#     This function attempts to bypass compiler optimizations that
-#     might skip the zeroing of memory that's about to be released.
-#
-#     Args:
-#         data: The data to securely zero (bytes, bytearray, ctypes array,
-#               or other buffer protocol supporting object)
-#     """
-#     # Skip empty data
-#     if not data:
-#         return
-#
-#     # Get data size and pointer
-#     try:
-#         if isinstance(data, (bytes, bytearray)):
-#             # For bytes/bytearray
-#             memsize = len(data)
-#             if isinstance(data, bytes):
-#                 # Convert immutable bytes to bytearray
-#                 data = bytearray(data)
-#         elif hasattr(data, '_type_') and hasattr(data, 'raw'):
-#             # For ctypes arrays
-#             memsize = len(data) * ctypes.sizeof(data._type_)
-#         elif hasattr(data, 'buffer_info'):
-#             # For array.array objects
-#             addr, memsize = data.buffer_info()
-#         else:
-#             # Try using the buffer protocol
-#             memoryview_obj = memoryview(data)
-#             memsize = memoryview_obj.nbytes
-#
-#         # Create a null bytes pattern for secure overwrite
-#         null_bytes = b'\x00' * memsize
-#
-#         # Attempt different methods of zeroing out data
-#         if isinstance(data, bytearray):
-#             data[:] = null_bytes
-#         elif hasattr(data, '_type_') and hasattr(data, 'raw'):
-#             ctypes.memset(ctypes.addressof(data), 0, memsize)
-#         elif hasattr(data, 'buffer_info'):
-#             data.frombytes(null_bytes)
-#         else:
-#             # Last resort, try using the buffer protocol
-#             mv = memoryview(data)
-#             if mv.readonly:
-#                 raise TypeError("Cannot securely zero read-only memory")
-#             mv[:] = null_bytes[:len(mv)]
-#
-#         # Force actual memory update by reading the data
-#         # This helps bypass some compiler optimizations
-#         if isinstance(data, bytearray):
-#             _ = sum(data)
-#         elif hasattr(data, '_type_') and hasattr(data, 'raw'):
-#             _ = sum(data)
-#         elif hasattr(data, 'buffer_info'):
-#             _ = sum(data)
-#     except (TypeError, BufferError) as e:
-#         raise TypeError(f"Data type not supported for secure zeroing: {type(data)}") from e
-#     except Exception as e:
-#         raise RuntimeError(f"Failed to securely zero memory: {e}") from e
 
 def secure_memzero(data):
     """
@@ -152,8 +90,10 @@ def secure_memzero(data):
                         random_data = bytearray(generate_secure_random_bytes(length))
                     except:
                         pass
+                    time.sleep(random.uniform(0.0001, 0.001))
                     target_data[:] = random_data
                     random_data[:] = bytearray(length)
+                    time.sleep(random.uniform(0.0001, 0.001))
                     del random_data
 
                 # Try platform specific secure zeroing
