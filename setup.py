@@ -8,7 +8,7 @@ with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name="openssl_encrypt",
-    version="0.2.4",
+    version="0.2.5",
     install_requires=[
         "cryptography>=42.0.0",
         "argon2-cffi>=23.1.0",
