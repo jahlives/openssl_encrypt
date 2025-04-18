@@ -836,13 +836,15 @@ def main():
     if args.paranoid or args.quick or args.standard:
         if args.paranoid:
             hash_config = get_template_config(SecurityTemplate.PARANOID)
-            setattr(args, 'algorithm', 'aes-gcm')
+            hash_config['hash_config']['algorithm'] = 'aes-siv'
+            setattr(args, 'algorithm', 'aes-siv')
         elif args.quick:
             hash_config = get_template_config(SecurityTemplate.QUICK)
-            setattr(args, 'algorithm', 'camellia')
+            hash_config['hash_config']['algorithm'] = 'fernet'
         elif args.standard:
             hash_config = get_template_config(SecurityTemplate.STANDARD)
-            setattr(args, 'algorithm', 'fernet')
+            hash_config['hash_config']['algorithm'] = 'aes-gcm'
+        setattr(args, 'algorithm', hash_config['hash_config']['algorithm'])
         hash_config = hash_config['hash_config']
     else:
         hash_config = {
