@@ -26,7 +26,15 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 
-from .secure_memory import secure_memzero
+from .secure_memory import (
+    SecureBytes,
+    secure_memzero,
+    secure_buffer,
+    secure_input,
+    secure_string,
+    secure_compare
+)
+
 
 # Try to import optional dependencies
 try:
@@ -85,21 +93,26 @@ class EncryptionAlgorithm(Enum):
 
 class CamelliaCipher:
     def __init__(self, key):
-        self.key = key
+        self.key = SecureBytes(key)
 
     def encrypt(self, nonce, data, associated_data=None):
-        cipher = Cipher(algorithms.Camellia(self.key), modes.CBC(nonce))
+        cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
         encryptor = cipher.encryptor()
         padder = padding.PKCS7(algorithms.Camellia.block_size).padder()
         padded_data = padder.update(data) + padder.finalize()
-        return encryptor.update(padded_data) + encryptor.finalize()
+        result = encryptor.update(padded_data) + encryptor.finalize()
+        secure_memzero(padded_data)  # Clear the padded data from memory
+        return result
+
 
     def decrypt(self, nonce, data, associated_data=None):
-        cipher = Cipher(algorithms.Camellia(self.key), modes.CBC(nonce))
+        cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
         decryptor = cipher.decryptor()
         padded_data = decryptor.update(data) + decryptor.finalize()
         unpadder = padding.PKCS7(algorithms.Camellia.block_size).unpadder()
-        return unpadder.update(padded_data) + unpadder.finalize()
+        result = unpadder.update(padded_data) + unpadder.finalize()
+        secure_memzero(padded_data)  # Clear the padded data from memory
+        return result
 
 
 def check_argon2_support():
@@ -338,9 +351,8 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
             print()  # New line after completion
 
     if use_secure_mem:
+        from .secure_memory import secure_buffer, secure_memcpy, secure_memzero
         try:
-            from .secure_memory import secure_buffer, secure_memcpy, secure_memzero
-
             # Use secure memory approach
             with secure_buffer(len(password) + len(salt), zero=False) as hashed:
                 # Initialize the secure buffer with password + salt
@@ -354,11 +366,8 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
 
                         with secure_buffer(64, zero=False) as hash_buffer:  # SHA-512 produces 64 bytes
                             for i in range(params):
-                                # Create a copy of current hash result
                                 result = hashlib.sha512(hashed).digest()
-                                # Securely copy to our hash buffer
                                 secure_memcpy(hash_buffer, result)
-                                # Update the main hash buffer
                                 secure_memcpy(hashed, hash_buffer)
                                 show_progress("SHA-512", i + 1, params)
 
@@ -421,16 +430,17 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
 
 
                 # Create a new bytes object with the final result
-                # We need to convert to bytes for compatibility with the rest of the code
-                result = bytes(hashed)
-
+                #result = SecureBytes(hashed) if not isinstance(hashed, SecureBytes) else hashed
+                result = SecureBytes.copy_from(hashed)
             return result
-
         except ImportError:
             # Fall back to standard method if secure_memory is not available
             if not quiet:
                 print("Warning: secure_memory module not available, falling back to standard method")
             use_secure_mem = False
+        finally:
+            if 'hashed' in locals():
+                secure_memzero(hashed)
 
     # Standard method without secure memory
     if not use_secure_mem:
@@ -487,7 +497,9 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                     for i in range(params):
                         hashed = hashlib.sha512(hashed).digest()
                         show_progress("SHA-512 (fallback)", i + 1, params)
+
         return hashed
+
 
 
 def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=False, use_secure_mem=True,
@@ -590,6 +602,12 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
         else:
             # Default to Argon2id if type is not valid
             argon2_type = Type.ID
+
+        if hasattr(hashed_password, 'to_bytes'):
+            hashed_password = bytes(hashed_password)
+        else:
+            hashed_password = bytes(hashed_password)
+
 
         try:
             for i in range(hash_config.get('argon2', {}).get('rounds', 1)):
