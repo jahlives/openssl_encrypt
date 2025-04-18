@@ -80,6 +80,6 @@ publish-pypi-prod:
 sast:
   stage: test
   rules:
-    - if: $CI_COMMIT_BRANCH == "dev*
+    - if: $CI_COMMIT_BRANCH == "dev"
 include:
 - template: Security/SAST.gitlab-ci.yml
