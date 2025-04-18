@@ -433,6 +433,7 @@ class TestCryptCore(unittest.TestCase):
                 raise AssertionError(f"Decryption failed for {type}: {str(e)}")
 
     def test_decrypt_stdin(self):
+        from openssl_encrypt.modules.secure_memory import SecureBytes
         encrypted_content = (
             b'eyJzYWx0IjogIlFzeGNkQ3UrRmp4TU5KVHdRZjlReUE9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIj'
             b'ogMCwgInNoYTI1NiI6IDAsICJzaGEzXzI1NiI6IDAsICJzaGEzXzUxMiI6IDAsICJ3aGlybHBvb2wiOiAw'
@@ -454,12 +455,54 @@ class TestCryptCore(unittest.TestCase):
             return open(file, mode)
 
         with patch('builtins.open', mock_open):
-            decrypted = decrypt_file(
-                input_file='/dev/stdin',
-                output_file=None,
-                password=b"1234",
-                quiet=True
-            )
+            try:
+                header_b64, payload_b64 = encrypted_content.split(b':')
+                header = json.loads(base64.b64decode(header_b64))
+                salt = base64.b64decode(header['salt'])
+
+                # First step - get the initial password hash
+                multi_hash_result = multi_hash_password(b"1234", salt, header['hash_config'])
+                print(f"\nMulti-hash output type: {type(multi_hash_result)}")
+                print(f"Multi-hash output (hex): {multi_hash_result.hex()}")
+
+                # Convert to bytes explicitly at each step
+                if isinstance(multi_hash_result, SecureBytes):
+                    password_bytes = bytes(multi_hash_result)
+                else:
+                    password_bytes = bytes(multi_hash_result)
+
+                print(f"\nPassword bytes type: {type(password_bytes)}")
+                print(f"Password bytes (hex): {password_bytes.hex()}")
+
+                # Second step - generate_key with regular bytes
+                key = generate_key(
+                    password=password_bytes,  # Make sure this is regular bytes
+                    salt=salt,  # This should already be bytes
+                    hash_config=header['hash_config'],
+                    quiet=True
+                )
+
+                if isinstance(key, tuple):
+                    derived_key, derived_salt, derived_config = key
+                    print(f"\nDerived key type: {type(derived_key)}")
+                    print(f"Derived key (hex): {derived_key.hex() if derived_key else 'None'}")
+
+                decrypted = decrypt_file(
+                    input_file='/dev/stdin',
+                    output_file=None,
+                    password=b"1234",
+                    quiet=True
+                )
+
+            except Exception as e:
+                print(f"\nException type: {type(e).__name__}")
+                print(f"Exception message: {str(e)}")
+                raise
+            finally:
+                if 'password_bytes' in locals():
+                    # Zero out the bytes if possible
+                    if hasattr(password_bytes, 'clear'):
+                        password_bytes.clear()
 
         self.assertEqual(decrypted, b'Hello World\n')
 
