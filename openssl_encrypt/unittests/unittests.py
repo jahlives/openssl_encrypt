@@ -25,7 +25,8 @@ from io import StringIO, BytesIO
 from enum import Enum
 from typing import Dict, Any, Optional
 import json
-import yaml
+import PyYAML as yaml
+
 
 
 # Add the parent directory to the path to allow imports
