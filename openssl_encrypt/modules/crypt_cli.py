@@ -17,7 +17,10 @@ import signal
 import tempfile
 import time
 from enum import Enum
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+import json
+import yaml
+
 
 
 # Import from local modules
@@ -68,7 +71,43 @@ class SecurityTemplate(Enum):
     QUICK = "quick"
 
 
-def get_template_config(template: SecurityTemplate) -> Dict[str, Any]:
+def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
+    """
+    Load a template file from the ./template directory.
+    Supports JSON and YAML formats.
+
+    Args:
+        template_name: Name of the template file (without extension)
+
+    Returns:
+        Template configuration dict or None if template not found
+    """
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # Move up one level from the modules directory to the project root
+    project_root = os.path.dirname(script_dir)
+
+    # Templates are in project root
+    template_dir = os.path.join(project_root, "templates")
+
+    # Try different extensions
+    for ext in [".json", ".yaml", ".yml"]:
+        template_path = os.path.join(template_dir, template_name + ext)
+        if os.path.exists(template_path):
+            try:
+                with open(template_path, 'r') as f:
+                    if ext == ".json":
+                        return json.load(f)
+                    else:
+                        return yaml.safe_load(f)
+            except Exception as e:
+                print(f"Error loading template {template_path}: {e}")
+                sys.exit(1)
+
+    print(f"Template {template_name} not found in {template_dir}")
+    sys.exit(1)
+
+def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
     """
     Returns predefined hash configurations matching your metadata structure.
     """
@@ -165,7 +204,24 @@ def get_template_config(template: SecurityTemplate) -> Dict[str, Any]:
         }
     }
 
-    return templates.get(template, {})
+    # If template is a SecurityTemplate enum, use built-in template
+    if isinstance(template, SecurityTemplate):
+        return templates[template]
+
+    # Otherwise, load template from file
+    if isinstance(template, str):
+        try:
+            custom_template = load_template_file(template)
+            if custom_template:
+                # Validate template structure
+                if "hash_config" in custom_template:
+                    return custom_template
+                else:
+                    print(f"Invalid template format: missing 'hash_config' key")
+                    sys.exit(1)
+        except Exception as e:
+            print(f"Error loading template file: {e}")
+            sys.exit(1)
 
 def main():
     """
@@ -208,6 +264,10 @@ def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(
         description='Encrypt or decrypt a file with a password')
+
+    # Add template argument
+    parser.add_argument('-t', '--template',
+                        help='Specify a template name (built-in or from ./template directory)')
 
     # Template selection group
     template_group = parser.add_mutually_exclusive_group()
@@ -837,7 +897,6 @@ def main():
         if args.paranoid:
             hash_config = get_template_config(SecurityTemplate.PARANOID)
             hash_config['hash_config']['algorithm'] = 'aes-siv'
-            setattr(args, 'algorithm', 'aes-siv')
         elif args.quick:
             hash_config = get_template_config(SecurityTemplate.QUICK)
             hash_config['hash_config']['algorithm'] = 'fernet'
@@ -845,6 +904,16 @@ def main():
             hash_config = get_template_config(SecurityTemplate.STANDARD)
             hash_config['hash_config']['algorithm'] = 'aes-gcm'
         setattr(args, 'algorithm', hash_config['hash_config']['algorithm'])
+        hash_config = hash_config['hash_config']
+        print(hash_config)
+        sys.exit(0)
+    elif args.template:
+        hash_config = get_template_config(args.template)
+        if hash_config['hash_config']['algorithm']:
+            setattr(args, 'algorithm', hash_config['hash_config']['algorithm'])
+        else:
+            hash_config['hash_config']['algorithm'] = 'fernet'
+            setattr(args, 'algorithm', 'fernet')
         hash_config = hash_config['hash_config']
     else:
         hash_config = {
