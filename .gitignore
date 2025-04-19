@@ -1,3 +1,6 @@
+/openssl_encrypt/templates/*
+!/openssl_encrypt/templates/.gitkeep
+
 # PyCharm IDE files
 .idea/
 
