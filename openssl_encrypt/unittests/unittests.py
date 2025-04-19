@@ -25,7 +25,7 @@ from io import StringIO, BytesIO
 from enum import Enum
 from typing import Dict, Any, Optional
 import json
-import PyYAML as yaml
+import yaml
 
 
 
