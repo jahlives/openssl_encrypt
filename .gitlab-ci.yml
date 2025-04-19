@@ -6,7 +6,7 @@ default:
   before_script:
     - python3 --version
     - pip install --upgrade pip --break-system-packages
-    - pip install build twine --break-system-packages
+    - pip install build twine PyYAML --break-system-packages
 
 stages:
   - prepare
