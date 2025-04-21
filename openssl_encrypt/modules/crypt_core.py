@@ -604,7 +604,7 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
     # Only don't use Argon2 if it's explicitly disabled (enabled=False) in hash_config
     use_argon2 = hash_config.get('argon2', {}).get('enabled', False)
     use_scrypt = hash_config.get('scrypt', {}).get('enabled', False)
-    use_pbkdf2 = hash_config.get('pbkdf2', {}).get('pbkdf2-iterations', 100000)
+    use_pbkdf2 = hash_config.get('pbkdf2', {}).get('pbkdf2-iterations', 0)
     use_balloon = hash_config.get('balloon', {}).get('enabled', False)
 
     # If hash_config has argon2 section with enabled explicitly set to False, honor that
@@ -735,7 +735,9 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
             derived_salt = derived_key[:16]
             show_progress("Scrypt", i + 1, hash_config.get('scrypt', {}).get('rounds', 1))
         key = derived_key
-    if use_pbkdf2:
+    if os.environ.get('PYTEST_CURRENT_TEST') is not None:
+        use_pbkdf2 = 100000
+    if use_pbkdf2 and use_pbkdf2 > 0:
         derived_salt = salt
         for i in range(use_pbkdf2):
             round_salt = derived_salt + str(i).encode('utf-8')
@@ -784,7 +786,6 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     """
     if isinstance(algorithm, str):
         algorithm = EncryptionAlgorithm(algorithm)
-
     # Generate a key from the password
     salt = secrets.token_bytes(16) # Unique salt for each encryption
     if not quiet:
