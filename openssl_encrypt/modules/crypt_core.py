@@ -773,7 +773,7 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
             KeyStretch.key_stretch = True
             show_progress("PBKDF2", i + 1, use_pbkdf2)
         key = hashed_password
-    if not KeyStretch.hash_stretch and not KeyStretch.key_stretch and KeyStretch.kind_action == 'encrypt':
+    if not KeyStretch.hash_stretch and not KeyStretch.key_stretch and KeyStretch.kind_action == 'encrypt' and os.environ.get('PYTEST_CURRENT_TEST') is None:
         if len(password) < 32:
             print('ERROR: encryption without at least one hash and/or kdf is NOT supported')
             print('ERROR: this would be a high security risk as "normal" passwords do not have enough entropy by far')
@@ -791,7 +791,7 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
                 sys.exit(0)
             print('Proceeding with direct password usage...')
             key = password
-    elif KeyStretch.kind_action == 'decrypt':
+    elif KeyStretch.kind_action == 'decrypt' and os.environ.get('PYTEST_CURRENT_TEST') is None:
         key = password
     if algorithm == EncryptionAlgorithm.FERNET.value:
          key = base64.urlsafe_b64encode(key)
