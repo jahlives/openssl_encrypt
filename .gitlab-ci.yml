@@ -48,15 +48,26 @@ publish:
     - job: build
       artifacts: true
   script:
-    - pip install --upgrade twine --break-system-packages
+    - pip install --upgrade twine requests
     - |
-      TWINE_USERNAME=oauth2 \
-      TWINE_PASSWORD=${PROJECT_ACCESS_TOKEN} \
-      python3 -m twine upload \
-        --verbose \
-        --repository-url "https://${MY_GITLAB_PYPI}/world/openssl_encrypt/-/packages/pypi" \
-        --non-interactive \
-        dist/*
+      python3 -c "
+import requests
+import os
+
+url = 'https://gitlab.rm-rf.ch/world/openssl_encrypt/-/packages/pypi'
+token = os.environ['PROJECT_ACCESS_TOKEN']
+
+with open('dist/openssl_encrypt-0.3.1-py3-none-any.whl', 'rb') as f:
+    response = requests.post(
+        url, 
+        headers={'PRIVATE-TOKEN': token},
+        files={'file': f},
+        allow_redirects=False
+    )
+print('Status Code:', response.status_code)
+print('Response Headers:', response.headers)
+print('Response Text:', response.text)
+"
   rules:
     - when: manual
       allow_failure: true
