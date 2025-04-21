@@ -49,7 +49,7 @@ publish:
   script:
     - pip install --upgrade twine --break-system-packages
     - echo "Attempting to publish with CI_JOB_TOKEN..."
-    - TWINE_PASSWORD=${PROJECT_ACCESS_TOKEN} TWINE_USERNAME=oauth2 python3 -m twine upload --verbose --repository-url "https://${MY_GITLAB_PYPI}/projects/${CI_PROJECT_ID}/packages/pypi" dist/*
+    - TWINE_PASSWORD=${PROJECT_ACCESS_TOKEN} TWINE_USERNAME=oauth2 python3 -m twine upload --verbose --repository-url "https://${MY_GITLAB_PYPI}/${CI_PROJECT_ID}/-/packages/pypi" dist/*
   rules:
     - when: manual
       allow_failure: true
