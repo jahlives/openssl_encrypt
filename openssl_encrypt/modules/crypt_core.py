@@ -28,7 +28,7 @@ from cryptography.hazmat.primitives import padding
 import random
 import time
 from functools import wraps
-
+import sys
 
 from .secure_memory import (
     SecureBytes,
@@ -94,6 +94,11 @@ class EncryptionAlgorithm(Enum):
     CHACHA20_POLY1305 = "chacha20-poly1305"
     AES_SIV = "aes-siv"
     CAMELLIA = "camellia"
+
+class KeyStretch:
+    key_stretch = False
+    hash_stretch = False
+    kind_action = 'encrypt'
 
 class CamelliaCipher:
     def __init__(self, key):
@@ -378,7 +383,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
 
         if current == total:
             print()  # New line after completion
-
+    stretch_hash = False
     if use_secure_mem:
         from .secure_memory import secure_buffer, secure_memcpy, secure_memzero
         try:
@@ -399,6 +404,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                                 secure_memcpy(hash_buffer, result)
                                 secure_memcpy(hashed, hash_buffer)
                                 show_progress("SHA-512", i + 1, params)
+                                KeyStretch.hash_stretch = True
 
                     elif algorithm == 'sha256' and params > 0:
                         if not quiet:
@@ -410,6 +416,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                                 secure_memcpy(hash_buffer, result)
                                 secure_memcpy(hashed, hash_buffer)
                                 show_progress("SHA-256", i + 1, params)
+                                KeyStretch.hash_stretch = True
 
                     elif algorithm == 'sha3_256' and params > 0:
                         if not quiet:
@@ -421,6 +428,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                                 secure_memcpy(hash_buffer, result)
                                 secure_memcpy(hashed, hash_buffer)
                                 show_progress("SHA3-256", i + 1, params)
+                                KeyStretch.hash_stretch = True
 
                     elif algorithm == 'sha3_512' and params > 0:
                         if not quiet:
@@ -432,6 +440,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                                 secure_memcpy(hash_buffer, result)
                                 secure_memcpy(hashed, hash_buffer)
                                 show_progress("SHA3-512", i + 1, params)
+                                KeyStretch.hash_stretch = True
 
                     elif algorithm == 'whirlpool' and params > 0:
                         if not quiet:
@@ -444,6 +453,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                                     secure_memcpy(hash_buffer, result)
                                     secure_memcpy(hashed, hash_buffer)
                                     show_progress("Whirlpool", i + 1, params)
+                                    KeyStretch.hash_stretch = True
                         else:
                             # Fall back to SHA-512 if Whirlpool is not available
                             if not quiet:
@@ -455,6 +465,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                                     secure_memcpy(hash_buffer, result)
                                     secure_memcpy(hashed, hash_buffer)
                                     show_progress("SHA-512 (fallback)", i + 1, params)
+                                    KeyStretch.hash_stretch = True
 
 
 
@@ -485,6 +496,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                 for i in range(params):
                     hashed = hashlib.sha512(hashed).digest()
                     show_progress("SHA-512", i + 1, params)
+                    KeyStretch.hash_stretch = True
 
             elif algorithm == 'sha256' and params > 0:
                 if not quiet:
@@ -493,6 +505,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                 for i in range(params):
                     hashed = hashlib.sha256(hashed).digest()
                     show_progress("SHA-256", i + 1, params)
+                    KeyStretch.hash_stretch = True
 
             elif algorithm == 'sha3_256' and params > 0:
                 if not quiet:
@@ -501,6 +514,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                 for i in range(params):
                     hashed = hashlib.sha3_256(hashed).digest()
                     show_progress("SHA3-256", i + 1, params)
+                    KeyStretch.hash_stretch = True
 
             elif algorithm == 'sha3_512' and params > 0:
                 if not quiet:
@@ -509,6 +523,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                 for i in range(params):
                     hashed = hashlib.sha3_512(hashed).digest()
                     show_progress("SHA3-512", i + 1, params)
+                    KeyStretch.hash_stretch = True
 
             elif algorithm == 'whirlpool' and params > 0:
                 if not quiet:
@@ -518,6 +533,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                     for i in range(params):
                         hashed = pywhirlpool.whirlpool(hashed).digest()
                         show_progress("Whirlpool", i + 1, params)
+                        KeyStretch.hash_stretch = True
                 else:
                     # Fall back to SHA-512 if Whirlpool is not available
                     if not quiet:
@@ -526,6 +542,7 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                     for i in range(params):
                         hashed = hashlib.sha512(hashed).digest()
                         show_progress("SHA-512 (fallback)", i + 1, params)
+                        KeyStretch.hash_stretch = True
 
         return hashed
 
@@ -568,6 +585,7 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
         if current == total:
             print()  # New line after completion
 
+    stretch_kdf = False
     # Determine required key length based on algorithm
     if algorithm == EncryptionAlgorithm.FERNET.value:
         key_length = 32  # Fernet requires 32 bytes that will be base64 encoded
@@ -650,6 +668,7 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
                     hash_len=hash_len,
                     type=argon2_type
                 )
+                KeyStretch.key_stretch = True
                 derived_salt = hashed_password[:16]
                 show_progress("Argon2", i + 1, hash_config.get('argon2', {}).get('rounds', 1))
             key = hashed_password
@@ -693,6 +712,7 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
                     space_cost=space_cost,  # renamed from memory_cost
                     parallel_cost=parallelism
                 )
+                KeyStretch.key_stretch = True
                 derived_salt = hashed_password[:16]
                 show_progress("Balloon", i + 1, hash_config.get('balloon', {}).get('rounds', 1))
             key = hashed_password
@@ -731,6 +751,7 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
                 p=hash_config['scrypt']['p'],  # Parallelization factor
                 backend=default_backend()
             )
+            KeyStretch.key_stretch = True
             derived_key = scrypt_kdf.derive(derived_key)
             derived_salt = derived_key[:16]
             show_progress("Scrypt", i + 1, hash_config.get('scrypt', {}).get('rounds', 1))
@@ -749,15 +770,37 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
                 backend=default_backend()
             ).derive(hashed_password)  # Use the potentially hashed password
             derived_salt = hashed_password[:16]
+            KeyStretch.key_stretch = True
             show_progress("PBKDF2", i + 1, use_pbkdf2)
         key = hashed_password
+    if not KeyStretch.hash_stretch and not KeyStretch.key_stretch and KeyStretch.kind_action == 'encrypt':
+        if len(password) < 32:
+            print('ERROR: encryption without at least one hash and/or kdf is NOT supported')
+            print('ERROR: this would be a high security risk as "normal" passwords do not have enough entropy by far')
+            print('ERROR: this could only work if you provide a password with at least 32 characters')
+            print('ERROR: your current password only has {} characters'.format(len(password)))
+            secure_memzero(password)
+            sys.exit(1)
+        else:
+            print('WARNING: You are about to use the password directly without any key strengthening.')
+            print('WARNING: This is only secure if your password has sufficient entropy (randomness).')
+            confirmation = input('Are you sure you want to proceed? (y/n): ').strip().lower()
+            if confirmation != 'y' and confirmation != 'yes':
+                print('Operation cancelled by user.')
+                secure_memzero(password)
+                sys.exit(0)
+            print('Proceeding with direct password usage...')
+            key = password
+    elif KeyStretch.kind_action == 'decrypt':
+        key = password
     if algorithm == EncryptionAlgorithm.FERNET.value:
          key = base64.urlsafe_b64encode(key)
     try:
         return key, salt, hash_config
     finally:
         if use_secure_mem:
-            secure_memzero(derived_salt)
+            if KeyStretch.hash_stretch or KeyStretch.hash_stretch:
+                secure_memzero(derived_salt)
             secure_memzero(password)
             secure_memzero(hashed_password)
             secure_memzero(salt)
@@ -917,6 +960,7 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
         Union[bool, bytes]: True if decryption was successful and output_file is specified,
                            or the decrypted data if output_file is None
     """
+    KeyStretch.kind_action = 'decrypt'
     # Read the encrypted file
     if not quiet:
         print(f"\nReading encrypted file: {input_file}")
