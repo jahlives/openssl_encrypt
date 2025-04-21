@@ -8,7 +8,7 @@ with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name="openssl_encrypt",
-    version="0.3.1",
+    version="0.3.2",
     install_requires=[
         "cryptography>=42.0.0",
         "argon2-cffi>=23.1.0",
@@ -30,7 +30,7 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     keywords="encryption, decryption, random-password, secure shredding, security",
-    url="https://gitlab.com/world/openssl_encrypt",
+    url="https://gitlab.rm-rf.ch/world/openssl_encrypt",
     classifiers=[
         "Development Status :: 5 - Production/Stable",
     	"Intended Audience :: Developers",
