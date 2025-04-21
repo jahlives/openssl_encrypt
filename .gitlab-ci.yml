@@ -51,23 +51,23 @@ publish:
     - pip install --upgrade twine requests
     - |
       python3 -c "
-import requests
-import os
+      import requests
+      import os
 
-url = 'http://10.55.0.20:8081/world/openssl_encrypt/-/packages/pypi'
-token = os.environ['PROJECT_ACCESS_TOKEN']
+      url = 'http://gitlab.rm-rf.ch/world/openssl_encrypt/-/packages/pypi'
+      token = os.environ['PROJECT_ACCESS_TOKEN']
 
-with open('dist/openssl_encrypt-0.3.1-py3-none-any.whl', 'rb') as f:
-    response = requests.post(
-        url, 
-        headers={'PRIVATE-TOKEN': token},
-        files={'file': f},
-        allow_redirects=False
-    )
-print('Status Code:', response.status_code)
-print('Response Headers:', response.headers)
-print('Response Text:', response.text)
-"
+      with open('dist/openssl_encrypt-0.3.1-py3-none-any.whl', 'rb') as f:
+        response = requests.post(
+          url, 
+          headers={'PRIVATE-TOKEN': token},
+          files={'file': f},
+          allow_redirects=False
+        )
+      print('Status Code:', response.status_code)
+      print('Response Headers:', response.headers)
+      print('Response Text:', response.text)
+      "
   rules:
     - when: manual
       allow_failure: true
