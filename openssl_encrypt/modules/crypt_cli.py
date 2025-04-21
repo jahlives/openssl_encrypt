@@ -905,8 +905,6 @@ def main():
             hash_config['hash_config']['algorithm'] = 'aes-gcm'
         setattr(args, 'algorithm', hash_config['hash_config']['algorithm'])
         hash_config = hash_config['hash_config']
-        print(hash_config)
-        sys.exit(0)
     elif args.template:
         hash_config = get_template_config(args.template)
         if hash_config['hash_config']['algorithm']:
