@@ -8,27 +8,20 @@ Therefore I decided to do a complete rewrite in pure python also using modern ci
 ## Issues
 you can create issues by [sending mail](mailto:issue+world-openssl-encrypt-2-issue-+gitlab@rm-rf.ch) to the linked address
 
-**Important due to latest changes in version 1.0.1 older encrypted files cannot be decrypted anymore (see [this ticket](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/issues/10))**
 ## Features
-- **Strong Encryption**: Uses Fernet symmetric encryption (AES-128-CBC) with secure key derivation \
-  Because of this "restriction" in Fernet
-  ```
-  Fernet is designed so that it doesn’t expose unauthenticated bytes. 
-  Because of this, the entire message contents must be able to fit in the available memory. 
-  This makes Fernet unsuitable for encrypting very large files.
-  ```
-  therefore "AES-GCM" and "ChaCha20" are now available in the final [release](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/v1.0)
-- **Multi-hash Password Protection**: Optional layered hashing with SHA-256, SHA-512, SHA3-256, SHA3-512, Whirlpool, Scrypt and Argon2
+- **Strong Encryption**: Uses Fernet symmetric encryption (AES-128-CBC) as default with secure key derivation. Also supports `AES-GCM`, `AES-SIV`, `CAMLELIA` and `POLY1305-CHACHA20` as ecnryption algorithm
+- **Multi-hash Password Protection**: Optional layered hashing with SHA-256, SHA-512, SHA3-256, SHA3-512 and Whirlpool they all can be chained with different rounds to create key-stretching
+- **Multi-KDF Password Protection**: Optional layered KFD with PBKDF2, Scrypt, Argon2 and Ballon they all can be chained with different rounds to create key-stretching and very strong brute-force prevention
 - **Password Management**: Password confirmation to prevent typos, random password generation, and standalone password generator
 - **File Integrity Verification**: Built-in hash verification to detect corrupted or tampered files
 - **Secure File Shredding**: Military-grade secure deletion with multi-pass overwriting
 - **Directory Support**: Recursive processing of directories
 - **Memory-Secure Processing**: Protection against memory-based attacks and data leakage
-- **Argon2 Support**: Memory-hard key derivation function that won the Password Hashing Competition
 - **Glob Pattern Support**: Batch operations using wildcard patterns
 - **Safe Overwriting**: Secure in-place file replacement with atomic operations
 - **Progress Visualization**: Real-time progress bars for lengthy operations
-- **Graphical User Interface**: User-friendly GUI for all operations
+- **Graphical User Interface**: User-friendly GUI for all operations (beta)
+- **Built-in and custom Templates**: built in templates like `--quick` `--standard` and `--paranoid` can be used. You can also define your own customized templates in `/templates`
 ## Files Included
 - [crypt.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/crypt.py) - Main command-line utility
 - [crypt_gui.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/crypt_gui.py) - Graphical user interface
