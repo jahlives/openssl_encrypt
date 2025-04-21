@@ -48,7 +48,7 @@ publish:
     - job: build
       artifacts: true
   script:
-    - pip install --upgrade twine
+    - pip install --upgrade twine --break-system-packages
     - |
       PYTHONHTTPSVERIFY=0 \
       TWINE_USERNAME=tobster \
