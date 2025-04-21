@@ -62,7 +62,7 @@ publish:
           url, 
           headers={'PRIVATE-TOKEN': token},
           files={'file': f},
-          allow_redirects=False
+          allow_redirects=True
         )
       print('Status Code:', response.status_code)
       print('Response Headers:', response.headers)
