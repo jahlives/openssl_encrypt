@@ -48,15 +48,13 @@ publish:
     - job: build
       artifacts: true
   script:
-    - pip install --upgrade twine --break-system-packages
+    - pip install --upgrade twine
     - |
       TWINE_USERNAME=tobster \
       TWINE_PASSWORD=${PROJECT_ACCESS_TOKEN} \
       python3 -m twine upload \
         --verbose \
-        --username tobster \
-        --password ${PROJECT_ACCESS_TOKEN} \
-        --repository-url "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}/-/packages/pypi" \
+        --repository-url "https://gitlab.rm-rf.ch/world/openssl_encrypt/-/packages/pypi" \
         dist/*
   rules:
     - when: manual
