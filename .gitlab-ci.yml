@@ -55,10 +55,9 @@ publish:
       TWINE_PASSWORD=${PROJECT_ACCESS_TOKEN} \
       python3 -m twine upload \
         --verbose \
-        --repository-url "http://127.0.0.1:8081/world/openssl_encrypt/-/packages/pypi" \
+        --repository-url "http://10.55.0.20:8081/world/openssl_encrypt/-/packages/pypi" \
         --non-interactive \
-        dist/openssl_encrypt-0.3.0-py3-none-any.whl \
-        dist/openssl_encrypt-0.3.0.tar.gz
+        dist/*
   rules:
     - when: manual
       allow_failure: true
