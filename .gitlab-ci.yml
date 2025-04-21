@@ -48,7 +48,7 @@ publish:
     - job: build
       artifacts: true
   script:
-    - pip install --upgrade twine
+    - pip install --upgrade twine --break-system-packages
     - |
       TWINE_USERNAME=tobster \
       TWINE_PASSWORD=${PROJECT_ACCESS_TOKEN} \
