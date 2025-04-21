@@ -50,25 +50,25 @@ publish:
     - pip install --upgrade twine requests
     - |
       python3 -c "
-        import requests
-        import os
+      import requests
+      import os
 
-        url = 'https://gitlab.rm-rf.ch/world/openssl_encrypt/-/packages/pypi/upload'
-        token = os.environ['PROJECT_ACCESS_TOKEN']
+      url = 'https://gitlab.rm-rf.ch/world/openssl_encrypt/-/packages/pypi/upload'
+      token = os.environ['PROJECT_ACCESS_TOKEN']
 
-        with open('dist/openssl_encrypt-0.3.1-py3-none-any.whl', 'rb') as f:
-            response = requests.post(
-                url, 
-                headers={
-                    'PRIVATE-TOKEN': token,
-                    'Content-Type': 'multipart/form-data'
-                },
-                files={'file': ('openssl_encrypt-0.3.1-py3-none-any.whl', f)},
-                allow_redirects=True
-            )
-        print('Status Code:', response.status_code)
-        print('Response Headers:', response.headers)
-        print('Response Text:', response.text)
+      with open('dist/openssl_encrypt-0.3.1-py3-none-any.whl', 'rb') as f:
+          response = requests.post(
+              url, 
+              headers={
+                   'PRIVATE-TOKEN': token,
+                   'Content-Type': 'multipart/form-data'
+               },
+               files={'file': ('openssl_encrypt-0.3.1-py3-none-any.whl', f)},
+               allow_redirects=True
+           )
+      print('Status Code:', response.status_code)
+      print('Response Headers:', response.headers)
+      print('Response Text:', response.text)
       "
   rules:
     - when: manual
