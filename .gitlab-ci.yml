@@ -49,8 +49,8 @@ publish:
       artifacts: true
   script:
     - pip install --upgrade twine --break-system-packages
-    - echo "Attempting to publish with CI_JOB_TOKEN..."
-    - TWINE_PASSWORD=${PROJECT_ACCESS_TOKEN} TWINE_USERNAME=gitlab-ci-token python3 -m twine upload --verbose --repository-url "https://${MY_GITLAB_PYPI}/projects/${CI_PROJECT_ID}/packages/pypi" dist/*
+    - echo "Repository URL: https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}/-/packages/pypi"
+    - python3 -m twine upload --verbose --repository-url "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}/-/packages/pypi" dist/*
   rules:
     # Manual trigger allowed for any branch
     - when: manual
