@@ -47,29 +47,9 @@ publish:
     - job: build
       artifacts: true
   script:
-    - pip install --upgrade twine requests
-    - |
-      python3 -c "
-      import requests
-      import os
-
-      url = 'https://gitlab.rm-rf.ch/world/openssl_encrypt/-/packages/pypi/upload'
-      token = os.environ['PROJECT_ACCESS_TOKEN']
-
-      with open('dist/openssl_encrypt-0.3.1-py3-none-any.whl', 'rb') as f:
-          response = requests.post(
-              url, 
-              headers={
-                   'PRIVATE-TOKEN': token,
-                   'Content-Type': 'multipart/form-data'
-               },
-               files={'file': ('openssl_encrypt-0.3.1-py3-none-any.whl', f)},
-               allow_redirects=True
-           )
-      print('Status Code:', response.status_code)
-      print('Response Headers:', response.headers)
-      print('Response Text:', response.text)
-      "
+    - pip install --upgrade twine --break-system-packages
+    - echo "Attempting to publish with CI_JOB_TOKEN..."
+    - TWINE_PASSWORD=${PROJECT_ACCESS_TOKEN} TWINE_USERNAME=oauth2 python3 -m twine upload --verbose --repository-url "https://${MY_GITLAB_PYPI}/projects/${CI_PROJECT_ID}/packages/pypi" dist/*
   rules:
     - when: manual
       allow_failure: true
