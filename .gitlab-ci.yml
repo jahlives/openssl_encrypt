@@ -50,7 +50,6 @@ publish:
   script:
     - pip install --upgrade twine --break-system-packages
     - |
-#      PYTHONHTTPSVERIFY=0 \
       TWINE_USERNAME=tobster \
       TWINE_PASSWORD=${PROJECT_ACCESS_TOKEN} \
       python3 -m twine upload \
