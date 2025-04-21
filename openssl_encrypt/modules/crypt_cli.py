@@ -404,7 +404,7 @@ def main():
     hash_group.add_argument(
         '--pbkdf2-iterations',
         type=int,
-        default=100000,
+        default=0,
         help='Number of PBKDF2 iterations (default: 100000)'
     )
 
@@ -455,7 +455,7 @@ def main():
         '--enable-argon2',
         action='store_true',
         help='Use Argon2 password hashing (requires argon2-cffi package)',
-        default=True
+        default=False
     )
     argon2_group.add_argument(
         '--argon2-rounds',
