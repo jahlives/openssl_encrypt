@@ -28,7 +28,12 @@ from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305, AESSIV
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
+
+try:
+    from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
+    SCRYPT_AVAILABLE = True
+except ImportError:
+    SCRYPT_AVAILABLE = False
 
 from .secure_memory import (
     SecureBytes,
@@ -78,10 +83,9 @@ except ImportError:
 
 try:
     from .balloon import balloon_m
-
-    BALLOON_HASH_AVAILABLE = True
+    BALLOON_AVAILABLE = True
 except ImportError:
-    BALLOON_HASH_AVAILABLE = False
+    BALLOON_AVAILABLE = False
 
 
 class EncryptionAlgorithm(Enum):
@@ -696,7 +700,7 @@ def generate_key(
     # If hash_config has argon2 section with enabled explicitly set to False, honor that
     # if hash_config and 'argon2' in hash_config and 'enabled' in hash_config['argon2']:
     #    use_argon2 = hash_config['argon2']['enabled']
-    if use_argon2:
+    if use_argon2 and ARGON2_AVAILABLE:
         derived_key = hashed_password
         derived_salt = salt
         # Use Argon2 for key derivation
@@ -746,7 +750,7 @@ def generate_key(
                         {}).get(
                         'rounds',
                         1))
-            key = hashed_password
+            hashed_password = hashed_password
             secure_memzero(derived_key)
             secure_memzero(derived_salt)
             # Update hash_config to reflect that Argon2 was used
@@ -768,7 +772,7 @@ def generate_key(
             # Fall back to PBKDF2 if Argon2 fails
             use_argon2 = False
 
-    if use_balloon:
+    if use_balloon and BALLOON_AVAILABLE:
         derived_key = hashed_password
         derived_salt = salt
         if not quiet:
@@ -800,7 +804,7 @@ def generate_key(
                         {}).get(
                         'rounds',
                         1))
-            key = hashed_password
+            hashed_password = hashed_password
             secure_memzero(derived_key)
             secure_memzero(derived_salt)
 
@@ -821,35 +825,43 @@ def generate_key(
                 print(
                     f"Balloon key derivation failed: {
                         str(e)}. Falling back to PBKDF2.")
-            use_argon2 = False  # Consider falling back to PBKDF2
+            use_balloon = False  # Consider falling back to PBKDF2
 
-    if use_scrypt:
+    if use_scrypt and SCRYPT_AVAILABLE:
         derived_key = hashed_password
         derived_salt = salt
         if not quiet:
             print("Using Scrypt for key derivation...")
-        for i in range(hash_config.get('scrypt', {}).get('rounds', 1)):
-            round_salt = derived_salt + str(i).encode()
-            scrypt_kdf = Scrypt(
-                salt=round_salt,
-                length=32,
-                n=hash_config['scrypt']['n'],  # CPU/memory cost factor
-                r=hash_config['scrypt']['r'],  # Block size factor
-                p=hash_config['scrypt']['p'],  # Parallelization factor
-                backend=default_backend()
-            )
-            KeyStretch.key_stretch = True
-            derived_key = scrypt_kdf.derive(derived_key)
-            derived_salt = derived_key[:16]
-            show_progress(
-                "Scrypt",
-                i + 1,
-                hash_config.get(
-                    'scrypt',
-                    {}).get(
-                    'rounds',
-                    1))
-        key = derived_key
+        try:
+            for i in range(hash_config.get('scrypt', {}).get('rounds', 1)):
+                round_salt = derived_salt + str(i).encode()
+                scrypt_kdf = Scrypt(
+                    salt=round_salt,
+                    length=32,
+                    n=hash_config['scrypt']['n'],  # CPU/memory cost factor
+                    r=hash_config['scrypt']['r'],  # Block size factor
+                    p=hash_config['scrypt']['p'],  # Parallelization factor
+                    backend=default_backend()
+                )
+                KeyStretch.key_stretch = True
+                derived_key = scrypt_kdf.derive(derived_key)
+                derived_salt = derived_key[:16]
+                show_progress(
+                    "Scrypt",
+                    i + 1,
+                    hash_config.get(
+                        'scrypt',
+                        {}).get(
+                        'rounds',
+                        1))
+            hashed_password = derived_key
+        except Exception as e:
+            if not quiet:
+                print(
+                    f"Scrypt key derivation failed: {
+                    str(e)}. Falling back to PBKDF2.")
+            use_scrypt = False  # Consider falling back to PBKDF2
+
     if os.environ.get('PYTEST_CURRENT_TEST') is not None:
         use_pbkdf2 = 100000
     if use_pbkdf2 and use_pbkdf2 > 0:
@@ -882,6 +894,8 @@ def generate_key(
                     len(
                         set(password))} unique characters) and {
                     string_entropy(password):.1f} bits of entropy")
+            print(
+                f"ERROR: if you insist on using too-weak password then set the environment variable PYTEST_CURRENT_TEST to a non-empty value")
             secure_memzero(password)
             sys.exit(1)
         elif string_entropy(password) < 80:
@@ -897,6 +911,7 @@ def generate_key(
                     len(
                         set(password))} unique characters) and {
                     string_entropy(password):.1f} bits of entropy")
+            print(f"ERROR: if you insist on using too-weak password then set the environment variable PYTEST_CURRENT_TEST to a non-empty value")
             secure_memzero(password)
             sys.exit(1)
         else:
@@ -977,7 +992,6 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
 
     key, salt, hash_config = generate_key(
         password, salt, hash_config, pbkdf2_iterations, quiet, use_secure_mem, algorithm_value)
-
     # Read the input file
     if not quiet:
         print(f"Reading file: {input_file}")
@@ -1154,7 +1168,6 @@ def decrypt_file(
 
     key, _, _ = generate_key(password, salt, hash_config,
                              pbkdf2_iterations, quiet, use_secure_mem, algorithm)
-
     # Decrypt the data
     if not quiet:
         print("Decrypting content with " + algorithm)
@@ -1271,7 +1284,7 @@ def print_hash_config(
         print("- Secure memory handling: Disabled")
     organized = get_organized_hash_config(hash_config, encryption_algo, salt)
 
-    if kind == 'decrypt':
+    if KeyStretch.kind_action == 'decrypt':
         print("\nDecrypting with the following configuration:")
     else:
         print("\nEncrypting with the following configuration:")
