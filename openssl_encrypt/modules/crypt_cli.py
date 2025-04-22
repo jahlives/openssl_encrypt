@@ -178,6 +178,11 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                     "type": 2,
                     "rounds": 10
                 },
+                "bcrypt": {
+                    'enabled': True,
+                    'rounds': 10,
+                    'iterations': 12
+                },
                 "pbkdf2_iterations": 10000,
                 "type": "id",
                 "algorithm": "camellia"
@@ -205,6 +210,11 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                     "hash_len": 32,
                     "type": 2,
                     "rounds": 100
+                },
+                "bcrypt": {
+                    'enabled': True,
+                    'rounds': 200,
+                    'iterations': 12
                 },
                 "pbkdf2_iterations": 0,
                 "type": "id",
@@ -304,6 +314,7 @@ def main():
         except AttributeError:
             # Some signals might not be available on all platforms
             pass
+
 
     # Set up argument parser
     parser = argparse.ArgumentParser(
