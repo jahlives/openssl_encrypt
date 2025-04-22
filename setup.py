@@ -8,12 +8,18 @@ with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name="openssl_encrypt",
-    version="0.3.2",
+    version="0.3.3",
     install_requires=[
-        "cryptography>=42.0.0",
-        "argon2-cffi>=23.1.0",
-        "pywin32>=306; sys_platform == 'win32'",  # Windows-specific dependency
+	"cryptography>=42.0.0,<43.0.0",
+    	"argon2-cffi>=23.1.0,<24.0.0",
+    	"pywin32>=306,<307; sys_platform == 'win32'",
+        "PyYAML",
     ],
+    entry_points={
+        'console_scripts': [
+            'openssl-encrypt=openssl_encrypt.cli:main',
+        ],
+    },
     extras_require={
         "dev": [
             "pytest>=8.0.0",
@@ -22,8 +28,14 @@ setup(
             "pylint>=3.0.0",
         ],
     },
+    project_urls={
+        "Bug Tracker": "https://gitlab.rm-rf.ch/world/openssl_encrypt/-/issues",
+        "Documentation": "https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs",
+        "Source Code": "https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt",
+    },
     packages=find_packages(),
     include_package_data=True,
+    package_data={"": ["README.md"]},
     author="Tobi",
     author_email="jahlives@gmx.ch",
     description="A package for secure file encryption and decryption based on modern ciphers",
@@ -38,6 +50,11 @@ setup(
     	"Intended Audience :: Information Technology",
     	"Intended Audience :: System Administrators",
         "Programming Language :: Python :: 3",
+    	"Programming Language :: Python :: 3.9",
+    	"Programming Language :: Python :: 3.10",
+    	"Programming Language :: Python :: 3.11",
+    	"Programming Language :: Python :: 3.12",
+	"Programming Language :: Python :: 3.13",
         "License :: OSI Approved :: MIT License",
 	"Topic :: Security",
 	"Topic :: Security :: Cryptography",
