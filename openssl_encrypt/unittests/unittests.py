@@ -43,6 +43,18 @@ from modules.crypt_utils import (
 from modules.crypt_cli import main as cli_main
 
 
+
+# Add the parent directory to the path to allow imports
+sys.path.insert(
+    0,
+    os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),
+            '..')))
+
+# Import the modules to test
+
+
 class TestCryptCore(unittest.TestCase):
     """Test cases for core cryptographic functions."""
 
@@ -83,7 +95,7 @@ class TestCryptCore(unittest.TestCase):
             },
             'pbkdf2_iterations': 1000  # Use low value for faster tests
         }
-        
+
         # Define stronger hash config for specific tests
         self.strong_hash_config = {
             'sha512': 1000,
@@ -116,30 +128,39 @@ class TestCryptCore(unittest.TestCase):
                     os.remove(file_path)
                 except Exception:
                     pass
-        
+
         # Remove the temporary directory
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def test_encrypt_decrypt_fernet_algorithm(self):
         """Test encryption and decryption using Fernet algorithm."""
         # Define output files
-        encrypted_file = os.path.join(self.test_dir, "test_encrypted_fernet.bin")
-        decrypted_file = os.path.join(self.test_dir, "test_decrypted_fernet.txt")
+        encrypted_file = os.path.join(
+            self.test_dir, "test_encrypted_fernet.bin")
+        decrypted_file = os.path.join(
+            self.test_dir, "test_decrypted_fernet.txt")
         self.test_files.extend([encrypted_file, decrypted_file])
-        
+
         # Encrypt the file
         result = encrypt_file(
-            self.test_file, encrypted_file, self.test_password, 
-            self.basic_hash_config, quiet=True, algorithm=EncryptionAlgorithm.FERNET
-        )
+            self.test_file,
+            encrypted_file,
+            self.test_password,
+            self.basic_hash_config,
+            quiet=True,
+            algorithm=EncryptionAlgorithm.FERNET)
         self.assertTrue(result)
         self.assertTrue(os.path.exists(encrypted_file))
-        
+
         # Decrypt the file
-        result = decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
+        result = decrypt_file(
+            encrypted_file,
+            decrypted_file,
+            self.test_password,
+            quiet=True)
         self.assertTrue(result)
         self.assertTrue(os.path.exists(decrypted_file))
-        
+
         # Verify the content
         with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
             self.assertEqual(original.read(), decrypted.read())
@@ -150,20 +171,27 @@ class TestCryptCore(unittest.TestCase):
         encrypted_file = os.path.join(self.test_dir, "test_encrypted_aes.bin")
         decrypted_file = os.path.join(self.test_dir, "test_decrypted_aes.txt")
         self.test_files.extend([encrypted_file, decrypted_file])
-        
+
         # Encrypt the file
         result = encrypt_file(
-            self.test_file, encrypted_file, self.test_password, 
-            self.basic_hash_config, quiet=True, algorithm=EncryptionAlgorithm.AES_GCM
-        )
+            self.test_file,
+            encrypted_file,
+            self.test_password,
+            self.basic_hash_config,
+            quiet=True,
+            algorithm=EncryptionAlgorithm.AES_GCM)
         self.assertTrue(result)
         self.assertTrue(os.path.exists(encrypted_file))
-        
+
         # Decrypt the file
-        result = decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
+        result = decrypt_file(
+            encrypted_file,
+            decrypted_file,
+            self.test_password,
+            quiet=True)
         self.assertTrue(result)
         self.assertTrue(os.path.exists(decrypted_file))
-        
+
         # Verify the content
         with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
             self.assertEqual(original.read(), decrypted.read())
@@ -171,23 +199,32 @@ class TestCryptCore(unittest.TestCase):
     def test_encrypt_decrypt_chacha20_algorithm(self):
         """Test encryption and decryption using ChaCha20-Poly1305 algorithm."""
         # Define output files
-        encrypted_file = os.path.join(self.test_dir, "test_encrypted_chacha.bin")
-        decrypted_file = os.path.join(self.test_dir, "test_decrypted_chacha.txt")
+        encrypted_file = os.path.join(
+            self.test_dir, "test_encrypted_chacha.bin")
+        decrypted_file = os.path.join(
+            self.test_dir, "test_decrypted_chacha.txt")
         self.test_files.extend([encrypted_file, decrypted_file])
-        
+
         # Encrypt the file
         result = encrypt_file(
-            self.test_file, encrypted_file, self.test_password, 
-            self.basic_hash_config, quiet=True, algorithm=EncryptionAlgorithm.CHACHA20_POLY1305
-        )
+            self.test_file,
+            encrypted_file,
+            self.test_password,
+            self.basic_hash_config,
+            quiet=True,
+            algorithm=EncryptionAlgorithm.CHACHA20_POLY1305)
         self.assertTrue(result)
         self.assertTrue(os.path.exists(encrypted_file))
-        
+
         # Decrypt the file
-        result = decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
+        result = decrypt_file(
+            encrypted_file,
+            decrypted_file,
+            self.test_password,
+            quiet=True)
         self.assertTrue(result)
         self.assertTrue(os.path.exists(decrypted_file))
-        
+
         # Verify the content
         with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
             self.assertEqual(original.read(), decrypted.read())
@@ -196,8 +233,10 @@ class TestCryptCore(unittest.TestCase):
     def test_wrong_password_fixed(self):
         """Test decryption with wrong password."""
         # Define output files
-        encrypted_file = os.path.join(self.test_dir, "test_encrypted_wrong.bin")
-        decrypted_file = os.path.join(self.test_dir, "test_decrypted_wrong.txt")
+        encrypted_file = os.path.join(
+            self.test_dir, "test_encrypted_wrong.bin")
+        decrypted_file = os.path.join(
+            self.test_dir, "test_decrypted_wrong.txt")
         self.test_files.extend([encrypted_file, decrypted_file])
 
         # Encrypt the file
@@ -211,9 +250,14 @@ class TestCryptCore(unittest.TestCase):
         wrong_password = b"WrongPassword123!"
 
         # Catch the specific exception cryptography.fernet.InvalidToken
-        # We need to import InvalidToken at the top of the file for this to work
+        # We need to import InvalidToken at the top of the file for this to
+        # work
         try:
-            decrypt_file(encrypted_file, decrypted_file, wrong_password, quiet=True)
+            decrypt_file(
+                encrypted_file,
+                decrypted_file,
+                wrong_password,
+                quiet=True)
             # If we get here, decryption succeeded, which is not what we expect
             self.fail("Decryption should have failed with wrong password")
         except InvalidToken:
@@ -230,11 +274,14 @@ class TestCryptCore(unittest.TestCase):
             self.skipTest("Argon2 is not available")
 
         # Define output files
-        encrypted_file = os.path.join(self.test_dir, "test_encrypted_strong.bin")
-        decrypted_file = os.path.join(self.test_dir, "test_decrypted_strong.txt")
+        encrypted_file = os.path.join(
+            self.test_dir, "test_encrypted_strong.bin")
+        decrypted_file = os.path.join(
+            self.test_dir, "test_decrypted_strong.txt")
         self.test_files.extend([encrypted_file, decrypted_file])
 
-        # Create a modified version of the strong_hash_config with less intense settings for testing
+        # Create a modified version of the strong_hash_config with less intense
+        # settings for testing
         test_hash_config = {
             'sha512': 100,  # Reduced from potentially higher values
             'sha256': 0,
@@ -258,7 +305,8 @@ class TestCryptCore(unittest.TestCase):
         }
 
         # The key issue is that we must explicitly use urlsafe_b64encode for Fernet
-        # Use the basic hash config with FERNET algorithm to guarantee correct key format
+        # Use the basic hash config with FERNET algorithm to guarantee correct
+        # key format
         result = encrypt_file(
             self.test_file, encrypted_file, self.test_password,
             test_hash_config, quiet=True,
@@ -267,7 +315,11 @@ class TestCryptCore(unittest.TestCase):
         self.assertTrue(result)
 
         # Decrypt the file
-        result = decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
+        result = decrypt_file(
+            encrypted_file,
+            decrypted_file,
+            self.test_password,
+            quiet=True)
         self.assertTrue(result)
 
         # Verify the content
@@ -281,23 +333,27 @@ class TestCryptCore(unittest.TestCase):
         with open(binary_file, "wb") as f:
             f.write(os.urandom(1024))  # 1KB of random data
         self.test_files.append(binary_file)
-        
+
         # Define output files
         encrypted_file = os.path.join(self.test_dir, "binary_encrypted.bin")
         decrypted_file = os.path.join(self.test_dir, "binary_decrypted.bin")
         self.test_files.extend([encrypted_file, decrypted_file])
-        
+
         # Encrypt the binary file
         result = encrypt_file(
-            binary_file, encrypted_file, self.test_password, 
+            binary_file, encrypted_file, self.test_password,
             self.basic_hash_config, quiet=True
         )
         self.assertTrue(result)
-        
+
         # Decrypt the file
-        result = decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
+        result = decrypt_file(
+            encrypted_file,
+            decrypted_file,
+            self.test_password,
+            quiet=True)
         self.assertTrue(result)
-        
+
         # Verify the content
         with open(binary_file, "rb") as original, open(decrypted_file, "rb") as decrypted:
             self.assertEqual(original.read(), decrypted.read())
@@ -308,39 +364,45 @@ class TestCryptCore(unittest.TestCase):
         test_copy = os.path.join(self.test_dir, "test_copy.txt")
         shutil.copy(self.test_file, test_copy)
         self.test_files.append(test_copy)
-        
+
         # Read original content
         with open(test_copy, "r") as f:
             original_content = f.read()
-        
+
         # Mock replacing function to simulate overwrite behavior
         with mock.patch('os.replace') as mock_replace:
             # Set up the mock to just do the copy for the test
             mock_replace.side_effect = lambda src, dst: shutil.copy(src, dst)
-            
+
             # Encrypt and overwrite
             with tempfile.NamedTemporaryFile(delete=False) as temp_file:
                 self.test_files.append(temp_file.name)
                 encrypt_file(
-                    test_copy, temp_file.name, self.test_password, 
+                    test_copy, temp_file.name, self.test_password,
                     self.basic_hash_config, quiet=True
                 )
-                # In real code, os.replace would overwrite test_copy with temp_file.name
-                
+                # In real code, os.replace would overwrite test_copy with
+                # temp_file.name
+
             # Now decrypt to a new file and check content
-            decrypted_file = os.path.join(self.test_dir, "decrypted_from_overwrite.txt")
+            decrypted_file = os.path.join(
+                self.test_dir, "decrypted_from_overwrite.txt")
             self.test_files.append(decrypted_file)
-            
+
             # Need to actually copy the temp file to test_copy for testing
             shutil.copy(temp_file.name, test_copy)
-            
+
             # Decrypt the overwritten file
-            decrypt_file(test_copy, decrypted_file, self.test_password, quiet=True)
-            
+            decrypt_file(
+                test_copy,
+                decrypted_file,
+                self.test_password,
+                quiet=True)
+
             # Verify content
             with open(decrypted_file, "r") as f:
                 decrypted_content = f.read()
-                
+
             self.assertEqual(original_content, decrypted_content)
 
     def test_generate_key(self):
@@ -357,7 +419,7 @@ class TestCryptCore(unittest.TestCase):
         )
         self.assertIsNotNone(key1)
         self.assertEqual(key1, key2)
-        
+
         # Test with stronger configuration
         if ARGON2_AVAILABLE:
             key3, _, _ = generate_key(
@@ -370,7 +432,7 @@ class TestCryptCore(unittest.TestCase):
             )
             self.assertIsNotNone(key3)
             self.assertEqual(key3, key4)
-            
+
             # Keys should be different with different configs
             if ARGON2_AVAILABLE and self.strong_hash_config['argon2']['enabled']:
                 self.assertNotEqual(key1, key3)
@@ -381,49 +443,62 @@ class TestCryptCore(unittest.TestCase):
 
         # Test with SHA-256
         config1 = {**self.basic_hash_config, 'sha256': 100}
-        hashed1 = multi_hash_password(self.test_password, salt, config1, quiet=True)
+        hashed1 = multi_hash_password(
+            self.test_password, salt, config1, quiet=True)
         self.assertIsNotNone(hashed1)
-        hashed2 = multi_hash_password(self.test_password, salt, config1, quiet=True)
+        hashed2 = multi_hash_password(
+            self.test_password, salt, config1, quiet=True)
         self.assertEqual(hashed1, hashed2)
-        
+
         # Test with SHA-512
         config2 = {**self.basic_hash_config, 'sha512': 100}
-        hashed3 = multi_hash_password(self.test_password, salt, config2, quiet=True)
+        hashed3 = multi_hash_password(
+            self.test_password, salt, config2, quiet=True)
         self.assertIsNotNone(hashed3)
-        hashed4 = multi_hash_password(self.test_password, salt, config2, quiet=True)
+        hashed4 = multi_hash_password(
+            self.test_password, salt, config2, quiet=True)
         self.assertEqual(hashed3, hashed4)
-        
+
         # Results should be different
         self.assertNotEqual(hashed1, hashed3)
-        
+
         # Test with SHA3-256 if available
         config3 = {**self.basic_hash_config, 'sha3_256': 100}
-        hashed5 = multi_hash_password(self.test_password, salt, config3, quiet=True)
+        hashed5 = multi_hash_password(
+            self.test_password, salt, config3, quiet=True)
         self.assertIsNotNone(hashed5)
-        hashed6 = multi_hash_password(self.test_password, salt, config3, quiet=True)
+        hashed6 = multi_hash_password(
+            self.test_password, salt, config3, quiet=True)
         self.assertEqual(hashed5, hashed6)
-        
+
         # Test with Scrypt
         config4 = {**self.basic_hash_config}
         config4['scrypt']['n'] = 1024  # Low value for testing
-        hashed7 = multi_hash_password(self.test_password, salt, config4, quiet=True)
+        hashed7 = multi_hash_password(
+            self.test_password, salt, config4, quiet=True)
         self.assertIsNotNone(hashed7)
-        hashed8 = multi_hash_password(self.test_password, salt, config4, quiet=True)
+        hashed8 = multi_hash_password(
+            self.test_password, salt, config4, quiet=True)
         self.assertEqual(hashed7, hashed8)
-        
+
         # Test with Argon2 if available
         if ARGON2_AVAILABLE:
             config5 = {**self.basic_hash_config}
             config5['argon2']['enabled'] = True
-            hashed9 = multi_hash_password(self.test_password, salt, config5, quiet=True)
+            hashed9 = multi_hash_password(
+                self.test_password, salt, config5, quiet=True)
             self.assertIsNotNone(hashed9)
-            hashed10 = multi_hash_password(self.test_password, salt, config5, quiet=True)
+            hashed10 = multi_hash_password(
+                self.test_password, salt, config5, quiet=True)
             self.assertEqual(hashed9, hashed10)
 
     def test_existing_decryption(self):
         for name in os.listdir('./openssl_encrypt/unittests/testfiles'):
             try:
-                decrypted_data = decrypt_file(input_file="./openssl_encrypt/unittests/testfiles/" + name, output_file=None, password=b"1234")
+                decrypted_data = decrypt_file(
+                    input_file="./openssl_encrypt/unittests/testfiles/" + name,
+                    output_file=None,
+                    password=b"1234")
                 print(f"\nDecryption result: {decrypted_data}")
 
                 # Only assert if we actually got data back
@@ -450,8 +525,7 @@ class TestCryptCore(unittest.TestCase):
             b'ZjczY2Q4YmUyYzc0YWRkNWE5MTFiYTY0ZGYyNzQ1OGVkODIyOWRhODA0YTI2IiwgImVuY3J5cHRlZF9oY'
             b'XNoIjogIjU1Y2ZhMDk1MjI4ODQ2NmY2YjE1NDQyMmNiNTQzZTkyY2NlODY4MjZlMjAyODRiYWI1NDEwMD'
             b'Y1MmRlZWFhNzYiLCAiYWxnb3JpdGhtIjogImFlcy1zaXYifQ==:dg0p7BCm2JulA33IBQrNQdCzWozU1V'
-            b'bdgdent8EmPIfTOKWSSj3B4g=='
-        )
+            b'bdgdent8EmPIfTOKWSSj3B4g==')
         mock_file = BytesIO(encrypted_content)
 
         def mock_open(file, mode='r'):
@@ -466,7 +540,8 @@ class TestCryptCore(unittest.TestCase):
                 salt = base64.b64decode(header['salt'])
 
                 # First step - get the initial password hash
-                multi_hash_result = multi_hash_password(b"1234", salt, header['hash_config'])
+                multi_hash_result = multi_hash_password(
+                    b"1234", salt, header['hash_config'])
                 print(f"\nMulti-hash output type: {type(multi_hash_result)}")
                 print(f"Multi-hash output (hex): {multi_hash_result.hex()}")
 
@@ -490,7 +565,9 @@ class TestCryptCore(unittest.TestCase):
                 if isinstance(key, tuple):
                     derived_key, derived_salt, derived_config = key
                     print(f"\nDerived key type: {type(derived_key)}")
-                    print(f"Derived key (hex): {derived_key.hex() if derived_key else 'None'}")
+                    print(
+                        f"Derived key (hex): {
+                            derived_key.hex() if derived_key else 'None'}")
 
                 decrypted = decrypt_file(
                     input_file='/dev/stdin',
@@ -519,7 +596,7 @@ class TestCryptUtils(unittest.TestCase):
         """Set up the test environment."""
         # Create a temporary directory
         self.test_dir = tempfile.mkdtemp()
-        
+
         # Create sample files for shredding tests
         self.sample_files = []
         for i in range(3):
@@ -527,15 +604,16 @@ class TestCryptUtils(unittest.TestCase):
             with open(file_path, "w") as f:
                 f.write(f"This is sample file {i} for shredding test.")
             self.sample_files.append(file_path)
-            
+
         # Create subdirectory with files
         self.sub_dir = os.path.join(self.test_dir, "sub_dir")
         os.makedirs(self.sub_dir, exist_ok=True)
-        
+
         for i in range(2):
             file_path = os.path.join(self.sub_dir, f"sub_file_{i}.txt")
             with open(file_path, "w") as f:
-                f.write(f"This is a file in the subdirectory for recursive shredding test.")
+                f.write(
+                    f"This is a file in the subdirectory for recursive shredding test.")
 
     def tearDown(self):
         """Clean up after tests."""
@@ -550,31 +628,39 @@ class TestCryptUtils(unittest.TestCase):
         # Test default password generation (all character types)
         password = generate_strong_password(16)
         self.assertEqual(len(password), 16)
-        
+
         # Password should contain at least one character from each required set
         has_lower = any(c.islower() for c in password)
         has_upper = any(c.isupper() for c in password)
         has_digit = any(c.isdigit() for c in password)
         has_special = any(c in string.punctuation for c in password)
-        
+
         self.assertTrue(has_lower)
         self.assertTrue(has_upper)
         self.assertTrue(has_digit)
         self.assertTrue(has_special)
-        
+
         # Test with only specific character sets
         # Only lowercase
-        password = generate_strong_password(16, use_lowercase=True, use_uppercase=False, 
-                                         use_digits=False, use_special=False)
+        password = generate_strong_password(
+            16,
+            use_lowercase=True,
+            use_uppercase=False,
+            use_digits=False,
+            use_special=False)
         self.assertEqual(len(password), 16)
         self.assertTrue(all(c.islower() for c in password))
-        
+
         # Only uppercase and digits
-        password = generate_strong_password(16, use_lowercase=False, use_uppercase=True, 
-                                         use_digits=True, use_special=False)
+        password = generate_strong_password(
+            16,
+            use_lowercase=False,
+            use_uppercase=True,
+            use_digits=True,
+            use_special=False)
         self.assertEqual(len(password), 16)
         self.assertTrue(all(c.isupper() or c.isdigit() for c in password))
-        
+
         # Test with minimum length enforcement
         password = generate_strong_password(6)  # Should enforce minimum of 8
         self.assertGreaterEqual(len(password), 8)
@@ -584,35 +670,36 @@ class TestCryptUtils(unittest.TestCase):
         # Test shredding a single file
         file_to_shred = self.sample_files[0]
         self.assertTrue(os.path.exists(file_to_shred))
-        
+
         # Shred the file
         result = secure_shred_file(file_to_shred, passes=1, quiet=True)
         self.assertTrue(result)
-        
+
         # File should no longer exist
         self.assertFalse(os.path.exists(file_to_shred))
-        
-        # Test shredding a non-existent file (should return False but not crash)
+
+        # Test shredding a non-existent file (should return False but not
+        # crash)
         non_existent = os.path.join(self.test_dir, "non_existent.txt")
         result = secure_shred_file(non_existent, quiet=True)
         self.assertFalse(result)
-        
+
   #  @unittest.skip("This test is destructive and actually deletes directories")
     def test_recursive_secure_shred(self):
         """Test recursive secure shredding of directories.
-        
+
         Note: This test is marked to be skipped by default since it's destructive.
         Remove the @unittest.skip decorator to run it.
         """
         # Verify directory and files exist
         self.assertTrue(os.path.isdir(self.sub_dir))
-        self.assertTrue(all(os.path.exists(f) for f in 
-                          [os.path.join(self.sub_dir, f"sub_file_{i}.txt") for i in range(2)]))
-        
+        self.assertTrue(all(os.path.exists(f) for f in [os.path.join(
+            self.sub_dir, f"sub_file_{i}.txt") for i in range(2)]))
+
         # Shred the directory recursively
         result = secure_shred_file(self.sub_dir, passes=1, quiet=True)
         self.assertTrue(result)
-        
+
         # Directory should no longer exist
         self.assertFalse(os.path.exists(self.sub_dir))
 
@@ -621,20 +708,20 @@ class TestCryptUtils(unittest.TestCase):
         # Create a test directory structure
         pattern_dir = os.path.join(self.test_dir, "pattern_test")
         os.makedirs(pattern_dir, exist_ok=True)
-        
+
         # Create test files with different extensions
         for ext in ["txt", "json", "csv"]:
             for i in range(2):
                 file_path = os.path.join(pattern_dir, f"test_file{i}.{ext}")
                 with open(file_path, "w") as f:
                     f.write(f"Test file with extension {ext}")
-        
+
         # Test simple pattern
         txt_pattern = os.path.join(pattern_dir, "*.txt")
         txt_files = expand_glob_patterns(txt_pattern)
         self.assertEqual(len(txt_files), 2)
         self.assertTrue(all(".txt" in f for f in txt_files))
-        
+
         # Test multiple patterns
         all_files_pattern = os.path.join(pattern_dir, "*.*")
         all_files = expand_glob_patterns(all_files_pattern)
@@ -643,17 +730,17 @@ class TestCryptUtils(unittest.TestCase):
 
 class TestCLIInterface(unittest.TestCase):
     """Test the command-line interface functionality."""
-    
+
     def setUp(self):
         """Set up the test environment."""
         # Create a temporary directory
         self.test_dir = tempfile.mkdtemp()
-        
+
         # Create a test file
         self.test_file = os.path.join(self.test_dir, "cli_test.txt")
         with open(self.test_file, "w") as f:
             f.write("This is a test file for CLI interface testing.")
-        
+
         # Save original sys.argv
         self.original_argv = sys.argv
 
@@ -661,7 +748,7 @@ class TestCLIInterface(unittest.TestCase):
         """Clean up after tests."""
         # Restore original sys.argv
         sys.argv = self.original_argv
-        
+
         # Remove temp directory
         try:
             shutil.rmtree(self.test_dir, ignore_errors=True)
@@ -673,11 +760,11 @@ class TestCLIInterface(unittest.TestCase):
         """Test encryption and decryption through the CLI interface."""
         # Set up mock password input
         mock_getpass.return_value = "TestPassword123!"
-        
+
         # Output files
         encrypted_file = os.path.join(self.test_dir, "cli_encrypted.bin")
         decrypted_file = os.path.join(self.test_dir, "cli_decrypted.txt")
-        
+
         # Test encryption through CLI
         sys.argv = [
             "crypt.py", "encrypt",
@@ -685,11 +772,11 @@ class TestCLIInterface(unittest.TestCase):
             "--output", encrypted_file,
             "--quiet"
         ]
-        
+
         # Redirect stdout to capture output
         original_stdout = sys.stdout
         sys.stdout = open(os.devnull, 'w')
-        
+
         try:
             with mock.patch('sys.exit') as mock_exit:
                 cli_main()
@@ -698,10 +785,10 @@ class TestCLIInterface(unittest.TestCase):
         finally:
             sys.stdout.close()
             sys.stdout = original_stdout
-        
+
         # Verify encrypted file was created
         self.assertTrue(os.path.exists(encrypted_file))
-        
+
         # Test decryption through CLI
         sys.argv = [
             "crypt.py", "decrypt",
@@ -709,10 +796,10 @@ class TestCLIInterface(unittest.TestCase):
             "--output", decrypted_file,
             "--quiet"
         ]
-        
+
         # Redirect stdout again
         sys.stdout = open(os.devnull, 'w')
-        
+
         try:
             with mock.patch('sys.exit') as mock_exit:
                 cli_main()
@@ -721,17 +808,18 @@ class TestCLIInterface(unittest.TestCase):
         finally:
             sys.stdout.close()
             sys.stdout = original_stdout
-        
+
         # Verify decrypted file and content
         self.assertTrue(os.path.exists(decrypted_file))
-        
+
         with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
             self.assertEqual(original.read(), decrypted.read())
 
     @mock.patch('builtins.print')
     def test_generate_password_cli(self, mock_print):
         """Test password generation without using CLI."""
-        # Instead of trying to use the CLI, let's just test the password generation directly
+        # Instead of trying to use the CLI, let's just test the password
+        # generation directly
 
         # Mock the password generation and display functions
         with mock.patch('modules.crypt_utils.generate_strong_password') as mock_gen_password:
@@ -742,11 +830,14 @@ class TestCLIInterface(unittest.TestCase):
                 password = mock_gen_password(16, True, True, True, True)
                 mock_display(password)
 
-                # Verify generate_strong_password was called with correct parameters
-                mock_gen_password.assert_called_once_with(16, True, True, True, True)
+                # Verify generate_strong_password was called with correct
+                # parameters
+                mock_gen_password.assert_called_once_with(
+                    16, True, True, True, True)
 
                 # Verify the password was displayed
-                mock_display.assert_called_once_with("MockedStrongPassword123!")
+                mock_display.assert_called_once_with(
+                    "MockedStrongPassword123!")
 
                 # Test passed if we get here
                 self.assertEqual(password, "MockedStrongPassword123!")
@@ -755,58 +846,60 @@ class TestCLIInterface(unittest.TestCase):
         """Test the security-info command."""
         # Configure CLI args
         sys.argv = ["crypt.py", "security-info"]
-        
+
         # Redirect stdout to capture output
         original_stdout = sys.stdout
         output_file = os.path.join(self.test_dir, "security_info_output.txt")
-        
+
         try:
             with open(output_file, 'w') as f:
                 sys.stdout = f
-                
+
                 with mock.patch('sys.exit'):
                     cli_main()
         finally:
             sys.stdout = original_stdout
-        
+
         # Verify output contains expected security information
         with open(output_file, 'r') as f:
             content = f.read()
             self.assertIn("SECURITY RECOMMENDATIONS", content)
-            self.assertIn("Password Hashing Algorithm Recommendations", content)
+            self.assertIn(
+                "Password Hashing Algorithm Recommendations",
+                content)
             self.assertIn("Argon2", content)
 
 
 class TestFileOperations(unittest.TestCase):
     """Test file operations and edge cases."""
-    
+
     def setUp(self):
         """Set up test environment."""
         # Create a temporary directory
         self.test_dir = tempfile.mkdtemp()
-        
+
         # Create test files of various sizes
         self.small_file = os.path.join(self.test_dir, "small.txt")
         with open(self.small_file, "w") as f:
             f.write("Small test file")
-        
+
         # Create a medium-sized file (100KB)
         self.medium_file = os.path.join(self.test_dir, "medium.dat")
         with open(self.medium_file, "wb") as f:
             f.write(os.urandom(100 * 1024))
-        
+
         # Create a larger file (1MB)
         self.large_file = os.path.join(self.test_dir, "large.dat")
         with open(self.large_file, "wb") as f:
             f.write(os.urandom(1024 * 1024))
-        
+
         # Create an empty file
         self.empty_file = os.path.join(self.test_dir, "empty.txt")
         open(self.empty_file, "w").close()
-        
+
         # Test password
         self.test_password = b"TestPassword123!"
-        
+
         # Basic hash config for testing
         self.basic_hash_config = {
             'sha512': 0,
@@ -840,21 +933,26 @@ class TestFileOperations(unittest.TestCase):
         # Define output files
         encrypted_file = os.path.join(self.test_dir, "empty_encrypted.bin")
         decrypted_file = os.path.join(self.test_dir, "empty_decrypted.txt")
-        
+
         # Encrypt the empty file
         result = encrypt_file(
-            self.empty_file, encrypted_file, self.test_password, 
+            self.empty_file, encrypted_file, self.test_password,
             self.basic_hash_config, quiet=True
         )
         self.assertTrue(result)
         self.assertTrue(os.path.exists(encrypted_file))
-        self.assertTrue(os.path.getsize(encrypted_file) > 0)  # Encrypted file shouldn't be empty
-        
+        # Encrypted file shouldn't be empty
+        self.assertTrue(os.path.getsize(encrypted_file) > 0)
+
         # Decrypt the file
-        result = decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
+        result = decrypt_file(
+            encrypted_file,
+            decrypted_file,
+            self.test_password,
+            quiet=True)
         self.assertTrue(result)
         self.assertTrue(os.path.exists(decrypted_file))
-        
+
         # Verify the content (should be empty)
         self.assertEqual(os.path.getsize(decrypted_file), 0)
 
@@ -863,23 +961,27 @@ class TestFileOperations(unittest.TestCase):
         # Define output files
         encrypted_file = os.path.join(self.test_dir, "large_encrypted.bin")
         decrypted_file = os.path.join(self.test_dir, "large_decrypted.dat")
-        
+
         # Encrypt the large file
         result = encrypt_file(
-            self.large_file, encrypted_file, self.test_password, 
+            self.large_file, encrypted_file, self.test_password,
             self.basic_hash_config, quiet=True
         )
         self.assertTrue(result)
         self.assertTrue(os.path.exists(encrypted_file))
-        
+
         # Decrypt the file
-        result = decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
+        result = decrypt_file(
+            encrypted_file,
+            decrypted_file,
+            self.test_password,
+            quiet=True)
         self.assertTrue(result)
         self.assertTrue(os.path.exists(decrypted_file))
-        
+
         # Verify the content with file hashes
         import hashlib
-        
+
         def get_file_hash(filename):
             """Calculate SHA-256 hash of a file."""
             hasher = hashlib.sha256()
@@ -887,10 +989,10 @@ class TestFileOperations(unittest.TestCase):
                 for chunk in iter(lambda: f.read(4096), b''):
                     hasher.update(chunk)
             return hasher.hexdigest()
-        
+
         original_hash = get_file_hash(self.large_file)
         decrypted_hash = get_file_hash(decrypted_file)
-        
+
         self.assertEqual(original_hash, decrypted_hash)
 
     def test_file_permissions(self):
@@ -898,51 +1000,59 @@ class TestFileOperations(unittest.TestCase):
         # Skip on Windows which has a different permission model
         if sys.platform == 'win32':
             self.skipTest("Skipping permission test on Windows")
-            
+
         # Create a file with specific permissions
         test_file = os.path.join(self.test_dir, "permission_test.txt")
         with open(test_file, "w") as f:
             f.write("Test file for permission testing")
-        
+
         # Set specific permissions (read/write for owner only)
         os.chmod(test_file, 0o600)
-        
+
         # Encrypt the file
-        encrypted_file = os.path.join(self.test_dir, "permission_encrypted.bin")
+        encrypted_file = os.path.join(
+            self.test_dir, "permission_encrypted.bin")
         encrypt_file(
-            test_file, encrypted_file, self.test_password, 
+            test_file, encrypted_file, self.test_password,
             self.basic_hash_config, quiet=True
         )
-        
+
         # Check that encrypted file has secure permissions
         encrypted_perms = os.stat(encrypted_file).st_mode & 0o777
-        self.assertEqual(encrypted_perms, 0o600)  # Should be read/write for owner only
-        
+        # Should be read/write for owner only
+        self.assertEqual(encrypted_perms, 0o600)
+
         # Decrypt back
-        decrypted_file = os.path.join(self.test_dir, "permission_decrypted.txt")
-        decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
-        
+        decrypted_file = os.path.join(
+            self.test_dir, "permission_decrypted.txt")
+        decrypt_file(
+            encrypted_file,
+            decrypted_file,
+            self.test_password,
+            quiet=True)
+
         # Check that decrypted file has secure permissions
         decrypted_perms = os.stat(decrypted_file).st_mode & 0o777
-        self.assertEqual(decrypted_perms, 0o600)  # Should be read/write for owner only
+        # Should be read/write for owner only
+        self.assertEqual(decrypted_perms, 0o600)
 
 
 class TestEncryptionEdgeCases(unittest.TestCase):
     """Test edge cases and error handling in encryption/decryption."""
-    
+
     def setUp(self):
         """Set up test environment."""
         # Create a temporary directory
         self.test_dir = tempfile.mkdtemp()
-        
+
         # Create a test file
         self.test_file = os.path.join(self.test_dir, "edge_case_test.txt")
         with open(self.test_file, "w") as f:
             f.write("This is a test file for edge case testing.")
-        
+
         # Test password
         self.test_password = b"TestPassword123!"
-        
+
         # Basic hash config for testing
         self.basic_hash_config = {
             'sha512': 0,
@@ -975,7 +1085,7 @@ class TestEncryptionEdgeCases(unittest.TestCase):
         """Test handling of non-existent input file."""
         non_existent = os.path.join(self.test_dir, "does_not_exist.txt")
         output_file = os.path.join(self.test_dir, "output.bin")
-        
+
         # This should raise an exception (file not found)
         with self.assertRaises(FileNotFoundError):
             encrypt_file(
@@ -987,7 +1097,7 @@ class TestEncryptionEdgeCases(unittest.TestCase):
         """Test handling of invalid output directory."""
         non_existent_dir = os.path.join(self.test_dir, "non_existent_dir")
         output_file = os.path.join(non_existent_dir, "output.bin")
-        
+
         # This should raise an exception (directory not found)
         with self.assertRaises(FileNotFoundError):
             encrypt_file(
@@ -1003,16 +1113,20 @@ class TestEncryptionEdgeCases(unittest.TestCase):
             self.test_file, encrypted_file, self.test_password,
             self.basic_hash_config, quiet=True
         )
-        
+
         # Corrupt the encrypted file
         with open(encrypted_file, "r+b") as f:
             f.seek(100)  # Go to some position in the file
             f.write(b"CORRUPTED")  # Write some random data
-        
+
         # Attempt to decrypt the corrupted file
         decrypted_file = os.path.join(self.test_dir, "from_corrupted.txt")
         with self.assertRaises(ValueError):
-            decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
+            decrypt_file(
+                encrypted_file,
+                decrypted_file,
+                self.test_password,
+                quiet=True)
 
     def test_output_file_already_exists(self):
         """Test behavior when output file already exists."""
@@ -1020,25 +1134,27 @@ class TestEncryptionEdgeCases(unittest.TestCase):
         existing_file = os.path.join(self.test_dir, "already_exists.bin")
         with open(existing_file, "w") as f:
             f.write("This file already exists and should be overwritten.")
-        
+
         # Encrypt to the existing file
         result = encrypt_file(
             self.test_file, existing_file, self.test_password,
             self.basic_hash_config, quiet=True
         )
         self.assertTrue(result)
-        
+
         # Verify the file was overwritten (content should be different)
         with open(existing_file, "rb") as f:
             content = f.read()
             # The content should now be encrypted data
-            self.assertNotEqual(content, b"This file already exists and should be overwritten.")
+            self.assertNotEqual(
+                content, b"This file already exists and should be overwritten.")
 
     def test_very_short_password(self):
         """Test encryption with a very short password."""
         short_password = b"abc"  # Very short password
-        
-        # Encryption should still work, but warn about weak password in non-quiet mode
+
+        # Encryption should still work, but warn about weak password in
+        # non-quiet mode
         output_file = os.path.join(self.test_dir, "short_pwd_output.bin")
         result = encrypt_file(
             self.test_file, output_file, short_password,
@@ -1051,7 +1167,7 @@ class TestEncryptionEdgeCases(unittest.TestCase):
         """Test encryption/decryption with unicode characters in password."""
         # Password with Unicode characters
         unicode_password = "пароль123!".encode()  # Russian for "password"
-        
+
         # Encrypt with Unicode password
         encrypted_file = os.path.join(self.test_dir, "unicode_pwd_enc.bin")
         result = encrypt_file(
@@ -1059,12 +1175,16 @@ class TestEncryptionEdgeCases(unittest.TestCase):
             self.basic_hash_config, quiet=True
         )
         self.assertTrue(result)
-        
+
         # Decrypt with the same Unicode password
         decrypted_file = os.path.join(self.test_dir, "unicode_pwd_dec.txt")
-        result = decrypt_file(encrypted_file, decrypted_file, unicode_password, quiet=True)
+        result = decrypt_file(
+            encrypted_file,
+            decrypted_file,
+            unicode_password,
+            quiet=True)
         self.assertTrue(result)
-        
+
         # Verify content
         with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
             self.assertEqual(original.read(), decrypted.read())
@@ -1072,36 +1192,36 @@ class TestEncryptionEdgeCases(unittest.TestCase):
 
 class TestSecureShredding(unittest.TestCase):
     """Test secure file shredding functionality in depth."""
-    
+
     def setUp(self):
         """Set up test environment."""
         # Create a temporary directory
         self.test_dir = tempfile.mkdtemp()
-        
+
         # Create files of different sizes for shredding tests
         self.small_file = os.path.join(self.test_dir, "small_to_shred.txt")
         with open(self.small_file, "w") as f:
             f.write("Small file to shred")
-        
+
         # Medium file (100KB)
         self.medium_file = os.path.join(self.test_dir, "medium_to_shred.dat")
         with open(self.medium_file, "wb") as f:
             f.write(os.urandom(100 * 1024))
-        
+
         # Create a read-only file
         self.readonly_file = os.path.join(self.test_dir, "readonly.txt")
         with open(self.readonly_file, "w") as f:
             f.write("This is a read-only file")
         os.chmod(self.readonly_file, 0o444)  # Read-only permissions
-        
+
         # Create an empty file
         self.empty_file = os.path.join(self.test_dir, "empty_to_shred.txt")
         open(self.empty_file, "w").close()
-        
+
         # Create a directory structure for recursive shredding tests
         self.test_subdir = os.path.join(self.test_dir, "test_subdir")
         os.makedirs(self.test_subdir, exist_ok=True)
-        
+
         for i in range(3):
             file_path = os.path.join(self.test_subdir, f"subfile_{i}.txt")
             with open(file_path, "w") as f:
@@ -1116,69 +1236,69 @@ class TestSecureShredding(unittest.TestCase):
                 os.chmod(self.readonly_file, 0o644)
         except Exception:
             pass
-            
+
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def test_shred_small_file(self):
         """Test shredding a small file."""
         self.assertTrue(os.path.exists(self.small_file))
-        
+
         # Shred the file with 3 passes
         result = secure_shred_file(self.small_file, passes=3, quiet=True)
         self.assertTrue(result)
-        
+
         # File should no longer exist
         self.assertFalse(os.path.exists(self.small_file))
 
     def test_shred_medium_file(self):
         """Test shredding a medium-sized file."""
         self.assertTrue(os.path.exists(self.medium_file))
-        
+
         # Shred the file with 2 passes
         result = secure_shred_file(self.medium_file, passes=2, quiet=True)
         self.assertTrue(result)
-        
+
         # File should no longer exist
         self.assertFalse(os.path.exists(self.medium_file))
 
     def test_shred_empty_file(self):
         """Test shredding an empty file."""
         self.assertTrue(os.path.exists(self.empty_file))
-        
+
         # Shred the empty file
         result = secure_shred_file(self.empty_file, passes=1, quiet=True)
         self.assertTrue(result)
-        
+
         # File should no longer exist
         self.assertFalse(os.path.exists(self.empty_file))
 
     def test_shred_readonly_file(self):
         """Test shredding a read-only file."""
         self.assertTrue(os.path.exists(self.readonly_file))
-        
+
         # On Windows, need to remove read-only attribute first
         if sys.platform == 'win32':
             os.chmod(self.readonly_file, 0o644)
-        
+
         # Shred the read-only file
         result = secure_shred_file(self.readonly_file, passes=1, quiet=True)
         self.assertTrue(result)
-        
+
         # File should no longer exist
         self.assertFalse(os.path.exists(self.readonly_file))
 
-    #@unittest.skip("Skipping recursive test to avoid actual deletion")
+    # @unittest.skip("Skipping recursive test to avoid actual deletion")
     def test_recursive_shred(self):
         """Test recursive directory shredding.
-        
+
         Note: This test is skipped by default as it's destructive.
         """
         self.assertTrue(os.path.isdir(self.test_subdir))
-        
+
         # Shred the directory and its contents
         result = secure_shred_file(self.test_subdir, passes=1, quiet=True)
         self.assertTrue(result)
-        
+
         # Directory should no longer exist
         self.assertFalse(os.path.exists(self.test_subdir))
 
@@ -1188,19 +1308,19 @@ class TestSecureShredding(unittest.TestCase):
         pass1_file = os.path.join(self.test_dir, "pass1.txt")
         pass2_file = os.path.join(self.test_dir, "pass2.txt")
         pass3_file = os.path.join(self.test_dir, "pass3.txt")
-        
+
         with open(pass1_file, "w") as f:
             f.write("Test file for 1-pass shredding")
         with open(pass2_file, "w") as f:
             f.write("Test file for 2-pass shredding")
         with open(pass3_file, "w") as f:
             f.write("Test file for 3-pass shredding")
-        
+
         # Shred with different passes
         self.assertTrue(secure_shred_file(pass1_file, passes=1, quiet=True))
         self.assertTrue(secure_shred_file(pass2_file, passes=2, quiet=True))
         self.assertTrue(secure_shred_file(pass3_file, passes=3, quiet=True))
-        
+
         # All files should be gone
         self.assertFalse(os.path.exists(pass1_file))
         self.assertFalse(os.path.exists(pass2_file))
@@ -1209,64 +1329,88 @@ class TestSecureShredding(unittest.TestCase):
 
 class TestPasswordGeneration(unittest.TestCase):
     """Test password generation functionality in depth."""
-    
+
     def test_password_length(self):
         """Test that generated passwords have the correct length."""
         for length in [8, 12, 16, 24, 32, 64]:
             password = generate_strong_password(length)
             self.assertEqual(len(password), length)
-    
+
     def test_minimum_password_length(self):
         """Test that password generation enforces minimum length."""
         # Try to generate a 6-character password
         password = generate_strong_password(6)
         # Should enforce minimum length of 8
         self.assertEqual(len(password), 8)
-    
+
     def test_character_sets(self):
         """Test password generation with different character sets."""
         # Only lowercase
-        password = generate_strong_password(16, use_lowercase=True, use_uppercase=False, 
-                                         use_digits=False, use_special=False)
+        password = generate_strong_password(
+            16,
+            use_lowercase=True,
+            use_uppercase=False,
+            use_digits=False,
+            use_special=False)
         self.assertEqual(len(password), 16)
         self.assertTrue(all(c.islower() for c in password))
-        
+
         # Only uppercase
-        password = generate_strong_password(16, use_lowercase=False, use_uppercase=True, 
-                                         use_digits=False, use_special=False)
+        password = generate_strong_password(
+            16,
+            use_lowercase=False,
+            use_uppercase=True,
+            use_digits=False,
+            use_special=False)
         self.assertEqual(len(password), 16)
         self.assertTrue(all(c.isupper() for c in password))
-        
+
         # Only digits
-        password = generate_strong_password(16, use_lowercase=False, use_uppercase=False, 
-                                         use_digits=True, use_special=False)
+        password = generate_strong_password(
+            16,
+            use_lowercase=False,
+            use_uppercase=False,
+            use_digits=True,
+            use_special=False)
         self.assertEqual(len(password), 16)
         self.assertTrue(all(c.isdigit() for c in password))
-        
+
         # Only special characters
-        password = generate_strong_password(16, use_lowercase=False, use_uppercase=False, 
-                                         use_digits=False, use_special=True)
+        password = generate_strong_password(
+            16,
+            use_lowercase=False,
+            use_uppercase=False,
+            use_digits=False,
+            use_special=True)
         self.assertEqual(len(password), 16)
         self.assertTrue(all(c in string.punctuation for c in password))
-        
+
         # Mix of uppercase and digits
-        password = generate_strong_password(16, use_lowercase=False, use_uppercase=True, 
-                                         use_digits=True, use_special=False)
+        password = generate_strong_password(
+            16,
+            use_lowercase=False,
+            use_uppercase=True,
+            use_digits=True,
+            use_special=False)
         self.assertEqual(len(password), 16)
         self.assertTrue(all(c.isupper() or c.isdigit() for c in password))
 
     def test_default_behavior(self):
         """Test default behavior when no character sets are specified."""
         # When no character sets are specified, should default to using all
-        password = generate_strong_password(16, use_lowercase=False, use_uppercase=False, 
-                                         use_digits=False, use_special=False)
+        password = generate_strong_password(
+            16,
+            use_lowercase=False,
+            use_uppercase=False,
+            use_digits=False,
+            use_special=False)
         self.assertEqual(len(password), 16)
-        
+
         # Should contain at least lowercase, uppercase, and digits
         has_lower = any(c.islower() for c in password)
         has_upper = any(c.isupper() for c in password)
         has_digit = any(c.isdigit() for c in password)
-        
+
         self.assertTrue(has_lower or has_upper or has_digit)
 
     def test_password_randomness(self):
@@ -1284,17 +1428,32 @@ class TestPasswordGeneration(unittest.TestCase):
         lower_count = sum(1 for c in long_password if c.islower())
         upper_count = sum(1 for c in long_password if c.isupper())
         digit_count = sum(1 for c in long_password if c.isdigit())
-        special_count = sum(1 for c in long_password if c in string.punctuation)
+        special_count = sum(
+            1 for c in long_password if c in string.punctuation)
 
         # Each character type should be present in reasonable numbers
         # Further relax the constraints based on true randomness
-        self.assertGreater(lower_count, 50, "Expected more than 50 lowercase characters")
-        self.assertGreater(upper_count, 50, "Expected more than 50 uppercase characters")
+        self.assertGreater(
+            lower_count,
+            50,
+            "Expected more than 50 lowercase characters")
+        self.assertGreater(
+            upper_count,
+            50,
+            "Expected more than 50 uppercase characters")
         self.assertGreater(digit_count, 50, "Expected more than 50 digits")
-        self.assertGreater(special_count, 50, "Expected more than 50 special characters")
+        self.assertGreater(
+            special_count,
+            50,
+            "Expected more than 50 special characters")
 
         # Verify that all character types combined add up to the total length
-        self.assertEqual(lower_count + upper_count + digit_count + special_count, 1000)
+        self.assertEqual(
+            lower_count +
+            upper_count +
+            digit_count +
+            special_count,
+            1000)
 
 
 if __name__ == "__main__":
