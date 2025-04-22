@@ -28,7 +28,9 @@ from cryptography.hazmat.primitives import padding
 import random
 import time
 from functools import wraps
+import math
 import sys
+from collections import Counter
 
 from .secure_memory import (
     SecureBytes,
@@ -123,6 +125,31 @@ class CamelliaCipher:
         secure_memzero(padded_data)  # Clear the padded data from memory
         return result
 
+
+def string_entropy(password: str) -> float:
+    """
+    Calculate password entropy in bits.
+    Higher entropy = more random = stronger password.
+    """
+    # Count character frequencies
+    password = str(password)
+    char_amount = 0
+    char_sets = [False, False, False, False]
+    char_nums = [26, 26, 10, 32]
+    for i in password:
+        if i.islower():
+            char_sets[0] = True
+        if i.isupper():
+            char_sets[1] = True
+        if i.isdigit():
+            char_sets[2] = True
+        if not i.isalnum() and i.isascii():
+            char_sets[3] = True
+
+    for x in range(4):
+        if char_sets[x]:
+            char_amount += char_nums[x]
+    return math.log2(char_amount) * len(set(password))
 
 def add_timing_jitter(func):
     """
@@ -775,15 +802,24 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
         key = hashed_password
     if not KeyStretch.hash_stretch and not KeyStretch.key_stretch and KeyStretch.kind_action == 'encrypt' and os.environ.get('PYTEST_CURRENT_TEST') is None:
         if len(password) < 32:
-            print('ERROR: encryption without at least one hash and/or kdf is NOT supported')
+            print('ERROR: encryption without at least one hash and/or kdf is NOT recommended')
             print('ERROR: this would be a high security risk as "normal" passwords do not have enough entropy by far')
-            print('ERROR: this could only work if you provide a password with at least 32 characters')
-            print('ERROR: your current password only has {} characters'.format(len(password)))
+            print('ERROR: this could only work if you provide a password with at least 32 characters and entropy of 80 bits or higher')
+            print(f"ERROR: your current password only has {format(len(password))} characters ({len(set(password))} unique characters) and {string_entropy(password):.1f} bits of entropy")
+            secure_memzero(password)
+            sys.exit(1)
+        elif string_entropy(password) < 80:
+            print('ERROR: encryption without at least one hash and/or kdf is NOT recommended')
+            print('ERROR: this would be a high security risk as "normal" passwords do not have enough entropy by far')
+            print('ERROR: this could only work if you provide a password with at least 32 characters and 80 bits entropy')
+            print(f"ERROR: your current password has {format(len(password))} characters ({len(set(password))} unique characters) and {string_entropy(password):.1f} bits of entropy")
             secure_memzero(password)
             sys.exit(1)
         else:
             print('WARNING: You are about to use the password directly without any key strengthening.')
             print('WARNING: This is only secure if your password has sufficient entropy (randomness).')
+            print(f"WARNING: Your password is {str(len(password))} long ({len(set(password))} unique characters) and has {string_entropy(password):.1f} bits entropy.")
+            print('WARNING: you should still consider to stop here and use hash/kdf chaining')
             confirmation = input('Are you sure you want to proceed? (y/n): ').strip().lower()
             if confirmation != 'y' and confirmation != 'yes':
                 print('Operation cancelled by user.')
