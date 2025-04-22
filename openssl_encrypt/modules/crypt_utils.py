@@ -14,6 +14,7 @@ import random
 import string
 import glob
 
+
 def expand_glob_patterns(pattern):
     """
     Expand glob patterns into a list of matching files and directories.
@@ -27,8 +28,13 @@ def expand_glob_patterns(pattern):
     return glob.glob(pattern)
 
 
-def generate_strong_password(length, use_lowercase=True, use_uppercase=True,
-                             use_digits=True, use_special=True, use_secure_mem=True):
+def generate_strong_password(
+        length,
+        use_lowercase=True,
+        use_uppercase=True,
+        use_digits=True,
+        use_special=True,
+        use_secure_mem=True):
     """
     Generate a cryptographically strong random password with customizable character sets.
 
@@ -117,7 +123,8 @@ def generate_strong_password(length, use_lowercase=True, use_uppercase=True,
     if not use_secure_mem:
         # Fill remaining length with random characters from the pool
         remaining_length = length - len(required_chars)
-        password_chars = required_chars + [random.choice(char_pool) for _ in range(remaining_length)]
+        password_chars = required_chars + \
+            [random.choice(char_pool) for _ in range(remaining_length)]
 
         # Shuffle to ensure required characters aren't in predictable positions
         random.shuffle(password_chars)
@@ -154,7 +161,8 @@ def display_password_with_timeout(password, timeout_seconds=10):
         print(" GENERATED PASSWORD ".center(60, "="))
         print("=" * 60)
         print(f"\nPassword: {password}")
-        print("\nThis password will be cleared from the screen in {0} seconds.".format(timeout_seconds))
+        print("\nThis password will be cleared from the screen in {0} seconds.".format(
+            timeout_seconds))
         print("Press Ctrl+C to clear immediately.")
         print("=" * 60)
 
@@ -162,8 +170,12 @@ def display_password_with_timeout(password, timeout_seconds=10):
         for remaining in range(timeout_seconds, 0, -1):
             if interrupted:
                 break
-            print(f"\rTime remaining: {remaining} seconds...", end="", flush=True)
-            # Sleep in small increments to check for interruption more frequently
+            print(
+                f"\rTime remaining: {remaining} seconds...",
+                end="",
+                flush=True)
+            # Sleep in small increments to check for interruption more
+            # frequently
             for _ in range(10):
                 if interrupted:
                     break
@@ -179,7 +191,8 @@ def display_password_with_timeout(password, timeout_seconds=10):
         else:
             print("\n\nClearing password from screen...")
 
-        # Use system command to clear the screen - this is the most reliable method
+        # Use system command to clear the screen - this is the most reliable
+        # method
         if sys.platform == 'win32':
             os.system('cls')  # Windows
         else:
@@ -285,28 +298,33 @@ def secure_shred_file(file_path, passes=3, quiet=False):
                     # Track progress for large files
                     bytes_written = 0
 
-                    # Determine the pattern for this pass (rotating through 3 patterns)
+                    # Determine the pattern for this pass (rotating through 3
+                    # patterns)
                     pattern_type = pass_num % 3
 
                     if pattern_type == 0:
                         # First pattern: Random data
                         while bytes_written < file_size:
-                            chunk_size = min(buffer_size, file_size - bytes_written)
-                            random_bytes = bytearray(random.getrandbits(8) for _ in range(chunk_size))
+                            chunk_size = min(
+                                buffer_size, file_size - bytes_written)
+                            random_bytes = bytearray(
+                                random.getrandbits(8) for _ in range(chunk_size))
                             f.write(random_bytes)
                             bytes_written += chunk_size
 
                     elif pattern_type == 1:
                         # Second pattern: All ones (0xFF)
                         while bytes_written < file_size:
-                            chunk_size = min(buffer_size, file_size - bytes_written)
+                            chunk_size = min(
+                                buffer_size, file_size - bytes_written)
                             f.write(b"\xFF" * chunk_size)
                             bytes_written += chunk_size
 
                     else:
                         # Third pattern: All zeros (0x00)
                         while bytes_written < file_size:
-                            chunk_size = min(buffer_size, file_size - bytes_written)
+                            chunk_size = min(
+                                buffer_size, file_size - bytes_written)
                             f.write(b"\x00" * chunk_size)
                             bytes_written += chunk_size
 
@@ -338,6 +356,7 @@ def secure_shred_file(file_path, passes=3, quiet=False):
         if not quiet:
             print(f"\nError during secure deletion: {e}")
         return True
+
 
 def show_security_recommendations():
     """
@@ -375,7 +394,11 @@ def show_security_recommendations():
     argon2_available, version, supported_types = check_argon2_support()
     if argon2_available:
         print(f"Argon2 Status: AVAILABLE (version {version})")
-        print(f"Supported variants: {', '.join('Argon2'+t for t in supported_types)}")
+        print(
+            f"Supported variants: {
+                ', '.join(
+                    'Argon2' +
+                    t for t in supported_types)}")
     else:
         print("Argon2 Status: NOT AVAILABLE")
         print("To enable Argon2 support, install the argon2-cffi package:")

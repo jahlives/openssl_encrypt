@@ -7,40 +7,33 @@ and secure deletion. It contains the cryptographic operations and key derivation
 functions that power the encryption tool.
 """
 
-import os
 import base64
 import hashlib
 import json
-import stat
-import time
-import threading
+import math
+import os
 import random
 import secrets
+import stat
+import sys
+import threading
+import time
 from enum import Enum
+from functools import wraps
+
 from cryptography.fernet import Fernet
+from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305, AESSIV
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305, AESSIV
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives import padding
-import random
-import time
-from functools import wraps
-import math
-import sys
-from collections import Counter
 
 from .secure_memory import (
     SecureBytes,
-    secure_memzero,
-    secure_buffer,
-    secure_input,
-    secure_string,
-    secure_compare
+    secure_memzero
 )
-
 
 # Try to import optional dependencies
 try:
@@ -85,6 +78,7 @@ except ImportError:
 
 try:
     from .balloon import balloon_m
+
     BALLOON_HASH_AVAILABLE = True
 except ImportError:
     BALLOON_HASH_AVAILABLE = False
@@ -97,10 +91,12 @@ class EncryptionAlgorithm(Enum):
     AES_SIV = "aes-siv"
     CAMELLIA = "camellia"
 
+
 class KeyStretch:
     key_stretch = False
     hash_stretch = False
     kind_action = 'encrypt'
+
 
 class CamelliaCipher:
     def __init__(self, key):
@@ -114,7 +110,6 @@ class CamelliaCipher:
         result = encryptor.update(padded_data) + encryptor.finalize()
         secure_memzero(padded_data)  # Clear the padded data from memory
         return result
-
 
     def decrypt(self, nonce, data, associated_data=None):
         cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
@@ -150,6 +145,7 @@ def string_entropy(password: str) -> float:
         if char_sets[x]:
             char_amount += char_nums[x]
     return math.log2(char_amount) * len(set(password))
+
 
 def add_timing_jitter(func):
     """
@@ -187,12 +183,14 @@ def check_argon2_support():
         return False, None, []
 
     try:
-        # Get version using importlib.metadata instead of direct attribute access
+        # Get version using importlib.metadata instead of direct attribute
+        # access
         try:
             import importlib.metadata
             version = importlib.metadata.version('argon2-cffi')
         except (ImportError, importlib.metadata.PackageNotFoundError):
-            # Fall back to old method for older Python versions or if metadata not found
+            # Fall back to old method for older Python versions or if metadata
+            # not found
             import argon2
             version = getattr(argon2, '__version__', 'unknown')
 
@@ -209,6 +207,7 @@ def check_argon2_support():
         return True, version, supported_types
     except Exception:
         return False, None, []
+
 
 def set_secure_permissions(file_path):
     """
@@ -299,7 +298,11 @@ def show_animated_progress(message, stop_event, quiet=False):
         position = int((elapsed % 3) * 10)  # Moves every 0.1 seconds
         bar = ' ' * position + '█████' + ' ' * (bar_length - 5 - position)
 
-        print(f"\r{message}: [{bar}] {animation[idx]} {time_str}", end='', flush=True)
+        print(
+            f"\r{message}: [{bar}] {
+                animation[idx]} {time_str}",
+            end='',
+            flush=True)
         idx = (idx + 1) % len(animation)
         time.sleep(0.1)
 
@@ -340,7 +343,8 @@ def with_progress_bar(func, message, *args, quiet=False, **kwargs):
         # Stop the progress thread
         stop_event.set()
         if not quiet:
-            progress_thread.join(timeout=1.0)  # Set a timeout to prevent hanging
+            # Set a timeout to prevent hanging
+            progress_thread.join(timeout=1.0)
             # Clear the current line
             print(f"\r{' ' * 80}\r", end='', flush=True)
             print(f"{message} completed in {duration:.2f} seconds")
@@ -350,13 +354,20 @@ def with_progress_bar(func, message, *args, quiet=False, **kwargs):
         # Stop the progress thread in case of error
         stop_event.set()
         if not quiet:
-            progress_thread.join(timeout=1.0)  # Set a timeout to prevent hanging
+            # Set a timeout to prevent hanging
+            progress_thread.join(timeout=1.0)
             # Clear the current line
             print(f"\r{' ' * 80}\r", end='', flush=True)
         raise e
 
+
 @add_timing_jitter
-def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem=True):
+def multi_hash_password(
+        password,
+        salt,
+        hash_config,
+        quiet=False,
+        use_secure_mem=True):
     """
     Apply multiple rounds of different hash algorithms to a password.
 
@@ -383,7 +394,8 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
     Returns:
         bytes: The hashed password
     """
-    # If hash_config is provided but doesn't specify type, use 'id' (Argon2id) as default
+    # If hash_config is provided but doesn't specify type, use 'id' (Argon2id)
+    # as default
     if hash_config and 'type' in hash_config:
         # Strip 'argon2' prefix if present
         hash_config['type'] = hash_config['type'].replace('argon2', '')
@@ -396,7 +408,8 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
             return
 
         # Update more frequently for better visual feedback
-        update_frequency = max(1, min(total // 100, 100))  # Update at least every 100 iterations
+        # Update at least every 100 iterations
+        update_frequency = max(1, min(total // 100, 100))
         if current % update_frequency != 0 and current != total:
             return
 
@@ -405,11 +418,15 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
         filled_length = int(bar_length * current // total)
         bar = '█' * filled_length + ' ' * (bar_length - filled_length)
 
-        print(f"\r{algorithm} hashing: [{bar}] {percent:.1f}% ({current}/{total})",
-              end='', flush=True)
+        print(
+            f"\r{algorithm} hashing: [{bar}] {
+                percent:.1f}% ({current}/{total})",
+            end='',
+            flush=True)
 
         if current == total:
             print()  # New line after completion
+
     stretch_hash = False
     if use_secure_mem:
         from .secure_memory import secure_buffer, secure_memcpy, secure_memzero
@@ -419,13 +436,15 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                 # Initialize the secure buffer with password + salt
                 secure_memcpy(hashed, password + salt)
 
-                # Apply each hash algorithm in sequence (only if iterations > 0)
+                # Apply each hash algorithm in sequence (only if iterations >
+                # 0)
                 for algorithm, params in hash_config.items():
                     if algorithm == 'sha512' and params > 0:
                         if not quiet:
                             print(f"Applying {params} rounds of SHA-512...")
 
-                        with secure_buffer(64, zero=False) as hash_buffer:  # SHA-512 produces 64 bytes
+                        # SHA-512 produces 64 bytes
+                        with secure_buffer(64, zero=False) as hash_buffer:
                             for i in range(params):
                                 result = hashlib.sha512(hashed).digest()
                                 secure_memcpy(hash_buffer, result)
@@ -437,7 +456,8 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                         if not quiet:
                             print(f"Applying {params} rounds of SHA-256...")
 
-                        with secure_buffer(32, zero=False) as hash_buffer:  # SHA-256 produces 32 bytes
+                        # SHA-256 produces 32 bytes
+                        with secure_buffer(32, zero=False) as hash_buffer:
                             for i in range(params):
                                 result = hashlib.sha256(hashed).digest()
                                 secure_memcpy(hash_buffer, result)
@@ -449,7 +469,8 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                         if not quiet:
                             print(f"Applying {params} rounds of SHA3-256...")
 
-                        with secure_buffer(32, zero=False) as hash_buffer:  # SHA3-256 produces 32 bytes
+                        # SHA3-256 produces 32 bytes
+                        with secure_buffer(32, zero=False) as hash_buffer:
                             for i in range(params):
                                 result = hashlib.sha3_256(hashed).digest()
                                 secure_memcpy(hash_buffer, result)
@@ -461,7 +482,8 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                         if not quiet:
                             print(f"Applying {params} rounds of SHA3-512...")
 
-                        with secure_buffer(64, zero=False) as hash_buffer:  # SHA3-512 produces 64 bytes
+                        # SHA3-512 produces 64 bytes
+                        with secure_buffer(64, zero=False) as hash_buffer:
                             for i in range(params):
                                 result = hashlib.sha3_512(hashed).digest()
                                 secure_memcpy(hash_buffer, result)
@@ -474,36 +496,40 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                             print(f"Applying {params} rounds of Whirlpool...")
 
                         if WHIRLPOOL_AVAILABLE:
-                            with secure_buffer(64, zero=False) as hash_buffer:  # Whirlpool produces 64 bytes
+                            # Whirlpool produces 64 bytes
+                            with secure_buffer(64, zero=False) as hash_buffer:
                                 for i in range(params):
-                                    result = pywhirlpool.whirlpool(bytes(hashed)).digest()
+                                    result = pywhirlpool.whirlpool(
+                                        bytes(hashed)).digest()
                                     secure_memcpy(hash_buffer, result)
                                     secure_memcpy(hashed, hash_buffer)
                                     show_progress("Whirlpool", i + 1, params)
                                     KeyStretch.hash_stretch = True
                         else:
-                            # Fall back to SHA-512 if Whirlpool is not available
+                            # Fall back to SHA-512 if Whirlpool is not
+                            # available
                             if not quiet:
-                                print("Warning: Whirlpool not available, using SHA-512 instead")
+                                print(
+                                    "Warning: Whirlpool not available, using SHA-512 instead")
 
                             with secure_buffer(64, zero=False) as hash_buffer:
                                 for i in range(params):
                                     result = hashlib.sha512(hashed).digest()
                                     secure_memcpy(hash_buffer, result)
                                     secure_memcpy(hashed, hash_buffer)
-                                    show_progress("SHA-512 (fallback)", i + 1, params)
+                                    show_progress(
+                                        "SHA-512 (fallback)", i + 1, params)
                                     KeyStretch.hash_stretch = True
 
-
-
                 # Create a new bytes object with the final result
-                #result = SecureBytes(hashed) if not isinstance(hashed, SecureBytes) else hashed
+                # result = SecureBytes(hashed) if not isinstance(hashed, SecureBytes) else hashed
                 result = SecureBytes.copy_from(hashed)
             return result
         except ImportError:
             # Fall back to standard method if secure_memory is not available
             if not quiet:
-                print("Warning: secure_memory module not available, falling back to standard method")
+                print(
+                    "Warning: secure_memory module not available, falling back to standard method")
             use_secure_mem = False
         finally:
             if 'hashed' in locals():
@@ -564,7 +590,8 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
                 else:
                     # Fall back to SHA-512 if Whirlpool is not available
                     if not quiet:
-                        print("Warning: Whirlpool not available, using SHA-512 instead")
+                        print(
+                            "Warning: Whirlpool not available, using SHA-512 instead")
 
                     for i in range(params):
                         hashed = hashlib.sha512(hashed).digest()
@@ -575,8 +602,14 @@ def multi_hash_password(password, salt, hash_config, quiet=False, use_secure_mem
 
 
 @add_timing_jitter
-def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=False, use_secure_mem=True,
-                 algorithm=EncryptionAlgorithm.FERNET.value):
+def generate_key(
+        password,
+        salt,
+        hash_config,
+        pbkdf2_iterations=100000,
+        quiet=False,
+        use_secure_mem=True,
+        algorithm=EncryptionAlgorithm.FERNET.value):
     """
     Generate an encryption key from a password using PBKDF2 or Argon2.
 
@@ -592,12 +625,14 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
     Returns:
         tuple: (key, salt, hash_config)
     """
+
     def show_progress(algorithm, current, total):
         if quiet:
             return
 
         # Update more frequently for better visual feedback
-        update_frequency = max(1, min(total // 100, 100))  # Update at least every 100 iterations
+        # Update at least every 100 iterations
+        update_frequency = max(1, min(total // 100, 100))
         if current % update_frequency != 0 and current != total:
             return
 
@@ -606,8 +641,11 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
         filled_length = int(bar_length * current // total)
         bar = '█' * filled_length + ' ' * (bar_length - filled_length)
 
-        print(f"\r{algorithm} hashing: [{bar}] {percent:.1f}% ({current}/{total})",
-              end='', flush=True)
+        print(
+            f"\r{algorithm} hashing: [{bar}] {
+                percent:.1f}% ({current}/{total})",
+            end='',
+            flush=True)
 
         if current == total:
             print()  # New line after completion
@@ -627,7 +665,8 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
     else:
         raise ValueError(f"Unsupported algorithm: {algorithm}")
 
-    # Apply hash iterations if any are configured (SHA-256, SHA-512, SHA3-256, etc.)
+    # Apply hash iterations if any are configured (SHA-256, SHA-512, SHA3-256,
+    # etc.)
     has_hash_iterations = hash_config and any(
         hash_config.get(algo, 0) > 0 for algo in
         ['sha256', 'sha512', 'sha3_256', 'sha3_512', 'whirlpool']
@@ -637,7 +676,8 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
         if not quiet:
             print("Applying hash iterations...")
         # Apply multiple hash algorithms in sequence
-        hashed_password = multi_hash_password(password, salt, hash_config, quiet, use_secure_mem)
+        hashed_password = multi_hash_password(
+            password, salt, hash_config, quiet, use_secure_mem)
     else:
         # If no hash iterations are specified, use the original password
         hashed_password = password
@@ -646,14 +686,15 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
     argon2_available = ARGON2_AVAILABLE
 
     # Determine if we should use Argon2
-    # Only don't use Argon2 if it's explicitly disabled (enabled=False) in hash_config
+    # Only don't use Argon2 if it's explicitly disabled (enabled=False) in
+    # hash_config
     use_argon2 = hash_config.get('argon2', {}).get('enabled', False)
     use_scrypt = hash_config.get('scrypt', {}).get('enabled', False)
     use_pbkdf2 = hash_config.get('pbkdf2', {}).get('pbkdf2-iterations', 0)
     use_balloon = hash_config.get('balloon', {}).get('enabled', False)
 
     # If hash_config has argon2 section with enabled explicitly set to False, honor that
-    #if hash_config and 'argon2' in hash_config and 'enabled' in hash_config['argon2']:
+    # if hash_config and 'argon2' in hash_config and 'enabled' in hash_config['argon2']:
     #    use_argon2 = hash_config['argon2']['enabled']
     if use_argon2:
         derived_key = hashed_password
@@ -662,7 +703,8 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
         if not quiet:
             print("Using Argon2 for key derivation...")
 
-        # Get parameters from the argon2 section of hash_config, or use defaults
+        # Get parameters from the argon2 section of hash_config, or use
+        # defaults
         argon2_config = hash_config.get('argon2', {}) if hash_config else {}
         time_cost = argon2_config.get('time_cost', 3)
         memory_cost = argon2_config.get('memory_cost', 65536)
@@ -682,7 +724,6 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
         else:
             hashed_password = bytes(hashed_password)
 
-
         try:
             for i in range(hash_config.get('argon2', {}).get('rounds', 1)):
                 round_salt = derived_salt + str(i).encode()
@@ -697,7 +738,14 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
                 )
                 KeyStretch.key_stretch = True
                 derived_salt = hashed_password[:16]
-                show_progress("Argon2", i + 1, hash_config.get('argon2', {}).get('rounds', 1))
+                show_progress(
+                    "Argon2",
+                    i + 1,
+                    hash_config.get(
+                        'argon2',
+                        {}).get(
+                        'rounds',
+                        1))
             key = hashed_password
             secure_memzero(derived_key)
             secure_memzero(derived_salt)
@@ -714,7 +762,9 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
             hash_config['argon2']['type'] = type_int
         except Exception as e:
             if not quiet:
-                print(f"Argon2 key derivation failed: {str(e)}. Falling back to PBKDF2.")
+                print(
+                    f"Argon2 key derivation failed: {
+                        str(e)}. Falling back to PBKDF2.")
             # Fall back to PBKDF2 if Argon2 fails
             use_argon2 = False
 
@@ -725,7 +775,8 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
             print("Using Balloon-Hashing for key derivation...")
         balloon_config = hash_config.get('balloon', {}) if hash_config else {}
         time_cost = balloon_config.get('time_cost', 3)
-        space_cost = balloon_config.get('space_cost', 65536)  # renamed from memory_cost
+        space_cost = balloon_config.get(
+            'space_cost', 65536)  # renamed from memory_cost
         parallelism = balloon_config.get('parallelism', 4)
         hash_len = key_length
 
@@ -741,7 +792,14 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
                 )
                 KeyStretch.key_stretch = True
                 derived_salt = hashed_password[:16]
-                show_progress("Balloon", i + 1, hash_config.get('balloon', {}).get('rounds', 1))
+                show_progress(
+                    "Balloon",
+                    i + 1,
+                    hash_config.get(
+                        'balloon',
+                        {}).get(
+                        'rounds',
+                        1))
             key = hashed_password
             secure_memzero(derived_key)
             secure_memzero(derived_salt)
@@ -760,7 +818,9 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
             })
         except Exception as e:
             if not quiet:
-                print(f"Balloon key derivation failed: {str(e)}. Falling back to PBKDF2.")
+                print(
+                    f"Balloon key derivation failed: {
+                        str(e)}. Falling back to PBKDF2.")
             use_argon2 = False  # Consider falling back to PBKDF2
 
     if use_scrypt:
@@ -781,7 +841,14 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
             KeyStretch.key_stretch = True
             derived_key = scrypt_kdf.derive(derived_key)
             derived_salt = derived_key[:16]
-            show_progress("Scrypt", i + 1, hash_config.get('scrypt', {}).get('rounds', 1))
+            show_progress(
+                "Scrypt",
+                i + 1,
+                hash_config.get(
+                    'scrypt',
+                    {}).get(
+                    'rounds',
+                    1))
         key = derived_key
     if os.environ.get('PYTEST_CURRENT_TEST') is not None:
         use_pbkdf2 = 100000
@@ -800,27 +867,54 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
             KeyStretch.key_stretch = True
             show_progress("PBKDF2", i + 1, use_pbkdf2)
         key = hashed_password
-    if not KeyStretch.hash_stretch and not KeyStretch.key_stretch and KeyStretch.kind_action == 'encrypt' and os.environ.get('PYTEST_CURRENT_TEST') is None:
+    if not KeyStretch.hash_stretch and not KeyStretch.key_stretch and KeyStretch.kind_action == 'encrypt' and os.environ.get(
+            'PYTEST_CURRENT_TEST') is None:
         if len(password) < 32:
-            print('ERROR: encryption without at least one hash and/or kdf is NOT recommended')
+            print(
+                'ERROR: encryption without at least one hash and/or kdf is NOT recommended')
             print('ERROR: this would be a high security risk as "normal" passwords do not have enough entropy by far')
-            print('ERROR: this could only work if you provide a password with at least 32 characters and entropy of 80 bits or higher')
-            print(f"ERROR: your current password only has {format(len(password))} characters ({len(set(password))} unique characters) and {string_entropy(password):.1f} bits of entropy")
+            print(
+                'ERROR: this could only work if you provide a password with at least 32 characters and entropy of 80 bits or higher')
+            print(
+                f"ERROR: your current password only has {
+                    format(
+                        len(password))} characters ({
+                    len(
+                        set(password))} unique characters) and {
+                    string_entropy(password):.1f} bits of entropy")
             secure_memzero(password)
             sys.exit(1)
         elif string_entropy(password) < 80:
-            print('ERROR: encryption without at least one hash and/or kdf is NOT recommended')
+            print(
+                'ERROR: encryption without at least one hash and/or kdf is NOT recommended')
             print('ERROR: this would be a high security risk as "normal" passwords do not have enough entropy by far')
-            print('ERROR: this could only work if you provide a password with at least 32 characters and 80 bits entropy')
-            print(f"ERROR: your current password has {format(len(password))} characters ({len(set(password))} unique characters) and {string_entropy(password):.1f} bits of entropy")
+            print(
+                'ERROR: this could only work if you provide a password with at least 32 characters and 80 bits entropy')
+            print(
+                f"ERROR: your current password has {
+                    format(
+                        len(password))} characters ({
+                    len(
+                        set(password))} unique characters) and {
+                    string_entropy(password):.1f} bits of entropy")
             secure_memzero(password)
             sys.exit(1)
         else:
-            print('WARNING: You are about to use the password directly without any key strengthening.')
-            print('WARNING: This is only secure if your password has sufficient entropy (randomness).')
-            print(f"WARNING: Your password is {str(len(password))} long ({len(set(password))} unique characters) and has {string_entropy(password):.1f} bits entropy.")
-            print('WARNING: you should still consider to stop here and use hash/kdf chaining')
-            confirmation = input('Are you sure you want to proceed? (y/n): ').strip().lower()
+            print(
+                'WARNING: You are about to use the password directly without any key strengthening.')
+            print(
+                'WARNING: This is only secure if your password has sufficient entropy (randomness).')
+            print(
+                f"WARNING: Your password is {
+                    str(
+                        len(password))} long ({
+                    len(
+                        set(password))} unique characters) and has {
+                    string_entropy(password):.1f} bits entropy.")
+            print(
+                'WARNING: you should still consider to stop here and use hash/kdf chaining')
+            confirmation = input(
+                'Are you sure you want to proceed? (y/n): ').strip().lower()
             if confirmation != 'y' and confirmation != 'yes':
                 print('Operation cancelled by user.')
                 secure_memzero(password)
@@ -830,7 +924,7 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
     elif KeyStretch.kind_action == 'decrypt' and os.environ.get('PYTEST_CURRENT_TEST') is None:
         key = password
     if algorithm == EncryptionAlgorithm.FERNET.value:
-         key = base64.urlsafe_b64encode(key)
+        key = base64.urlsafe_b64encode(key)
     try:
         return key, salt, hash_config
     finally:
@@ -843,6 +937,7 @@ def generate_key(password, salt, hash_config, pbkdf2_iterations=100000, quiet=Fa
             secure_memzero(key)
         else:
             return True
+
 
 def encrypt_file(input_file, output_file, password, hash_config=None,
                  pbkdf2_iterations=100000, quiet=False, use_secure_mem=True,
@@ -866,10 +961,11 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     if isinstance(algorithm, str):
         algorithm = EncryptionAlgorithm(algorithm)
     # Generate a key from the password
-    salt = secrets.token_bytes(16) # Unique salt for each encryption
+    salt = secrets.token_bytes(16)  # Unique salt for each encryption
     if not quiet:
         print("\nGenerating encryption key...")
-    algorithm_value = algorithm.value if isinstance(algorithm, EncryptionAlgorithm) else algorithm
+    algorithm_value = algorithm.value if isinstance(
+        algorithm, EncryptionAlgorithm) else algorithm
     print_hash_config(
         hash_config,
         encryption_algo=algorithm_value,
@@ -880,8 +976,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     )
 
     key, salt, hash_config = generate_key(
-        password, salt, hash_config, pbkdf2_iterations, quiet, use_secure_mem, algorithm_value
-    )
+        password, salt, hash_config, pbkdf2_iterations, quiet, use_secure_mem, algorithm_value)
 
     # Read the input file
     if not quiet:
@@ -907,7 +1002,8 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
             return f.encrypt(data)
         else:
             # Generate a random nonce
-            nonce = secrets.token_bytes(16) # 16 bytes for AES-GCM and ChaCha20-Poly1305
+            # 16 bytes for AES-GCM and ChaCha20-Poly1305
+            nonce = secrets.token_bytes(16)
             if algorithm == EncryptionAlgorithm.AES_GCM:
                 cipher = AESGCM(key)
                 return nonce + cipher.encrypt(nonce[:12], data, None)
@@ -981,7 +1077,13 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         else:
             return True
 
-def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=True):
+
+def decrypt_file(
+        input_file,
+        output_file,
+        password,
+        quiet=False,
+        use_secure_mem=True):
     """
     Decrypt a file with a password.
 
@@ -1027,9 +1129,8 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
     algorithm = metadata['algorithm']
     original_hash = metadata.get('original_hash')
     encrypted_hash = metadata.get('encrypted_hash')
-    algorithm = metadata.get('algorithm',
-                             EncryptionAlgorithm.FERNET.value)  # Default to Fernet for backward compatibility
-
+    # Default to Fernet for backward compatibility
+    algorithm = metadata.get('algorithm', EncryptionAlgorithm.FERNET.value)
 
     print_hash_config(
         hash_config,
@@ -1051,9 +1152,8 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
     if not quiet:
         print("Generating decryption key...")
 
-    key, _, _ = generate_key(
-        password, salt, hash_config, pbkdf2_iterations, quiet, use_secure_mem, algorithm
-    )
+    key, _, _ = generate_key(password, salt, hash_config,
+                             pbkdf2_iterations, quiet, use_secure_mem, algorithm)
 
     # Decrypt the data
     if not quiet:
@@ -1081,7 +1181,8 @@ def decrypt_file(input_file, output_file, password, quiet=False, use_secure_mem=
                 cipher = CamelliaCipher(key)
                 return cipher.decrypt(nonce, ciphertext, None)
             else:
-                raise ValueError(f"Unsupported encryption algorithm: {algorithm}")
+                raise ValueError(
+                    f"Unsupported encryption algorithm: {algorithm}")
 
     # Only show progress for larger files (> 1MB)
     if len(encrypted_data) > 1024 * 1024 and not quiet:
@@ -1155,7 +1256,13 @@ def get_organized_hash_config(hash_config, encryption_algo=None, salt=None):
     return organized_config
 
 
-def print_hash_config(hash_config, encryption_algo=None, salt=None, quiet=False, use_secure_mem=True, kind='decrypt'):
+def print_hash_config(
+        hash_config,
+        encryption_algo=None,
+        salt=None,
+        quiet=False,
+        use_secure_mem=True,
+        kind='decrypt'):
     if quiet:
         return
     if use_secure_mem:
@@ -1183,7 +1290,8 @@ def print_hash_config(hash_config, encryption_algo=None, salt=None, quiet=False,
     else:
         for algo, params in organized['kdfs'].items():
             if algo == 'scrypt':
-                print(f"    - Scrypt: n={params['n']}, r={params['r']}, p={params['p']}")
+                print(
+                    f"    - Scrypt: n={params['n']}, r={params['r']}, p={params['p']}")
             elif algo == 'argon2':
                 print(f"    - Argon2: time_cost={params['time_cost']}, "
                       f"memory_cost={params['memory_cost']}KB, "
@@ -1198,6 +1306,7 @@ def print_hash_config(hash_config, encryption_algo=None, salt=None, quiet=False,
                 print(f"    - PBKDF2: {params} iterations")
     print("  Encryption:")
     print(f"    - Algorithm: {encryption_algo or 'Not specified'}")
-    salt_str = base64.b64encode(salt).decode('utf-8') if isinstance(salt, bytes) else salt
+    salt_str = base64.b64encode(salt).decode(
+        'utf-8') if isinstance(salt, bytes) else salt
     print(f"    - Salt: {salt_str or 'Not specified'}")
     print('')

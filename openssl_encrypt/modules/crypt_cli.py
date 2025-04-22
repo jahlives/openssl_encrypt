@@ -22,14 +22,16 @@ import json
 import yaml
 
 
-
 # Import from local modules
 from .crypt_core import (
-    encrypt_file, decrypt_file, check_argon2_support,
-    get_file_permissions, WHIRLPOOL_AVAILABLE, ARGON2_AVAILABLE, ARGON2_TYPE_INT_MAP,
-    EncryptionAlgorithm
-
-)
+    encrypt_file,
+    decrypt_file,
+    check_argon2_support,
+    get_file_permissions,
+    WHIRLPOOL_AVAILABLE,
+    ARGON2_AVAILABLE,
+    ARGON2_TYPE_INT_MAP,
+    EncryptionAlgorithm)
 from .crypt_utils import (
     secure_shred_file, expand_glob_patterns, generate_strong_password,
     display_password_with_timeout, show_security_recommendations,
@@ -50,20 +52,60 @@ def use_secure_memory(args):
     Returns:
         bool: True if secure memory should be used, False otherwise
     """
-    return not hasattr(args, 'disable_secure_memory') or not args.disable_secure_memory
+    return not hasattr(
+        args, 'disable_secure_memory') or not args.disable_secure_memory
 
 
 def debug_hash_config(args, hash_config, message="Hash configuration"):
     """Debug output for hash configuration"""
     print(f"\n{message}:")
-    print(f"SHA3-512: args={args.sha3_512_rounds}, hash_config={hash_config.get('sha3_512', 'Not set')}")
-    print(f"SHA3-256: args={args.sha3_256_rounds}, hash_config={hash_config.get('sha3_256', 'Not set')}")
-    print(f"SHA-512: args={args.sha512_rounds}, hash_config={hash_config.get('sha512', 'Not set')}")
-    print(f"SHA-256: args={args.sha256_rounds}, hash_config={hash_config.get('sha256', 'Not set')}")
-    print(f"PBKDF2: args={args.pbkdf2_iterations}, hash_config={hash_config.get('pbkdf2_iterations', 'Not set')}")
-    print(f"Scrypt: args.n={args.scrypt_n}, hash_config.n={hash_config.get('scrypt', {}).get('n', 'Not set')}")
     print(
-        f"Argon2: args.enable_argon2={args.enable_argon2}, hash_config.enabled={hash_config.get('argon2', {}).get('enabled', 'Not set')}")
+        f"SHA3-512: args={
+            args.sha3_512_rounds}, hash_config={
+            hash_config.get(
+                'sha3_512',
+                'Not set')}")
+    print(
+        f"SHA3-256: args={
+            args.sha3_256_rounds}, hash_config={
+            hash_config.get(
+                'sha3_256',
+                'Not set')}")
+    print(
+        f"SHA-512: args={
+            args.sha512_rounds}, hash_config={
+            hash_config.get(
+                'sha512',
+                'Not set')}")
+    print(
+        f"SHA-256: args={
+            args.sha256_rounds}, hash_config={
+            hash_config.get(
+                'sha256',
+                'Not set')}")
+    print(
+        f"PBKDF2: args={
+            args.pbkdf2_iterations}, hash_config={
+            hash_config.get(
+                'pbkdf2_iterations',
+                'Not set')}")
+    print(
+        f"Scrypt: args.n={
+            args.scrypt_n}, hash_config.n={
+            hash_config.get(
+                'scrypt',
+                {}).get(
+                    'n',
+                'Not set')}")
+    print(
+        f"Argon2: args.enable_argon2={
+            args.enable_argon2}, hash_config.enabled={
+            hash_config.get(
+                'argon2',
+                {}).get(
+                    'enabled',
+                'Not set')}")
+
 
 class SecurityTemplate(Enum):
     STANDARD = "standard"
@@ -106,6 +148,7 @@ def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
 
     print(f"Template {template_name} not found in {template_dir}")
     sys.exit(1)
+
 
 def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
     """
@@ -223,6 +266,7 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
             print(f"Error loading template file: {e}")
             sys.exit(1)
 
+
 def main():
     """
     Main function that handles the command-line interface.
@@ -266,8 +310,10 @@ def main():
         description='Encrypt or decrypt a file with a password')
 
     # Add template argument
-    parser.add_argument('-t', '--template',
-                        help='Specify a template name (built-in or from ./template directory)')
+    parser.add_argument(
+        '-t',
+        '--template',
+        help='Specify a template name (built-in or from ./template directory)')
 
     # Template selection group
     template_group = parser.add_mutually_exclusive_group()
@@ -290,20 +336,25 @@ def main():
     # Define core actions
     parser.add_argument(
         'action',
-        choices=['encrypt', 'decrypt', 'shred', 'generate-password', 'security-info', 'check-argon2'],
+        choices=[
+            'encrypt',
+            'decrypt',
+            'shred',
+            'generate-password',
+            'security-info',
+            'check-argon2'],
         help='Action to perform: encrypt/decrypt files, shred data, generate passwords, '
-             'show security recommendations, or check Argon2 support'
-    )
+        'show security recommendations, or check Argon2 support')
 
     parser.add_argument(
         '--algorithm',
         type=str,
-        choices=[algo.value for algo in EncryptionAlgorithm],
+        choices=[
+            algo.value for algo in EncryptionAlgorithm],
         default=EncryptionAlgorithm.FERNET.value,
         help='Encryption algorithm to use: fernet (default, Fernet from cryptography, good general choice), '
-             'aes-gcm (AES-256 in GCM mode, high security, widely trusted), '
-             'chacha20-poly1305 (modern AEAD cipher, excellent performance)'
-    )
+        'aes-gcm (AES-256 in GCM mode, high security, widely trusted), '
+        'chacha20-poly1305 (modern AEAD cipher, excellent performance)')
     # Define common options
     parser.add_argument(
         '--password', '-p',
@@ -316,9 +367,9 @@ def main():
         help='Generate a random password of specified length for encryption'
     )
     parser.add_argument(
-        '--input', '-i',
-        help='Input file or directory (supports glob patterns for shred action)'
-    )
+        '--input',
+        '-i',
+        help='Input file or directory (supports glob patterns for shred action)')
     parser.add_argument(
         '--output', '-o',
         help='Output file (optional for decrypt)'
@@ -358,7 +409,8 @@ def main():
     )
 
     # Group hash configuration arguments for better organization
-    hash_group = parser.add_argument_group('Hash Options', 'Configure hashing algorithms for key derivation')
+    hash_group = parser.add_argument_group(
+        'Hash Options', 'Configure hashing algorithms for key derivation')
 
     # SHA family arguments - updated to match the template naming
     hash_group.add_argument(
@@ -409,7 +461,8 @@ def main():
     )
 
     # Scrypt parameters group - updated to match the template naming
-    scrypt_group = parser.add_argument_group('Scrypt Options', 'Configure Scrypt memory-hard function parameters')
+    scrypt_group = parser.add_argument_group(
+        'Scrypt Options', 'Configure Scrypt memory-hard function parameters')
     scrypt_group.add_argument(
         '--enable-scrypt',
         action='store_true',
@@ -450,7 +503,8 @@ def main():
     )
 
     # Argon2 parameters group - updated for consistency
-    argon2_group = parser.add_argument_group('Argon2 Options', 'Configure Argon2 memory-hard function parameters')
+    argon2_group = parser.add_argument_group(
+        'Argon2 Options', 'Configure Argon2 memory-hard function parameters')
     argon2_group.add_argument(
         '--enable-argon2',
         action='store_true',
@@ -549,11 +603,39 @@ def main():
     )
 
     # Legacy options for backward compatibility
-    hash_group.add_argument('--sha512', type=int, nargs='?', const=1, default=0, help=argparse.SUPPRESS)
-    hash_group.add_argument('--sha256', type=int, nargs='?', const=1, default=0, help=argparse.SUPPRESS)
-    hash_group.add_argument('--sha3-256', type=int, nargs='?', const=1, default=0, help=argparse.SUPPRESS)
-    hash_group.add_argument('--sha3-512', type=int, nargs='?', const=1, default=0, help=argparse.SUPPRESS)
-    hash_group.add_argument('--pbkdf2', type=int, default=100000, help=argparse.SUPPRESS)
+    hash_group.add_argument(
+        '--sha512',
+        type=int,
+        nargs='?',
+        const=1,
+        default=0,
+        help=argparse.SUPPRESS)
+    hash_group.add_argument(
+        '--sha256',
+        type=int,
+        nargs='?',
+        const=1,
+        default=0,
+        help=argparse.SUPPRESS)
+    hash_group.add_argument(
+        '--sha3-256',
+        type=int,
+        nargs='?',
+        const=1,
+        default=0,
+        help=argparse.SUPPRESS)
+    hash_group.add_argument(
+        '--sha3-512',
+        type=int,
+        nargs='?',
+        const=1,
+        default=0,
+        help=argparse.SUPPRESS)
+    hash_group.add_argument(
+        '--pbkdf2',
+        type=int,
+        default=100000,
+        help=argparse.SUPPRESS)
 
     # Password generation options
     password_group = parser.add_argument_group('Password Generation Options')
@@ -623,7 +705,11 @@ def main():
         print("====================")
         if argon2_available:
             print(f"✓ Argon2 is AVAILABLE (version {version})")
-            print(f"✓ Supported variants: {', '.join('Argon2' + t for t in supported_types)}")
+            print(
+                f"✓ Supported variants: {
+                    ', '.join(
+                        'Argon2' +
+                        t for t in supported_types)}")
 
             # Try a test hash to verify functionality
             try:
@@ -640,7 +726,8 @@ def main():
                 if len(test_hash) == 16:
                     print("✓ Argon2 functionality test: PASSED")
                 else:
-                    print("✗ Argon2 functionality test: FAILED (unexpected hash length)")
+                    print(
+                        "✗ Argon2 functionality test: FAILED (unexpected hash length)")
             except Exception as e:
                 print(f"✗ Argon2 functionality test: FAILED with error: {e}")
         else:
@@ -651,7 +738,8 @@ def main():
 
     elif args.action == 'generate-password':
         # If no character sets are explicitly selected, use all by default
-        if not (args.use_lowercase or args.use_uppercase or args.use_digits or args.use_special):
+        if not (
+                args.use_lowercase or args.use_uppercase or args.use_digits or args.use_special):
             args.use_lowercase = True
             args.use_uppercase = True
             args.use_digits = True
@@ -708,12 +796,15 @@ def main():
 
                     # If no password provided yet, prompt the user
                     else:
-                        # For encryption, require password confirmation to prevent typos
+                        # For encryption, require password confirmation to
+                        # prevent typos
                         if args.action == 'encrypt' and not args.quiet:
                             match = False
                             while not match:
-                                pwd1 = getpass.getpass('Enter password: ').encode()
-                                pwd2 = getpass.getpass('Confirm password: ').encode()
+                                pwd1 = getpass.getpass(
+                                    'Enter password: ').encode()
+                                pwd2 = getpass.getpass(
+                                    'Confirm password: ').encode()
 
                                 if pwd1 == pwd2:
                                     password_secure.extend(pwd1)
@@ -725,13 +816,15 @@ def main():
                                     # Securely clear the temporary buffers
                                     pwd1 = b'\x00' * len(pwd1)
                                     pwd2 = b'\x00' * len(pwd2)
-                                    print("Passwords do not match. Please try again.")
+                                    print(
+                                        "Passwords do not match. Please try again.")
                         # For decryption or quiet mode, just ask once
                         else:
                             # When in quiet mode, don't add the "Enter password: " prompt text
-                            #prompt = '' if args.quiet else 'Enter password: '
+                            # prompt = '' if args.quiet else 'Enter password: '
                             pwd = getpass.getpass('Enter password: ')
-                            sys.stdout.write('\033[A\033[K')  # Move up one line and clear it
+                            # Move up one line and clear it
+                            sys.stdout.write('\033[A\033[K')
                             sys.stdout.flush()
                             password_secure.extend(pwd.encode('utf-8'))
                             # Securely clear the temporary buffer
@@ -741,12 +834,15 @@ def main():
                     password = bytes(password_secure)
 
             except ImportError:
-                # Fall back to standard method if secure_memory is not available
+                # Fall back to standard method if secure_memory is not
+                # available
                 if not args.quiet:
-                    print("Warning: secure_memory module not available, falling back to standard password handling")
+                    print(
+                        "Warning: secure_memory module not available, falling back to standard password handling")
                 use_secure_mem = False
 
-        # Standard password handling if secure_memory is not available or disabled
+        # Standard password handling if secure_memory is not available or
+        # disabled
         if not use_secure_mem:
             # Original password handling code
             password = args.password
@@ -767,7 +863,8 @@ def main():
 
             # If no password provided yet, prompt the user
             if not password:
-                # For encryption, require password confirmation to prevent typos
+                # For encryption, require password confirmation to prevent
+                # typos
                 if args.action == 'encrypt' and not args.quiet:
                     while True:
                         password1 = getpass.getpass('Enter password: ')
@@ -780,7 +877,8 @@ def main():
                             print("Passwords do not match. Please try again.")
                 # For decryption or quiet mode, just ask once
                 else:
-                    # When in quiet mode, don't add the "Enter password: " prompt text
+                    # When in quiet mode, don't add the "Enter password: "
+                    # prompt text
                     if args.quiet:
                         password = getpass.getpass('')
                     else:
@@ -812,33 +910,39 @@ def main():
             parser.error("--password and --random cannot be used together")
         if args.random < 12:
             if not args.quiet:
-                print(f"Warning: Random password length increased to 12 (minimum secure length)")
+                print(
+                    f"Warning: Random password length increased to 12 (minimum secure length)")
             args.random = 12
 
-    # Set default iterations if SHA algorithms are requested but no iterations provided
+    # Set default iterations if SHA algorithms are requested but no iterations
+    # provided
     MIN_SHA_ITERATIONS = 1000000
 
-    # If user specified to use SHA-256, SHA-512, or SHA3 but didn't provide iterations
+    # If user specified to use SHA-256, SHA-512, or SHA3 but didn't provide
+    # iterations
     if args.sha256_rounds == 1:  # When flag is provided without value
         args.sha256_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
-            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-256")
-
+            print(
+                f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-256")
 
     if args.sha512_rounds == 1:  # When flag is provided without value
         args.sha512_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
-            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-512")
+            print(
+                f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-512")
 
     if args.sha3_256_rounds == 1:  # When flag is provided without value
         args.sha3_256_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
-            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-256")
+            print(
+                f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-256")
 
     if args.sha3_512_rounds == 1:  # When flag is provided without value
         args.sha3_512_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
-            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-512")
+            print(
+                f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-512")
 
     # Handle Argon2 presets if specified
     if args.argon2_preset and ARGON2_AVAILABLE:
@@ -885,7 +989,9 @@ def main():
         args.argon2_type = preset['type']
 
         if not args.quiet:
-            print(f"Using Argon2 preset '{args.argon2_preset}' with parameters:")
+            print(
+                f"Using Argon2 preset '{
+                    args.argon2_preset}' with parameters:")
             print(f"  - Time cost: {args.argon2_time}")
             print(f"  - Memory: {args.argon2_memory} KB")
             print(f"  - Parallelism: {args.argon2_parallelism}")
@@ -933,7 +1039,8 @@ def main():
                 'memory_cost': args.argon2_memory,
                 'parallelism': args.argon2_parallelism,
                 'hash_len': args.argon2_hash_len,
-                'type': ARGON2_TYPE_INT_MAP[args.argon2_type],  # Store integer value for JSON serialization
+                # Store integer value for JSON serialization
+                'type': ARGON2_TYPE_INT_MAP[args.argon2_type],
                 'rounds': args.argon2_rounds
             },
             'balloon': {
@@ -956,10 +1063,14 @@ def main():
             # Handle output file path
             if args.overwrite:
                 output_file = args.input
-                # Create a temporary file for the encryption to enable atomic replacement
+                # Create a temporary file for the encryption to enable atomic
+                # replacement
                 temp_dir = os.path.dirname(os.path.abspath(args.input))
                 temp_suffix = f".{uuid.uuid4().hex[:12]}.tmp"
-                temp_output = os.path.join(temp_dir, f".{os.path.basename(args.input)}{temp_suffix}")
+                temp_output = os.path.join(
+                    temp_dir, f".{
+                        os.path.basename(
+                            args.input)}{temp_suffix}")
 
                 # Add to cleanup list in case process is interrupted
                 temp_files_to_cleanup.append(temp_output)
@@ -970,18 +1081,25 @@ def main():
 
                     # Encrypt to temporary file
                     success = encrypt_file(
-                        args.input, temp_output, password, hash_config, args.pbkdf2_iterations, args.quiet,
-                        GLOBAL_USE_SECURE_MEM, algorithm=args.algorithm
-                    )
+                        args.input,
+                        temp_output,
+                        password,
+                        hash_config,
+                        args.pbkdf2_iterations,
+                        args.quiet,
+                        GLOBAL_USE_SECURE_MEM,
+                        algorithm=args.algorithm)
 
                     if success:
                         # Apply the original permissions to the temp file
                         os.chmod(temp_output, original_permissions)
 
-                        # Replace the original file with the encrypted file (atomic operation)
+                        # Replace the original file with the encrypted file
+                        # (atomic operation)
                         os.replace(temp_output, output_file)
 
-                        # Successful replacement means we don't need to clean up the temp file
+                        # Successful replacement means we don't need to clean
+                        # up the temp file
                         temp_files_to_cleanup.remove(temp_output)
                     else:
                         # Clean up the temp file if it exists
@@ -1004,15 +1122,20 @@ def main():
             # Direct encryption to output file (when not overwriting)
             if not args.overwrite:
                 success = encrypt_file(
-                    args.input, output_file, password, hash_config, args.pbkdf2_iterations, args.quiet,
-                    GLOBAL_USE_SECURE_MEM
-                )
+                    args.input,
+                    output_file,
+                    password,
+                    hash_config,
+                    args.pbkdf2_iterations,
+                    args.quiet,
+                    GLOBAL_USE_SECURE_MEM)
 
             if success:
                 if not args.quiet:
                     print(f"\nFile encrypted successfully: {output_file}")
 
-                    # If we used a generated password, display it with a warning
+                    # If we used a generated password, display it with a
+                    # warning
                     if generated_password:
                         # Store the original signal handler
                         original_sigint = signal.getsignal(signal.SIGINT)
@@ -1032,12 +1155,17 @@ def main():
                             signal.signal(signal.SIGINT, sigint_handler)
 
                             print("\n" + "!" * 80)
-                            print("IMPORTANT: SAVE THIS PASSWORD NOW".center(80))
+                            print(
+                                "IMPORTANT: SAVE THIS PASSWORD NOW".center(80))
                             print("!" * 80)
-                            print(f"\nGenerated Password: {generated_password}")
-                            print("\nWARNING: This is the ONLY time this password will be displayed.")
-                            print("         If you lose it, your data CANNOT be recovered.")
-                            print("         Please write it down or save it in a password manager now.")
+                            print(
+                                f"\nGenerated Password: {generated_password}")
+                            print(
+                                "\nWARNING: This is the ONLY time this password will be displayed.")
+                            print(
+                                "         If you lose it, your data CANNOT be recovered.")
+                            print(
+                                "         Please write it down or save it in a password manager now.")
                             print("\nThis message will disappear in 10 seconds...")
 
                             # Wait for 10 seconds or until keyboard interrupt
@@ -1045,8 +1173,10 @@ def main():
                                 if interrupted:
                                     break
                                 # Overwrite the line with updated countdown
-                                print(f"\rTime remaining: {remaining} seconds...", end="", flush=True)
-                                # Sleep in small increments to check for interruption more frequently
+                                print(
+                                    f"\rTime remaining: {remaining} seconds...", end="", flush=True)
+                                # Sleep in small increments to check for
+                                # interruption more frequently
                                 for _ in range(10):
                                     if interrupted:
                                         break
@@ -1058,7 +1188,8 @@ def main():
 
                             # Give an indication that we're clearing the screen
                             if interrupted:
-                                print("\n\nClearing password from screen (interrupted by user)...")
+                                print(
+                                    "\n\nClearing password from screen (interrupted by user)...")
                             else:
                                 print("\n\nClearing password from screen...")
 
@@ -1069,13 +1200,15 @@ def main():
                                 os.system('clear')  # Unix/Linux/MacOS
 
                             print("Password has been cleared from screen.")
-                            print("For additional security, consider clearing your terminal history.")
+                            print(
+                                "For additional security, consider clearing your terminal history.")
 
                 # If shredding was requested and encryption was successful
                 if args.shred and not args.overwrite:
                     if not args.quiet:
                         print("Shredding the original file as requested...")
-                    secure_shred_file(args.input, args.shred_passes, args.quiet)
+                    secure_shred_file(
+                        args.input, args.shred_passes, args.quiet)
 
         elif args.action == 'decrypt':
             if args.overwrite:
@@ -1083,7 +1216,10 @@ def main():
                 # Create a temporary file for the decryption
                 temp_dir = os.path.dirname(os.path.abspath(args.input))
                 temp_suffix = f".{uuid.uuid4().hex[:12]}.tmp"
-                temp_output = os.path.join(temp_dir, f".{os.path.basename(args.input)}{temp_suffix}")
+                temp_output = os.path.join(
+                    temp_dir, f".{
+                        os.path.basename(
+                            args.input)}{temp_suffix}")
 
                 # Add to cleanup list
                 temp_files_to_cleanup.append(temp_output)
@@ -1093,7 +1229,12 @@ def main():
                     original_permissions = get_file_permissions(args.input)
 
                     # Decrypt to temporary file first
-                    success = decrypt_file(args.input, temp_output, password, args.quiet, GLOBAL_USE_SECURE_MEM)
+                    success = decrypt_file(
+                        args.input,
+                        temp_output,
+                        password,
+                        args.quiet,
+                        GLOBAL_USE_SECURE_MEM)
                     if success:
                         # Apply the original permissions to the temp file
                         os.chmod(temp_output, original_permissions)
@@ -1101,7 +1242,8 @@ def main():
                         # Replace the original file with the decrypted file
                         os.replace(temp_output, output_file)
 
-                        # Successful replacement means we don't need to clean up the temp file
+                        # Successful replacement means we don't need to clean
+                        # up the temp file
                         temp_files_to_cleanup.remove(temp_output)
                     else:
                         # Clean up the temp file if it exists
@@ -1116,7 +1258,12 @@ def main():
                             temp_files_to_cleanup.remove(temp_output)
                     raise e
             elif args.output:
-                success = decrypt_file(args.input, args.output, password, args.quiet, GLOBAL_USE_SECURE_MEM)
+                success = decrypt_file(
+                    args.input,
+                    args.output,
+                    password,
+                    args.quiet,
+                    GLOBAL_USE_SECURE_MEM)
                 if success and not args.quiet:
                     print(f"\nFile decrypted successfully: {args.output}")
 
@@ -1124,10 +1271,17 @@ def main():
                 if args.shred and success:
                     if not args.quiet:
                         print("Shredding the encrypted file as requested...")
-                    secure_shred_file(args.input, args.shred_passes, args.quiet)
+                    secure_shred_file(
+                        args.input, args.shred_passes, args.quiet)
             else:
-                # Decrypt to screen if no output file specified (useful for text files)
-                decrypted = decrypt_file(args.input, None, password, args.quiet, GLOBAL_USE_SECURE_MEM)
+                # Decrypt to screen if no output file specified (useful for
+                # text files)
+                decrypted = decrypt_file(
+                    args.input,
+                    None,
+                    password,
+                    args.quiet,
+                    GLOBAL_USE_SECURE_MEM)
                 try:
                     # Try to decode as text
                     if not args.quiet:
@@ -1135,22 +1289,28 @@ def main():
                     print(decrypted.decode().rstrip())
                 except UnicodeDecodeError:
                     if not args.quiet:
-                        print("\nDecrypted successfully, but content is binary and cannot be displayed.")
+                        print(
+                            "\nDecrypted successfully, but content is binary and cannot be displayed.")
 
         elif args.action == 'shred':
-            # Direct shredding of files or directories without encryption/decryption
+            # Direct shredding of files or directories without
+            # encryption/decryption
 
             # Expand any glob patterns in the input path
             matched_paths = expand_glob_patterns(args.input)
 
             if not matched_paths:
                 if not args.quiet:
-                    print(f"No files or directories match the pattern: {args.input}")
+                    print(
+                        f"No files or directories match the pattern: {
+                            args.input}")
                 exit_code = 1
             else:
                 # If there are multiple files/dirs to shred, inform the user
                 if len(matched_paths) > 1 and not args.quiet:
-                    print(f"Found {len(matched_paths)} files/directories matching the pattern.")
+                    print(
+                        f"Found {
+                            len(matched_paths)} files/directories matching the pattern.")
 
                 overall_success = True
 
@@ -1160,20 +1320,23 @@ def main():
                     if os.path.isdir(path) and not args.recursive:
                         # Directory detected but recursive flag not provided
                         if args.quiet:
-                            # In quiet mode, fail immediately without confirmation
+                            # In quiet mode, fail immediately without
+                            # confirmation
                             if not args.quiet:
                                 print(f"Error: {path} is a directory. "
                                       f"Use --recursive to shred directories.")
                             overall_success = False
                             continue
                         else:
-                            # Ask for confirmation since this is potentially dangerous
+                            # Ask for confirmation since this is potentially
+                            # dangerous
                             confirm_message = (
                                 f"WARNING: {path} is a directory but --recursive flag is not specified. "
                                 f"Only empty directories will be removed. Continue?"
                             )
                             if request_confirmation(confirm_message):
-                                success = secure_shred_file(path, args.shred_passes, args.quiet)
+                                success = secure_shred_file(
+                                    path, args.shred_passes, args.quiet)
                                 if not success:
                                     overall_success = False
                             else:
@@ -1182,10 +1345,12 @@ def main():
                     else:
                         # File or directory with recursive flag
                         if not args.quiet:
-                            print(f"Securely shredding "
-                                  f"{'directory' if os.path.isdir(path) else 'file'}: {path}")
+                            print(
+                                f"Securely shredding " f"{
+                                    'directory' if os.path.isdir(path) else 'file'}: {path}")
 
-                        success = secure_shred_file(path, args.shred_passes, args.quiet)
+                        success = secure_shred_file(
+                            path, args.shred_passes, args.quiet)
                         if not success:
                             overall_success = False
 

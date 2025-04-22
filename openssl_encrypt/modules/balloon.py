@@ -59,8 +59,12 @@ def expand(buf: list[bytes], cnt: int, space_cost: int) -> int:
 
 
 def mix(
-    buf: list[bytes], cnt: int, delta: int, salt: bytes, space_cost: int, time_cost: int
-) -> None:
+        buf: list[bytes],
+        cnt: int,
+        delta: int,
+        salt: bytes,
+        space_cost: int,
+        time_cost: int) -> None:
     """Second step of the algorithm. Mix `time_cost` number
        of times the pseudorandom bytes in the buffer. At each
        step in the for loop, update the nth block to be
@@ -126,7 +130,12 @@ def balloon(
         bytes: A series of bytes, the hash.
     """
     # Encode salt as bytes to be passed to _balloon()
-    return _balloon(password, salt.encode("utf-8"), space_cost, time_cost, delta)
+    return _balloon(
+        password,
+        salt.encode("utf-8"),
+        space_cost,
+        time_cost,
+        delta)
 
 
 def _balloon(
@@ -206,7 +215,8 @@ def balloon_m(
         futures = []
 
         for p in range(parallel_cost):
-            parallel_salt = b"" + salt.encode("utf-8") + (p + 1).to_bytes(8, "little")
+            parallel_salt = b"" + \
+                salt.encode("utf-8") + (p + 1).to_bytes(8, "little")
             futures.append(
                 executor.submit(
                     _balloon,
@@ -220,7 +230,8 @@ def balloon_m(
         completed_futures = concurrent.futures.as_completed(futures)
         output = next(completed_futures).result()
         for future in completed_futures:
-            output = bytes([_a ^ _b for _a, _b in zip(output, future.result())])
+            output = bytes(
+                [_a ^ _b for _a, _b in zip(output, future.result())])
 
     return hash_func(password, salt, output)
 
@@ -247,8 +258,12 @@ def balloon_m_hash(password: str, salt: str) -> str:
 
 
 def verify(
-    hash: str, password: str, salt: str, space_cost: int, time_cost: int, delta: int = 3
-) -> bool:
+        hash: str,
+        password: str,
+        salt: str,
+        space_cost: int,
+        time_cost: int,
+        delta: int = 3) -> bool:
     """Verify that hash matches password when hashed with salt, space_cost,
        time_cost, and delta.
 
@@ -294,6 +309,12 @@ def verify_m(
         bool: True if password matches hash, otherwise False.
     """
     return secrets.compare_digest(
-        balloon_m(password, salt, space_cost, time_cost, parallel_cost, delta).hex(),
+        balloon_m(
+            password,
+            salt,
+            space_cost,
+            time_cost,
+            parallel_cost,
+            delta).hex(),
         hash,
     )
