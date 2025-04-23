@@ -565,9 +565,7 @@ class TestCryptCore(unittest.TestCase):
                 if isinstance(key, tuple):
                     derived_key, derived_salt, derived_config = key
                     print(f"\nDerived key type: {type(derived_key)}")
-                    print(
-                        f"Derived key (hex): {
-                            derived_key.hex() if derived_key else 'None'}")
+                    print(f"Derived key (hex): {derived_key.hex() if derived_key else 'None'}")
 
                 decrypted = decrypt_file(
                     input_file='/dev/stdin',
