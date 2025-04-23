@@ -864,6 +864,8 @@ def generate_key(
 
     if os.environ.get('PYTEST_CURRENT_TEST') is not None:
         use_pbkdf2 = 100000
+    elif hash_config['pbkdf2_iterations'] > 0:
+        use_pbkdf2 = hash_config['pbkdf2_iterations']
     if use_pbkdf2 and use_pbkdf2 > 0:
         derived_salt = salt
         for i in range(use_pbkdf2):
@@ -878,7 +880,7 @@ def generate_key(
             derived_salt = hashed_password[:16]
             KeyStretch.key_stretch = True
             show_progress("PBKDF2", i + 1, use_pbkdf2)
-        key = hashed_password
+        hashed_password = hashed_password
     if not KeyStretch.hash_stretch and not KeyStretch.key_stretch and KeyStretch.kind_action == 'encrypt' and os.environ.get(
             'PYTEST_CURRENT_TEST') is None:
         if len(password) < 32:
@@ -936,12 +938,12 @@ def generate_key(
                 sys.exit(0)
             print('Proceeding with direct password usage...')
             key = password
-    elif KeyStretch.kind_action == 'decrypt' and os.environ.get('PYTEST_CURRENT_TEST') is None:
-        key = password
+    elif KeyStretch.kind_action == 'decrypt' and os.environ.get('PYTEST_CURRENT_TEST') is None and not KeyStretch.hash_stretch and not KeyStretch.key_stretch:
+        hashed_password = password
     if algorithm == EncryptionAlgorithm.FERNET.value:
-        key = base64.urlsafe_b64encode(key)
+        hashed_password = base64.urlsafe_b64encode(hashed_password)
     try:
-        return key, salt, hash_config
+        return hashed_password, salt, hash_config
     finally:
         if use_secure_mem:
             if KeyStretch.hash_stretch or KeyStretch.hash_stretch:
@@ -949,7 +951,7 @@ def generate_key(
             secure_memzero(password)
             secure_memzero(hashed_password)
             secure_memzero(salt)
-            secure_memzero(key)
+  #          secure_memzero(key)
         else:
             return True
 
