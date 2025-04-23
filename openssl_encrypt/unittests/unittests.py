@@ -26,6 +26,7 @@ from enum import Enum
 from typing import Dict, Any, Optional
 import json
 import yaml
+import pytest
 
 
 
@@ -586,6 +587,82 @@ class TestCryptCore(unittest.TestCase):
 
         self.assertEqual(decrypted, b'Hello World\n')
 
+    def test_decrypt_stdin_strong(self):
+        from openssl_encrypt.modules.secure_memory import SecureBytes
+        encrypted_content = (
+            b"eyJmb3JtYXRfdmVyc2lvbiI6IDIsICJzYWx0IjogImxRZU9JOEFaUi9VcXhJcUhENnpMOEE9PSIsICJo"
+            b"YXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMCwgInNoYTI1NiI6IDAsICJzaGEzXzI1NiI6IDAsICJzaGEz"
+            b"XzUxMiI6IDEwMDAwMDAsICJ3aGlybHBvb2wiOiAwLCAic2NyeXB0IjogeyJlbmFibGVkIjogdHJ1ZSwg"
+            b"Im4iOiAxMjgsICJyIjogOCwgInAiOiAxLCAicm91bmRzIjogMTAwMDB9LCAiYXJnb24yIjogeyJlbmFi"
+            b"bGVkIjogdHJ1ZSwgInRpbWVfY29zdCI6IDMsICJtZW1vcnlfY29zdCI6IDY1NTM2LCAicGFyYWxsZWxp"
+            b"c20iOiA0LCAiaGFzaF9sZW4iOiAzMiwgInR5cGUiOiAyLCAicm91bmRzIjogMTAwfSwgImJjcnlwdCI6"
+            b"IHsiZW5hYmxlZCI6IHRydWUsICJyb3VuZHMiOiAyMDAsICJpdGVyYXRpb25zIjogMTJ9LCAicGJrZGYy"
+            b"X2l0ZXJhdGlvbnMiOiAwLCAidHlwZSI6ICJpZCIsICJhbGdvcml0aG0iOiAiYWVzLWdjbSJ9LCAicGJr"
+            b"ZGYyX2l0ZXJhdGlvbnMiOiAwLCAib3JpZ2luYWxfaGFzaCI6ICJkMmE4NGY0YjhiNjUwOTM3ZWM4Zjcz"
+            b"Y2Q4YmUyYzc0YWRkNWE5MTFiYTY0ZGYyNzQ1OGVkODIyOWRhODA0YTI2IiwgImVuY3J5cHRlZF9oYXNo"
+            b"IjogImI0MTJmYzhmMTdiYjllZWQxZDU1ZjQ2MGY3MmNjOWJhMjkxNTA2Y2JjMDNmOTc0NzFlYzU4YzZl"
+            b"NmE4NDdiZDEiLCAiYWxnb3JpdGhtIjogImFlcy1nY20ifQ==:NJ5wCJKXJCZqqfNfp75l1onYhFaRTP2b"
+            b"Y+JHhdaK1AOJCMXy+N4Amm3v01g=")
+        mock_file = BytesIO(encrypted_content)
+
+        def mock_open(file, mode='r'):
+            if file == '/dev/stdin' and 'b' in mode:
+                return mock_file
+            return open(file, mode)
+
+        with patch('builtins.open', mock_open):
+            try:
+                header_b64, payload_b64 = encrypted_content.split(b':')
+                header = json.loads(base64.b64decode(header_b64))
+                salt = base64.b64decode(header['salt'])
+
+                # First step - get the initial password hash
+                multi_hash_result = multi_hash_password(
+                    b"pw7qG0kh5oG1QrRz6CibPNDxGaHrrBAa", salt, header['hash_config'])
+                print(f"\nMulti-hash output type: {type(multi_hash_result)}")
+                print(f"Multi-hash output (hex): {multi_hash_result.hex()}")
+                print(f"Hash Config: {header['hash_config']}")
+                # Convert to bytes explicitly at each step
+                if isinstance(multi_hash_result, SecureBytes):
+                    password_bytes = bytes(multi_hash_result)
+                else:
+                    password_bytes = bytes(multi_hash_result)
+
+                print(f"\nPassword bytes type: {type(password_bytes)}")
+                print(f"Password bytes (hex): {password_bytes.hex()}")
+
+                # Second step - generate_key with regular bytes
+                key = generate_key(
+                    password=password_bytes,  # Make sure this is regular bytes
+                    salt=salt,  # This should already be bytes
+                    hash_config=header['hash_config'],
+                    quiet=True
+                )
+
+                if isinstance(key, tuple):
+                    derived_key, derived_salt, derived_config = key
+                    print(f"\nDerived key type: {type(derived_key)}")
+                    print(f"Derived key (hex): {derived_key.hex() if derived_key else 'None'}")
+
+                decrypted = decrypt_file(
+                    input_file='/dev/stdin',
+                    output_file=None,
+                    password=b"pw7qG0kh5oG1QrRz6CibPNDxGaHrrBAa",
+                    quiet=True
+                )
+
+            except Exception as e:
+                print(f"\nException type: {type(e).__name__}")
+                print(f"Exception message: {str(e)}")
+                raise
+            finally:
+                if 'password_bytes' in locals():
+                    # Zero out the bytes if possible
+                    if hasattr(password_bytes, 'clear'):
+                        password_bytes.clear()
+
+        self.assertEqual(decrypted, b'Hello World\n')
+
 
 class TestCryptUtils(unittest.TestCase):
     """Test utility functions including password generation and file shredding."""
@@ -725,7 +802,7 @@ class TestCryptUtils(unittest.TestCase):
         all_files = expand_glob_patterns(all_files_pattern)
         self.assertEqual(len(all_files), 6)  # 2 files each of 3 extensions
 
-
+@pytest.mark.order(0)
 class TestCLIInterface(unittest.TestCase):
     """Test the command-line interface functionality."""
 
@@ -758,7 +835,6 @@ class TestCLIInterface(unittest.TestCase):
         """Test encryption and decryption through the CLI interface."""
         # Set up mock password input
         mock_getpass.return_value = "TestPassword123!"
-
         # Output files
         encrypted_file = os.path.join(self.test_dir, "cli_encrypted.bin")
         decrypted_file = os.path.join(self.test_dir, "cli_decrypted.txt")
@@ -788,6 +864,7 @@ class TestCLIInterface(unittest.TestCase):
         self.assertTrue(os.path.exists(encrypted_file))
 
         # Test decryption through CLI
+
         sys.argv = [
             "crypt.py", "decrypt",
             "--input", encrypted_file,
