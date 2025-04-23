@@ -302,11 +302,7 @@ def show_animated_progress(message, stop_event, quiet=False):
         position = int((elapsed % 3) * 10)  # Moves every 0.1 seconds
         bar = ' ' * position + '█████' + ' ' * (bar_length - 5 - position)
 
-        print(
-            f"\r{message}: [{bar}] {
-                animation[idx]} {time_str}",
-            end='',
-            flush=True)
+        print(f"\r{message}: [{bar}] {animation[idx]} {time_str}", end='', flush=True)
         idx = (idx + 1) % len(animation)
         time.sleep(0.1)
 
