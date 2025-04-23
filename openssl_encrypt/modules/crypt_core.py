@@ -302,11 +302,7 @@ def show_animated_progress(message, stop_event, quiet=False):
         position = int((elapsed % 3) * 10)  # Moves every 0.1 seconds
         bar = ' ' * position + '█████' + ' ' * (bar_length - 5 - position)
 
-        print(
-            f"\r{message}: [{bar}] {
-                animation[idx]} {time_str}",
-            end='',
-            flush=True)
+        print(f"\r{message}: [{bar}] {animation[idx]} {time_str}", end='', flush=True)
         idx = (idx + 1) % len(animation)
         time.sleep(0.1)
 
@@ -862,7 +858,7 @@ def generate_key(
                     str(e)}. Falling back to PBKDF2.")
             use_scrypt = False  # Consider falling back to PBKDF2
 
-    if os.environ.get('PYTEST_CURRENT_TEST') is not None:
+    if os.environ.get('PYTEST_CURRENT_TEST') is not None and hash_config['pbkdf2_iterations'] is None:
         use_pbkdf2 = 100000
     elif hash_config['pbkdf2_iterations'] > 0:
         use_pbkdf2 = hash_config['pbkdf2_iterations']
@@ -935,9 +931,9 @@ def generate_key(
             if confirmation != 'y' and confirmation != 'yes':
                 print('Operation cancelled by user.')
                 secure_memzero(password)
-                sys.exit(0)
+                sys.exit(1)
             print('Proceeding with direct password usage...')
-            key = password
+            hashed_password = password
     elif KeyStretch.kind_action == 'decrypt' and os.environ.get('PYTEST_CURRENT_TEST') is None and not KeyStretch.hash_stretch and not KeyStretch.key_stretch:
         hashed_password = password
     if algorithm == EncryptionAlgorithm.FERNET.value:
