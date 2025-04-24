@@ -1018,7 +1018,6 @@ def main():
                 try:
                     # Get original file permissions before doing anything
                     original_permissions = get_file_permissions(args.input)
-
                     # Encrypt to temporary file
                     success = encrypt_file(
                         args.input,
@@ -1070,6 +1069,7 @@ def main():
                     hash_config,
                     args.pbkdf2_iterations,
                     args.quiet,
+                    algorithm=args.algorithm,
                     progress=args.progress,
                     verbose=args.verbose
                 )
