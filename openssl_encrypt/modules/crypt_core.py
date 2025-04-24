@@ -367,7 +367,8 @@ def multi_hash_password(
         salt,
         hash_config,
         quiet=False,
-        use_secure_mem=True):
+        use_secure_mem=True,
+        progress=False):
     """
     Apply multiple rounds of different hash algorithms to a password.
 
@@ -389,6 +390,7 @@ def multi_hash_password(
         salt (bytes): Salt value to use
         hash_config (dict): Dictionary with algorithm names as keys and iteration/parameter values
         quiet (bool): Whether to suppress progress output
+        progress (bool): Whether to use progress bar for progress output
         use_secure_mem (bool): Whether to use secure memory handling
 
     Returns:
@@ -405,6 +407,8 @@ def multi_hash_password(
     # Function to display progress for iterative hashing
     def show_progress(algorithm, current, total):
         if quiet:
+            return
+        if not progress:
             return
 
         # Update more frequently for better visual feedback
@@ -609,7 +613,8 @@ def generate_key(
         pbkdf2_iterations=100000,
         quiet=False,
         use_secure_mem=True,
-        algorithm=EncryptionAlgorithm.FERNET.value):
+        algorithm=EncryptionAlgorithm.FERNET.value,
+        progress=False):
     """
     Generate an encryption key from a password using PBKDF2 or Argon2.
 
@@ -620,6 +625,7 @@ def generate_key(
         pbkdf2_iterations (int): Number of iterations for PBKDF2
         quiet (bool): Whether to suppress progress output
         use_secure_mem (bool): Whether to use secure memory
+        progress (bool): Whether to use progress bar for progress output
         algorithm (str): The encryption algorithm to be used
 
     Returns:
@@ -628,6 +634,8 @@ def generate_key(
 
     def show_progress(algorithm, current, total):
         if quiet:
+            return
+        if not progress:
             return
 
         # Update more frequently for better visual feedback
@@ -676,7 +684,7 @@ def generate_key(
             print("Applying hash iterations...")
         # Apply multiple hash algorithms in sequence
         password = multi_hash_password(
-            password, salt, hash_config, quiet, use_secure_mem)
+            password, salt, hash_config, quiet, use_secure_mem, progress=progress)
     # Check if Argon2 is available on the system
     argon2_available = ARGON2_AVAILABLE
 
@@ -939,7 +947,7 @@ def generate_key(
 
 def encrypt_file(input_file, output_file, password, hash_config=None,
                  pbkdf2_iterations=100000, quiet=False, use_secure_mem=True,
-                 algorithm=EncryptionAlgorithm.FERNET):
+                 algorithm=EncryptionAlgorithm.FERNET, progress=False, verbose=False):
     """
     Encrypt a file with a password using the specified algorithm.
 
@@ -951,6 +959,8 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         pbkdf2_iterations (int): Number of PBKDF2 iterations
         quiet (bool): Whether to suppress progress output
         use_secure_mem (bool): Whether to use secure memory handling
+        progress (bool): Whether to show progress bar
+        verbose (bool): Whether to show verbose output
         algorithm (EncryptionAlgorithm): Encryption algorithm to use (default: Fernet)
 
     Returns:
@@ -970,11 +980,11 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         salt=salt,
         quiet=quiet,
         use_secure_mem=use_secure_mem,
-        kind='encrypt'
+        verbose=verbose
     )
 
     key, salt, hash_config = generate_key(
-        password, salt, hash_config, pbkdf2_iterations, quiet, use_secure_mem, algorithm_value)
+        password, salt, hash_config, pbkdf2_iterations, quiet, use_secure_mem, algorithm_value, progress=progress)
     # Read the input file
     if not quiet:
         print(f"Reading file: {input_file}")
@@ -1080,7 +1090,9 @@ def decrypt_file(
         output_file,
         password,
         quiet=False,
-        use_secure_mem=True):
+        use_secure_mem=True,
+        progress=False,
+        verbose=False):
     """
     Decrypt a file with a password.
 
@@ -1089,6 +1101,8 @@ def decrypt_file(
         output_file (str, optional): Path where to save the decrypted file. If None, returns decrypted data
         password (bytes): The password to use for decryption
         quiet (bool): Whether to suppress progress output
+        progress (bool): Whether to show progress bar
+        verbose (bool): Whether to show verbose output
         use_secure_mem (bool): Whether to use secure memory handling
 
     Returns:
@@ -1135,7 +1149,7 @@ def decrypt_file(
         salt=metadata.get('salt'),
         quiet=quiet,
         use_secure_mem=use_secure_mem,
-        kind='decrypt'
+        verbose=verbose
     )
 
     # Verify the hash of encrypted data
@@ -1150,7 +1164,7 @@ def decrypt_file(
         print("Generating decryption key...")
 
     key, _, _ = generate_key(password, salt, hash_config,
-                             pbkdf2_iterations, quiet, use_secure_mem, algorithm)
+                             pbkdf2_iterations, quiet, use_secure_mem, algorithm, progress=progress)
     # Decrypt the data
     if not quiet:
         print("Decrypting content with " + algorithm)
@@ -1258,7 +1272,7 @@ def print_hash_config(
         salt=None,
         quiet=False,
         use_secure_mem=True,
-        kind='decrypt'):
+        verbose=False):
     if quiet:
         return
     if use_secure_mem:
@@ -1267,42 +1281,43 @@ def print_hash_config(
         print("- Secure memory handling: Disabled")
     organized = get_organized_hash_config(hash_config, encryption_algo, salt)
 
-    if KeyStretch.kind_action == 'decrypt':
+    if KeyStretch.kind_action == 'decrypt' and verbose:
         print("\nDecrypting with the following configuration:")
-    else:
+    elif verbose:
         print("\nEncrypting with the following configuration:")
 
-    # Print Hashes
-    print("  Hash Functions:")
-    if not organized['hashes']:
-        print("    - No additional hashing algorithms used")
-    else:
-        for algo, iterations in organized['hashes'].items():
-            print(f"    - {algo.upper()}: {iterations} iterations")
-    # Print KDFs
-    print("  Key Derivation Functions:")
-    if not organized['kdfs']:
-        print("    - No KDFs used")
-    else:
-        for algo, params in organized['kdfs'].items():
-            if algo == 'scrypt':
-                print(
-                    f"    - Scrypt: n={params['n']}, r={params['r']}, p={params['p']}")
-            elif algo == 'argon2':
-                print(f"    - Argon2: time_cost={params['time_cost']}, "
-                      f"memory_cost={params['memory_cost']}KB, "
-                      f"parallelism={params['parallelism']}, "
-                      f"hash_len={params['hash_len']}")
-            elif algo == 'balloon':
-                print(f"    - Balloon: time_cost={params['time_cost']}, "
-                      f"space_cost={params['space_cost']}, "
-                      f"parallelism={params['parallelism']}, "
-                      f"rounds={params['rounds']}")
-            elif algo == 'pbkdf2_iterations':
-                print(f"    - PBKDF2: {params} iterations")
-    print("  Encryption:")
-    print(f"    - Algorithm: {encryption_algo or 'Not specified'}")
-    salt_str = base64.b64encode(salt).decode(
-        'utf-8') if isinstance(salt, bytes) else salt
-    print(f"    - Salt: {salt_str or 'Not specified'}")
-    print('')
+    if verbose:
+        # Print Hashes
+        print("  Hash Functions:")
+        if not organized['hashes']:
+            print("    - No additional hashing algorithms used")
+        else:
+            for algo, iterations in organized['hashes'].items():
+                print(f"    - {algo.upper()}: {iterations} iterations")
+        # Print KDFs
+        print("  Key Derivation Functions:")
+        if not organized['kdfs']:
+            print("    - No KDFs used")
+        else:
+            for algo, params in organized['kdfs'].items():
+                if algo == 'scrypt':
+                    print(
+                        f"    - Scrypt: n={params['n']}, r={params['r']}, p={params['p']}")
+                elif algo == 'argon2':
+                    print(f"    - Argon2: time_cost={params['time_cost']}, "
+                          f"memory_cost={params['memory_cost']}KB, "
+                          f"parallelism={params['parallelism']}, "
+                          f"hash_len={params['hash_len']}")
+                elif algo == 'balloon':
+                    print(f"    - Balloon: time_cost={params['time_cost']}, "
+                          f"space_cost={params['space_cost']}, "
+                          f"parallelism={params['parallelism']}, "
+                          f"rounds={params['rounds']}")
+                elif algo == 'pbkdf2_iterations':
+                    print(f"    - PBKDF2: {params} iterations")
+        print("  Encryption:")
+        print(f"    - Algorithm: {encryption_algo or 'Not specified'}")
+        salt_str = base64.b64encode(salt).decode(
+            'utf-8') if isinstance(salt, bytes) else salt
+        print(f"    - Salt: {salt_str or 'Not specified'}")
+        print('')
