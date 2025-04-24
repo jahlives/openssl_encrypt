@@ -38,7 +38,7 @@ setup(
     package_data={"": ["README.md"]},
     author="Tobi",
     author_email="jahlives@gmx.ch",
-    description="A package for secure file encryption and decryption based on modern ciphers using heavy-compute-load chaining of hashing and KDF to generate strong encryption password based on users provided password",
+    description="A package for secure file encryption and decryption based on modern ciphers using heavy-compute-load chaining of hashing and KDF to generate strong encryption password based on users provided password to ensure secure encryption of files",
     long_description=long_description,
     long_description_content_type="text/markdown",
     keywords="encryption, decryption, random-password, secure shredding, security",
