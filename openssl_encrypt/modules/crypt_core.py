@@ -645,11 +645,7 @@ def generate_key(
         filled_length = int(bar_length * current // total)
         bar = '█' * filled_length + ' ' * (bar_length - filled_length)
 
-        print(
-            f"\r{algorithm} hashing: [{bar}] {
-                percent:.1f}% ({current}/{total})",
-            end='',
-            flush=True)
+        print(f"\r{algorithm} hashing: [{bar}] {percent:.1f}% ({current}/{total})", end='', flush=True)
 
         if current == total:
             print()  # New line after completion
