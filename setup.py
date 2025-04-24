@@ -8,7 +8,7 @@ with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name="openssl_encrypt",
-    version="0.4.0",
+    version="0.4.1",
     install_requires=[
 	"cryptography>=42.0.0,<43.0.0",
     	"argon2-cffi>=23.1.0,<24.0.0",
@@ -38,7 +38,7 @@ setup(
     package_data={"": ["README.md"]},
     author="Tobi",
     author_email="jahlives@gmx.ch",
-    description="A package for secure file encryption and decryption based on modern ciphers",
+    description="A package for secure file encryption and decryption based on modern ciphers using heavy-compute-load chaining of hashing and KDF to generate strong encryption password based on users provided password",
     long_description=long_description,
     long_description_content_type="text/markdown",
     keywords="encryption, decryption, random-password, secure shredding, security",
