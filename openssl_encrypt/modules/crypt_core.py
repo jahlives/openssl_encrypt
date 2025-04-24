@@ -845,7 +845,10 @@ def generate_key(
             print('Proceeding with direct password usage...')
             #hashed_password = password
     if algorithm == EncryptionAlgorithm.FERNET.value:
-        password = base64.urlsafe_b64encode(password)
+        if KeyStretch.key_stretch or KeyStretch.hash_stretch:
+            password = base64.urlsafe_b64encode(password)
+        else:
+            password = base64.b64encode(hashlib.sha256(password).digest())
     try:
         return password, salt, hash_config
     finally:
