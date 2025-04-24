@@ -415,12 +415,12 @@ def main():
         help='Process directories recursively when shredding'
     )
 
-    # Add memory security option
-    parser.add_argument(
-        '--disable-secure-memory',
-        action='store_true',
-        help='Disable secure memory handling (not recommended)'
-    )
+    # # Add memory security option
+    # parser.add_argument(
+    #     '--disable-secure-memory',
+    #     action='store_true',
+    #     help='Disable secure memory handling (not recommended)'
+    # )
 
     # Group hash configuration arguments for better organization
     hash_group = parser.add_argument_group(
