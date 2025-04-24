@@ -38,24 +38,6 @@ from .crypt_utils import (
     request_confirmation
 )
 
-# Global variable for secure memory handling
-GLOBAL_USE_SECURE_MEM = True  # Default value, will be updated based on args
-
-
-def use_secure_memory(args):
-    """
-    Determine if secure memory handling should be used.
-
-    Args:
-        args: Command-line arguments namespace
-
-    Returns:
-        bool: True if secure memory should be used, False otherwise
-    """
-    return not hasattr(
-        args, 'disable_secure_memory') or not args.disable_secure_memory
-
-
 def debug_hash_config(args, hash_config, message="Hash configuration"):
     """Debug output for hash configuration"""
     print(f"\n{message}:")
@@ -273,8 +255,6 @@ def main():
     """
     # Global variable to track temporary files that need cleanup
     temp_files_to_cleanup = []
-
-    global GLOBAL_USE_SECURE_MEM
 
     def cleanup_temp_files():
         """Clean up any temporary files that were created but not deleted"""
@@ -765,8 +745,7 @@ def main():
             args.use_lowercase,
             args.use_uppercase,
             args.use_digits,
-            args.use_special,
-            GLOBAL_USE_SECURE_MEM
+            args.use_special
         )
 
         display_password_with_timeout(password)
@@ -781,128 +760,75 @@ def main():
     if args.action in ['encrypt', 'decrypt']:
         password = None
         generated_password = None
-        use_secure_mem = GLOBAL_USE_SECURE_MEM
 
-        if use_secure_mem:
-            try:
-                from .secure_memory import secure_string, secure_input, SecureBytes
+        try:
+            from .secure_memory import secure_string, secure_input, SecureBytes
 
-                # Initialize a secure string to hold the password
-                with secure_string() as password_secure:
-                    # Handle random password generation for encryption
-                    use_secure_mem = GLOBAL_USE_SECURE_MEM
-                    if args.action == 'encrypt' and args.random and not args.password:
-                        generated_password = generate_strong_password(
-                            args.random,
-                            use_lowercase=True,
-                            use_uppercase=True,
-                            use_digits=True,
-                            use_special=True,
-                            use_secure_mem=True  # Use True instead of use_secure_mem
-                        )
-                        password_secure.extend(generated_password.encode())
-                        if not args.quiet:
-                            print("\nGenerated a random password for encryption.")
+            # Initialize a secure string to hold the password
+            with secure_string() as password_secure:
+                # Handle random password generation for encryption
+                if args.action == 'encrypt' and args.random and not args.password:
+                    generated_password = generate_strong_password(
+                        args.random,
+                        use_lowercase=True,
+                        use_uppercase=True,
+                        use_digits=True,
+                        use_special=True,
+                        use_secure_mem=True  # Use True instead of use_secure_mem
+                    )
+                    password_secure.extend(generated_password.encode())
+                    if not args.quiet:
+                        print("\nGenerated a random password for encryption.")
 
-                    # If password provided as argument
-                    elif args.password:
-                        password_secure.extend(args.password.encode())
+                # If password provided as argument
+                elif args.password:
+                    password_secure.extend(args.password.encode())
 
-                    # If no password provided yet, prompt the user
-                    else:
-                        # For encryption, require password confirmation to
-                        # prevent typos
-                        if args.action == 'encrypt' and not args.quiet:
-                            match = False
-                            while not match:
-                                pwd1 = getpass.getpass(
-                                    'Enter password: ').encode()
-                                pwd2 = getpass.getpass(
-                                    'Confirm password: ').encode()
-
-                                if pwd1 == pwd2:
-                                    password_secure.extend(pwd1)
-                                    # Securely clear the temporary buffers
-                                    pwd1 = b'\x00' * len(pwd1)
-                                    pwd2 = b'\x00' * len(pwd2)
-                                    match = True
-                                else:
-                                    # Securely clear the temporary buffers
-                                    pwd1 = b'\x00' * len(pwd1)
-                                    pwd2 = b'\x00' * len(pwd2)
-                                    print(
-                                        "Passwords do not match. Please try again.")
-                        # For decryption or quiet mode, just ask once
-                        else:
-                            # When in quiet mode, don't add the "Enter password: " prompt text
-                            # prompt = '' if args.quiet else 'Enter password: '
-                            pwd = getpass.getpass('Enter password: ')
-                            # Move up one line and clear it
-                            sys.stdout.write('\033[A\033[K')
-                            sys.stdout.flush()
-                            password_secure.extend(pwd.encode('utf-8'))
-                            # Securely clear the temporary buffer
-                            pwd = b'\x00' * len(pwd)
-
-                    # Convert to bytes for the rest of the code
-                    password = bytes(password_secure)
-
-            except ImportError:
-                # Fall back to standard method if secure_memory is not
-                # available
-                if not args.quiet:
-                    print(
-                        "Warning: secure_memory module not available, falling back to standard password handling")
-                use_secure_mem = False
-
-        # Standard password handling if secure_memory is not available or
-        # disabled
-        if not use_secure_mem:
-            # Original password handling code
-            password = args.password
-
-            # Handle random password generation for encryption
-            if args.action == 'encrypt' and args.random and not password:
-                generated_password = generate_strong_password(
-                    args.random,
-                    use_lowercase=True,
-                    use_uppercase=True,
-                    use_digits=True,
-                    use_special=True,
-                    use_secure_mem=GLOBAL_USE_SECURE_MEM
-                )
-                password = generated_password
-                if not args.quiet:
-                    print("\nGenerated a random password for encryption.")
-
-            # If no password provided yet, prompt the user
-            if not password:
-                # For encryption, require password confirmation to prevent
-                # typos
-                if args.action == 'encrypt' and not args.quiet:
-                    while True:
-                        password1 = getpass.getpass('Enter password: ')
-                        password2 = getpass.getpass('Confirm password: ')
-
-                        if password1 == password2:
-                            password = password1
-                            break
-                        else:
-                            print("Passwords do not match. Please try again.")
-                # For decryption or quiet mode, just ask once
+                # If no password provided yet, prompt the user
                 else:
-                    # When in quiet mode, don't add the "Enter password: "
-                    # prompt text
-                    if args.quiet:
-                        password = getpass.getpass('')
+                    # For encryption, require password confirmation to
+                    # prevent typos
+                    if args.action == 'encrypt' and not args.quiet:
+                        match = False
+                        while not match:
+                            pwd1 = getpass.getpass(
+                                'Enter password: ').encode()
+                            pwd2 = getpass.getpass(
+                                'Confirm password: ').encode()
+
+                            if pwd1 == pwd2:
+                                password_secure.extend(pwd1)
+                                # Securely clear the temporary buffers
+                                pwd1 = b'\x00' * len(pwd1)
+                                pwd2 = b'\x00' * len(pwd2)
+                                match = True
+                            else:
+                                # Securely clear the temporary buffers
+                                pwd1 = b'\x00' * len(pwd1)
+                                pwd2 = b'\x00' * len(pwd2)
+                                print(
+                                    "Passwords do not match. Please try again.")
+                    # For decryption or quiet mode, just ask once
                     else:
-                        password = getpass.getpass('Enter password: ')
+                        # When in quiet mode, don't add the "Enter password: " prompt text
+                        # prompt = '' if args.quiet else 'Enter password: '
+                        pwd = getpass.getpass('Enter password: ')
+                        # Move up one line and clear it
+                        sys.stdout.write('\033[A\033[K')
+                        sys.stdout.flush()
+                        password_secure.extend(pwd.encode('utf-8'))
+                        # Securely clear the temporary buffer
+                        pwd = b'\x00' * len(pwd)
 
-            # Convert to bytes
-            password = password.encode()
+                # Convert to bytes for the rest of the code
+                password = bytes(password_secure)
 
-    # Update the global variable based on args
-    GLOBAL_USE_SECURE_MEM = use_secure_memory(args)
+        except ImportError:
+            # Fall back to standard method if secure_memory is not
+            # available
+            if not args.quiet:
+                print("Warning: secure_memory module not available")
+            sys.exit(1)
 
     # Check for Whirlpool availability if needed and not in quiet mode
     if args.whirlpool_rounds > 0 and not WHIRLPOOL_AVAILABLE and not args.quiet:
@@ -1101,7 +1027,6 @@ def main():
                         hash_config,
                         args.pbkdf2_iterations,
                         args.quiet,
-                        GLOBAL_USE_SECURE_MEM,
                         algorithm=args.algorithm,
                         progress=args.progress,
                         verbose=args.verbose
@@ -1145,7 +1070,6 @@ def main():
                     hash_config,
                     args.pbkdf2_iterations,
                     args.quiet,
-                    GLOBAL_USE_SECURE_MEM,
                     progress=args.progress,
                     verbose=args.verbose
                 )
@@ -1254,7 +1178,6 @@ def main():
                         temp_output,
                         password,
                         args.quiet,
-                        GLOBAL_USE_SECURE_MEM,
                         progress=args.progress,
                         verbose=args.verbose
                     )
@@ -1286,7 +1209,6 @@ def main():
                     args.output,
                     password,
                     args.quiet,
-                    GLOBAL_USE_SECURE_MEM,
                     progress=args.progress,
                     verbose=args.verbose
                 )
@@ -1307,7 +1229,6 @@ def main():
                     None,
                     password,
                     args.quiet,
-                    GLOBAL_USE_SECURE_MEM,
                     progress=args.progress,
                     verbose=args.verbose
                 )

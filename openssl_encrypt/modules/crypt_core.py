@@ -367,7 +367,6 @@ def multi_hash_password(
         salt,
         hash_config,
         quiet=False,
-        use_secure_mem=True,
         progress=False):
     """
     Apply multiple rounds of different hash algorithms to a password.
@@ -391,7 +390,6 @@ def multi_hash_password(
         hash_config (dict): Dictionary with algorithm names as keys and iteration/parameter values
         quiet (bool): Whether to suppress progress output
         progress (bool): Whether to use progress bar for progress output
-        use_secure_mem (bool): Whether to use secure memory handling
 
     Returns:
         bytes: The hashed password
@@ -428,112 +426,108 @@ def multi_hash_password(
             print()  # New line after completion
 
     stretch_hash = False
-    if use_secure_mem:
+    try:
         from .secure_memory import secure_buffer, secure_memcpy, secure_memzero
-        try:
-            # Use secure memory approach
-            with secure_buffer(len(password) + len(salt), zero=False) as hashed:
-                # Initialize the secure buffer with password + salt
-                secure_memcpy(hashed, password + salt)
+        # Use secure memory approach
+        with secure_buffer(len(password) + len(salt), zero=False) as hashed:
+            # Initialize the secure buffer with password + salt
+            secure_memcpy(hashed, password + salt)
 
-                # Apply each hash algorithm in sequence (only if iterations >
-                # 0)
-                for algorithm, params in hash_config.items():
-                    if algorithm == 'sha512' and params > 0:
+            # Apply each hash algorithm in sequence (only if iterations >
+            # 0)
+            for algorithm, params in hash_config.items():
+                if algorithm == 'sha512' and params > 0:
+                    if not quiet:
+                        print(f"Applying {params} rounds of SHA-512...")
+
+                    # SHA-512 produces 64 bytes
+                    with secure_buffer(64, zero=False) as hash_buffer:
+                        for i in range(params):
+                            result = hashlib.sha512(hashed).digest()
+                            secure_memcpy(hash_buffer, result)
+                            secure_memcpy(hashed, hash_buffer)
+                            show_progress("SHA-512", i + 1, params)
+                            KeyStretch.hash_stretch = True
+
+                elif algorithm == 'sha256' and params > 0:
+                    if not quiet:
+                        print(f"Applying {params} rounds of SHA-256...")
+
+                    # SHA-256 produces 32 bytes
+                    with secure_buffer(32, zero=False) as hash_buffer:
+                        for i in range(params):
+                            result = hashlib.sha256(hashed).digest()
+                            secure_memcpy(hash_buffer, result)
+                            secure_memcpy(hashed, hash_buffer)
+                            show_progress("SHA-256", i + 1, params)
+                            KeyStretch.hash_stretch = True
+
+                elif algorithm == 'sha3_256' and params > 0:
+                    if not quiet:
+                        print(f"Applying {params} rounds of SHA3-256...")
+
+                    # SHA3-256 produces 32 bytes
+                    with secure_buffer(32, zero=False) as hash_buffer:
+                        for i in range(params):
+                            result = hashlib.sha3_256(hashed).digest()
+                            secure_memcpy(hash_buffer, result)
+                            secure_memcpy(hashed, hash_buffer)
+                            show_progress("SHA3-256", i + 1, params)
+                            KeyStretch.hash_stretch = True
+
+                elif algorithm == 'sha3_512' and params > 0:
+                    if not quiet:
+                        print(f"Applying {params} rounds of SHA3-512...")
+
+                    # SHA3-512 produces 64 bytes
+                    with secure_buffer(64, zero=False) as hash_buffer:
+                        for i in range(params):
+                            result = hashlib.sha3_512(hashed).digest()
+                            secure_memcpy(hash_buffer, result)
+                            secure_memcpy(hashed, hash_buffer)
+                            show_progress("SHA3-512", i + 1, params)
+                            KeyStretch.hash_stretch = True
+
+                elif algorithm == 'whirlpool' and params > 0:
+                    if not quiet:
+                        print(f"Applying {params} rounds of Whirlpool...")
+
+                    if WHIRLPOOL_AVAILABLE:
+                        # Whirlpool produces 64 bytes
+                        with secure_buffer(64, zero=False) as hash_buffer:
+                            for i in range(params):
+                                result = pywhirlpool.whirlpool(
+                                    bytes(hashed)).digest()
+                                secure_memcpy(hash_buffer, result)
+                                secure_memcpy(hashed, hash_buffer)
+                                show_progress("Whirlpool", i + 1, params)
+                                KeyStretch.hash_stretch = True
+                    else:
+                        # Fall back to SHA-512 if Whirlpool is not
+                        # available
                         if not quiet:
-                            print(f"Applying {params} rounds of SHA-512...")
+                            print(
+                                "Warning: Whirlpool not available, using SHA-512 instead")
 
-                        # SHA-512 produces 64 bytes
                         with secure_buffer(64, zero=False) as hash_buffer:
                             for i in range(params):
                                 result = hashlib.sha512(hashed).digest()
                                 secure_memcpy(hash_buffer, result)
                                 secure_memcpy(hashed, hash_buffer)
-                                show_progress("SHA-512", i + 1, params)
+                                show_progress(
+                                    "SHA-512 (fallback)", i + 1, params)
                                 KeyStretch.hash_stretch = True
 
-                    elif algorithm == 'sha256' and params > 0:
-                        if not quiet:
-                            print(f"Applying {params} rounds of SHA-256...")
-
-                        # SHA-256 produces 32 bytes
-                        with secure_buffer(32, zero=False) as hash_buffer:
-                            for i in range(params):
-                                result = hashlib.sha256(hashed).digest()
-                                secure_memcpy(hash_buffer, result)
-                                secure_memcpy(hashed, hash_buffer)
-                                show_progress("SHA-256", i + 1, params)
-                                KeyStretch.hash_stretch = True
-
-                    elif algorithm == 'sha3_256' and params > 0:
-                        if not quiet:
-                            print(f"Applying {params} rounds of SHA3-256...")
-
-                        # SHA3-256 produces 32 bytes
-                        with secure_buffer(32, zero=False) as hash_buffer:
-                            for i in range(params):
-                                result = hashlib.sha3_256(hashed).digest()
-                                secure_memcpy(hash_buffer, result)
-                                secure_memcpy(hashed, hash_buffer)
-                                show_progress("SHA3-256", i + 1, params)
-                                KeyStretch.hash_stretch = True
-
-                    elif algorithm == 'sha3_512' and params > 0:
-                        if not quiet:
-                            print(f"Applying {params} rounds of SHA3-512...")
-
-                        # SHA3-512 produces 64 bytes
-                        with secure_buffer(64, zero=False) as hash_buffer:
-                            for i in range(params):
-                                result = hashlib.sha3_512(hashed).digest()
-                                secure_memcpy(hash_buffer, result)
-                                secure_memcpy(hashed, hash_buffer)
-                                show_progress("SHA3-512", i + 1, params)
-                                KeyStretch.hash_stretch = True
-
-                    elif algorithm == 'whirlpool' and params > 0:
-                        if not quiet:
-                            print(f"Applying {params} rounds of Whirlpool...")
-
-                        if WHIRLPOOL_AVAILABLE:
-                            # Whirlpool produces 64 bytes
-                            with secure_buffer(64, zero=False) as hash_buffer:
-                                for i in range(params):
-                                    result = pywhirlpool.whirlpool(
-                                        bytes(hashed)).digest()
-                                    secure_memcpy(hash_buffer, result)
-                                    secure_memcpy(hashed, hash_buffer)
-                                    show_progress("Whirlpool", i + 1, params)
-                                    KeyStretch.hash_stretch = True
-                        else:
-                            # Fall back to SHA-512 if Whirlpool is not
-                            # available
-                            if not quiet:
-                                print(
-                                    "Warning: Whirlpool not available, using SHA-512 instead")
-
-                            with secure_buffer(64, zero=False) as hash_buffer:
-                                for i in range(params):
-                                    result = hashlib.sha512(hashed).digest()
-                                    secure_memcpy(hash_buffer, result)
-                                    secure_memcpy(hashed, hash_buffer)
-                                    show_progress(
-                                        "SHA-512 (fallback)", i + 1, params)
-                                    KeyStretch.hash_stretch = True
-
-                # Create a new bytes object with the final result
-                # result = SecureBytes(hashed) if not isinstance(hashed, SecureBytes) else hashed
-                result = SecureBytes.copy_from(hashed)
-            return result
-        except ImportError:
-            # Fall back to standard method if secure_memory is not available
-            if not quiet:
-                print(
-                    "Warning: secure_memory module not available, falling back to standard method")
-            use_secure_mem = False
-        finally:
-            if 'hashed' in locals():
-                secure_memzero(hashed)
+            result = SecureBytes.copy_from(hashed)
+        return result
+    except ImportError:
+        # Fall back to standard method if secure_memory is not available
+        if not quiet:
+            print("Warning: secure_memory module not available")
+        sys.exit(1)
+    finally:
+        if 'hashed' in locals():
+            secure_memzero(hashed)
 
 
 @add_timing_jitter
@@ -543,7 +537,6 @@ def generate_key(
         hash_config,
         pbkdf2_iterations=100000,
         quiet=False,
-        use_secure_mem=True,
         algorithm=EncryptionAlgorithm.FERNET.value,
         progress=False):
     """
@@ -555,7 +548,6 @@ def generate_key(
         hash_config (dict): Configuration for hash algorithms including Argon2
         pbkdf2_iterations (int): Number of iterations for PBKDF2
         quiet (bool): Whether to suppress progress output
-        use_secure_mem (bool): Whether to use secure memory
         progress (bool): Whether to use progress bar for progress output
         algorithm (str): The encryption algorithm to be used
 
@@ -611,7 +603,7 @@ def generate_key(
             print("Applying hash iterations...")
         # Apply multiple hash algorithms in sequence
         password = multi_hash_password(
-            password, salt, hash_config, quiet, use_secure_mem, progress=progress)
+            password, salt, hash_config, quiet, progress=progress)
     # Check if Argon2 is available on the system
     argon2_available = ARGON2_AVAILABLE
 
@@ -857,17 +849,14 @@ def generate_key(
     try:
         return password, salt, hash_config
     finally:
-        if use_secure_mem:
-            if KeyStretch.hash_stretch or KeyStretch.hash_stretch:
-                secure_memzero(derived_salt)
-            secure_memzero(password)
-            secure_memzero(salt)
-        else:
-            return True
+        if KeyStretch.hash_stretch or KeyStretch.hash_stretch:
+            secure_memzero(derived_salt)
+        secure_memzero(password)
+        secure_memzero(salt)
 
 
 def encrypt_file(input_file, output_file, password, hash_config=None,
-                 pbkdf2_iterations=100000, quiet=False, use_secure_mem=True,
+                 pbkdf2_iterations=100000, quiet=False,
                  algorithm=EncryptionAlgorithm.FERNET, progress=False, verbose=False):
     """
     Encrypt a file with a password using the specified algorithm.
@@ -879,7 +868,6 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         hash_config (dict, optional): Hash configuration dictionary
         pbkdf2_iterations (int): Number of PBKDF2 iterations
         quiet (bool): Whether to suppress progress output
-        use_secure_mem (bool): Whether to use secure memory handling
         progress (bool): Whether to show progress bar
         verbose (bool): Whether to show verbose output
         algorithm (EncryptionAlgorithm): Encryption algorithm to use (default: Fernet)
@@ -900,12 +888,11 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         encryption_algo=algorithm_value,
         salt=salt,
         quiet=quiet,
-        use_secure_mem=use_secure_mem,
         verbose=verbose
     )
 
     key, salt, hash_config = generate_key(
-        password, salt, hash_config, pbkdf2_iterations, quiet, use_secure_mem, algorithm_value, progress=progress)
+        password, salt, hash_config, pbkdf2_iterations, quiet, algorithm_value, progress=progress)
     # Read the input file
     if not quiet:
         print(f"Reading file: {input_file}")
@@ -997,21 +984,16 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     try:
         return True
     finally:
-        if use_secure_mem:
-            secure_memzero(key)
-            secure_memzero(data)
-            secure_memzero(encrypted_data)
-            secure_memzero(encrypted_hash)
-        else:
-            return True
-
+        secure_memzero(key)
+        secure_memzero(data)
+        secure_memzero(encrypted_data)
+        secure_memzero(encrypted_hash)
 
 def decrypt_file(
         input_file,
         output_file,
         password,
         quiet=False,
-        use_secure_mem=True,
         progress=False,
         verbose=False):
     """
@@ -1024,8 +1006,6 @@ def decrypt_file(
         quiet (bool): Whether to suppress progress output
         progress (bool): Whether to show progress bar
         verbose (bool): Whether to show verbose output
-        use_secure_mem (bool): Whether to use secure memory handling
-
     Returns:
         Union[bool, bytes]: True if decryption was successful and output_file is specified,
                            or the decrypted data if output_file is None
@@ -1069,7 +1049,6 @@ def decrypt_file(
         encryption_algo=metadata.get('algorithm', 'fernet'),
         salt=metadata.get('salt'),
         quiet=quiet,
-        use_secure_mem=use_secure_mem,
         verbose=verbose
     )
 
@@ -1085,7 +1064,7 @@ def decrypt_file(
         print("Generating decryption key...")
 
     key, _, _ = generate_key(password, salt, hash_config,
-                             pbkdf2_iterations, quiet, use_secure_mem, algorithm, progress=progress)
+                             pbkdf2_iterations, quiet, algorithm, progress=progress)
     # Decrypt the data
     if not quiet:
         print("Decrypting content with " + algorithm)
@@ -1151,13 +1130,9 @@ def decrypt_file(
     try:
         return True
     finally:
-        if use_secure_mem:
-            secure_memzero(key)
-            secure_memzero(decrypted_data)
-            secure_memzero(file_content)
-        else:
-            return True
-
+        secure_memzero(key)
+        secure_memzero(decrypted_data)
+        secure_memzero(file_content)
 
 def get_organized_hash_config(hash_config, encryption_algo=None, salt=None):
     organized_config = {
@@ -1186,20 +1161,15 @@ def get_organized_hash_config(hash_config, encryption_algo=None, salt=None):
 
     return organized_config
 
-
 def print_hash_config(
         hash_config,
         encryption_algo=None,
         salt=None,
         quiet=False,
-        use_secure_mem=True,
         verbose=False):
     if quiet:
         return
-    if use_secure_mem:
-        print("- Secure memory handling: Enabled")
-    else:
-        print("- Secure memory handling: Disabled")
+    print("Secure memory handling: Enabled")
     organized = get_organized_hash_config(hash_config, encryption_algo, salt)
 
     if KeyStretch.kind_action == 'decrypt' and verbose:
