@@ -27,6 +27,7 @@ from typing import Dict, Any, Optional
 import json
 import yaml
 import pytest
+import secrets
 
 
 
@@ -587,22 +588,24 @@ class TestCryptCore(unittest.TestCase):
 
         self.assertEqual(decrypted, b'Hello World\n')
 
-    def test_decrypt_stdin_strong(self):
+    def test_decrypt_stdin_quick(self):
         from openssl_encrypt.modules.secure_memory import SecureBytes
         encrypted_content = (
-            b"eyJmb3JtYXRfdmVyc2lvbiI6IDIsICJzYWx0IjogImxRZU9JOEFaUi9VcXhJcUhENnpMOEE9PSIsICJo"
-            b"YXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMCwgInNoYTI1NiI6IDAsICJzaGEzXzI1NiI6IDAsICJzaGEz"
-            b"XzUxMiI6IDEwMDAwMDAsICJ3aGlybHBvb2wiOiAwLCAic2NyeXB0IjogeyJlbmFibGVkIjogdHJ1ZSwg"
-            b"Im4iOiAxMjgsICJyIjogOCwgInAiOiAxLCAicm91bmRzIjogMTAwMDB9LCAiYXJnb24yIjogeyJlbmFi"
-            b"bGVkIjogdHJ1ZSwgInRpbWVfY29zdCI6IDMsICJtZW1vcnlfY29zdCI6IDY1NTM2LCAicGFyYWxsZWxp"
-            b"c20iOiA0LCAiaGFzaF9sZW4iOiAzMiwgInR5cGUiOiAyLCAicm91bmRzIjogMTAwfSwgImJjcnlwdCI6"
-            b"IHsiZW5hYmxlZCI6IHRydWUsICJyb3VuZHMiOiAyMDAsICJpdGVyYXRpb25zIjogMTJ9LCAicGJrZGYy"
-            b"X2l0ZXJhdGlvbnMiOiAwLCAidHlwZSI6ICJpZCIsICJhbGdvcml0aG0iOiAiYWVzLWdjbSJ9LCAicGJr"
-            b"ZGYyX2l0ZXJhdGlvbnMiOiAwLCAib3JpZ2luYWxfaGFzaCI6ICJkMmE4NGY0YjhiNjUwOTM3ZWM4Zjcz"
-            b"Y2Q4YmUyYzc0YWRkNWE5MTFiYTY0ZGYyNzQ1OGVkODIyOWRhODA0YTI2IiwgImVuY3J5cHRlZF9oYXNo"
-            b"IjogImI0MTJmYzhmMTdiYjllZWQxZDU1ZjQ2MGY3MmNjOWJhMjkxNTA2Y2JjMDNmOTc0NzFlYzU4YzZl"
-            b"NmE4NDdiZDEiLCAiYWxnb3JpdGhtIjogImFlcy1nY20ifQ==:NJ5wCJKXJCZqqfNfp75l1onYhFaRTP2b"
-            b"Y+JHhdaK1AOJCMXy+N4Amm3v01g=")
+            b"eyJmb3JtYXRfdmVyc2lvbiI6IDIsICJzYWx0IjogIjgxLzFTN3kzQlZkdjkrZDNHNUtQ"
+            b"anc9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMCwgInNoYTI1NiI6IDEwMDAs"
+            b"ICJzaGEzXzI1NiI6IDAsICJzaGEzXzUxMiI6IDEwMDAwLCAid2hpcmxwb29sIjogMCwg"
+            b"InNjcnlwdCI6IHsiZW5hYmxlZCI6IGZhbHNlLCAibiI6IDEyOCwgInIiOiA4LCAicCI6"
+            b"IDEsICJyb3VuZHMiOiAxMDAwfSwgImFyZ29uMiI6IHsiZW5hYmxlZCI6IGZhbHNlLCAi"
+            b"dGltZV9jb3N0IjogMiwgIm1lbW9yeV9jb3N0IjogNjU1MzYsICJwYXJhbGxlbGlzbSI6"
+            b"IDQsICJoYXNoX2xlbiI6IDMyLCAidHlwZSI6IDIsICJyb3VuZHMiOiAxMH0sICJwYmtk"
+            b"ZjJfaXRlcmF0aW9ucyI6IDEwMDAwLCAidHlwZSI6ICJpZCIsICJhbGdvcml0aG0iOiAi"
+            b"ZmVybmV0In0sICJwYmtkZjJfaXRlcmF0aW9ucyI6IDAsICJvcmlnaW5hbF9oYXNoIjog"
+            b"ImQyYTg0ZjRiOGI2NTA5MzdlYzhmNzNjZDhiZTJjNzRhZGQ1YTkxMWJhNjRkZjI3NDU4"
+            b"ZWQ4MjI5ZGE4MDRhMjYiLCAiZW5jcnlwdGVkX2hhc2giOiAiNmQyMDgyZTkzMzgxYTg3"
+            b"ODAyN2NjODhlNzFhMTk3MGVjMjZkYjQ4ZjJjOTI3YzU4MjQyYTNiYjQ3ZDNmOGU5OCIs"
+            b"ICJhbGdvcml0aG0iOiAiZmVybmV0In0=:Z0FBQUFBQm9DZlBGOERJZllnel9WZGZGUVlX"
+            b"RUJocUF5T2l6MndITkxCblgwWEo1ZXIwY2tGUG81RXcxM1BIQWJ0VUY3WkVHeUZ3S2Fz"
+            b"Mi1FMlNzYU90MUF3bnRRcDBqRkE9PQ==")
         mock_file = BytesIO(encrypted_content)
 
         def mock_open(file, mode='r'):
@@ -662,6 +665,235 @@ class TestCryptCore(unittest.TestCase):
                         password_bytes.clear()
 
         self.assertEqual(decrypted, b'Hello World\n')
+
+    def test_decrypt_stdin_standard(self):
+        from openssl_encrypt.modules.secure_memory import SecureBytes
+        encrypted_content = (
+            b"eyJmb3JtYXRfdmVyc2lvbiI6IDIsICJzYWx0IjogIlh6MGV4TGVsTVIzcERYOENLaXU5"
+            b"TVE9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMCwgInNoYTI1NiI6IDAsICJz"
+            b"aGEzXzI1NiI6IDAsICJzaGEzXzUxMiI6IDEwMDAwMDAsICJ3aGlybHBvb2wiOiAwLCAi"
+            b"c2NyeXB0IjogeyJlbmFibGVkIjogdHJ1ZSwgIm4iOiAxMjgsICJyIjogOCwgInAiOiAx"
+            b"LCAicm91bmRzIjogMTAwMDB9LCAiYXJnb24yIjogeyJlbmFibGVkIjogdHJ1ZSwgInRp"
+            b"bWVfY29zdCI6IDMsICJtZW1vcnlfY29zdCI6IDY1NTM2LCAicGFyYWxsZWxpc20iOiA0"
+            b"LCAiaGFzaF9sZW4iOiAzMiwgInR5cGUiOiAyLCAicm91bmRzIjogMTAwfSwgInBia2Rm"
+            b"Ml9pdGVyYXRpb25zIjogMCwgInR5cGUiOiAiaWQiLCAiYWxnb3JpdGhtIjogImFlcy1n"
+            b"Y20ifSwgInBia2RmMl9pdGVyYXRpb25zIjogMCwgIm9yaWdpbmFsX2hhc2giOiAiZDJh"
+            b"ODRmNGI4YjY1MDkzN2VjOGY3M2NkOGJlMmM3NGFkZDVhOTExYmE2NGRmMjc0NThlZDgy"
+            b"MjlkYTgwNGEyNiIsICJlbmNyeXB0ZWRfaGFzaCI6ICI4MzA0ODJlNDRlYTdhNWUxMjNj"
+            b"NDFiYzM3NWQzYzAyMWE2NjM5NTlmNThhMDE3MjA2ODBlOTU4MWNhYzA0ODJlIiwgImFs"
+            b"Z29yaXRobSI6ICJmZXJuZXQifQ==:Z0FBQUFBQm9DZk95czEteGQwVnFENmFndVpCenpi"
+            b"U1RpMFpoeUNkWHhNMFM5ZXNtdEEwMzFUUjM5cS14bTZiWEhhUzF2V0NsU1ZYVmZBNnRf"
+            b"ZzYxeTlzVEdMZ0o2UGNSUGc9PQ==")
+        mock_file = BytesIO(encrypted_content)
+
+        def mock_open(file, mode='r'):
+            if file == '/dev/stdin' and 'b' in mode:
+                return mock_file
+            return open(file, mode)
+
+        with patch('builtins.open', mock_open):
+            try:
+                header_b64, payload_b64 = encrypted_content.split(b':')
+                header = json.loads(base64.b64decode(header_b64))
+                salt = base64.b64decode(header['salt'])
+
+                # First step - get the initial password hash
+                multi_hash_result = multi_hash_password(
+                    b"pw7qG0kh5oG1QrRz6CibPNDxGaHrrBAa", salt, header['hash_config'])
+                print(f"\nMulti-hash output type: {type(multi_hash_result)}")
+                print(f"Multi-hash output (hex): {multi_hash_result.hex()}")
+                print(f"Hash Config: {header['hash_config']}")
+                # Convert to bytes explicitly at each step
+                if isinstance(multi_hash_result, SecureBytes):
+                    password_bytes = bytes(multi_hash_result)
+                else:
+                    password_bytes = bytes(multi_hash_result)
+
+                print(f"\nPassword bytes type: {type(password_bytes)}")
+                print(f"Password bytes (hex): {password_bytes.hex()}")
+
+                # Second step - generate_key with regular bytes
+                key = generate_key(
+                    password=password_bytes,  # Make sure this is regular bytes
+                    salt=salt,  # This should already be bytes
+                    hash_config=header['hash_config'],
+                    quiet=True
+                )
+
+                if isinstance(key, tuple):
+                    derived_key, derived_salt, derived_config = key
+                    print(f"\nDerived key type: {type(derived_key)}")
+                    print(f"Derived key (hex): {derived_key.hex() if derived_key else 'None'}")
+
+                decrypted = decrypt_file(
+                    input_file='/dev/stdin',
+                    output_file=None,
+                    password=b"pw7qG0kh5oG1QrRz6CibPNDxGaHrrBAa",
+                    quiet=True
+                )
+
+            except Exception as e:
+                print(f"\nException type: {type(e).__name__}")
+                print(f"Exception message: {str(e)}")
+                raise
+            finally:
+                if 'password_bytes' in locals():
+                    # Zero out the bytes if possible
+                    if hasattr(password_bytes, 'clear'):
+                        password_bytes.clear()
+
+        self.assertEqual(decrypted, b'Hello World\n')
+
+    def test_decrypt_stdin_paranoid(self):
+        from openssl_encrypt.modules.secure_memory import SecureBytes
+        encrypted_content = (
+            b"eyJmb3JtYXRfdmVyc2lvbiI6IDIsICJzYWx0IjogIjZCcWJUNG5PNVFGVXZMSHlqTlBB"
+            b"QUE9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMTAwMDAsICJzaGEyNTYiOiAx"
+            b"MDAwMCwgInNoYTNfMjU2IjogMTAwMDAsICJzaGEzXzUxMiI6IDIwMDAwMDAsICJzY3J5"
+            b"cHQiOiB7ImVuYWJsZWQiOiB0cnVlLCAibiI6IDI1NiwgInIiOiAxNiwgInAiOiAyLCAi"
+            b"cm91bmRzIjogMjAwMDB9LCAiYXJnb24yIjogeyJlbmFibGVkIjogdHJ1ZSwgInRpbWVf"
+            b"Y29zdCI6IDQsICJtZW1vcnlfY29zdCI6IDEzMTA3MiwgInBhcmFsbGVsaXNtIjogOCwg"
+            b"Imhhc2hfbGVuIjogMzIsICJ0eXBlIjogMiwgInJvdW5kcyI6IDIwMH0sICJiYWxsb29u"
+            b"IjogeyJlbmFibGVkIjogdHJ1ZSwgInRpbWVfY29zdCI6IDMsICJzcGFjZV9jb3N0Ijog"
+            b"NjU1MzYsICJwYXJhbGxlbGlzbSI6IDQsICJoYXNoX2xlbiI6IDMyLCAicm91bmRzIjog"
+            b"NX0sICJwYmtkZjJfaXRlcmF0aW9ucyI6IDAsICJ0eXBlIjogImlkIiwgImFsZ29yaXRo"
+            b"bSI6ICJhZXMtc2l2In0sICJwYmtkZjJfaXRlcmF0aW9ucyI6IDAsICJvcmlnaW5hbF9o"
+            b"YXNoIjogImQyYTg0ZjRiOGI2NTA5MzdlYzhmNzNjZDhiZTJjNzRhZGQ1YTkxMWJhNjRk"
+            b"ZjI3NDU4ZWQ4MjI5ZGE4MDRhMjYiLCAiZW5jcnlwdGVkX2hhc2giOiAiMzY4Y2QxYzhm"
+            b"ZGU3ZTQ4YjQ3NDYyOGUzOTcwZjRlYzY3YTQyMDhiMjlhM2ViMWNjMDA5YWJhMTM0Njc0"
+            b"N2NlNCIsICJhbGdvcml0aG0iOiAiZmVybmV0In0=:Z0FBQUFBQm9DZlFrX1dlXzFiWlpO"
+            b"WVR1aWRGY0JoWUJwNGd3aVkteTNiNmxuOTQ4VjlQSE5fWWVVSEpZLVRrb0xqb1pzTXl2"
+            b"TkJidVE2UDZTSWdqallTcnBnNWw0QzBBSUE9PQ==")
+        mock_file = BytesIO(encrypted_content)
+
+        def mock_open(file, mode='r'):
+            if file == '/dev/stdin' and 'b' in mode:
+                return mock_file
+            return open(file, mode)
+
+        with patch('builtins.open', mock_open):
+            try:
+                header_b64, payload_b64 = encrypted_content.split(b':')
+                header = json.loads(base64.b64decode(header_b64))
+                salt = base64.b64decode(header['salt'])
+
+                # First step - get the initial password hash
+                multi_hash_result = multi_hash_password(
+                    b"pw7qG0kh5oG1QrRz6CibPNDxGaHrrBAa", salt, header['hash_config'])
+                print(f"\nMulti-hash output type: {type(multi_hash_result)}")
+                print(f"Multi-hash output (hex): {multi_hash_result.hex()}")
+                print(f"Hash Config: {header['hash_config']}")
+                # Convert to bytes explicitly at each step
+                if isinstance(multi_hash_result, SecureBytes):
+                    password_bytes = bytes(multi_hash_result)
+                else:
+                    password_bytes = bytes(multi_hash_result)
+
+                print(f"\nPassword bytes type: {type(password_bytes)}")
+                print(f"Password bytes (hex): {password_bytes.hex()}")
+
+                # Second step - generate_key with regular bytes
+                key = generate_key(
+                    password=password_bytes,  # Make sure this is regular bytes
+                    salt=salt,  # This should already be bytes
+                    hash_config=header['hash_config'],
+                    quiet=True
+                )
+
+                if isinstance(key, tuple):
+                    derived_key, derived_salt, derived_config = key
+                    print(f"\nDerived key type: {type(derived_key)}")
+                    print(f"Derived key (hex): {derived_key.hex() if derived_key else 'None'}")
+
+                decrypted = decrypt_file(
+                    input_file='/dev/stdin',
+                    output_file=None,
+                    password=b"pw7qG0kh5oG1QrRz6CibPNDxGaHrrBAa",
+                    quiet=True
+                )
+
+            except Exception as e:
+                print(f"\nException type: {type(e).__name__}")
+                print(f"Exception message: {str(e)}")
+                raise
+            finally:
+                if 'password_bytes' in locals():
+                    # Zero out the bytes if possible
+                    if hasattr(password_bytes, 'clear'):
+                        password_bytes.clear()
+
+        self.assertEqual(decrypted, b'Hello World\n')
+
+    # def test_encrypt_decrypt_with_stemplate(self):
+    #     """Test encryption and decryption with stronger hash configuration."""
+    #     from openssl_encrypt.modules.secure_memory import SecureBytes
+    #     plain_content = (b"Hello World")
+    #     mock_file = BytesIO(plain_content)
+    #     def mock_open(file, mode='r'):
+    #         if file == '/dev/stdin' and 'b' in mode:
+    #             return mock_file
+    #         return open(file, mode)
+    #
+    #     # Create a modified version of the strong_hash_config with less intense
+    #     # settings for testing
+    #     test_hash_config = {
+    #         'sha512': 100,  # Reduced from potentially higher values
+    #         'sha256': 0,
+    #         'sha3_256': 100,  # Reduced from potentially higher values
+    #         'sha3_512': 0,
+    #         'whirlpool': 0,
+    #         'scrypt': {
+    #             'enabled': True,
+    #             'rounds': 100,
+    #             'n': 1024,  # Reduced from potentially higher values
+    #             'r': 8,
+    #             'p': 1
+    #         },
+    #         'argon2': {
+    #             'enabled': True,  # Disable Argon2 for this test to simplify
+    #             'time_cost': 1,
+    #             'memory_cost': 8192,
+    #             'parallelism': 1,
+    #             'hash_len': 32,
+    #             'type': 2,
+    #             'rounds': 100
+    #         },
+    #         'pbkdf2_iterations': 1000  # Reduced for testing
+    #     }
+    #     encrypted_file = os.path.join(self.test_dir, "test_template.enc")
+    #     self.test_files.extend([encrypted_file])
+    #     salt = secrets.token_bytes(16)
+    #     multi_hash_result = multi_hash_password(
+    #         b"pw7qG0kh5oG1QrRz6CibPNDxGaHrrBAa", salt, test_hash_config)
+    #     key = generate_key(
+    #         password=multi_hash_result,  # Make sure this is regular bytes
+    #         salt=salt,  # This should already be bytes
+    #         hash_config=test_hash_config,
+    #         quiet=True
+    #     )
+    #     # The key issue is that we must explicitly use urlsafe_b64encode for Fernet
+    #     # Use the basic hash config with FERNET algorithm to guarantee correct
+    #     # key format
+    #     result_enc = encrypt_file(
+    #         mock_file,
+    #         encrypted_file,
+    #         str(key),
+    #         test_hash_config,
+    #         quiet=True,
+    #         algorithm=EncryptionAlgorithm.FERNET.value
+    #     )
+    #     self.assertTrue(result_enc)
+    #
+    #     # Decrypt the file
+    #     result_dec = decrypt_file(
+    #         encrypted_file,
+    #         None,
+    #         f"pw7qG0kh5oG1QrRz6CibPNDxGaHrrBAa",
+    #         quiet=True)
+    #     self.assertTrue(result_dec)
+    #
+    #     # Verify the content
+    #     self.assertEqual(result_dec, plain_content)
 
 
 class TestCryptUtils(unittest.TestCase):

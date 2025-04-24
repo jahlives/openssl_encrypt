@@ -178,11 +178,6 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                     "type": 2,
                     "rounds": 10
                 },
-                "bcrypt": {
-                    'enabled': True,
-                    'rounds': 10,
-                    'iterations': 12
-                },
                 "pbkdf2_iterations": 10000,
                 "type": "id",
                 "algorithm": "camellia"
@@ -210,11 +205,6 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                     "hash_len": 32,
                     "type": 2,
                     "rounds": 100
-                },
-                "bcrypt": {
-                    'enabled': True,
-                    'rounds': 200,
-                    'iterations': 12
                 },
                 "pbkdf2_iterations": 0,
                 "type": "id",
@@ -320,6 +310,19 @@ def main():
     parser = argparse.ArgumentParser(
         description='Encrypt or decrypt a file with a password')
 
+    # show or hide progess
+    parser.add_argument(
+        '--progress',
+        action='store_true',
+        help='Show progress bar'
+    )
+
+    parser.add_argument(
+        '--verbose',
+        action='store_true',
+        help='Show hash/kdf details'
+    )
+
     # Add template argument
     parser.add_argument(
         '-t',
@@ -412,12 +415,12 @@ def main():
         help='Process directories recursively when shredding'
     )
 
-    # Add memory security option
-    parser.add_argument(
-        '--disable-secure-memory',
-        action='store_true',
-        help='Disable secure memory handling (not recommended)'
-    )
+    # # Add memory security option
+    # parser.add_argument(
+    #     '--disable-secure-memory',
+    #     action='store_true',
+    #     help='Disable secure memory handling (not recommended)'
+    # )
 
     # Group hash configuration arguments for better organization
     hash_group = parser.add_argument_group(
@@ -1099,7 +1102,10 @@ def main():
                         args.pbkdf2_iterations,
                         args.quiet,
                         GLOBAL_USE_SECURE_MEM,
-                        algorithm=args.algorithm)
+                        algorithm=args.algorithm,
+                        progress=args.progress,
+                        verbose=args.verbose
+                    )
 
                     if success:
                         # Apply the original permissions to the temp file
@@ -1139,7 +1145,10 @@ def main():
                     hash_config,
                     args.pbkdf2_iterations,
                     args.quiet,
-                    GLOBAL_USE_SECURE_MEM)
+                    GLOBAL_USE_SECURE_MEM,
+                    progress=args.progress,
+                    verbose=args.verbose
+                )
 
             if success:
                 if not args.quiet:
@@ -1245,7 +1254,10 @@ def main():
                         temp_output,
                         password,
                         args.quiet,
-                        GLOBAL_USE_SECURE_MEM)
+                        GLOBAL_USE_SECURE_MEM,
+                        progress=args.progress,
+                        verbose=args.verbose
+                    )
                     if success:
                         # Apply the original permissions to the temp file
                         os.chmod(temp_output, original_permissions)
@@ -1274,7 +1286,10 @@ def main():
                     args.output,
                     password,
                     args.quiet,
-                    GLOBAL_USE_SECURE_MEM)
+                    GLOBAL_USE_SECURE_MEM,
+                    progress=args.progress,
+                    verbose=args.verbose
+                )
                 if success and not args.quiet:
                     print(f"\nFile decrypted successfully: {args.output}")
 
@@ -1292,7 +1307,10 @@ def main():
                     None,
                     password,
                     args.quiet,
-                    GLOBAL_USE_SECURE_MEM)
+                    GLOBAL_USE_SECURE_MEM,
+                    progress=args.progress,
+                    verbose=args.verbose
+                )
                 try:
                     # Try to decode as text
                     if not args.quiet:
