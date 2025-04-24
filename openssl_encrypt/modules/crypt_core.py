@@ -754,9 +754,7 @@ def generate_key(
             hash_config['argon2']['type'] = type_int
         except Exception as e:
             if not quiet:
-                print(
-                    f"Argon2 key derivation failed: {
-                        str(e)}. Falling back to PBKDF2.")
+                print(f"Argon2 key derivation failed: {str(e)}. Falling back to PBKDF2.")
             # Fall back to PBKDF2 if Argon2 fails
             use_argon2 = False
 
@@ -808,9 +806,7 @@ def generate_key(
             })
         except Exception as e:
             if not quiet:
-                print(
-                    f"Balloon key derivation failed: {
-                        str(e)}. Falling back to PBKDF2.")
+                print(f"Balloon key derivation failed: {str(e)}. Falling back to PBKDF2.")
             use_balloon = False  # Consider falling back to PBKDF2
 
     if use_scrypt and SCRYPT_AVAILABLE:
@@ -843,9 +839,7 @@ def generate_key(
  #           hashed_password = derived_key
         except Exception as e:
             if not quiet:
-                print(
-                    f"Scrypt key derivation failed: {
-                    str(e)}. Falling back to PBKDF2.")
+                print(f"Scrypt key derivation failed: {str(e)}. Falling back to PBKDF2.")
             use_scrypt = False  # Consider falling back to PBKDF2
 
     if os.environ.get('PYTEST_CURRENT_TEST') is not None and hash_config['pbkdf2_iterations'] is None:
