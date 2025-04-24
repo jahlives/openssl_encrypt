@@ -676,11 +676,11 @@ def generate_key(
         if not quiet:
             print("Applying hash iterations...")
         # Apply multiple hash algorithms in sequence
-        hashed_password = multi_hash_password(
+        password = multi_hash_password(
             password, salt, hash_config, quiet, use_secure_mem)
     else:
         # If no hash iterations are specified, use the original password
-        hashed_password = password
+        password = password
 
     # Check if Argon2 is available on the system
     argon2_available = ARGON2_AVAILABLE
@@ -697,8 +697,8 @@ def generate_key(
     # if hash_config and 'argon2' in hash_config and 'enabled' in hash_config['argon2']:
     #    use_argon2 = hash_config['argon2']['enabled']
     if use_argon2 and ARGON2_AVAILABLE:
-        derived_key = hashed_password
-        derived_salt = salt
+        #derived_key = hashed_password
+        #derived_salt = salt
         # Use Argon2 for key derivation
         if not quiet:
             print("Using Argon2 for key derivation...")
@@ -719,17 +719,17 @@ def generate_key(
             # Default to Argon2id if type is not valid
             argon2_type = Type.ID
 
-        if hasattr(hashed_password, 'to_bytes'):
-            hashed_password = bytes(hashed_password)
+        if hasattr(password, 'to_bytes'):
+            password = bytes(password)
         else:
-            hashed_password = bytes(hashed_password)
+            password = bytes(password)
 
         try:
             for i in range(hash_config.get('argon2', {}).get('rounds', 1)):
-                round_salt = derived_salt + str(i).encode()
-                hashed_password = argon2.low_level.hash_secret_raw(
-                    secret=hashed_password,  # Use the potentially hashed password
-                    salt=round_salt,
+                salt = salt + str(i).encode()
+                password = argon2.low_level.hash_secret_raw(
+                    secret=password,  # Use the potentially hashed password
+                    salt=salt,
                     time_cost=time_cost,
                     memory_cost=memory_cost,
                     parallelism=parallelism,
@@ -737,7 +737,7 @@ def generate_key(
                     type=argon2_type
                 )
                 KeyStretch.key_stretch = True
-                derived_salt = hashed_password[:16]
+                salt = password[:16]
                 show_progress(
                     "Argon2",
                     i + 1,
@@ -746,9 +746,9 @@ def generate_key(
                         {}).get(
                         'rounds',
                         1))
-            hashed_password = hashed_password
-            secure_memzero(derived_key)
-            secure_memzero(derived_salt)
+         #   hashed_password = hashed_password
+         #   secure_memzero(derived_key)
+         #   secure_memzero(derived_salt)
             # Update hash_config to reflect that Argon2 was used
             if hash_config is None:
                 hash_config = {}
@@ -769,8 +769,8 @@ def generate_key(
             use_argon2 = False
 
     if use_balloon and BALLOON_AVAILABLE:
-        derived_key = hashed_password
-        derived_salt = salt
+ #       derived_key = hashed_password
+ #       derived_salt = salt
         if not quiet:
             print("Using Balloon-Hashing for key derivation...")
         balloon_config = hash_config.get('balloon', {}) if hash_config else {}
@@ -782,16 +782,16 @@ def generate_key(
 
         try:
             for i in range(hash_config.get('balloon', {}).get('rounds', 1)):
-                round_salt = derived_salt + str(i).encode()
-                hashed_password = balloon_m(
-                    password=hashed_password,  # Use the potentially hashed password
-                    salt=str(round_salt),
+                salt = salt + str(i).encode()
+                password = balloon_m(
+                    password=password,  # Use the potentially hashed password
+                    salt=str(salt),
                     time_cost=time_cost,
                     space_cost=space_cost,  # renamed from memory_cost
                     parallel_cost=parallelism
                 )
                 KeyStretch.key_stretch = True
-                derived_salt = hashed_password[:16]
+                salt = password[:16]
                 show_progress(
                     "Balloon",
                     i + 1,
@@ -800,9 +800,9 @@ def generate_key(
                         {}).get(
                         'rounds',
                         1))
-            hashed_password = hashed_password
-            secure_memzero(derived_key)
-            secure_memzero(derived_salt)
+ #           hashed_password = hashed_password
+ #           secure_memzero(derived_key)
+ #           secure_memzero(derived_salt)
 
             # Update hash_config
             if hash_config is None:
@@ -824,15 +824,15 @@ def generate_key(
             use_balloon = False  # Consider falling back to PBKDF2
 
     if use_scrypt and SCRYPT_AVAILABLE:
-        derived_key = hashed_password
-        derived_salt = salt
+ #       derived_key = hashed_password
+ #       derived_salt = salt
         if not quiet:
             print("Using Scrypt for key derivation...")
         try:
             for i in range(hash_config.get('scrypt', {}).get('rounds', 1)):
-                round_salt = derived_salt + str(i).encode()
+                salt = salt + str(i).encode()
                 scrypt_kdf = Scrypt(
-                    salt=round_salt,
+                    salt=salt,
                     length=32,
                     n=hash_config['scrypt']['n'],  # CPU/memory cost factor
                     r=hash_config['scrypt']['r'],  # Block size factor
@@ -840,8 +840,8 @@ def generate_key(
                     backend=default_backend()
                 )
                 KeyStretch.key_stretch = True
-                derived_key = scrypt_kdf.derive(derived_key)
-                derived_salt = derived_key[:16]
+                password = scrypt_kdf.derive(password)
+                salt = password[:16]
                 show_progress(
                     "Scrypt",
                     i + 1,
@@ -850,7 +850,7 @@ def generate_key(
                         {}).get(
                         'rounds',
                         1))
-            hashed_password = derived_key
+ #           hashed_password = derived_key
         except Exception as e:
             if not quiet:
                 print(
@@ -863,20 +863,20 @@ def generate_key(
     elif hash_config['pbkdf2_iterations'] > 0:
         use_pbkdf2 = hash_config['pbkdf2_iterations']
     if use_pbkdf2 and use_pbkdf2 > 0:
-        derived_salt = salt
+      #  derived_salt = salt
         for i in range(use_pbkdf2):
-            round_salt = derived_salt + str(i).encode('utf-8')
-            hashed_password = PBKDF2HMAC(
+            salt = salt + str(i).encode('utf-8')
+            password = PBKDF2HMAC(
                 algorithm=hashes.SHA256(),
                 length=key_length,
-                salt=round_salt,
+                salt=salt,
                 iterations=1,
                 backend=default_backend()
-            ).derive(hashed_password)  # Use the potentially hashed password
-            derived_salt = hashed_password[:16]
+            ).derive(password)  # Use the potentially hashed password
+            salt = password[:16]
             KeyStretch.key_stretch = True
             show_progress("PBKDF2", i + 1, use_pbkdf2)
-        hashed_password = hashed_password
+  #      hashed_password = hashed_password
     if not KeyStretch.hash_stretch and not KeyStretch.key_stretch and KeyStretch.kind_action == 'encrypt' and os.environ.get(
             'PYTEST_CURRENT_TEST') is None:
         if len(password) < 32:
@@ -933,19 +933,19 @@ def generate_key(
                 secure_memzero(password)
                 sys.exit(1)
             print('Proceeding with direct password usage...')
-            hashed_password = password
-    elif KeyStretch.kind_action == 'decrypt' and os.environ.get('PYTEST_CURRENT_TEST') is None and not KeyStretch.hash_stretch and not KeyStretch.key_stretch:
-        hashed_password = password
+            #hashed_password = password
+#    elif KeyStretch.kind_action == 'decrypt' and os.environ.get('PYTEST_CURRENT_TEST') is None and not KeyStretch.hash_stretch and not KeyStretch.key_stretch:
+#        hashed_password = password
     if algorithm == EncryptionAlgorithm.FERNET.value:
-        hashed_password = base64.urlsafe_b64encode(hashed_password)
+        password = base64.urlsafe_b64encode(password)
     try:
-        return hashed_password, salt, hash_config
+        return password, salt, hash_config
     finally:
         if use_secure_mem:
-            if KeyStretch.hash_stretch or KeyStretch.hash_stretch:
-                secure_memzero(derived_salt)
+ #           if KeyStretch.hash_stretch or KeyStretch.hash_stretch:
+ #               secure_memzero(derived_salt)
             secure_memzero(password)
-            secure_memzero(hashed_password)
+ #           secure_memzero(hashed_password)
             secure_memzero(salt)
   #          secure_memzero(key)
         else:
