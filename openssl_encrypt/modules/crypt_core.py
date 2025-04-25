@@ -834,10 +834,7 @@ def generate_key(
             print(
                 f"ERROR: your current password only has {
                     format(
-                        len(password))} characters ({
-                    len(
-                        set(password))} unique characters) and {
-                    string_entropy(password):.1f} bits of entropy")
+                        len(password))} characters ({len(set(password))} unique characters) and {string_entropy(password):.1f} bits of entropy")
             print(
                 f"ERROR: if you insist on using too-weak password then set the environment variable PYTEST_CURRENT_TEST to a non-empty value")
             secure_memzero(password)
