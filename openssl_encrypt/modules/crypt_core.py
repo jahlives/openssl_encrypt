@@ -890,8 +890,6 @@ def generate_key(
     elif algorithm == EncryptionAlgorithm.FERNET.value:
         password = base64.urlsafe_b64encode(password)
     try:
-        if not quiet and password is not None and not progress:
-            print("✅")  # Green check symbol
         return password, salt, hash_config
     finally:
         if KeyStretch.hash_stretch or KeyStretch.hash_stretch:
@@ -947,13 +945,15 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
 
     # Calculate hash of original data for integrity verification
     if not quiet:
-        print("Calculating content hash...")
+        print("Calculating content hash", end=" ")
 
     original_hash = calculate_hash(data)
+    if not quiet:
+        print("✅")
 
     # Encrypt the data
     if not quiet:
-        print("Encrypting content with " + algorithm_value)
+        print("Encrypting content with " + algorithm_value, end=" ")
 
     # For large files, use progress bar for encryption
     def do_encrypt():
@@ -989,12 +989,15 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         )
     else:
         encrypted_data = do_encrypt()
-
+    if not quiet:
+        print("✅")
     # Calculate hash of encrypted data
     if not quiet:
-        print("Calculating encrypted content hash...")
+        print("Calculating encrypted content hash", end=" ")
 
     encrypted_hash = calculate_hash(encrypted_data)
+    if not quiet:
+        print("✅")
 
     # Create metadata with all necessary information
     metadata = {
@@ -1016,13 +1019,15 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
 
     # Write the metadata and encrypted data to the output file
     if not quiet:
-        print(f"Writing encrypted file: {output_file}")
+        print(f"Writing encrypted file: {output_file}", end=" ")
 
     with open(output_file, 'wb') as file:
         file.write(metadata_base64 + b':' + encrypted_data)
 
     # Set secure permissions on the output file
     set_secure_permissions(output_file)
+    if not quiet:
+        print("✅")
 
     # Clean up
     key = None
