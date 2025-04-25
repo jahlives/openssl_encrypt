@@ -832,9 +832,7 @@ def generate_key(
             print(
                 'ERROR: this could only work if you provide a password with at least 32 characters and entropy of 80 bits or higher')
             print(
-                f"ERROR: your current password only has {
-                    format(
-                        len(password))} characters ({len(set(password))} unique characters) and {string_entropy(password):.1f} bits of entropy")
+                f"ERROR: your current password only has {format(len(password))} characters ({len(set(password))} unique characters) and {string_entropy(password):.1f} bits of entropy")
             print(
                 f"ERROR: if you insist on using too-weak password then set the environment variable PYTEST_CURRENT_TEST to a non-empty value")
             secure_memzero(password)
