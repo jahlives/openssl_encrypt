@@ -36,7 +36,7 @@ The GUI provides a user-friendly interface with four main tabs:
 
 ### Command-Line Interface
 
-```
+```bash
 python crypt.py ACTION [OPTIONS]
 ```
 
@@ -46,22 +46,34 @@ python crypt.py ACTION [OPTIONS]
 - `decrypt`: Decrypt a file with a password
 - `shred`: Securely delete a file by overwriting its contents
 - `generate-password`: Generate a secure random password
+- `security-info`: Show security recommendations
+- `check-argon2`: Check Argon2 support
 
-#### Common Options:
+#### General Options:
 
 | Option | Description |
 |--------|-------------|
-| `-i`, `--input` | Input file or directory (required for encrypt/decrypt/shred, supports glob patterns for shred action) |
+| `-i`, `--input` | Input file or directory (supports glob patterns for shred) |
 | `-o`, `--output` | Output file (optional for decrypt) |
 | `-p`, `--password` | Password (will prompt if not provided) |
-| `--random` | Generate a random password of specified length for encryption |
+| `--random LENGTH` | Generate random password of specified length for encryption |
 | `-q`, `--quiet` | Suppress all output except decrypted content and exit code |
-| `--overwrite` | Overwrite the input file with the output |
+| `-f`, `--overwrite` | Overwrite the input file with the output |
 | `-s`, `--shred` | Securely delete the original file after encryption/decryption |
 | `--shred-passes` | Number of passes for secure deletion (default: 3) |
 | `-r`, `--recursive` | Process directories recursively when shredding |
-| `--disable-secure-memory` | Disable secure memory handling (not recommended) |
-| `--argon2-time` | Argon2 time cost parameter (default: 0, not used) |
+| `--progress` | Show progress bar |
+| `--verbose` | Show hash/KDF details |
+| `--algorithm` | Encryption algorithm: fernet (default), aes-gcm, or chacha20-poly1305 |
+
+#### Template Options:
+
+| Option | Description |
+|--------|-------------|
+| `-t`, `--template` | Specify a template name (built-in or from ./template directory) |
+| `--quick` | Use quick but secure configuration |
+| `--standard` | Use standard security configuration (default) |
+| `--paranoid` | Use maximum security configuration |
 
 #### Password Generation Options:
 
@@ -77,21 +89,48 @@ python crypt.py ACTION [OPTIONS]
 
 | Option | Description |
 |--------|-------------|
-| `--sha256` | Number of SHA-256 iterations (default: 1,000,000 if flag provided without value) |
-| `--sha512` | Number of SHA-512 iterations (default: 1,000,000 if flag provided without value) |
-| `--sha3-256` | Number of SHA3-256 iterations (default: 1,000,000 if flag provided without value) |
-| `--sha3-512` | Number of SHA3-512 iterations (default: 1,000,000 if flag provided without value) |
-| `--whirlpool` | Number of Whirlpool iterations (default: 0, not used) |
-| `--scrypt-cost` | Scrypt cost factor N as power of 2 (default: 0, not used) |
-| `--scrypt-r` | Scrypt block size parameter r (default: 8) |
-| `--scrypt-p` | Scrypt parallelization parameter p (default: 1) |
-| `--pbkdf2` | Number of PBKDF2 iterations (default: 100,000) |
-| `--argon2-time` | Argon2 time cost parameter (default: 0, not used) |
-| `--argon2-memory` | Argon2 memory cost in KB (default: 102400 = 100MB) |
-| `--argon2-parallelism` | Argon2 parallelism parameter (default: 8) | 
-| `--argon2-type` | Argon2 variant to use: argon2i, argon2d, or argon2id (default: argon2id) |
+| `--sha256-rounds` | Number of SHA-256 iterations (default: 1,000,000 if enabled) |
+| `--sha512-rounds` | Number of SHA-512 iterations (default: 1,000,000 if enabled) |
+| `--sha3-256-rounds` | Number of SHA3-256 iterations (default: 1,000,000 if enabled) |
+| `--sha3-512-rounds` | Number of SHA3-512 iterations (default: 1,000,000 if enabled) |
+| `--whirlpool-rounds` | Number of Whirlpool iterations (default: 0) |
+| `--pbkdf2-iterations` | Number of PBKDF2 iterations (default: 100000) |
 
-#### read input from stdin
+#### Scrypt Options:
+
+| Option | Description |
+|--------|-------------|
+| `--enable-scrypt` | Enable Scrypt password hashing |
+| `--scrypt-rounds` | Scrypt iteration rounds (default: 1) |
+| `--scrypt-n` | CPU/memory cost factor (default: 128, use power of 2) |
+| `--scrypt-r` | Block size parameter (default: 8) |
+| `--scrypt-p` | Parallelization parameter (default: 1) |
+
+#### Argon2 Options:
+
+| Option | Description |
+|--------|-------------|
+| `--enable-argon2` | Enable Argon2 password hashing |
+| `--argon2-rounds` | Time cost (default: 1) |
+| `--argon2-time` | Time cost parameter (default: 3) |
+| `--argon2-memory` | Memory usage in KB (default: 65536 - 64MB) |
+| `--argon2-parallelism` | Parallelism factor (default: 4) |
+| `--argon2-hash-len` | Hash length in bytes (default: 32) |
+| `--argon2-type` | Argon2 variant: id (recommended), i, or d |
+| `--argon2-preset` | Predefined parameters: low, medium, high, or paranoid |
+
+#### Balloon Hashing Options:
+
+| Option | Description |
+|--------|-------------|
+| `--enable-balloon` | Enable Balloon Hashing KDF |
+| `--balloon-time-cost` | Time cost parameter (default: 3) |
+| `--balloon-space-cost` | Memory usage in bytes (default: 65536) |
+| `--balloon-parallelism` | Thread count (default: 4) |
+| `--balloon-rounds` | Number of rounds (default: 2) |
+| `--balloon-hash-len` | Hash output length in bytes (default: 32) |
+
+#### Read Input from stdin
 It can be helpful to get the decrypted content from stdin (ex when encrypted content is from wallet). Here a sample of reading data from `kdewallet`
 ```
 kwallet-query -f "Secret Service" -r KeePassCrypt -v kdewallet | python crypt.py decrypt --input /dev/stdin -q
