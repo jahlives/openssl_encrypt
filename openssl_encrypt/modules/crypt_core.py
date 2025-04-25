@@ -600,7 +600,7 @@ def generate_key(
 
     if has_hash_iterations:
         if not quiet:
-            print("Applying hash iterations...")
+            print("Applying hash iterations", end=" ")
         # Apply multiple hash algorithms in sequence
         password = multi_hash_password(
             password, salt, hash_config, quiet, progress=progress)
@@ -844,17 +844,18 @@ def generate_key(
                 sys.exit(1)
             print('Proceeding with direct password usage...')
             #hashed_password = password
-    if algorithm == EncryptionAlgorithm.FERNET.value:
-        if KeyStretch.key_stretch or KeyStretch.hash_stretch:
-            password = base64.urlsafe_b64encode(password)
-        else:
-            password = base64.b64encode(hashlib.sha256(password).digest())
-    elif not KeyStretch.key_stretch and not KeyStretch.hash_stretch:
+    if not KeyStretch.key_stretch and not KeyStretch.hash_stretch:
         if algorithm in [EncryptionAlgorithm.AES_GCM.value, EncryptionAlgorithm.CAMELLIA.value, EncryptionAlgorithm.CHACHA20_POLY1305.value]:
             password = hashlib.sha256(password).digest()
         elif algorithm == EncryptionAlgorithm.AES_SIV.value:
             password = hashlib.sha512(password).digest()
+        else:
+            password = base64.b64encode(hashlib.sha256(password).digest())
+    elif algorithm == EncryptionAlgorithm.FERNET.value:
+        password = base64.urlsafe_b64encode(password)
     try:
+        if not quiet and password is not None:
+            print("✅")  # Green check symbol
         return password, salt, hash_config
     finally:
         if KeyStretch.hash_stretch or KeyStretch.hash_stretch:
@@ -1063,19 +1064,22 @@ def decrypt_file(
     # Verify the hash of encrypted data
     if encrypted_hash:
         if not quiet:
-            print("Verifying encrypted content integrity...")
+            print("Verifying encrypted content integrity", end=" ")
         if calculate_hash(encrypted_data) != encrypted_hash:
+            print("❌")  # Red X symbol
             raise ValueError("Encrypted data has been tampered with")
+        elif not quiet:
+            print("✅")  # Green check symbol
 
     # Generate the key from the password and salt
     if not quiet:
-        print("Generating decryption key...")
+        print("Generating decryption key ✅")  # Green check symbol)
 
     key, _, _ = generate_key(password, salt, hash_config,
                              pbkdf2_iterations, quiet, algorithm, progress=progress)
     # Decrypt the data
     if not quiet:
-        print("Decrypting content with " + algorithm)
+        print("Decrypting content with " + algorithm, end=" ")
 
     def do_decrypt():
         if algorithm == EncryptionAlgorithm.FERNET.value:
@@ -1112,12 +1116,17 @@ def decrypt_file(
     else:
         decrypted_data = do_decrypt()
 
+    if not quiet:
+        print("✅")  # Green check symbol
     # Verify the hash of decrypted data
     if original_hash:
         if not quiet:
-            print("Verifying decrypted content integrity...")
+            print("Verifying decrypted content integrity", end=" ")
         if calculate_hash(decrypted_data) != original_hash:
+            print("❌")  # Red X symbol
             raise ValueError("Decryption failed: data integrity check failed")
+        elif not quiet:
+            print("✅")  # Green check symbol
 
     # If no output file is specified, return the decrypted data
     if output_file is None:
