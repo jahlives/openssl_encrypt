@@ -17,6 +17,22 @@ stages:
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
 
+
+sync-wiki:
+  stage: test
+  script:
+    - git clone https://oauth2:${PROJECT_ACCESS_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.wiki.git wiki
+    - cp -r openssl_encrypt/docs/* wiki/
+    - cd wiki
+    - git config --global user.email "pipeline@rm-rf.ch"
+    - git config --global user.name "GitLab Pipeline"
+    - git add .
+    - git diff-index --quiet HEAD || git commit -m "Update wiki from docs folder"
+    - git push
+  rules:
+    - when: manual
+      allow_failure: true
+
 test:
   stage: test
   before_script:
@@ -38,21 +54,6 @@ build:
       - dist/
   rules:
     - when: always
-
-sync-wiki:
-  stage: build
-  script:
-    - git clone https://oauth2:${PROJECT_ACCESS_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.wiki.git wiki
-    - cp -r openssl_encrypt/docs/* wiki/
-    - cd wiki
-    - git config --global user.email "pipeline@rm-rf.ch"
-    - git config --global user.name "GitLab Pipeline"
-    - git add .
-    - git diff-index --quiet HEAD || git commit -m "Update wiki from docs folder"
-    - git push
-  rules:
-    - when: manual
-      allow_failure: true
 
 publish:
   stage: publish
