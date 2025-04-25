@@ -437,8 +437,10 @@ def multi_hash_password(
             # 0)
             for algorithm, params in hash_config.items():
                 if algorithm == 'sha512' and params > 0:
-                    if not quiet:
-                        print(f"Applying {params} rounds of SHA-512...")
+                    if not quiet and not progress:
+                        print(f"Applying {params} rounds of SHA-512", end= " ")
+                    elif not quiet:
+                        print(f"Applying {params} rounds of SHA-512")
 
                     # SHA-512 produces 64 bytes
                     with secure_buffer(64, zero=False) as hash_buffer:
@@ -448,10 +450,14 @@ def multi_hash_password(
                             secure_memcpy(hashed, hash_buffer)
                             show_progress("SHA-512", i + 1, params)
                             KeyStretch.hash_stretch = True
+                        if not quiet and not progress:
+                            print("✅")
 
                 elif algorithm == 'sha256' and params > 0:
-                    if not quiet:
-                        print(f"Applying {params} rounds of SHA-256...")
+                    if not quiet and not progress:
+                        print(f"Applying {params} rounds of SHA-256", end=" ")
+                    elif not quiet:
+                        print(f"Applying {params} rounds of SHA-256")
 
                     # SHA-256 produces 32 bytes
                     with secure_buffer(32, zero=False) as hash_buffer:
@@ -461,11 +467,14 @@ def multi_hash_password(
                             secure_memcpy(hashed, hash_buffer)
                             show_progress("SHA-256", i + 1, params)
                             KeyStretch.hash_stretch = True
+                        if not quiet and not progress:
+                            print("✅")
 
                 elif algorithm == 'sha3_256' and params > 0:
-                    if not quiet:
-                        print(f"Applying {params} rounds of SHA3-256...")
-
+                    if not quiet and not progress:
+                        print(f"Applying {params} rounds of SHA3-256", end=" ")
+                    elif not quiet:
+                        print(f"Applying {params} rounds of SHA3-256")
                     # SHA3-256 produces 32 bytes
                     with secure_buffer(32, zero=False) as hash_buffer:
                         for i in range(params):
@@ -474,11 +483,14 @@ def multi_hash_password(
                             secure_memcpy(hashed, hash_buffer)
                             show_progress("SHA3-256", i + 1, params)
                             KeyStretch.hash_stretch = True
+                        if not quiet and not progress:
+                            print("✅")
 
                 elif algorithm == 'sha3_512' and params > 0:
-                    if not quiet:
-                        print(f"Applying {params} rounds of SHA3-512...")
-
+                    if not quiet and not progress:
+                        print(f"Applying {params} rounds of SHA3-512", end=" ")
+                    elif not quiet:
+                        print(f"Applying {params} rounds of SHA3-512")
                     # SHA3-512 produces 64 bytes
                     with secure_buffer(64, zero=False) as hash_buffer:
                         for i in range(params):
@@ -487,10 +499,14 @@ def multi_hash_password(
                             secure_memcpy(hashed, hash_buffer)
                             show_progress("SHA3-512", i + 1, params)
                             KeyStretch.hash_stretch = True
+                        if not quiet and not progress:
+                            print("✅")
 
                 elif algorithm == 'whirlpool' and params > 0:
-                    if not quiet:
-                        print(f"Applying {params} rounds of Whirlpool...")
+                    if not quiet and WHIRLPOOL_AVAILABLE and not progress:
+                        print(f"Applying {params} rounds of Whirlpool", end=" ")
+                    elif not quiet and not WHIRLPOOL_AVAILABLE:
+                        print(f"Applying {params} rounds of Whirlpool")
 
                     if WHIRLPOOL_AVAILABLE:
                         # Whirlpool produces 64 bytes
@@ -502,13 +518,18 @@ def multi_hash_password(
                                 secure_memcpy(hashed, hash_buffer)
                                 show_progress("Whirlpool", i + 1, params)
                                 KeyStretch.hash_stretch = True
+                            if not quiet and not progress:
+                                print("✅")
                     else:
                         # Fall back to SHA-512 if Whirlpool is not
                         # available
-                        if not quiet:
+                        if not quiet and not progress:
                             print(
-                                "Warning: Whirlpool not available, using SHA-512 instead")
-
+                                "Warning: Whirlpool not available, using SHA-512 instead", end=" ")
+                        elif not quiet:
+                            print(
+                                "Warning: Whirlpool not available, using SHA-512 instead"
+                            )
                         with secure_buffer(64, zero=False) as hash_buffer:
                             for i in range(params):
                                 result = hashlib.sha512(hashed).digest()
@@ -517,7 +538,8 @@ def multi_hash_password(
                                 show_progress(
                                     "SHA-512 (fallback)", i + 1, params)
                                 KeyStretch.hash_stretch = True
-
+                            if not quiet and not progress:
+                                print("✅")
             result = SecureBytes.copy_from(hashed)
         return result
     except ImportError:
@@ -599,8 +621,10 @@ def generate_key(
     ) or (hash_config and hash_config.get('scrypt', {}).get('n', 0) > 0)
 
     if has_hash_iterations:
-        if not quiet:
+        if not quiet and not progress:
             print("Applying hash iterations", end=" ")
+        elif not quiet:
+            print("Applying hash iterations")
         # Apply multiple hash algorithms in sequence
         password = multi_hash_password(
             password, salt, hash_config, quiet, progress=progress)
@@ -621,8 +645,10 @@ def generate_key(
     if use_argon2 and ARGON2_AVAILABLE:
         derived_salt = salt
         # Use Argon2 for key derivation
-        if not quiet:
-            print("Using Argon2 for key derivation...")
+        if not quiet and not progress:
+            print("Using Argon2 for key derivation", end=" ")
+        elif not quiet:
+            print("Using Argon2 for key derivation")
 
         # Get parameters from the argon2 section of hash_config, or use
         # defaults
@@ -679,6 +705,8 @@ def generate_key(
             hash_config['argon2']['parallelism'] = parallelism
             hash_config['argon2']['hash_len'] = hash_len
             hash_config['argon2']['type'] = type_int
+            if not quiet and not progress:
+                print("✅")
         except Exception as e:
             if not quiet:
                 print(f"Argon2 key derivation failed: {str(e)}. Falling back to PBKDF2.")
@@ -687,8 +715,10 @@ def generate_key(
 
     if use_balloon and BALLOON_AVAILABLE:
         derived_salt = salt
-        if not quiet:
-            print("Using Balloon-Hashing for key derivation...")
+        if not quiet and not progress:
+            print("Using Balloon-Hashing for key derivation", end=" ")
+        elif not quiet:
+            print("Using Balloon-Hashing for key derivation")
         balloon_config = hash_config.get('balloon', {}) if hash_config else {}
         time_cost = balloon_config.get('time_cost', 3)
         space_cost = balloon_config.get(
@@ -731,6 +761,8 @@ def generate_key(
                 'parallelism': parallelism,
                 'hash_len': hash_len
             })
+            if not quiet and not progress:
+                print("✅")
         except Exception as e:
             if not quiet:
                 print(f"Balloon key derivation failed: {str(e)}. Falling back to PBKDF2.")
@@ -739,8 +771,10 @@ def generate_key(
     if use_scrypt and SCRYPT_AVAILABLE:
 
         derived_salt = salt
-        if not quiet:
-            print("Using Scrypt for key derivation...")
+        if not quiet and not progress:
+            print("Using Scrypt for key derivation", end=" ")
+        elif not quiet:
+            print("Using Scrypt for key derivation")
         try:
             for i in range(hash_config.get('scrypt', {}).get('rounds', 1)):
                 derived_salt = derived_salt + str(i).encode()
@@ -764,6 +798,8 @@ def generate_key(
                         'rounds',
                         1))
  #           hashed_password = derived_key
+            if not quiet and not progress:
+                print("✅")
         except Exception as e:
             if not quiet:
                 print(f"Scrypt key derivation failed: {str(e)}. Falling back to PBKDF2.")
@@ -854,7 +890,7 @@ def generate_key(
     elif algorithm == EncryptionAlgorithm.FERNET.value:
         password = base64.urlsafe_b64encode(password)
     try:
-        if not quiet and password is not None:
+        if not quiet and password is not None and not progress:
             print("✅")  # Green check symbol
         return password, salt, hash_config
     finally:
