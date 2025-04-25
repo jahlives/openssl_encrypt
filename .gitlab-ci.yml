@@ -19,7 +19,7 @@ variables:
 
 
 sync-wiki:
-  stage: test
+  stage: prepare
   script:
     - git clone https://oauth2:${PROJECT_ACCESS_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.wiki.git wiki
     - cp -r openssl_encrypt/docs/* wiki/
