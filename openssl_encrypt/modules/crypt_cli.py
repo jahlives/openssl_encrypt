@@ -94,6 +94,55 @@ class SecurityTemplate(Enum):
     PARANOID = "paranoid"
     QUICK = "quick"
 
+def show_version_info():
+    """Display version information including git commit hash, Python version and dependencies."""
+    import sys
+    import platform
+    from importlib.metadata import version as pkg_version
+
+    # Import version information from version.py
+    try:
+        from openssl_encrypt.version import __version__, __git_commit__
+    except ImportError:
+        __version__ = "unknown"
+        __git_commit__ = "unknown"
+
+    # Get Python version
+    python_version = sys.version.split()[0]
+    python_implementation = platform.python_implementation()
+
+    # Get system information
+    system = platform.system()
+    release = platform.release()
+
+    # Get dependency versions
+    dependencies = {
+        "cryptography": "unknown",
+        "argon2-cffi": "unknown",
+        "PyYAML": "unknown"
+    }
+
+    # Try to get actual versions of dependencies
+    for dep in dependencies:
+        try:
+            dependencies[dep] = pkg_version(dep)
+        except Exception:
+            pass
+
+    # Format the output
+    version_info = [
+        f"openssl_encrypt: v{__version__} (commit: {__git_commit__})",
+        f"Python: {python_implementation} {python_version}",
+        f"System: {system} {release}",
+        "\nDependencies:",
+    ]
+
+    for dep, ver in dependencies.items():
+        version_info.append(f"  {dep}: {ver}")
+
+    return "\n".join(version_info)
+
+
 
 def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
     """
@@ -301,6 +350,12 @@ def main():
         '--verbose',
         action='store_true',
         help='Show hash/kdf details'
+    )
+
+    parser.add_argument(
+        '--version',
+        action='store_true',
+        help='Show version information and exit'
     )
 
     # Add template argument
@@ -683,6 +738,10 @@ def main():
 
     if args.enable_balloon:
         args.use_balloon = True
+
+    if args.version:
+        print(show_version_info())
+        return 0
 
     # Handle scrypt_cost conversion to scrypt_n
     if args.scrypt_cost > 0 and args.scrypt_n == 0:
