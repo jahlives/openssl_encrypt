@@ -854,12 +854,7 @@ def generate_key(
             print(
                 'WARNING: This is only secure if your password has sufficient entropy (randomness).')
             print(
-                f"WARNING: Your password is {
-                    str(
-                        len(password))} long ({
-                    len(
-                        set(password))} unique characters) and has {
-                    string_entropy(password):.1f} bits entropy.")
+                f"WARNING: Your password is {str(len(password))} long ({len(set(password))} unique characters) and has {string_entropy(password):.1f} bits entropy.")
             print(
                 'WARNING: you should still consider to stop here and use hash/kdf chaining')
             confirmation = input(
