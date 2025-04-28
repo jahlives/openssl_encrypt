@@ -21,7 +21,9 @@ variables:
 
 sync-wiki:
   stage: sync
-  image: alpine/git:latest
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache git
   script:
     - git clone https://oauth2:${PROJECT_ACCESS_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.wiki.git wiki
     - cp -r openssl_encrypt/docs/* wiki/
