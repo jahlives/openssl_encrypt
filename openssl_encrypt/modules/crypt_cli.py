@@ -352,12 +352,6 @@ def main():
         help='Show hash/kdf details'
     )
 
-    parser.add_argument(
-        '--version',
-        action='store_true',
-        help='Show version information and exit'
-    )
-
     # Add template argument
     parser.add_argument(
         '-t',
@@ -391,7 +385,8 @@ def main():
             'shred',
             'generate-password',
             'security-info',
-            'check-argon2'],
+            'check-argon2',
+            'version'],
         help='Action to perform: encrypt/decrypt files, shred data, generate passwords, '
         'show security recommendations, or check Argon2 support')
 
@@ -739,7 +734,7 @@ def main():
     if args.enable_balloon:
         args.use_balloon = True
 
-    if args.version:
+    if args.action == 'version':
         print(show_version_info())
         return 0
 
