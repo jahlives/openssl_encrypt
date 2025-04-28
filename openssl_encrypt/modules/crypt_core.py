@@ -832,12 +832,7 @@ def generate_key(
             print(
                 'ERROR: this could only work if you provide a password with at least 32 characters and entropy of 80 bits or higher')
             print(
-                f"ERROR: your current password only has {
-                    format(
-                        len(password))} characters ({
-                    len(
-                        set(password))} unique characters) and {
-                    string_entropy(password):.1f} bits of entropy")
+                f"ERROR: your current password only has {format(len(password))} characters ({len(set(password))} unique characters) and {string_entropy(password):.1f} bits of entropy")
             print(
                 f"ERROR: if you insist on using too-weak password then set the environment variable PYTEST_CURRENT_TEST to a non-empty value")
             secure_memzero(password)
@@ -849,12 +844,7 @@ def generate_key(
             print(
                 'ERROR: this could only work if you provide a password with at least 32 characters and 80 bits entropy')
             print(
-                f"ERROR: your current password has {
-                    format(
-                        len(password))} characters ({
-                    len(
-                        set(password))} unique characters) and {
-                    string_entropy(password):.1f} bits of entropy")
+                f"ERROR: your current password has {format(len(password))} characters ({len(set(password))} unique characters) and {string_entropy(password):.1f} bits of entropy")
             print(f"ERROR: if you insist on using too-weak password then set the environment variable PYTEST_CURRENT_TEST to a non-empty value")
             secure_memzero(password)
             sys.exit(1)
@@ -864,12 +854,7 @@ def generate_key(
             print(
                 'WARNING: This is only secure if your password has sufficient entropy (randomness).')
             print(
-                f"WARNING: Your password is {
-                    str(
-                        len(password))} long ({
-                    len(
-                        set(password))} unique characters) and has {
-                    string_entropy(password):.1f} bits entropy.")
+                f"WARNING: Your password is {str(len(password))} long ({len(set(password))} unique characters) and has {string_entropy(password):.1f} bits entropy.")
             print(
                 'WARNING: you should still consider to stop here and use hash/kdf chaining')
             confirmation = input(
