@@ -394,11 +394,7 @@ def show_security_recommendations():
     argon2_available, version, supported_types = check_argon2_support()
     if argon2_available:
         print(f"Argon2 Status: AVAILABLE (version {version})")
-        print(
-            f"Supported variants: {
-                ', '.join(
-                    'Argon2' +
-                    t for t in supported_types)}")
+        print(f"Supported variants: {', '.join('Argon2' + t for t in supported_types)}")
     else:
         print("Argon2 Status: NOT AVAILABLE")
         print("To enable Argon2 support, install the argon2-cffi package:")
