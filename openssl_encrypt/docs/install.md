@@ -12,7 +12,7 @@
 The easiest way to install is via pip from PyPI:
 
 ```bash
-pip install openssl-encrypt
+pip install openssl_encrypt
 ```
 
 #### From GitLab Package Registry
@@ -24,7 +24,7 @@ The package is also available from the custom GitLab package registry:
 pip config set global.extra-index-url https://gitlab.rm-rf.ch/api/v4/projects/world%2Fopenssl_encrypt/packages/pypi/simple
 
 # Install the package
-pip install openssl-encrypt
+pip install openssl_encrypt
 ```
 
 #### From Source
@@ -117,7 +117,7 @@ If you encounter any installation issues:
 The packages on both PyPI and the GitLab registry are signed. You can verify the signature using:
 
 ```bash
-pip install openssl-encrypt --require-hashes
+pip install openssl_encrypt --require-hashes
 ```
 
 ### Offline Installation
