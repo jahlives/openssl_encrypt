@@ -437,8 +437,10 @@ def multi_hash_password(
             # 0)
             for algorithm, params in hash_config.items():
                 if algorithm == 'sha512' and params > 0:
-                    if not quiet:
-                        print(f"Applying {params} rounds of SHA-512...")
+                    if not quiet and not progress:
+                        print(f"Applying {params} rounds of SHA-512", end= " ")
+                    elif not quiet:
+                        print(f"Applying {params} rounds of SHA-512")
 
                     # SHA-512 produces 64 bytes
                     with secure_buffer(64, zero=False) as hash_buffer:
@@ -448,10 +450,14 @@ def multi_hash_password(
                             secure_memcpy(hashed, hash_buffer)
                             show_progress("SHA-512", i + 1, params)
                             KeyStretch.hash_stretch = True
+                        if not quiet and not progress:
+                            print("✅")
 
                 elif algorithm == 'sha256' and params > 0:
-                    if not quiet:
-                        print(f"Applying {params} rounds of SHA-256...")
+                    if not quiet and not progress:
+                        print(f"Applying {params} rounds of SHA-256", end=" ")
+                    elif not quiet:
+                        print(f"Applying {params} rounds of SHA-256")
 
                     # SHA-256 produces 32 bytes
                     with secure_buffer(32, zero=False) as hash_buffer:
@@ -461,11 +467,14 @@ def multi_hash_password(
                             secure_memcpy(hashed, hash_buffer)
                             show_progress("SHA-256", i + 1, params)
                             KeyStretch.hash_stretch = True
+                        if not quiet and not progress:
+                            print("✅")
 
                 elif algorithm == 'sha3_256' and params > 0:
-                    if not quiet:
-                        print(f"Applying {params} rounds of SHA3-256...")
-
+                    if not quiet and not progress:
+                        print(f"Applying {params} rounds of SHA3-256", end=" ")
+                    elif not quiet:
+                        print(f"Applying {params} rounds of SHA3-256")
                     # SHA3-256 produces 32 bytes
                     with secure_buffer(32, zero=False) as hash_buffer:
                         for i in range(params):
@@ -474,11 +483,14 @@ def multi_hash_password(
                             secure_memcpy(hashed, hash_buffer)
                             show_progress("SHA3-256", i + 1, params)
                             KeyStretch.hash_stretch = True
+                        if not quiet and not progress:
+                            print("✅")
 
                 elif algorithm == 'sha3_512' and params > 0:
-                    if not quiet:
-                        print(f"Applying {params} rounds of SHA3-512...")
-
+                    if not quiet and not progress:
+                        print(f"Applying {params} rounds of SHA3-512", end=" ")
+                    elif not quiet:
+                        print(f"Applying {params} rounds of SHA3-512")
                     # SHA3-512 produces 64 bytes
                     with secure_buffer(64, zero=False) as hash_buffer:
                         for i in range(params):
@@ -487,10 +499,14 @@ def multi_hash_password(
                             secure_memcpy(hashed, hash_buffer)
                             show_progress("SHA3-512", i + 1, params)
                             KeyStretch.hash_stretch = True
+                        if not quiet and not progress:
+                            print("✅")
 
                 elif algorithm == 'whirlpool' and params > 0:
-                    if not quiet:
-                        print(f"Applying {params} rounds of Whirlpool...")
+                    if not quiet and WHIRLPOOL_AVAILABLE and not progress:
+                        print(f"Applying {params} rounds of Whirlpool", end=" ")
+                    elif not quiet and not WHIRLPOOL_AVAILABLE:
+                        print(f"Applying {params} rounds of Whirlpool")
 
                     if WHIRLPOOL_AVAILABLE:
                         # Whirlpool produces 64 bytes
@@ -502,13 +518,18 @@ def multi_hash_password(
                                 secure_memcpy(hashed, hash_buffer)
                                 show_progress("Whirlpool", i + 1, params)
                                 KeyStretch.hash_stretch = True
+                            if not quiet and not progress:
+                                print("✅")
                     else:
                         # Fall back to SHA-512 if Whirlpool is not
                         # available
-                        if not quiet:
+                        if not quiet and not progress:
                             print(
-                                "Warning: Whirlpool not available, using SHA-512 instead")
-
+                                "Warning: Whirlpool not available, using SHA-512 instead", end=" ")
+                        elif not quiet:
+                            print(
+                                "Warning: Whirlpool not available, using SHA-512 instead"
+                            )
                         with secure_buffer(64, zero=False) as hash_buffer:
                             for i in range(params):
                                 result = hashlib.sha512(hashed).digest()
@@ -517,7 +538,8 @@ def multi_hash_password(
                                 show_progress(
                                     "SHA-512 (fallback)", i + 1, params)
                                 KeyStretch.hash_stretch = True
-
+                            if not quiet and not progress:
+                                print("✅")
             result = SecureBytes.copy_from(hashed)
         return result
     except ImportError:
@@ -599,8 +621,10 @@ def generate_key(
     ) or (hash_config and hash_config.get('scrypt', {}).get('n', 0) > 0)
 
     if has_hash_iterations:
-        if not quiet:
-            print("Applying hash iterations...")
+        if not quiet and not progress:
+            print("Applying hash iterations", end=" ")
+        elif not quiet:
+            print("Applying hash iterations")
         # Apply multiple hash algorithms in sequence
         password = multi_hash_password(
             password, salt, hash_config, quiet, progress=progress)
@@ -621,8 +645,10 @@ def generate_key(
     if use_argon2 and ARGON2_AVAILABLE:
         derived_salt = salt
         # Use Argon2 for key derivation
-        if not quiet:
-            print("Using Argon2 for key derivation...")
+        if not quiet and not progress:
+            print("Using Argon2 for key derivation", end=" ")
+        elif not quiet:
+            print("Using Argon2 for key derivation")
 
         # Get parameters from the argon2 section of hash_config, or use
         # defaults
@@ -679,6 +705,8 @@ def generate_key(
             hash_config['argon2']['parallelism'] = parallelism
             hash_config['argon2']['hash_len'] = hash_len
             hash_config['argon2']['type'] = type_int
+            if not quiet and not progress:
+                print("✅")
         except Exception as e:
             if not quiet:
                 print(f"Argon2 key derivation failed: {str(e)}. Falling back to PBKDF2.")
@@ -687,8 +715,10 @@ def generate_key(
 
     if use_balloon and BALLOON_AVAILABLE:
         derived_salt = salt
-        if not quiet:
-            print("Using Balloon-Hashing for key derivation...")
+        if not quiet and not progress:
+            print("Using Balloon-Hashing for key derivation", end=" ")
+        elif not quiet:
+            print("Using Balloon-Hashing for key derivation")
         balloon_config = hash_config.get('balloon', {}) if hash_config else {}
         time_cost = balloon_config.get('time_cost', 3)
         space_cost = balloon_config.get(
@@ -731,6 +761,8 @@ def generate_key(
                 'parallelism': parallelism,
                 'hash_len': hash_len
             })
+            if not quiet and not progress:
+                print("✅")
         except Exception as e:
             if not quiet:
                 print(f"Balloon key derivation failed: {str(e)}. Falling back to PBKDF2.")
@@ -739,8 +771,10 @@ def generate_key(
     if use_scrypt and SCRYPT_AVAILABLE:
 
         derived_salt = salt
-        if not quiet:
-            print("Using Scrypt for key derivation...")
+        if not quiet and not progress:
+            print("Using Scrypt for key derivation", end=" ")
+        elif not quiet:
+            print("Using Scrypt for key derivation")
         try:
             for i in range(hash_config.get('scrypt', {}).get('rounds', 1)):
                 derived_salt = derived_salt + str(i).encode()
@@ -764,6 +798,8 @@ def generate_key(
                         'rounds',
                         1))
  #           hashed_password = derived_key
+            if not quiet and not progress:
+                print("✅")
         except Exception as e:
             if not quiet:
                 print(f"Scrypt key derivation failed: {str(e)}. Falling back to PBKDF2.")
@@ -796,12 +832,7 @@ def generate_key(
             print(
                 'ERROR: this could only work if you provide a password with at least 32 characters and entropy of 80 bits or higher')
             print(
-                f"ERROR: your current password only has {
-                    format(
-                        len(password))} characters ({
-                    len(
-                        set(password))} unique characters) and {
-                    string_entropy(password):.1f} bits of entropy")
+                f"ERROR: your current password only has {format(len(password))} characters ({len(set(password))} unique characters) and {string_entropy(password):.1f} bits of entropy")
             print(
                 f"ERROR: if you insist on using too-weak password then set the environment variable PYTEST_CURRENT_TEST to a non-empty value")
             secure_memzero(password)
@@ -813,12 +844,7 @@ def generate_key(
             print(
                 'ERROR: this could only work if you provide a password with at least 32 characters and 80 bits entropy')
             print(
-                f"ERROR: your current password has {
-                    format(
-                        len(password))} characters ({
-                    len(
-                        set(password))} unique characters) and {
-                    string_entropy(password):.1f} bits of entropy")
+                f"ERROR: your current password has {format(len(password))} characters ({len(set(password))} unique characters) and {string_entropy(password):.1f} bits of entropy")
             print(f"ERROR: if you insist on using too-weak password then set the environment variable PYTEST_CURRENT_TEST to a non-empty value")
             secure_memzero(password)
             sys.exit(1)
@@ -828,12 +854,7 @@ def generate_key(
             print(
                 'WARNING: This is only secure if your password has sufficient entropy (randomness).')
             print(
-                f"WARNING: Your password is {
-                    str(
-                        len(password))} long ({
-                    len(
-                        set(password))} unique characters) and has {
-                    string_entropy(password):.1f} bits entropy.")
+                f"WARNING: Your password is {str(len(password))} long ({len(set(password))} unique characters) and has {string_entropy(password):.1f} bits entropy.")
             print(
                 'WARNING: you should still consider to stop here and use hash/kdf chaining')
             confirmation = input(
@@ -844,16 +865,15 @@ def generate_key(
                 sys.exit(1)
             print('Proceeding with direct password usage...')
             #hashed_password = password
-    if algorithm == EncryptionAlgorithm.FERNET.value:
-        if KeyStretch.key_stretch or KeyStretch.hash_stretch:
-            password = base64.urlsafe_b64encode(password)
-        else:
-            password = base64.b64encode(hashlib.sha256(password).digest())
-    elif not KeyStretch.key_stretch and not KeyStretch.hash_stretch:
+    if not KeyStretch.key_stretch and not KeyStretch.hash_stretch:
         if algorithm in [EncryptionAlgorithm.AES_GCM.value, EncryptionAlgorithm.CAMELLIA.value, EncryptionAlgorithm.CHACHA20_POLY1305.value]:
             password = hashlib.sha256(password).digest()
         elif algorithm == EncryptionAlgorithm.AES_SIV.value:
             password = hashlib.sha512(password).digest()
+        else:
+            password = base64.b64encode(hashlib.sha256(password).digest())
+    elif algorithm == EncryptionAlgorithm.FERNET.value:
+        password = base64.urlsafe_b64encode(password)
     try:
         return password, salt, hash_config
     finally:
@@ -910,13 +930,15 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
 
     # Calculate hash of original data for integrity verification
     if not quiet:
-        print("Calculating content hash...")
+        print("Calculating content hash", end=" ")
 
     original_hash = calculate_hash(data)
+    if not quiet:
+        print("✅")
 
     # Encrypt the data
     if not quiet:
-        print("Encrypting content with " + algorithm_value)
+        print("Encrypting content with " + algorithm_value, end=" ")
 
     # For large files, use progress bar for encryption
     def do_encrypt():
@@ -952,12 +974,15 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         )
     else:
         encrypted_data = do_encrypt()
-
+    if not quiet:
+        print("✅")
     # Calculate hash of encrypted data
     if not quiet:
-        print("Calculating encrypted content hash...")
+        print("Calculating encrypted content hash", end=" ")
 
     encrypted_hash = calculate_hash(encrypted_data)
+    if not quiet:
+        print("✅")
 
     # Create metadata with all necessary information
     metadata = {
@@ -979,13 +1004,15 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
 
     # Write the metadata and encrypted data to the output file
     if not quiet:
-        print(f"Writing encrypted file: {output_file}")
+        print(f"Writing encrypted file: {output_file}", end=" ")
 
     with open(output_file, 'wb') as file:
         file.write(metadata_base64 + b':' + encrypted_data)
 
     # Set secure permissions on the output file
     set_secure_permissions(output_file)
+    if not quiet:
+        print("✅")
 
     # Clean up
     key = None
@@ -1063,19 +1090,22 @@ def decrypt_file(
     # Verify the hash of encrypted data
     if encrypted_hash:
         if not quiet:
-            print("Verifying encrypted content integrity...")
+            print("Verifying encrypted content integrity", end=" ")
         if calculate_hash(encrypted_data) != encrypted_hash:
+            print("❌")  # Red X symbol
             raise ValueError("Encrypted data has been tampered with")
+        elif not quiet:
+            print("✅")  # Green check symbol
 
     # Generate the key from the password and salt
     if not quiet:
-        print("Generating decryption key...")
+        print("Generating decryption key ✅")  # Green check symbol)
 
     key, _, _ = generate_key(password, salt, hash_config,
                              pbkdf2_iterations, quiet, algorithm, progress=progress)
     # Decrypt the data
     if not quiet:
-        print("Decrypting content with " + algorithm)
+        print("Decrypting content with " + algorithm, end=" ")
 
     def do_decrypt():
         if algorithm == EncryptionAlgorithm.FERNET.value:
@@ -1112,12 +1142,17 @@ def decrypt_file(
     else:
         decrypted_data = do_decrypt()
 
+    if not quiet:
+        print("✅")  # Green check symbol
     # Verify the hash of decrypted data
     if original_hash:
         if not quiet:
-            print("Verifying decrypted content integrity...")
+            print("Verifying decrypted content integrity", end=" ")
         if calculate_hash(decrypted_data) != original_hash:
+            print("❌")  # Red X symbol
             raise ValueError("Decryption failed: data integrity check failed")
+        elif not quiet:
+            print("✅")  # Green check symbol
 
     # If no output file is specified, return the decrypted data
     if output_file is None:

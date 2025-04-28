@@ -1,68 +1,176 @@
-## Security Notes
+# Security Notes
 
-- Use strong, unique passwords! The security of your encrypted files depends primarily on password strength
-- For maximum security, use multiple hash algorithms and higher iteration counts
-- When encrypting files, the tool requires password confirmation to prevent typos that could lead to data loss
-- The `--random` option generates a strong password and displays it for a limited time (10 seconds)
-- Securely shredded files cannot be recovered, even with forensic tools
-- The `--overwrite` option uses secure techniques to replace the original file
-- Note that due to SSD, RAID, and file system complications, secure shredding may not completely remove all traces on some storage systems
+## Core Security Features
 
-### Memory Security
+### Password Security
 
-This tool implements several memory security features to protect sensitive data:
+- Use strong, unique passwords - the security of your encrypted files depends primarily on password strength
+- Default minimum password length is 12 characters
+- Password strength is evaluated in real-time using zxcvbn
+- Passwords are never stored on disk unencrypted
+- All password operations occur in secure memory buffers
 
-- **Secure Buffers**: Password and key material is stored in special memory buffers that are protected against swapping to disk
-- **Memory Wiping**: Sensitive information is immediately wiped from memory when no longer needed
-- **Side-Channel Protection**: Argon2i variant provides additional protection against cache-timing and other side-channel attacks
-- **Defense Against Cold Boot Attacks**: Minimizes the time sensitive data remains in memory
+### Encryption Features
 
-By default, secure memory handling is enabled. It can be disabled with `--disable-secure-memory`, but this is not recommended unless you encounter compatibility issues.
+- Uses AES-256-GCM by default for authenticated encryption
+- Supports ChaCha20-Poly1305 as an alternative cipher
+- Includes Authenticated Encryption with Associated Data (AEAD)
+- Optional compression before encryption (disabled by default for security)
 
-### Argon2 Key Derivation
+## Memory Security Implementation
 
-Argon2 is a state-of-the-art password hashing algorithm designed to be:
+### Secure Memory Management
 
-- **Memory-Hard**: Requires significant amounts of memory to compute, making hardware-based attacks difficult
-- **Time-Tunable**: Configurable time cost to scale with available resources
-- **Parallelism-Aware**: Can leverage multiple CPU cores for better performance
+- **Protected Memory Buffers**: All sensitive data (passwords, keys) stored in locked memory
+- **Immediate Wiping**: Zero-fill memory immediately after use
+- **Swap Prevention**: Memory pages locked to prevent swapping to disk
+- **Side-Channel Mitigation**: Constant-time operations for sensitive comparisons
+- **Cold Boot Attack Protection**: Minimizes sensitive data lifetime in memory
 
-Three variants are supported:
-- **argon2d**: Provides the highest resistance against GPU cracking attempts (uses data-dependent memory access)
-- **argon2i**: Provides resistance against side-channel attacks (uses data-independent memory access)
-- **argon2id**: A hybrid approach offering good protection against both GPU and side-channel attacks (default)
+## Key Derivation Security
 
-## How It Works
+### Multi-Layer Key Derivation
 
-### Encryption Process
+1. **Primary KDF**: Argon2id (default), Argon2i, or Argon2d
+2. **Secondary KDF Options**:
+   - PBKDF2-HMAC-SHA512
+   - Scrypt
+   - Balloon Hashing
+3. **Additional Hash Functions**:
+   - SHA-256/512
+   - SHA3-256/512
+   - BLAKE2b/BLAKE3
+   - Whirlpool
 
-1. Generate a cryptographic key from your password using:
-   - Optional multi-layer password hashing (SHA-256/512, SHA3-256/512, Whirlpool, Scrypt)
-   - Final PBKDF2 key derivation
-   - Optional Argon2 memory-hard key derivation
-2. Encrypt the file using Fernet (AES-128-CBC with HMAC)
-3. Store encryption parameters and file integrity hash in the file header
+### Argon2 Configuration
 
-### Secure Shredding Process
+Default parameters:
+- Memory: 1GB
+- Iterations: 3
+- Parallelism: 4
+- Hash length: 32 bytes
 
-1. Overwrite the file's contents multiple times with:
-   - Random data
-   - All 1's (0xFF)
-   - All 0's (0x00)
-2. Truncate the file to zero bytes
-3. Delete the file from the filesystem
+Customizable via:
+```bash
+python crypt.py encrypt -i file.txt \
+    --enable-argon2 \
+    --argon2-memory 2097152 \
+    --argon2-time 4 \
+    --argon2-parallelism 8 \
+    --argon2-type id
+```
 
-### Password Generation Process
+## File Security Features
 
-1. Creates a cryptographically secure random password using the system's secure random number generator
-2. Ensures inclusion of selected character types (lowercase, uppercase, digits, special characters)
-3. Shuffles the password to avoid predictable patterns
-4. Displays the password with a countdown timer
-5. Securely clears the password from the screen after timeout or user interruption
+### Secure File Operations
 
-### Memory-Secure Processing
+- Atomic write operations for file integrity
+- Temporary files are encrypted
+- Secure file deletion with multiple passes
+- Directory permissions verification
+- Backup creation before modifications (optional)
 
-1. All sensitive data (passwords, encryption keys) is isolated in protected memory areas
-2. When sensitive operations complete, memory is securely wiped with zeros
-3. Temporary buffers are allocated and freed as needed to minimize exposure
-4. The tool implements defense-in-depth with multiple memory protection techniques
+### Secure Shredding Implementation
+
+Multi-pass overwrite sequence:
+1. Random data (cryptographically secure)
+2. Alternating patterns (0xFF, 0x00)
+3. Final zero-fill pass
+4. File truncation
+5. Filesystem deletion
+
+```bash
+# Maximum security shredding
+python crypt.py shred -i sensitive.txt --shred-passes 35 --verify
+
+# Directory recursive shredding
+python crypt.py shred -i secret_folder/ -r --shred-passes 7
+```
+
+## Random Number Generation
+
+- Uses operating system's cryptographic RNG
+- Implements additional entropy gathering
+- Supports hardware RNG when available
+- Fallback to software CSPRNG if needed
+
+### Password Generation
+
+```bash
+# Generate strong random password
+python crypt.py generate-password --length 24 --all-chars
+
+# Custom character set password
+python crypt.py generate-password --length 20 --no-special
+```
+
+## Template-Based Security Profiles
+
+### Available Templates
+
+1. **quick**: Balanced security for regular use
+   - Argon2id (512MB RAM, 2 iterations)
+   - Single-layer key derivation
+
+2. **standard** (default): Strong security
+   - Argon2id (1GB RAM, 3 iterations)
+   - PBKDF2 secondary KDF
+   - BLAKE3 file hashing
+
+3. **paranoid**: Maximum security
+   - Argon2id (2GB RAM, 4 iterations)
+   - Multiple KDF layers
+   - All available hash functions
+   - Secure memory level: maximum
+
+```bash
+# Use paranoid template
+python crypt.py encrypt -i critical.dat --template paranoid
+```
+
+## Security Considerations
+
+### Storage System Limitations
+
+- SSD wear leveling may retain old data
+- RAID systems may have multiple copies
+- File system journaling may preserve fragments
+- Cloud storage may create automatic backups
+
+### Recommendations
+
+1. **Password Management**:
+   - Use generated passwords when possible
+   - Store passwords securely (password manager)
+   - Change passwords regularly
+   - Never reuse passwords
+
+2. **File Handling**:
+   - Verify encryption success before deleting originals
+   - Use `--verify` option for critical files
+   - Keep secure backups of encrypted files
+   - Test decryption process regularly
+
+3. **System Security**:
+   - Keep system and tool updated
+   - Use full-disk encryption
+   - Monitor system logs
+   - Maintain secure backups
+
+## Emergency Procedures
+
+### Data Compromise Response
+
+1. Immediately revoke compromised passwords
+2. Re-encrypt affected files with new passwords
+3. Verify secure deletion of old files
+4. Document incident and review security measures
+
+### Recovery Process
+
+1. Maintain encrypted backups
+2. Test recovery procedures regularly
+3. Document all encryption parameters
+4. Store recovery information securely
+
+For additional security information or to report security issues, please use the project's security contact channels.
