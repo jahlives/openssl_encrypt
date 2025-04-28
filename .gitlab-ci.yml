@@ -5,11 +5,11 @@ default:
       - .pip-cache/
   before_script:
     - python3 --version
-    - apk add git
     - pip install --upgrade pip --break-system-packages
     - pip install build twine PyYAML --break-system-packages
 
 stages:
+  - sync
   - prepare
   - test
   - build
@@ -20,7 +20,8 @@ variables:
 
 
 sync-wiki:
-  stage: prepare
+  stage: sync
+  image: alpine/git:latest
   script:
     - git clone https://oauth2:${PROJECT_ACCESS_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.wiki.git wiki
     - cp -r openssl_encrypt/docs/* wiki/
@@ -31,8 +32,9 @@ sync-wiki:
     - git diff-index --quiet HEAD || git commit -m "Update wiki from docs folder"
     - git push
   rules:
-    - when: manual
-      allow_failure: true
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_COMMIT_BRANCH == "dev"
 
 test:
   stage: test
