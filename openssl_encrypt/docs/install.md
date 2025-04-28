@@ -94,7 +94,7 @@ and verify first that the file can be decrypted.
 You can verify the installation by running:
 
 ```bash
-python -m openssl_encrypt --version
+python -m openssl_encrypt version
 ```
 
 ### Troubleshooting
