@@ -33,8 +33,7 @@ def generate_strong_password(
         use_lowercase=True,
         use_uppercase=True,
         use_digits=True,
-        use_special=True,
-        use_secure_mem=True):
+        use_special=True):
     """
     Generate a cryptographically strong random password with customizable character sets.
 
@@ -44,7 +43,6 @@ def generate_strong_password(
         use_uppercase (bool): Include uppercase letters
         use_digits (bool): Include digits
         use_special (bool): Include special characters
-        use_secure_mem (bool): Whether to use secure memory handling
 
     Returns:
         str: The generated password
@@ -86,51 +84,38 @@ def generate_strong_password(
         required_chars = required_chars[:length]
 
     # Use secure memory if enabled
-    if use_secure_mem:
-        try:
-            from .secure_memory import SecureBytes, secure_memzero
+    try:
+        from .secure_memory import SecureBytes, secure_memzero
 
-            # Use SecureBytes for generating the password
-            password_chars = SecureBytes()
+        # Use SecureBytes for generating the password
+        password_chars = SecureBytes()
 
-            # Add all required characters
-            password_chars.extend([ord(c) for c in required_chars])
+        # Add all required characters
+        password_chars.extend([ord(c) for c in required_chars])
 
-            # Fill remaining length with random characters from the pool
-            remaining_length = length - len(required_chars)
-            for _ in range(remaining_length):
-                password_chars.append(ord(random.choice(char_pool)))
-
-            # Shuffle to ensure required characters aren't in predictable positions
-            # Use Fisher-Yates algorithm for in-place shuffle
-            for i in range(len(password_chars) - 1, 0, -1):
-                j = random.randrange(i + 1)
-                password_chars[i], password_chars[j] = password_chars[j], password_chars[i]
-
-            # Convert to string
-            password = ''.join(chr(c) for c in password_chars)
-
-            # Clean up the secure byte array
-            secure_memzero(password_chars)
-
-            return password
-
-        except ImportError:
-            # Fall back to standard approach if secure_memory is not available
-            use_secure_mem = False
-
-    # Standard approach without secure memory
-    if not use_secure_mem:
         # Fill remaining length with random characters from the pool
         remaining_length = length - len(required_chars)
-        password_chars = required_chars + \
-            [random.choice(char_pool) for _ in range(remaining_length)]
+        for _ in range(remaining_length):
+            password_chars.append(ord(random.choice(char_pool)))
 
         # Shuffle to ensure required characters aren't in predictable positions
-        random.shuffle(password_chars)
+        # Use Fisher-Yates algorithm for in-place shuffle
+        for i in range(len(password_chars) - 1, 0, -1):
+            j = random.randrange(i + 1)
+            password_chars[i], password_chars[j] = password_chars[j], password_chars[i]
 
-        return ''.join(password_chars)
+        # Convert to string
+        password = ''.join(chr(c) for c in password_chars)
 
+        # Clean up the secure byte array
+        secure_memzero(password_chars)
+
+        return password
+
+    except ImportError:
+        # Fall back to standard approach if secure_memory is not available
+        print("Secure memory module not found, cannot generate strong password.")
+        return False
 
 def display_password_with_timeout(password, timeout_seconds=10):
     """
