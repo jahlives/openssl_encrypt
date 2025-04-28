@@ -21,15 +21,16 @@ variables:
 
 sync-wiki:
   stage: sync
-  image: alpine/git:latest
+  image: bitnami/git:latest
   script:
-    - /usr/bin/sh -c "git clone https://oauth2:${PROJECT_ACCESS_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.wiki.git wiki"
-    - /usr/bin/sh -c "cp -r openssl_encrypt/docs/* wiki/"
-    - /usr/bin/sh -c "cd wiki && git config --global user.email 'pipeline@rm-rf.ch'"
-    - /usr/bin/sh -c "cd wiki && git config --global user.name 'GitLab Pipeline'"
-    - /usr/bin/sh -c "cd wiki && git add ."
-    - /usr/bin/sh -c "cd wiki && git diff-index --quiet HEAD || git commit -m 'Update wiki from docs folder'"
-    - /usr/bin/sh -c "cd wiki && git push"
+    - git clone https://oauth2:${PROJECT_ACCESS_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.wiki.git wiki
+    - cp -r openssl_encrypt/docs/* wiki/
+    - cd wiki
+    - git config --global user.email "pipeline@rm-rf.ch"
+    - git config --global user.name "GitLab Pipeline"
+    - git add .
+    - git diff-index --quiet HEAD || git commit -m "Update wiki from docs folder"
+    - git push
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_BRANCH == "release"
