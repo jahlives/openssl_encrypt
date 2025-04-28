@@ -5,6 +5,7 @@ default:
       - .pip-cache/
   before_script:
     - python3 --version
+    - apk add git
     - pip install --upgrade pip --break-system-packages
     - pip install build twine PyYAML --break-system-packages
 
