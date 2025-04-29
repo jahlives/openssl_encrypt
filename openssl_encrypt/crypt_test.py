@@ -15,10 +15,8 @@ import argparse
 import shutil
 from pathlib import Path
 
-# Add the parent directory to the sys.path to allow importing the modules
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from openssl_encrypt.modules.crypt_core import (
+# Import from the modules package directly since we're within the openssl_encrypt package
+from .modules.crypt_core import (
     encrypt_file, decrypt_file, EncryptionAlgorithm,
     generate_key, multi_hash_password, string_entropy
 )
