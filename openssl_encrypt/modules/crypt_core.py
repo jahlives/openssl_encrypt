@@ -496,6 +496,7 @@ def multi_hash_password(
         - SHA-512
         - SHA3-256
         - SHA3-512
+        - BLAKE2b
         - Whirlpool
         - Scrypt (memory-hard function)
         - Argon2 (memory-hard function, winner of PHC)
@@ -617,6 +618,26 @@ def multi_hash_password(
                             KeyStretch.hash_stretch = True
                         if not quiet and not progress:
                             print("✅")
+                
+                elif algorithm == 'blake2b' and params > 0:
+                    if not quiet and not progress:
+                        print(f"Applying {params} rounds of BLAKE2b", end=" ")
+                    elif not quiet:
+                        print(f"Applying {params} rounds of BLAKE2b")
+                    # BLAKE2b produces 64 bytes by default
+                    with secure_buffer(64, zero=False) as hash_buffer:
+                        for i in range(params):
+                            # Use salt for key to enhance security
+                            # Note: key parameter is optional and limited to 64 bytes
+                            key_material = hashlib.sha256(salt + str(i).encode()).digest()
+                            # Create a personalized BLAKE2b instance for each iteration
+                            result = hashlib.blake2b(hashed, key=key_material[:32], digest_size=64).digest()
+                            secure_memcpy(hash_buffer, result)
+                            secure_memcpy(hashed, hash_buffer)
+                            show_progress("BLAKE2b", i + 1, params)
+                            KeyStretch.hash_stretch = True
+                        if not quiet and not progress:
+                            print("✅")
 
                 elif algorithm == 'whirlpool' and params > 0:
                     if not quiet and WHIRLPOOL_AVAILABLE and not progress:
@@ -733,7 +754,7 @@ def generate_key(
     # etc.)
     has_hash_iterations = hash_config and any(
         hash_config.get(algo, 0) > 0 for algo in
-        ['sha256', 'sha512', 'sha3_256', 'sha3_512', 'whirlpool']
+        ['sha256', 'sha512', 'sha3_256', 'sha3_512', 'blake2b', 'whirlpool']
     ) or (hash_config and hash_config.get('scrypt', {}).get('n', 0) > 0)
 
     if has_hash_iterations:
@@ -1547,7 +1568,7 @@ def get_organized_hash_config(hash_config, encryption_algo=None, salt=None):
 
     # Define which algorithms are KDFs and which are hashes
     kdf_algorithms = ['scrypt', 'argon2', 'balloon', 'pbkdf2_iterations']
-    hash_algorithms = ['sha3_512', 'sha3_256', 'sha512', 'sha256', 'whirlpool']
+    hash_algorithms = ['sha3_512', 'sha3_256', 'sha512', 'sha256', 'blake2b', 'whirlpool']
 
     # Organize the config
     for algo, params in hash_config.items():
