@@ -24,6 +24,8 @@ DEFAULT_CONFIG = {
     'sha256': 0,
     'sha3_256': 10000,  # Enable SHA3-256 by default with 10000 iterations
     'sha3_512': 0,
+    'blake2b': 0,       # BLAKE2b hash function with default of 0 iterations
+    'shake256': 0,      # SHAKE-256 hash function with default of 0 iterations
     'whirlpool': 0,
     # Scrypt parameters
     'scrypt': {
@@ -147,6 +149,37 @@ class SettingsTab:
             row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(hash_frame, text="(0 to disable)").grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
 
+        # BLAKE2b - Modern cryptographic hash function
+        row += 1
+        ttk.Label(hash_frame, text="BLAKE2b rounds:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
+        self.hash_vars['blake2b'] = tk.IntVar(value=self.config['blake2b'])
+        ttk.Entry(hash_frame, textvariable=self.hash_vars['blake2b'], width=10).grid(
+            row=row, column=1, sticky=tk.W, padx=5, pady=5)
+        blake2b_help = ttk.Label(hash_frame, text="(Modern, high-performance hash)", foreground="blue")
+        blake2b_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        
+        # Add tooltip for BLAKE2b
+        self.create_tooltip(blake2b_help,
+                           "BLAKE2b is a cryptographic hash function faster than MD5, SHA-1, SHA-2, and SHA-3, "
+                           "yet is at least as secure as the latest standard SHA-3. It's widely used in modern "
+                           "cryptographic applications and provides 512-bit output.")
+
+        # SHAKE-256 - Extendable-output function (XOF)
+        row += 1
+        ttk.Label(hash_frame, text="SHAKE-256 rounds:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
+        self.hash_vars['shake256'] = tk.IntVar(value=self.config['shake256'])
+        ttk.Entry(hash_frame, textvariable=self.hash_vars['shake256'], width=10).grid(
+            row=row, column=1, sticky=tk.W, padx=5, pady=5)
+        shake256_help = ttk.Label(hash_frame, text="(SHA-3 family extendable-output function)", foreground="blue")
+        shake256_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        
+        # Add tooltip for SHAKE-256
+        self.create_tooltip(shake256_help,
+                           "SHAKE-256 is an extendable-output function (XOF) from the SHA-3 family. "
+                           "It can generate outputs of any desired length, making it highly versatile. "
+                           "In this implementation, it produces 64 bytes (512 bits) of output for "
+                           "consistency with other hash functions.")
+
         # Whirlpool
         row += 1
         ttk.Label(hash_frame, text="Whirlpool rounds:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
@@ -168,15 +201,27 @@ class SettingsTab:
         scrypt_frame.pack(fill=tk.X, expand=True, padx=10, pady=5)
 
         self.scrypt_vars = {}
+        
+        # Enable Scrypt
+        row = 0
+        self.scrypt_vars['enabled'] = tk.BooleanVar(value=self.config['scrypt']['enabled'])
+        scrypt_enable = ttk.Checkbutton(scrypt_frame, text="Enable Scrypt", variable=self.scrypt_vars['enabled'])
+        scrypt_enable.grid(row=row, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5)
+        
+        # Add tooltip for Scrypt
+        self.create_tooltip(scrypt_enable,
+                          "Scrypt is a memory-hard key derivation function designed to be resistant to "
+                          "hardware attacks. It requires significant memory resources, making it "
+                          "particularly effective against GPU-based attacks.")
 
         # CPU/Memory cost factor (N)
-        row = 0
+        row += 1
         ttk.Label(scrypt_frame, text="CPU/Memory cost (N):").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
         self.scrypt_vars['n'] = tk.IntVar(value=self.config['scrypt']['n'])
-        n_values = [0, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576]
+        n_values = [1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576]
         n_combo = ttk.Combobox(scrypt_frame, textvariable=self.scrypt_vars['n'], values=n_values, width=10)
         n_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
-        ttk.Label(scrypt_frame, text="(0 to disable, must be power of 2)").grid(
+        ttk.Label(scrypt_frame, text="(must be power of 2, 16384 is standard)").grid(
             row=row, column=2, sticky=tk.W, padx=5, pady=5)
 
         # Block size (r)
@@ -457,6 +502,8 @@ class SettingsTab:
                 'sha256': 0,
                 'sha3_256': 10000,  # Added SHA3-256 as a primary hash
                 'sha3_512': 0,
+                'blake2b': 0,       # No BLAKE2b in standard preset
+                'shake256': 0,      # No SHAKE-256 in standard preset  
                 'whirlpool': 0,
                 'scrypt': {
                     'n': 16384,
@@ -488,6 +535,8 @@ class SettingsTab:
                 'sha256': 0,
                 'sha3_256': 20000,  # Added higher SHA3-256 iteration count
                 'sha3_512': 5000,
+                'blake2b': 10000,   # Added BLAKE2b for high security preset
+                'shake256': 0,      # No SHAKE-256 in high security preset
                 'whirlpool': 0,
                 'scrypt': {
                     'n': 65536,
@@ -519,6 +568,8 @@ class SettingsTab:
                 'sha256': 10000,
                 'sha3_256': 50000,  # Higher SHA3-256 iterations for paranoid preset
                 'sha3_512': 10000,
+                'blake2b': 20000,   # Add BLAKE2b for paranoid preset
+                'shake256': 15000,  # Add SHAKE-256 for paranoid preset 
                 'whirlpool': 5000,
                 'scrypt': {
                     'n': 262144,
@@ -550,6 +601,8 @@ class SettingsTab:
                 'sha256': 0,
                 'sha3_256': 0,
                 'sha3_512': 0,
+                'blake2b': 0,       # No BLAKE2b in legacy preset
+                'shake256': 0,      # No SHAKE-256 in legacy preset
                 'whirlpool': 0,
                 'scrypt': {
                     'n': 0,
@@ -690,8 +743,10 @@ class SettingsTab:
             self.hash_vars['sha256'].get() == 0 and
             self.hash_vars['sha3_256'].get() == 0 and
             self.hash_vars['sha3_512'].get() == 0 and
+            self.hash_vars['blake2b'].get() == 0 and
+            self.hash_vars['shake256'].get() == 0 and
             self.hash_vars['whirlpool'].get() == 0 and
-            self.scrypt_vars['n'].get() == 0 and
+            (not self.scrypt_vars['enabled'].get()) and
             (not self.argon2_vars['enabled'].get()) and
             (not self.balloon_vars['enabled'].get())
         )
@@ -807,8 +862,10 @@ class SettingsTab:
             "Based on your current settings, here's a rough performance estimate:\n\n"
             "SHA-512: {sha512} rounds\n"
             "SHA-256: {sha256} rounds\n"
-            "SHA3-256: {sha3_256} rounds {sha3_recommended}\n"  # Added recommendation indicator
+            "SHA3-256: {sha3_256} rounds {sha3_recommended}\n"
             "SHA3-512: {sha3_512} rounds\n"
+            "BLAKE2b: {blake2b} rounds {blake2b_recommended}\n"
+            "SHAKE-256: {shake256} rounds {shake256_recommended}\n"
             "Whirlpool: {whirlpool} rounds\n"
             "Scrypt: {scrypt_enabled} (N={scrypt_n}, r={scrypt_r}, p={scrypt_p}, rounds={scrypt_rounds})\n"
             "Argon2: {argon2_enabled} (t={argon2_t}, m={argon2_m}KB, p={argon2_p}, rounds={argon2_rounds})\n"
@@ -822,8 +879,16 @@ class SettingsTab:
             sha3_recommended="★ (recommended)" if self.config[
                                                       'sha3_256'] > 0 else "- consider enabling for better security",
             sha3_512=self.config['sha3_512'],
+            # Add BLAKE2b with recommendation
+            blake2b=self.config['blake2b'],
+            blake2b_recommended="★ (high performance)" if self.config[
+                                                      'blake2b'] > 0 else "",
+            # Add SHAKE-256 with recommendation
+            shake256=self.config['shake256'],
+            shake256_recommended="★ (variable-length output)" if self.config[
+                                                      'shake256'] > 0 else "",
             whirlpool=self.config['whirlpool'],
-            scrypt_enabled="Enabled" if self.config['scrypt']['n'] > 0 else "Disabled",
+            scrypt_enabled="Enabled" if self.config['scrypt']['enabled'] else "Disabled",
             scrypt_n=self.config['scrypt']['n'],
             scrypt_r=self.config['scrypt']['r'],
             scrypt_p=self.config['scrypt']['p'],
@@ -875,6 +940,10 @@ class SettingsTab:
         # SHA3-256 is slightly more efficient than SHA-256
         score += self.config['sha3_256'] / 12000  # Adjusted weight for SHA3-256
         score += self.config['sha3_512'] / 10000
+        # BLAKE2b is significantly faster than other hash functions, adjust weight accordingly
+        score += self.config['blake2b'] / 15000   # BLAKE2b is more efficient
+        # SHAKE-256 is a bit slower than SHA3-256
+        score += self.config['shake256'] / 11000  # Adjusted weight for SHAKE-256
         score += self.config['whirlpool'] / 5000
 
         # Score PBKDF2

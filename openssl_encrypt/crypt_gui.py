@@ -30,9 +30,11 @@ except ImportError:
         'blake2b': 0,
         'shake256': 0,
         'scrypt': {
+            'enabled': False,
             'n': 16384,
             'r': 8,
-            'p': 1
+            'p': 1,
+            'rounds': 100
         },
         'argon2': {
             'enabled': False,
