@@ -517,17 +517,21 @@ class TestCryptCore(unittest.TestCase):
     def test_decrypt_stdin(self):
         from openssl_encrypt.modules.secure_memory import SecureBytes
         encrypted_content = (
-            b'eyJzYWx0IjogIlFzeGNkQ3UrRmp4TU5KVHdRZjlReUE9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIj'
-            b'ogMCwgInNoYTI1NiI6IDAsICJzaGEzXzI1NiI6IDAsICJzaGEzXzUxMiI6IDAsICJ3aGlybHBvb2wiOiAw'
-            b'LCAic2NyeXB0IjogeyJlbmFibGVkIjogZmFsc2UsICJuIjogMTI4LCAiciI6IDgsICJwIjogMSwgInJvdW'
-            b'5kcyI6IDF9LCAiYXJnb24yIjogeyJlbmFibGVkIjogdHJ1ZSwgInRpbWVfY29zdCI6IDMsICJtZW1vcnlf'
-            b'Y29zdCI6IDY1NTM2LCAicGFyYWxsZWxpc20iOiA0LCAiaGFzaF9sZW4iOiA2NCwgInR5cGUiOiAyLCAic'
-            b'm91bmRzIjogMX0sICJwYmtkZjJfaXRlcmF0aW9ucyI6IDEwMDAwMCwgInR5cGUiOiAiaWQifSwgInBia2'
-            b'RmMl9pdGVyYXRpb25zIjogMTAwMDAwLCAib3JpZ2luYWxfaGFzaCI6ICJkMmE4NGY0YjhiNjUwOTM3ZWM4'
-            b'ZjczY2Q4YmUyYzc0YWRkNWE5MTFiYTY0ZGYyNzQ1OGVkODIyOWRhODA0YTI2IiwgImVuY3J5cHRlZF9oY'
-            b'XNoIjogIjU1Y2ZhMDk1MjI4ODQ2NmY2YjE1NDQyMmNiNTQzZTkyY2NlODY4MjZlMjAyODRiYWI1NDEwMD'
-            b'Y1MmRlZWFhNzYiLCAiYWxnb3JpdGhtIjogImFlcy1zaXYifQ==:dg0p7BCm2JulA33IBQrNQdCzWozU1V'
-            b'bdgdent8EmPIfTOKWSSj3B4g==')
+            b'eyJmb3JtYXRfdmVyc2lvbiI6IDIsICJzYWx0IjogInlMYy9hTi9pMjNZVXRKS09iTGtSY3c9'
+            b'PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMCwgInNoYTI1NiI6IDAsICJzaGEzXzI1'
+            b'NiI6IDAsICJzaGEzXzUxMiI6IDAsICJ3aGlybHBvb2wiOiAwLCAic2NyeXB0IjogeyJlbmFi'
+            b'bGVkIjogZmFsc2UsICJuIjogMTI4LCAiciI6IDgsICJwIjogMSwgInJvdW5kcyI6IDF9LCAi'
+            b'YXJnb24yIjogeyJlbmFibGVkIjogZmFsc2UsICJ0aW1lX2Nvc3QiOiAzLCAibWVtb3J5X2Nv'
+            b'c3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgImhhc2hfbGVuIjogMzIsICJ0eXBlIjog'
+            b'MiwgInJvdW5kcyI6IDF9LCAiYmFsbG9vbiI6IHsiZW5hYmxlZCI6IGZhbHNlLCAidGltZV9j'
+            b'b3N0IjogMywgInNwYWNlX2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgInJvdW5k'
+            b'cyI6IDJ9LCAicGJrZGYyX2l0ZXJhdGlvbnMiOiAxMDAwMDAsICJ0eXBlIjogImlkIn0sICJw'
+            b'YmtkZjJfaXRlcmF0aW9ucyI6IDEwMDAwMCwgIm9yaWdpbmFsX2hhc2giOiAiZDJhODRmNGI4'
+            b'YjY1MDkzN2VjOGY3M2NkOGJlMmM3NGFkZDVhOTExYmE2NGRmMjc0NThlZDgyMjlkYTgwNGEy'
+            b'NiIsICJlbmNyeXB0ZWRfaGFzaCI6ICIwMzU5ZDg5ODkwOWNjY2Q3NzAwZjZiODk0ZmYwM2Uw'
+            b'YjYzZTliOGU1YzY4MzgwZTgxMTdhYTZkNDhjMzk1NTMxIiwgImFsZ29yaXRobSI6ICJhZXMt'
+            b'c2l2In0=:zI27UMfSdjt5lCePUg4X26DRGHqtuMBZyoD3Y9kKh1hGhkAlbuNN8+HdDnw='
+        )
         mock_file = BytesIO(encrypted_content)
 
         def mock_open(file, mode='r'):
@@ -605,7 +609,8 @@ class TestCryptCore(unittest.TestCase):
             b"ODAyN2NjODhlNzFhMTk3MGVjMjZkYjQ4ZjJjOTI3YzU4MjQyYTNiYjQ3ZDNmOGU5OCIs"
             b"ICJhbGdvcml0aG0iOiAiZmVybmV0In0=:Z0FBQUFBQm9DZlBGOERJZllnel9WZGZGUVlX"
             b"RUJocUF5T2l6MndITkxCblgwWEo1ZXIwY2tGUG81RXcxM1BIQWJ0VUY3WkVHeUZ3S2Fz"
-            b"Mi1FMlNzYU90MUF3bnRRcDBqRkE9PQ==")
+            b"Mi1FMlNzYU90MUF3bnRRcDBqRkE9PQ=="
+        )
         mock_file = BytesIO(encrypted_content)
 
         def mock_open(file, mode='r'):
@@ -669,21 +674,21 @@ class TestCryptCore(unittest.TestCase):
     def test_decrypt_stdin_standard(self):
         from openssl_encrypt.modules.secure_memory import SecureBytes
         encrypted_content = (
-            b"eyJmb3JtYXRfdmVyc2lvbiI6IDIsICJzYWx0IjogIlh6MGV4TGVsTVIzcERYOENLaXU5"
-            b"TVE9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMCwgInNoYTI1NiI6IDAsICJz"
+            b"eyJmb3JtYXRfdmVyc2lvbiI6IDIsICJzYWx0IjogInE3MUh1R2xUOXhjRGhrMkFDMjZI"
+            b"bGc9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMCwgInNoYTI1NiI6IDAsICJz"
             b"aGEzXzI1NiI6IDAsICJzaGEzXzUxMiI6IDEwMDAwMDAsICJ3aGlybHBvb2wiOiAwLCAi"
             b"c2NyeXB0IjogeyJlbmFibGVkIjogdHJ1ZSwgIm4iOiAxMjgsICJyIjogOCwgInAiOiAx"
-            b"LCAicm91bmRzIjogMTAwMDB9LCAiYXJnb24yIjogeyJlbmFibGVkIjogdHJ1ZSwgInRp"
-            b"bWVfY29zdCI6IDMsICJtZW1vcnlfY29zdCI6IDY1NTM2LCAicGFyYWxsZWxpc20iOiA0"
-            b"LCAiaGFzaF9sZW4iOiAzMiwgInR5cGUiOiAyLCAicm91bmRzIjogMTAwfSwgInBia2Rm"
-            b"Ml9pdGVyYXRpb25zIjogMCwgInR5cGUiOiAiaWQiLCAiYWxnb3JpdGhtIjogImFlcy1n"
-            b"Y20ifSwgInBia2RmMl9pdGVyYXRpb25zIjogMCwgIm9yaWdpbmFsX2hhc2giOiAiZDJh"
-            b"ODRmNGI4YjY1MDkzN2VjOGY3M2NkOGJlMmM3NGFkZDVhOTExYmE2NGRmMjc0NThlZDgy"
-            b"MjlkYTgwNGEyNiIsICJlbmNyeXB0ZWRfaGFzaCI6ICI4MzA0ODJlNDRlYTdhNWUxMjNj"
-            b"NDFiYzM3NWQzYzAyMWE2NjM5NTlmNThhMDE3MjA2ODBlOTU4MWNhYzA0ODJlIiwgImFs"
-            b"Z29yaXRobSI6ICJmZXJuZXQifQ==:Z0FBQUFBQm9DZk95czEteGQwVnFENmFndVpCenpi"
-            b"U1RpMFpoeUNkWHhNMFM5ZXNtdEEwMzFUUjM5cS14bTZiWEhhUzF2V0NsU1ZYVmZBNnRf"
-            b"ZzYxeTlzVEdMZ0o2UGNSUGc9PQ==")
+            b"LCAicm91bmRzIjogMTAwMH0sICJhcmdvbjIiOiB7ImVuYWJsZWQiOiB0cnVlLCAidGlt"
+            b"ZV9jb3N0IjogMywgIm1lbW9yeV9jb3N0IjogNjU1MzYsICJwYXJhbGxlbGlzbSI6IDQs"
+            b"ICJoYXNoX2xlbiI6IDMyLCAidHlwZSI6IDIsICJyb3VuZHMiOiAxMDB9LCAicGJrZGYy"
+            b"X2l0ZXJhdGlvbnMiOiAwLCAidHlwZSI6ICJpZCIsICJhbGdvcml0aG0iOiAiYWVzLWdj"
+            b"bSJ9LCAicGJrZGYyX2l0ZXJhdGlvbnMiOiAwLCAib3JpZ2luYWxfaGFzaCI6ICJkMmE4"
+            b"NGY0YjhiNjUwOTM3ZWM4ZjczY2Q4YmUyYzc0YWRkNWE5MTFiYTY0ZGYyNzQ1OGVkODIy"
+            b"OWRhODA0YTI2IiwgImVuY3J5cHRlZF9oYXNoIjogIjNjZjRmZDJmOGQ4NTExYmIxNmVl"
+            b"Y2YyYmEyYzEyOTg3ZTMwOGNkNWUxNmVmYzE3MzhmMzZiNDRmMThjNjI3M2IiLCAiYWxn"
+            b"b3JpdGhtIjogImFlcy1nY20ifQ==:JvcGpHD2st2uXCaDo/odw8CTQUXpWvkCmcjnqCxf"
+            b"CxJRBJE3OkKxUQ=="
+        )
         mock_file = BytesIO(encrypted_content)
 
         def mock_open(file, mode='r'):
@@ -747,23 +752,23 @@ class TestCryptCore(unittest.TestCase):
     def test_decrypt_stdin_paranoid(self):
         from openssl_encrypt.modules.secure_memory import SecureBytes
         encrypted_content = (
-            b"eyJmb3JtYXRfdmVyc2lvbiI6IDIsICJzYWx0IjogIjZCcWJUNG5PNVFGVXZMSHlqTlBB"
-            b"QUE9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMTAwMDAsICJzaGEyNTYiOiAx"
+            b"eyJmb3JtYXRfdmVyc2lvbiI6IDIsICJzYWx0IjogInFvTGpTR2p2Y3BFeHBCNEtMQTlI"
+            b"UXc9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMTAwMDAsICJzaGEyNTYiOiAx"
             b"MDAwMCwgInNoYTNfMjU2IjogMTAwMDAsICJzaGEzXzUxMiI6IDIwMDAwMDAsICJzY3J5"
             b"cHQiOiB7ImVuYWJsZWQiOiB0cnVlLCAibiI6IDI1NiwgInIiOiAxNiwgInAiOiAyLCAi"
             b"cm91bmRzIjogMjAwMDB9LCAiYXJnb24yIjogeyJlbmFibGVkIjogdHJ1ZSwgInRpbWVf"
             b"Y29zdCI6IDQsICJtZW1vcnlfY29zdCI6IDEzMTA3MiwgInBhcmFsbGVsaXNtIjogOCwg"
-            b"Imhhc2hfbGVuIjogMzIsICJ0eXBlIjogMiwgInJvdW5kcyI6IDIwMH0sICJiYWxsb29u"
+            b"Imhhc2hfbGVuIjogNjQsICJ0eXBlIjogMiwgInJvdW5kcyI6IDIwMH0sICJiYWxsb29u"
             b"IjogeyJlbmFibGVkIjogdHJ1ZSwgInRpbWVfY29zdCI6IDMsICJzcGFjZV9jb3N0Ijog"
-            b"NjU1MzYsICJwYXJhbGxlbGlzbSI6IDQsICJoYXNoX2xlbiI6IDMyLCAicm91bmRzIjog"
+            b"NjU1MzYsICJwYXJhbGxlbGlzbSI6IDQsICJoYXNoX2xlbiI6IDY0LCAicm91bmRzIjog"
             b"NX0sICJwYmtkZjJfaXRlcmF0aW9ucyI6IDAsICJ0eXBlIjogImlkIiwgImFsZ29yaXRo"
             b"bSI6ICJhZXMtc2l2In0sICJwYmtkZjJfaXRlcmF0aW9ucyI6IDAsICJvcmlnaW5hbF9o"
             b"YXNoIjogImQyYTg0ZjRiOGI2NTA5MzdlYzhmNzNjZDhiZTJjNzRhZGQ1YTkxMWJhNjRk"
-            b"ZjI3NDU4ZWQ4MjI5ZGE4MDRhMjYiLCAiZW5jcnlwdGVkX2hhc2giOiAiMzY4Y2QxYzhm"
-            b"ZGU3ZTQ4YjQ3NDYyOGUzOTcwZjRlYzY3YTQyMDhiMjlhM2ViMWNjMDA5YWJhMTM0Njc0"
-            b"N2NlNCIsICJhbGdvcml0aG0iOiAiZmVybmV0In0=:Z0FBQUFBQm9DZlFrX1dlXzFiWlpO"
-            b"WVR1aWRGY0JoWUJwNGd3aVkteTNiNmxuOTQ4VjlQSE5fWWVVSEpZLVRrb0xqb1pzTXl2"
-            b"TkJidVE2UDZTSWdqallTcnBnNWw0QzBBSUE9PQ==")
+            b"ZjI3NDU4ZWQ4MjI5ZGE4MDRhMjYiLCAiZW5jcnlwdGVkX2hhc2giOiAiMGRkOWNhMzJh"
+            b"MTNkZTU5MTgzMjhiYWIyMWVmNjkyOWIyNzVkY2JkNTAzNWFiNjhlZTZjZTUxNDU3NWRl"
+            b"MGIwZCIsICJhbGdvcml0aG0iOiAiYWVzLXNpdiJ9:fFNXoUdLA44nNsfL0zmDOoD+HoV3"
+            b"50qzOsug0u9ah0jlH/CoCJjBfuwUQps="
+        )
         mock_file = BytesIO(encrypted_content)
 
         def mock_open(file, mode='r'):
