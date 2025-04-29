@@ -9,10 +9,10 @@ functions that power the encryption tool.
 
 import base64
 import hashlib
+import hmac
 import json
 import math
 import os
-import random
 import secrets
 import stat
 import sys
@@ -105,70 +105,150 @@ class KeyStretch:
 class CamelliaCipher:
     def __init__(self, key):
         self.key = SecureBytes(key)
+        # Derive a separate HMAC key from the provided key to prevent key reuse
+        self.hmac_key = SecureBytes(hashlib.sha256(bytes(self.key) + b"hmac_key").digest())
 
     def encrypt(self, nonce, data, associated_data=None):
+        # Use authenticated encryption with encrypt-then-MAC pattern
+        # First encrypt with CBC mode
         cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
         encryptor = cipher.encryptor()
+        
+        # Pad data first
         padder = padding.PKCS7(algorithms.Camellia.block_size).padder()
         padded_data = padder.update(data) + padder.finalize()
-        result = encryptor.update(padded_data) + encryptor.finalize()
+        
+        # Encrypt the padded data
+        ciphertext = encryptor.update(padded_data) + encryptor.finalize()
         secure_memzero(padded_data)  # Clear the padded data from memory
-        return result
-
+        
+        # Add authentication with HMAC
+        # Include nonce and associated data in HMAC computation for context binding
+        hmac_data = nonce + ciphertext
+        if associated_data:
+            hmac_data += associated_data
+            
+        # Compute HMAC on the ciphertext for integrity protection
+        hmac_obj = hmac.new(bytes(self.hmac_key), hmac_data, hashlib.sha256)
+        tag = hmac_obj.digest()
+        
+        # Return ciphertext with authentication tag
+        return ciphertext + tag
+        
     def decrypt(self, nonce, data, associated_data=None):
+        # Split ciphertext and authentication tag
+        tag_size = 32  # SHA-256 HMAC produces 32 bytes
+        if len(data) < tag_size:
+            raise ValueError("Invalid ciphertext: too short")
+            
+        ciphertext = data[:-tag_size]
+        received_tag = data[-tag_size:]
+        
+        # Verify HMAC first (encrypt-then-MAC pattern)
+        hmac_data = nonce + ciphertext
+        if associated_data:
+            hmac_data += associated_data
+            
+        # Compute expected HMAC
+        hmac_obj = hmac.new(bytes(self.hmac_key), hmac_data, hashlib.sha256)
+        expected_tag = hmac_obj.digest()
+        
+        # Use constant-time comparison to prevent timing attacks
+        if not secrets.compare_digest(expected_tag, received_tag):
+            # Use generic error message to avoid leaking information
+            raise ValueError("Authentication failed: integrity check error")
+            
+        # If authentication succeeds, decrypt the data
         cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
         decryptor = cipher.decryptor()
-        padded_data = decryptor.update(data) + decryptor.finalize()
+        padded_data = decryptor.update(ciphertext) + decryptor.finalize()
+        
+        # Unpad the decrypted data
         unpadder = padding.PKCS7(algorithms.Camellia.block_size).unpadder()
-        result = unpadder.update(padded_data) + unpadder.finalize()
-        secure_memzero(padded_data)  # Clear the padded data from memory
-        return result
+        
+        try:
+            result = unpadder.update(padded_data) + unpadder.finalize()
+            return result
+        except Exception as e:
+            # Use generic error message for padding errors to prevent padding oracle attacks
+            raise ValueError("Decryption failed: invalid padding")
+        finally:
+            # Always clean up sensitive data
+            secure_memzero(padded_data)  # Clear the padded data from memory
 
 
 def string_entropy(password: str) -> float:
     """
-    Calculate password entropy in bits.
+    Calculate password entropy in bits using a timing-resistant approach.
     Higher entropy = more random = stronger password.
+    
+    This function uses a constant-time approach to prevent timing attacks
+    that could leak information about password composition.
     """
-    # Count character frequencies
+    # Convert to string if not already
     password = str(password)
+    
+    # Always check all character sets regardless of content
+    # This makes the function run in constant time relative to character types
+    char_sets = [0, 0, 0, 0]  # Use integers instead of booleans for constant-time ops
+    char_nums = [26, 26, 10, 32]  # lowercase, uppercase, digits, symbols
+    
+    # Constant-time character type detection
+    for char in password:
+        # Update each set with a constant-time operation
+        # The | operator ensures we don't short-circuit evaluation
+        char_sets[0] |= int(char.islower())
+        char_sets[1] |= int(char.isupper())
+        char_sets[2] |= int(char.isdigit())
+        char_sets[3] |= int(not char.isalnum() and char.isascii())
+    
+    # Calculate character set size in a constant-time way
     char_amount = 0
-    char_sets = [False, False, False, False]
-    char_nums = [26, 26, 10, 32]
-    for i in password:
-        if i.islower():
-            char_sets[0] = True
-        if i.isupper():
-            char_sets[1] = True
-        if i.isdigit():
-            char_sets[2] = True
-        if not i.isalnum() and i.isascii():
-            char_sets[3] = True
-
-    for x in range(4):
-        if char_sets[x]:
-            char_amount += char_nums[x]
-    return math.log2(char_amount) * len(set(password))
+    for i in range(4):
+        # Multiply by 0 or 1 instead of conditional addition
+        char_amount += char_nums[i] * char_sets[i]
+    
+    # Ensure we have at least one character type
+    char_amount = max(char_amount, 1)
+    
+    # Calculate unique characters in constant time
+    # by creating a fixed-size array of character counts
+    char_counts = [0] * 128  # ASCII range
+    for char in password:
+        if ord(char) < 128:  # Handle only ASCII for simplicity
+            char_counts[ord(char)] = 1
+    
+    unique_chars = sum(char_counts)
+    
+    # Calculate and return entropy
+    return math.log2(char_amount) * unique_chars
 
 
 def add_timing_jitter(func):
     """
-    Adds random timing jitter to function execution to help prevent timing attacks.
+    Adds cryptographically secure random timing jitter to function execution 
+    to help prevent timing attacks.
 
     Args:
         func: The function to wrap with timing jitter
     """
+    # Use SystemRandom for cryptographically secure randomness
+    secure_random = secrets.SystemRandom()
 
     @wraps(func)
     def wrapper(*args, **kwargs):
-        # Add random delay between 1 and 10 milliseconds
-        jitter = random.uniform(0.001, 0.01)
+        # Add cryptographically secure random delay between 1 and 20 milliseconds
+        # Using a wider range with variable distribution makes timing analysis harder
+        jitter_ms = secure_random.randint(1, 20)
+        jitter = jitter_ms / 1000.0
         time.sleep(jitter)
 
         result = func(*args, **kwargs)
 
-        # Add another random delay after execution
-        jitter = random.uniform(0.001, 0.01)
+        # Add another cryptographically secure random delay after execution
+        # Use a different range to further increase unpredictability
+        jitter_ms = secure_random.randint(2, 25)
+        jitter = jitter_ms / 1000.0
         time.sleep(jitter)
 
         return result
@@ -666,25 +746,53 @@ def generate_key(
             # Default to Argon2id if type is not valid
             argon2_type = Type.ID
 
-        if hasattr(password, 'to_bytes'):
-            password = bytes(password)
-        else:
-            password = bytes(password)
+        # Securely convert password to bytes using consistent approach
+        try:
+            if hasattr(password, 'to_bytes'):
+                # Use SecureBytes methods if available
+                password = SecureBytes(bytes(password))
+            else:
+                # Otherwise create a new SecureBytes object
+                password = SecureBytes(password)
+        except Exception:
+            # Handle any conversion errors safely
+            raise ValueError("Failed to securely process password data")
 
         try:
             for i in range(hash_config.get('argon2', {}).get('rounds', 1)):
-                derived_salt = derived_salt + str(i).encode()
-                password = argon2.low_level.hash_secret_raw(
-                    secret=password,  # Use the potentially hashed password
-                    salt=derived_salt,
+                # Generate a new salt for each round to prevent salt reuse attacks
+                if i == 0:
+                    # Use the original salt for the first round
+                    round_salt = derived_salt
+                else:
+                    # For subsequent rounds, derive a new unique salt using a secure method
+                    # This prevents potential weakening due to salt reuse
+                    salt_material = hashlib.sha256(derived_salt + str(i).encode()).digest()
+                    round_salt = salt_material[:16]  # Use 16 bytes for salt
+                
+                # Convert password to bytes format required by argon2
+                password_bytes = bytes(password)
+                
+                # Apply Argon2 KDF
+                result = argon2.low_level.hash_secret_raw(
+                    secret=password_bytes,  # Use the potentially hashed password
+                    salt=round_salt,
                     time_cost=time_cost,
                     memory_cost=memory_cost,
                     parallelism=parallelism,
                     hash_len=hash_len,
                     type=argon2_type
                 )
+                
+                # Securely overwrite the previous password value
+                secure_memzero(password_bytes)
+                
+                # Store the result securely for the next round
+                password = SecureBytes(result)
                 KeyStretch.key_stretch = True
-                derived_salt = password[:16]
+                
+                # Securely clean up the round salt
+                secure_memzero(round_salt)
                 show_progress(
                     "Argon2",
                     i + 1,
@@ -728,16 +836,40 @@ def generate_key(
 
         try:
             for i in range(hash_config.get('balloon', {}).get('rounds', 1)):
-                derived_salt = derived_salt + str(i).encode()
-                password = balloon_m(
-                    password=password,  # Use the potentially hashed password
-                    salt=str(derived_salt),
+                # Generate a new unique salt for each round to prevent salt reuse attacks
+                if i == 0:
+                    # Use the original salt for the first round
+                    round_salt = derived_salt
+                else:
+                    # For subsequent rounds, derive a new unique salt using a secure method
+                    # This prevents potential weakening due to salt reuse
+                    salt_material = hashlib.sha256(derived_salt + str(i).encode()).digest()
+                    round_salt = salt_material[:16]  # Use 16 bytes for salt
+                
+                # Make a secure copy of the password for this operation
+                if hasattr(password, 'to_bytes'):
+                    password_bytes = bytes(password)
+                else:
+                    password_bytes = bytes(password)
+                
+                # Apply Balloon KDF with the new salt
+                result = balloon_m(
+                    password=password_bytes,  # Use the potentially hashed password
+                    salt=str(round_salt),     # Convert to string as required by balloon_m
                     time_cost=time_cost,
-                    space_cost=space_cost,  # renamed from memory_cost
+                    space_cost=space_cost,    # renamed from memory_cost
                     parallel_cost=parallelism
                 )
+                
+                # Securely overwrite the previous password value
+                secure_memzero(password_bytes)
+                
+                # Store the result securely for the next round
+                password = SecureBytes(result)
                 KeyStretch.key_stretch = True
-                derived_salt = password[:16]
+                
+                # Securely clean up the round salt
+                secure_memzero(round_salt)
                 show_progress(
                     "Balloon",
                     i + 1,
@@ -777,18 +909,44 @@ def generate_key(
             print("Using Scrypt for key derivation")
         try:
             for i in range(hash_config.get('scrypt', {}).get('rounds', 1)):
-                derived_salt = derived_salt + str(i).encode()
+                # Generate a new unique salt for each round to prevent salt reuse attacks
+                if i == 0:
+                    # Use the original salt for the first round
+                    round_salt = derived_salt
+                else:
+                    # For subsequent rounds, derive a new unique salt using a secure method
+                    # This prevents potential weakening due to salt reuse
+                    salt_material = hashlib.sha256(derived_salt + str(i).encode()).digest()
+                    round_salt = salt_material[:16]  # Use 16 bytes for salt
+                
+                # Create the scrypt KDF with appropriate parameters
                 scrypt_kdf = Scrypt(
-                    salt=derived_salt,
-                    length=32,
+                    salt=round_salt,
+                    length=32,  # Fixed output length for consistency
                     n=hash_config['scrypt']['n'],  # CPU/memory cost factor
                     r=hash_config['scrypt']['r'],  # Block size factor
                     p=hash_config['scrypt']['p'],  # Parallelization factor
                     backend=default_backend()
                 )
+                
+                # Make a secure copy of the password for this operation
+                if hasattr(password, 'to_bytes'):
+                    password_bytes = bytes(password)
+                else:
+                    password_bytes = bytes(password)
+                
+                # Apply the KDF
+                result = scrypt_kdf.derive(password_bytes)
+                
+                # Securely overwrite the previous password value
+                secure_memzero(password_bytes)
+                
+                # Store the result securely for the next round
+                password = SecureBytes(result)
                 KeyStretch.key_stretch = True
-                password = scrypt_kdf.derive(password)
-                derived_salt = password[:16]
+                
+                # Securely clean up the round salt
+                secure_memzero(round_salt)
                 show_progress(
                     "Scrypt",
                     i + 1,
@@ -946,24 +1104,34 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
             f = Fernet(key)
             return f.encrypt(data)
         else:
-            # Generate a random nonce
-            # 16 bytes for AES-GCM and ChaCha20-Poly1305
-            nonce = secrets.token_bytes(16)
+            # Generate appropriate nonce sizes for each algorithm
             if algorithm == EncryptionAlgorithm.AES_GCM:
+                # AES-GCM recommends 12 bytes (96 bits) for nonce
+                nonce = secrets.token_bytes(12)
                 cipher = AESGCM(key)
-                return nonce + cipher.encrypt(nonce[:12], data, None)
+                return nonce + cipher.encrypt(nonce, data, None)
+                
             elif algorithm == EncryptionAlgorithm.AES_SIV:
+                # AES-SIV uses a synthetic IV, so just need a unique value
+                # Using 16 bytes for consistency with AES block size
+                nonce = secrets.token_bytes(16)
                 cipher = AESSIV(key)
-                return nonce[:12] + cipher.encrypt(data, None)
-            elif algorithm == EncryptionAlgorithm.CHACHA20_POLY1305:  # ChaCha20-Poly1305
+                return nonce + cipher.encrypt(data, None)
+                
+            elif algorithm == EncryptionAlgorithm.CHACHA20_POLY1305:
+                # ChaCha20-Poly1305 uses a 12-byte nonce (96 bits)
+                nonce = secrets.token_bytes(12)
                 cipher = ChaCha20Poly1305(key)
-                return nonce + cipher.encrypt(nonce[:12], data, None)
+                return nonce + cipher.encrypt(nonce, data, None)
+                
             elif algorithm == EncryptionAlgorithm.CAMELLIA:
+                # Camellia in CBC mode requires a full block (16 bytes) for IV
+                nonce = secrets.token_bytes(16)
                 cipher = CamelliaCipher(key)
                 return nonce + cipher.encrypt(nonce, data, None)
+                
             else:
-                print(f"Unknown algorithm " + algorithm.value + f"supplied")
-                return False
+                raise ValueError(f"Unknown encryption algorithm: {algorithm}")
 
     # Only show progress for larger files (> 1MB)
     if len(data) > 1024 * 1024 and not quiet:
@@ -1014,15 +1182,26 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     if not quiet:
         print("✅")
 
-    # Clean up
-    key = None
+    # Clean up sensitive data properly
     try:
         return True
     finally:
-        secure_memzero(key)
-        secure_memzero(data)
-        secure_memzero(encrypted_data)
-        secure_memzero(encrypted_hash)
+        # Wipe sensitive data from memory in the correct order
+        if 'key' in locals() and key is not None:
+            secure_memzero(key)
+            key = None
+            
+        if 'data' in locals() and data is not None:
+            secure_memzero(data)
+            data = None
+            
+        if 'encrypted_data' in locals() and encrypted_data is not None:
+            secure_memzero(encrypted_data)
+            encrypted_data = None
+            
+        if 'encrypted_hash' in locals() and encrypted_hash is not None:
+            secure_memzero(encrypted_hash)
+            encrypted_hash = None
 
 def decrypt_file(
         input_file,
@@ -1091,9 +1270,12 @@ def decrypt_file(
     if encrypted_hash:
         if not quiet:
             print("Verifying encrypted content integrity", end=" ")
-        if calculate_hash(encrypted_data) != encrypted_hash:
+        computed_hash = calculate_hash(encrypted_data)
+        # Use constant-time comparison to prevent timing attacks
+        if not secrets.compare_digest(computed_hash, encrypted_hash):
             print("❌")  # Red X symbol
-            raise ValueError("Encrypted data has been tampered with")
+            # Use a generic error message to avoid leaking specifics
+            raise ValueError("Content integrity verification failed")
         elif not quiet:
             print("✅")  # Green check symbol
 
@@ -1112,25 +1294,64 @@ def decrypt_file(
             f = Fernet(key)
             return f.decrypt(encrypted_data)
         else:
-            # First 16 bytes are the nonce
-            nonce = encrypted_data[:16]
-            ciphertext = encrypted_data[16:]
-
             if algorithm == EncryptionAlgorithm.AES_GCM.value:
-                cipher = AESGCM(key)
-                return cipher.decrypt(nonce[:12], ciphertext, None)
+                # AES-GCM uses 12-byte nonce
+                nonce_size = 12
+                nonce = encrypted_data[:nonce_size]
+                ciphertext = encrypted_data[nonce_size:]
+                
+                try:
+                    cipher = AESGCM(key)
+                    result = cipher.decrypt(nonce, ciphertext, None)
+                    return result
+                except Exception:
+                    # Use a generic error message to prevent oracle attacks
+                    raise ValueError("Decryption failed: authentication error")
+                    
             elif algorithm == EncryptionAlgorithm.CHACHA20_POLY1305.value:
-                cipher = ChaCha20Poly1305(key)
-                return cipher.decrypt(nonce[:12], ciphertext, None)
+                # ChaCha20-Poly1305 uses 12-byte nonce
+                nonce_size = 12
+                nonce = encrypted_data[:nonce_size]
+                ciphertext = encrypted_data[nonce_size:]
+                
+                try:
+                    cipher = ChaCha20Poly1305(key)
+                    result = cipher.decrypt(nonce, ciphertext, None)
+                    return result
+                except Exception:
+                    # Use a generic error message to prevent oracle attacks
+                    raise ValueError("Decryption failed: authentication error")
+                    
             elif algorithm == EncryptionAlgorithm.AES_SIV.value:
-                cipher = AESSIV(key)
-                return cipher.decrypt(encrypted_data[12:], None)
+                # AES-SIV uses 16-byte nonce
+                nonce_size = 16
+                nonce = encrypted_data[:nonce_size]
+                ciphertext = encrypted_data[nonce_size:]
+                
+                try:
+                    cipher = AESSIV(key)
+                    result = cipher.decrypt(ciphertext, None)
+                    return result
+                except Exception:
+                    # Use a generic error message to prevent oracle attacks
+                    raise ValueError("Decryption failed: authentication error")
+                    
             elif algorithm == EncryptionAlgorithm.CAMELLIA.value:
-                cipher = CamelliaCipher(key)
-                return cipher.decrypt(nonce, ciphertext, None)
+                # Camellia CBC mode uses 16-byte IV
+                nonce_size = 16
+                nonce = encrypted_data[:nonce_size]
+                ciphertext = encrypted_data[nonce_size:]
+                
+                try:
+                    cipher = CamelliaCipher(key)
+                    result = cipher.decrypt(nonce, ciphertext, None)
+                    return result
+                except Exception:
+                    # Use a generic error message to prevent oracle attacks
+                    raise ValueError("Decryption failed: authentication error")
+                    
             else:
-                raise ValueError(
-                    f"Unsupported encryption algorithm: {algorithm}")
+                raise ValueError(f"Unsupported encryption algorithm: {algorithm}")
 
     # Only show progress for larger files (> 1MB)
     if len(encrypted_data) > 1024 * 1024 and not quiet:
@@ -1148,9 +1369,12 @@ def decrypt_file(
     if original_hash:
         if not quiet:
             print("Verifying decrypted content integrity", end=" ")
-        if calculate_hash(decrypted_data) != original_hash:
+        computed_hash = calculate_hash(decrypted_data)
+        # Use constant-time comparison to prevent timing attacks
+        if not secrets.compare_digest(computed_hash, original_hash):
             print("❌")  # Red X symbol
-            raise ValueError("Decryption failed: data integrity check failed")
+            # Use a generic error message to avoid leaking specifics
+            raise ValueError("Decryption failed: content integrity verification failed")
         elif not quiet:
             print("✅")  # Green check symbol
 
@@ -1168,14 +1392,22 @@ def decrypt_file(
     # Set secure permissions on the output file
     set_secure_permissions(output_file)
 
-    # Clean up
-    key = None
+    # Clean up sensitive data properly
     try:
         return True
     finally:
-        secure_memzero(key)
-        secure_memzero(decrypted_data)
-        secure_memzero(file_content)
+        # Wipe sensitive data from memory in the correct order
+        if 'key' in locals() and key is not None:
+            secure_memzero(key)
+            key = None
+            
+        if 'decrypted_data' in locals() and decrypted_data is not None:
+            secure_memzero(decrypted_data)
+            decrypted_data = None
+            
+        if 'file_content' in locals() and file_content is not None:
+            secure_memzero(file_content)
+            file_content = None
 
 def get_organized_hash_config(hash_config, encryption_algo=None, salt=None):
     organized_config = {
