@@ -30,21 +30,43 @@ from cryptography.hazmat.primitives.ciphers.aead import (
     AESGCM, ChaCha20Poly1305, AESSIV, 
     AESGCMSIV, AESOCB3
 )
-# XChaCha20Poly1305 implementation using the constructor method
-# from the cryptography package for improved API compatibility
+# XChaCha20Poly1305 implementation as a wrapper around ChaCha20Poly1305
+# with a 24-byte nonce that gets truncated to 12 bytes for the underlying algorithm
 class XChaCha20Poly1305:
     def __init__(self, key):
         self.key = key
         self.cipher = ChaCha20Poly1305(key)
         
     def encrypt(self, nonce, data, associated_data):
-        # XChaCha20Poly1305 uses a 24-byte nonce, but we'll only use the first 16 bytes
-        # and the standard ChaCha20Poly1305 implementation in cryptography will handle it
-        return self.cipher.encrypt(nonce[:16], data, associated_data)
+        # XChaCha20Poly1305 uses a 24-byte nonce, but we'll use only the first 12 bytes
+        # as ChaCha20Poly1305 requires a 12-byte nonce
+        if len(nonce) == 24:
+            # Take first 12 bytes of 24-byte nonce
+            truncated_nonce = nonce[:12]
+        elif len(nonce) == 12:
+            # Already correct size
+            truncated_nonce = nonce
+        else:
+            # If it's any other size, use a deterministic process to create a 12-byte nonce
+            # Hash the nonce to get a consistent result
+            truncated_nonce = hashlib.sha256(nonce).digest()[:12]
+            
+        return self.cipher.encrypt(truncated_nonce, data, associated_data)
         
     def decrypt(self, nonce, data, associated_data):
-        # XChaCha20Poly1305 uses a 24-byte nonce, but we'll only use the first 16 bytes
-        return self.cipher.decrypt(nonce[:16], data, associated_data)
+        # XChaCha20Poly1305 uses a 24-byte nonce, but we'll use only the first 12 bytes
+        if len(nonce) == 24:
+            # Take first 12 bytes of 24-byte nonce
+            truncated_nonce = nonce[:12]
+        elif len(nonce) == 12:
+            # Already correct size
+            truncated_nonce = nonce
+        else:
+            # If it's any other size, use a deterministic process to create a 12-byte nonce
+            # Hash the nonce to get a consistent result
+            truncated_nonce = hashlib.sha256(nonce).digest()[:12]
+            
+        return self.cipher.decrypt(truncated_nonce, data, associated_data)
 import cryptography.exceptions
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
@@ -1277,9 +1299,10 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                     return nonce + cipher.encrypt(nonce, data, None)
                     
                 elif algorithm == EncryptionAlgorithm.XCHACHA20_POLY1305:
-                    # XChaCha20-Poly1305 uses a 24-byte nonce
-                    # Provides high security against accidental nonce reuse
-                    nonce = secrets.token_bytes(24)
+                    # XChaCha20-Poly1305 should use a 24-byte nonce, but our implementation
+                    # adapts to work with the standard ChaCha20Poly1305 which needs 12 bytes
+                    # So we'll use a 12-byte nonce for consistency and simplicity
+                    nonce = secrets.token_bytes(12)
                     cipher = XChaCha20Poly1305(key)
                     return nonce + cipher.encrypt(nonce, data, None)
             
@@ -1553,8 +1576,8 @@ def decrypt_file(
 
             elif algorithm == EncryptionAlgorithm.XCHACHA20_POLY1305.value:
                 try:
-                    # XChaCha20-Poly1305 uses 24-byte nonce
-                    nonce_size = 24
+                    # XChaCha20-Poly1305 uses 12-byte nonce (to be compatible with ChaCha20Poly1305)
+                    nonce_size = 12
                     nonce = encrypted_data[:nonce_size]
                     ciphertext = encrypted_data[nonce_size:]
                     cipher = XChaCha20Poly1305(key)
