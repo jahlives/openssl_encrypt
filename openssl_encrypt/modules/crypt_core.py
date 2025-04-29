@@ -1265,6 +1265,18 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                 elif algorithm == EncryptionAlgorithm.CHACHA20_POLY1305:
                     cipher = ChaCha20Poly1305(key)
                     return nonce + cipher.encrypt(nonce[:12], data, None)
+                
+                elif algorithm == EncryptionAlgorithm.XCHACHA20_POLY1305:
+                    cipher = XChaCha20Poly1305(key)
+                    return nonce + cipher.encrypt(nonce[:12], data, None)
+                
+                elif algorithm == EncryptionAlgorithm.AES_GCM_SIV:
+                    cipher = AESGCMSIV(key)
+                    return nonce + cipher.encrypt(nonce[:12], data, None)
+                
+                elif algorithm == EncryptionAlgorithm.AES_OCB3:
+                    cipher = AESOCB3(key)
+                    return nonce + cipher.encrypt(nonce[:12], data, None)
             else:
                 # Use the secure, optimized nonce sizes for production mode
                 if algorithm == EncryptionAlgorithm.AES_GCM:
