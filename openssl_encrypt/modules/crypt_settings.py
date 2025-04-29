@@ -46,8 +46,9 @@ DEFAULT_CONFIG = {
     # Balloon parameters
     'balloon': {
         'enabled': False,
+        'rounds': 1,           # Number of chained KDF rounds
         'space_cost': 16,      # Memory usage factor
-        'time_cost': 20,       # Number of rounds
+        'time_cost': 20,       # Number of internal rounds
         'delta': 4,            # Number of random blocks
         'parallel_cost': 4     # Number of concurrent instances for balloon_m
     },
@@ -195,6 +196,22 @@ class SettingsTab:
         p_combo = ttk.Combobox(scrypt_frame, textvariable=self.scrypt_vars['p'], values=p_values, width=10)
         p_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(scrypt_frame, text="(1 is standard)").grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        
+        # KDF rounds
+        row += 1
+        ttk.Label(scrypt_frame, text="Chained KDF rounds:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
+        self.scrypt_vars['rounds'] = tk.IntVar(value=self.config['scrypt']['rounds'])
+        rounds_values = [1, 5, 10, 25, 50, 100, 250, 500, 1000]
+        rounds_combo = ttk.Combobox(scrypt_frame, textvariable=self.scrypt_vars['rounds'], values=rounds_values, width=10)
+        rounds_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
+        rounds_help = ttk.Label(scrypt_frame, text="(number of times to apply KDF sequentially)")
+        rounds_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        
+        # Add tooltip for rounds
+        self.create_tooltip(rounds_help,
+                           "Specifies how many times to chain the KDF function. Each round uses the output "
+                           "of the previous round as input, significantly increasing attack difficulty "
+                           "while using less memory than increasing other parameters.")
 
         # Argon2 settings
         argon2_frame = ttk.LabelFrame(scrollable_frame, text="Argon2 Settings (Memory-Hard Function)")
@@ -262,6 +279,22 @@ class SettingsTab:
         hash_len_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(argon2_frame, text="(32 is standard)").grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
         
+        # KDF rounds
+        row += 1
+        ttk.Label(argon2_frame, text="Chained KDF rounds:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
+        self.argon2_vars['rounds'] = tk.IntVar(value=self.config['argon2']['rounds'])
+        rounds_values = [1, 5, 10, 25, 50, 100, 250, 500, 1000]
+        rounds_combo = ttk.Combobox(argon2_frame, textvariable=self.argon2_vars['rounds'], values=rounds_values, width=10)
+        rounds_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
+        argon2_rounds_help = ttk.Label(argon2_frame, text="(number of times to apply KDF sequentially)")
+        argon2_rounds_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        
+        # Add tooltip for rounds
+        self.create_tooltip(argon2_rounds_help,
+                           "Specifies how many times to chain the Argon2 function. Each round uses the output "
+                           "of the previous round as input, significantly increasing attack difficulty. "
+                           "This provides additional security beyond what Argon2's internal iterations provide.")
+        
         # Balloon settings
         balloon_frame = ttk.LabelFrame(scrollable_frame, text="Balloon Settings (Memory-Hard Function)")
         balloon_frame.pack(fill=tk.X, expand=True, padx=10, pady=5)
@@ -323,6 +356,22 @@ class SettingsTab:
         parallel_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(balloon_frame, text="(concurrent instances, use CPU core count)").grid(
             row=row, column=2, sticky=tk.W, padx=5, pady=5)
+            
+        # KDF rounds
+        row += 1
+        ttk.Label(balloon_frame, text="Chained KDF rounds:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
+        self.balloon_vars['rounds'] = tk.IntVar(value=self.config['balloon']['rounds'] if 'rounds' in self.config['balloon'] else 1)
+        rounds_values = [1, 5, 10, 25, 50, 100, 250, 500, 1000]
+        rounds_combo = ttk.Combobox(balloon_frame, textvariable=self.balloon_vars['rounds'], values=rounds_values, width=10)
+        rounds_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
+        balloon_rounds_help = ttk.Label(balloon_frame, text="(number of times to apply KDF sequentially)")
+        balloon_rounds_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        
+        # Add tooltip for rounds
+        self.create_tooltip(balloon_rounds_help,
+                           "Specifies how many times to chain the Balloon function. Each round uses the output "
+                           "of the previous round as input, significantly increasing attack difficulty. "
+                           "This improves security with minimal memory overhead compared to increasing space_cost.")
 
         # Presets section
         presets_frame = ttk.LabelFrame(scrollable_frame, text="Security Presets")
@@ -424,6 +473,7 @@ class SettingsTab:
                 },
                 'balloon': {
                     'enabled': False,
+                    'rounds': 1,
                     'space_cost': 16,
                     'time_cost': 20,
                     'delta': 4,
@@ -454,6 +504,7 @@ class SettingsTab:
                 },
                 'balloon': {
                     'enabled': False,
+                    'rounds': 5,
                     'space_cost': 32,
                     'time_cost': 30,
                     'delta': 4,
@@ -484,6 +535,7 @@ class SettingsTab:
                 },
                 'balloon': {
                     'enabled': True,
+                    'rounds': 25,
                     'space_cost': 64,
                     'time_cost': 40,
                     'delta': 5,
@@ -514,6 +566,7 @@ class SettingsTab:
                 },
                 'balloon': {
                     'enabled': False,
+                    'rounds': 1,
                     'space_cost': 16,
                     'time_cost': 20,
                     'delta': 4,
@@ -757,9 +810,9 @@ class SettingsTab:
             "SHA3-256: {sha3_256} rounds {sha3_recommended}\n"  # Added recommendation indicator
             "SHA3-512: {sha3_512} rounds\n"
             "Whirlpool: {whirlpool} rounds\n"
-            "Scrypt: {scrypt_enabled} (N={scrypt_n}, r={scrypt_r}, p={scrypt_p})\n"
-            "Argon2: {argon2_enabled} (t={argon2_t}, m={argon2_m}KB, p={argon2_p})\n"
-            "Balloon: {balloon_enabled} (s={balloon_s}, t={balloon_t}, d={balloon_d}, p={balloon_p})\n"
+            "Scrypt: {scrypt_enabled} (N={scrypt_n}, r={scrypt_r}, p={scrypt_p}, rounds={scrypt_rounds})\n"
+            "Argon2: {argon2_enabled} (t={argon2_t}, m={argon2_m}KB, p={argon2_p}, rounds={argon2_rounds})\n"
+            "Balloon: {balloon_enabled} (s={balloon_s}, t={balloon_t}, d={balloon_d}, p={balloon_p}, rounds={balloon_rounds})\n"
             "PBKDF2: {pbkdf2} iterations\n\n"
         ).format(
             sha512=self.config['sha512'],
@@ -774,15 +827,18 @@ class SettingsTab:
             scrypt_n=self.config['scrypt']['n'],
             scrypt_r=self.config['scrypt']['r'],
             scrypt_p=self.config['scrypt']['p'],
+            scrypt_rounds=self.config['scrypt']['rounds'],
             argon2_enabled="Enabled" if self.config['argon2']['enabled'] else "Disabled",
             argon2_t=self.config['argon2']['time_cost'],
             argon2_m=self.config['argon2']['memory_cost'],
             argon2_p=self.config['argon2']['parallelism'],
+            argon2_rounds=self.config['argon2']['rounds'],
             balloon_enabled="Enabled" if self.config['balloon']['enabled'] else "Disabled",
             balloon_s=self.config['balloon']['space_cost'],
             balloon_t=self.config['balloon']['time_cost'],
             balloon_d=self.config['balloon']['delta'],
             balloon_p=self.config['balloon']['parallel_cost'],
+            balloon_rounds=self.config['balloon']['rounds'],
             pbkdf2=self.config['pbkdf2_iterations']
         )
 
@@ -828,20 +884,22 @@ class SettingsTab:
         if self.config['scrypt']['n'] > 0:
             # Logarithmic scale since Scrypt impact grows quickly with N
             score += (2 * (self.config['scrypt']['n'] / 8192)) * (self.config['scrypt']['r'] / 8) * \
-                     self.config['scrypt']['p']
+                     self.config['scrypt']['p'] * (self.config['scrypt']['rounds'] / 10)
 
         # Score Argon2 (higher impact)
         if self.config['argon2']['enabled']:
             score += (2 * (self.config['argon2']['memory_cost'] / 65536)) * \
                      (self.config['argon2']['time_cost'] / 3) * \
-                     (self.config['argon2']['parallelism'] / 4)
+                     (self.config['argon2']['parallelism'] / 4) * \
+                     (self.config['argon2']['rounds'] / 10)
                      
         # Score Balloon (higher impact)
         if self.config['balloon']['enabled']:
             score += (1.5 * (self.config['balloon']['space_cost'] / 16)) * \
                      (self.config['balloon']['time_cost'] / 20) * \
                      (self.config['balloon']['delta'] / 4) * \
-                     (self.config['balloon']['parallel_cost'] / 4)
+                     (self.config['balloon']['parallel_cost'] / 4) * \
+                     (self.config['balloon']['rounds'] / 10)
 
         # Determine performance level
         if score < 5:
