@@ -44,7 +44,7 @@ test:
     - pip install -r requirements.txt --break-system-packages
     - pip install pytest pytest-order --break-system-packages
   script:
-    - python3 -m pytest openssl_encrypt/unittests/unittests.py -v -s
+    - python3 -m pytest openssl_encrypt/unittests/unittests.py -v
   rules:
     - if: $CI_COMMIT_BRANCH == "dev"
     - if: $CI_COMMIT_TAG
