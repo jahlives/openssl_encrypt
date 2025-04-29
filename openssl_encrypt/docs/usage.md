@@ -7,7 +7,7 @@ The tool can be used either through the command line interface or the graphical 
 To start the graphical user interface:
 
 ```bash
-python crypt_gui.py
+python -m openssl_encrypt.crypt_gui
 ```
 
 The GUI provides a user-friendly interface with four main tabs:
@@ -37,7 +37,7 @@ The GUI provides a user-friendly interface with four main tabs:
 ### Command-Line Interface
 
 ```bash
-python crypt.py ACTION [OPTIONS]
+python -m openssl_encrypt.crypt ACTION [OPTIONS]
 ```
 
 #### Actions:
@@ -133,7 +133,7 @@ python crypt.py ACTION [OPTIONS]
 #### Read Input from stdin
 It can be helpful to get the decrypted content from stdin (ex when encrypted content is from wallet). Here a sample of reading data from `kdewallet`
 ```
-kwallet-query -f "Secret Service" -r KeePassCrypt -v kdewallet | python crypt.py decrypt --input /dev/stdin -q
+kwallet-query -f "Secret Service" -r KeePassCrypt -v kdewallet | python -m openssl_encrypt.crypt decrypt --input /dev/stdin -q
 ```
 
 ### Test Module

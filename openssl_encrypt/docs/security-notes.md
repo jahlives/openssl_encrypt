@@ -52,7 +52,7 @@ Default parameters:
 
 Customizable via:
 ```bash
-python crypt.py encrypt -i file.txt \
+python -m openssl_encrypt.crypt encrypt -i file.txt \
     --enable-argon2 \
     --argon2-memory 2097152 \
     --argon2-time 4 \
@@ -81,10 +81,10 @@ Multi-pass overwrite sequence:
 
 ```bash
 # Maximum security shredding
-python crypt.py shred -i sensitive.txt --shred-passes 35 --verify
+python -m openssl_encrypt.crypt shred -i sensitive.txt --shred-passes 35 --verify
 
 # Directory recursive shredding
-python crypt.py shred -i secret_folder/ -r --shred-passes 7
+python -m openssl_encrypt.crypt shred -i secret_folder/ -r --shred-passes 7
 ```
 
 ## Random Number Generation
@@ -98,10 +98,10 @@ python crypt.py shred -i secret_folder/ -r --shred-passes 7
 
 ```bash
 # Generate strong random password
-python crypt.py generate-password --length 24 --all-chars
+python -m openssl_encrypt.crypt generate-password --length 24 --all-chars
 
 # Custom character set password
-python crypt.py generate-password --length 20 --no-special
+python -m openssl_encrypt.crypt generate-password --length 20 --no-special
 ```
 
 ## Template-Based Security Profiles
@@ -125,7 +125,7 @@ python crypt.py generate-password --length 20 --no-special
 
 ```bash
 # Use paranoid template
-python crypt.py encrypt -i critical.dat --template paranoid
+python -m openssl_encrypt.crypt encrypt -i critical.dat --template paranoid
 ```
 
 ## Security Considerations
