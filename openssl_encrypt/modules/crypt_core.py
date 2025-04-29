@@ -497,6 +497,7 @@ def multi_hash_password(
         - SHA3-256
         - SHA3-512
         - BLAKE2b
+        - SHAKE-256 (extendable-output function from SHA-3 family)
         - Whirlpool
         - Scrypt (memory-hard function)
         - Argon2 (memory-hard function, winner of PHC)
@@ -638,6 +639,34 @@ def multi_hash_password(
                             KeyStretch.hash_stretch = True
                         if not quiet and not progress:
                             print("✅")
+                
+                elif algorithm == 'shake256' and params > 0:
+                    if not quiet and not progress:
+                        print(f"Applying {params} rounds of SHAKE-256", end=" ")
+                    elif not quiet:
+                        print(f"Applying {params} rounds of SHAKE-256")
+                    # SHAKE-256 can produce variable length output, we use 64 bytes for consistency
+                    # with other hash functions like SHA-512 and BLAKE2b
+                    with secure_buffer(64, zero=False) as hash_buffer:
+                        for i in range(params):
+                            # Each round combines the current hash with a round-specific salt
+                            # to prevent length extension attacks
+                            round_material = hashlib.sha256(salt + str(i).encode()).digest()
+                            
+                            # SHAKE-256 is an extendable-output function (XOF) that can produce
+                            # any desired output length, which makes it very versatile
+                            shake = hashlib.shake_256()
+                            shake.update(hashed + round_material)
+                            
+                            # Get 64 bytes (512 bits) of output for strong security
+                            result = shake.digest(64)
+                            
+                            secure_memcpy(hash_buffer, result)
+                            secure_memcpy(hashed, hash_buffer)
+                            show_progress("SHAKE-256", i + 1, params)
+                            KeyStretch.hash_stretch = True
+                        if not quiet and not progress:
+                            print("✅")
 
                 elif algorithm == 'whirlpool' and params > 0:
                     if not quiet and WHIRLPOOL_AVAILABLE and not progress:
@@ -754,7 +783,7 @@ def generate_key(
     # etc.)
     has_hash_iterations = hash_config and any(
         hash_config.get(algo, 0) > 0 for algo in
-        ['sha256', 'sha512', 'sha3_256', 'sha3_512', 'blake2b', 'whirlpool']
+        ['sha256', 'sha512', 'sha3_256', 'sha3_512', 'blake2b', 'shake256', 'whirlpool']
     ) or (hash_config and hash_config.get('scrypt', {}).get('n', 0) > 0)
 
     if has_hash_iterations:
@@ -1568,7 +1597,7 @@ def get_organized_hash_config(hash_config, encryption_algo=None, salt=None):
 
     # Define which algorithms are KDFs and which are hashes
     kdf_algorithms = ['scrypt', 'argon2', 'balloon', 'pbkdf2_iterations']
-    hash_algorithms = ['sha3_512', 'sha3_256', 'sha512', 'sha256', 'blake2b', 'whirlpool']
+    hash_algorithms = ['sha3_512', 'sha3_256', 'sha512', 'sha256', 'blake2b', 'shake256', 'whirlpool']
 
     # Organize the config
     for algo, params in hash_config.items():

@@ -72,6 +72,12 @@ def debug_hash_config(args, hash_config, message="Hash configuration"):
                 'blake2b',
                 'Not set')}")
     print(
+        f"SHAKE-256: args={
+            args.shake256_rounds}, hash_config={
+            hash_config.get(
+                'shake256',
+                'Not set')}")
+    print(
         f"PBKDF2: args={
             args.pbkdf2_iterations}, hash_config={
             hash_config.get(
@@ -199,6 +205,7 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                 "sha3_256": 0,
                 "sha3_512": 10000,
                 "blake2b": 0,
+                "shake256": 0,
                 "whirlpool": 0,
                 "scrypt": {
                     "enabled": False,
@@ -226,8 +233,9 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                 "sha512": 0,
                 "sha256": 0,
                 "sha3_256": 0,
-                "sha3_512": 800000,
+                "sha3_512": 600000,
                 "blake2b": 200000,
+                "shake256": 200000,
                 "whirlpool": 0,
                 "scrypt": {
                     "enabled": True,
@@ -255,8 +263,9 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                 "sha512": 10000,
                 "sha256": 10000,
                 "sha3_256": 10000,
-                "sha3_512": 1000000,
-                "blake2b": 1000000,
+                "sha3_512": 800000,
+                "blake2b": 800000,
+                "shake256": 400000,
                 "scrypt": {
                     "enabled": True,
                     "n": 256,
@@ -507,6 +516,14 @@ def main():
         help='Number of BLAKE2b iterations (default: 1,000,000 if flag provided without value)'
     )
     hash_group.add_argument(
+        '--shake256-rounds',
+        type=int,
+        nargs='?',
+        const=1,
+        default=0,
+        help='Number of SHAKE-256 iterations (default: 1,000,000 if flag provided without value)'
+    )
+    hash_group.add_argument(
         '--whirlpool-rounds',
         type=int,
         default=0,
@@ -700,6 +717,13 @@ def main():
         default=0,
         help=argparse.SUPPRESS)
     hash_group.add_argument(
+        '--shake256',
+        type=int,
+        nargs='?',
+        const=1,
+        default=0,
+        help=argparse.SUPPRESS)
+    hash_group.add_argument(
         '--pbkdf2',
         type=int,
         default=100000,
@@ -748,6 +772,8 @@ def main():
         args.sha3_512_rounds = args.sha3_512
     if not args.blake2b_rounds and args.blake2b:
         args.blake2b_rounds = args.blake2b
+    if not args.shake256_rounds and args.shake256:
+        args.shake256_rounds = args.shake256
 
     # PBKDF2 mapping
     if args.pbkdf2 != 100000:  # Only override if not the default
@@ -969,6 +995,12 @@ def main():
         if not args.quiet:
             print(
                 f"Using default of {MIN_SHA_ITERATIONS} iterations for BLAKE2b")
+                
+    if args.shake256_rounds == 1:  # When flag is provided without value
+        args.shake256_rounds = MIN_SHA_ITERATIONS
+        if not args.quiet:
+            print(
+                f"Using default of {MIN_SHA_ITERATIONS} iterations for SHAKE-256")
 
     # Handle Argon2 presets if specified
     if args.argon2_preset and ARGON2_AVAILABLE:
@@ -1052,6 +1084,7 @@ def main():
             'sha3_256': args.sha3_256_rounds,
             'sha3_512': args.sha3_512_rounds,
             'blake2b': args.blake2b_rounds,
+            'shake256': args.shake256_rounds,
             'whirlpool': args.whirlpool_rounds,
             'scrypt': {
                 'enabled': args.enable_scrypt,
