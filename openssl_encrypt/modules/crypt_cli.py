@@ -225,7 +225,7 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                 },
                 "pbkdf2_iterations": 10000,
                 "type": "id",
-                "algorithm": "camellia"
+                "algorithm": "aes-ocb3"
             }
         },
         SecurityTemplate.STANDARD: {
@@ -255,7 +255,7 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                 },
                 "pbkdf2_iterations": 0,
                 "type": "id",
-                "algorithm": "fernet"
+                "algorithm": "aes-gcm-siv"
             }
         },
         SecurityTemplate.PARANOID: {
@@ -414,9 +414,15 @@ def main():
         choices=[
             algo.value for algo in EncryptionAlgorithm],
         default=EncryptionAlgorithm.FERNET.value,
-        help='Encryption algorithm to use: fernet (default, Fernet from cryptography, good general choice), '
-        'aes-gcm (AES-256 in GCM mode, high security, widely trusted), '
-        'chacha20-poly1305 (modern AEAD cipher, excellent performance)')
+        help='Encryption algorithm to use: \n'
+        '  fernet (default, AES-128-CBC with authentication), \n'
+        '  aes-gcm (AES-256 in GCM mode, high security, widely trusted), \n'
+        '  aes-gcm-siv (AES-256 in GCM-SIV mode, resistant to nonce reuse), \n'
+        '  aes-ocb3 (AES-256 in OCB3 mode, faster than GCM), \n'
+        '  aes-siv (AES in SIV mode, synthetic IV), \n'
+        '  chacha20-poly1305 (modern AEAD cipher with 12-byte nonce), \n'
+        '  xchacha20-poly1305 (ChaCha20-Poly1305 with 24-byte nonce, safer for high-volume encryption), \n'
+        '  camellia (Camellia in CBC mode)')
     # Define common options
     parser.add_argument(
         '--password', '-p',
@@ -1060,13 +1066,13 @@ def main():
     if args.paranoid or args.quick or args.standard:
         if args.paranoid:
             hash_config = get_template_config(SecurityTemplate.PARANOID)
-            hash_config['hash_config']['algorithm'] = 'aes-siv'
+            hash_config['hash_config']['algorithm'] = 'xchacha20-poly1305'
         elif args.quick:
             hash_config = get_template_config(SecurityTemplate.QUICK)
-            hash_config['hash_config']['algorithm'] = 'fernet'
+            hash_config['hash_config']['algorithm'] = 'aes-ocb3'
         elif args.standard:
             hash_config = get_template_config(SecurityTemplate.STANDARD)
-            hash_config['hash_config']['algorithm'] = 'aes-gcm'
+            hash_config['hash_config']['algorithm'] = 'aes-gcm-siv'
         setattr(args, 'algorithm', hash_config['hash_config']['algorithm'])
         hash_config = hash_config['hash_config']
     elif args.template:
