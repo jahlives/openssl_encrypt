@@ -1066,13 +1066,22 @@ def generate_key(
             password = hashlib.sha512(password).digest()
         else:
             password = base64.b64encode(hashlib.sha256(password).digest())
+    elif not KeyStretch.key_stretch:
+        if algorithm in [EncryptionAlgorithm.AES_GCM.value, EncryptionAlgorithm.CAMELLIA.value, EncryptionAlgorithm.CHACHA20_POLY1305.value]:
+            password = hashlib.sha256(password).digest()
+        elif algorithm == EncryptionAlgorithm.AES_SIV.value:
+            password = hashlib.sha512(password).digest()
+        else:
+            password = base64.b64encode(hashlib.sha256(password).digest())
     elif algorithm == EncryptionAlgorithm.FERNET.value:
         password = base64.urlsafe_b64encode(password)
     try:
         return password, salt, hash_config
     finally:
-        if KeyStretch.hash_stretch or KeyStretch.hash_stretch:
+        try:
             secure_memzero(derived_salt)
+        except NameError:
+            pass
         secure_memzero(password)
         secure_memzero(salt)
 
