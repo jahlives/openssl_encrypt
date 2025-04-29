@@ -226,7 +226,7 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                     "n": 128,
                     "r": 8,
                     "p": 1,
-                    "rounds": 10000
+                    "rounds": 1000
                 },
                 "argon2": {
                     "enabled": True,
