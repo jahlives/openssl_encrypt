@@ -27,6 +27,8 @@ except ImportError:
         'sha3_256': 0,
         'sha3_512': 0,
         'whirlpool': 0,
+        'blake2b': 0,
+        'shake256': 0,
         'scrypt': {
             'n': 16384,
             'r': 8,
