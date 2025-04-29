@@ -81,6 +81,8 @@ class TestCryptCore(unittest.TestCase):
             'sha256': 0,
             'sha3_256': 0,
             'sha3_512': 0,
+            'blake2b': 0,
+            'shake256': 0,
             'whirlpool': 0,
             'scrypt': {
                 'n': 0,
@@ -104,6 +106,8 @@ class TestCryptCore(unittest.TestCase):
             'sha256': 0,
             'sha3_256': 1000,
             'sha3_512': 0,
+            'blake2b': 500,
+            'shake256': 500,
             'whirlpool': 0,
             'scrypt': {
                 'n': 4096,  # Lower value for faster tests
@@ -230,6 +234,105 @@ class TestCryptCore(unittest.TestCase):
         # Verify the content
         with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
             self.assertEqual(original.read(), decrypted.read())
+            
+    def test_encrypt_decrypt_xchacha20_algorithm(self):
+        """Test encryption and decryption using XChaCha20-Poly1305 algorithm."""
+        # Define output files
+        encrypted_file = os.path.join(
+            self.test_dir, "test_encrypted_xchacha.bin")
+        decrypted_file = os.path.join(
+            self.test_dir, "test_decrypted_xchacha.txt")
+        self.test_files.extend([encrypted_file, decrypted_file])
+
+        # Encrypt the file
+        result = encrypt_file(
+            self.test_file,
+            encrypted_file,
+            self.test_password,
+            self.basic_hash_config,
+            quiet=True,
+            algorithm=EncryptionAlgorithm.XCHACHA20_POLY1305)
+        self.assertTrue(result)
+        self.assertTrue(os.path.exists(encrypted_file))
+
+        # Decrypt the file
+        result = decrypt_file(
+            encrypted_file,
+            decrypted_file,
+            self.test_password,
+            quiet=True)
+        self.assertTrue(result)
+        self.assertTrue(os.path.exists(decrypted_file))
+
+        # Verify the content
+        with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
+            self.assertEqual(original.read(), decrypted.read())
+            
+    def test_encrypt_decrypt_aes_gcm_siv_algorithm(self):
+        """Test encryption and decryption using AES-GCM-SIV algorithm."""
+        # Define output files
+        encrypted_file = os.path.join(
+            self.test_dir, "test_encrypted_aes_gcm_siv.bin")
+        decrypted_file = os.path.join(
+            self.test_dir, "test_decrypted_aes_gcm_siv.txt")
+        self.test_files.extend([encrypted_file, decrypted_file])
+
+        # Encrypt the file
+        result = encrypt_file(
+            self.test_file,
+            encrypted_file,
+            self.test_password,
+            self.basic_hash_config,
+            quiet=True,
+            algorithm=EncryptionAlgorithm.AES_GCM_SIV)
+        self.assertTrue(result)
+        self.assertTrue(os.path.exists(encrypted_file))
+
+        # Decrypt the file
+        result = decrypt_file(
+            encrypted_file,
+            decrypted_file,
+            self.test_password,
+            quiet=True)
+        self.assertTrue(result)
+        self.assertTrue(os.path.exists(decrypted_file))
+
+        # Verify the content
+        with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
+            self.assertEqual(original.read(), decrypted.read())
+            
+    def test_encrypt_decrypt_aes_ocb3_algorithm(self):
+        """Test encryption and decryption using AES-OCB3 algorithm."""
+        # Define output files
+        encrypted_file = os.path.join(
+            self.test_dir, "test_encrypted_aes_ocb3.bin")
+        decrypted_file = os.path.join(
+            self.test_dir, "test_decrypted_aes_ocb3.txt")
+        self.test_files.extend([encrypted_file, decrypted_file])
+
+        # Encrypt the file
+        result = encrypt_file(
+            self.test_file,
+            encrypted_file,
+            self.test_password,
+            self.basic_hash_config,
+            quiet=True,
+            algorithm=EncryptionAlgorithm.AES_OCB3)
+        self.assertTrue(result)
+        self.assertTrue(os.path.exists(encrypted_file))
+
+        # Decrypt the file
+        result = decrypt_file(
+            encrypted_file,
+            decrypted_file,
+            self.test_password,
+            quiet=True)
+        self.assertTrue(result)
+        self.assertTrue(os.path.exists(decrypted_file))
+
+        # Verify the content
+        with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
+            self.assertEqual(original.read(), decrypted.read())
 
     # Fix for test_wrong_password - Using the imported InvalidToken
     def test_wrong_password_fixed(self):
@@ -289,6 +392,8 @@ class TestCryptCore(unittest.TestCase):
             'sha256': 0,
             'sha3_256': 100,  # Reduced from potentially higher values
             'sha3_512': 0,
+            'blake2b': 100,  # Added for testing new hash function
+            'shake256': 100,  # Added for testing new hash function
             'whirlpool': 0,
             'scrypt': {
                 'n': 1024,  # Reduced from potentially higher values
@@ -493,6 +598,58 @@ class TestCryptCore(unittest.TestCase):
             hashed10 = multi_hash_password(
                 self.test_password, salt, config5, quiet=True)
             self.assertEqual(hashed9, hashed10)
+            
+        # Test with BLAKE2b
+        config6 = {**self.basic_hash_config, 'blake2b': 100}
+        hashed11 = multi_hash_password(
+            self.test_password, salt, config6, quiet=True)
+        self.assertIsNotNone(hashed11)
+        hashed12 = multi_hash_password(
+            self.test_password, salt, config6, quiet=True)
+        self.assertEqual(hashed11, hashed12)
+        
+        # Test with SHAKE-256
+        config7 = {**self.basic_hash_config, 'shake256': 100}
+        hashed13 = multi_hash_password(
+            self.test_password, salt, config7, quiet=True)
+        self.assertIsNotNone(hashed13)
+        hashed14 = multi_hash_password(
+            self.test_password, salt, config7, quiet=True)
+        self.assertEqual(hashed13, hashed14)
+        
+        # Results should be different between BLAKE2b and SHAKE-256
+        self.assertNotEqual(hashed11, hashed13)
+        
+    def test_xchacha20poly1305_implementation(self):
+        """Test XChaCha20Poly1305 implementation specifically focusing on nonce handling."""
+        # Import the XChaCha20Poly1305 class directly to test it
+        from modules.crypt_core import XChaCha20Poly1305
+        
+        # Create instance with test key (32 bytes for ChaCha20Poly1305)
+        key = os.urandom(32)
+        cipher = XChaCha20Poly1305(key)
+        
+        # Test data
+        data = b"Test data to encrypt with XChaCha20Poly1305"
+        aad = b"Additional authenticated data"
+        
+        # Test with 24-byte nonce (XChaCha20 standard)
+        nonce_24byte = os.urandom(24)
+        ciphertext_24 = cipher.encrypt(nonce_24byte, data, aad)
+        plaintext_24 = cipher.decrypt(nonce_24byte, ciphertext_24, aad)
+        self.assertEqual(data, plaintext_24)
+        
+        # Test with 12-byte nonce (regular ChaCha20Poly1305 standard)
+        nonce_12byte = os.urandom(12)
+        ciphertext_12 = cipher.encrypt(nonce_12byte, data, aad)
+        plaintext_12 = cipher.decrypt(nonce_12byte, ciphertext_12, aad)
+        self.assertEqual(data, plaintext_12)
+        
+        # Test incompatible nonce sizes
+        for invalid_size in [8, 16, 32]:
+            invalid_nonce = os.urandom(invalid_size)
+            with self.assertRaises(ValueError):
+                cipher.encrypt(invalid_nonce, data, aad)
 
     def test_existing_decryption(self):
         for name in os.listdir('./openssl_encrypt/unittests/testfiles'):
