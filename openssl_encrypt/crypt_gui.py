@@ -155,7 +155,7 @@ class CryptGUI:
 
     def copy_to_clipboard(self):
         """Copy the contents of the output text widget to clipboard"""
-        self.root.clipboard_append(output_text)  # Add the text to clipboard
+        self.root.clipboard_append(self.output_text.get(1.0, tk.END))  # Add the text to clipboard
         self.root.update()  # Make sure the clipboard content is available after the function returns
 
     def setup_settings_tab(self):
@@ -948,8 +948,8 @@ class CryptGUI:
         hash_config = self.settings_tab.get_current_config()
         encryption_algorithm = self.encrypt_algorithm_var.get()
 
-        # Build the command
-        cmd = [sys.executable, "crypt.py", "encrypt", "-i", input_file]
+        # Build the command - use full path to crypt.py
+        cmd = [sys.executable, os.path.join(os.path.dirname(__file__), "crypt.py"), "encrypt", "-i", input_file]
 
         if output_file and not self.encrypt_overwrite_var.get():
             cmd.extend(["-o", output_file])
@@ -1070,8 +1070,8 @@ class CryptGUI:
         # Get current hash configuration
         hash_config = self.settings_tab.get_current_config()
 
-        # Build the command
-        cmd = [sys.executable, "crypt.py", "decrypt", "-i", input_file]
+        # Build the command - use full path to crypt.py
+        cmd = [sys.executable, os.path.join(os.path.dirname(__file__), "crypt.py"), "decrypt", "-i", input_file]
 
         if output_file and not self.decrypt_overwrite_var.get():
             cmd.extend(["-o", output_file])
@@ -1110,8 +1110,8 @@ class CryptGUI:
                                  f"the selected files or directories?\n\n{input_files}"):
             return
         
-        # Build the command
-        cmd = [sys.executable, "crypt.py", "shred", "-i", input_files]
+        # Build the command - use full path to crypt.py
+        cmd = [sys.executable, os.path.join(os.path.dirname(__file__), "crypt.py"), "shred", "-i", input_files]
         
         if self.shred_recursive_var.get():
             cmd.append("-r")
