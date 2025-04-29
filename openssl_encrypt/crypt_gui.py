@@ -242,8 +242,11 @@ class CryptGUI:
         algorithms = [
             ("fernet", "AES-128-CBC"),
             ("aes-gcm", "AES-GCM"),
-            ("chacha20-poly1305", "ChaCha20Poly1305"),
+            ("aes-gcm-siv", "AES-GCM-SIV"),
+            ("aes-ocb3", "AES-OCB3"),
             ("aes-siv", "AES-SIV"),
+            ("chacha20-poly1305", "ChaCha20Poly1305"),
+            ("xchacha20-poly1305", "XChaCha20Poly1305"),
             ("camellia", "Camellia-128-CBC")
         ]
 
