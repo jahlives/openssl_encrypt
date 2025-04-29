@@ -43,6 +43,14 @@ DEFAULT_CONFIG = {
         'hash_len': 32,
         'type': 'id'  # id, i, or d
     },
+    # Balloon parameters
+    'balloon': {
+        'enabled': False,
+        'space_cost': 16,      # Memory usage factor
+        'time_cost': 20,       # Number of rounds
+        'delta': 4,            # Number of random blocks
+        'parallel_cost': 4     # Number of concurrent instances for balloon_m
+    },
     # PBKDF2 parameters
     'pbkdf2_iterations': 100000
 }
@@ -253,6 +261,68 @@ class SettingsTab:
                                       values=hash_len_values, width=10)
         hash_len_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(argon2_frame, text="(32 is standard)").grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        
+        # Balloon settings
+        balloon_frame = ttk.LabelFrame(scrollable_frame, text="Balloon Settings (Memory-Hard Function)")
+        balloon_frame.pack(fill=tk.X, expand=True, padx=10, pady=5)
+        
+        self.balloon_vars = {}
+        
+        # Enable Balloon
+        row = 0
+        self.balloon_vars['enabled'] = tk.BooleanVar(value=self.config['balloon']['enabled'])
+        balloon_enable = ttk.Checkbutton(balloon_frame, text="Enable Balloon", variable=self.balloon_vars['enabled'])
+        balloon_enable.grid(row=row, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5)
+        
+        # Add tooltip for Balloon
+        self.create_tooltip(balloon_enable,
+                           "Balloon is a memory-hard hashing function designed to be resistant to "
+                           "attacks from specialized hardware. It's particularly effective against "
+                           "GPU-based attacks and provides strong security guarantees.")
+        
+        # Space cost
+        row += 1
+        ttk.Label(balloon_frame, text="Space cost:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
+        self.balloon_vars['space_cost'] = tk.IntVar(value=self.config['balloon']['space_cost'])
+        space_values = [8, 16, 32, 64, 128, 256]
+        space_combo = ttk.Combobox(balloon_frame, textvariable=self.balloon_vars['space_cost'],
+                                 values=space_values, width=10)
+        space_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(balloon_frame, text="(memory usage factor, higher is more secure)").grid(
+            row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        
+        # Time cost
+        row += 1
+        ttk.Label(balloon_frame, text="Time cost:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
+        self.balloon_vars['time_cost'] = tk.IntVar(value=self.config['balloon']['time_cost'])
+        time_values = [10, 20, 30, 40, 50]
+        time_combo = ttk.Combobox(balloon_frame, textvariable=self.balloon_vars['time_cost'],
+                               values=time_values, width=10)
+        time_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(balloon_frame, text="(number of rounds, higher is more secure)").grid(
+            row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        
+        # Delta
+        row += 1
+        ttk.Label(balloon_frame, text="Delta:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
+        self.balloon_vars['delta'] = tk.IntVar(value=self.config['balloon']['delta'])
+        delta_values = [3, 4, 5, 6]
+        delta_combo = ttk.Combobox(balloon_frame, textvariable=self.balloon_vars['delta'],
+                               values=delta_values, width=10)
+        delta_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
+        delta_help = ttk.Label(balloon_frame, text="(number of random blocks, 4 is standard)")
+        delta_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        
+        # Parallel cost
+        row += 1
+        ttk.Label(balloon_frame, text="Parallel cost:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
+        self.balloon_vars['parallel_cost'] = tk.IntVar(value=self.config['balloon']['parallel_cost'])
+        parallel_values = [1, 2, 4, 8, 16]
+        parallel_combo = ttk.Combobox(balloon_frame, textvariable=self.balloon_vars['parallel_cost'],
+                                    values=parallel_values, width=10)
+        parallel_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(balloon_frame, text="(concurrent instances, use CPU core count)").grid(
+            row=row, column=2, sticky=tk.W, padx=5, pady=5)
 
         # Presets section
         presets_frame = ttk.LabelFrame(scrollable_frame, text="Security Presets")
@@ -352,6 +422,13 @@ class SettingsTab:
                     'hash_len': 32,
                     'type': 'id'
                 },
+                'balloon': {
+                    'enabled': False,
+                    'space_cost': 16,
+                    'time_cost': 20,
+                    'delta': 4,
+                    'parallel_cost': 4
+                },
                 'pbkdf2_iterations': 100000
             }
         elif preset_name == "high":
@@ -374,6 +451,13 @@ class SettingsTab:
                     'parallelism': 4,
                     'hash_len': 32,
                     'type': 'id'
+                },
+                'balloon': {
+                    'enabled': False,
+                    'space_cost': 32,
+                    'time_cost': 30,
+                    'delta': 4,
+                    'parallel_cost': 4
                 },
                 'pbkdf2_iterations': 200000
             }
@@ -398,6 +482,13 @@ class SettingsTab:
                     'hash_len': 64,
                     'type': 'id'
                 },
+                'balloon': {
+                    'enabled': True,
+                    'space_cost': 64,
+                    'time_cost': 40,
+                    'delta': 5,
+                    'parallel_cost': 8
+                },
                 'pbkdf2_iterations': 500000
             }
         elif preset_name == "legacy":
@@ -420,6 +511,13 @@ class SettingsTab:
                     'parallelism': 4,
                     'hash_len': 32,
                     'type': 'id'
+                },
+                'balloon': {
+                    'enabled': False,
+                    'space_cost': 16,
+                    'time_cost': 20,
+                    'delta': 4,
+                    'parallel_cost': 4
                 },
                 'pbkdf2_iterations': 10000
             }
@@ -461,6 +559,11 @@ class SettingsTab:
         for key in self.argon2_vars:
             if key in self.config['argon2']:
                 self.argon2_vars[key].set(self.config['argon2'][key])
+                
+        # Update Balloon variables
+        for key in self.balloon_vars:
+            if key in self.config['balloon']:
+                self.balloon_vars[key].set(self.config['balloon'][key])
     
     def update_config_from_ui(self):
         """Update configuration from UI variables"""
@@ -478,6 +581,11 @@ class SettingsTab:
         for key in self.argon2_vars:
             if key in self.config['argon2']:
                 self.config['argon2'][key] = self.argon2_vars[key].get()
+                
+        # Update Balloon settings
+        for key in self.balloon_vars:
+            if key in self.config['balloon']:
+                self.config['balloon'][key] = self.balloon_vars[key].get()
     
     def validate_settings(self):
         """Validate user settings for sanity"""
@@ -500,6 +608,29 @@ class SettingsTab:
             else:
                 return False
                 
+        # Validate Balloon settings if enabled
+        if self.balloon_vars['enabled'].get():
+            # Ensure space_cost is at least 8
+            space_cost = self.balloon_vars['space_cost'].get()
+            if space_cost < 8:
+                messagebox.showerror("Invalid Setting",
+                                  "Balloon space cost must be at least 8 for adequate security.")
+                return False
+                
+            # Ensure time_cost is at least 10
+            time_cost = self.balloon_vars['time_cost'].get()
+            if time_cost < 10:
+                messagebox.showerror("Invalid Setting",
+                                  "Balloon time cost must be at least 10 for adequate security.")
+                return False
+                
+            # Ensure delta is at least 3
+            delta = self.balloon_vars['delta'].get()
+            if delta < 3:
+                messagebox.showerror("Invalid Setting",
+                                  "Balloon delta must be at least 3 for proper security.")
+                return False
+                
         # Check if at least one hashing algorithm is enabled
         all_disabled = (
             self.hash_vars['sha512'].get() == 0 and
@@ -508,7 +639,8 @@ class SettingsTab:
             self.hash_vars['sha3_512'].get() == 0 and
             self.hash_vars['whirlpool'].get() == 0 and
             self.scrypt_vars['n'].get() == 0 and
-            (not self.argon2_vars['enabled'].get())
+            (not self.argon2_vars['enabled'].get()) and
+            (not self.balloon_vars['enabled'].get())
         )
         
         if all_disabled:
@@ -627,6 +759,7 @@ class SettingsTab:
             "Whirlpool: {whirlpool} rounds\n"
             "Scrypt: {scrypt_enabled} (N={scrypt_n}, r={scrypt_r}, p={scrypt_p})\n"
             "Argon2: {argon2_enabled} (t={argon2_t}, m={argon2_m}KB, p={argon2_p})\n"
+            "Balloon: {balloon_enabled} (s={balloon_s}, t={balloon_t}, d={balloon_d}, p={balloon_p})\n"
             "PBKDF2: {pbkdf2} iterations\n\n"
         ).format(
             sha512=self.config['sha512'],
@@ -645,6 +778,11 @@ class SettingsTab:
             argon2_t=self.config['argon2']['time_cost'],
             argon2_m=self.config['argon2']['memory_cost'],
             argon2_p=self.config['argon2']['parallelism'],
+            balloon_enabled="Enabled" if self.config['balloon']['enabled'] else "Disabled",
+            balloon_s=self.config['balloon']['space_cost'],
+            balloon_t=self.config['balloon']['time_cost'],
+            balloon_d=self.config['balloon']['delta'],
+            balloon_p=self.config['balloon']['parallel_cost'],
             pbkdf2=self.config['pbkdf2_iterations']
         )
 
@@ -697,6 +835,13 @@ class SettingsTab:
             score += (2 * (self.config['argon2']['memory_cost'] / 65536)) * \
                      (self.config['argon2']['time_cost'] / 3) * \
                      (self.config['argon2']['parallelism'] / 4)
+                     
+        # Score Balloon (higher impact)
+        if self.config['balloon']['enabled']:
+            score += (1.5 * (self.config['balloon']['space_cost'] / 16)) * \
+                     (self.config['balloon']['time_cost'] / 20) * \
+                     (self.config['balloon']['delta'] / 4) * \
+                     (self.config['balloon']['parallel_cost'] / 4)
 
         # Determine performance level
         if score < 5:
