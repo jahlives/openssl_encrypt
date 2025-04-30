@@ -1,0 +1,30 @@
+{
+  "hash_config": {
+    "sha512": 0,
+    "sha256": 1000,
+    "sha3_256": 0,
+    "sha3_512": 10000,
+    "blake2b": 0,
+    "shake256": 0,
+    "whirlpool": 0,
+    "scrypt": {
+      "enabled": false,
+      "n": 128,
+      "r": 8,
+      "p": 1,
+      "rounds": 1000
+    },
+    "argon2": {
+      "enabled": false,
+      "time_cost": 2,
+      "memory_cost": 65536,
+      "parallelism": 4,
+      "hash_len": 32,
+      "type": 2,
+      "rounds": 10
+    },
+    "pbkdf2_iterations": 10000,
+    "type": "id",
+    "algorithm": "fernet"
+  }
+}
