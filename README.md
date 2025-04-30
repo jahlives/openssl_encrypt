@@ -1,5 +1,5 @@
-# Breaking Changes: release 0.4.0 is a BREAKING release, before updating to this release DECRYPT your already encrypted data with the EXACT version used for encrypting. Then update and encrypt again
-[![Breaking Changes](https://img.shields.io/badge/WARNING-BREAKING%20CHANGES-red)](https://gitlab.rm-rf.ch/world/openssl_encrypt) The breaking change 0.4.0 was necessary as the chaining of hash/kdf was not properly handled which potentially lead to less-secure-than-possible encryption passwords. Still strong ones but not as strong as they could be according to hash/kdf config
+# Breaking Changes: release 0.5.0 is a BREAKING release, before updating to this release DECRYPT your already encrypted data with the EXACT version used for encrypting. Then update and encrypt again
+[![Breaking Changes](https://img.shields.io/badge/WARNING-BREAKING%20CHANGES-red)](https://gitlab.rm-rf.ch/world/openssl_encrypt) The breaking change 0.5.0 was introduced because many changes were required to better handle security
 # Secure File Encryption Tool
 A powerful tool for securely encrypting, decrypting, and shredding files with military-grade cryptography and multi-layer password hashing.
 ## History

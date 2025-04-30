@@ -24,6 +24,8 @@ DEFAULT_CONFIG = {
     'sha256': 0,
     'sha3_256': 10000,  # Enable SHA3-256 by default with 10000 iterations
     'sha3_512': 0,
+    'blake2b': 0,       # BLAKE2b hash function with default of 0 iterations
+    'shake256': 0,      # SHAKE-256 hash function with default of 0 iterations
     'whirlpool': 0,
     # Scrypt parameters
     'scrypt': {
@@ -42,6 +44,15 @@ DEFAULT_CONFIG = {
         'parallelism': 4,
         'hash_len': 32,
         'type': 'id'  # id, i, or d
+    },
+    # Balloon parameters
+    'balloon': {
+        'enabled': False,
+        'rounds': 1,           # Number of chained KDF rounds
+        'space_cost': 16,      # Memory usage factor
+        'time_cost': 20,       # Number of internal rounds
+        'delta': 4,            # Number of random blocks
+        'parallel_cost': 4     # Number of concurrent instances for balloon_m
     },
     # PBKDF2 parameters
     'pbkdf2_iterations': 100000
@@ -138,6 +149,37 @@ class SettingsTab:
             row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(hash_frame, text="(0 to disable)").grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
 
+        # BLAKE2b - Modern cryptographic hash function
+        row += 1
+        ttk.Label(hash_frame, text="BLAKE2b rounds:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
+        self.hash_vars['blake2b'] = tk.IntVar(value=self.config['blake2b'])
+        ttk.Entry(hash_frame, textvariable=self.hash_vars['blake2b'], width=10).grid(
+            row=row, column=1, sticky=tk.W, padx=5, pady=5)
+        blake2b_help = ttk.Label(hash_frame, text="(Modern, high-performance hash)", foreground="blue")
+        blake2b_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        
+        # Add tooltip for BLAKE2b
+        self.create_tooltip(blake2b_help,
+                           "BLAKE2b is a cryptographic hash function faster than MD5, SHA-1, SHA-2, and SHA-3, "
+                           "yet is at least as secure as the latest standard SHA-3. It's widely used in modern "
+                           "cryptographic applications and provides 512-bit output.")
+
+        # SHAKE-256 - Extendable-output function (XOF)
+        row += 1
+        ttk.Label(hash_frame, text="SHAKE-256 rounds:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
+        self.hash_vars['shake256'] = tk.IntVar(value=self.config['shake256'])
+        ttk.Entry(hash_frame, textvariable=self.hash_vars['shake256'], width=10).grid(
+            row=row, column=1, sticky=tk.W, padx=5, pady=5)
+        shake256_help = ttk.Label(hash_frame, text="(SHA-3 family extendable-output function)", foreground="blue")
+        shake256_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        
+        # Add tooltip for SHAKE-256
+        self.create_tooltip(shake256_help,
+                           "SHAKE-256 is an extendable-output function (XOF) from the SHA-3 family. "
+                           "It can generate outputs of any desired length, making it highly versatile. "
+                           "In this implementation, it produces 64 bytes (512 bits) of output for "
+                           "consistency with other hash functions.")
+
         # Whirlpool
         row += 1
         ttk.Label(hash_frame, text="Whirlpool rounds:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
@@ -159,15 +201,27 @@ class SettingsTab:
         scrypt_frame.pack(fill=tk.X, expand=True, padx=10, pady=5)
 
         self.scrypt_vars = {}
+        
+        # Enable Scrypt
+        row = 0
+        self.scrypt_vars['enabled'] = tk.BooleanVar(value=self.config['scrypt']['enabled'])
+        scrypt_enable = ttk.Checkbutton(scrypt_frame, text="Enable Scrypt", variable=self.scrypt_vars['enabled'])
+        scrypt_enable.grid(row=row, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5)
+        
+        # Add tooltip for Scrypt
+        self.create_tooltip(scrypt_enable,
+                          "Scrypt is a memory-hard key derivation function designed to be resistant to "
+                          "hardware attacks. It requires significant memory resources, making it "
+                          "particularly effective against GPU-based attacks.")
 
         # CPU/Memory cost factor (N)
-        row = 0
+        row += 1
         ttk.Label(scrypt_frame, text="CPU/Memory cost (N):").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
         self.scrypt_vars['n'] = tk.IntVar(value=self.config['scrypt']['n'])
-        n_values = [0, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576]
+        n_values = [1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576]
         n_combo = ttk.Combobox(scrypt_frame, textvariable=self.scrypt_vars['n'], values=n_values, width=10)
         n_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
-        ttk.Label(scrypt_frame, text="(0 to disable, must be power of 2)").grid(
+        ttk.Label(scrypt_frame, text="(must be power of 2, 16384 is standard)").grid(
             row=row, column=2, sticky=tk.W, padx=5, pady=5)
 
         # Block size (r)
@@ -187,6 +241,22 @@ class SettingsTab:
         p_combo = ttk.Combobox(scrypt_frame, textvariable=self.scrypt_vars['p'], values=p_values, width=10)
         p_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(scrypt_frame, text="(1 is standard)").grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        
+        # KDF rounds
+        row += 1
+        ttk.Label(scrypt_frame, text="Chained KDF rounds:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
+        self.scrypt_vars['rounds'] = tk.IntVar(value=self.config['scrypt']['rounds'])
+        rounds_values = [1, 5, 10, 25, 50, 100, 250, 500, 1000]
+        rounds_combo = ttk.Combobox(scrypt_frame, textvariable=self.scrypt_vars['rounds'], values=rounds_values, width=10)
+        rounds_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
+        rounds_help = ttk.Label(scrypt_frame, text="(number of times to apply KDF sequentially)")
+        rounds_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        
+        # Add tooltip for rounds
+        self.create_tooltip(rounds_help,
+                           "Specifies how many times to chain the KDF function. Each round uses the output "
+                           "of the previous round as input, significantly increasing attack difficulty "
+                           "while using less memory than increasing other parameters.")
 
         # Argon2 settings
         argon2_frame = ttk.LabelFrame(scrollable_frame, text="Argon2 Settings (Memory-Hard Function)")
@@ -253,6 +323,100 @@ class SettingsTab:
                                       values=hash_len_values, width=10)
         hash_len_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(argon2_frame, text="(32 is standard)").grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        
+        # KDF rounds
+        row += 1
+        ttk.Label(argon2_frame, text="Chained KDF rounds:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
+        self.argon2_vars['rounds'] = tk.IntVar(value=self.config['argon2']['rounds'])
+        rounds_values = [1, 5, 10, 25, 50, 100, 250, 500, 1000]
+        rounds_combo = ttk.Combobox(argon2_frame, textvariable=self.argon2_vars['rounds'], values=rounds_values, width=10)
+        rounds_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
+        argon2_rounds_help = ttk.Label(argon2_frame, text="(number of times to apply KDF sequentially)")
+        argon2_rounds_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        
+        # Add tooltip for rounds
+        self.create_tooltip(argon2_rounds_help,
+                           "Specifies how many times to chain the Argon2 function. Each round uses the output "
+                           "of the previous round as input, significantly increasing attack difficulty. "
+                           "This provides additional security beyond what Argon2's internal iterations provide.")
+        
+        # Balloon settings
+        balloon_frame = ttk.LabelFrame(scrollable_frame, text="Balloon Settings (Memory-Hard Function)")
+        balloon_frame.pack(fill=tk.X, expand=True, padx=10, pady=5)
+        
+        self.balloon_vars = {}
+        
+        # Enable Balloon
+        row = 0
+        self.balloon_vars['enabled'] = tk.BooleanVar(value=self.config['balloon']['enabled'])
+        balloon_enable = ttk.Checkbutton(balloon_frame, text="Enable Balloon", variable=self.balloon_vars['enabled'])
+        balloon_enable.grid(row=row, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5)
+        
+        # Add tooltip for Balloon
+        self.create_tooltip(balloon_enable,
+                           "Balloon is a memory-hard hashing function designed to be resistant to "
+                           "attacks from specialized hardware. It's particularly effective against "
+                           "GPU-based attacks and provides strong security guarantees.")
+        
+        # Space cost
+        row += 1
+        ttk.Label(balloon_frame, text="Space cost:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
+        self.balloon_vars['space_cost'] = tk.IntVar(value=self.config['balloon']['space_cost'])
+        space_values = [8, 16, 32, 64, 128, 256]
+        space_combo = ttk.Combobox(balloon_frame, textvariable=self.balloon_vars['space_cost'],
+                                 values=space_values, width=10)
+        space_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(balloon_frame, text="(memory usage factor, higher is more secure)").grid(
+            row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        
+        # Time cost
+        row += 1
+        ttk.Label(balloon_frame, text="Time cost:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
+        self.balloon_vars['time_cost'] = tk.IntVar(value=self.config['balloon']['time_cost'])
+        time_values = [10, 20, 30, 40, 50]
+        time_combo = ttk.Combobox(balloon_frame, textvariable=self.balloon_vars['time_cost'],
+                               values=time_values, width=10)
+        time_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(balloon_frame, text="(number of rounds, higher is more secure)").grid(
+            row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        
+        # Delta
+        row += 1
+        ttk.Label(balloon_frame, text="Delta:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
+        self.balloon_vars['delta'] = tk.IntVar(value=self.config['balloon']['delta'])
+        delta_values = [3, 4, 5, 6]
+        delta_combo = ttk.Combobox(balloon_frame, textvariable=self.balloon_vars['delta'],
+                               values=delta_values, width=10)
+        delta_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
+        delta_help = ttk.Label(balloon_frame, text="(number of random blocks, 4 is standard)")
+        delta_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        
+        # Parallel cost
+        row += 1
+        ttk.Label(balloon_frame, text="Parallel cost:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
+        self.balloon_vars['parallel_cost'] = tk.IntVar(value=self.config['balloon']['parallel_cost'])
+        parallel_values = [1, 2, 4, 8, 16]
+        parallel_combo = ttk.Combobox(balloon_frame, textvariable=self.balloon_vars['parallel_cost'],
+                                    values=parallel_values, width=10)
+        parallel_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(balloon_frame, text="(concurrent instances, use CPU core count)").grid(
+            row=row, column=2, sticky=tk.W, padx=5, pady=5)
+            
+        # KDF rounds
+        row += 1
+        ttk.Label(balloon_frame, text="Chained KDF rounds:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
+        self.balloon_vars['rounds'] = tk.IntVar(value=self.config['balloon']['rounds'] if 'rounds' in self.config['balloon'] else 1)
+        rounds_values = [1, 5, 10, 25, 50, 100, 250, 500, 1000]
+        rounds_combo = ttk.Combobox(balloon_frame, textvariable=self.balloon_vars['rounds'], values=rounds_values, width=10)
+        rounds_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
+        balloon_rounds_help = ttk.Label(balloon_frame, text="(number of times to apply KDF sequentially)")
+        balloon_rounds_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        
+        # Add tooltip for rounds
+        self.create_tooltip(balloon_rounds_help,
+                           "Specifies how many times to chain the Balloon function. Each round uses the output "
+                           "of the previous round as input, significantly increasing attack difficulty. "
+                           "This improves security with minimal memory overhead compared to increasing space_cost.")
 
         # Presets section
         presets_frame = ttk.LabelFrame(scrollable_frame, text="Security Presets")
@@ -338,6 +502,8 @@ class SettingsTab:
                 'sha256': 0,
                 'sha3_256': 10000,  # Added SHA3-256 as a primary hash
                 'sha3_512': 0,
+                'blake2b': 0,       # No BLAKE2b in standard preset
+                'shake256': 0,      # No SHAKE-256 in standard preset  
                 'whirlpool': 0,
                 'scrypt': {
                     'n': 16384,
@@ -352,6 +518,14 @@ class SettingsTab:
                     'hash_len': 32,
                     'type': 'id'
                 },
+                'balloon': {
+                    'enabled': False,
+                    'rounds': 1,
+                    'space_cost': 16,
+                    'time_cost': 20,
+                    'delta': 4,
+                    'parallel_cost': 4
+                },
                 'pbkdf2_iterations': 100000
             }
         elif preset_name == "high":
@@ -361,6 +535,8 @@ class SettingsTab:
                 'sha256': 0,
                 'sha3_256': 20000,  # Added higher SHA3-256 iteration count
                 'sha3_512': 5000,
+                'blake2b': 10000,   # Added BLAKE2b for high security preset
+                'shake256': 0,      # No SHAKE-256 in high security preset
                 'whirlpool': 0,
                 'scrypt': {
                     'n': 65536,
@@ -375,6 +551,14 @@ class SettingsTab:
                     'hash_len': 32,
                     'type': 'id'
                 },
+                'balloon': {
+                    'enabled': False,
+                    'rounds': 5,
+                    'space_cost': 32,
+                    'time_cost': 30,
+                    'delta': 4,
+                    'parallel_cost': 4
+                },
                 'pbkdf2_iterations': 200000
             }
         elif preset_name == "paranoid":
@@ -384,6 +568,8 @@ class SettingsTab:
                 'sha256': 10000,
                 'sha3_256': 50000,  # Higher SHA3-256 iterations for paranoid preset
                 'sha3_512': 10000,
+                'blake2b': 20000,   # Add BLAKE2b for paranoid preset
+                'shake256': 15000,  # Add SHAKE-256 for paranoid preset 
                 'whirlpool': 5000,
                 'scrypt': {
                     'n': 262144,
@@ -398,6 +584,14 @@ class SettingsTab:
                     'hash_len': 64,
                     'type': 'id'
                 },
+                'balloon': {
+                    'enabled': True,
+                    'rounds': 25,
+                    'space_cost': 64,
+                    'time_cost': 40,
+                    'delta': 5,
+                    'parallel_cost': 8
+                },
                 'pbkdf2_iterations': 500000
             }
         elif preset_name == "legacy":
@@ -407,6 +601,8 @@ class SettingsTab:
                 'sha256': 0,
                 'sha3_256': 0,
                 'sha3_512': 0,
+                'blake2b': 0,       # No BLAKE2b in legacy preset
+                'shake256': 0,      # No SHAKE-256 in legacy preset
                 'whirlpool': 0,
                 'scrypt': {
                     'n': 0,
@@ -420,6 +616,14 @@ class SettingsTab:
                     'parallelism': 4,
                     'hash_len': 32,
                     'type': 'id'
+                },
+                'balloon': {
+                    'enabled': False,
+                    'rounds': 1,
+                    'space_cost': 16,
+                    'time_cost': 20,
+                    'delta': 4,
+                    'parallel_cost': 4
                 },
                 'pbkdf2_iterations': 10000
             }
@@ -461,6 +665,11 @@ class SettingsTab:
         for key in self.argon2_vars:
             if key in self.config['argon2']:
                 self.argon2_vars[key].set(self.config['argon2'][key])
+                
+        # Update Balloon variables
+        for key in self.balloon_vars:
+            if key in self.config['balloon']:
+                self.balloon_vars[key].set(self.config['balloon'][key])
     
     def update_config_from_ui(self):
         """Update configuration from UI variables"""
@@ -478,6 +687,11 @@ class SettingsTab:
         for key in self.argon2_vars:
             if key in self.config['argon2']:
                 self.config['argon2'][key] = self.argon2_vars[key].get()
+                
+        # Update Balloon settings
+        for key in self.balloon_vars:
+            if key in self.config['balloon']:
+                self.config['balloon'][key] = self.balloon_vars[key].get()
     
     def validate_settings(self):
         """Validate user settings for sanity"""
@@ -500,15 +714,41 @@ class SettingsTab:
             else:
                 return False
                 
+        # Validate Balloon settings if enabled
+        if self.balloon_vars['enabled'].get():
+            # Ensure space_cost is at least 8
+            space_cost = self.balloon_vars['space_cost'].get()
+            if space_cost < 8:
+                messagebox.showerror("Invalid Setting",
+                                  "Balloon space cost must be at least 8 for adequate security.")
+                return False
+                
+            # Ensure time_cost is at least 10
+            time_cost = self.balloon_vars['time_cost'].get()
+            if time_cost < 10:
+                messagebox.showerror("Invalid Setting",
+                                  "Balloon time cost must be at least 10 for adequate security.")
+                return False
+                
+            # Ensure delta is at least 3
+            delta = self.balloon_vars['delta'].get()
+            if delta < 3:
+                messagebox.showerror("Invalid Setting",
+                                  "Balloon delta must be at least 3 for proper security.")
+                return False
+                
         # Check if at least one hashing algorithm is enabled
         all_disabled = (
             self.hash_vars['sha512'].get() == 0 and
             self.hash_vars['sha256'].get() == 0 and
             self.hash_vars['sha3_256'].get() == 0 and
             self.hash_vars['sha3_512'].get() == 0 and
+            self.hash_vars['blake2b'].get() == 0 and
+            self.hash_vars['shake256'].get() == 0 and
             self.hash_vars['whirlpool'].get() == 0 and
-            self.scrypt_vars['n'].get() == 0 and
-            (not self.argon2_vars['enabled'].get())
+            (not self.scrypt_vars['enabled'].get()) and
+            (not self.argon2_vars['enabled'].get()) and
+            (not self.balloon_vars['enabled'].get())
         )
         
         if all_disabled:
@@ -622,11 +862,14 @@ class SettingsTab:
             "Based on your current settings, here's a rough performance estimate:\n\n"
             "SHA-512: {sha512} rounds\n"
             "SHA-256: {sha256} rounds\n"
-            "SHA3-256: {sha3_256} rounds {sha3_recommended}\n"  # Added recommendation indicator
+            "SHA3-256: {sha3_256} rounds {sha3_recommended}\n"
             "SHA3-512: {sha3_512} rounds\n"
+            "BLAKE2b: {blake2b} rounds {blake2b_recommended}\n"
+            "SHAKE-256: {shake256} rounds {shake256_recommended}\n"
             "Whirlpool: {whirlpool} rounds\n"
-            "Scrypt: {scrypt_enabled} (N={scrypt_n}, r={scrypt_r}, p={scrypt_p})\n"
-            "Argon2: {argon2_enabled} (t={argon2_t}, m={argon2_m}KB, p={argon2_p})\n"
+            "Scrypt: {scrypt_enabled} (N={scrypt_n}, r={scrypt_r}, p={scrypt_p}, rounds={scrypt_rounds})\n"
+            "Argon2: {argon2_enabled} (t={argon2_t}, m={argon2_m}KB, p={argon2_p}, rounds={argon2_rounds})\n"
+            "Balloon: {balloon_enabled} (s={balloon_s}, t={balloon_t}, d={balloon_d}, p={balloon_p}, rounds={balloon_rounds})\n"
             "PBKDF2: {pbkdf2} iterations\n\n"
         ).format(
             sha512=self.config['sha512'],
@@ -636,15 +879,31 @@ class SettingsTab:
             sha3_recommended="★ (recommended)" if self.config[
                                                       'sha3_256'] > 0 else "- consider enabling for better security",
             sha3_512=self.config['sha3_512'],
+            # Add BLAKE2b with recommendation
+            blake2b=self.config['blake2b'],
+            blake2b_recommended="★ (high performance)" if self.config[
+                                                      'blake2b'] > 0 else "",
+            # Add SHAKE-256 with recommendation
+            shake256=self.config['shake256'],
+            shake256_recommended="★ (variable-length output)" if self.config[
+                                                      'shake256'] > 0 else "",
             whirlpool=self.config['whirlpool'],
-            scrypt_enabled="Enabled" if self.config['scrypt']['n'] > 0 else "Disabled",
+            scrypt_enabled="Enabled" if self.config['scrypt']['enabled'] else "Disabled",
             scrypt_n=self.config['scrypt']['n'],
             scrypt_r=self.config['scrypt']['r'],
             scrypt_p=self.config['scrypt']['p'],
+            scrypt_rounds=self.config['scrypt']['rounds'],
             argon2_enabled="Enabled" if self.config['argon2']['enabled'] else "Disabled",
             argon2_t=self.config['argon2']['time_cost'],
             argon2_m=self.config['argon2']['memory_cost'],
             argon2_p=self.config['argon2']['parallelism'],
+            argon2_rounds=self.config['argon2']['rounds'],
+            balloon_enabled="Enabled" if self.config['balloon']['enabled'] else "Disabled",
+            balloon_s=self.config['balloon']['space_cost'],
+            balloon_t=self.config['balloon']['time_cost'],
+            balloon_d=self.config['balloon']['delta'],
+            balloon_p=self.config['balloon']['parallel_cost'],
+            balloon_rounds=self.config['balloon']['rounds'],
             pbkdf2=self.config['pbkdf2_iterations']
         )
 
@@ -681,6 +940,10 @@ class SettingsTab:
         # SHA3-256 is slightly more efficient than SHA-256
         score += self.config['sha3_256'] / 12000  # Adjusted weight for SHA3-256
         score += self.config['sha3_512'] / 10000
+        # BLAKE2b is significantly faster than other hash functions, adjust weight accordingly
+        score += self.config['blake2b'] / 15000   # BLAKE2b is more efficient
+        # SHAKE-256 is a bit slower than SHA3-256
+        score += self.config['shake256'] / 11000  # Adjusted weight for SHAKE-256
         score += self.config['whirlpool'] / 5000
 
         # Score PBKDF2
@@ -690,13 +953,22 @@ class SettingsTab:
         if self.config['scrypt']['n'] > 0:
             # Logarithmic scale since Scrypt impact grows quickly with N
             score += (2 * (self.config['scrypt']['n'] / 8192)) * (self.config['scrypt']['r'] / 8) * \
-                     self.config['scrypt']['p']
+                     self.config['scrypt']['p'] * (self.config['scrypt']['rounds'] / 10)
 
         # Score Argon2 (higher impact)
         if self.config['argon2']['enabled']:
             score += (2 * (self.config['argon2']['memory_cost'] / 65536)) * \
                      (self.config['argon2']['time_cost'] / 3) * \
-                     (self.config['argon2']['parallelism'] / 4)
+                     (self.config['argon2']['parallelism'] / 4) * \
+                     (self.config['argon2']['rounds'] / 10)
+                     
+        # Score Balloon (higher impact)
+        if self.config['balloon']['enabled']:
+            score += (1.5 * (self.config['balloon']['space_cost'] / 16)) * \
+                     (self.config['balloon']['time_cost'] / 20) * \
+                     (self.config['balloon']['delta'] / 4) * \
+                     (self.config['balloon']['parallel_cost'] / 4) * \
+                     (self.config['balloon']['rounds'] / 10)
 
         # Determine performance level
         if score < 5:

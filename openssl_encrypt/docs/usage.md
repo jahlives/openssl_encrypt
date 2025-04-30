@@ -7,7 +7,7 @@ The tool can be used either through the command line interface or the graphical 
 To start the graphical user interface:
 
 ```bash
-python crypt_gui.py
+python -m openssl_encrypt.crypt_gui
 ```
 
 The GUI provides a user-friendly interface with four main tabs:
@@ -37,7 +37,7 @@ The GUI provides a user-friendly interface with four main tabs:
 ### Command-Line Interface
 
 ```bash
-python crypt.py ACTION [OPTIONS]
+python -m openssl_encrypt.crypt ACTION [OPTIONS]
 ```
 
 #### Actions:
@@ -133,5 +133,45 @@ python crypt.py ACTION [OPTIONS]
 #### Read Input from stdin
 It can be helpful to get the decrypted content from stdin (ex when encrypted content is from wallet). Here a sample of reading data from `kdewallet`
 ```
-kwallet-query -f "Secret Service" -r KeePassCrypt -v kdewallet | python crypt.py decrypt --input /dev/stdin -q
+kwallet-query -f "Secret Service" -r KeePassCrypt -v kdewallet | python -m openssl_encrypt.crypt decrypt --input /dev/stdin -q
+```
+
+### Test Module
+
+The package includes a test module to verify encryption/decryption functionality and hash algorithms. The test module can be run as a Python module:
+
+```bash
+python -m openssl_encrypt.crypt_test [OPTIONS]
+```
+
+#### Test Options:
+
+| Option | Description |
+|--------|-------------|
+| `--algorithm`, `-a` | Specific encryption algorithm to test (e.g., fernet, aes-gcm, chacha20-poly1305) |
+| `--iterations`, `-i` | Number of test iterations to run (default: 1) |
+| `--all` | Test all supported encryption algorithms |
+| `--hash-functions` | Test hash functions |
+| `--entropy` | Test password entropy evaluation |
+
+#### Examples:
+
+Test a specific encryption algorithm:
+```bash
+python -m openssl_encrypt.crypt_test --algorithm fernet
+```
+
+Test all encryption algorithms with multiple iterations:
+```bash
+python -m openssl_encrypt.crypt_test --all --iterations 3
+```
+
+Test only the hash functions:
+```bash
+python -m openssl_encrypt.crypt_test --hash-functions
+```
+
+Run a comprehensive test suite:
+```bash
+python -m openssl_encrypt.crypt_test --all --hash-functions --entropy
 ```

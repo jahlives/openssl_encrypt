@@ -94,7 +94,7 @@ and verify first that the file can be decrypted.
 You can verify the installation by running:
 
 ```bash
-python -m openssl_encrypt version
+python -m openssl_encrypt.crypt version
 ```
 
 ### Troubleshooting
@@ -123,7 +123,7 @@ pip install openssl_encrypt --require-hashes
 ### Offline Installation
 
 For air-gapped systems, you can download the wheel file from either:
-- PyPI: https://pypi.org/project/openssl-encrypt/
+- PyPI: https://pypi.org/project/openssl_encrypt/
 - GitLab: https://gitlab.rm-rf.ch/world/openssl_encrypt/-/packages
 
 Then install using:

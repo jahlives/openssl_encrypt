@@ -1,6 +1,15 @@
 /openssl_encrypt/templates/*
 !/openssl_encrypt/templates/.gitkeep
+!/openssl_encrypt/templates/quick.json
+!/openssl_encrypt/templates/quick.yml
+!/openssl_encrypt/templates/standard.json
+!/openssl_encrypt/templates/standard.yml
+!/openssl_encrypt/templates/paranoid.json
+!/openssl_encrypt/templates/paranoid.yml
+/openssl_encrypt/version.py
 
+CLAUDE.md
+test.results
 # PyCharm IDE files
 .idea/
 

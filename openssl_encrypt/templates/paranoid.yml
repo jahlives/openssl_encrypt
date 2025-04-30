@@ -1,0 +1,31 @@
+hash_config:
+  sha512: 10000
+  sha256: 10000
+  sha3_256: 10000
+  sha3_512: 800000
+  blake2b: 800000
+  shake256: 400000
+  scrypt:
+    enabled: true
+    n: 256
+    r: 16
+    p: 2
+    rounds: 100
+  argon2:
+    enabled: true
+    time_cost: 4
+    memory_cost: 131072
+    parallelism: 8
+    hash_len: 64
+    type: 2
+    rounds: 200
+  balloon:
+    enabled: true
+    time_cost: 3
+    space_cost: 65536
+    parallelism: 4
+    hash_len: 64
+    rounds: 5
+  pbkdf2_iterations: 0
+  type: id
+  algorithm: xchacha20-poly1305

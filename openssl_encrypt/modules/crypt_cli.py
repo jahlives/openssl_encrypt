@@ -42,51 +42,23 @@ def debug_hash_config(args, hash_config, message="Hash configuration"):
     """Debug output for hash configuration"""
     print(f"\n{message}:")
     print(
-        f"SHA3-512: args={
-            args.sha3_512_rounds}, hash_config={
-            hash_config.get(
-                'sha3_512',
-                'Not set')}")
+        f"SHA3-512: args={args.sha3_512_rounds}, hash_config={hash_config.get('sha3_512', 'Not set')}")
     print(
-        f"SHA3-256: args={
-            args.sha3_256_rounds}, hash_config={
-            hash_config.get(
-                'sha3_256',
-                'Not set')}")
+        f"SHA3-256: args={args.sha3_256_rounds}, hash_config={hash_config.get('sha3_256', 'Not set')}")
     print(
-        f"SHA-512: args={
-            args.sha512_rounds}, hash_config={
-            hash_config.get(
-                'sha512',
-                'Not set')}")
+        f"SHA-512: args={args.sha512_rounds}, hash_config={hash_config.get('sha512', 'Not set')}")
     print(
-        f"SHA-256: args={
-            args.sha256_rounds}, hash_config={
-            hash_config.get(
-                'sha256',
-                'Not set')}")
+        f"SHA-256: args={args.sha256_rounds}, hash_config={hash_config.get('sha256', 'Not set')}")
     print(
-        f"PBKDF2: args={
-            args.pbkdf2_iterations}, hash_config={
-            hash_config.get(
-                'pbkdf2_iterations',
-                'Not set')}")
+        f"BLAKE2b: args={args.blake2b_rounds}, hash_config={hash_config.get('blake2b', 'Not set')}")
     print(
-        f"Scrypt: args.n={
-            args.scrypt_n}, hash_config.n={
-            hash_config.get(
-                'scrypt',
-                {}).get(
-                    'n',
-                'Not set')}")
+        f"SHAKE-256: args={args.shake256_rounds}, hash_config={hash_config.get('shake256', 'Not set')}")
     print(
-        f"Argon2: args.enable_argon2={
-            args.enable_argon2}, hash_config.enabled={
-            hash_config.get(
-                'argon2',
-                {}).get(
-                    'enabled',
-                'Not set')}")
+        f"PBKDF2: args={args.pbkdf2_iterations}, hash_config={hash_config.get('pbkdf2_iterations', 'Not set')}")
+    print(
+        f"Scrypt: args.n={args.scrypt_n}, hash_config.n={hash_config.get('scrypt', {}).get('n', 'Not set')}")
+    print(
+        f"Argon2: args.enable_argon2={args.enable_argon2}, hash_config.enabled={hash_config.get('argon2', {}).get('enabled', 'Not set')}")
 
 
 class SecurityTemplate(Enum):
@@ -192,6 +164,8 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                 "sha256": 1000,
                 "sha3_256": 0,
                 "sha3_512": 10000,
+                "blake2b": 0,
+                "shake256": 0,
                 "whirlpool": 0,
                 "scrypt": {
                     "enabled": False,
@@ -211,7 +185,7 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                 },
                 "pbkdf2_iterations": 10000,
                 "type": "id",
-                "algorithm": "camellia"
+                "algorithm": "aes-ocb3"
             }
         },
         SecurityTemplate.STANDARD: {
@@ -219,14 +193,16 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                 "sha512": 0,
                 "sha256": 0,
                 "sha3_256": 0,
-                "sha3_512": 1000000,
+                "sha3_512": 600000,
+                "blake2b": 200000,
+                "shake256": 200000,
                 "whirlpool": 0,
                 "scrypt": {
                     "enabled": True,
                     "n": 128,
                     "r": 8,
                     "p": 1,
-                    "rounds": 10000
+                    "rounds": 1000
                 },
                 "argon2": {
                     "enabled": True,
@@ -239,7 +215,7 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                 },
                 "pbkdf2_iterations": 0,
                 "type": "id",
-                "algorithm": "fernet"
+                "algorithm": "aes-gcm-siv"
             }
         },
         SecurityTemplate.PARANOID: {
@@ -247,7 +223,9 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                 "sha512": 10000,
                 "sha256": 10000,
                 "sha3_256": 10000,
-                "sha3_512": 2000000,
+                "sha3_512": 800000,
+                "blake2b": 800000,
+                "shake256": 400000,
                 "scrypt": {
                     "enabled": True,
                     "n": 256,
@@ -396,9 +374,15 @@ def main():
         choices=[
             algo.value for algo in EncryptionAlgorithm],
         default=EncryptionAlgorithm.FERNET.value,
-        help='Encryption algorithm to use: fernet (default, Fernet from cryptography, good general choice), '
-        'aes-gcm (AES-256 in GCM mode, high security, widely trusted), '
-        'chacha20-poly1305 (modern AEAD cipher, excellent performance)')
+        help='Encryption algorithm to use: \n'
+        '  fernet (default, AES-128-CBC with authentication), \n'
+        '  aes-gcm (AES-256 in GCM mode, high security, widely trusted), \n'
+        '  aes-gcm-siv (AES-256 in GCM-SIV mode, resistant to nonce reuse), \n'
+        '  aes-ocb3 (AES-256 in OCB3 mode, faster than GCM), \n'
+        '  aes-siv (AES in SIV mode, synthetic IV), \n'
+        '  chacha20-poly1305 (modern AEAD cipher with 12-byte nonce), \n'
+        '  xchacha20-poly1305 (ChaCha20-Poly1305 with 24-byte nonce, safer for high-volume encryption), \n'
+        '  camellia (Camellia in CBC mode)')
     # Define common options
     parser.add_argument(
         '--password', '-p',
@@ -488,6 +472,22 @@ def main():
         const=1,
         default=0,
         help='Number of SHA3-512 iterations (default: 1,000,000 if flag provided without value)'
+    )
+    hash_group.add_argument(
+        '--blake2b-rounds',
+        type=int,
+        nargs='?',
+        const=1,
+        default=0,
+        help='Number of BLAKE2b iterations (default: 1,000,000 if flag provided without value)'
+    )
+    hash_group.add_argument(
+        '--shake256-rounds',
+        type=int,
+        nargs='?',
+        const=1,
+        default=0,
+        help='Number of SHAKE-256 iterations (default: 1,000,000 if flag provided without value)'
     )
     hash_group.add_argument(
         '--whirlpool-rounds',
@@ -676,6 +676,20 @@ def main():
         default=0,
         help=argparse.SUPPRESS)
     hash_group.add_argument(
+        '--blake2b',
+        type=int,
+        nargs='?',
+        const=1,
+        default=0,
+        help=argparse.SUPPRESS)
+    hash_group.add_argument(
+        '--shake256',
+        type=int,
+        nargs='?',
+        const=1,
+        default=0,
+        help=argparse.SUPPRESS)
+    hash_group.add_argument(
         '--pbkdf2',
         type=int,
         default=100000,
@@ -722,6 +736,10 @@ def main():
         args.sha3_256_rounds = args.sha3_256
     if not args.sha3_512_rounds and args.sha3_512:
         args.sha3_512_rounds = args.sha3_512
+    if not args.blake2b_rounds and args.blake2b:
+        args.blake2b_rounds = args.blake2b
+    if not args.shake256_rounds and args.shake256:
+        args.shake256_rounds = args.shake256
 
     # PBKDF2 mapping
     if args.pbkdf2 != 100000:  # Only override if not the default
@@ -774,8 +792,7 @@ def main():
                 if len(test_hash) == 16:
                     print("✓ Argon2 functionality test: PASSED")
                 else:
-                    print(
-                        "✗ Argon2 functionality test: FAILED (unexpected hash length)")
+                    print("✗ Argon2 functionality test: FAILED (unexpected hash length)")
             except Exception as e:
                 print(f"✗ Argon2 functionality test: FAILED with error: {e}")
         else:
@@ -937,6 +954,18 @@ def main():
         if not args.quiet:
             print(
                 f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-512")
+                
+    if args.blake2b_rounds == 1:  # When flag is provided without value
+        args.blake2b_rounds = MIN_SHA_ITERATIONS
+        if not args.quiet:
+            print(
+                f"Using default of {MIN_SHA_ITERATIONS} iterations for BLAKE2b")
+                
+    if args.shake256_rounds == 1:  # When flag is provided without value
+        args.shake256_rounds = MIN_SHA_ITERATIONS
+        if not args.quiet:
+            print(
+                f"Using default of {MIN_SHA_ITERATIONS} iterations for SHAKE-256")
 
     # Handle Argon2 presets if specified
     if args.argon2_preset and ARGON2_AVAILABLE:
@@ -996,13 +1025,13 @@ def main():
     if args.paranoid or args.quick or args.standard:
         if args.paranoid:
             hash_config = get_template_config(SecurityTemplate.PARANOID)
-            hash_config['hash_config']['algorithm'] = 'aes-siv'
+            hash_config['hash_config']['algorithm'] = 'xchacha20-poly1305'
         elif args.quick:
             hash_config = get_template_config(SecurityTemplate.QUICK)
-            hash_config['hash_config']['algorithm'] = 'fernet'
+            hash_config['hash_config']['algorithm'] = 'aes-ocb3'
         elif args.standard:
             hash_config = get_template_config(SecurityTemplate.STANDARD)
-            hash_config['hash_config']['algorithm'] = 'aes-gcm'
+            hash_config['hash_config']['algorithm'] = 'aes-gcm-siv'
         setattr(args, 'algorithm', hash_config['hash_config']['algorithm'])
         hash_config = hash_config['hash_config']
     elif args.template:
@@ -1019,6 +1048,8 @@ def main():
             'sha256': args.sha256_rounds,
             'sha3_256': args.sha3_256_rounds,
             'sha3_512': args.sha3_512_rounds,
+            'blake2b': args.blake2b_rounds,
+            'shake256': args.shake256_rounds,
             'whirlpool': args.whirlpool_rounds,
             'scrypt': {
                 'enabled': args.enable_scrypt,
@@ -1061,10 +1092,7 @@ def main():
                 # replacement
                 temp_dir = os.path.dirname(os.path.abspath(args.input))
                 temp_suffix = f".{uuid.uuid4().hex[:12]}.tmp"
-                temp_output = os.path.join(
-                    temp_dir, f".{
-                        os.path.basename(
-                            args.input)}{temp_suffix}")
+                temp_output = os.path.join(temp_dir, f".{os.path.basename(args.input)}{temp_suffix}")
 
                 # Add to cleanup list in case process is interrupted
                 temp_files_to_cleanup.append(temp_output)
@@ -1171,8 +1199,7 @@ def main():
                                 if interrupted:
                                     break
                                 # Overwrite the line with updated countdown
-                                print(
-                                    f"\rTime remaining: {remaining} seconds...", end="", flush=True)
+                                print(f"\rTime remaining: {remaining} seconds...", end="", flush=True)
                                 # Sleep in small increments to check for
                                 # interruption more frequently
                                 for _ in range(10):
@@ -1186,8 +1213,7 @@ def main():
 
                             # Give an indication that we're clearing the screen
                             if interrupted:
-                                print(
-                                    "\n\nClearing password from screen (interrupted by user)...")
+                                print("\n\nClearing password from screen (interrupted by user)...")
                             else:
                                 print("\n\nClearing password from screen...")
 
@@ -1198,8 +1224,7 @@ def main():
                                 os.system('clear')  # Unix/Linux/MacOS
 
                             print("Password has been cleared from screen.")
-                            print(
-                                "For additional security, consider clearing your terminal history.")
+                            print("For additional security, consider clearing your terminal history.")
 
                 # If shredding was requested and encryption was successful
                 if args.shred and not args.overwrite:
@@ -1214,10 +1239,7 @@ def main():
                 # Create a temporary file for the decryption
                 temp_dir = os.path.dirname(os.path.abspath(args.input))
                 temp_suffix = f".{uuid.uuid4().hex[:12]}.tmp"
-                temp_output = os.path.join(
-                    temp_dir, f".{
-                        os.path.basename(
-                            args.input)}{temp_suffix}")
+                temp_output = os.path.join(temp_dir, f".{os.path.basename(args.input)}{temp_suffix}")
 
                 # Add to cleanup list
                 temp_files_to_cleanup.append(temp_output)
@@ -1305,16 +1327,12 @@ def main():
 
             if not matched_paths:
                 if not args.quiet:
-                    print(
-                        f"No files or directories match the pattern: {
-                            args.input}")
+                    print(f"No files or directories match the pattern: {args.input}")
                 exit_code = 1
             else:
                 # If there are multiple files/dirs to shred, inform the user
                 if len(matched_paths) > 1 and not args.quiet:
-                    print(
-                        f"Found {
-                            len(matched_paths)} files/directories matching the pattern.")
+                    print(f"Found {len(matched_paths)} files/directories matching the pattern.")
 
                 overall_success = True
 
@@ -1349,9 +1367,7 @@ def main():
                     else:
                         # File or directory with recursive flag
                         if not args.quiet:
-                            print(
-                                f"Securely shredding " f"{
-                                    'directory' if os.path.isdir(path) else 'file'}: {path}")
+                            print(f"Securely shredding {'directory' if os.path.isdir(path) else 'file'}: {path}")
 
                         success = secure_shred_file(
                             path, args.shred_passes, args.quiet)
