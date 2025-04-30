@@ -8,13 +8,21 @@ this_directory = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
-VERSION = "0.5.0"  # Define version in a variable for reuse
+VERSION = "0.5.1"  # Define version in a variable for reuse
 
 # Get git commit hash
-try:
-    git_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode('ascii').strip()
-except (subprocess.SubprocessError, FileNotFoundError):
-    git_hash = "unknown"
+git_hash = "unknown"
+
+# First check if GitLab CI provides the commit SHA
+if os.environ.get('CI_COMMIT_SHA'):
+    git_hash = os.environ.get('CI_COMMIT_SHA')
+# Otherwise try to get it from git directly
+else:
+    try:
+        git_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode('ascii').strip()
+    except (subprocess.SubprocessError, FileNotFoundError):
+        # Keep default "unknown"
+        pass
 
 # Generate version.py from template
 template_path = os.path.join(this_directory, 'openssl_encrypt/version.py.template')
