@@ -8,6 +8,9 @@ bcrypt~=4.3.0
 pywin32>=306; sys_platform == 'win32'
 PyYAML
 
+# Optional post-quantum cryptography dependencies
+# liboqs-python  # Uncomment to enable post-quantum cryptography support
+
 # Development tools (commented out by default)
 pytest>=8.0.0
 pytest-cov>=4.1.0

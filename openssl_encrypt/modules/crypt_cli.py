@@ -31,7 +31,8 @@ from .crypt_core import (
     WHIRLPOOL_AVAILABLE,
     ARGON2_AVAILABLE,
     ARGON2_TYPE_INT_MAP,
-    EncryptionAlgorithm)
+    EncryptionAlgorithm,
+    PQC_AVAILABLE)
 from .crypt_utils import (
     secure_shred_file, expand_glob_patterns, generate_strong_password,
     display_password_with_timeout, show_security_recommendations,
@@ -188,7 +189,7 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                 },
                 "pbkdf2_iterations": 10000,
                 "type": "id",
-                "algorithm": "aes-ocb3"
+                "algorithm": "fernet"
             }
         },
         SecurityTemplate.STANDARD: {
@@ -205,7 +206,7 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                     "n": 128,
                     "r": 8,
                     "p": 1,
-                    "rounds": 1000
+                    "rounds": 10
                 },
                 "argon2": {
                     "enabled": True,
@@ -234,7 +235,7 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                     "n": 256,
                     "r": 16,
                     "p": 2,
-                    "rounds": 20000
+                    "rounds": 100
                 },
                 "argon2": {
                     "enabled": True,
@@ -254,7 +255,8 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                     "rounds": 5
                 },
                 "pbkdf2_iterations": 0,
-                "type": "id"
+                "type": "id",
+                "algorithm": "xchacha20-poly1305"
             }
         }
     }
@@ -367,10 +369,11 @@ def main():
             'generate-password',
             'security-info',
             'check-argon2',
+            'check-pqc',
             'version',
             'show-version-file'],
         help='Action to perform: encrypt/decrypt files, shred data, generate passwords, '
-        'show security recommendations, check Argon2 support, or display version file contents')
+        'show security recommendations, check Argon2 support, check post-quantum cryptography support or display version file contents')
 
     parser.add_argument(
         '--algorithm',
@@ -386,7 +389,10 @@ def main():
         '  aes-siv (AES in SIV mode, synthetic IV), \n'
         '  chacha20-poly1305 (modern AEAD cipher with 12-byte nonce), \n'
         '  xchacha20-poly1305 (ChaCha20-Poly1305 with 24-byte nonce, safer for high-volume encryption), \n'
-        '  camellia (Camellia in CBC mode)')
+        '  camellia (Camellia in CBC mode), \n'
+        '  kyber512-hybrid (post-quantum key exchange with AES-256-GCM, NIST level 1), \n'
+        '  kyber768-hybrid (post-quantum key exchange with AES-256-GCM, NIST level 3), \n'
+        '  kyber1024-hybrid (post-quantum key exchange with AES-256-GCM, NIST level 5)')
     # Define common options
     parser.add_argument(
         '--password', '-p',
@@ -548,6 +554,23 @@ def main():
         type=int,
         default=0,
         help=argparse.SUPPRESS  # Hidden legacy option
+    )
+    
+    # Add Post-Quantum Cryptography options
+    pqc_group = parser.add_argument_group('Post-Quantum Cryptography Options')
+    pqc_group.add_argument(
+        '--pqc-keyfile',
+        help='Path to store or load post-quantum key pair'
+    )
+    pqc_group.add_argument(
+        '--pqc-store-key',
+        action='store_true',
+        help='Store the post-quantum private key in the encrypted file (less secure but enables self-decryption)'
+    )
+    pqc_group.add_argument(
+        '--pqc-gen-key',
+        action='store_true',
+        help='Generate a new post-quantum key pair and store in the path specified by --pqc-keyfile'
     )
 
     # Argon2 parameters group - updated for consistency
@@ -826,6 +849,60 @@ def main():
             print("\nTo enable Argon2 support, install the argon2-cffi package:")
             print("    pip install argon2-cffi")
         sys.exit(0)
+        
+    elif args.action == 'check-pqc':
+        from .pqc import check_pqc_support, PQCAlgorithm
+        
+        pqc_available, version, supported_algorithms = check_pqc_support()
+        print("\nPOST-QUANTUM CRYPTOGRAPHY SUPPORT CHECK")
+        print("======================================")
+        if pqc_available:
+            print(f"✓ Post-quantum cryptography is AVAILABLE (liboqs version {version})")
+            print("✓ Supported algorithms:")
+            
+            # Organize algorithms by type
+            kems = [algo for algo in supported_algorithms if 'Kyber' in algo]
+            sigs = [algo for algo in supported_algorithms if 'Kyber' not in algo]
+            
+            if kems:
+                print("\n  Key Encapsulation Mechanisms (KEMs):")
+                for algo in kems:
+                    print(f"    - {algo}")
+            
+            if sigs:
+                print("\n  Digital Signature Algorithms:")
+                for algo in sigs:
+                    print(f"    - {algo}")
+            
+            # Try a test encryption to verify functionality
+            try:
+                from .pqc import PQCipher
+                test_cipher = PQCipher(PQCAlgorithm.KYBER768)
+                public_key, private_key = test_cipher.generate_keypair()
+                test_data = b"Test post-quantum encryption"
+                encrypted = test_cipher.encrypt(test_data, public_key)
+                decrypted = test_cipher.decrypt(encrypted, private_key)
+                
+                if decrypted == test_data:
+                    print("\n✓ Post-quantum encryption functionality test: PASSED")
+                else:
+                    print("\n✗ Post-quantum encryption functionality test: FAILED (decryption mismatch)")
+            except Exception as e:
+                print(f"\n✗ Post-quantum encryption functionality test: FAILED with error: {e}")
+        else:
+            print("✗ Post-quantum cryptography is NOT AVAILABLE")
+            print("\nTo enable post-quantum cryptography support, install the liboqs-python package:")
+            print("    pip install liboqs-python")
+            
+        print("\nUsage examples:")
+        print("  Encrypt with Kyber-768 (NIST Level 3):")
+        print("    python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm kyber768-hybrid")
+        print("\n  Generate and save a key pair:")
+        print("    python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm kyber768-hybrid --pqc-gen-key --pqc-keyfile key.pqc")
+        print("\n  Decrypt using a saved key pair:")
+        print("    python -m openssl_encrypt.crypt decrypt -i file.txt.enc -o file.txt --pqc-keyfile key.pqc")
+        
+        sys.exit(0)
 
     elif args.action == 'generate-password':
         # If no character sets are explicitly selected, use all by default
@@ -938,6 +1015,22 @@ def main():
             print("Install with: pip install argon2-cffi")
         args.enable_argon2 = False
         args.argon2_preset = None
+        
+    # Check for post-quantum cryptography availability if needed
+    if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid']:
+        try:
+            # Attempt direct import to ensure module is truly available
+            import oqs
+            pqc_available = True
+        except ImportError:
+            pqc_available = False
+            
+        if not pqc_available:
+            if not args.quiet:
+                print("Warning: liboqs-python module not found. Post-quantum cryptography will not be available.")
+                print("Install with: pip install liboqs-python")
+                print("Falling back to aes-gcm algorithm.")
+            args.algorithm = 'aes-gcm'
 
     # Validate random password parameter
     if args.random is not None:
@@ -1126,6 +1219,103 @@ def main():
                 try:
                     # Get original file permissions before doing anything
                     original_permissions = get_file_permissions(args.input)
+                    # Handle PQC key operations
+                    pqc_keypair = None
+                    if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid']:
+                        # Check if we should generate and save a new key pair
+                        if args.pqc_gen_key and args.pqc_keyfile:
+                            from .pqc import PQCipher, PQCAlgorithm
+                            
+                            # Map algorithm name to PQCAlgorithm with fallbacks
+                            pqc_algorithms = check_pqc_support()[2]
+                            
+                            # Determine which variants are available
+                            kyber512_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber512", "mlkem512"]]
+                            kyber768_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber768", "mlkem768"]]
+                            kyber1024_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber1024", "mlkem1024"]]
+                            
+                            # Choose first available or fall back to default name
+                            kyber512_algo = kyber512_options[0] if kyber512_options else "Kyber512"
+                            kyber768_algo = kyber768_options[0] if kyber768_options else "Kyber768"
+                            kyber1024_algo = kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                            
+                            if not args.quiet:
+                                print(f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}")
+                            
+                            # Create direct string mapping instead of using enum
+                            algo_map = {
+                                'kyber512-hybrid': kyber512_algo,
+                                'kyber768-hybrid': kyber768_algo,
+                                'kyber1024-hybrid': kyber1024_algo
+                            }
+                            
+                            # Generate key pair
+                            cipher = PQCipher(algo_map[args.algorithm])
+                            public_key, private_key = cipher.generate_keypair()
+                            
+                            # Save key pair to file
+                            import json
+                            import base64
+                            
+                            key_data = {
+                                'algorithm': args.algorithm,
+                                'public_key': base64.b64encode(public_key).decode('utf-8'),
+                                'private_key': base64.b64encode(private_key).decode('utf-8')
+                            }
+                            
+                            with open(args.pqc_keyfile, 'w') as f:
+                                json.dump(key_data, f)
+                                
+                            if not args.quiet:
+                                print(f"Post-quantum key pair saved to {args.pqc_keyfile}")
+                                
+                            pqc_keypair = (public_key, private_key)
+                        
+                        # Check if we should load an existing key pair
+                        elif args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
+                            import json
+                            import base64
+                            
+                            with open(args.pqc_keyfile, 'r') as f:
+                                key_data = json.load(f)
+                                
+                            if 'public_key' in key_data and 'private_key' in key_data:
+                                public_key = base64.b64decode(key_data['public_key'])
+                                private_key = base64.b64decode(key_data['private_key'])
+                                pqc_keypair = (public_key, private_key)
+                                
+                                if not args.quiet:
+                                    print(f"Loaded post-quantum key pair from {args.pqc_keyfile}")
+                    
+                    # For PQC algorithms, we may need to generate a keypair if not specified
+                    if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid'] and not pqc_keypair:
+                        # No keypair provided, generate an ephemeral one
+                        from .pqc import PQCipher, check_pqc_support
+                        
+                        # Map algorithm name to available algorithms
+                        pqc_algorithms = check_pqc_support()[2]
+                        kyber512_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber512", "mlkem512"]]
+                        kyber768_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber768", "mlkem768"]]
+                        kyber1024_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber1024", "mlkem1024"]]
+                        
+                        # Choose first available algorithm
+                        algo_map = {
+                            'kyber512-hybrid': kyber512_options[0] if kyber512_options else "Kyber512",
+                            'kyber768-hybrid': kyber768_options[0] if kyber768_options else "Kyber768",
+                            'kyber1024-hybrid': kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                        }
+                        
+                        if not args.quiet:
+                            print(f"Generating ephemeral post-quantum key pair for {args.algorithm}")
+                            if args.pqc_store_key:
+                                print("Private key will be stored in the encrypted file for self-decryption")
+                            else:
+                                print("WARNING: Private key will NOT be stored - you must use a key file for decryption")
+                        
+                        cipher = PQCipher(algo_map[args.algorithm])
+                        public_key, private_key = cipher.generate_keypair()
+                        pqc_keypair = (public_key, private_key)
+                    
                     # Encrypt to temporary file
                     success = encrypt_file(
                         args.input,
@@ -1136,7 +1326,9 @@ def main():
                         args.quiet,
                         algorithm=args.algorithm,
                         progress=args.progress,
-                        verbose=args.verbose
+                        verbose=args.verbose,
+                        pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
+                        pqc_store_private_key=args.pqc_store_key
                     )
 
                     if success:
@@ -1168,6 +1360,103 @@ def main():
             else:
                 output_file = args.output
 
+            # Handle PQC key operations (for non-overwriting case)
+            pqc_keypair = None
+            if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid']:
+                # Check if we should generate and save a new key pair
+                if args.pqc_gen_key and args.pqc_keyfile:
+                    from .pqc import PQCipher, PQCAlgorithm, check_pqc_support
+                    
+                    # Map algorithm name to PQCAlgorithm with fallbacks
+                    pqc_algorithms = check_pqc_support()[2]
+                    
+                    # Determine which variants are available
+                    kyber512_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber512", "mlkem512"]]
+                    kyber768_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber768", "mlkem768"]]
+                    kyber1024_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber1024", "mlkem1024"]]
+                    
+                    # Choose first available or fall back to default name
+                    kyber512_algo = kyber512_options[0] if kyber512_options else "Kyber512"
+                    kyber768_algo = kyber768_options[0] if kyber768_options else "Kyber768"
+                    kyber1024_algo = kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                    
+                    if not args.quiet:
+                        print(f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}")
+                    
+                    # Create direct string mapping 
+                    algo_map = {
+                        'kyber512-hybrid': kyber512_algo,
+                        'kyber768-hybrid': kyber768_algo,
+                        'kyber1024-hybrid': kyber1024_algo
+                    }
+                    
+                    # Generate key pair
+                    cipher = PQCipher(algo_map[args.algorithm])
+                    public_key, private_key = cipher.generate_keypair()
+                    
+                    # Save key pair to file
+                    import json
+                    import base64
+                    
+                    key_data = {
+                        'algorithm': args.algorithm,
+                        'public_key': base64.b64encode(public_key).decode('utf-8'),
+                        'private_key': base64.b64encode(private_key).decode('utf-8')
+                    }
+                    
+                    with open(args.pqc_keyfile, 'w') as f:
+                        json.dump(key_data, f)
+                        
+                    if not args.quiet:
+                        print(f"Post-quantum key pair saved to {args.pqc_keyfile}")
+                        
+                    pqc_keypair = (public_key, private_key)
+                
+                # Check if we should load an existing key pair
+                elif args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
+                    import json
+                    import base64
+                    
+                    with open(args.pqc_keyfile, 'r') as f:
+                        key_data = json.load(f)
+                        
+                    if 'public_key' in key_data and 'private_key' in key_data:
+                        public_key = base64.b64decode(key_data['public_key'])
+                        private_key = base64.b64decode(key_data['private_key'])
+                        pqc_keypair = (public_key, private_key)
+                        
+                        if not args.quiet:
+                            print(f"Loaded post-quantum key pair from {args.pqc_keyfile}")
+                else:
+                    # No keyfile specified - generate an ephemeral keypair for this encryption
+                    from .pqc import PQCipher, check_pqc_support
+                    import random
+                    
+                    # Map algorithm name to available algorithms
+                    pqc_algorithms = check_pqc_support()[2]
+                    kyber512_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber512", "mlkem512"]]
+                    kyber768_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber768", "mlkem768"]]
+                    kyber1024_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber1024", "mlkem1024"]]
+                    
+                    # Choose first available algorithm
+                    algo_map = {
+                        'kyber512-hybrid': kyber512_options[0] if kyber512_options else "Kyber512",
+                        'kyber768-hybrid': kyber768_options[0] if kyber768_options else "Kyber768",
+                        'kyber1024-hybrid': kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                    }
+                    
+                    # Generate a new ephemeral keypair
+                    if not args.quiet:
+                        print(f"Generating ephemeral post-quantum key pair for {args.algorithm}")
+                        if args.pqc_store_key:
+                            print("Private key will be stored in the encrypted file for self-decryption")
+                        else:
+                            print("WARNING: Private key will NOT be stored - you must use a key file for decryption")
+                            
+                    cipher = PQCipher(algo_map[args.algorithm])
+                    public_key, private_key = cipher.generate_keypair()
+                    pqc_keypair = (public_key, private_key)
+            
             # Direct encryption to output file (when not overwriting)
             if not args.overwrite:
                 success = encrypt_file(
@@ -1179,7 +1468,9 @@ def main():
                     args.quiet,
                     algorithm=args.algorithm,
                     progress=args.progress,
-                    verbose=args.verbose
+                    verbose=args.verbose,
+                    pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
+                    pqc_store_private_key=args.pqc_store_key
                 )
 
             if success:
@@ -1274,6 +1565,25 @@ def main():
                     # Get original file permissions before doing anything
                     original_permissions = get_file_permissions(args.input)
 
+                    # Handle PQC key operations for decryption
+                    pqc_private_key = None
+                    if args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
+                        import json
+                        import base64
+                        
+                        try:
+                            with open(args.pqc_keyfile, 'r') as f:
+                                key_data = json.load(f)
+                                
+                            if 'private_key' in key_data:
+                                pqc_private_key = base64.b64decode(key_data['private_key'])
+                                
+                                if not args.quiet:
+                                    print(f"Loaded post-quantum private key from {args.pqc_keyfile}")
+                        except Exception as e:
+                            if not args.quiet:
+                                print(f"Warning: Failed to load PQC key file: {e}")
+                    
                     # Decrypt to temporary file first
                     success = decrypt_file(
                         args.input,
@@ -1281,7 +1591,8 @@ def main():
                         password,
                         args.quiet,
                         progress=args.progress,
-                        verbose=args.verbose
+                        verbose=args.verbose,
+                        pqc_private_key=pqc_private_key
                     )
                     if success:
                         # Apply the original permissions to the temp file
@@ -1306,13 +1617,33 @@ def main():
                             temp_files_to_cleanup.remove(temp_output)
                     raise e
             elif args.output:
+                # Handle PQC key operations for decryption
+                pqc_private_key = None
+                if args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
+                    import json
+                    import base64
+                    
+                    try:
+                        with open(args.pqc_keyfile, 'r') as f:
+                            key_data = json.load(f)
+                            
+                        if 'private_key' in key_data:
+                            pqc_private_key = base64.b64decode(key_data['private_key'])
+                            
+                            if not args.quiet:
+                                print(f"Loaded post-quantum private key from {args.pqc_keyfile}")
+                    except Exception as e:
+                        if not args.quiet:
+                            print(f"Warning: Failed to load PQC key file: {e}")
+                
                 success = decrypt_file(
                     args.input,
                     args.output,
                     password,
                     args.quiet,
                     progress=args.progress,
-                    verbose=args.verbose
+                    verbose=args.verbose,
+                    pqc_private_key=pqc_private_key
                 )
                 if success and not args.quiet:
                     print(f"\nFile decrypted successfully: {args.output}")
@@ -1324,6 +1655,25 @@ def main():
                     secure_shred_file(
                         args.input, args.shred_passes, args.quiet)
             else:
+                # Handle PQC key operations for decryption to screen
+                pqc_private_key = None
+                if args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
+                    import json
+                    import base64
+                    
+                    try:
+                        with open(args.pqc_keyfile, 'r') as f:
+                            key_data = json.load(f)
+                            
+                        if 'private_key' in key_data:
+                            pqc_private_key = base64.b64decode(key_data['private_key'])
+                            
+                            if not args.quiet:
+                                print(f"Loaded post-quantum private key from {args.pqc_keyfile}")
+                    except Exception as e:
+                        if not args.quiet:
+                            print(f"Warning: Failed to load PQC key file: {e}")
+                
                 # Decrypt to screen if no output file specified (useful for
                 # text files)
                 decrypted = decrypt_file(
@@ -1332,7 +1682,8 @@ def main():
                     password,
                     args.quiet,
                     progress=args.progress,
-                    verbose=args.verbose
+                    verbose=args.verbose,
+                    pqc_private_key=pqc_private_key
                 )
                 try:
                     # Try to decode as text
