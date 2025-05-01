@@ -32,19 +32,29 @@ from cryptography.hazmat.primitives.ciphers.aead import (
 )
 # XChaCha20Poly1305 implementation as a wrapper around ChaCha20Poly1305
 # with a 24-byte nonce that gets truncated to 12 bytes for the underlying algorithm
+from .crypt_errors import (
+    ValidationError, EncryptionError, DecryptionError, 
+    AuthenticationError, secure_encrypt_error_handler,
+    secure_decrypt_error_handler
+)
+
 class XChaCha20Poly1305:
     def __init__(self, key):
         # Validate key before use
         if key is None:
-            raise ValueError("Key cannot be None")
+            raise ValidationError("Key cannot be None")
         
         # Validate key length (should be 32 bytes for ChaCha20-Poly1305)
-        key_length = len(key)
-        if key_length != 32:
-            raise ValueError(f"Invalid key length: {key_length}. XChaCha20Poly1305 requires a 32-byte key")
-            
-        self.key = key
-        self.cipher = ChaCha20Poly1305(key)
+        try:
+            key_length = len(key)
+            if key_length != 32:
+                raise ValidationError(f"Invalid key length: {key_length}. XChaCha20Poly1305 requires a 32-byte key")
+                
+            self.key = key
+            self.cipher = ChaCha20Poly1305(key)
+        except Exception as e:
+            # Convert any other errors to validation errors
+            raise ValidationError("Invalid key material", original_exception=e)
     
     def _process_nonce(self, nonce):
         """
@@ -58,20 +68,19 @@ class XChaCha20Poly1305:
             bytes: Properly formatted 12-byte nonce
             
         Raises:
-            ValueError: If nonce is None or empty
-            TypeError: If nonce is not bytes-like
+            ValidationError: If nonce validation fails
         """
         # Validate nonce
         if nonce is None:
-            raise ValueError("Nonce cannot be None")
+            raise ValidationError("Nonce cannot be None")
             
         # Ensure nonce is bytes
         if not isinstance(nonce, (bytes, bytearray, memoryview)):
-            raise TypeError(f"Nonce must be bytes-like object, got {type(nonce).__name__}")
+            raise ValidationError(f"Nonce must be bytes-like object, got {type(nonce).__name__}")
             
         # Check if nonce is empty
         if len(nonce) == 0:
-            raise ValueError("Nonce cannot be empty")
+            raise ValidationError("Nonce cannot be empty")
             
         # Process based on length
         if len(nonce) == 24:
@@ -89,7 +98,7 @@ class XChaCha20Poly1305:
             
         # Final validation of the processed nonce
         if len(truncated_nonce) != 12:
-            raise ValueError(f"Failed to generate 12-byte nonce, got {len(truncated_nonce)} bytes")
+            raise ValidationError(f"Failed to generate 12-byte nonce, got {len(truncated_nonce)} bytes")
             
         return truncated_nonce
     
@@ -101,15 +110,15 @@ class XChaCha20Poly1305:
             data: Data to be validated
             
         Raises:
-            ValueError: If data is None
-            TypeError: If data is not bytes-like
+            ValidationError: If data validation fails
         """
         if data is None:
-            raise ValueError("Data cannot be None")
+            raise ValidationError("Data cannot be None")
             
         if not isinstance(data, (bytes, bytearray, memoryview)):
-            raise TypeError(f"Data must be bytes-like object, got {type(data).__name__}")
-        
+            raise ValidationError(f"Data must be bytes-like object, got {type(data).__name__}")
+    
+    @secure_encrypt_error_handler
     def encrypt(self, nonce, data, associated_data=None):
         """
         Encrypt data using XChaCha20Poly1305.
@@ -123,7 +132,8 @@ class XChaCha20Poly1305:
             bytes: Encrypted data
             
         Raises:
-            ValueError: For invalid inputs
+            ValidationError: For invalid inputs
+            EncryptionError: If encryption operation fails
         """
         # Validate inputs
         self._validate_data(data)
@@ -131,15 +141,16 @@ class XChaCha20Poly1305:
         
         # Process associated data
         if associated_data is not None and not isinstance(associated_data, (bytes, bytearray, memoryview)):
-            raise TypeError(f"Associated data must be bytes-like object, got {type(associated_data).__name__}")
+            raise ValidationError(f"Associated data must be bytes-like object, got {type(associated_data).__name__}")
         
         # Encrypt using the underlying cipher
         try:
             return self.cipher.encrypt(truncated_nonce, data, associated_data)
         except Exception as e:
-            # Convert specific cryptography errors to more generic ones to avoid leaking info
-            raise ValueError(f"Encryption failed: {str(e)}")
-        
+            # Specific error message will be standardized by the decorator
+            raise EncryptionError(original_exception=e)
+    
+    @secure_decrypt_error_handler
     def decrypt(self, nonce, data, associated_data=None):
         """
         Decrypt data using XChaCha20Poly1305.
@@ -153,7 +164,9 @@ class XChaCha20Poly1305:
             bytes: Decrypted data
             
         Raises:
-            ValueError: For invalid inputs or authentication failures
+            ValidationError: For invalid inputs
+            AuthenticationError: If integrity verification fails
+            DecryptionError: If decryption fails for other reasons
         """
         # Validate inputs
         self._validate_data(data)
@@ -161,21 +174,21 @@ class XChaCha20Poly1305:
         
         # Process associated data
         if associated_data is not None and not isinstance(associated_data, (bytes, bytearray, memoryview)):
-            raise TypeError(f"Associated data must be bytes-like object, got {type(associated_data).__name__}")
+            raise ValidationError(f"Associated data must be bytes-like object, got {type(associated_data).__name__}")
         
         # Minimum ciphertext size check (AEAD tag is at least 16 bytes)
         if len(data) < 16:
-            raise ValueError("Ciphertext too short - missing authentication tag")
+            raise ValidationError("Ciphertext too short - missing authentication tag")
             
         # Decrypt using the underlying cipher
         try:
             return self.cipher.decrypt(truncated_nonce, data, associated_data)
         except cryptography.exceptions.InvalidTag:
-            # Use a consistent error message for authentication failures
-            raise ValueError("Authentication failed: integrity check error")
+            # Use a standardized authentication error
+            raise AuthenticationError("Integrity verification failed")
         except Exception as e:
-            # Convert specific cryptography errors to more generic ones to avoid leaking info
-            raise ValueError(f"Decryption failed: {str(e)}")
+            # Specific error message will be standardized by the decorator
+            raise DecryptionError(original_exception=e)
 import cryptography.exceptions
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
@@ -269,112 +282,172 @@ class KeyStretch:
 
 class CamelliaCipher:
     def __init__(self, key):
-        self.key = SecureBytes(key)
-        # Derive a separate HMAC key from the provided key to prevent key reuse
-        self.hmac_key = SecureBytes(hashlib.sha256(bytes(self.key) + b"hmac_key").digest())
-        # Detect if we're in test mode
-        self.test_mode = os.environ.get('PYTEST_CURRENT_TEST') is not None
-        
-    def encrypt(self, nonce, data, associated_data=None):
-        # Use authenticated encryption with encrypt-then-MAC pattern
-        # First encrypt with CBC mode
-        cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
-        encryptor = cipher.encryptor()
-        
-        # Pad data first
-        padder = padding.PKCS7(algorithms.Camellia.block_size).padder()
-        padded_data = padder.update(data) + padder.finalize()
-        
-        # Encrypt the padded data
-        ciphertext = encryptor.update(padded_data) + encryptor.finalize()
-        secure_memzero(padded_data)  # Clear the padded data from memory
-        
-        # In test mode, don't add HMAC for backward compatibility
-        if self.test_mode:
-            return ciphertext
-            
-        # Add authentication with HMAC
-        # Include nonce and associated data in HMAC computation for context binding
-        hmac_data = nonce + ciphertext
-        if associated_data:
-            hmac_data += associated_data
-            
-        # Compute HMAC on the ciphertext for integrity protection
-        hmac_obj = hmac.new(bytes(self.hmac_key), hmac_data, hashlib.sha256)
-        tag = hmac_obj.digest()
-        
-        # Return ciphertext with authentication tag
-        return ciphertext + tag
-        
-    def decrypt(self, nonce, data, associated_data=None):
-        # In test mode, process without HMAC for backward compatibility
-        if self.test_mode:
-            try:
-                cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
-                decryptor = cipher.decryptor()
-                padded_data = decryptor.update(data) + decryptor.finalize()
-                unpadder = padding.PKCS7(algorithms.Camellia.block_size).unpadder()
-                result = unpadder.update(padded_data) + unpadder.finalize()
-                return result
-            finally:
-                if 'padded_data' in locals() and padded_data is not None:
-                    secure_memzero(padded_data)
-        
-        # Production mode with HMAC authentication
-        # Split ciphertext and authentication tag
-        tag_size = 32  # SHA-256 HMAC produces 32 bytes
-        if len(data) < tag_size:
-            # Try without HMAC, might be legacy data
-            try:
-                cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
-                decryptor = cipher.decryptor()
-                padded_data = decryptor.update(data) + decryptor.finalize()
-                unpadder = padding.PKCS7(algorithms.Camellia.block_size).unpadder()
-                result = unpadder.update(padded_data) + unpadder.finalize()
-                return result
-            except Exception:
-                # If that fails, it's truly invalid
-                raise ValueError("Invalid ciphertext: too short")
-            finally:
-                if 'padded_data' in locals() and padded_data is not None:
-                    secure_memzero(padded_data)
-            
-        # Normal case with HMAC
-        ciphertext = data[:-tag_size]
-        received_tag = data[-tag_size:]
-        
-        # Verify HMAC first (encrypt-then-MAC pattern)
-        hmac_data = nonce + ciphertext
-        if associated_data:
-            hmac_data += associated_data
-            
-        # Compute expected HMAC
-        hmac_obj = hmac.new(bytes(self.hmac_key), hmac_data, hashlib.sha256)
-        expected_tag = hmac_obj.digest()
-        
-        # Use constant-time comparison to prevent timing attacks
-        if not secrets.compare_digest(expected_tag, received_tag):
-            # Use generic error message to avoid leaking information
-            raise ValueError("Authentication failed: integrity check error")
-            
-        # If authentication succeeds, decrypt the data
-        cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
-        decryptor = cipher.decryptor()
-        padded_data = decryptor.update(ciphertext) + decryptor.finalize()
-        
-        # Unpad the decrypted data
-        unpadder = padding.PKCS7(algorithms.Camellia.block_size).unpadder()
-        
         try:
-            result = unpadder.update(padded_data) + unpadder.finalize()
-            return result
+            self.key = SecureBytes(key)
+            # Derive a separate HMAC key from the provided key to prevent key reuse
+            self.hmac_key = SecureBytes(hashlib.sha256(bytes(self.key) + b"hmac_key").digest())
+            # Detect if we're in test mode
+            self.test_mode = os.environ.get('PYTEST_CURRENT_TEST') is not None
         except Exception as e:
-            # Use generic error message for padding errors to prevent padding oracle attacks
-            raise ValueError("Decryption failed: invalid padding")
+            raise ValidationError("Invalid key material for Camellia cipher", original_exception=e)
+    
+    @secure_encrypt_error_handler
+    def encrypt(self, nonce, data, associated_data=None):
+        """
+        Encrypt data using Camellia cipher with authentication.
+        
+        Args:
+            nonce (bytes): Initialization vector for CBC mode
+            data (bytes): Data to encrypt
+            associated_data (bytes, optional): Additional data to authenticate
+            
+        Returns:
+            bytes: Encrypted data with authentication tag
+            
+        Raises:
+            ValidationError: For invalid inputs
+            EncryptionError: If encryption operation fails
+        """
+        if nonce is None or len(nonce) != 16:
+            raise ValidationError(f"Camellia requires a 16-byte IV/nonce, got {len(nonce) if nonce else 'None'}")
+            
+        if data is None:
+            raise ValidationError("Data cannot be None")
+        
+        padded_data = None
+        try:
+            # Use authenticated encryption with encrypt-then-MAC pattern
+            # First encrypt with CBC mode
+            cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
+            encryptor = cipher.encryptor()
+            
+            # Pad data first
+            padder = padding.PKCS7(algorithms.Camellia.block_size).padder()
+            padded_data = padder.update(data) + padder.finalize()
+            
+            # Encrypt the padded data
+            ciphertext = encryptor.update(padded_data) + encryptor.finalize()
+            
+            # In test mode, don't add HMAC for backward compatibility
+            if self.test_mode:
+                return ciphertext
+                
+            # Add authentication with HMAC
+            # Include nonce and associated data in HMAC computation for context binding
+            hmac_data = nonce + ciphertext
+            if associated_data:
+                hmac_data += associated_data
+                
+            # Compute HMAC on the ciphertext for integrity protection
+            hmac_obj = hmac.new(bytes(self.hmac_key), hmac_data, hashlib.sha256)
+            tag = hmac_obj.digest()
+            
+            # Return ciphertext with authentication tag
+            return ciphertext + tag
+            
+        except Exception as e:
+            raise EncryptionError("Camellia encryption failed", original_exception=e)
         finally:
             # Always clean up sensitive data
-            if 'padded_data' in locals() and padded_data is not None:
-                secure_memzero(padded_data)  # Clear the padded data from memory
+            if padded_data is not None:
+                secure_memzero(padded_data)
+    
+    @secure_decrypt_error_handler
+    def decrypt(self, nonce, data, associated_data=None):
+        """
+        Decrypt data using Camellia cipher with authentication verification.
+        
+        Args:
+            nonce (bytes): Initialization vector used for encryption
+            data (bytes): Encrypted data with authentication tag
+            associated_data (bytes, optional): Additional authenticated data
+            
+        Returns:
+            bytes: Decrypted data
+            
+        Raises:
+            ValidationError: For invalid inputs
+            AuthenticationError: If integrity verification fails
+            DecryptionError: If decryption fails for other reasons
+        """
+        if nonce is None or len(nonce) != 16:
+            raise ValidationError(f"Camellia requires a 16-byte IV/nonce, got {len(nonce) if nonce else 'None'}")
+            
+        if data is None:
+            raise ValidationError("Encrypted data cannot be None")
+        
+        padded_data = None
+        try:
+            # In test mode, process without HMAC for backward compatibility
+            if self.test_mode:
+                cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
+                decryptor = cipher.decryptor()
+                padded_data = decryptor.update(data) + decryptor.finalize()
+                unpadder = padding.PKCS7(algorithms.Camellia.block_size).unpadder()
+                result = unpadder.update(padded_data) + unpadder.finalize()
+                return result
+            
+            # Production mode with HMAC authentication
+            # Split ciphertext and authentication tag
+            tag_size = 32  # SHA-256 HMAC produces 32 bytes
+            if len(data) < tag_size:
+                # Try without HMAC, might be legacy data
+                try:
+                    cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
+                    decryptor = cipher.decryptor()
+                    padded_data = decryptor.update(data) + decryptor.finalize()
+                    unpadder = padding.PKCS7(algorithms.Camellia.block_size).unpadder()
+                    result = unpadder.update(padded_data) + unpadder.finalize()
+                    return result
+                except Exception as e:
+                    # If that fails, it's truly invalid
+                    raise ValidationError("Invalid ciphertext: too short", original_exception=e)
+                
+            # Normal case with HMAC
+            ciphertext = data[:-tag_size]
+            received_tag = data[-tag_size:]
+            
+            # Verify HMAC first (encrypt-then-MAC pattern)
+            hmac_data = nonce + ciphertext
+            if associated_data:
+                hmac_data += associated_data
+                
+            # Compute expected HMAC
+            hmac_obj = hmac.new(bytes(self.hmac_key), hmac_data, hashlib.sha256)
+            expected_tag = hmac_obj.digest()
+            
+            # Use constant-time comparison from our secure error module
+            from .crypt_errors import constant_time_compare
+            if not constant_time_compare(expected_tag, received_tag):
+                # Standardized authentication error
+                raise AuthenticationError("Message authentication failed")
+                
+            # If authentication succeeds, decrypt the data
+            cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
+            decryptor = cipher.decryptor()
+            padded_data = decryptor.update(ciphertext) + decryptor.finalize()
+            
+            # Unpad the decrypted data
+            unpadder = padding.PKCS7(algorithms.Camellia.block_size).unpadder()
+            
+            try:
+                result = unpadder.update(padded_data) + unpadder.finalize()
+                return result
+            except Exception as e:
+                # Standardized error for padding issues - still a decryption error
+                # but we use a more specific category to prevent oracle attacks
+                raise DecryptionError("Invalid padding in decrypted data", original_exception=e)
+                
+        except (ValidationError, AuthenticationError, DecryptionError):
+            # Re-raise known error types
+            raise
+        except Exception as e:
+            # Convert any other exceptions to a standardized decryption error
+            raise DecryptionError("Camellia decryption failed", original_exception=e)
+        finally:
+            # Always clean up sensitive data
+            if padded_data is not None:
+                secure_memzero(padded_data)
 
 
 def string_entropy(password: str) -> float:
@@ -540,6 +613,7 @@ def copy_permissions(source_file, target_file):
         set_secure_permissions(target_file)
 
 
+@secure_error_handler
 def calculate_hash(data):
     """
     Calculate SHA-256 hash of data for integrity verification.
@@ -549,8 +623,32 @@ def calculate_hash(data):
 
     Returns:
         str: Hexadecimal hash string
+        
+    Raises:
+        ValidationError: If data is invalid
+        InternalError: If hashing operation fails
     """
-    return hashlib.sha256(data).hexdigest()
+    if data is None:
+        raise ValidationError("Cannot calculate hash of None")
+        
+    if not isinstance(data, (bytes, bytearray, memoryview)):
+        raise ValidationError(f"Data must be bytes-like object, got {type(data).__name__}")
+        
+    try:
+        # Add a small timing jitter to prevent timing analysis
+        jitter_ms = secrets.randbelow(5) + 1  # 1-5ms
+        time.sleep(jitter_ms / 1000.0)
+        
+        # Calculate the hash
+        hash_result = hashlib.sha256(data).hexdigest()
+        
+        # Add another small jitter after calculation
+        jitter_ms = secrets.randbelow(5) + 1  # 1-5ms
+        time.sleep(jitter_ms / 1000.0)
+        
+        return hash_result
+    except Exception as e:
+        raise InternalError("Hash calculation failed", original_exception=e)
 
 
 def show_animated_progress(message, stop_event, quiet=False):
@@ -882,7 +980,13 @@ def multi_hash_password(
             secure_memzero(hashed)
 
 
-@add_timing_jitter
+from .crypt_errors import (
+    secure_key_derivation_error_handler, KeyDerivationError,
+    ValidationError, InternalError, secure_error_handler,
+    AuthenticationError, DecryptionError, EncryptionError
+)
+
+@secure_key_derivation_error_handler
 def generate_key(
         password,
         salt,
@@ -907,7 +1011,23 @@ def generate_key(
 
     Returns:
         tuple: (key, salt, hash_config)
+        
+    Raises:
+        ValidationError: If input parameters are invalid
+        KeyDerivationError: If key derivation fails
     """
+    # Validate input parameters
+    if password is None:
+        raise ValidationError("Password cannot be None")
+        
+    if salt is None:
+        raise ValidationError("Salt cannot be None")
+        
+    if not isinstance(hash_config, dict):
+        raise ValidationError("Hash configuration must be a dictionary")
+        
+    if not isinstance(pbkdf2_iterations, int) or pbkdf2_iterations < 0:
+        raise ValidationError("PBKDF2 iterations must be a non-negative integer")
 
     def show_progress(algorithm, current, total):
         if quiet:
@@ -1312,6 +1432,7 @@ def generate_key(
         secure_memzero(salt)
 
 
+@secure_encrypt_error_handler
 def encrypt_file(input_file, output_file, password, hash_config=None,
                  pbkdf2_iterations=100000, quiet=False,
                  algorithm=EncryptionAlgorithm.FERNET, progress=False, verbose=False,
@@ -1334,7 +1455,25 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
 
     Returns:
         bool: True if encryption was successful
+        
+    Raises:
+        ValidationError: If input parameters are invalid
+        EncryptionError: If the encryption operation fails
+        KeyDerivationError: If key derivation fails
+        AuthenticationError: If integrity verification fails
     """
+    # Input validation with standardized errors
+    if not input_file or not isinstance(input_file, str):
+        raise ValidationError("Input file path must be a non-empty string")
+        
+    if not output_file or not isinstance(output_file, str):
+        raise ValidationError("Output file path must be a non-empty string")
+        
+    if not os.path.isfile(input_file):
+        raise ValidationError(f"Input file does not exist: {input_file}")
+        
+    if password is None:
+        raise ValidationError("Password cannot be None")
     if isinstance(algorithm, str):
         algorithm = EncryptionAlgorithm(algorithm)
     # Generate a key from the password
@@ -1580,6 +1719,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
             secure_memzero(encrypted_hash)
             encrypted_hash = None
 
+@secure_decrypt_error_handler
 def decrypt_file(
         input_file,
         output_file,
@@ -1599,10 +1739,29 @@ def decrypt_file(
         progress (bool): Whether to show progress bar
         verbose (bool): Whether to show verbose output
         pqc_private_key (bytes, optional): Post-quantum private key for hybrid decryption
+    
     Returns:
         Union[bool, bytes]: True if decryption was successful and output_file is specified,
                            or the decrypted data if output_file is None
+                           
+    Raises:
+        ValidationError: If input parameters are invalid
+        DecryptionError: If the decryption operation fails
+        KeyDerivationError: If key derivation fails
+        AuthenticationError: If integrity verification fails
     """
+    # Input validation with standardized errors
+    if not input_file or not isinstance(input_file, str):
+        raise ValidationError("Input file path must be a non-empty string")
+        
+    if output_file is not None and not isinstance(output_file, str):
+        raise ValidationError("Output file path must be a string")
+        
+    if not os.path.isfile(input_file):
+        raise ValidationError(f"Input file does not exist: {input_file}")
+        
+    if password is None:
+        raise ValidationError("Password cannot be None")
     KeyStretch.kind_action = 'decrypt'
     # Read the encrypted file
     if not quiet:
@@ -1665,16 +1824,22 @@ def decrypt_file(
     if encrypted_hash:
         if not quiet:
             print("Verifying encrypted content integrity", end=" ")
+            
+        # Use our constant-time comparison from crypt_errors
+        from .crypt_errors import constant_time_compare
+        
         computed_hash = calculate_hash(encrypted_data)
         # Use constant-time comparison to prevent timing attacks
-        if not secrets.compare_digest(computed_hash, encrypted_hash):
-            print("❌")  # Red X symbol
-            # In test mode, use the original message for compatibility with tests
+        if not constant_time_compare(computed_hash, encrypted_hash):
+            if not quiet:
+                print("❌")  # Red X symbol
+                
+            # In test mode, use a more detailed message for compatibility with tests
             if os.environ.get('PYTEST_CURRENT_TEST') is not None:
-                raise ValueError("Encrypted data has been tampered with")
+                raise AuthenticationError("Encrypted data has been tampered with")
             else:
                 # In production mode, use a generic message to avoid leaking specifics
-                raise ValueError("Content integrity verification failed")
+                raise AuthenticationError("Content integrity verification failed")
         elif not quiet:
             print("✅")  # Green check symbol
 
@@ -1931,10 +2096,14 @@ def decrypt_file(
             if not quiet:
                 print("⚠️ (PQC test mode)")
         else:
+            # Use our constant-time comparison from crypt_errors
+            from .crypt_errors import constant_time_compare
+            
             computed_hash = calculate_hash(decrypted_data)
             # Use constant-time comparison to prevent timing attacks
-            if not secrets.compare_digest(computed_hash, original_hash):
-                print("❌")  # Red X symbol
+            if not constant_time_compare(computed_hash, original_hash):
+                if not quiet:
+                    print("❌")  # Red X symbol
                 
                 # Check if this is a PQC operation (algorithm contains 'kyber')
                 if (('kyber' in encryption_algorithm.lower() or 'ml-kem' in encryption_algorithm.lower()) and 
@@ -1947,10 +2116,10 @@ def decrypt_file(
                     
                 # Regular integrity check behavior
                 if os.environ.get('PYTEST_CURRENT_TEST') is not None:
-                    raise ValueError("Decryption failed: data integrity check failed")
+                    raise AuthenticationError("Decrypted data integrity check failed")
                 else:
                     # In production mode, use a generic message to avoid leaking specifics
-                    raise ValueError("Decryption failed: content integrity verification failed")
+                    raise AuthenticationError("Content integrity verification failed")
             elif not quiet:
                 print("✅")  # Green check symbol
 
