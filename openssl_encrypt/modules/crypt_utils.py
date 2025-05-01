@@ -13,6 +13,8 @@ import signal
 import random
 import string
 import glob
+import json
+import stat
 
 
 def expand_glob_patterns(pattern):
@@ -398,3 +400,36 @@ def request_confirmation(message):
     """
     response = input(f"{message} (y/N): ").strip().lower()
     return response == 'y' or response == 'yes'
+
+
+def parse_metadata(encrypted_data):
+    """
+    Parse metadata from encrypted file content.
+    
+    Args:
+        encrypted_data (bytes): The encrypted file content
+        
+    Returns:
+        dict: Metadata dictionary if found, empty dict otherwise
+    """
+    try:
+        # Look for the METADATA marker
+        metadata_marker = b"METADATA:"
+        metadata_start = encrypted_data.find(metadata_marker)
+        
+        if metadata_start < 0:
+            return {}
+            
+        # Extract the JSON metadata
+        metadata_start += len(metadata_marker)
+        metadata_end = encrypted_data.find(b":", metadata_start)
+        
+        if metadata_end < 0:
+            return {}
+            
+        metadata_json = encrypted_data[metadata_start:metadata_end].decode('utf-8')
+        metadata = json.loads(metadata_json)
+        return metadata
+    except Exception as e:
+        print(f"Error parsing metadata: {e}")
+        return {}

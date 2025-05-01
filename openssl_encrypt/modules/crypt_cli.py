@@ -991,12 +991,20 @@ def main():
         args.argon2_preset = None
         
     # Check for post-quantum cryptography availability if needed
-    if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid'] and not PQC_AVAILABLE:
-        if not args.quiet:
-            print("Warning: liboqs-python module not found. Post-quantum cryptography will not be available.")
-            print("Install with: pip install liboqs-python")
-            print("Falling back to aes-gcm algorithm.")
-        args.algorithm = 'aes-gcm'
+    if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid']:
+        try:
+            # Attempt direct import to ensure module is truly available
+            import oqs
+            pqc_available = True
+        except ImportError:
+            pqc_available = False
+            
+        if not pqc_available:
+            if not args.quiet:
+                print("Warning: liboqs-python module not found. Post-quantum cryptography will not be available.")
+                print("Install with: pip install liboqs-python")
+                print("Falling back to aes-gcm algorithm.")
+            args.algorithm = 'aes-gcm'
 
     # Validate random password parameter
     if args.random is not None:
@@ -1192,11 +1200,27 @@ def main():
                         if args.pqc_gen_key and args.pqc_keyfile:
                             from .pqc import PQCipher, PQCAlgorithm
                             
-                            # Map algorithm name to PQCAlgorithm
+                            # Map algorithm name to PQCAlgorithm with fallbacks
+                            pqc_algorithms = check_pqc_support()[2]
+                            
+                            # Determine which variants are available
+                            kyber512_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber512", "mlkem512"]]
+                            kyber768_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber768", "mlkem768"]]
+                            kyber1024_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber1024", "mlkem1024"]]
+                            
+                            # Choose first available or fall back to default name
+                            kyber512_algo = kyber512_options[0] if kyber512_options else "Kyber512"
+                            kyber768_algo = kyber768_options[0] if kyber768_options else "Kyber768"
+                            kyber1024_algo = kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                            
+                            if not args.quiet:
+                                print(f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}")
+                            
+                            # Create direct string mapping instead of using enum
                             algo_map = {
-                                'kyber512-hybrid': PQCAlgorithm.KYBER512,
-                                'kyber768-hybrid': PQCAlgorithm.KYBER768,
-                                'kyber1024-hybrid': PQCAlgorithm.KYBER1024
+                                'kyber512-hybrid': kyber512_algo,
+                                'kyber768-hybrid': kyber768_algo,
+                                'kyber1024-hybrid': kyber1024_algo
                             }
                             
                             # Generate key pair
@@ -1237,6 +1261,35 @@ def main():
                                 if not args.quiet:
                                     print(f"Loaded post-quantum key pair from {args.pqc_keyfile}")
                     
+                    # For PQC algorithms, we may need to generate a keypair if not specified
+                    if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid'] and not pqc_keypair:
+                        # No keypair provided, generate an ephemeral one
+                        from .pqc import PQCipher, check_pqc_support
+                        
+                        # Map algorithm name to available algorithms
+                        pqc_algorithms = check_pqc_support()[2]
+                        kyber512_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber512", "mlkem512"]]
+                        kyber768_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber768", "mlkem768"]]
+                        kyber1024_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber1024", "mlkem1024"]]
+                        
+                        # Choose first available algorithm
+                        algo_map = {
+                            'kyber512-hybrid': kyber512_options[0] if kyber512_options else "Kyber512",
+                            'kyber768-hybrid': kyber768_options[0] if kyber768_options else "Kyber768",
+                            'kyber1024-hybrid': kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                        }
+                        
+                        if not args.quiet:
+                            print(f"Generating ephemeral post-quantum key pair for {args.algorithm}")
+                            if args.pqc_store_key:
+                                print("Private key will be stored in the encrypted file for self-decryption")
+                            else:
+                                print("WARNING: Private key will NOT be stored - you must use a key file for decryption")
+                        
+                        cipher = PQCipher(algo_map[args.algorithm])
+                        public_key, private_key = cipher.generate_keypair()
+                        pqc_keypair = (public_key, private_key)
+                    
                     # Encrypt to temporary file
                     success = encrypt_file(
                         args.input,
@@ -1248,7 +1301,8 @@ def main():
                         algorithm=args.algorithm,
                         progress=args.progress,
                         verbose=args.verbose,
-                        pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None
+                        pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
+                        pqc_store_private_key=args.pqc_store_key
                     )
 
                     if success:
@@ -1285,13 +1339,29 @@ def main():
             if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid']:
                 # Check if we should generate and save a new key pair
                 if args.pqc_gen_key and args.pqc_keyfile:
-                    from .pqc import PQCipher, PQCAlgorithm
+                    from .pqc import PQCipher, PQCAlgorithm, check_pqc_support
                     
-                    # Map algorithm name to PQCAlgorithm
+                    # Map algorithm name to PQCAlgorithm with fallbacks
+                    pqc_algorithms = check_pqc_support()[2]
+                    
+                    # Determine which variants are available
+                    kyber512_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber512", "mlkem512"]]
+                    kyber768_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber768", "mlkem768"]]
+                    kyber1024_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber1024", "mlkem1024"]]
+                    
+                    # Choose first available or fall back to default name
+                    kyber512_algo = kyber512_options[0] if kyber512_options else "Kyber512"
+                    kyber768_algo = kyber768_options[0] if kyber768_options else "Kyber768"
+                    kyber1024_algo = kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                    
+                    if not args.quiet:
+                        print(f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}")
+                    
+                    # Create direct string mapping 
                     algo_map = {
-                        'kyber512-hybrid': PQCAlgorithm.KYBER512,
-                        'kyber768-hybrid': PQCAlgorithm.KYBER768,
-                        'kyber1024-hybrid': PQCAlgorithm.KYBER1024
+                        'kyber512-hybrid': kyber512_algo,
+                        'kyber768-hybrid': kyber768_algo,
+                        'kyber1024-hybrid': kyber1024_algo
                     }
                     
                     # Generate key pair
@@ -1331,6 +1401,35 @@ def main():
                         
                         if not args.quiet:
                             print(f"Loaded post-quantum key pair from {args.pqc_keyfile}")
+                else:
+                    # No keyfile specified - generate an ephemeral keypair for this encryption
+                    from .pqc import PQCipher, check_pqc_support
+                    import random
+                    
+                    # Map algorithm name to available algorithms
+                    pqc_algorithms = check_pqc_support()[2]
+                    kyber512_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber512", "mlkem512"]]
+                    kyber768_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber768", "mlkem768"]]
+                    kyber1024_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber1024", "mlkem1024"]]
+                    
+                    # Choose first available algorithm
+                    algo_map = {
+                        'kyber512-hybrid': kyber512_options[0] if kyber512_options else "Kyber512",
+                        'kyber768-hybrid': kyber768_options[0] if kyber768_options else "Kyber768",
+                        'kyber1024-hybrid': kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                    }
+                    
+                    # Generate a new ephemeral keypair
+                    if not args.quiet:
+                        print(f"Generating ephemeral post-quantum key pair for {args.algorithm}")
+                        if args.pqc_store_key:
+                            print("Private key will be stored in the encrypted file for self-decryption")
+                        else:
+                            print("WARNING: Private key will NOT be stored - you must use a key file for decryption")
+                            
+                    cipher = PQCipher(algo_map[args.algorithm])
+                    public_key, private_key = cipher.generate_keypair()
+                    pqc_keypair = (public_key, private_key)
             
             # Direct encryption to output file (when not overwriting)
             if not args.overwrite:
@@ -1344,7 +1443,8 @@ def main():
                     algorithm=args.algorithm,
                     progress=args.progress,
                     verbose=args.verbose,
-                    pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None
+                    pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
+                    pqc_store_private_key=args.pqc_store_key
                 )
 
             if success:
