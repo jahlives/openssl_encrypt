@@ -34,39 +34,148 @@ from cryptography.hazmat.primitives.ciphers.aead import (
 # with a 24-byte nonce that gets truncated to 12 bytes for the underlying algorithm
 class XChaCha20Poly1305:
     def __init__(self, key):
+        # Validate key before use
+        if key is None:
+            raise ValueError("Key cannot be None")
+        
+        # Validate key length (should be 32 bytes for ChaCha20-Poly1305)
+        key_length = len(key)
+        if key_length != 32:
+            raise ValueError(f"Invalid key length: {key_length}. XChaCha20Poly1305 requires a 32-byte key")
+            
         self.key = key
         self.cipher = ChaCha20Poly1305(key)
+    
+    def _process_nonce(self, nonce):
+        """
+        Process and validate nonce to ensure proper length and format.
+        Returns a properly formatted 12-byte nonce for the ChaCha20Poly1305 cipher.
         
-    def encrypt(self, nonce, data, associated_data):
-        # XChaCha20Poly1305 uses a 24-byte nonce, but we'll use only the first 12 bytes
-        # as ChaCha20Poly1305 requires a 12-byte nonce
+        Args:
+            nonce (bytes): Input nonce
+            
+        Returns:
+            bytes: Properly formatted 12-byte nonce
+            
+        Raises:
+            ValueError: If nonce is None or empty
+            TypeError: If nonce is not bytes-like
+        """
+        # Validate nonce
+        if nonce is None:
+            raise ValueError("Nonce cannot be None")
+            
+        # Ensure nonce is bytes
+        if not isinstance(nonce, (bytes, bytearray, memoryview)):
+            raise TypeError(f"Nonce must be bytes-like object, got {type(nonce).__name__}")
+            
+        # Check if nonce is empty
+        if len(nonce) == 0:
+            raise ValueError("Nonce cannot be empty")
+            
+        # Process based on length
         if len(nonce) == 24:
-            # Take first 12 bytes of 24-byte nonce
+            # For XChaCha20Poly1305, use the proper 12 bytes from the 24-byte nonce
+            # Instead of just truncating, we use the first 12 bytes
             truncated_nonce = nonce[:12]
         elif len(nonce) == 12:
             # Already correct size
             truncated_nonce = nonce
         else:
-            # If it's any other size, use a deterministic process to create a 12-byte nonce
-            # Hash the nonce to get a consistent result
-            truncated_nonce = hashlib.sha256(nonce).digest()[:12]
+            # For any other size, use a deterministic process to create a 12-byte nonce
+            # Use SHA-256 for consistency and to avoid collisions
+            hash_obj = hashlib.sha256(nonce)
+            truncated_nonce = hash_obj.digest()[:12]
             
-        return self.cipher.encrypt(truncated_nonce, data, associated_data)
+        # Final validation of the processed nonce
+        if len(truncated_nonce) != 12:
+            raise ValueError(f"Failed to generate 12-byte nonce, got {len(truncated_nonce)} bytes")
+            
+        return truncated_nonce
+    
+    def _validate_data(self, data):
+        """
+        Validate data to be encrypted/decrypted.
         
-    def decrypt(self, nonce, data, associated_data):
-        # XChaCha20Poly1305 uses a 24-byte nonce, but we'll use only the first 12 bytes
-        if len(nonce) == 24:
-            # Take first 12 bytes of 24-byte nonce
-            truncated_nonce = nonce[:12]
-        elif len(nonce) == 12:
-            # Already correct size
-            truncated_nonce = nonce
-        else:
-            # If it's any other size, use a deterministic process to create a 12-byte nonce
-            # Hash the nonce to get a consistent result
-            truncated_nonce = hashlib.sha256(nonce).digest()[:12]
+        Args:
+            data: Data to be validated
             
-        return self.cipher.decrypt(truncated_nonce, data, associated_data)
+        Raises:
+            ValueError: If data is None
+            TypeError: If data is not bytes-like
+        """
+        if data is None:
+            raise ValueError("Data cannot be None")
+            
+        if not isinstance(data, (bytes, bytearray, memoryview)):
+            raise TypeError(f"Data must be bytes-like object, got {type(data).__name__}")
+        
+    def encrypt(self, nonce, data, associated_data=None):
+        """
+        Encrypt data using XChaCha20Poly1305.
+        
+        Args:
+            nonce (bytes): Nonce for encryption (ideally 24 bytes for XChaCha20Poly1305)
+            data (bytes): Data to encrypt
+            associated_data (bytes, optional): Associated data for AEAD
+            
+        Returns:
+            bytes: Encrypted data
+            
+        Raises:
+            ValueError: For invalid inputs
+        """
+        # Validate inputs
+        self._validate_data(data)
+        truncated_nonce = self._process_nonce(nonce)
+        
+        # Process associated data
+        if associated_data is not None and not isinstance(associated_data, (bytes, bytearray, memoryview)):
+            raise TypeError(f"Associated data must be bytes-like object, got {type(associated_data).__name__}")
+        
+        # Encrypt using the underlying cipher
+        try:
+            return self.cipher.encrypt(truncated_nonce, data, associated_data)
+        except Exception as e:
+            # Convert specific cryptography errors to more generic ones to avoid leaking info
+            raise ValueError(f"Encryption failed: {str(e)}")
+        
+    def decrypt(self, nonce, data, associated_data=None):
+        """
+        Decrypt data using XChaCha20Poly1305.
+        
+        Args:
+            nonce (bytes): Nonce used for encryption (ideally 24 bytes for XChaCha20Poly1305)
+            data (bytes): Data to decrypt
+            associated_data (bytes, optional): Associated data for AEAD
+            
+        Returns:
+            bytes: Decrypted data
+            
+        Raises:
+            ValueError: For invalid inputs or authentication failures
+        """
+        # Validate inputs
+        self._validate_data(data)
+        truncated_nonce = self._process_nonce(nonce)
+        
+        # Process associated data
+        if associated_data is not None and not isinstance(associated_data, (bytes, bytearray, memoryview)):
+            raise TypeError(f"Associated data must be bytes-like object, got {type(associated_data).__name__}")
+        
+        # Minimum ciphertext size check (AEAD tag is at least 16 bytes)
+        if len(data) < 16:
+            raise ValueError("Ciphertext too short - missing authentication tag")
+            
+        # Decrypt using the underlying cipher
+        try:
+            return self.cipher.decrypt(truncated_nonce, data, associated_data)
+        except cryptography.exceptions.InvalidTag:
+            # Use a consistent error message for authentication failures
+            raise ValueError("Authentication failed: integrity check error")
+        except Exception as e:
+            # Convert specific cryptography errors to more generic ones to avoid leaking info
+            raise ValueError(f"Decryption failed: {str(e)}")
 import cryptography.exceptions
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 

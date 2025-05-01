@@ -221,6 +221,19 @@ class SecureMemoryAllocator:
         Args:
             buffer: The memory buffer to lock
         """
+        # Validate buffer before proceeding
+        if buffer is None:
+            return False
+        
+        # Ensure buffer has valid length
+        try:
+            buffer_len = len(buffer)
+            if buffer_len <= 0:
+                return False
+        except (TypeError, AttributeError):
+            return False
+            
+        lock_success = False
         try:
             # On Linux/Unix platforms
             if self.system in ('linux', 'darwin', 'freebsd'):
@@ -232,38 +245,110 @@ class SecureMemoryAllocator:
                     # Attempt to disable core dumps
                     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
-                    # On Linux, we can use mlock to prevent memory from being
-                    # swapped
-                    if hasattr(
-                            ctypes.CDLL(
-                                'libc.so.6' if self.system == 'linux' else 'libc.dylib'),
-                            'mlock'):
-                        addr = ctypes.addressof(
-                            ctypes.c_char.from_buffer(buffer))
-                        size = len(buffer)
-                        ctypes.CDLL(
-                            'libc.so.6' if self.system == 'linux' else 'libc.dylib').mlock(
-                            addr, size)
-                except (ImportError, AttributeError, OSError):
-                    pass
+                    # Determine the correct library name based on platform
+                    if self.system == 'linux':
+                        libc_name = 'libc.so.6'
+                    elif self.system == 'darwin':
+                        libc_name = 'libc.dylib'
+                    elif self.system == 'freebsd':
+                        libc_name = 'libc.so'
+                    else:
+                        return False
+                        
+                    # Load the C library
+                    try:
+                        libc = ctypes.CDLL(libc_name)
+                    except OSError:
+                        return False
+                        
+                    # Check if mlock function exists
+                    if hasattr(libc, 'mlock'):
+                        # Create a memoryview to safely access buffer
+                        try:
+                            # Get buffer address with validation
+                            c_buffer = ctypes.c_char.from_buffer(buffer)
+                            if not c_buffer:
+                                return False
+                                
+                            addr = ctypes.addressof(c_buffer)
+                            size = buffer_len
+                            
+                            # Validate address and size
+                            if addr <= 0 or size <= 0 or size > 1_000_000_000:  # 1GB max for safety
+                                return False
+                                
+                            # Call mlock with proper error checking
+                            result = libc.mlock(addr, size)
+                            lock_success = (result == 0)
+                            
+                            # Check if locking was successful
+                            if not lock_success:
+                                # Try to get error code
+                                if hasattr(ctypes, 'get_errno'):
+                                    errno = ctypes.get_errno()
+                                    if not quiet:
+                                        print(f"Memory locking failed with error code: {errno}")
+                            
+                        except (TypeError, ValueError, BufferError) as e:
+                            if not quiet:
+                                print(f"Buffer conversion error: {str(e)}")
+                            return False
+                    
+                except (ImportError, AttributeError, OSError) as e:
+                    if not quiet:
+                        print(f"Memory locking error: {str(e)}")
+                    return False
 
             # On Windows
             elif self.system == 'windows':
                 try:
-                    # Attempt to use VirtualLock to prevent memory from being
-                    # paged to disk
-                    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+                    # Attempt to use VirtualLock to prevent memory from being paged to disk
+                    try:
+                        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+                    except OSError:
+                        return False
+                        
                     if hasattr(kernel32, 'VirtualLock'):
-                        addr = ctypes.addressof(
-                            ctypes.c_char.from_buffer(buffer))
-                        size = len(buffer)
-                        kernel32.VirtualLock(addr, size)
-                except (AttributeError, OSError):
-                    pass
-        except Exception:
-            # Silently continue if locking fails - this is a best-effort
-            # approach
-            pass
+                        try:
+                            # Get buffer address with validation
+                            c_buffer = ctypes.c_char.from_buffer(buffer)
+                            if not c_buffer:
+                                return False
+                                
+                            addr = ctypes.addressof(c_buffer)
+                            size = buffer_len
+                            
+                            # Validate address and size
+                            if addr <= 0 or size <= 0 or size > 1_000_000_000:  # 1GB max for safety
+                                return False
+                                
+                            # Call VirtualLock with proper error handling
+                            result = kernel32.VirtualLock(addr, size)
+                            lock_success = (result != 0)  # Windows API returns non-zero on success
+                            
+                            # Check for errors
+                            if not lock_success:
+                                error_code = ctypes.get_last_error()
+                                if not quiet:
+                                    print(f"Memory locking failed with error code: {error_code}")
+                                    
+                        except (TypeError, ValueError, BufferError) as e:
+                            if not quiet:
+                                print(f"Buffer conversion error: {str(e)}")
+                            return False
+                            
+                except (AttributeError, OSError) as e:
+                    if not quiet:
+                        print(f"Memory locking error: {str(e)}")
+                    return False
+                    
+        except Exception as e:
+            # Log the error but continue execution
+            if not quiet:
+                print(f"Memory locking unexpected error: {str(e)}")
+            return False
+            
+        return lock_success
 
     def free(self, secure_container):
         """
@@ -283,41 +368,123 @@ class SecureMemoryAllocator:
 
         Args:
             buffer: The memory buffer to unlock
+            
+        Returns:
+            bool: True if unlocking was successful, False otherwise
         """
+        # Validate buffer before proceeding
+        if buffer is None:
+            return False
+        
+        # Ensure buffer has valid length
+        try:
+            buffer_len = len(buffer)
+            if buffer_len <= 0:
+                return False
+        except (TypeError, AttributeError):
+            return False
+            
+        unlock_success = False
         try:
             # On Linux/Unix platforms
             if self.system in ('linux', 'darwin', 'freebsd'):
                 try:
-                    # On Linux, we can use munlock to unlock previously locked
-                    # memory
-                    if hasattr(
-                            ctypes.CDLL(
-                                'libc.so.6' if self.system == 'linux' else 'libc.dylib'),
-                            'munlock'):
-                        addr = ctypes.addressof(
-                            ctypes.c_char.from_buffer(buffer))
-                        size = len(buffer)
-                        ctypes.CDLL(
-                            'libc.so.6' if self.system == 'linux' else 'libc.dylib').munlock(
-                            addr, size)
-                except (ImportError, AttributeError, OSError):
-                    pass
+                    # Determine the correct library name based on platform
+                    if self.system == 'linux':
+                        libc_name = 'libc.so.6'
+                    elif self.system == 'darwin':
+                        libc_name = 'libc.dylib'
+                    elif self.system == 'freebsd':
+                        libc_name = 'libc.so'
+                    else:
+                        return False
+                        
+                    # Load the C library
+                    try:
+                        libc = ctypes.CDLL(libc_name)
+                    except OSError:
+                        return False
+                    
+                    # Check if munlock function exists
+                    if hasattr(libc, 'munlock'):
+                        try:
+                            # Get buffer address with validation
+                            c_buffer = ctypes.c_char.from_buffer(buffer)
+                            if not c_buffer:
+                                return False
+                                
+                            addr = ctypes.addressof(c_buffer)
+                            size = buffer_len
+                            
+                            # Validate address and size
+                            if addr <= 0 or size <= 0 or size > 1_000_000_000:  # 1GB max for safety
+                                return False
+                                
+                            # Call munlock with proper error checking
+                            result = libc.munlock(addr, size)
+                            unlock_success = (result == 0)
+                            
+                        except (TypeError, ValueError, BufferError) as e:
+                            if not quiet:
+                                print(f"Buffer conversion error during unlock: {str(e)}")
+                            return False
+                            
+                except (ImportError, AttributeError, OSError) as e:
+                    if not quiet:
+                        print(f"Memory unlocking error: {str(e)}")
+                    return False
 
             # On Windows
             elif self.system == 'windows':
                 try:
-                    # Unlock memory previously locked with VirtualLock
-                    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+                    # Load Windows kernel library
+                    try:
+                        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+                    except OSError:
+                        return False
+                        
+                    # Check if VirtualUnlock function exists
                     if hasattr(kernel32, 'VirtualUnlock'):
-                        addr = ctypes.addressof(
-                            ctypes.c_char.from_buffer(buffer))
-                        size = len(buffer)
-                        kernel32.VirtualUnlock(addr, size)
-                except (AttributeError, OSError):
-                    pass
-        except Exception:
-            # Silently continue if unlocking fails
-            pass
+                        try:
+                            # Get buffer address with validation
+                            c_buffer = ctypes.c_char.from_buffer(buffer)
+                            if not c_buffer:
+                                return False
+                                
+                            addr = ctypes.addressof(c_buffer)
+                            size = buffer_len
+                            
+                            # Validate address and size
+                            if addr <= 0 or size <= 0 or size > 1_000_000_000:  # 1GB max for safety
+                                return False
+                                
+                            # Call VirtualUnlock with proper error handling
+                            result = kernel32.VirtualUnlock(addr, size)
+                            unlock_success = (result != 0)  # Windows API returns non-zero on success
+                            
+                            # Check for errors
+                            if not unlock_success:
+                                error_code = ctypes.get_last_error()
+                                if not quiet:
+                                    print(f"Memory unlocking failed with error code: {error_code}")
+                                    
+                        except (TypeError, ValueError, BufferError) as e:
+                            if not quiet:
+                                print(f"Buffer conversion error during unlock: {str(e)}")
+                            return False
+                            
+                except (AttributeError, OSError) as e:
+                    if not quiet:
+                        print(f"Memory unlocking error: {str(e)}")
+                    return False
+                    
+        except Exception as e:
+            # Log the error but continue execution
+            if not quiet:
+                print(f"Memory unlocking unexpected error: {str(e)}")
+            return False
+            
+        return unlock_success
 
     def __del__(self):
         """Clean up all allocated blocks when the allocator is destroyed."""
@@ -356,7 +523,7 @@ def free_secure_buffer(buffer):
 
 def secure_memcpy(dest, src, length=None):
     """
-    Copy data between buffers securely with backward compatibility.
+    Copy data between buffers securely with comprehensive validation and buffer overflow protection.
 
     Args:
         dest: Destination buffer
@@ -365,60 +532,117 @@ def secure_memcpy(dest, src, length=None):
 
     Returns:
         int: Number of bytes copied
+        
+    Raises:
+        ValueError: If either source or destination is None, or if length is invalid
+        TypeError: If source or destination are not valid buffer types
     """
-    # Determine number of bytes to copy
+    # Input validation
+    if dest is None:
+        raise ValueError("Destination buffer cannot be None")
+    if src is None:
+        raise ValueError("Source buffer cannot be None")
+        
+    # Validate buffer types
+    try:
+        len_dest = len(dest)
+        len_src = len(src)
+    except (TypeError, AttributeError):
+        raise TypeError("Both source and destination must support the len() operation")
+    
+    # Validate length parameter if provided
+    if length is not None:
+        if not isinstance(length, int):
+            raise TypeError("Length must be an integer")
+        if length < 0:
+            raise ValueError("Length cannot be negative")
+            
+    # Zero-length check to avoid unnecessary operations
+    if len_src == 0 or len_dest == 0:
+        return 0
+        
+    # Ensure buffers are accessible for writing
+    try:
+        # Check if destination is writable by attempting to modify first byte
+        # First save the original value
+        if len_dest > 0:
+            orig_val = dest[0]
+            dest[0] = orig_val  # Try writing the same value to test writability
+    except (TypeError, IndexError):
+        raise TypeError("Destination buffer is not writable")
+        
+    # Determine number of bytes to copy with explicit bounds checks
     if length is None:
         # Default to the minimum length to avoid buffer overflows
-        length = min(len(src), len(dest))
+        copy_length = min(len_src, len_dest)
     else:
-        length = min(length, len(src), len(dest))
-
+        # Ensure length doesn't exceed either buffer
+        copy_length = min(length, len_src, len_dest)
+    
     # Size check - if destination is too small, resize it if possible
-    if hasattr(dest, 'extend') and len(dest) < length:
+    if hasattr(dest, 'extend') and len_dest < copy_length:
         # For resizable buffers like bytearray or SecureBytes, extend if needed
-        extension_needed = length - len(dest)
+        extension_needed = copy_length - len_dest
         try:
             dest.extend(b'\x00' * extension_needed)
-        except AttributeError:
-            # If extend fails, handle error gracefully
-            pass
-
-    # If sizes don't match after attempted resizing and dest is smaller,
-    # we have to truncate to avoid buffer overflow
-    actual_copy_length = min(length, len(dest))
-
-    # Use a safer byte-by-byte copy approach that works with any buffer type
+            # Update destination length after extension
+            len_dest = len(dest)
+        except (AttributeError, TypeError, ValueError):
+            # If extend fails, handle error gracefully by adjusting copy length
+            copy_length = min(copy_length, len_dest)
+    
+    # Final safety check before copying
+    actual_copy_length = min(copy_length, len_dest)
+    
+    # Try different copy strategies with proper error handling
     try:
+        # Strategy 1: Direct byte-by-byte copy with bounds checking
         for i in range(actual_copy_length):
-            dest[i] = src[i]
-    except (TypeError, IndexError) as e:
-        # Fall back to an even more robust approach for problematic buffers
+            # Validate indices for both source and destination
+            if i < len_src and i < len_dest:
+                dest[i] = src[i]
+            else:
+                # We've reached the end of at least one buffer
+                return i
+    except (TypeError, IndexError, ValueError) as e:
+        # Strategy 2: Try with explicit type conversions
         try:
-            # Convert to bytearrays if needed
+            # Convert to bytearrays/bytes if needed
             src_bytes = bytes(src)
             for i in range(actual_copy_length):
-                if i < len(dest):  # Final safety check
+                # Double-check bounds to prevent overflows
+                if i < len(src_bytes) and i < len_dest:
                     dest[i] = src_bytes[i]
+                else:
+                    return i
         except Exception as e:
-            # If all else fails, try one more approach using a memory view if
-            # possible
+            # Strategy 3: Try using memory views if possible
             try:
+                # Create memory views with explicit bounds checking
                 src_view = memoryview(src)
                 dest_view = memoryview(dest)
-
-                # Copy only what will fit
-                fit_length = min(len(src_view), len(dest_view))
-
-                # Byte by byte copy with memoryview
-                for i in range(fit_length):
-                    dest_view[i] = src_view[i]
-
-                return fit_length
-            except Exception:
-                # Last resort: log that we couldn't copy and return 0
+                
+                # Validate views are compatible
+                if src_view.readonly and not dest_view.readonly:
+                    # Ensure copy length doesn't exceed either view
+                    fit_length = min(len(src_view), len(dest_view))
+                    
+                    # Byte-by-byte copy with explicit bounds checking
+                    for i in range(fit_length):
+                        if i < len(src_view) and i < len(dest_view):
+                            dest_view[i] = src_view[i]
+                        else:
+                            return i
+                    
+                    return fit_length
+                else:
+                    # Memory views aren't compatible for copying
+                    return 0
+            except Exception as final_error:
+                # Last resort: log the error and return 0
                 # This prevents breaking old files completely
                 return 0
-
+    
     # Return number of bytes actually copied
     return actual_copy_length
 
