@@ -27,6 +27,33 @@ pip install liboqs-python
 
 This package provides Python bindings for liboqs, the Open Quantum Safe project's C library implementation of quantum-resistant cryptographic algorithms.
 
+### Manual Installation
+
+as it seems that there is not pypi package atm one need to manually install the required C-Libs and Python bindings
+#### Build and install C Libs
+```bash
+sudo dnf install git gcc cmake ninja-build make golang python3-devel openssl-devel
+git clone --recurse-submodules https://github.com/open-quantum-safe/liboqs.git
+cd liboqs
+mkdir build && cd build
+cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local ..
+ninja
+sudo ninja install
+```
+#### Install Python bindings
+```bash
+pip install --user git+https://github.com/open-quantum-safe/liboqs-python.git
+sudo ldconfig
+```
+If you encounter issues with the installation due to the library not being found, you might need to set the library path explicitly:
+```bash
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
+```
+then test if python can import it
+```python
+import oqs
+print(oqs.get_enabled_kem_mechanisms())
+```
 ## Using Post-Quantum Encryption
 
 ### Command Line Usage
