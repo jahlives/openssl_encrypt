@@ -982,7 +982,8 @@ def multi_hash_password(
 
 from .crypt_errors import (
     secure_key_derivation_error_handler, KeyDerivationError,
-    ValidationError, InternalError, secure_error_handler,
+    ValidationError, InternalError, secure_encrypt_error_handler,
+    secure_decrypt_error_handler, secure_error_handler,
     AuthenticationError, DecryptionError, EncryptionError
 )
 
