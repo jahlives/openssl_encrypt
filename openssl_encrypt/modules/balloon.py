@@ -52,9 +52,29 @@ def expand(buf: list[bytes], cnt: int, space_cost: int) -> int:
     Returns:
         int: Counter used in a security proof (read the paper).
     """
+    # Validate parameters to prevent buffer overflows
+    if not isinstance(buf, list):
+        raise TypeError("Buffer must be a list")
+    if not isinstance(cnt, int) or cnt < 0:
+        raise ValueError("Counter must be a non-negative integer")
+    if not isinstance(space_cost, int) or space_cost < 1:
+        raise ValueError("Space cost must be a positive integer")
+    if len(buf) < 1:
+        raise ValueError("Buffer must contain at least one element")
+    
+    # Ensure space_cost doesn't exceed reasonable limits to prevent memory issues
+    max_space_cost = 1_000_000  # Set a reasonable upper limit
+    if space_cost > max_space_cost:
+        raise ValueError(f"Space cost exceeds maximum allowed value ({max_space_cost})")
+    
     for s in range(1, space_cost):
-        buf.append(hash_func(cnt, buf[s - 1]))
-        cnt += 1
+        # Ensure we're only accessing valid indices
+        if s - 1 >= 0 and s - 1 < len(buf):
+            buf.append(hash_func(cnt, buf[s - 1]))
+            cnt += 1
+        else:
+            raise IndexError(f"Buffer access out of bounds at index {s - 1}")
+    
     return cnt
 
 
@@ -83,19 +103,63 @@ def mix(
         void: Updates the buffer and counter, but does not
         return anything.
     """
+    # Validate parameters to prevent buffer overflows and other issues
+    if not isinstance(buf, list):
+        raise TypeError("Buffer must be a list")
+    if not isinstance(cnt, int) or cnt < 0:
+        raise ValueError("Counter must be a non-negative integer")
+    if not isinstance(delta, int) or delta < 1:
+        raise ValueError("Delta must be a positive integer")
+    if not isinstance(salt, bytes):
+        raise TypeError("Salt must be bytes")
+    if not isinstance(space_cost, int) or space_cost < 1:
+        raise ValueError("Space cost must be a positive integer")
+    if not isinstance(time_cost, int) or time_cost < 1:
+        raise ValueError("Time cost must be a positive integer")
+    
+    # Check buffer size matches space_cost parameter
+    if len(buf) != space_cost:
+        raise ValueError(f"Buffer length ({len(buf)}) must match space_cost ({space_cost})")
+    
+    # Set reasonable limits to prevent excessive resource usage
+    max_delta = 100
+    max_time_cost = 100000
+    if delta > max_delta:
+        raise ValueError(f"Delta exceeds maximum allowed value ({max_delta})")
+    if time_cost > max_time_cost:
+        raise ValueError(f"Time cost exceeds maximum allowed value ({max_time_cost})")
+    
     for t in range(time_cost):
         for s in range(space_cost):
-            buf[s] = hash_func(cnt, buf[s - 1], buf[s])
-            cnt += 1
-            for i in range(delta):
-                idx_block = hash_func(t, s, i)
-                other = (
-                    int.from_bytes(hash_func(cnt, salt, idx_block), "little")
-                    % space_cost
-                )
+            # Validate indices before access
+            if s >= 0 and s < len(buf) and (s - 1) % len(buf) < len(buf):
+                buf[s] = hash_func(cnt, buf[(s - 1) % len(buf)], buf[s])
                 cnt += 1
-                buf[s] = hash_func(cnt, buf[s], buf[other])
-                cnt += 1
+                
+                for i in range(delta):
+                    idx_block = hash_func(t, s, i)
+                    
+                    # Securely calculate other index with bounds checking
+                    try:
+                        hash_bytes = hash_func(cnt, salt, idx_block)
+                        # Ensure we have at least 4 bytes for conversion
+                        if len(hash_bytes) >= 4:
+                            # Use only first 4 bytes for conversion to int
+                            other = int.from_bytes(hash_bytes[:4], "little") % space_cost
+                            
+                            # Validate other index is in bounds
+                            if 0 <= other < len(buf):
+                                cnt += 1
+                                buf[s] = hash_func(cnt, buf[s], buf[other])
+                                cnt += 1
+                            else:
+                                raise IndexError(f"Generated index {other} out of bounds for buffer size {len(buf)}")
+                        else:
+                            raise ValueError("Hash function returned insufficient bytes")
+                    except Exception as e:
+                        raise ValueError(f"Error processing random index in mix function: {str(e)}")
+            else:
+                raise IndexError(f"Buffer index {s} or {s-1} out of bounds (buffer size: {len(buf)})")
 
 
 def extract(buf: list[bytes]) -> bytes:
@@ -107,7 +171,18 @@ def extract(buf: list[bytes]) -> bytes:
     Returns:
         bytes: Last value of the buffer as bytes.
     """
-    return buf[-1]
+    # Validate buffer to prevent index errors
+    if not isinstance(buf, list):
+        raise TypeError("Buffer must be a list")
+    if len(buf) == 0:
+        raise ValueError("Cannot extract from empty buffer")
+    
+    # Access last element safely
+    last_index = len(buf) - 1
+    if last_index >= 0:
+        return buf[last_index]
+    else:
+        raise IndexError(f"Buffer index {last_index} out of bounds")
 
 
 def balloon(
