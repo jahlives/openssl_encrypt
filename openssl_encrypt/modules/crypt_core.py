@@ -21,6 +21,9 @@ import time
 from enum import Enum
 from functools import wraps
 
+# Error handling imports are at the top of file
+
+
 from cryptography.fernet import Fernet
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
@@ -29,13 +32,6 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.ciphers.aead import (
     AESGCM, ChaCha20Poly1305, AESSIV, 
     AESGCMSIV, AESOCB3
-)
-# XChaCha20Poly1305 implementation as a wrapper around ChaCha20Poly1305
-# with a 24-byte nonce that gets truncated to 12 bytes for the underlying algorithm
-from .crypt_errors import (
-    ValidationError, EncryptionError, DecryptionError, 
-    AuthenticationError, secure_encrypt_error_handler,
-    secure_decrypt_error_handler
 )
 
 class XChaCha20Poly1305:
@@ -980,6 +976,7 @@ def multi_hash_password(
             secure_memzero(hashed)
 
 
+# Import error handling functions at the top of the file to avoid circular imports
 from .crypt_errors import (
     secure_key_derivation_error_handler, KeyDerivationError,
     ValidationError, InternalError, secure_encrypt_error_handler,
