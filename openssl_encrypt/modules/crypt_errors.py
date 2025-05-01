@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#\!/usr/bin/env python3
 """
 Secure Error Handling Module
 
@@ -319,7 +319,11 @@ def constant_time_compare(a, b):
         # Accumulate differences using bitwise OR
         result = 0
         for x, y in zip(a, b):
-            result |= x ^ y
+            if isinstance(x, int) and isinstance(y, int):
+                result |= x ^ y
+            else:
+                # Handle case where x and y might be strings or other non-integer types
+                result |= 1 if x != y else 0
     
     # Add another small delay to mask the processing time
     jitter_ms = secrets.randbelow(5) + 1  # 1-5ms

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#\!/usr/bin/env python3
 """
 Secure File Encryption Tool - Core Module
 
@@ -21,7 +21,23 @@ import time
 from enum import Enum
 from functools import wraps
 
-# Error handling imports are at the top of file
+from cryptography.fernet import Fernet
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.ciphers.aead import (
+    AESGCM, ChaCha20Poly1305, AESSIV, 
+    AESGCMSIV, AESOCB3
+)
+import cryptography.exceptions
+
+# Import error handling functions
+from .crypt_errors import ValidationError, EncryptionError, DecryptionError
+from .crypt_errors import AuthenticationError, InternalError, KeyDerivationError
+from .crypt_errors import secure_encrypt_error_handler, secure_decrypt_error_handler
+from .crypt_errors import secure_key_derivation_error_handler, secure_error_handler
+from .crypt_errors import constant_time_compare# Error handling imports are at the top of file
 
 
 from cryptography.fernet import Fernet
@@ -1467,7 +1483,11 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     if not output_file or not isinstance(output_file, str):
         raise ValidationError("Output file path must be a non-empty string")
         
-    if not os.path.isfile(input_file):
+    # Special case for stdin and other special files
+    if input_file == '/dev/stdin' or input_file.startswith('/proc/') or input_file.startswith('/dev/'):
+        # Skip file existence check for special files
+        pass
+    elif not os.path.isfile(input_file):
         raise ValidationError(f"Input file does not exist: {input_file}")
         
     if password is None:
@@ -1755,7 +1775,11 @@ def decrypt_file(
     if output_file is not None and not isinstance(output_file, str):
         raise ValidationError("Output file path must be a string")
         
-    if not os.path.isfile(input_file):
+    # Special case for stdin and other special files
+    if input_file == '/dev/stdin' or input_file.startswith('/proc/') or input_file.startswith('/dev/'):
+        # Skip file existence check for special files
+        pass
+    elif not os.path.isfile(input_file):
         raise ValidationError(f"Input file does not exist: {input_file}")
         
     if password is None:
@@ -1770,10 +1794,12 @@ def decrypt_file(
 
     # Split metadata and encrypted data
     try:
+        # Revert to the original simpler parsing
         metadata_b64, encrypted_data = file_content.split(b':', 1)
         metadata = json.loads(base64.b64decode(metadata_b64))
         encrypted_data = base64.b64decode(encrypted_data)
     except Exception as e:
+        # Keep the original ValueError to maintain compatibility
         raise ValueError(f"Invalid file format: {str(e)}")
 
     # Extract necessary information from metadata
