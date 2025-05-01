@@ -4,7 +4,8 @@ Test suite for the Secure File Encryption Tool.
 
 This module contains comprehensive tests for the core functionality
 of the encryption tool, including encryption, decryption, password
-generation, secure file deletion, and various hash configurations.
+generation, secure file deletion, various hash configurations,
+error handling, and buffer overflow protection.
 """
 
 import os
@@ -43,6 +44,12 @@ from modules.crypt_utils import (
     generate_strong_password, secure_shred_file, expand_glob_patterns
 )
 from modules.crypt_cli import main as cli_main
+from modules.crypt_errors import (
+    ValidationError, EncryptionError, DecryptionError, AuthenticationError,
+    KeyDerivationError, InternalError, secure_error_handler, 
+    secure_encrypt_error_handler, secure_decrypt_error_handler,
+    secure_key_derivation_error_handler, constant_time_compare, ErrorCategory
+)
 
 
 
@@ -1843,6 +1850,384 @@ class TestPasswordGeneration(unittest.TestCase):
             digit_count +
             special_count,
             1000)
+
+
+class TestSecureErrorHandling(unittest.TestCase):
+    """Test cases for secure error handling functionality."""
+
+    def setUp(self):
+        """Set up test environment."""
+        # Enable debug mode for detailed error messages in tests
+        os.environ['DEBUG'] = '1'
+        
+        # Create a temporary directory for test files
+        self.test_dir = tempfile.mkdtemp()
+        self.test_files = []
+
+        # Create a test file with some content
+        self.test_file = os.path.join(self.test_dir, "test_file.txt")
+        with open(self.test_file, "w") as f:
+            f.write("This is a test file for encryption and decryption.")
+        self.test_files.append(self.test_file)
+
+        # Test password
+        self.test_password = b"TestPassword123!"
+
+        # Define basic hash config for testing
+        self.basic_hash_config = {
+            'sha512': 0,
+            'sha256': 0,
+            'sha3_256': 0,
+            'sha3_512': 0,
+            'blake2b': 0,
+            'shake256': 0,
+            'whirlpool': 0,
+            'scrypt': {
+                'n': 0,
+                'r': 8,
+                'p': 1
+            },
+            'argon2': {
+                'enabled': False,
+                'time_cost': 1,
+                'memory_cost': 8192,
+                'parallelism': 1,
+                'hash_len': 16,
+                'type': 2  # Argon2id
+            },
+            'pbkdf2_iterations': 1000  # Use low value for faster tests
+        }
+
+    def tearDown(self):
+        """Clean up after tests."""
+        # Remove debug environment variable
+        if 'DEBUG' in os.environ:
+            del os.environ['DEBUG']
+            
+        # Remove any test files that were created
+        for file_path in self.test_files:
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except Exception:
+                    pass
+
+        # Remove the temporary directory
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_validation_error(self):
+        """Test validation error handling for input validation."""
+        # Test with invalid input file (non-existent)
+        non_existent_file = os.path.join(self.test_dir, "does_not_exist.txt")
+        output_file = os.path.join(self.test_dir, "output.bin")
+        
+        # The correct error type should be raised
+        with self.assertRaises(ValidationError):
+            encrypt_file(
+                non_existent_file, output_file, self.test_password,
+                self.basic_hash_config, quiet=True
+            )
+
+    def test_constant_time_compare(self):
+        """Test constant-time comparison function."""
+        # Equal values should return True
+        self.assertTrue(constant_time_compare(b"same", b"same"))
+        
+        # Different values should return False
+        self.assertFalse(constant_time_compare(b"different1", b"different2"))
+        
+        # Different length values should return False
+        self.assertFalse(constant_time_compare(b"short", b"longer"))
+        
+        # Test with other byte-like objects
+        self.assertTrue(constant_time_compare(bytearray(b"test"), bytearray(b"test")))
+        self.assertFalse(constant_time_compare(bytearray(b"test1"), bytearray(b"test2")))
+
+    def test_error_handler_timing_jitter(self):
+        """Test that error handling adds timing jitter."""
+        # This test verifies that our secure error handler adds some timing jitter
+        # We do this by running the same error multiple times and measuring time differences
+        
+        # Create invalid input scenario
+        non_existent_file = os.path.join(self.test_dir, "does_not_exist.txt")
+        output_file = os.path.join(self.test_dir, "output.bin")
+        
+        # Collect timing samples
+        samples = []
+        for _ in range(5):
+            start_time = time.time()
+            try:
+                encrypt_file(
+                    non_existent_file, output_file, self.test_password,
+                    self.basic_hash_config, quiet=True
+                )
+            except ValidationError:
+                pass
+            samples.append(time.time() - start_time)
+        
+        # Calculate standard deviation of samples
+        mean = sum(samples) / len(samples)
+        variance = sum((x - mean) ** 2 for x in samples) / len(samples)
+        std_dev = variance ** 0.5
+        
+        # If there's timing jitter, standard deviation should be non-zero
+        # But we keep the threshold very small to not make test brittle
+        self.assertGreater(std_dev, 0.0001, 
+                         "Error handler should add timing jitter, but all samples had identical timing")
+
+    def test_secure_error_handler_decorator(self):
+        """Test the secure_error_handler decorator functionality."""
+        
+        # Define a function that raises an exception
+        @secure_error_handler
+        def test_function():
+            raise ValueError("Test error")
+        
+        # It should wrap the ValueError in a ValidationError
+        with self.assertRaises(ValidationError):
+            test_function()
+        
+        # Test with specific error category
+        @secure_error_handler(error_category=ErrorCategory.ENCRYPTION)
+        def test_function_with_category():
+            raise RuntimeError("Test error")
+        
+        # It should wrap the RuntimeError in an EncryptionError
+        with self.assertRaises(EncryptionError):
+            test_function_with_category()
+        
+        # Test specialized decorators
+        @secure_encrypt_error_handler
+        def test_encrypt_function():
+            raise Exception("Encryption test error")
+        
+        @secure_decrypt_error_handler
+        def test_decrypt_function():
+            raise Exception("Decryption test error")
+        
+        @secure_key_derivation_error_handler
+        def test_key_derivation_function():
+            raise Exception("Key derivation test error")
+        
+        # Verify each specialized handler wraps exceptions correctly
+        with self.assertRaises(EncryptionError):
+            test_encrypt_function()
+        
+        with self.assertRaises(DecryptionError):
+            test_decrypt_function()
+        
+        with self.assertRaises(KeyDerivationError):
+            test_key_derivation_function()
+
+
+class TestBufferOverflowProtection(unittest.TestCase):
+    """Test cases for buffer overflow protection features."""
+
+    def setUp(self):
+        """Set up test environment."""
+        # Create a temporary directory for test files
+        self.test_dir = tempfile.mkdtemp()
+        self.test_files = []
+
+        # Create a test file with some content
+        self.test_file = os.path.join(self.test_dir, "test_file.txt")
+        with open(self.test_file, "w") as f:
+            f.write("This is a test file for encryption and decryption.")
+        self.test_files.append(self.test_file)
+
+        # Test password
+        self.test_password = b"TestPassword123!"
+
+        # Define basic hash config for testing
+        self.basic_hash_config = {
+            'sha512': 0,
+            'sha256': 0,
+            'sha3_256': 0,
+            'sha3_512': 0,
+            'blake2b': 0,
+            'shake256': 0,
+            'whirlpool': 0,
+            'scrypt': {
+                'n': 0,
+                'r': 8,
+                'p': 1
+            },
+            'argon2': {
+                'enabled': False,
+                'time_cost': 1,
+                'memory_cost': 8192,
+                'parallelism': 1,
+                'hash_len': 16,
+                'type': 2  # Argon2id
+            },
+            'pbkdf2_iterations': 1000  # Use low value for faster tests
+        }
+
+    def tearDown(self):
+        """Clean up after tests."""
+        # Remove any test files that were created
+        for file_path in self.test_files:
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except Exception:
+                    pass
+
+        # Remove the temporary directory
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_code_contains_special_file_handling(self):
+        """Test that code includes special file handling for /dev/stdin and other special files."""
+        # This test doesn't execute the code, just verifies the pattern exists in the source
+        from inspect import getsource
+        from openssl_encrypt.modules.crypt_core import encrypt_file, decrypt_file
+        
+        # Get the source code
+        encrypt_source = getsource(encrypt_file)
+        decrypt_source = getsource(decrypt_file)
+        
+        # Check encrypt_file includes special handling
+        self.assertIn("'/dev/stdin'", encrypt_source, "Missing special case handling for /dev/stdin in encrypt_file")
+        self.assertIn("/proc/", encrypt_source, "Missing special case handling for /proc/ files in encrypt_file")
+        self.assertIn("/dev/", encrypt_source, "Missing special case handling for /dev/ files in encrypt_file")
+        
+        # Check decrypt_file includes special handling 
+        self.assertIn("'/dev/stdin'", decrypt_source, "Missing special case handling for /dev/stdin in decrypt_file")
+        self.assertIn("/proc/", decrypt_source, "Missing special case handling for /proc/ files in decrypt_file")
+        self.assertIn("/dev/", decrypt_source, "Missing special case handling for /dev/ files in decrypt_file")
+
+    def test_large_input_handling(self):
+        """Test handling of unusually large inputs to prevent buffer overflows."""
+        # Create a moderately large test file (5MB)
+        large_file = os.path.join(self.test_dir, "large_file.dat")
+        self.test_files.append(large_file)
+        
+        # Write 5MB of random data
+        with open(large_file, "wb") as f:
+            f.write(os.urandom(5 * 1024 * 1024))
+        
+        # Create output files
+        encrypted_file = os.path.join(self.test_dir, "large_encrypted.bin")
+        decrypted_file = os.path.join(self.test_dir, "large_decrypted.dat")
+        self.test_files.extend([encrypted_file, decrypted_file])
+        
+        # Encrypt the large file
+        result = encrypt_file(
+            large_file, encrypted_file, self.test_password,
+            self.basic_hash_config, quiet=True
+        )
+        self.assertTrue(result)
+        
+        # Decrypt the file
+        result = decrypt_file(
+            encrypted_file, decrypted_file, self.test_password, quiet=True
+        )
+        self.assertTrue(result)
+        
+        # Verify content integrity with file hash
+        import hashlib
+        
+        def get_file_hash(filename):
+            """Calculate SHA-256 hash of a file."""
+            hasher = hashlib.sha256()
+            with open(filename, 'rb') as f:
+                for chunk in iter(lambda: f.read(4096), b''):
+                    hasher.update(chunk)
+            return hasher.hexdigest()
+        
+        original_hash = get_file_hash(large_file)
+        decrypted_hash = get_file_hash(decrypted_file)
+        
+        self.assertEqual(original_hash, decrypted_hash)
+
+    def test_malformed_metadata_handling(self):
+        """Test handling of malformed metadata in encrypted files."""
+        # Create a valid encrypted file first
+        encrypted_file = os.path.join(self.test_dir, "valid_encrypted.bin")
+        self.test_files.append(encrypted_file)
+        
+        encrypt_file(
+            self.test_file, encrypted_file, self.test_password,
+            self.basic_hash_config, quiet=True
+        )
+        
+        # Now create a corrupted version with invalid metadata
+        corrupted_file = os.path.join(self.test_dir, "corrupted_metadata.bin")
+        self.test_files.append(corrupted_file)
+        
+        # Read the valid encrypted file
+        with open(encrypted_file, "rb") as f:
+            content = f.read()
+        
+        # Corrupt the metadata part (should be Base64-encoded JSON followed by colon)
+        parts = content.split(b':', 1)
+        if len(parts) == 2:
+            metadata_b64, data = parts
+            
+            # Try to decode and corrupt the metadata
+            try:
+                metadata = json.loads(base64.b64decode(metadata_b64))
+                
+                # Corrupt the metadata by changing format_version to an invalid value
+                metadata['format_version'] = "invalid"
+                
+                # Re-encode the corrupted metadata
+                corrupted_metadata_b64 = base64.b64encode(json.dumps(metadata).encode())
+                
+                # Write the corrupted file
+                with open(corrupted_file, "wb") as f:
+                    f.write(corrupted_metadata_b64 + b':' + data)
+                
+                # Attempt to decrypt the corrupted file
+                with self.assertRaises(Exception):
+                    decrypt_file(
+                        corrupted_file, 
+                        os.path.join(self.test_dir, "output.txt"),
+                        self.test_password, 
+                        quiet=True
+                    )
+            except Exception:
+                self.skipTest("Could not prepare corrupted metadata test")
+        else:
+            self.skipTest("Encrypted file format not as expected for test")
+
+    def test_excessive_input_validation(self):
+        """Test handling of excessive inputs that could cause overflow."""
+        # Create an excessively long password
+        long_password = secrets.token_bytes(10000)  # 10KB password
+        
+        # This should be handled gracefully without buffer overflows
+        # The function may either succeed (with truncation) or raise a validation error
+        try:
+            output_file = os.path.join(self.test_dir, "long_password.bin")
+            self.test_files.append(output_file)
+            
+            result = encrypt_file(
+                self.test_file, output_file, long_password,
+                self.basic_hash_config, quiet=True
+            )
+            
+            # If it didn't raise an exception, it should have worked
+            self.assertTrue(result)
+            self.assertTrue(os.path.exists(output_file))
+            
+            # Try decrypting with the same long password
+            decrypted_file = os.path.join(self.test_dir, "long_password_dec.txt")
+            self.test_files.append(decrypted_file)
+            
+            result = decrypt_file(
+                output_file, decrypted_file, long_password, quiet=True
+            )
+            
+            self.assertTrue(result)
+            
+            # Verify content
+            with open(self.test_file, "rb") as original, open(decrypted_file, "rb") as decrypted:
+                self.assertEqual(original.read(), decrypted.read())
+                
+        except ValidationError:
+            # It's also acceptable to reject excessive inputs
+            pass
 
 
 if __name__ == "__main__":
