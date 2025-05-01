@@ -72,13 +72,16 @@ def show_version_info():
     import sys
     import platform
     from importlib.metadata import version as pkg_version
+    import os
 
     # Import version information from version.py
     try:
         from openssl_encrypt.version import __version__, __git_commit__
+        version_module_path = sys.modules['openssl_encrypt.version'].__file__
     except ImportError:
         __version__ = "unknown"
         __git_commit__ = "unknown"
+        version_module_path = None
 
     # Get Python version
     python_version = sys.version.split()[0]
@@ -367,9 +370,10 @@ def main():
             'security-info',
             'check-argon2',
             'check-pqc',
-            'version'],
+            'version',
+            'show-version-file'],
         help='Action to perform: encrypt/decrypt files, shred data, generate passwords, '
-        'show security recommendations, check Argon2 support, or check post-quantum cryptography support')
+        'show security recommendations, check Argon2 support, check post-quantum cryptography support or display version file contents')
 
     parser.add_argument(
         '--algorithm',
@@ -778,6 +782,28 @@ def main():
     if args.action == 'version':
         print(show_version_info())
         return 0
+        
+    if args.action == 'show-version-file':
+        try:
+            from openssl_encrypt.version import print_version_info, get_version_info
+            
+            # Call print_version_info function to show detailed version information
+            print_version_info()
+            
+            # Additionally, show the full version info dictionary
+            version_info = get_version_info()
+            print("\nComplete Version Information:")
+            print("----------------------------")
+            for key, value in version_info.items():
+                if key == "history":
+                    # Skip history as it was already printed by print_version_info
+                    continue
+                print(f"{key}: {value}")
+                
+            return 0
+        except ImportError:
+            print("Version module not found. Run 'pip install -e .' to generate the version file.")
+            return 1
 
     # Handle scrypt_cost conversion to scrypt_n
     if args.scrypt_cost > 0 and args.scrypt_n == 0:
