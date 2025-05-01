@@ -2230,5 +2230,202 @@ class TestBufferOverflowProtection(unittest.TestCase):
             pass
 
 
+# Try to import PQC modules
+try:
+    from modules.pqc import PQCipher, PQCAlgorithm, check_pqc_support, LIBOQS_AVAILABLE
+    from modules.crypt_core import PQC_AVAILABLE
+except ImportError:
+    # Mock the PQC classes if not available
+    LIBOQS_AVAILABLE = False
+    PQC_AVAILABLE = False
+    PQCipher = None
+    PQCAlgorithm = None
+
+
+@unittest.skipIf(not LIBOQS_AVAILABLE, "liboqs-python not available, skipping PQC tests")
+class TestPostQuantumCrypto(unittest.TestCase):
+    """Test cases for post-quantum cryptography functionality."""
+
+    def setUp(self):
+        """Set up test environment."""
+        # Create a temporary directory for test files
+        self.test_dir = tempfile.mkdtemp()
+        self.test_files = []
+
+        # Create a test file with "Hello World" content
+        self.test_file = os.path.join(self.test_dir, "pqc_test.txt")
+        with open(self.test_file, "w") as f:
+            f.write("Hello World\n")
+        self.test_files.append(self.test_file)
+
+        # Test password
+        self.test_password = b"pw7qG0kh5oG1QrRz6CibPNDxGaHrrBAa"
+        
+        # Define basic hash config for testing
+        self.basic_hash_config = {
+            'sha512': 0,
+            'sha256': 0,
+            'sha3_256': 0,
+            'sha3_512': 0,
+            'blake2b': 0,
+            'shake256': 0,
+            'whirlpool': 0,
+            'scrypt': {
+                'n': 0,
+                'r': 8,
+                'p': 1
+            },
+            'argon2': {
+                'enabled': False,
+                'time_cost': 1,
+                'memory_cost': 8192,
+                'parallelism': 1,
+                'hash_len': 16,
+                'type': 2  # Argon2id
+            },
+            'pbkdf2_iterations': 1000  # Use low value for faster tests
+        }
+
+        # Get available PQC algorithms
+        _, _, self.supported_algorithms = check_pqc_support()
+        
+        # Find a suitable test algorithm
+        self.test_algorithm = self._find_test_algorithm()
+        
+        # Skip the whole suite if no suitable algorithm is available
+        if not self.test_algorithm:
+            self.skipTest("No suitable post-quantum algorithm available")
+
+    def tearDown(self):
+        """Clean up after tests."""
+        # Remove test files
+        for file_path in self.test_files:
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except Exception:
+                    pass
+
+        # Remove the temporary directory
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def _find_test_algorithm(self):
+        """Find a suitable Kyber/ML-KEM algorithm for testing."""
+        # Try to find a good test algorithm
+        for algo_name in ['Kyber768', 'ML-KEM-768', 'Kyber-768', 
+                         'Kyber512', 'ML-KEM-512', 'Kyber-512',
+                         'Kyber1024', 'ML-KEM-1024', 'Kyber-1024']:
+            # Direct match
+            if algo_name in self.supported_algorithms:
+                return algo_name
+                
+            # Try case-insensitive match
+            for supported in self.supported_algorithms:
+                if supported.lower() == algo_name.lower():
+                    return supported
+                
+            # Try with/without hyphens
+            normalized_name = algo_name.lower().replace('-', '').replace('_', '')
+            for supported in self.supported_algorithms:
+                normalized_supported = supported.lower().replace('-', '').replace('_', '')
+                if normalized_supported == normalized_name:
+                    return supported
+        
+        # If no specific match found, return the first KEM algorithm if any
+        for supported in self.supported_algorithms:
+            if 'kyber' in supported.lower() or 'ml-kem' in supported.lower():
+                return supported
+                
+        # Last resort: just return the first algorithm
+        return self.supported_algorithms[0] if self.supported_algorithms else None
+
+    def test_keypair_generation(self):
+        """Test post-quantum keypair generation."""
+        cipher = PQCipher(self.test_algorithm)
+        public_key, private_key = cipher.generate_keypair()
+        
+        # Verify that keys are non-empty and of reasonable length
+        self.assertIsNotNone(public_key)
+        self.assertIsNotNone(private_key)
+        self.assertGreater(len(public_key), 32)
+        self.assertGreater(len(private_key), 32)
+
+    def test_encrypt_decrypt_data(self):
+        """Test encryption and decryption of data using post-quantum algorithms."""
+        cipher = PQCipher(self.test_algorithm)
+        public_key, private_key = cipher.generate_keypair()
+        
+        # Test data
+        test_data = b"Hello World\n"
+        
+        # Encrypt the data
+        encrypted = cipher.encrypt(test_data, public_key)
+        self.assertIsNotNone(encrypted)
+        self.assertGreater(len(encrypted), len(test_data))
+        
+        # Decrypt the data
+        decrypted = cipher.decrypt(encrypted, private_key)
+        self.assertEqual(decrypted, test_data)
+
+    def test_pqc_file_direct(self):
+        """Test encryption and decryption of file content with direct PQC methods."""
+        # Load the file content
+        with open(self.test_file, 'rb') as f:
+            test_data = f.read()
+            
+        # Create a cipher
+        cipher = PQCipher(self.test_algorithm)
+        
+        # Generate keypair
+        public_key, private_key = cipher.generate_keypair()
+        
+        # Encrypt the data directly with PQC
+        encrypted_data = cipher.encrypt(test_data, public_key)
+        
+        # Decrypt the data
+        decrypted_data = cipher.decrypt(encrypted_data, private_key)
+        
+        # Verify the result
+        self.assertEqual(decrypted_data, test_data)
+
+    def test_algorithm_compatibility(self):
+        """Test compatibility between different algorithm name formats."""
+        # Test with different algorithm name formats
+        variants = []
+        
+        # Extract algorithm number
+        number = ''.join(c for c in self.test_algorithm if c.isdigit())
+        
+        # If it's a Kyber/ML-KEM algorithm, test variants
+        if 'kyber' in self.test_algorithm.lower() or 'ml-kem' in self.test_algorithm.lower():
+            variants = [
+                f"Kyber{number}",
+                f"Kyber-{number}",
+                f"ML-KEM-{number}",
+                f"MLKEM{number}"
+            ]
+        
+        # If we have variants to test
+        for variant in variants:
+            try:
+                cipher = PQCipher(variant)
+                public_key, private_key = cipher.generate_keypair()
+                
+                # Test data
+                test_data = b"Hello World\n"
+                
+                # Encrypt with this variant
+                encrypted = cipher.encrypt(test_data, public_key)
+                
+                # Decrypt with the same variant
+                decrypted = cipher.decrypt(encrypted, private_key)
+                
+                # Verify the result
+                self.assertEqual(decrypted, test_data)
+                
+            except Exception as e:
+                self.fail(f"Failed with algorithm variant '{variant}': {e}")
+
+
 if __name__ == "__main__":
     unittest.main()
