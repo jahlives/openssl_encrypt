@@ -761,13 +761,18 @@ class CryptGUI:
                 import re
                 # Match standard hashing progress: "SHA-512 hashing: [████████        ] 40.0% (400000/1000000)"
                 hash_progress_regex = re.compile(r'([\w\-]+) hashing: \[(.*?)\] (\d+\.\d+)% \((\d+)/(\d+)\)')
+                # Match newer format progress message (from argon2, scrypt, balloon, etc):
+                # "Argon2 processing: 50.0% complete"
+                simple_progress_regex = re.compile(r'([\w\-]+) processing: (\d+\.\d+)% complete')
                 # Match processing messages like "Applying 1000000 rounds of SHA-512..."
                 processing_regex = re.compile(r'Applying (\d+) rounds of ([\w\-]+).*')
                 # Match processing with parameters like "Applying scrypt with n=16384, r=8, p=1..."
                 param_processing_regex = re.compile(r'Applying ([\w\-]+) with.*')
                 # Match processing messages for Argon2 and other memory-hard functions
                 memory_processing_regex = re.compile(r'([\w\-]+) processing')
-                # Match integrity check results
+                # Match Balloon specific messages
+                balloon_regex = re.compile(r'Balloon hashing.*')
+                # Match integrity check results 
                 integrity_regex = re.compile(r'(✓|⚠️).*integrity.*')
 
                 # Process stdout and update progress
@@ -786,9 +791,11 @@ class CryptGUI:
 
                     # Check for different types of progress indicators
                     hash_match = hash_progress_regex.search(line)
+                    simple_match = simple_progress_regex.search(line)
                     processing_match = processing_regex.search(line)
                     param_match = param_processing_regex.search(line)
                     memory_match = memory_processing_regex.search(line)
+                    balloon_match = balloon_regex.search(line)
 
                     if hash_match:
                         # Standard hashing progress
@@ -806,6 +813,34 @@ class CryptGUI:
                         if progress_text != self.last_progress_text:
                             self.status_var.set(progress_text)
                             self.last_progress_text = progress_text
+                    
+                    elif simple_match:
+                        # Simpler progress format
+                        algorithm, percent = simple_match.groups()
+                        percent_float = float(percent)
+                        
+                        # Update progress bar
+                        self.progress_var.set(percent_float)
+                        
+                        # Update status text with algorithm and percentage
+                        if algorithm != self.current_algorithm:
+                            self.current_algorithm = algorithm
+                            
+                        progress_text = f"{algorithm} processing: {percent}% complete"
+                        if progress_text != self.last_progress_text:
+                            self.status_var.set(progress_text)
+                            self.last_progress_text = progress_text
+                            
+                    elif balloon_match:
+                        # For balloon hashing, which may not report percentage
+                        self.current_algorithm = "Balloon"
+                        progress_text = "Balloon hashing in progress..."
+                        if progress_text != self.last_progress_text:
+                            self.status_var.set(progress_text)
+                            self.last_progress_text = progress_text
+                            # Use indeterminate progress for balloon
+                            self.progress_bar.configure(mode="indeterminate")
+                            self.progress_bar.start()
 
                     elif processing_match:
                         # Starting a new hashing process
@@ -994,13 +1029,18 @@ class CryptGUI:
             # PBKDF2 iterations
             cmd.extend(["--pbkdf2-iterations", str(hash_config['pbkdf2_iterations'])])
 
-            # Scrypt parameters
-            if hash_config['scrypt']['n'] > 0:
+            # Scrypt parameters - check if enabled
+            if hash_config['scrypt'].get('enabled', False) or hash_config['scrypt']['n'] > 0:
+                cmd.append("--enable-scrypt")
                 cmd.extend([
                     "--scrypt-n", str(hash_config['scrypt']['n']),
                     "--scrypt-r", str(hash_config['scrypt']['r']),
                     "--scrypt-p", str(hash_config['scrypt']['p'])
                 ])
+                
+                # Add rounds parameter if present
+                if 'rounds' in hash_config['scrypt'] and hash_config['scrypt']['rounds'] > 1:
+                    cmd.extend(["--scrypt-rounds", str(hash_config['scrypt']['rounds'])])
 
             # Argon2 parameters
             if hash_config['argon2']['enabled']:
@@ -1012,6 +1052,30 @@ class CryptGUI:
                     "--argon2-hash-len", str(hash_config['argon2']['hash_len']),
                     "--argon2-type", hash_config['argon2']['type']
                 ])
+                
+                # Add rounds parameter if present
+                if 'rounds' in hash_config['argon2'] and hash_config['argon2']['rounds'] > 1:
+                    cmd.extend(["--argon2-rounds", str(hash_config['argon2']['rounds'])])
+                    
+            # Balloon parameters (if present)
+            if 'balloon' in hash_config and hash_config['balloon'].get('enabled', False):
+                cmd.append("--enable-balloon")
+                
+                balloon_config = hash_config['balloon']
+                
+                if 'time_cost' in balloon_config:
+                    cmd.extend(["--balloon-time-cost", str(balloon_config['time_cost'])])
+                
+                if 'space_cost' in balloon_config:
+                    cmd.extend(["--balloon-space-cost", str(balloon_config['space_cost'])])
+                
+                # Handle both 'parallel_cost' and 'parallelism' as keys might vary
+                if 'parallel_cost' in balloon_config:
+                    cmd.extend(["--balloon-parallelism", str(balloon_config['parallel_cost'])])
+                
+                # Add rounds parameter if present
+                if 'rounds' in balloon_config and balloon_config['rounds'] > 1:
+                    cmd.extend(["--balloon-rounds", str(balloon_config['rounds'])])
 
         # Run the command
         self.output_text.insert(tk.END, f" ".join(cmd) + "\n")
@@ -1019,6 +1083,12 @@ class CryptGUI:
         self.root.update_idletasks()
         try:
             self.disable_buttons()
+            # Add --progress flag to show progress information in the output
+            if "--progress" not in cmd:
+                cmd.append("--progress")
+            # Add --verbose flag to show more detail about the hashing process
+            if "--verbose" not in cmd:
+                cmd.append("--verbose")
             self.run_command_with_progress(cmd)
             self.enable_buttons()
         finally:
@@ -1098,6 +1168,12 @@ class CryptGUI:
         self.root.update_idletasks()
         try:
             self.disable_buttons()
+            # Add --progress flag to show progress information in the output
+            if "--progress" not in cmd:
+                cmd.append("--progress")
+            # Add --verbose flag to show more detail about the hashing process
+            if "--verbose" not in cmd:
+                cmd.append("--verbose")
             self.run_command_with_progress(cmd, show_output=show_output)
             self.enable_buttons()
         finally:
@@ -1124,6 +1200,12 @@ class CryptGUI:
             cmd.append("-r")
         
         cmd.extend(["--shred-passes", str(self.shred_passes_var.get())])
+        
+        # Add progress flags
+        if "--progress" not in cmd:
+            cmd.append("--progress")
+        if "--verbose" not in cmd:
+            cmd.append("--verbose")
         
         # Run the command
         self.run_command_with_progress(cmd)

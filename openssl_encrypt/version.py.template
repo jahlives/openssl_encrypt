@@ -17,7 +17,9 @@ VERSION_HISTORY = {
     "0.3.0": "Added support for Argon2 key derivation",
     "0.4.0": "Added secure memory handling and improved password strength",
     "0.4.4": "Added support for Scrypt and more hash algorithms",
-    "0.5.0": "Added BLAKE2b and SHAKE-256 hash algorithms, XChaCha20-Poly1305 encryption"
+    "0.5.0": "Added BLAKE2b and SHAKE-256 hash algorithms, XChaCha20-Poly1305 encryption",
+    "0.5.1": "More reliable approach to get commit sha into version.py",
+    "0.5.2": "Added postquantum resistant encryption via a hypbrid approach"
 }
 
 # Check for updates
