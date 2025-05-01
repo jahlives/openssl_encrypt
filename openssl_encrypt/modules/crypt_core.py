@@ -1436,7 +1436,9 @@ def generate_key(
     elif algorithm == EncryptionAlgorithm.FERNET.value:
         password = base64.urlsafe_b64encode(password)
     try:
-        return password, salt, hash_config
+        # Always convert to regular bytes to ensure consistent return type
+        # whether it's SecureBytes or already a bytes object
+        return bytes(password), salt, hash_config
     finally:
         try:
             secure_memzero(derived_salt)
@@ -1689,8 +1691,36 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
             # Store private key only if requested (for self-decryption)
             if pqc_store_private_key and len(pqc_keypair) > 1:
                 if not quiet:
-                    print("Storing post-quantum private key in encrypted file for self-decryption")
-                metadata['pqc_private_key'] = base64.b64encode(pqc_keypair[1]).decode('utf-8')
+                    print("Storing encrypted post-quantum private key in file for self-decryption")
+                # Create a separate derived key that specifically depends on the provided password
+                # This way, even if the main encryption key has issues, the private key's encryption 
+                # will still be password dependent
+                
+                # Use a different salt for private key encryption
+                private_key_salt = secrets.token_bytes(16)
+                private_key_iterations = 100000  # Strong iteration count
+                
+                # Create a key derivation that directly depends on the password
+                private_key_key = hashlib.pbkdf2_hmac(
+                    'sha256', 
+                    password,  # Original password, not the derived key
+                    private_key_salt, 
+                    private_key_iterations,
+                    dklen=32  # Ensure we get exactly 32 bytes for AES-GCM
+                )
+                
+                
+                # Use AES-GCM for encryption
+                cipher = AESGCM(private_key_key)
+                nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
+                encrypted_private_key = nonce + cipher.encrypt(nonce, pqc_keypair[1], None)
+                
+                # Store the salt in metadata for decryption
+                metadata['pqc_key_salt'] = base64.b64encode(private_key_salt).decode('utf-8')
+                
+                
+                metadata['pqc_private_key'] = base64.b64encode(encrypted_private_key).decode('utf-8')
+                metadata['pqc_key_encrypted'] = True  # Mark that the key is encrypted
             elif not quiet:
                 print("Post-quantum private key NOT stored - you'll need the key file for decryption")
         elif 'private_key' in locals():
@@ -1700,8 +1730,34 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
             # Store the private key if requested
             if pqc_store_private_key:
                 if not quiet:
-                    print("Storing post-quantum private key in encrypted file for self-decryption")
-                metadata['pqc_private_key'] = base64.b64encode(private_key).decode('utf-8')
+                    print("Storing encrypted post-quantum private key in file for self-decryption")
+                # Create a separate derived key that specifically depends on the provided password
+                # This way, even if the main encryption key has issues, the private key's encryption 
+                # will still be password dependent
+                
+                # Use a different salt for private key encryption
+                private_key_salt = secrets.token_bytes(16)
+                private_key_iterations = 100000  # Strong iteration count
+                
+                # Create a key derivation that directly depends on the password
+                private_key_key = hashlib.pbkdf2_hmac(
+                    'sha256', 
+                    password,  # Original password, not the derived key
+                    private_key_salt, 
+                    private_key_iterations,
+                    dklen=32  # Ensure we get exactly 32 bytes for AES-GCM
+                )
+                
+                
+                # Use AES-GCM for encryption
+                cipher = AESGCM(key)
+                nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
+                encrypted_private_key = nonce + cipher.encrypt(nonce, private_key, None)
+                
+                # Store the salt in metadata for decryption
+                metadata['pqc_key_salt'] = base64.b64encode(private_key_salt).decode('utf-8')
+                metadata['pqc_private_key'] = base64.b64encode(encrypted_private_key).decode('utf-8')
+                metadata['pqc_key_encrypted'] = True  # Mark that the key is encrypted
     # If scrypt is used, add rounds to hash_config
     # Serialize and encode the metadata
     metadata_json = json.dumps(metadata).encode('utf-8')
@@ -1841,11 +1897,9 @@ def decrypt_file(
     # Extract PQC information if present (format version 3+)
     pqc_info = None
     if format_version >= 3:
-        if 'pqc_private_key' in metadata:
-            # If the file contains the private key, use it
-            pqc_private_key_from_metadata = base64.b64decode(metadata['pqc_private_key'])
-            if pqc_private_key is None:
-                pqc_private_key = pqc_private_key_from_metadata
+        # Store for PQC key decryption after key derivation
+        pqc_has_private_key = 'pqc_private_key' in metadata
+        pqc_key_is_encrypted = metadata.get('pqc_key_encrypted', False)
         
         if 'pqc_public_key' in metadata:
             pqc_public_key = base64.b64decode(metadata['pqc_public_key'])
@@ -1892,6 +1946,68 @@ def decrypt_file(
     key, _, _ = generate_key(password, salt, hash_config,
                              pbkdf2_iterations, quiet, algorithm, progress=progress,
                              pqc_keypair=pqc_info)
+    # Now that we have the key, we can try to decrypt PQC private key if needed
+    if format_version >= 3 and pqc_has_private_key:
+        try:
+            encrypted_private_key = base64.b64decode(metadata['pqc_private_key'])
+            
+            # Check if key is encrypted
+            if pqc_key_is_encrypted:
+                # We need to decrypt the private key using the separately derived key
+                # Get the salt from metadata
+                if 'pqc_key_salt' not in metadata:
+                    if not quiet:
+                        print("Failed to decrypt post-quantum private key - wrong format")
+                    pqc_private_key_from_metadata = None
+                else:
+                    # Decode the salt
+                    private_key_salt = base64.b64decode(metadata['pqc_key_salt'])
+                    private_key_iterations = 100000  # Same as in encryption
+                    
+                    # Create the same key derivation as during encryption
+                    private_key_key = hashlib.pbkdf2_hmac(
+                        'sha256', 
+                        password,  # Original password, not the derived key
+                        private_key_salt, 
+                        private_key_iterations,
+                        dklen=32  # Ensure we get exactly 32 bytes for AES-GCM
+                    )
+                    
+                    
+                    # Use the derived private_key_key NOT the main key
+                    cipher = AESGCM(private_key_key)
+                    try:
+                        # Format: nonce (12 bytes) + encrypted_key
+                        nonce = encrypted_private_key[:12]
+                        encrypted_key_data = encrypted_private_key[12:]
+                        
+                        
+                        # Decrypt the private key with the key derived from password and salt
+                        pqc_private_key_from_metadata = cipher.decrypt(nonce, encrypted_key_data, None)
+                        
+                        
+                        if not quiet:
+                            print("Successfully decrypted post-quantum private key from metadata")
+                    except Exception as e:
+                        # If decryption fails, it means the wrong password was used
+                        if not quiet:
+                            print("Failed to decrypt post-quantum private key - wrong password")
+                        pqc_private_key_from_metadata = None
+            else:
+                # Legacy support for non-encrypted keys (created before our fix)
+                # WARNING: This is insecure but needed for backward compatibility
+                pqc_private_key_from_metadata = encrypted_private_key
+                if not quiet:
+                    print("WARNING: Using legacy unencrypted private key from metadata")
+            
+            # If no private key was provided explicitly, use the one from metadata
+            if pqc_private_key is None:
+                pqc_private_key = pqc_private_key_from_metadata
+                
+        except Exception as e:
+            if not quiet:
+                print(f"Error processing PQC private key: {str(e)}")
+            # If there's an error, we'll continue without a private key
     # Decrypt the data
     if not quiet:
         print("Decrypting content with " + algorithm, end=" ")
