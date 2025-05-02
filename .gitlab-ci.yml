@@ -29,19 +29,21 @@ build-docker-image:
     - name: docker:dind
       alias: docker
   variables:
-    # Use TLS https://docs.gitlab.com/ee/ci/docker/using_docker_build.html#tls-enabled
-    DOCKER_HOST: tcp://docker:2376
-    DOCKER_TLS_CERTDIR: "/certs"
-    DOCKER_TLS_VERIFY: 1
-    DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+    # Try with TLS disabled first for troubleshooting
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
   before_script:
-    # Diagnostic information
-    - docker info
-    - docker version
-    # Use more secure login method with password-stdin
-    - echo "$CI_REGISTRY_PASSWORD" | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+    # Create Docker context for diagnostics
+    - mkdir -p ~/.docker/cli-plugins/
+    # Explicitly set Docker host for diagnostics
+    - export DOCKER_HOST=tcp://docker:2375
+    # Diagnostics (but don't fail pipeline if they fail)
+    - docker info || true
+    - docker version || true
+    # Log in to GitLab registry
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
-    # Ensure we can communicate with the Docker daemon
+    # Test Docker connectivity before proceeding
     - docker ps
     - |
       cat > Dockerfile <<EOF
