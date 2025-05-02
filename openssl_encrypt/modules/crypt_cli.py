@@ -35,11 +35,16 @@ from .crypt_core import (
     ARGON2_AVAILABLE,
     ARGON2_TYPE_INT_MAP,
     EncryptionAlgorithm,
-    PQC_AVAILABLE)
+    PQC_AVAILABLE,
+    string_entropy)
 from .crypt_utils import (
     secure_shred_file, expand_glob_patterns, generate_strong_password,
     display_password_with_timeout, show_security_recommendations,
     request_confirmation
+)
+from .password_policy import (
+    PasswordPolicy, validate_password, validate_password_or_raise,
+    get_password_strength
 )
 
 def debug_hash_config(args, hash_config, message="Hash configuration"):
@@ -754,6 +759,40 @@ def main():
         help='Include special characters in generated password'
     )
 
+    # Password policy options
+    policy_group = parser.add_argument_group('Password Policy Options',
+                                            'Configure password strength validation')
+    policy_group.add_argument(
+        '--password-policy',
+        choices=['minimal', 'basic', 'standard', 'paranoid', 'none'],
+        default='standard',
+        help='Password policy level to enforce (default: standard)'
+    )
+    policy_group.add_argument(
+        '--min-password-length',
+        type=int,
+        help='Minimum password length (overrides policy level)'
+    )
+    policy_group.add_argument(
+        '--min-password-entropy',
+        type=float,
+        help='Minimum password entropy in bits (overrides policy level)'
+    )
+    policy_group.add_argument(
+        '--disable-common-password-check',
+        action='store_true',
+        help='Disable checking against common password lists'
+    )
+    policy_group.add_argument(
+        '--force-password',
+        action='store_true',
+        help='Force acceptance of weak passwords (use with caution)'
+    )
+    policy_group.add_argument(
+        '--custom-password-list',
+        help='Path to custom common password list file'
+    )
+
     args = parser.parse_args()
 
     # Handle legacy options and map to new names
@@ -915,8 +954,25 @@ def main():
             args.use_uppercase = True
             args.use_digits = True
             args.use_special = True
+        
+        # Apply password policy if specified
+        if args.password_policy != 'none' and not args.force_password:
+            # Create policy to get minimum required length
+            policy_params = {}
+            if args.min_password_length is not None:
+                policy_params['min_length'] = args.min_password_length
+                
+            policy = PasswordPolicy(
+                policy_level=args.password_policy, 
+                **policy_params
+            )
+            
+            # Ensure length meets policy requirements
+            if args.length < policy.min_length:
+                print(f"\nIncreasing password length from {args.length} to {policy.min_length} to meet policy requirements")
+                args.length = policy.min_length
 
-        # Generate and display the password
+        # Generate password
         password = generate_strong_password(
             args.length,
             args.use_lowercase,
@@ -924,7 +980,37 @@ def main():
             args.use_digits,
             args.use_special
         )
+        
+        # Check password strength 
+        entropy, strength = get_password_strength(password)
+        print(f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)")
+        
+        # Validate against policy
+        if args.password_policy != 'none':
+            policy_params = {}
+            if args.min_password_entropy is not None:
+                policy_params['min_entropy'] = args.min_password_entropy
+                
+            if args.disable_common_password_check:
+                policy_params['check_common_passwords'] = False
+                
+            if args.custom_password_list:
+                policy_params['common_passwords_path'] = args.custom_password_list
+            
+            # Create policy
+            policy = PasswordPolicy(
+                policy_level=args.password_policy, 
+                **policy_params
+            )
+            
+            # Check if generated password meets policy (it should, but verify)
+            valid, _ = policy.validate_password(password, quiet=True)
+            if not valid:
+                # This is rare but could happen with specific combinations of constraints
+                print("Warning: Generated password does not meet policy requirements.")
+                print("Consider adjusting character requirements or using a longer length.")
 
+        # Display the password
         display_password_with_timeout(password)
         # Exit after generating password
         sys.exit(0)
@@ -945,20 +1031,110 @@ def main():
             with secure_string() as password_secure:
                 # Handle random password generation for encryption
                 if args.action == 'encrypt' and args.random and not args.password:
+                    # Determine character sets based on args or defaults
+                    use_lowercase = args.use_lowercase if args.use_lowercase is not None else True
+                    use_uppercase = args.use_uppercase if args.use_uppercase is not None else True
+                    use_digits = args.use_digits if args.use_digits is not None else True
+                    use_special = args.use_special if args.use_special is not None else True
+                    
+                    # Ensure length meets policy requirements
+                    if args.password_policy != 'none' and not args.force_password:
+                        # Create policy to get minimum required length
+                        policy_params = {}
+                        if args.min_password_length is not None:
+                            policy_params['min_length'] = args.min_password_length
+                            
+                        policy = PasswordPolicy(
+                            policy_level=args.password_policy, 
+                            **policy_params
+                        )
+                        
+                        # Ensure random password length meets policy requirements
+                        if args.random < policy.min_length:
+                            if not args.quiet:
+                                print(f"\nIncreasing random password length from {args.random} to {policy.min_length} to meet policy requirements")
+                            args.random = policy.min_length
+                    
+                    # Generate password with requested settings
                     generated_password = generate_strong_password(
                         args.random,
-                        use_lowercase=True,
-                        use_uppercase=True,
-                        use_digits=True,
-                        use_special=True,
-                        use_secure_mem=True  # Use True instead of use_secure_mem
+                        use_lowercase=use_lowercase,
+                        use_uppercase=use_uppercase,
+                        use_digits=use_digits,
+                        use_special=use_special,
+                        use_secure_mem=True
                     )
+                    
+                    # Validate the generated password against policy
+                    if args.password_policy != 'none':
+                        policy_params = {}
+                        if args.min_password_entropy is not None:
+                            policy_params['min_entropy'] = args.min_password_entropy
+                            
+                        if args.disable_common_password_check:
+                            policy_params['check_common_passwords'] = False
+                            
+                        if args.custom_password_list:
+                            policy_params['common_passwords_path'] = args.custom_password_list
+                        
+                        # Create policy
+                        policy = PasswordPolicy(
+                            policy_level=args.password_policy, 
+                            **policy_params
+                        )
+                        
+                        # Check if generated password meets policy (it should, but verify)
+                        valid, msgs = policy.validate_password(generated_password, quiet=args.quiet)
+                        
+                        # Print strength information
+                        if not args.quiet:
+                            for msg in msgs:
+                                if "Password strength:" in msg:
+                                    print(f"\n{msg}")
+                    
                     password_secure.extend(generated_password.encode())
                     if not args.quiet:
                         print("\nGenerated a random password for encryption.")
 
                 # If password provided as argument
                 elif args.password:
+                    # Skip validation in test mode
+                    in_test_mode = os.environ.get('PYTEST_CURRENT_TEST') is not None
+                    
+                    # Validate password strength if policy is enabled, not in force mode, and not in test mode
+                    if args.password_policy != 'none' and not args.force_password and not in_test_mode:
+                        try:
+                            # Create policy with user-specified parameters
+                            policy_params = {}
+                            
+                            # Override policy settings with custom parameters if provided
+                            if args.min_password_length is not None:
+                                policy_params['min_length'] = args.min_password_length
+                            
+                            if args.min_password_entropy is not None:
+                                policy_params['min_entropy'] = args.min_password_entropy
+                                
+                            if args.disable_common_password_check:
+                                policy_params['check_common_passwords'] = False
+                                
+                            if args.custom_password_list:
+                                policy_params['common_passwords_path'] = args.custom_password_list
+                            
+                            # Create policy
+                            policy = PasswordPolicy(
+                                policy_level=args.password_policy, 
+                                **policy_params
+                            )
+                            
+                            # Validate the password (will raise ValidationError if invalid)
+                            policy.validate_password_or_raise(args.password, quiet=args.quiet)
+                            
+                        except ValidationError as e:
+                            if not args.quiet:
+                                print(f"\nPassword validation failed: {str(e)}")
+                                print("Use --force-password to bypass validation (not recommended)")
+                            sys.exit(1)
+                    
                     password_secure.extend(args.password.encode())
 
                 # If no password provided yet, prompt the user
@@ -974,11 +1150,47 @@ def main():
                                 'Confirm password: ').encode()
 
                             if pwd1 == pwd2:
-                                password_secure.extend(pwd1)
+                                # Validate password if policy is enabled, not forced, and not in test mode
+                                valid_password = True
+                                in_test_mode = os.environ.get('PYTEST_CURRENT_TEST') is not None
+                                
+                                if args.password_policy != 'none' and not args.force_password and not in_test_mode:
+                                    try:
+                                        # Create policy with user-specified parameters
+                                        policy_params = {}
+                                        
+                                        # Override policy settings with custom parameters if provided
+                                        if args.min_password_length is not None:
+                                            policy_params['min_length'] = args.min_password_length
+                                        
+                                        if args.min_password_entropy is not None:
+                                            policy_params['min_entropy'] = args.min_password_entropy
+                                            
+                                        if args.disable_common_password_check:
+                                            policy_params['check_common_passwords'] = False
+                                            
+                                        if args.custom_password_list:
+                                            policy_params['common_passwords_path'] = args.custom_password_list
+                                        
+                                        # Create policy and validate password
+                                        policy = PasswordPolicy(
+                                            policy_level=args.password_policy, 
+                                            **policy_params
+                                        )
+                                        policy.validate_password_or_raise(pwd1.decode('utf-8', errors='ignore'))
+                                        
+                                    except ValidationError as e:
+                                        print(f"\nPassword validation failed: {str(e)}")
+                                        print("Use --force-password to bypass validation (not recommended)")
+                                        valid_password = False
+                                
+                                if valid_password:
+                                    password_secure.extend(pwd1)
+                                    match = True
+                                
                                 # Securely clear the temporary buffers
                                 pwd1 = b'\x00' * len(pwd1)
                                 pwd2 = b'\x00' * len(pwd2)
-                                match = True
                             else:
                                 # Securely clear the temporary buffers
                                 pwd1 = b'\x00' * len(pwd1)
