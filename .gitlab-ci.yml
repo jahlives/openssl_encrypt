@@ -9,7 +9,7 @@ default:
     - pip install build twine PyYAML --break-system-packages
 
 stages:
-#  - docker
+  - docker
   - sync
   - prepare
   - test
