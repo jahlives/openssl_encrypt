@@ -102,6 +102,8 @@ sync-wiki:
 test:
   stage: test
   image: $DOCKER_IMAGE
+  variables:
+    PQC_QUIET: "true"  # Suppress PQC module initialization messages
   before_script:
     - pip install -r requirements.txt --break-system-packages
   script:
@@ -127,6 +129,8 @@ test:
 test-fallback:
   stage: test
   image: python:3.13-alpine
+  variables:
+    PQC_QUIET: "true"  # Suppress PQC module initialization messages
   before_script:
     - pip install -r requirements.txt --break-system-packages
     - pip install pytest pytest-order --break-system-packages

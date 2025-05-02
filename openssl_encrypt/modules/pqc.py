@@ -42,9 +42,15 @@ def public_key_part(private_key: bytes) -> bytes:
             # but not enough to reveal the entire key
             return bytes(secure_private_key[:16])
 
+# Environment variable to control PQC initialization messages
+import os
+
 # Try to import PQC libraries, provide fallbacks if not available
 LIBOQS_AVAILABLE = False
 oqs = None
+
+# Check for quiet mode environment variable
+PQC_QUIET = os.environ.get('PQC_QUIET', '').lower() in ('1', 'true', 'yes', 'on')
 
 try:
     import oqs
@@ -59,23 +65,27 @@ try:
             test_mechanisms = oqs.get_enabled_kem_mechanisms()
             if test_mechanisms:
                 test_kem = oqs.KeyEncapsulation(test_mechanisms[0])
-                if not hasattr(test_kem, 'generate_keypair'):
+                if not hasattr(test_kem, 'generate_keypair') and not PQC_QUIET:
                     print(f"Warning: oqs KeyEncapsulation has non-standard API: {dir(test_kem)}")
                 # Clean up test object
                 test_kem = None
         except Exception as e:
-            print(f"Warning: oqs KEM initialization test failed: {e}")
+            if not PQC_QUIET:
+                print(f"Warning: oqs KEM initialization test failed: {e}")
     else:
-        print("Warning: oqs module found but KEM mechanisms not available")
-        print(f"Available methods: {dir(oqs)}")
+        if not PQC_QUIET:
+            print("Warning: oqs module found but KEM mechanisms not available")
+            print(f"Available methods: {dir(oqs)}")
         LIBOQS_AVAILABLE = False
 except ImportError as e:
-    print(f"Post-quantum cryptography import failed: {e}")
-    print("To use post-quantum features, install: pip install liboqs-python")
+    if not PQC_QUIET:
+        print(f"Post-quantum cryptography import failed: {e}")
+        print("To use post-quantum features, install: pip install liboqs-python")
     LIBOQS_AVAILABLE = False
 except Exception as e:
-    print(f"Error initializing oqs module: {e}")
-    print("Continuing without post-quantum cryptography support")
+    if not PQC_QUIET:
+        print(f"Error initializing oqs module: {e}")
+        print("Continuing without post-quantum cryptography support")
     LIBOQS_AVAILABLE = False
 
 # Define supported PQC algorithms
@@ -115,6 +125,9 @@ def check_pqc_support(quiet: bool = False) -> Tuple[bool, Optional[str], list]:
     Returns:
         tuple: (is_available, version, supported_algorithms)
     """
+    # Respect both the parameter and the global environment variable setting
+    should_be_quiet = quiet or PQC_QUIET
+    
     if not LIBOQS_AVAILABLE:
         return False, None, []
 
@@ -140,10 +153,10 @@ def check_pqc_support(quiet: bool = False) -> Tuple[bool, Optional[str], list]:
             else:
                 # Fallback to known Kyber algorithms if API methods not found
                 supported_algorithms.extend(['Kyber512', 'Kyber768', 'Kyber1024', 'ML-KEM-512', 'ML-KEM-768', 'ML-KEM-1024'])
-                if not quiet:
+                if not should_be_quiet:
                     print("Notice: Using hardcoded algorithm list because API method not found")
         except Exception as e:
-            if not quiet:
+            if not should_be_quiet:
                 print(f"Warning: Error detecting KEM algorithms: {e}")
             # Force add Kyber algorithms as fallback
             supported_algorithms.extend(['Kyber512', 'Kyber768', 'Kyber1024'])
@@ -160,11 +173,11 @@ def check_pqc_support(quiet: bool = False) -> Tuple[bool, Optional[str], list]:
             
         # Don't print the full list as it's too verbose
         # Just log the count for diagnostic purposes
-        if supported_algorithms and not quiet:
+        if supported_algorithms and not should_be_quiet:
             print(f"Detected {len(supported_algorithms)} PQC mechanisms")
         return True, version, supported_algorithms
     except Exception as e:
-        if not quiet:
+        if not should_be_quiet:
             print(f"Error checking post-quantum support: {e}")
         return False, None, ['Kyber512', 'Kyber768', 'Kyber1024']  # Provide fallback algorithms
 
@@ -187,6 +200,9 @@ class PQCipher:
             ValueError: If liboqs is not available or algorithm not supported
             ImportError: If required dependencies are missing
         """
+        # Respect both parameter and environment variable
+        should_be_quiet = quiet or PQC_QUIET
+        
         if not LIBOQS_AVAILABLE:
             raise ImportError("liboqs-python is required for post-quantum cryptography. "
                              "Install with: pip install liboqs-python")
@@ -198,13 +214,13 @@ class PQCipher:
             raise ImportError("The 'cryptography' library is required")
             
         # Check available algorithms
-        supported = check_pqc_support(quiet=quiet)[2]
+        supported = check_pqc_support(quiet=should_be_quiet)[2]
         # Don't print full list, just indicate check completed
-        if not quiet:
+        if not should_be_quiet:
             print(f"PQC algorithm check complete")
         
         # Store quiet mode for use in other methods
-        self.quiet = quiet
+        self.quiet = should_be_quiet
         
         # Map the requested algorithm to an available one
         if isinstance(algorithm, str):
@@ -266,7 +282,7 @@ class PQCipher:
                     self.algorithm_name = algorithm.value
         
         # Report the actual algorithm being used
-        if not quiet:
+        if not self.quiet:
             print(f"Using algorithm: {self.algorithm_name}")
         
         # All Kyber/ML-KEM algorithms are KEM algorithms
