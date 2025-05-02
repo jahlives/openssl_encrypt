@@ -672,8 +672,8 @@ class PQCipher:
                         print("Could not recover original content, using PQC test mode")
                         return b"[PQC Test Mode - Original Content Not Recoverable]"
                     
-                    # Additional debug info
-                    print(f"AES-GCM key first bytes: {symmetric_key[:4].hex()}")
+                    # Debug info - avoiding printing key material for security
+                    # print(f"AES-GCM key first bytes: {symmetric_key[:4].hex()}") - REMOVED: security risk
                     print(f"AES-GCM ciphertext length: {len(ciphertext)}")
                     
                     # Normal decrypt path using secure memory
