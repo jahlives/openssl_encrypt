@@ -150,7 +150,7 @@ test-fallback:
     # Install liboqs Python bindings
     - pip install --user git+https://github.com/open-quantum-safe/liboqs-python.git
   script:
-    - python -c "import cryptography; print(f'Using cryptography version: {cryptography.__version__}')"
+#    - python -c "import cryptography; print(f'Using cryptography version: {cryptography.__version__}')"
     - python3 -m pytest openssl_encrypt/unittests/unittests.py -v
   rules:
     - if: $CI_COMMIT_BRANCH == "dev"
