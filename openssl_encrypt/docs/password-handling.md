@@ -1,6 +1,6 @@
 # Secure Password and Sensitive Data Handling
 
-This document explains how sensitive data like passwords are securely handled in the encryption tool to prevent data leakage through memory dumps or other memory-based attacks.
+This document explains how sensitive data like passwords are securely handled in the encryption tool to prevent data leakage through memory dumps or other memory-based attacks, as well as providing details on the password policy implementation.
 
 ## Memory Security Architecture
 
@@ -204,3 +204,74 @@ In case of memory-related security incidents:
 5. Follow secure coding guidelines
 
 For additional security measures or custom implementations, please consult the security team or open an issue in the project repository.
+
+## Password Policy Implementation
+
+The encryption tool now includes robust password policy features to enforce secure password usage.
+
+### Policy Levels
+
+Four predefined policy levels are available:
+
+1. **Minimal**: Basic length requirement only (8 characters)
+2. **Basic**: Moderate requirements (10+ characters, uppercase, lowercase, numbers)
+3. **Standard**: Strong requirements (12+ characters, all character types, moderate entropy)
+4. **Paranoid**: Very strong requirements (16+ characters, all character types, high entropy, common password checks)
+
+### Password Validation Features
+
+1. **Length Requirements**: Enforces minimum password length based on policy level
+2. **Character Complexity**: Requires specific character classes (lowercase, uppercase, digits, special)
+3. **Entropy Calculation**: Computes and validates password entropy in bits
+4. **Common Password Detection**: Checks against databases of known weak passwords
+5. **Timing-Safe Operations**: All validation uses constant-time operations to prevent timing attacks
+
+### Command-Line Options
+
+```
+# Password Policy Options
+  --password-policy {minimal,basic,standard,paranoid,none}
+                        Password policy level to enforce (default: standard)
+  --min-password-length MIN_PASSWORD_LENGTH
+                        Minimum password length (overrides policy level)
+  --min-password-entropy MIN_PASSWORD_ENTROPY
+                        Minimum password entropy in bits (overrides policy level)
+  --disable-common-password-check
+                        Disable checking against common password lists
+  --force-password     Force acceptance of weak passwords (use with caution)
+  --custom-password-list CUSTOM_PASSWORD_LIST
+                        Path to custom common password list file
+```
+
+### Common Password Protection
+
+The tool includes:
+
+1. **Embedded Common Password List**: Core protection even without external files
+2. **Standard Word Lists**: Integration with system dictionaries when available
+3. **Custom List Support**: Option to specify your own weak password database
+
+### Usage Examples
+
+```bash
+# Generate a password meeting standard policy
+python -m openssl_encrypt.crypt generate-password
+
+# Encrypt with paranoid policy
+python -m openssl_encrypt.crypt encrypt -i file.txt -o file.enc --password-policy paranoid
+
+# Force a weak password (not recommended)
+python -m openssl_encrypt.crypt encrypt -i file.txt -o file.enc --force-password
+
+# Custom policy requirements
+python -m openssl_encrypt.crypt encrypt -i file.txt -o file.enc --min-password-length 20 --min-password-entropy 100
+```
+
+### Technical Implementation
+
+The password policy implementation:
+
+1. Uses constant-time operations for security-critical validations
+2. Provides detailed feedback for improving password strength
+3. Integrates with the secure memory architecture
+4. Is extensible for custom validation rules
