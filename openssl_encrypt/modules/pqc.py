@@ -173,6 +173,7 @@ def check_pqc_support(quiet: bool = False) -> Tuple[bool, Optional[str], list]:
             
         # Don't print the full list as it's too verbose
         # Just log the count for diagnostic purposes
+        # IMPORTANT: This is the line that was showing up in quiet mode
         if supported_algorithms and not should_be_quiet:
             print(f"Detected {len(supported_algorithms)} PQC mechanisms")
         return True, version, supported_algorithms
