@@ -21,7 +21,7 @@ VERSION_HISTORY = {
     "0.5.1": "More reliable approach to get commit sha into version.py",
     "0.5.2": "Added postquantum resistant encryption via a hypbrid approach",
     "0.5.3": "Security release with additional buffer overflow protection and better secure memory handling",
-    "0.6.0": "Breaking release for postquantum colud not be made non-breaking finally"
+    "0.6.0": "Breaking release for postquantum colud not be made non-breaking finally. This release is considered feature complete"
 }
 
 # Check for updates
