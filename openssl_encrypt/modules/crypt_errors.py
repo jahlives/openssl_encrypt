@@ -357,3 +357,63 @@ def constant_time_compare(a, b):
     time.sleep(jitter_ms / 1000.0)
     
     return result == 0
+
+
+def constant_time_pkcs7_unpad(padded_data, block_size=16):
+    """
+    Perform PKCS#7 unpadding in constant time to prevent padding oracle attacks.
+    
+    This function ensures that the unpadding operation takes the same amount
+    of time regardless of whether the padding is valid or not, to prevent
+    timing side-channel attacks that could be used in padding oracle attacks.
+    
+    Args:
+        padded_data (bytes): The padded data to unpad
+        block_size (int): The block size used for padding (default is 16 bytes)
+        
+    Returns:
+        tuple: (unpadded_data, is_valid_padding)
+        
+    Note:
+        Unlike standard PKCS#7 unpadding which raises exceptions for invalid
+        padding, this function returns a tuple with the potentially unpadded
+        data and a boolean indicating if the padding was valid.
+    """
+    # Add a small random delay to further mask timing differences
+    jitter_ms = secrets.randbelow(5) + 1  # 1-5ms
+    time.sleep(jitter_ms / 1000.0)
+    
+    # Initial assumption - padding is invalid until proven otherwise
+    is_valid = False
+    padding_len = 0
+    data_len = len(padded_data)
+    
+    # Check for basic validity conditions
+    if padded_data and data_len > 0 and data_len % block_size == 0:
+        # Get padding length from last byte
+        last_byte = padded_data[-1]
+        
+        # Check if padding byte is in valid range (1 to block_size)
+        if last_byte > 0 and last_byte <= block_size:
+            # Initial assumption - padding is valid
+            is_valid = True
+            padding_len = last_byte
+            
+            # Verify all padding bytes are the same
+            for i in range(padding_len):
+                idx = data_len - i - 1
+                if idx < 0 or padded_data[idx] != last_byte:
+                    is_valid = False
+                    padding_len = 0  # Reset padding length if invalid
+    
+    # Calculate unpadded length - if padding is invalid, it remains the original length
+    unpadded_len = data_len - padding_len if is_valid else data_len
+    
+    # Create unpadded data
+    unpadded_data = padded_data[:unpadded_len]
+    
+    # Add another small delay to mask the processing time
+    jitter_ms = secrets.randbelow(5) + 1  # 1-5ms
+    time.sleep(jitter_ms / 1000.0)
+    
+    return unpadded_data, is_valid

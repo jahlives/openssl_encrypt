@@ -337,7 +337,7 @@ class CamelliaCipher:
             cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
             encryptor = cipher.encryptor()
             
-            # Pad data first
+            # Pad data first - use standard cryptography library implementation
             padder = padding.PKCS7(algorithms.Camellia.block_size).padder()
             padded_data = padder.update(data) + padder.finalize()
             
@@ -394,30 +394,38 @@ class CamelliaCipher:
         
         padded_data = None
         try:
+            # Import the constant-time unpadding function
+            from .crypt_errors import constant_time_pkcs7_unpad, constant_time_compare
+            
             # In test mode, process without HMAC for backward compatibility
             if self.test_mode:
                 cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
                 decryptor = cipher.decryptor()
                 padded_data = decryptor.update(data) + decryptor.finalize()
+                
+                # For test mode, use standard cryptography library for unpadding
+                # This is for backward compatibility and ensures tests pass
                 unpadder = padding.PKCS7(algorithms.Camellia.block_size).unpadder()
-                result = unpadder.update(padded_data) + unpadder.finalize()
-                return result
+                return unpadder.update(padded_data) + unpadder.finalize()
             
             # Production mode with HMAC authentication
             # Split ciphertext and authentication tag
             tag_size = 32  # SHA-256 HMAC produces 32 bytes
             if len(data) < tag_size:
                 # Try without HMAC, might be legacy data
-                try:
-                    cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
-                    decryptor = cipher.decryptor()
-                    padded_data = decryptor.update(data) + decryptor.finalize()
-                    unpadder = padding.PKCS7(algorithms.Camellia.block_size).unpadder()
-                    result = unpadder.update(padded_data) + unpadder.finalize()
-                    return result
-                except Exception as e:
-                    # If that fails, it's truly invalid
-                    raise ValidationError("Invalid ciphertext: too short", original_exception=e)
+                cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
+                decryptor = cipher.decryptor()
+                padded_data = decryptor.update(data) + decryptor.finalize()
+                
+                # Use constant-time unpadding
+                unpadded_data, padding_valid = constant_time_pkcs7_unpad(
+                    padded_data, algorithms.Camellia.block_size
+                )
+                
+                if not padding_valid:
+                    raise DecryptionError("Invalid padding in decrypted data")
+                    
+                return unpadded_data
                 
             # Normal case with HMAC
             ciphertext = data[:-tag_size]
@@ -432,27 +440,29 @@ class CamelliaCipher:
             hmac_obj = hmac.new(bytes(self.hmac_key), hmac_data, hashlib.sha256)
             expected_tag = hmac_obj.digest()
             
-            # Use constant-time comparison from our secure error module
-            from .crypt_errors import constant_time_compare
-            if not constant_time_compare(expected_tag, received_tag):
-                # Standardized authentication error
-                raise AuthenticationError("Message authentication failed")
-                
-            # If authentication succeeds, decrypt the data
+            # Always decrypt data regardless of tag verification outcome
+            # to ensure constant-time operation
             cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
             decryptor = cipher.decryptor()
             padded_data = decryptor.update(ciphertext) + decryptor.finalize()
             
-            # Unpad the decrypted data
-            unpadder = padding.PKCS7(algorithms.Camellia.block_size).unpadder()
+            # Use constant-time unpadding
+            unpadded_data, padding_valid = constant_time_pkcs7_unpad(
+                padded_data, algorithms.Camellia.block_size
+            )
             
-            try:
-                result = unpadder.update(padded_data) + unpadder.finalize()
-                return result
-            except Exception as e:
-                # Standardized error for padding issues - still a decryption error
-                # but we use a more specific category to prevent oracle attacks
-                raise DecryptionError("Invalid padding in decrypted data", original_exception=e)
+            # After decryption, verify HMAC using constant-time comparison
+            # This ensures timing sidechannels don't leak whether the tag
+            # is valid or the padding is correct
+            if not constant_time_compare(expected_tag, received_tag):
+                # Standardized authentication error
+                raise AuthenticationError("Message authentication failed")
+                
+            # Only after HMAC verification do we check padding validity
+            if not padding_valid:
+                raise DecryptionError("Invalid padding in decrypted data")
+                
+            return unpadded_data
                 
         except (ValidationError, AuthenticationError, DecryptionError):
             # Re-raise known error types
