@@ -269,7 +269,8 @@ except ImportError:
 # Try to import post-quantum cryptography module
 try:
     from .pqc import PQCipher, check_pqc_support, PQCAlgorithm
-    PQC_AVAILABLE, PQC_VERSION, PQC_ALGORITHMS = check_pqc_support()
+    # Always initialize quietly during module import to prevent unwanted output
+    PQC_AVAILABLE, PQC_VERSION, PQC_ALGORITHMS = check_pqc_support(quiet=True) 
 except ImportError:
     PQC_AVAILABLE = False
     PQC_VERSION = None
