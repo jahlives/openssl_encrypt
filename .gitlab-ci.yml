@@ -106,6 +106,7 @@ test:
     PQC_QUIET: "true"  # Suppress PQC module initialization messages
   before_script:
     - pip install -r requirements.txt --break-system-packages
+    - pip install setuptools --break-system-packages  # Provides pkg_resources
   script:
     - python3 -m pytest openssl_encrypt/unittests/unittests.py -v
   rules:
@@ -133,7 +134,7 @@ test-fallback:
     PQC_QUIET: "true"  # Suppress PQC module initialization messages
   before_script:
     - pip install -r requirements.txt --break-system-packages
-    - pip install pytest pytest-order --break-system-packages
+    - pip install pytest pytest-order setuptools --break-system-packages  # setuptools provides pkg_resources
     # Explicitly pin cryptography version to match the tests
     # Install dependencies for building liboqs (Alpine Linux packages)
     - apk add git gcc g++ cmake ninja make go python3-dev openssl-dev musl-dev
