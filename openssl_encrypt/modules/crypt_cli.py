@@ -16,6 +16,9 @@ import atexit
 import signal
 import tempfile
 import time
+import base64
+import hashlib
+import secrets
 from enum import Enum
 from typing import Dict, Any, Optional
 import json
@@ -1224,7 +1227,7 @@ def main():
                     if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid']:
                         # Check if we should generate and save a new key pair
                         if args.pqc_gen_key and args.pqc_keyfile:
-                            from .pqc import PQCipher, PQCAlgorithm
+                            from .pqc import PQCipher, PQCAlgorithm, check_pqc_support
                             
                             # Map algorithm name to PQCAlgorithm with fallbacks
                             pqc_algorithms = check_pqc_support()[2]
@@ -1398,10 +1401,33 @@ def main():
                     import json
                     import base64
                     
+                    # Get password for encrypting the private key in the keyfile
+                    keyfile_password = None
+                    if 'password' in locals() and password:
+                        # Use the same password as for the file encryption
+                        keyfile_password = password
+                    else:
+                        # Get a separate password for the keyfile
+                        keyfile_password = getpass.getpass("Enter password to encrypt the private key in keyfile: ").encode()
+                    
+                    # Encrypt the private key with the password
+                    # We generate a key derived from the password
+                    key_salt = secrets.token_bytes(16)
+                    key_derivation = hashlib.pbkdf2_hmac('sha256', keyfile_password, key_salt, 100000)
+                    encryption_key = hashlib.sha256(key_derivation).digest()
+                    
+                    # Use AES-GCM to encrypt the private key
+                    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+                    cipher = AESGCM(encryption_key)
+                    nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
+                    encrypted_private_key = nonce + cipher.encrypt(nonce, private_key, None)
+                    
                     key_data = {
                         'algorithm': args.algorithm,
                         'public_key': base64.b64encode(public_key).decode('utf-8'),
-                        'private_key': base64.b64encode(private_key).decode('utf-8')
+                        'private_key': base64.b64encode(encrypted_private_key).decode('utf-8'),
+                        'key_salt': base64.b64encode(key_salt).decode('utf-8'),
+                        'key_encrypted': True  # Mark that the key is encrypted
                     }
                     
                     with open(args.pqc_keyfile, 'w') as f:
@@ -1422,8 +1448,52 @@ def main():
                         
                     if 'public_key' in key_data and 'private_key' in key_data:
                         public_key = base64.b64decode(key_data['public_key'])
-                        private_key = base64.b64decode(key_data['private_key'])
-                        pqc_keypair = (public_key, private_key)
+                        encrypted_private_key = base64.b64decode(key_data['private_key'])
+                        
+                        # Check if key is encrypted (will be for keys created after our fix)
+                        if key_data.get('key_encrypted', False):
+                            if not args.quiet:
+                                print("Found encrypted private key in keyfile")
+                                
+                            # Get password to decrypt the private key
+                            keyfile_password = None
+                            if 'password' in locals() and password:
+                                # Try the same password as for the file
+                                keyfile_password = password
+                            else:
+                                # Ask for the keyfile password
+                                keyfile_password = getpass.getpass("Enter password to decrypt the private key in keyfile: ").encode()
+                            
+                            # Import what we need to decrypt
+                            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+                            
+                            # Key derivation using the same method as when encrypting
+                            key_salt = base64.b64decode(key_data['key_salt'])
+                            key_derivation = hashlib.pbkdf2_hmac('sha256', keyfile_password, key_salt, 100000)
+                            encryption_key = hashlib.sha256(key_derivation).digest()
+                            
+                            try:
+                                # Format: nonce (12 bytes) + encrypted_key
+                                nonce = encrypted_private_key[:12]
+                                encrypted_key_data = encrypted_private_key[12:]
+                                
+                                # Decrypt the private key with the password-derived key
+                                cipher = AESGCM(encryption_key)
+                                private_key = cipher.decrypt(nonce, encrypted_key_data, None)
+                                
+                                if not args.quiet:
+                                    print("Successfully decrypted private key from keyfile")
+                            except Exception as e:
+                                print(f"Error decrypting private key: {e}. Wrong password?")
+                                print("Will proceed with only the public key.")
+                                private_key = None
+                        else:
+                            # Legacy support for non-encrypted keys (created before our fix)
+                            private_key = encrypted_private_key
+                            if not args.quiet:
+                                print("WARNING: Using legacy unencrypted private key from keyfile")
+                        
+                        pqc_keypair = (public_key, private_key) if private_key else (public_key, None)
                         
                         if not args.quiet:
                             print(f"Loaded post-quantum key pair from {args.pqc_keyfile}")
@@ -1576,9 +1646,52 @@ def main():
                                 key_data = json.load(f)
                                 
                             if 'private_key' in key_data:
-                                pqc_private_key = base64.b64decode(key_data['private_key'])
+                                encrypted_private_key = base64.b64decode(key_data['private_key'])
                                 
-                                if not args.quiet:
+                                # Check if key is encrypted (will be for keys created after our fix)
+                                if key_data.get('key_encrypted', False):
+                                    if not args.quiet:
+                                        print("Found encrypted private key in keyfile")
+                                        
+                                    # Get password to decrypt the private key
+                                    keyfile_password = None
+                                    if 'password' in locals() and password:
+                                        # Try the same password as for the file
+                                        keyfile_password = password
+                                    else:
+                                        # Ask for the keyfile password
+                                        keyfile_password = getpass.getpass("Enter password to decrypt the private key in keyfile: ").encode()
+                                    
+                                    # Import what we need to decrypt
+                                    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+                                    
+                                    # Key derivation using the same method as when encrypting
+                                    key_salt = base64.b64decode(key_data['key_salt'])
+                                    key_derivation = hashlib.pbkdf2_hmac('sha256', keyfile_password, key_salt, 100000)
+                                    encryption_key = hashlib.sha256(key_derivation).digest()
+                                    
+                                    try:
+                                        # Format: nonce (12 bytes) + encrypted_key
+                                        nonce = encrypted_private_key[:12]
+                                        encrypted_key_data = encrypted_private_key[12:]
+                                        
+                                        # Decrypt the private key with the password-derived key
+                                        cipher = AESGCM(encryption_key)
+                                        pqc_private_key = cipher.decrypt(nonce, encrypted_key_data, None)
+                                        
+                                        if not args.quiet:
+                                            print("Successfully decrypted private key from keyfile")
+                                    except Exception as e:
+                                        print(f"Error decrypting private key: {e}. Wrong password?")
+                                        print("Decryption may fail without a valid private key.")
+                                        pqc_private_key = None
+                                else:
+                                    # Legacy support for non-encrypted keys (created before our fix)
+                                    pqc_private_key = encrypted_private_key
+                                    if not args.quiet:
+                                        print("WARNING: Using legacy unencrypted private key from keyfile")
+                                
+                                if not args.quiet and pqc_private_key:
                                     print(f"Loaded post-quantum private key from {args.pqc_keyfile}")
                         except Exception as e:
                             if not args.quiet:
@@ -1628,9 +1741,52 @@ def main():
                             key_data = json.load(f)
                             
                         if 'private_key' in key_data:
-                            pqc_private_key = base64.b64decode(key_data['private_key'])
+                            encrypted_private_key = base64.b64decode(key_data['private_key'])
                             
-                            if not args.quiet:
+                            # Check if key is encrypted (will be for keys created after our fix)
+                            if key_data.get('key_encrypted', False):
+                                if not args.quiet:
+                                    print("Found encrypted private key in keyfile")
+                                    
+                                # Get password to decrypt the private key
+                                keyfile_password = None
+                                if 'password' in locals() and password:
+                                    # Try the same password as for the file
+                                    keyfile_password = password
+                                else:
+                                    # Ask for the keyfile password
+                                    keyfile_password = getpass.getpass("Enter password to decrypt the private key in keyfile: ").encode()
+                                
+                                # Import what we need to decrypt
+                                from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+                                
+                                # Key derivation using the same method as when encrypting
+                                key_salt = base64.b64decode(key_data['key_salt'])
+                                key_derivation = hashlib.pbkdf2_hmac('sha256', keyfile_password, key_salt, 100000)
+                                encryption_key = hashlib.sha256(key_derivation).digest()
+                                
+                                try:
+                                    # Format: nonce (12 bytes) + encrypted_key
+                                    nonce = encrypted_private_key[:12]
+                                    encrypted_key_data = encrypted_private_key[12:]
+                                    
+                                    # Decrypt the private key with the password-derived key
+                                    cipher = AESGCM(encryption_key)
+                                    pqc_private_key = cipher.decrypt(nonce, encrypted_key_data, None)
+                                    
+                                    if not args.quiet:
+                                        print("Successfully decrypted private key from keyfile")
+                                except Exception as e:
+                                    print(f"Error decrypting private key: {e}. Wrong password?")
+                                    print("Decryption may fail without a valid private key.")
+                                    pqc_private_key = None
+                            else:
+                                # Legacy support for non-encrypted keys (created before our fix)
+                                pqc_private_key = encrypted_private_key
+                                if not args.quiet:
+                                    print("WARNING: Using legacy unencrypted private key from keyfile")
+                            
+                            if not args.quiet and pqc_private_key:
                                 print(f"Loaded post-quantum private key from {args.pqc_keyfile}")
                     except Exception as e:
                         if not args.quiet:
@@ -1666,9 +1822,52 @@ def main():
                             key_data = json.load(f)
                             
                         if 'private_key' in key_data:
-                            pqc_private_key = base64.b64decode(key_data['private_key'])
+                            encrypted_private_key = base64.b64decode(key_data['private_key'])
                             
-                            if not args.quiet:
+                            # Check if key is encrypted (will be for keys created after our fix)
+                            if key_data.get('key_encrypted', False):
+                                if not args.quiet:
+                                    print("Found encrypted private key in keyfile")
+                                    
+                                # Get password to decrypt the private key
+                                keyfile_password = None
+                                if 'password' in locals() and password:
+                                    # Try the same password as for the file
+                                    keyfile_password = password
+                                else:
+                                    # Ask for the keyfile password
+                                    keyfile_password = getpass.getpass("Enter password to decrypt the private key in keyfile: ").encode()
+                                
+                                # Import what we need to decrypt
+                                from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+                                
+                                # Key derivation using the same method as when encrypting
+                                key_salt = base64.b64decode(key_data['key_salt'])
+                                key_derivation = hashlib.pbkdf2_hmac('sha256', keyfile_password, key_salt, 100000)
+                                encryption_key = hashlib.sha256(key_derivation).digest()
+                                
+                                try:
+                                    # Format: nonce (12 bytes) + encrypted_key
+                                    nonce = encrypted_private_key[:12]
+                                    encrypted_key_data = encrypted_private_key[12:]
+                                    
+                                    # Decrypt the private key with the password-derived key
+                                    cipher = AESGCM(encryption_key)
+                                    pqc_private_key = cipher.decrypt(nonce, encrypted_key_data, None)
+                                    
+                                    if not args.quiet:
+                                        print("Successfully decrypted private key from keyfile")
+                                except Exception as e:
+                                    print(f"Error decrypting private key: {e}. Wrong password?")
+                                    print("Decryption may fail without a valid private key.")
+                                    pqc_private_key = None
+                            else:
+                                # Legacy support for non-encrypted keys (created before our fix)
+                                pqc_private_key = encrypted_private_key
+                                if not args.quiet:
+                                    print("WARNING: Using legacy unencrypted private key from keyfile")
+                            
+                            if not args.quiet and pqc_private_key:
                                 print(f"Loaded post-quantum private key from {args.pqc_keyfile}")
                     except Exception as e:
                         if not args.quiet:

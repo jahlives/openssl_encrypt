@@ -1,0 +1,9 @@
+# This file contains configurations for scheduled pipelines
+# These configurations can be imported into the GitLab UI
+
+# Daily build of the Docker image with liboqs
+docker-image-daily:
+  description: "Build Docker image with liboqs daily"
+  cron: "0 2 * * *"  # Run at 2 AM every day
+  ref: "dev"  # Use the dev branch for the scheduled pipeline
+  active: true
