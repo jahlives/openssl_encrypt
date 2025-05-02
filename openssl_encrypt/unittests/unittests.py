@@ -590,7 +590,13 @@ class TestCryptCore(unittest.TestCase):
                 multi_hash_result = multi_hash_password(
                     b"1234", salt, header['hash_config'])
                 print(f"\nMulti-hash output type: {type(multi_hash_result)}")
-                print(f"Multi-hash output (hex): {multi_hash_result.hex()}")
+                # Print only length and first/last bytes to avoid exposing the entire hash
+                if multi_hash_result:
+                    hash_hex = multi_hash_result.hex()
+                    masked_hash = f"{hash_hex[:6]}...{hash_hex[-6:]}" if len(hash_hex) > 12 else "***masked***"
+                    print(f"Multi-hash output (hex): {masked_hash} [length: {len(multi_hash_result)}]")
+                else:
+                    print(f"Multi-hash output (hex): None")
 
                 # Convert to bytes explicitly at each step
                 if isinstance(multi_hash_result, SecureBytes):
@@ -612,7 +618,13 @@ class TestCryptCore(unittest.TestCase):
                 if isinstance(key, tuple):
                     derived_key, derived_salt, derived_config = key
                     print(f"\nDerived key type: {type(derived_key)}")
-                    print(f"Derived key (hex): {derived_key.hex() if derived_key else 'None'}")
+                    # Print only length and first/last bytes to avoid exposing the entire key
+                    if derived_key:
+                        key_hex = derived_key.hex()
+                        masked_key = f"{key_hex[:6]}...{key_hex[-6:]}" if len(key_hex) > 12 else "***masked***"
+                        print(f"Derived key (hex): {masked_key} [length: {len(derived_key)}]")
+                    else:
+                        print(f"Derived key (hex): None")
 
                 decrypted = decrypt_file(
                     input_file='/dev/stdin',
@@ -669,7 +681,13 @@ class TestCryptCore(unittest.TestCase):
                 multi_hash_result = multi_hash_password(
                     b"pw7qG0kh5oG1QrRz6CibPNDxGaHrrBAa", salt, header['hash_config'])
                 print(f"\nMulti-hash output type: {type(multi_hash_result)}")
-                print(f"Multi-hash output (hex): {multi_hash_result.hex()}")
+                # Print only length and first/last bytes to avoid exposing the entire hash
+                if multi_hash_result:
+                    hash_hex = multi_hash_result.hex()
+                    masked_hash = f"{hash_hex[:6]}...{hash_hex[-6:]}" if len(hash_hex) > 12 else "***masked***"
+                    print(f"Multi-hash output (hex): {masked_hash} [length: {len(multi_hash_result)}]")
+                else:
+                    print(f"Multi-hash output (hex): None")
                 print(f"Hash Config: {header['hash_config']}")
                 # Convert to bytes explicitly at each step
                 if isinstance(multi_hash_result, SecureBytes):
@@ -691,7 +709,13 @@ class TestCryptCore(unittest.TestCase):
                 if isinstance(key, tuple):
                     derived_key, derived_salt, derived_config = key
                     print(f"\nDerived key type: {type(derived_key)}")
-                    print(f"Derived key (hex): {derived_key.hex() if derived_key else 'None'}")
+                    # Print only length and first/last bytes to avoid exposing the entire key
+                    if derived_key:
+                        key_hex = derived_key.hex()
+                        masked_key = f"{key_hex[:6]}...{key_hex[-6:]}" if len(key_hex) > 12 else "***masked***"
+                        print(f"Derived key (hex): {masked_key} [length: {len(derived_key)}]")
+                    else:
+                        print(f"Derived key (hex): None")
 
                 decrypted = decrypt_file(
                     input_file='/dev/stdin',
