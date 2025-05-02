@@ -1563,8 +1563,10 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                     return nonce + cipher.encrypt(nonce[:12], data, None)
                 
                 elif algorithm == EncryptionAlgorithm.XCHACHA20_POLY1305:
+                    # Use a proper 24-byte nonce for XChaCha20Poly1305 even in test mode
+                    nonce_xchacha = secrets.token_bytes(24)
                     cipher = XChaCha20Poly1305(key)
-                    return nonce + cipher.encrypt(nonce[:12], data, None)
+                    return nonce_xchacha + cipher.encrypt(nonce_xchacha, data, None)
                 
                 elif algorithm == EncryptionAlgorithm.AES_GCM_SIV:
                     cipher = AESGCMSIV(key)
@@ -1607,10 +1609,9 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                     return nonce + cipher.encrypt(nonce, data, None)
                     
                 elif algorithm == EncryptionAlgorithm.XCHACHA20_POLY1305:
-                    # XChaCha20-Poly1305 should use a 24-byte nonce, but our implementation
-                    # adapts to work with the standard ChaCha20Poly1305 which needs 12 bytes
-                    # So we'll use a 12-byte nonce for consistency and simplicity
-                    nonce = secrets.token_bytes(12)
+                    # XChaCha20-Poly1305 is designed to use a 24-byte nonce
+                    # Using the full 24-byte nonce increases security by reducing collision risk
+                    nonce = secrets.token_bytes(24)
                     cipher = XChaCha20Poly1305(key)
                     return nonce + cipher.encrypt(nonce, data, None)
             
@@ -2111,20 +2112,32 @@ def decrypt_file(
                         raise ValueError("Decryption failed: authentication error")
 
             elif algorithm == EncryptionAlgorithm.XCHACHA20_POLY1305.value:
+                # First try with 24-byte nonce (correct for XChaCha20Poly1305)
                 try:
-                    # XChaCha20-Poly1305 uses 12-byte nonce (to be compatible with ChaCha20Poly1305)
-                    nonce_size = 12
+                    nonce_size = 24
                     nonce = encrypted_data[:nonce_size]
                     ciphertext = encrypted_data[nonce_size:]
                     cipher = XChaCha20Poly1305(key)
                     result = cipher.decrypt(nonce, ciphertext, None)
                     return result
-                except Exception as e:
-                    # Raise the original error if tests are running, otherwise use a generic message
-                    if os.environ.get('PYTEST_CURRENT_TEST') is not None:
-                        raise e
-                    # Use a generic error message to prevent oracle attacks
-                    raise ValueError("Decryption failed: authentication error")
+                except Exception:
+                    # For backward compatibility with older encrypted files that may
+                    # have used 12-byte nonces, try that as a fallback
+                    try:
+                        nonce_size = 12
+                        nonce = encrypted_data[:nonce_size]
+                        ciphertext = encrypted_data[nonce_size:]
+                        cipher = XChaCha20Poly1305(key)
+                        result = cipher.decrypt(nonce, ciphertext, None)
+                        if not quiet:
+                            print("\nWARNING: Using legacy 12-byte nonce for XChaCha20-Poly1305")
+                        return result
+                    except Exception as e:
+                        # Raise the original error if tests are running, otherwise use a generic message
+                        if os.environ.get('PYTEST_CURRENT_TEST') is not None:
+                            raise e
+                        # Use a generic error message to prevent oracle attacks
+                        raise ValueError("Decryption failed: authentication error")
                     
             elif algorithm == EncryptionAlgorithm.AES_SIV.value:
                 try:
