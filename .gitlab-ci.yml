@@ -9,7 +9,7 @@ default:
     - pip install build twine PyYAML --break-system-packages
 
 stages:
-  - docker
+#  - docker
   - sync
   - prepare
   - test
@@ -100,7 +100,7 @@ sync-wiki:
       allow_failure: true
 
 test:
-  stage: test
+  stage: testttt
   image: $DOCKER_IMAGE
   before_script:
     - pip install -r requirements.txt --break-system-packages
