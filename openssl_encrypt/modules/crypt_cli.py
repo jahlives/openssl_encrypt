@@ -1133,8 +1133,12 @@ def main():
                             policy.validate_password_or_raise(args.password, quiet=args.quiet)
                             
                         except crypt_errors.ValidationError as e:
+                            # Always display password strength information before validation failure
                             if not args.quiet:
-                                print(f"\nPassword validation failed: {str(e)}")
+                                # Calculate and display password strength
+                                entropy, strength = get_password_strength(args.password)
+                                print(f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)")
+                                print(f"Password validation failed: {str(e)}")
                                 print("Use --force-password to bypass validation (not recommended)")
                             sys.exit(1)
                     
@@ -1183,7 +1187,10 @@ def main():
                                         policy.validate_password_or_raise(pwd1.decode('utf-8', errors='ignore'))
                                         
                                     except crypt_errors.ValidationError as e:
-                                        print(f"\nPassword validation failed: {str(e)}")
+                                        # Calculate and display password strength
+                                        entropy, strength = get_password_strength(pwd1.decode('utf-8', errors='ignore'))
+                                        print(f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)")
+                                        print(f"Password validation failed: {str(e)}")
                                         print("Use --force-password to bypass validation (not recommended)")
                                         valid_password = False
                                 
