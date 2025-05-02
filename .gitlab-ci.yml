@@ -36,7 +36,10 @@ sync-wiki:
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH == "dev"
+      when: manual
+      allow_failure: true
 
 test:
   stage: test
