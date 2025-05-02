@@ -895,31 +895,33 @@ def main():
     elif args.action == 'check-pqc':
         from .pqc import check_pqc_support, PQCAlgorithm
         
-        pqc_available, version, supported_algorithms = check_pqc_support()
-        print("\nPOST-QUANTUM CRYPTOGRAPHY SUPPORT CHECK")
-        print("======================================")
+        pqc_available, version, supported_algorithms = check_pqc_support(quiet=args.quiet)
+        if not args.quiet:
+            print("\nPOST-QUANTUM CRYPTOGRAPHY SUPPORT CHECK")
+            print("======================================")
         if pqc_available:
-            print(f"✓ Post-quantum cryptography is AVAILABLE (liboqs version {version})")
-            print("✓ Supported algorithms:")
-            
-            # Organize algorithms by type
-            kems = [algo for algo in supported_algorithms if 'Kyber' in algo]
-            sigs = [algo for algo in supported_algorithms if 'Kyber' not in algo]
-            
-            if kems:
-                print("\n  Key Encapsulation Mechanisms (KEMs):")
-                for algo in kems:
-                    print(f"    - {algo}")
-            
-            if sigs:
-                print("\n  Digital Signature Algorithms:")
-                for algo in sigs:
-                    print(f"    - {algo}")
+            if not args.quiet:
+                print(f"✓ Post-quantum cryptography is AVAILABLE (liboqs version {version})")
+                print("✓ Supported algorithms:")
+                
+                # Organize algorithms by type
+                kems = [algo for algo in supported_algorithms if 'Kyber' in algo]
+                sigs = [algo for algo in supported_algorithms if 'Kyber' not in algo]
+                
+                if kems:
+                    print("\n  Key Encapsulation Mechanisms (KEMs):")
+                    for algo in kems:
+                        print(f"    - {algo}")
+                
+                if sigs:
+                    print("\n  Digital Signature Algorithms:")
+                    for algo in sigs:
+                        print(f"    - {algo}")
             
             # Try a test encryption to verify functionality
             try:
                 from .pqc import PQCipher
-                test_cipher = PQCipher(PQCAlgorithm.KYBER768)
+                test_cipher = PQCipher(PQCAlgorithm.KYBER768, quiet=args.quiet)
                 public_key, private_key = test_cipher.generate_keypair()
                 test_data = b"Test post-quantum encryption"
                 encrypted = test_cipher.encrypt(test_data, public_key)
@@ -1199,12 +1201,15 @@ def main():
                                     "Passwords do not match. Please try again.")
                     # For decryption or quiet mode, just ask once
                     else:
-                        # When in quiet mode, don't add the "Enter password: " prompt text
-                        # prompt = '' if args.quiet else 'Enter password: '
+                        # Always prompt for a password, even in quiet mode
+                        # We need to show the prompt but we can hide any extra text
                         pwd = getpass.getpass('Enter password: ')
-                        # Move up one line and clear it
-                        sys.stdout.write('\033[A\033[K')
-                        sys.stdout.flush()
+                        
+                        # In quiet mode, move up one line and clear it after getting the password
+                        if args.quiet:
+                            sys.stdout.write('\033[A\033[K')
+                            sys.stdout.flush()
+                            
                         password_secure.extend(pwd.encode('utf-8'))
                         # Securely clear the temporary buffer
                         pwd = b'\x00' * len(pwd)
@@ -1442,7 +1447,7 @@ def main():
                             from .pqc import PQCipher, PQCAlgorithm, check_pqc_support
                             
                             # Map algorithm name to PQCAlgorithm with fallbacks
-                            pqc_algorithms = check_pqc_support()[2]
+                            pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
                             
                             # Determine which variants are available
                             kyber512_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber512", "mlkem512"]]
@@ -1465,7 +1470,7 @@ def main():
                             }
                             
                             # Generate key pair
-                            cipher = PQCipher(algo_map[args.algorithm])
+                            cipher = PQCipher(algo_map[args.algorithm], quiet=args.quiet)
                             public_key, private_key = cipher.generate_keypair()
                             
                             # Save key pair to file
@@ -1508,7 +1513,7 @@ def main():
                         from .pqc import PQCipher, check_pqc_support
                         
                         # Map algorithm name to available algorithms
-                        pqc_algorithms = check_pqc_support()[2]
+                        pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
                         kyber512_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber512", "mlkem512"]]
                         kyber768_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber768", "mlkem768"]]
                         kyber1024_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber1024", "mlkem1024"]]
@@ -1527,7 +1532,7 @@ def main():
                             else:
                                 print("WARNING: Private key will NOT be stored - you must use a key file for decryption")
                         
-                        cipher = PQCipher(algo_map[args.algorithm])
+                        cipher = PQCipher(algo_map[args.algorithm], quiet=args.quiet)
                         public_key, private_key = cipher.generate_keypair()
                         pqc_keypair = (public_key, private_key)
                     
@@ -1583,7 +1588,7 @@ def main():
                     from .pqc import PQCipher, PQCAlgorithm, check_pqc_support
                     
                     # Map algorithm name to PQCAlgorithm with fallbacks
-                    pqc_algorithms = check_pqc_support()[2]
+                    pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
                     
                     # Determine which variants are available
                     kyber512_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber512", "mlkem512"]]
@@ -1606,7 +1611,7 @@ def main():
                     }
                     
                     # Generate key pair
-                    cipher = PQCipher(algo_map[args.algorithm])
+                    cipher = PQCipher(algo_map[args.algorithm], quiet=args.quiet)
                     public_key, private_key = cipher.generate_keypair()
                     
                     # Save key pair to file
@@ -1715,7 +1720,7 @@ def main():
                     import random
                     
                     # Map algorithm name to available algorithms
-                    pqc_algorithms = check_pqc_support()[2]
+                    pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
                     kyber512_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber512", "mlkem512"]]
                     kyber768_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber768", "mlkem768"]]
                     kyber1024_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber1024", "mlkem1024"]]
@@ -1735,7 +1740,7 @@ def main():
                         else:
                             print("WARNING: Private key will NOT be stored - you must use a key file for decryption")
                             
-                    cipher = PQCipher(algo_map[args.algorithm])
+                    cipher = PQCipher(algo_map[args.algorithm], quiet=args.quiet)
                     public_key, private_key = cipher.generate_keypair()
                     pqc_keypair = (public_key, private_key)
             
