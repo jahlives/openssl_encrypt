@@ -107,7 +107,7 @@ test:
     # Explicitly pin cryptography version to match the tests
     - pip install 'cryptography>=42.0.0,<43.0.0' --force-reinstall --break-system-packages
   script:
-    - python -c "import cryptography; print(f'Using cryptography version: {cryptography.__version__}')"
+#    - python -c "import cryptography; print(f'Using cryptography version: {cryptography.__version__}')"
     - python3 -m pytest openssl_encrypt/unittests/unittests.py -v
   rules:
     # Run tests on dev and release branches, and for tags (manually)
