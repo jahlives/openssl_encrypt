@@ -26,12 +26,23 @@ build-docker-image:
   stage: docker
   image: docker:latest
   services:
-    - docker:dind
+    - name: docker:dind
+      alias: docker
   variables:
+    # Use TLS https://docs.gitlab.com/ee/ci/docker/using_docker_build.html#tls-enabled
+    DOCKER_HOST: tcp://docker:2376
     DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_TLS_VERIFY: 1
+    DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
   before_script:
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    # Diagnostic information
+    - docker info
+    - docker version
+    # Use more secure login method with password-stdin
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
   script:
+    # Ensure we can communicate with the Docker daemon
+    - docker ps
     - |
       cat > Dockerfile <<EOF
       FROM python:3.13-alpine
