@@ -43,17 +43,29 @@ test:
   before_script:
     - pip install -r requirements.txt --break-system-packages
     - pip install pytest pytest-order --break-system-packages
+    # Install dependencies for building liboqs (Alpine Linux packages)
+    - apk add git gcc g++ cmake ninja make go python3-dev openssl-dev musl-dev
+    # Clone liboqs repository with submodules
+    - git clone --recurse-submodules https://github.com/open-quantum-safe/liboqs.git
+    # Build and install liboqs
+    - cd liboqs
+    - mkdir build && cd build
+    - cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local ..
+    - ninja
+    - ninja install
+    # Return to project root directory
+    - cd $CI_PROJECT_DIR
+    # Install liboqs Python bindings
+    - pip install --user git+https://github.com/open-quantum-safe/liboqs-python.git
   script:
     - python3 -m pytest openssl_encrypt/unittests/unittests.py -v
-    - echo "Unittest stage temporarily disabled until PQC libraries are added to build environment"
+#    - echo "Unittest stage temporarily disabled until PQC libraries are added to build environment"
     # - python3 -m pytest openssl_encrypt/unittests/unittests.py -v
   rules:
-    # Temporarily disable this job by setting when: never for all conditions
+    # Run tests on dev branch and for tags (manually)
     - if: $CI_COMMIT_BRANCH == "dev"
-      when: never
     - if: $CI_COMMIT_TAG
- #     when: manual
-      when: never
+      when: manual
 
 
 build:
