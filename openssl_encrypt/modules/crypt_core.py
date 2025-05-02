@@ -1432,59 +1432,7 @@ def generate_key(
             derived_salt = password[:16]
             KeyStretch.key_stretch = True
             show_progress("PBKDF2", i + 1, use_pbkdf2)
-    if not KeyStretch.hash_stretch and not KeyStretch.key_stretch and KeyStretch.kind_action == 'encrypt' and os.environ.get(
-            'PYTEST_CURRENT_TEST') is None:
-        if len(password) < 32:
-            print(
-                'ERROR: encryption without at least one hash and/or kdf is NOT recommended')
-            print('ERROR: this would be a high security risk as "normal" passwords do not have enough entropy by far')
-            print(
-                'ERROR: this could only work if you provide a password with at least 32 characters and entropy of 80 bits or higher')
-            print(
-                f"ERROR: your current password only has {format(len(password))} characters ({len(set(password))} unique characters) and {string_entropy(password):.1f} bits of entropy")
-            print(
-                f"ERROR: if you insist on using too-weak password then set the environment variable PYTEST_CURRENT_TEST to a non-empty value")
-            secure_memzero(password)
-            sys.exit(1)
-        elif string_entropy(password) < 80:
-            print(
-                'ERROR: encryption without at least one hash and/or kdf is NOT recommended')
-            print('ERROR: this would be a high security risk as "normal" passwords do not have enough entropy by far')
-            print(
-                'ERROR: this could only work if you provide a password with at least 32 characters and 80 bits entropy')
-            print(
-                f"ERROR: your current password has {format(len(password))} characters ({len(set(password))} unique characters) and {string_entropy(password):.1f} bits of entropy")
-            print(f"ERROR: if you insist on using too-weak password then set the environment variable PYTEST_CURRENT_TEST to a non-empty value")
-            secure_memzero(password)
-            sys.exit(1)
-        else:
-            print(
-                'WARNING: You are about to use the password directly without any key strengthening.')
-            print(
-                'WARNING: This is only secure if your password has sufficient entropy (randomness).')
-            print(
-                f"WARNING: Your password is {str(len(password))} long ({len(set(password))} unique characters) and has {string_entropy(password):.1f} bits entropy.")
-            print(
-                'WARNING: you should still consider to stop here and use hash/kdf chaining')
-            # Skip confirmation prompt in test environments, quiet mode, or when running tests
-            # as detected by pytest-specific environment variable or generally quiet mode
-            if os.environ.get('PYTEST_CURRENT_TEST') is not None or quiet or 'unittest' in sys.modules:
-                # Automatically proceed in test environments
-                confirmation = 'y'
-            else:
-                try:
-                    confirmation = input('Are you sure you want to proceed? (y/n): ').strip().lower()
-                    if confirmation != 'y' and confirmation != 'yes':
-                        print('Operation cancelled by user.')
-                        secure_memzero(password)
-                        sys.exit(1)
-                except (EOFError, KeyboardInterrupt):
-                    # Handle EOF or keyboard interrupt (e.g., when running in a non-interactive environment)
-                    print('\nOperation cancelled due to non-interactive environment.')
-                    secure_memzero(password)
-                    sys.exit(1)
-            print('Proceeding with direct password usage...')
-            #hashed_password = password
+            
     if not KeyStretch.key_stretch and not KeyStretch.hash_stretch:
         if algorithm in [EncryptionAlgorithm.AES_GCM.value, EncryptionAlgorithm.CAMELLIA.value, EncryptionAlgorithm.CHACHA20_POLY1305.value]:
             password = hashlib.sha256(password).digest()
