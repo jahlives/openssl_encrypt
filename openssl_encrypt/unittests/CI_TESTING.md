@@ -1,39 +1,37 @@
 # CI Testing Notes
 
-## Test Compatibility in CI Environments
+## Cryptography Library Version Requirements
 
-Some of the tests in this project are environment-sensitive due to cryptographic library versioning and differences in how encrypted data is handled across environments. This is particularly true for encrypted test files that were created in one environment but need to be decrypted in another.
+The test files in this project were created using cryptography library version 42.x. Due to breaking changes in newer versions of the cryptography library (particularly version 44.x and above), these test files may not be compatible with newer versions.
 
-### CI-Specific Test Behavior
+### Fixed Dependency Version
 
-To accommodate these differences, we've implemented special handling for tests running in CI environments:
+To ensure consistent and reliable testing across all environments, we have:
 
-1. **File Decryption Tests**:
-   - Only Kyber-based (post-quantum) test files are fully tested in CI
-   - Other algorithm tests are automatically skipped or marked as passing in CI
-   - These tests continue to run normally in local development environments
+1. **Pinned the cryptography library version**:
+   - Set version requirements to `cryptography>=42.0.0,<43.0.0` in:
+     - requirements.txt
+     - setup.py
+   - Added explicit version pinning in CI configuration with `--force-reinstall`
 
-2. **Stdin Decryption Tests**:
-   - Tests that involve decrypting from standard input are skipped in CI environments
-   - These tests continue to run normally in local development environments
-
-### CI Environment Detection
-
-A CI environment is detected by checking for:
-
-1. The presence of environment variables:
-   - `CI=true`
-   - `GITLAB_CI=true`
-
-2. Cryptography library version:
-   - Version 44.0.0 or newer will trigger CI compatibility mode
-   - The test files were created with an older version of the cryptography library
-   - Newer versions (44+) of the cryptography library have made changes to their AEAD implementations that can cause compatibility issues with older encrypted files
+2. **CI Pipeline Modifications**:
+   - The GitLab CI pipeline has been configured to verify and use the correct version
+   - Prints the cryptography version before running tests for verification
 
 ### Test Files
 
-All test files remain in the repository and are still used when running tests locally. This ensures that all encryption algorithms are thoroughly tested in development environments while allowing CI pipelines to complete successfully.
+All test files in the repository were created with cryptography version 42.x. This approach ensures that all encryption algorithms are thoroughly tested in both development and CI environments.
+
+### Compatibility Notes
+
+Compatibility issues with cryptography versions:
+- Version 44.0.0+ introduces breaking changes in AEAD implementations
+- Changes affect how authentication tags are handled
+- Test files encrypted with older versions may fail integrity checks with newer library versions
 
 ### Future Improvements
 
-Ideally, test files should be recreated in the CI environment itself, or we should implement more robust compatibility layers to handle differences in cryptographic implementations across environments. This is planned for future updates.
+For future work:
+- Consider generating test files during the CI process itself
+- Create a version compatibility layer for handling files across different cryptography versions
+- Add tests to verify compatibility between versions
