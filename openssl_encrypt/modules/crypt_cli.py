@@ -46,6 +46,7 @@ from .password_policy import (
     PasswordPolicy, validate_password, validate_password_or_raise,
     get_password_strength
 )
+from . import crypt_errors
 
 def debug_hash_config(args, hash_config, message="Hash configuration"):
     """Debug output for hash configuration"""
@@ -1131,9 +1132,13 @@ def main():
                             # Validate the password (will raise ValidationError if invalid)
                             policy.validate_password_or_raise(args.password, quiet=args.quiet)
                             
-                        except ValidationError as e:
+                        except crypt_errors.ValidationError as e:
+                            # Always display password strength information before validation failure
                             if not args.quiet:
-                                print(f"\nPassword validation failed: {str(e)}")
+                                # Calculate and display password strength
+                                entropy, strength = get_password_strength(args.password)
+                                print(f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)")
+                                print(f"Password validation failed: {str(e)}")
                                 print("Use --force-password to bypass validation (not recommended)")
                             sys.exit(1)
                     
@@ -1181,8 +1186,11 @@ def main():
                                         )
                                         policy.validate_password_or_raise(pwd1.decode('utf-8', errors='ignore'))
                                         
-                                    except ValidationError as e:
-                                        print(f"\nPassword validation failed: {str(e)}")
+                                    except crypt_errors.ValidationError as e:
+                                        # Calculate and display password strength
+                                        entropy, strength = get_password_strength(pwd1.decode('utf-8', errors='ignore'))
+                                        print(f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)")
+                                        print(f"Password validation failed: {str(e)}")
                                         print("Use --force-password to bypass validation (not recommended)")
                                         valid_password = False
                                 

@@ -9,12 +9,12 @@ to ensure that passwords meet security requirements.
 import re
 import os
 import math
-import pkg_resources
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 import zlib
 import base64
 import hashlib
+import importlib.resources
 
 # Import from local modules
 try:
@@ -284,8 +284,8 @@ class CommonPasswordChecker:
     
     # Default paths to check for common password lists
     DEFAULT_PATHS = [
-        # Package resource path
-        pkg_resources.resource_filename('openssl_encrypt', 'data/common_passwords.txt'),
+        # Package resource path (modern importlib.resources approach)
+        str(importlib.resources.files('openssl_encrypt').joinpath('data/common_passwords.txt')),
         # Local module directory
         os.path.join(os.path.dirname(__file__), '../data/common_passwords.txt'),
         # Local project directory
