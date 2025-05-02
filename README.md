@@ -1,5 +1,11 @@
 # Breaking Changes: release 0.6.0 is a BREAKING release, before updating to this release DECRYPT your already encrypted data with the EXACT version used for encrypting. Then update and encrypt again
 [![Breaking Changes](https://img.shields.io/badge/WARNING-BREAKING%20CHANGES-red)](https://gitlab.rm-rf.ch/world/openssl_encrypt) The breaking change 0.6.0 was introduced because the final implementation of postquantum is not backwards compatible. Also further security changes and improvements were not possible to be backwards compatible
+# Version 0.6.0: Feature Complete Status
+  With the release of version **0.6.0**, openssl_encrypt is now **considered feature complete**. No new features will be added to the codebase, which should **significantly reduce the likelihood of breaking changes**. Moving forward, our development efforts will focus
+  exclusively on bug fixes, security updates, deployment enhancements, and documentation improvements. While we are committed to maintaining backward compatibility, we cannot provide an absolute guarantee against breaking changes, as security patches and
+  critical bug fixes occasionally necessitate such modifications. The project now enters an extended testing phase to ensure stability and reliability across all supported environments and use cases. We appreciate the community's continued feedback as we refine
+  and strengthen the existing functionality.
+
 # Secure File Encryption Tool
 A powerful tool for securely encrypting, decrypting, and shredding files with military-grade cryptography and multi-layer password hashing.
 ## History
