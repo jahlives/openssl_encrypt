@@ -104,7 +104,10 @@ test:
   image: $DOCKER_IMAGE
   before_script:
     - pip install -r requirements.txt --break-system-packages
+    # Explicitly pin cryptography version to match the tests
+    - pip install 'cryptography>=42.0.0,<43.0.0' --force-reinstall --break-system-packages
   script:
+    - python -c "import cryptography; print(f'Using cryptography version: {cryptography.__version__}')"
     - python3 -m pytest openssl_encrypt/unittests/unittests.py -v
   rules:
     # Run tests on dev and release branches, and for tags (manually)
@@ -130,6 +133,8 @@ test-fallback:
   before_script:
     - pip install -r requirements.txt --break-system-packages
     - pip install pytest pytest-order --break-system-packages
+    # Explicitly pin cryptography version to match the tests
+    - pip install 'cryptography>=42.0.0,<43.0.0' --force-reinstall --break-system-packages
     # Install dependencies for building liboqs (Alpine Linux packages)
     - apk add git gcc g++ cmake ninja make go python3-dev openssl-dev musl-dev
     # Clone liboqs repository with submodules
@@ -145,6 +150,7 @@ test-fallback:
     # Install liboqs Python bindings
     - pip install --user git+https://github.com/open-quantum-safe/liboqs-python.git
   script:
+    - python -c "import cryptography; print(f'Using cryptography version: {cryptography.__version__}')"
     - python3 -m pytest openssl_encrypt/unittests/unittests.py -v
   rules:
     - if: $CI_COMMIT_BRANCH == "dev"
