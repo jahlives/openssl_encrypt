@@ -42,9 +42,15 @@ def public_key_part(private_key: bytes) -> bytes:
             # but not enough to reveal the entire key
             return bytes(secure_private_key[:16])
 
+# Environment variable to control PQC initialization messages
+import os
+
 # Try to import PQC libraries, provide fallbacks if not available
 LIBOQS_AVAILABLE = False
 oqs = None
+
+# Check for quiet mode environment variable
+PQC_QUIET = os.environ.get('PQC_QUIET', '').lower() in ('1', 'true', 'yes', 'on')
 
 try:
     import oqs
@@ -59,23 +65,27 @@ try:
             test_mechanisms = oqs.get_enabled_kem_mechanisms()
             if test_mechanisms:
                 test_kem = oqs.KeyEncapsulation(test_mechanisms[0])
-                if not hasattr(test_kem, 'generate_keypair'):
+                if not hasattr(test_kem, 'generate_keypair') and not PQC_QUIET:
                     print(f"Warning: oqs KeyEncapsulation has non-standard API: {dir(test_kem)}")
                 # Clean up test object
                 test_kem = None
         except Exception as e:
-            print(f"Warning: oqs KEM initialization test failed: {e}")
+            if not PQC_QUIET:
+                print(f"Warning: oqs KEM initialization test failed: {e}")
     else:
-        print("Warning: oqs module found but KEM mechanisms not available")
-        print(f"Available methods: {dir(oqs)}")
+        if not PQC_QUIET:
+            print("Warning: oqs module found but KEM mechanisms not available")
+            print(f"Available methods: {dir(oqs)}")
         LIBOQS_AVAILABLE = False
 except ImportError as e:
-    print(f"Post-quantum cryptography import failed: {e}")
-    print("To use post-quantum features, install: pip install liboqs-python")
+    if not PQC_QUIET:
+        print(f"Post-quantum cryptography import failed: {e}")
+        print("To use post-quantum features, install: pip install liboqs-python")
     LIBOQS_AVAILABLE = False
 except Exception as e:
-    print(f"Error initializing oqs module: {e}")
-    print("Continuing without post-quantum cryptography support")
+    if not PQC_QUIET:
+        print(f"Error initializing oqs module: {e}")
+        print("Continuing without post-quantum cryptography support")
     LIBOQS_AVAILABLE = False
 
 # Define supported PQC algorithms
@@ -105,13 +115,19 @@ class PQCAlgorithm(Enum):
     SPHINCSSHA2128F = "SPHINCS+-SHA2-128f"
     SPHINCSSHA2256F = "SPHINCS+-SHA2-256f"
 
-def check_pqc_support() -> Tuple[bool, Optional[str], list]:
+def check_pqc_support(quiet: bool = False) -> Tuple[bool, Optional[str], list]:
     """
     Check if post-quantum cryptography is available and which algorithms are supported.
+
+    Args:
+        quiet (bool): Whether to suppress output messages
 
     Returns:
         tuple: (is_available, version, supported_algorithms)
     """
+    # Respect both the parameter and the global environment variable setting
+    should_be_quiet = quiet or PQC_QUIET
+    
     if not LIBOQS_AVAILABLE:
         return False, None, []
 
@@ -137,9 +153,11 @@ def check_pqc_support() -> Tuple[bool, Optional[str], list]:
             else:
                 # Fallback to known Kyber algorithms if API methods not found
                 supported_algorithms.extend(['Kyber512', 'Kyber768', 'Kyber1024', 'ML-KEM-512', 'ML-KEM-768', 'ML-KEM-1024'])
-                print("Notice: Using hardcoded algorithm list because API method not found")
+                if not should_be_quiet:
+                    print("Notice: Using hardcoded algorithm list because API method not found")
         except Exception as e:
-            print(f"Warning: Error detecting KEM algorithms: {e}")
+            if not should_be_quiet:
+                print(f"Warning: Error detecting KEM algorithms: {e}")
             # Force add Kyber algorithms as fallback
             supported_algorithms.extend(['Kyber512', 'Kyber768', 'Kyber1024'])
             
@@ -155,11 +173,12 @@ def check_pqc_support() -> Tuple[bool, Optional[str], list]:
             
         # Don't print the full list as it's too verbose
         # Just log the count for diagnostic purposes
-        if supported_algorithms:
+        if supported_algorithms and not should_be_quiet:
             print(f"Detected {len(supported_algorithms)} PQC mechanisms")
         return True, version, supported_algorithms
     except Exception as e:
-        print(f"Error checking post-quantum support: {e}")
+        if not should_be_quiet:
+            print(f"Error checking post-quantum support: {e}")
         return False, None, ['Kyber512', 'Kyber768', 'Kyber1024']  # Provide fallback algorithms
 
 class PQCipher:
@@ -169,17 +188,21 @@ class PQCipher:
     This implementation combines post-quantum key encapsulation with 
     symmetric encryption using AES-256-GCM.
     """
-    def __init__(self, algorithm: Union[PQCAlgorithm, str]):
+    def __init__(self, algorithm: Union[PQCAlgorithm, str], quiet: bool = False):
         """
         Initialize a post-quantum cipher instance
         
         Args:
             algorithm (Union[PQCAlgorithm, str]): The post-quantum algorithm to use
+            quiet (bool): Whether to suppress output messages
         
         Raises:
             ValueError: If liboqs is not available or algorithm not supported
             ImportError: If required dependencies are missing
         """
+        # Respect both parameter and environment variable
+        should_be_quiet = quiet or PQC_QUIET
+        
         if not LIBOQS_AVAILABLE:
             raise ImportError("liboqs-python is required for post-quantum cryptography. "
                              "Install with: pip install liboqs-python")
@@ -191,9 +214,13 @@ class PQCipher:
             raise ImportError("The 'cryptography' library is required")
             
         # Check available algorithms
-        supported = check_pqc_support()[2]
+        supported = check_pqc_support(quiet=should_be_quiet)[2]
         # Don't print full list, just indicate check completed
-        print(f"PQC algorithm check complete")
+        if not should_be_quiet:
+            print(f"PQC algorithm check complete")
+        
+        # Store quiet mode for use in other methods
+        self.quiet = should_be_quiet
         
         # Map the requested algorithm to an available one
         if isinstance(algorithm, str):
@@ -255,7 +282,8 @@ class PQCipher:
                     self.algorithm_name = algorithm.value
         
         # Report the actual algorithm being used
-        print(f"Using algorithm: {self.algorithm_name}")
+        if not self.quiet:
+            print(f"Using algorithm: {self.algorithm_name}")
         
         # All Kyber/ML-KEM algorithms are KEM algorithms
         self.is_kem = any(x in self.algorithm_name.lower() for x in ["kyber", "ml-kem"])
@@ -292,10 +320,11 @@ class PQCipher:
                 
             return public_key, private_key
         except Exception as e:
-            print(f"Error generating keypair: {e}")
-            # For debugging, show what methods are available
-            with oqs.KeyEncapsulation(self.algorithm_name) as kem:
-                print(f"Available methods: {dir(kem)}")
+            if not self.quiet:
+                print(f"Error generating keypair: {e}")
+                # For debugging, show what methods are available
+                with oqs.KeyEncapsulation(self.algorithm_name) as kem:
+                    print(f"Available methods: {dir(kem)}")
             raise
     
     def encrypt(self, data: bytes, public_key: bytes) -> bytes:
@@ -362,10 +391,12 @@ class PQCipher:
                 return result
                 
         except Exception as e:
-            print(f"Error in post-quantum test encryption: {e}")
+            if not self.quiet:
+                print(f"Error in post-quantum test encryption: {e}")
             # Fall back to a very simple format if all else fails
             simple_result = b"PQC_TEST_DATA:" + data
-            print(f"Using simple format fallback - length: {len(simple_result)} bytes")
+            if not self.quiet:
+                print(f"Using simple format fallback - length: {len(simple_result)} bytes")
             return simple_result
     
     def decrypt(self, encrypted_data: bytes, private_key: bytes, file_contents: bytes = None) -> bytes:
@@ -441,7 +472,8 @@ class PQCipher:
                 # Special handling for extremely short files or testing
                 if len(remaining_data) < 12:
                     # More concise warning for small data
-                    print("Using recovery mode for test data")
+                    if not self.quiet:
+                        print("Using recovery mode for test data")
                     
                     # For test files, try to generate a synthetic nonce and empty ciphertext
                     if len(remaining_data) == 0:
@@ -481,11 +513,13 @@ class PQCipher:
                     encapsulated_key[:len(sim_header)] == sim_header):
                     # Detected simulation header
                     simulation_mode = True
-                    print("Detected simulated ciphertext, using matching simulation for decryption")
+                    if not self.quiet:
+                        print("Detected simulated ciphertext, using matching simulation for decryption")
                 elif len(encapsulated_key) > 0 and encapsulated_key[0] == ord(b"S"):
                     # Detected marker byte for short simulation
                     simulation_mode = True
-                    print("Detected simulation marker, using matching simulation for decryption")
+                    if not self.quiet:
+                        print("Detected simulation marker, using matching simulation for decryption")
                 
                 # Initialize the shared secret with None to detect success
                 shared_secret = None
@@ -501,7 +535,8 @@ class PQCipher:
                     sim_marker = b"S"
                     if len(encapsulated_key) > 0 and encapsulated_key[0] == ord(sim_marker):
                         simulation_detected = True
-                        print("Detected simulation marker byte")
+                        if not self.quiet:
+                            print("Detected simulation marker byte")
                 
                 # If simulation was detected, use the same deterministic approach
                 if simulation_detected:
@@ -510,7 +545,8 @@ class PQCipher:
                         secure_input.extend(encapsulated_key)
                         secure_input.extend(public_key_part(private_key))
                         shared_secret = SecureBytes(hashlib.sha256(secure_input).digest()[:shared_secret_len])
-                    print("Using SIMULATION MODE for decapsulation")
+                    if not self.quiet:
+                        print("Using SIMULATION MODE for decapsulation")
                 else:
                     # Always try simulation mode first as a fallback
                     # Store the simulation result in case real decryption fails
@@ -526,7 +562,8 @@ class PQCipher:
                             shared_secret = kem.decap_secret(encapsulated_key)
                             # Suppress verbose success messages
                         except Exception as e1:
-                            print(f"Direct decap_secret failed: {e1}")
+                            if not self.quiet:
+                                print(f"Direct decap_secret failed: {e1}")
                             
                             # Try decaps_cb if available
                             if hasattr(kem, 'decaps_cb') and callable(kem.decaps_cb):
@@ -537,15 +574,18 @@ class PQCipher:
                                         shared_secret = bytes(shared_secret_buffer)
                                         # Success but no need for verbose messages
                                 except Exception as e2:
-                                    print(f"decaps_cb approach failed: {e2}")
+                                    if not self.quiet:
+                                        print(f"decaps_cb approach failed: {e2}")
                     
                     except Exception as e:
-                        print(f"All standard decapsulation approaches failed: {e}")
+                        if not self.quiet:
+                            print(f"All standard decapsulation approaches failed: {e}")
                     
                     # If all approaches failed, use simulation mode
                     if shared_secret is None:
                         shared_secret = simulation_secret
-                        print("FALLING BACK TO SIMULATION MODE FOR DECRYPTION")
+                        if not self.quiet:
+                            print("FALLING BACK TO SIMULATION MODE FOR DECRYPTION")
                         
                 # No need to log shared secret details
                 
@@ -562,7 +602,8 @@ class PQCipher:
                 try:
                     # Check if we have an empty or very small ciphertext
                     if len(ciphertext) == 0:
-                        print("Empty ciphertext detected, attempting to recover actual content")
+                        if not self.quiet:
+                            print("Empty ciphertext detected, attempting to recover actual content")
                         
                         # For existing files where the data wasn't properly encrypted
                         # See if we can recover the original content from the encrypted file
@@ -615,10 +656,12 @@ class PQCipher:
                                             # Extract the line containing the marker
                                             content_line = file_contents[line_start:line_end].strip()
                                             if len(content_line) > 5:  # Reasonable minimum
-                                                print(f"Found plaintext: {content_line}")
+                                                if not self.quiet:
+                                                    print(f"Found plaintext: {content_line}")
                                                 return content_line
                                 except Exception as e:
-                                    print(f"Metadata parsing attempt failed: {e}")
+                                    if not self.quiet:
+                                        print(f"Metadata parsing attempt failed: {e}")
                             
                             # Add a more comprehensive list of test content
                             plaintext_candidates = [
@@ -637,7 +680,8 @@ class PQCipher:
                             if file_contents:
                                 for candidate in plaintext_candidates:
                                     if candidate in file_contents:
-                                        print(f"Found plaintext candidate: {candidate}")
+                                        if not self.quiet:
+                                            print(f"Found plaintext candidate: {candidate}")
                                         return candidate
                                     
                             # Last resort: Try to extract ASCII text from the encrypted data
@@ -662,19 +706,23 @@ class PQCipher:
                             if ascii_parts:
                                 longest = max(ascii_parts, key=len)
                                 if len(longest) >= 3:
-                                    print(f"Recovered ASCII content: {longest}")
+                                    if not self.quiet:
+                                        print(f"Recovered ASCII content: {longest}")
                                     return longest
                         
                         except Exception as recovery_error:
-                            print(f"Content recovery failed: {recovery_error}")
+                            if not self.quiet:
+                                print(f"Content recovery failed: {recovery_error}")
                         
                         # If all recovery attempts fail, use a placeholder
-                        print("Could not recover original content, using PQC test mode")
+                        if not self.quiet:
+                            print("Could not recover original content, using PQC test mode")
                         return b"[PQC Test Mode - Original Content Not Recoverable]"
                     
-                    # Additional debug info
-                    print(f"AES-GCM key first bytes: {symmetric_key[:4].hex()}")
-                    print(f"AES-GCM ciphertext length: {len(ciphertext)}")
+                    # Debug info - avoiding printing key material for security
+                    # print(f"AES-GCM key first bytes: {symmetric_key[:4].hex()}") - REMOVED: security risk
+                    if not self.quiet:
+                        print(f"AES-GCM ciphertext length: {len(ciphertext)}")
                     
                     # Normal decrypt path using secure memory
                     with SecureBytes() as secure_plaintext:
@@ -685,13 +733,15 @@ class PQCipher:
                         if isinstance(decrypted, bytearray):
                             secure_memzero(decrypted)
                         
-                        print(f"Decryption successful, result length: {len(secure_plaintext)}")
+                        if not self.quiet:
+                            print(f"Decryption successful, result length: {len(secure_plaintext)}")
                         # Return a copy, secure memory will be auto-cleared
                         return bytes(secure_plaintext)
                     
                 except Exception as e:
                     # Use generic error message to prevent oracle attacks
-                    print(f"AES-GCM decryption failed: {e}")
+                    if not self.quiet:
+                        print(f"AES-GCM decryption failed: {e}")
                     
                     # Special handling for test files - if all else fails
                     try:
@@ -699,7 +749,8 @@ class PQCipher:
                         if len(ciphertext) > 16:  # Need at least the tag size
                             from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
                             # Last resort - attempt unauthenticated AES decryption (for testing only)
-                            print("WARNING: Attempting fallback, simplified decryption (test only)")
+                            if not self.quiet:
+                                print("WARNING: Attempting fallback, simplified decryption (test only)")
                             # Use only the first 16 bytes of the symmetric key for AES-128
                             # Use secure memory for fallback decryption
                             with SecureBytes() as secure_key:
@@ -721,14 +772,17 @@ class PQCipher:
                                     # Return a copy, secure memory will be auto-cleared
                                     return bytes(secure_plaintext)
                     except Exception as fallback_error:
-                        print(f"Fallback decryption also failed: {fallback_error}")
+                        if not self.quiet:
+                            print(f"Fallback decryption also failed: {fallback_error}")
                     
                     # If all approaches fail, raise a clear error
                     raise ValueError("Decryption failed: authentication error")
         except Exception as e:
-            print(f"Error in post-quantum decryption: {e}")
+            if not self.quiet:
+                print(f"Error in post-quantum decryption: {e}")
             if 'kem' in locals():
-                print(f"Available methods on KEM object: {dir(kem)}")
+                if not self.quiet:
+                    print(f"Available methods on KEM object: {dir(kem)}")
             raise
         finally:
             # Clean up sensitive data

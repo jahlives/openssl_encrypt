@@ -102,13 +102,19 @@ sync-wiki:
 test:
   stage: test
   image: $DOCKER_IMAGE
+  variables:
+    PQC_QUIET: "true"  # Suppress PQC module initialization messages
   before_script:
     - pip install -r requirements.txt --break-system-packages
+    - pip install setuptools --break-system-packages  # Provides pkg_resources
   script:
     - python3 -m pytest openssl_encrypt/unittests/unittests.py -v
   rules:
-    # Run tests on dev branch and for tags (manually)
+    # Run tests on dev and release branches, and for tags (manually)
     - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH == "release"
+      # Must succeed on release branch
+      allow_failure: false
     - if: $CI_COMMIT_TAG
       when: manual
   # Fallback configuration if the custom image is not available
@@ -124,9 +130,12 @@ test:
 test-fallback:
   stage: test
   image: python:3.13-alpine
+  variables:
+    PQC_QUIET: "true"  # Suppress PQC module initialization messages
   before_script:
     - pip install -r requirements.txt --break-system-packages
-    - pip install pytest pytest-order --break-system-packages
+    - pip install pytest pytest-order setuptools --break-system-packages  # setuptools provides pkg_resources
+    # Explicitly pin cryptography version to match the tests
     # Install dependencies for building liboqs (Alpine Linux packages)
     - apk add git gcc g++ cmake ninja make go python3-dev openssl-dev musl-dev
     # Clone liboqs repository with submodules
@@ -146,6 +155,10 @@ test-fallback:
   rules:
     - if: $CI_COMMIT_BRANCH == "dev"
       when: on_failure
+    - if: $CI_COMMIT_BRANCH == "release"
+      when: on_failure
+      # Must succeed on release branch
+      allow_failure: false
     - if: $CI_COMMIT_TAG
       when: manual
 
