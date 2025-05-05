@@ -29,15 +29,19 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
             parts = header_data.split(b':', 1)
             if len(parts) > 1:
                 metadata_b64 = parts[0]
-                metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
-                header_config = json.loads(metadata_json)
-                
-                # Extract key ID from hash_config
-                if 'hash_config' in header_config:
-                    key_id = header_config['hash_config'].get('pqc_keystore_key_id')
-                    if key_id and verbose:
-                        print(f"Found key ID in metadata: {key_id}")
-                    return key_id
+                try:
+                    metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
+                    header_config = json.loads(metadata_json)
+                    
+                    # Extract key ID from hash_config
+                    if 'hash_config' in header_config:
+                        key_id = header_config['hash_config'].get('pqc_keystore_key_id')
+                        if key_id and verbose:
+                            print(f"Found key ID in metadata: {key_id}")
+                        return key_id
+                except Exception as e:
+                    if verbose:
+                        print(f"Error parsing metadata JSON: {e}")
         except Exception as e:
             if verbose:
                 print(f"Failed to parse base64 JSON metadata: {e}")
@@ -48,17 +52,54 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
             header_end = header_data.find(b'HEND')
             if header_end > header_start:
                 header_json = header_data[header_start+5:header_end].decode('utf-8')
-                header_config = json.loads(header_json)
-                
-                # Extract key ID from hash_config
-                if 'hash_config' in header_config:
-                    key_id = header_config['hash_config'].get('pqc_keystore_key_id')
-                    if key_id and verbose:
-                        print(f"Found key ID in metadata: {key_id}")
-                    return key_id
+                try:
+                    header_config = json.loads(header_json)
+                    
+                    # Extract key ID from hash_config
+                    if 'hash_config' in header_config:
+                        key_id = header_config['hash_config'].get('pqc_keystore_key_id')
+                        if key_id and verbose:
+                            print(f"Found key ID in metadata: {key_id}")
+                        return key_id
+                except Exception as e:
+                    if verbose:
+                        print(f"Error parsing legacy header JSON: {e}")
     except Exception as e:
         if verbose:
             print(f"Error extracting key ID from metadata: {e}")
+    
+    # Check if the file contains an embedded private key in the metadata
+    try:
+        with open(encrypted_file, 'rb') as f:
+            header_data = f.read(2048)  # Read enough for header with embedded key
+            
+        # Try to detect if there's an embedded private key
+        try:
+            parts = header_data.split(b':', 1)
+            if len(parts) > 1:
+                metadata_b64 = parts[0]
+                metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
+                header_config = json.loads(metadata_json)
+                
+                # Check if there's a PQC public key in the metadata
+                if 'hash_config' in header_config and 'pqc_public_key' in header_config['hash_config']:
+                    # This file has an embedded public key, which means it might have an embedded private key
+                    if verbose:
+                        print("Found embedded PQC public key in metadata")
+                    
+                    # Check for embedded private key marker
+                    private_key_marker = header_config['hash_config'].get('pqc_private_key_embedded')
+                    if private_key_marker:
+                        if verbose:
+                            print("File has embedded private key")
+                        return "EMBEDDED_PRIVATE_KEY"
+        except Exception as e:
+            if verbose:
+                print(f"Error checking for embedded private key: {e}")
+                
+    except Exception as e:
+        if verbose:
+            print(f"Error checking for embedded key: {e}")
     
     return None
 
@@ -120,8 +161,44 @@ def get_pqc_key_for_decryption(args, hash_config=None):
         if key_id and not getattr(args, 'quiet', False):
             print(f"Found key ID in file metadata: {key_id}")
     
+    # Check for embedded private key
+    if key_id == "EMBEDDED_PRIVATE_KEY":
+        if hasattr(args, 'input') and args.input:
+            try:
+                # Read the file to extract the embedded private key
+                with open(args.input, 'rb') as f:
+                    file_data = f.read(4096)  # Read enough to get the embedded key
+                
+                parts = file_data.split(b':', 1)
+                if len(parts) > 1:
+                    metadata_b64 = parts[0]
+                    metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
+                    header_config = json.loads(metadata_json)
+                    
+                    # Extract embedded private key
+                    if 'hash_config' in header_config:
+                        embedded_private_key = header_config['hash_config'].get('pqc_private_key')
+                        if embedded_private_key:
+                            if not getattr(args, 'quiet', False):
+                                print("Successfully retrieved embedded private key from metadata")
+                            
+                            # Decode the private key
+                            private_key = base64.b64decode(embedded_private_key)
+                            
+                            # Extract public key as well
+                            if 'pqc_public_key' in header_config['hash_config']:
+                                public_key = base64.b64decode(header_config['hash_config']['pqc_public_key'])
+                                
+                                # Return the key pair
+                                pqc_keypair = (public_key, private_key)
+                                pqc_private_key = private_key
+                                return pqc_keypair, pqc_private_key, "EMBEDDED_PRIVATE_KEY"
+            except Exception as e:
+                if getattr(args, 'verbose', False):
+                    print(f"Failed to extract embedded private key: {e}")
+    
     # If we have a keystore and key ID, try to retrieve the key
-    if key_id and hasattr(args, 'keystore') and args.keystore:
+    if key_id and key_id != "EMBEDDED_PRIVATE_KEY" and hasattr(args, 'keystore') and args.keystore:
         try:
             # Get keystore password
             keystore_password = get_keystore_password(args)
@@ -160,16 +237,56 @@ def get_pqc_key_for_decryption(args, hash_config=None):
                 key_data = json.load(f)
             
             if 'public_key' in key_data and 'private_key' in key_data:
-                public_key = base64.b64decode(key_data['public_key'])
-                private_key = base64.b64decode(key_data['private_key'])
-                
-                pqc_keypair = (public_key, private_key)
-                pqc_private_key = private_key
-                
-                if not getattr(args, 'quiet', False):
-                    print(f"Using key from PQC keyfile: {args.pqc_keyfile}")
+                # Check if the private key is encrypted
+                if key_data.get('key_encrypted', False) and 'key_salt' in key_data:
+                    # Get password for decryption
+                    keyfile_password = getpass.getpass("Enter password to decrypt the private key in keyfile: ").encode()
                     
-                return pqc_keypair, pqc_private_key, None
+                    # Import what we need to decrypt
+                    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+                    import hashlib
+                    
+                    # Key derivation using the same method as when encrypting
+                    key_salt = base64.b64decode(key_data['key_salt'])
+                    key_derivation = hashlib.pbkdf2_hmac('sha256', keyfile_password, key_salt, 100000)
+                    encryption_key = hashlib.sha256(key_derivation).digest()
+                    
+                    try:
+                        encrypted_private_key = base64.b64decode(key_data['private_key'])
+                        
+                        # Format: nonce (12 bytes) + encrypted_key
+                        nonce = encrypted_private_key[:12]
+                        encrypted_key_data = encrypted_private_key[12:]
+                        
+                        # Decrypt the private key with the password-derived key
+                        cipher = AESGCM(encryption_key)
+                        private_key = cipher.decrypt(nonce, encrypted_key_data, None)
+                        
+                        # Decode public key
+                        public_key = base64.b64decode(key_data['public_key'])
+                        
+                        pqc_keypair = (public_key, private_key)
+                        pqc_private_key = private_key
+                        
+                        if not getattr(args, 'quiet', False):
+                            print(f"Successfully decrypted and loaded key from PQC keyfile: {args.pqc_keyfile}")
+                            
+                        return pqc_keypair, pqc_private_key, None
+                    except Exception as e:
+                        if getattr(args, 'verbose', False):
+                            print(f"Failed to decrypt key from file: {e}")
+                else:
+                    # Unencrypted private key
+                    public_key = base64.b64decode(key_data['public_key'])
+                    private_key = base64.b64decode(key_data['private_key'])
+                    
+                    pqc_keypair = (public_key, private_key)
+                    pqc_private_key = private_key
+                    
+                    if not getattr(args, 'quiet', False):
+                        print(f"Using key from PQC keyfile: {args.pqc_keyfile}")
+                        
+                    return pqc_keypair, pqc_private_key, None
         except Exception as e:
             if getattr(args, 'verbose', False):
                 print(f"Failed to load key from file: {e}")
@@ -257,6 +374,13 @@ def auto_generate_pqc_key(args, hash_config):
             # Store key ID in metadata
             hash_config["pqc_keystore_key_id"] = key_id
             
+            # If requested, also store the private key in metadata for self-decryption
+            if hasattr(args, 'pqc_store_key') and args.pqc_store_key:
+                hash_config["pqc_private_key"] = base64.b64encode(private_key).decode('utf-8')
+                hash_config["pqc_private_key_embedded"] = True
+                if not getattr(args, 'quiet', False):
+                    print("Storing private key in metadata for self-decryption")
+            
             # Important: clear the keystore cache for security
             keystore.clear_cache()
             
@@ -277,5 +401,15 @@ def auto_generate_pqc_key(args, hash_config):
     # Generate keypair
     cipher = PQCipher(base_algo, quiet=getattr(args, 'quiet', False))
     public_key, private_key = cipher.generate_keypair()
+    
+    # If requested, store the private key in metadata for self-decryption
+    if hasattr(args, 'pqc_store_key') and args.pqc_store_key:
+        hash_config["pqc_private_key"] = base64.b64encode(private_key).decode('utf-8')
+        hash_config["pqc_private_key_embedded"] = True
+        if not getattr(args, 'quiet', False):
+            print("Storing private key in metadata for self-decryption")
+    
+    # Store the public key as well for verification
+    hash_config["pqc_public_key"] = base64.b64encode(public_key).decode('utf-8')
     
     return (public_key, private_key), private_key

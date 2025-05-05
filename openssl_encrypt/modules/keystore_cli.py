@@ -19,7 +19,22 @@ from .crypt_errors import (
     KeystoreError, KeystorePasswordError, KeyNotFoundError, 
     KeystoreCorruptedError, KeystoreVersionError
 )
-from .crypt_utils import secure_delete_file
+# Import secure_delete_file only if it's available
+try:
+    from .crypt_utils import secure_delete_file
+except ImportError:
+    # Define a simple fallback if not available
+    def secure_delete_file(file_path, passes=3, quiet=False):
+        """Simple fallback for secure file deletion"""
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            return True
+        except Exception as e:
+            if not quiet:
+                print(f"Error deleting file {file_path}: {e}")
+            return False
+
 from .secure_memory import SecureBytes, secure_memzero
 
 class KeystoreSecurityLevel(Enum):
