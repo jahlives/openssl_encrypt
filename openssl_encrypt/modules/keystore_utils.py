@@ -155,11 +155,10 @@ def get_keystore_password(args) -> str:
             if not getattr(args, 'quiet', False):
                 print(f"Warning: Failed to read keystore password from file: {e}")
     
-    # Fall back to main password if available
-    if hasattr(args, 'password') and args.password:
-        return args.password
-        
-    # Prompt user for password
+    # For decryption operations, we should always prompt for a separate keystore password
+    # rather than reusing the file password, as they could be different
+    
+    # Prompt user for password (always prompt for keystore operations to ensure we get the right password)
     return getpass.getpass("Enter keystore password: ")
 
 def get_pqc_key_for_decryption(args, hash_config=None):
