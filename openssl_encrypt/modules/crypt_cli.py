@@ -37,6 +37,9 @@ from .crypt_core import (
     EncryptionAlgorithm,
     PQC_AVAILABLE,
     string_entropy)
+
+# Import our enhanced keystore wrapper functions
+from .keystore_wrapper import encrypt_file_with_keystore, decrypt_file_with_keystore
 from .crypt_utils import (
     secure_shred_file, expand_glob_patterns, generate_strong_password,
     display_password_with_timeout, show_security_recommendations,
@@ -580,6 +583,41 @@ def main():
         '--pqc-gen-key',
         action='store_true',
         help='Generate a new post-quantum key pair and store in the path specified by --pqc-keyfile'
+    )
+    
+    # Add PQC Keystore options
+    keystore_group = parser.add_argument_group('Keystore Options')
+    keystore_group.add_argument(
+        '--keystore',
+        help='Path to the PQC keystore file'
+    )
+    keystore_group.add_argument(
+        '--keystore-password',
+        help='Password for the keystore (will prompt if not provided)'
+    )
+    keystore_group.add_argument(
+        '--keystore-password-file',
+        help='File containing the keystore password'
+    )
+    keystore_group.add_argument(
+        '--key-id',
+        help='Specific key ID to use from the keystore'
+    )
+    keystore_group.add_argument(
+        '--use-keystore-key',
+        action='store_true',
+        help='Use a key from the keystore for encryption/decryption'
+    )
+    keystore_group.add_argument(
+        '--create-keystore',
+        action='store_true',
+        help='Create keystore if it does not exist'
+    )
+    keystore_group.add_argument(
+        '--keystore-security',
+        choices=['standard', 'high', 'paranoid'],
+        default='standard',
+        help='Security level for new keystores'
     )
 
     # Argon2 parameters group - updated for consistency
@@ -1517,47 +1555,219 @@ def main():
                     
                     # For PQC algorithms, we may need to generate a keypair if not specified
                     if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid'] and not pqc_keypair:
-                        # No keypair provided, generate an ephemeral one
-                        from .pqc import PQCipher, check_pqc_support
+                        # Check if we have a keystore to use - including create-keystore option
+                        # Add debug print to understand why this branch might not be executing
+                        print(f"Debug - Keystore path: {args.keystore}, use_keystore: {getattr(args, 'use_keystore_key', False)}, key_id: {getattr(args, 'key_id', None)}, create: {getattr(args, 'create_keystore', False)}")
+                        if args.keystore and (args.use_keystore_key or args.key_id or args.create_keystore):
+                            try:
+                                # Import keystore-related modules
+                                from .keystore_cli import PQCKeystore, KeystoreSecurityLevel, KeystoreError, KeystorePasswordError
+                                from .keystore_utils import get_keystore_password, auto_generate_pqc_key
+                                
+                                # Create or load the keystore
+                                keystore = PQCKeystore(args.keystore)
+                                keystore_password = get_keystore_password(args)
+                                
+                                if os.path.exists(args.keystore):
+                                    if not args.quiet:
+                                        print(f"Loading keystore from {args.keystore}")
+                                    keystore.load_keystore(keystore_password)
+                                elif args.create_keystore:
+                                    if not args.quiet:
+                                        print(f"Creating new keystore at {args.keystore}")
+                                    security_level = KeystoreSecurityLevel(args.keystore_security)
+                                    keystore.create_keystore(keystore_password, security_level)
+                                else:
+                                    if not args.quiet:
+                                        print(f"Keystore not found at {args.keystore} and --create-keystore not specified")
+                                    raise FileNotFoundError(f"Keystore not found at {args.keystore}")
+                                
+                                # Get algorithm without -hybrid suffix for storage
+                                algorithm_base = args.algorithm.replace('-hybrid', '')
+                                
+                                # If specific key ID provided, use that key
+                                if args.key_id:
+                                    try:
+                                        public_key, private_key = keystore.get_key(args.key_id)
+                                        if not args.quiet:
+                                            print(f"Using key {args.key_id} from keystore")
+                                        pqc_keypair = (public_key, private_key)
+                                        
+                                        # Add key ID to hash_config for later retrieval
+                                        hash_config["pqc_keystore_key_id"] = args.key_id
+                                    except Exception as e:
+                                        if not args.quiet:
+                                            print(f"Error getting key {args.key_id}: {e}")
+                                        raise
+                                else:
+                                    # Find a suitable key or generate a new one
+                                    keys = keystore.list_keys()
+                                    
+                                    # Filter for keys matching our algorithm
+                                    matching_keys = [k for k in keys if k["algorithm"].lower().replace("-", "").replace("_", "") == 
+                                                    algorithm_base.lower().replace("-", "").replace("_", "")]
+                                    
+                                    if matching_keys:
+                                        # Use the first matching key
+                                        key_id = matching_keys[0]["key_id"]
+                                        public_key, private_key = keystore.get_key(key_id)
+                                        if not args.quiet:
+                                            print(f"Using existing {matching_keys[0]['algorithm']} key from keystore")
+                                        pqc_keypair = (public_key, private_key)
+                                        
+                                        # Add key ID to hash_config for later retrieval
+                                        hash_config["pqc_keystore_key_id"] = key_id
+                                    else:
+                                        # Generate a new key and add to keystore
+                                        from .pqc import PQCipher, check_pqc_support
+                                        
+                                        # Map algorithm name to available algorithms
+                                        pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
+                                        kyber512_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber512", "mlkem512"]]
+                                        kyber768_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber768", "mlkem768"]]
+                                        kyber1024_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber1024", "mlkem1024"]]
+                                        
+                                        # Choose first available algorithm
+                                        algo_map = {
+                                            'kyber512-hybrid': kyber512_options[0] if kyber512_options else "Kyber512",
+                                            'kyber768-hybrid': kyber768_options[0] if kyber768_options else "Kyber768",
+                                            'kyber1024-hybrid': kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                                        }
+                                        
+                                        if not args.quiet:
+                                            print(f"Generating new {algorithm_base} key for keystore")
+                                            
+                                        # Generate keypair
+                                        cipher = PQCipher(algo_map[args.algorithm], quiet=args.quiet)
+                                        public_key, private_key = cipher.generate_keypair()
+                                        
+                                        # Add to keystore
+                                        key_id = keystore.add_key(
+                                            algorithm=algorithm_base,
+                                            public_key=public_key,
+                                            private_key=private_key,
+                                            description=f"Auto-generated {algorithm_base} key for {args.input}"
+                                        )
+                                        
+                                        # Save keystore
+                                        keystore.save_keystore()
+                                        
+                                        if not args.quiet:
+                                            print(f"Added new key to keystore with ID: {key_id}")
+                                            
+                                        pqc_keypair = (public_key, private_key)
+                                        
+                                        # Add key ID to hash_config for later retrieval
+                                        hash_config["pqc_keystore_key_id"] = key_id
+                                
+                                # Clean up keystore for security
+                                keystore.clear_cache()
+                                
+                                # If requested, also store the private key in metadata for self-decryption
+                                if args.pqc_store_key:
+                                    hash_config["pqc_private_key"] = base64.b64encode(private_key).decode('utf-8')
+                                    hash_config["pqc_private_key_embedded"] = True
+                                    if not args.quiet:
+                                        print("Storing private key in metadata for self-decryption")
+                                
+                            except Exception as e:
+                                if args.verbose:
+                                    print(f"Error using keystore: {e}")
+                                if not args.quiet:
+                                    print(f"Falling back to ephemeral key or keyfile")
                         
-                        # Map algorithm name to available algorithms
-                        pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
-                        kyber512_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber512", "mlkem512"]]
-                        kyber768_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber768", "mlkem768"]]
-                        kyber1024_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber1024", "mlkem1024"]]
-                        
-                        # Choose first available algorithm
-                        algo_map = {
-                            'kyber512-hybrid': kyber512_options[0] if kyber512_options else "Kyber512",
-                            'kyber768-hybrid': kyber768_options[0] if kyber768_options else "Kyber768",
-                            'kyber1024-hybrid': kyber1024_options[0] if kyber1024_options else "Kyber1024"
-                        }
-                        
-                        if not args.quiet:
-                            print(f"Generating ephemeral post-quantum key pair for {args.algorithm}")
-                            if args.pqc_store_key:
-                                print("Private key will be stored in the encrypted file for self-decryption")
-                            else:
-                                print("WARNING: Private key will NOT be stored - you must use a key file for decryption")
-                        
-                        cipher = PQCipher(algo_map[args.algorithm], quiet=args.quiet)
-                        public_key, private_key = cipher.generate_keypair()
-                        pqc_keypair = (public_key, private_key)
+                        # If we still don't have a keypair, fall back to standard methods
+                        if not pqc_keypair:
+                            # Check for keyfile first
+                            if args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
+                                try:
+                                    import json
+                                    import base64
+                                    
+                                    with open(args.pqc_keyfile, 'r') as f:
+                                        key_data = json.load(f)
+                                        
+                                    if 'public_key' in key_data and 'private_key' in key_data:
+                                        public_key = base64.b64decode(key_data['public_key'])
+                                        private_key = base64.b64decode(key_data['private_key'])
+                                        pqc_keypair = (public_key, private_key)
+                                        
+                                        if not args.quiet:
+                                            print(f"Loaded post-quantum key pair from {args.pqc_keyfile}")
+                                except Exception as e:
+                                    if args.verbose:
+                                        print(f"Error loading key from file: {e}")
+                                        print("Falling back to ephemeral key")
+                            
+                            # If still no keypair, generate an ephemeral one
+                            if not pqc_keypair:
+                                from .pqc import PQCipher, check_pqc_support
+                                
+                                # Map algorithm name to available algorithms
+                                pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
+                                kyber512_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber512", "mlkem512"]]
+                                kyber768_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber768", "mlkem768"]]
+                                kyber1024_options = [alg for alg in pqc_algorithms if alg.lower().replace('-', '').replace('_', '') in ["kyber1024", "mlkem1024"]]
+                                
+                                # Choose first available algorithm
+                                algo_map = {
+                                    'kyber512-hybrid': kyber512_options[0] if kyber512_options else "Kyber512",
+                                    'kyber768-hybrid': kyber768_options[0] if kyber768_options else "Kyber768",
+                                    'kyber1024-hybrid': kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                                }
+                                
+                                if not args.quiet:
+                                    print(f"Generating ephemeral post-quantum key pair for {args.algorithm}")
+                                    if args.pqc_store_key:
+                                        print("Private key will be stored in the encrypted file for self-decryption")
+                                    else:
+                                        print("WARNING: Private key will NOT be stored - you must use a key file for decryption")
+                                
+                                cipher = PQCipher(algo_map[args.algorithm], quiet=args.quiet)
+                                public_key, private_key = cipher.generate_keypair()
+                                pqc_keypair = (public_key, private_key)
+                                
+                                # If requested, store the private key in metadata for self-decryption
+                                if args.pqc_store_key:
+                                    hash_config["pqc_private_key"] = base64.b64encode(private_key).decode('utf-8')
+                                    hash_config["pqc_private_key_embedded"] = True
                     
-                    # Encrypt to temporary file
-                    success = encrypt_file(
-                        args.input,
-                        temp_output,
-                        password,
-                        hash_config,
-                        args.pbkdf2_iterations,
-                        args.quiet,
-                        algorithm=args.algorithm,
-                        progress=args.progress,
-                        verbose=args.verbose,
-                        pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
-                        pqc_store_private_key=args.pqc_store_key
-                    )
+                    # Encrypt to temporary file - use keystore wrapper if we're using a keystore
+                    if args.keystore and (args.use_keystore_key or args.key_id or args.create_keystore) and key_id and 'key_id' in locals():
+                        if not args.quiet:
+                            print(f"Using keystore wrapper for encryption with key ID: {key_id}")
+                        
+                        success = encrypt_file_with_keystore(
+                            args.input,
+                            temp_output,
+                            password,
+                            hash_config,
+                            args.pbkdf2_iterations,
+                            args.quiet,
+                            algorithm=args.algorithm,
+                            progress=args.progress,
+                            verbose=args.verbose,
+                            pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
+                            keystore_file=args.keystore,
+                            keystore_password=get_keystore_password(args) if 'get_keystore_password' in dir() else None,
+                            key_id=key_id,
+                            pqc_store_private_key=args.pqc_store_key
+                        )
+                    else:
+                        # Use standard encryption if not using keystore
+                        success = encrypt_file(
+                            args.input,
+                            temp_output,
+                            password,
+                            hash_config,
+                            args.pbkdf2_iterations,
+                            args.quiet,
+                            algorithm=args.algorithm,
+                            progress=args.progress,
+                            verbose=args.verbose,
+                            pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
+                            pqc_store_private_key=args.pqc_store_key
+                        )
 
                     if success:
                         # Apply the original permissions to the temp file
@@ -1754,19 +1964,42 @@ def main():
             
             # Direct encryption to output file (when not overwriting)
             if not args.overwrite:
-                success = encrypt_file(
-                    args.input,
-                    output_file,
-                    password,
-                    hash_config,
-                    args.pbkdf2_iterations,
-                    args.quiet,
-                    algorithm=args.algorithm,
-                    progress=args.progress,
-                    verbose=args.verbose,
-                    pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
-                    pqc_store_private_key=args.pqc_store_key
-                )
+                # Use keystore wrapper if we're using a keystore
+                if args.keystore and (args.use_keystore_key or args.key_id or args.create_keystore) and 'key_id' in locals() and key_id:
+                    if not args.quiet:
+                        print(f"Using keystore wrapper for encryption with key ID: {key_id}")
+                            
+                    success = encrypt_file_with_keystore(
+                        args.input,
+                        output_file,
+                        password,
+                        hash_config,
+                        args.pbkdf2_iterations,
+                        args.quiet,
+                        algorithm=args.algorithm,
+                        progress=args.progress,
+                        verbose=args.verbose,
+                        pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
+                        keystore_file=args.keystore,
+                        keystore_password=get_keystore_password(args) if 'get_keystore_password' in dir() else None,
+                        key_id=key_id,
+                        pqc_store_private_key=args.pqc_store_key
+                    )
+                else:
+                    # Use standard encryption if not using keystore
+                    success = encrypt_file(
+                        args.input,
+                        output_file,
+                        password,
+                        hash_config,
+                        args.pbkdf2_iterations,
+                        args.quiet,
+                        algorithm=args.algorithm,
+                        progress=args.progress,
+                        verbose=args.verbose,
+                        pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
+                        pqc_store_private_key=args.pqc_store_key
+                    )
 
             if success:
                 if not args.quiet:
@@ -1862,7 +2095,56 @@ def main():
 
                     # Handle PQC key operations for decryption
                     pqc_private_key = None
-                    if args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
+                    
+                    # First, try to extract key ID from the encrypted file metadata
+                    key_id = None
+                    if args.keystore and (args.use_keystore_key or args.key_id):
+                        try:
+                            from .keystore_utils import extract_key_id_from_metadata, get_keystore_password, get_pqc_key_for_decryption
+                            
+                            # Try to get key ID from file metadata if not explicitly specified
+                            if not args.key_id:
+                                key_id = extract_key_id_from_metadata(args.input, args.verbose)
+                                if key_id and not args.quiet:
+                                    print(f"Found key ID in file metadata: {key_id}")
+                            else:
+                                key_id = args.key_id
+                            
+                            # If we have a key ID and it's not for an embedded key, try to load from keystore
+                            if key_id and key_id != "EMBEDDED_PRIVATE_KEY":
+                                try:
+                                    from .keystore_cli import PQCKeystore, get_key_from_keystore
+                                    
+                                    # Get keystore password
+                                    keystore_password = get_keystore_password(args)
+                                    
+                                    # Load keystore
+                                    keystore = PQCKeystore(args.keystore)
+                                    keystore.load_keystore(keystore_password)
+                                    
+                                    # Get key from keystore
+                                    _, private_key = keystore.get_key(key_id)
+                                    pqc_private_key = private_key
+                                    
+                                    if not args.quiet:
+                                        print(f"Successfully retrieved key {key_id} from keystore for decryption")
+                                        
+                                    # Clean up keystore for security
+                                    keystore.clear_cache()
+                                except Exception as e:
+                                    if args.verbose:
+                                        print(f"Failed to get key from keystore: {e}")
+                                    if not args.quiet:
+                                        print("Will attempt alternative decryption methods")
+                            # If key_id indicates embedded private key, it will be extracted during decryption
+                            elif key_id == "EMBEDDED_PRIVATE_KEY" and not args.quiet:
+                                print("File has embedded private key, will be used during decryption")
+                        except Exception as e:
+                            if args.verbose:
+                                print(f"Error processing keystore information: {e}")
+                    
+                    # If we still don't have a private key, try keyfile
+                    if not pqc_private_key and args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
                         import json
                         import base64
                         
@@ -1922,16 +2204,34 @@ def main():
                             if not args.quiet:
                                 print(f"Warning: Failed to load PQC key file: {e}")
                     
-                    # Decrypt to temporary file first
-                    success = decrypt_file(
-                        args.input,
-                        temp_output,
-                        password,
-                        args.quiet,
-                        progress=args.progress,
-                        verbose=args.verbose,
-                        pqc_private_key=pqc_private_key
-                    )
+                    # Decrypt to temporary file first - use wrapper if using keystore
+                    if args.keystore and (args.use_keystore_key or args.key_id) and 'key_id' in locals() and key_id:
+                        if not args.quiet:
+                            print(f"Using keystore wrapper for decryption with key ID: {key_id}")
+                        
+                        success = decrypt_file_with_keystore(
+                            args.input,
+                            temp_output,
+                            password,
+                            args.quiet,
+                            progress=args.progress,
+                            verbose=args.verbose,
+                            pqc_private_key=pqc_private_key,
+                            keystore_file=args.keystore,
+                            keystore_password=get_keystore_password(args) if 'get_keystore_password' in dir() else None,
+                            key_id=key_id
+                        )
+                    else:
+                        # Use standard decryption if not using keystore
+                        success = decrypt_file(
+                            args.input,
+                            temp_output,
+                            password,
+                            args.quiet,
+                            progress=args.progress,
+                            verbose=args.verbose,
+                            pqc_private_key=pqc_private_key
+                        )
                     if success:
                         # Apply the original permissions to the temp file
                         os.chmod(temp_output, original_permissions)
@@ -1957,7 +2257,56 @@ def main():
             elif args.output:
                 # Handle PQC key operations for decryption
                 pqc_private_key = None
-                if args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
+                
+                # First, try to extract key ID from the encrypted file metadata
+                key_id = None
+                if args.keystore and (args.use_keystore_key or args.key_id):
+                    try:
+                        from .keystore_utils import extract_key_id_from_metadata, get_keystore_password, get_pqc_key_for_decryption
+                        
+                        # Try to get key ID from file metadata if not explicitly specified
+                        if not args.key_id:
+                            key_id = extract_key_id_from_metadata(args.input, args.verbose)
+                            if key_id and not args.quiet:
+                                print(f"Found key ID in file metadata: {key_id}")
+                        else:
+                            key_id = args.key_id
+                        
+                        # If we have a key ID and it's not for an embedded key, try to load from keystore
+                        if key_id and key_id != "EMBEDDED_PRIVATE_KEY":
+                            try:
+                                from .keystore_cli import PQCKeystore, get_key_from_keystore
+                                
+                                # Get keystore password
+                                keystore_password = get_keystore_password(args)
+                                
+                                # Load keystore
+                                keystore = PQCKeystore(args.keystore)
+                                keystore.load_keystore(keystore_password)
+                                
+                                # Get key from keystore
+                                _, private_key = keystore.get_key(key_id)
+                                pqc_private_key = private_key
+                                
+                                if not args.quiet:
+                                    print(f"Successfully retrieved key {key_id} from keystore for decryption")
+                                    
+                                # Clean up keystore for security
+                                keystore.clear_cache()
+                            except Exception as e:
+                                if args.verbose:
+                                    print(f"Failed to get key from keystore: {e}")
+                                if not args.quiet:
+                                    print("Will attempt alternative decryption methods")
+                        # If key_id indicates embedded private key, it will be extracted during decryption
+                        elif key_id == "EMBEDDED_PRIVATE_KEY" and not args.quiet:
+                            print("File has embedded private key, will be used during decryption")
+                    except Exception as e:
+                        if args.verbose:
+                            print(f"Error processing keystore information: {e}")
+                
+                # If we still don't have a private key, try keyfile
+                if not pqc_private_key and args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
                     import json
                     import base64
                     
@@ -2017,15 +2366,34 @@ def main():
                         if not args.quiet:
                             print(f"Warning: Failed to load PQC key file: {e}")
                 
-                success = decrypt_file(
-                    args.input,
-                    args.output,
-                    password,
-                    args.quiet,
-                    progress=args.progress,
-                    verbose=args.verbose,
-                    pqc_private_key=pqc_private_key
-                )
+                # Use wrapper if using keystore
+                if args.keystore and (args.use_keystore_key or args.key_id) and 'key_id' in locals() and key_id:
+                    if not args.quiet:
+                        print(f"Using keystore wrapper for decryption with key ID: {key_id}")
+                    
+                    success = decrypt_file_with_keystore(
+                        args.input,
+                        args.output,
+                        password,
+                        args.quiet,
+                        progress=args.progress,
+                        verbose=args.verbose,
+                        pqc_private_key=pqc_private_key,
+                        keystore_file=args.keystore,
+                        keystore_password=get_keystore_password(args) if 'get_keystore_password' in dir() else None,
+                        key_id=key_id
+                    )
+                else:
+                    # Use standard decryption if not using keystore
+                    success = decrypt_file(
+                        args.input,
+                        args.output,
+                        password,
+                        args.quiet,
+                        progress=args.progress,
+                        verbose=args.verbose,
+                        pqc_private_key=pqc_private_key
+                    )
                 if success and not args.quiet:
                     print(f"\nFile decrypted successfully: {args.output}")
 
@@ -2038,7 +2406,56 @@ def main():
             else:
                 # Handle PQC key operations for decryption to screen
                 pqc_private_key = None
-                if args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
+                
+                # First, try to extract key ID from the encrypted file metadata
+                key_id = None
+                if args.keystore and (args.use_keystore_key or args.key_id):
+                    try:
+                        from .keystore_utils import extract_key_id_from_metadata, get_keystore_password, get_pqc_key_for_decryption
+                        
+                        # Try to get key ID from file metadata if not explicitly specified
+                        if not args.key_id:
+                            key_id = extract_key_id_from_metadata(args.input, args.verbose)
+                            if key_id and not args.quiet:
+                                print(f"Found key ID in file metadata: {key_id}")
+                        else:
+                            key_id = args.key_id
+                        
+                        # If we have a key ID and it's not for an embedded key, try to load from keystore
+                        if key_id and key_id != "EMBEDDED_PRIVATE_KEY":
+                            try:
+                                from .keystore_cli import PQCKeystore, get_key_from_keystore
+                                
+                                # Get keystore password
+                                keystore_password = get_keystore_password(args)
+                                
+                                # Load keystore
+                                keystore = PQCKeystore(args.keystore)
+                                keystore.load_keystore(keystore_password)
+                                
+                                # Get key from keystore
+                                _, private_key = keystore.get_key(key_id)
+                                pqc_private_key = private_key
+                                
+                                if not args.quiet:
+                                    print(f"Successfully retrieved key {key_id} from keystore for decryption")
+                                    
+                                # Clean up keystore for security
+                                keystore.clear_cache()
+                            except Exception as e:
+                                if args.verbose:
+                                    print(f"Failed to get key from keystore: {e}")
+                                if not args.quiet:
+                                    print("Will attempt alternative decryption methods")
+                        # If key_id indicates embedded private key, it will be extracted during decryption
+                        elif key_id == "EMBEDDED_PRIVATE_KEY" and not args.quiet:
+                            print("File has embedded private key, will be used during decryption")
+                    except Exception as e:
+                        if args.verbose:
+                            print(f"Error processing keystore information: {e}")
+                
+                # If we still don't have a private key, try keyfile
+                if not pqc_private_key and args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
                     import json
                     import base64
                     

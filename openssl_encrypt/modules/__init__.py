@@ -19,6 +19,12 @@ from .keystore_utils import (
     auto_generate_pqc_key
 )
 
+# Import keystore wrapper functions
+from .keystore_wrapper import (
+    encrypt_file_with_keystore,
+    decrypt_file_with_keystore
+)
+
 # Make all keystore error classes available
 from .crypt_errors import (
     KeystoreError,

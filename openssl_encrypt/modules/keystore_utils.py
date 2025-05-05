@@ -22,36 +22,57 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
     """
     try:
         with open(encrypted_file, 'rb') as f:
-            header_data = f.read(1024)  # Read enough for header
-            
-        # Try base64 JSON format (newer format)
-        try:
-            parts = header_data.split(b':', 1)
-            if len(parts) > 1:
-                metadata_b64 = parts[0]
-                try:
-                    metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
-                    header_config = json.loads(metadata_json)
-                    
-                    # Extract key ID from hash_config
-                    if 'hash_config' in header_config:
-                        key_id = header_config['hash_config'].get('pqc_keystore_key_id')
-                        if key_id and verbose:
-                            print(f"Found key ID in metadata: {key_id}")
-                        return key_id
-                except Exception as e:
-                    if verbose:
-                        print(f"Error parsing metadata JSON: {e}")
-        except Exception as e:
-            if verbose:
-                print(f"Failed to parse base64 JSON metadata: {e}")
+            data = f.read(3000)  # Read enough for the header
+        
+        # Find the colon separator
+        colon_pos = data.find(b':')
+        if colon_pos > 0:
+            metadata_b64 = data[:colon_pos]
+            try:
+                metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
                 
+                # First try direct JSON parsing
+                try:
+                    metadata = json.loads(metadata_json)
+                    if 'hash_config' in metadata and 'pqc_keystore_key_id' in metadata['hash_config']:
+                        key_id = metadata['hash_config']['pqc_keystore_key_id']
+                        if verbose:
+                            print(f"Found key ID in metadata JSON: {key_id}")
+                        return key_id
+                except json.JSONDecodeError:
+                    if verbose:
+                        print("JSON parsing failed, trying regex")
+                
+                # Fall back to regex for UUID pattern
+                import re
+                uuid_pattern = r'([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'
+                matches = re.findall(uuid_pattern, metadata_json)
+                
+                if matches:
+                    # In case of multiple matches, prefer one that's after "pqc_keystore_key_id"
+                    for i in range(len(metadata_json) - 20):
+                        if metadata_json[i:i+20].find("pqc_keystore_key_id") >= 0:
+                            # Found the key, now see which UUID is closest after this position
+                            for match in matches:
+                                if metadata_json[i:].find(match) >= 0:
+                                    if verbose:
+                                        print(f"Found key ID using regex: {match}")
+                                    return match
+                    
+                    # If we couldn't find one after the key name, just return the first match
+                    if verbose:
+                        print(f"Found potential key ID: {matches[0]}")
+                    return matches[0]
+            except Exception as e:
+                if verbose:
+                    print(f"Error decoding metadata: {e}")
+        
         # Fall back to legacy OSENC format
-        header_start = header_data.find(b'OSENC')
+        header_start = data.find(b'OSENC')
         if header_start >= 0:
-            header_end = header_data.find(b'HEND')
+            header_end = data.find(b'HEND')
             if header_end > header_start:
-                header_json = header_data[header_start+5:header_end].decode('utf-8')
+                header_json = data[header_start+5:header_end].decode('utf-8')
                 try:
                     header_config = json.loads(header_json)
                     
@@ -68,7 +89,7 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
         if verbose:
             print(f"Error extracting key ID from metadata: {e}")
     
-    # Check if the file contains an embedded private key in the metadata
+    # Check for embedded private key
     try:
         with open(encrypted_file, 'rb') as f:
             header_data = f.read(2048)  # Read enough for header with embedded key
@@ -79,19 +100,27 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
             if len(parts) > 1:
                 metadata_b64 = parts[0]
                 metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
-                header_config = json.loads(metadata_json)
                 
-                # Check if there's a PQC public key in the metadata
-                if 'hash_config' in header_config and 'pqc_public_key' in header_config['hash_config']:
-                    # This file has an embedded public key, which means it might have an embedded private key
-                    if verbose:
-                        print("Found embedded PQC public key in metadata")
+                try:
+                    header_config = json.loads(metadata_json)
                     
-                    # Check for embedded private key marker
-                    private_key_marker = header_config['hash_config'].get('pqc_private_key_embedded')
-                    if private_key_marker:
+                    # Check if there's a PQC public key in the metadata
+                    if 'hash_config' in header_config and 'pqc_public_key' in header_config['hash_config']:
+                        # This file has an embedded public key, which means it might have an embedded private key
                         if verbose:
-                            print("File has embedded private key")
+                            print("Found embedded PQC public key in metadata")
+                        
+                        # Check for embedded private key marker
+                        private_key_marker = header_config['hash_config'].get('pqc_private_key_embedded')
+                        if private_key_marker:
+                            if verbose:
+                                print("File has embedded private key")
+                            return "EMBEDDED_PRIVATE_KEY"
+                except json.JSONDecodeError:
+                    # If we can't parse as JSON but there's a match for private key
+                    if metadata_json.find("pqc_private_key_embedded") >= 0:
+                        if verbose:
+                            print("Found embedded private key indicator")
                         return "EMBEDDED_PRIVATE_KEY"
         except Exception as e:
             if verbose:
@@ -157,6 +186,8 @@ def get_pqc_key_for_decryption(args, hash_config=None):
     
     # If no key ID in hash_config, try extracting from file
     if not key_id and hasattr(args, 'input') and args.input:
+        # Use the improved extract_key_id_from_metadata function
+        # which now includes regex-based extraction for robustness
         key_id = extract_key_id_from_metadata(args.input, getattr(args, 'verbose', False))
         if key_id and not getattr(args, 'quiet', False):
             print(f"Found key ID in file metadata: {key_id}")
