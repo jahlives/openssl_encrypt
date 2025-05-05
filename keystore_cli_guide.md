@@ -8,7 +8,7 @@ First, create a PQC keystore to store your keys:
 
 ```bash
 # Create a keystore with standard security settings
-python -m openssl_encrypt.keystore_cli_main create --keystore my_keystore.pqc
+python -m openssl_encrypt.keystore_cli_main create --keystore-path my_keystore.pqc
 # You'll be prompted for a password
 ```
 
@@ -16,12 +16,12 @@ For higher security:
 
 ```bash
 # Create a keystore with high security settings
-python -m openssl_encrypt.keystore_cli_main create --keystore my_keystore.pqc --keystore-high-security
+python -m openssl_encrypt.keystore_cli_main create --keystore-path my_keystore.pqc --security-level high
 ```
 
 Example command:
 ```bash
-python -m openssl_encrypt.keystore_cli_main create --keystore /tmp/my_keystore.pqc --keystore-high-security
+python -m openssl_encrypt.keystore_cli_main create --keystore-path /tmp/my_keystore.pqc --security-level high --keystore-password mypassword
 ```
 
 Make sure you use the exact module path shown above.
@@ -36,8 +36,26 @@ To check the keys in your keystore:
 
 ```bash
 # List all keys in the keystore
-python -m openssl_encrypt.keystore_cli_main list-keys --keystore my_keystore.pqc
+python -m openssl_encrypt.keystore_cli_main list-keys --keystore-path my_keystore.pqc
 # You'll be prompted for the keystore password
+
+# Or provide the password directly (less secure)
+python -m openssl_encrypt.keystore_cli_main list-keys --keystore-path my_keystore.pqc --keystore-password "your-password"
+```
+
+**Parameter Consistency**:
+All commands now use consistent parameter names:
+- `--keystore-path` instead of `--keystore`
+- `--keystore-password` instead of `--keystore-password`
+
+Example:
+
+```bash
+# Create a keystore
+python -m openssl_encrypt.keystore_cli_main create --keystore-path /tmp/my_keystore.pqc --security-level high
+
+# List keys
+python -m openssl_encrypt.keystore_cli_main list-keys --keystore-path /tmp/my_keystore.pqc
 ```
 
 ## 3. Encrypt a File Using PQC with Keystore
