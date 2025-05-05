@@ -19,6 +19,13 @@ For higher security:
 python -m openssl_encrypt.keystore_cli_main create --keystore my_keystore.pqc --keystore-high-security
 ```
 
+Example command:
+```bash
+python -m openssl_encrypt.keystore_cli_main create --keystore /tmp/my_keystore.pqc --keystore-high-security
+```
+
+Make sure you use the exact module path shown above.
+
 Note: To avoid import warnings, use the above commands. If you encounter the warning:
 `<frozen runpy>:128: RuntimeWarning: '...' found in sys.modules...`, it's a harmless
 import-related warning and doesn't affect functionality.
