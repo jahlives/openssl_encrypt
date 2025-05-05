@@ -8,7 +8,7 @@ First, create a PQC keystore to store your keys:
 
 ```bash
 # Create a keystore with standard security settings
-python -m openssl_encrypt.modules.keystore_cli create --keystore my_keystore.pqc
+python -m openssl_encrypt.keystore_cli_main create --keystore my_keystore.pqc
 # You'll be prompted for a password
 ```
 
@@ -16,8 +16,12 @@ For higher security:
 
 ```bash
 # Create a keystore with high security settings
-python -m openssl_encrypt.modules.keystore_cli create --keystore my_keystore.pqc --keystore-high-security
+python -m openssl_encrypt.keystore_cli_main create --keystore my_keystore.pqc --keystore-high-security
 ```
+
+Note: To avoid import warnings, use the above commands. If you encounter the warning:
+`<frozen runpy>:128: RuntimeWarning: '...' found in sys.modules...`, it's a harmless
+import-related warning and doesn't affect functionality.
 
 ## 2. List Keys in the Keystore
 
@@ -25,7 +29,7 @@ To check the keys in your keystore:
 
 ```bash
 # List all keys in the keystore
-python -m openssl_encrypt.modules.keystore_cli list-keys --keystore my_keystore.pqc
+python -m openssl_encrypt.keystore_cli_main list-keys --keystore my_keystore.pqc
 # You'll be prompted for the keystore password
 ```
 
@@ -95,17 +99,17 @@ python -m openssl_encrypt.crypt decrypt \
 
 ### Remove a Key
 ```bash
-python -m openssl_encrypt.modules.keystore_cli remove-key KEY_ID --keystore my_keystore.pqc
+python -m openssl_encrypt.keystore_cli_main remove-key KEY_ID --keystore my_keystore.pqc
 ```
 
 ### Change Keystore Password
 ```bash
-python -m openssl_encrypt.modules.keystore_cli change-master-password --keystore my_keystore.pqc
+python -m openssl_encrypt.keystore_cli_main change-master-password --keystore my_keystore.pqc
 ```
 
 ### Set Default Key for an Algorithm
 ```bash
-python -m openssl_encrypt.modules.keystore_cli set-default KEY_ID --keystore my_keystore.pqc
+python -m openssl_encrypt.keystore_cli_main set-default KEY_ID --keystore my_keystore.pqc
 ```
 
 ## Security Considerations
