@@ -22,7 +22,7 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
     """
     try:
         with open(encrypted_file, 'rb') as f:
-            data = f.read(3000)  # Read enough for the header
+            data = f.read(8192)  # Read enough for the header - increased to 8KB for large PQC keys
         
         # Find the colon separator
         colon_pos = data.find(b':')
@@ -92,7 +92,7 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
     # Check for embedded private key
     try:
         with open(encrypted_file, 'rb') as f:
-            header_data = f.read(2048)  # Read enough for header with embedded key
+            header_data = f.read(8192)  # Read enough for header with embedded key - increased to 8KB for large PQC keys
             
         # Try to detect if there's an embedded private key
         try:
