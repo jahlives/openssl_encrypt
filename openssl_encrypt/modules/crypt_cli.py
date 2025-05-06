@@ -593,7 +593,7 @@ def main():
     keystore_group.add_argument(
         '--auto-generate-key',
         action='store_true',
-        help='Automatically generate and store a PQC key in the keystore if needed'
+        help='Explicitly request to generate and store a PQC key in the keystore (happens automatically for PQC algorithms)'
     )
     keystore_group.add_argument(
         '--auto-create-keystore',
@@ -1666,8 +1666,15 @@ def main():
                         
                         # Check if we should auto-generate a key
                         key_id = getattr(args, 'key_id', None)
-                        if getattr(args, 'auto_generate_key', False) and args.algorithm.startswith('kyber'):
-                            # Auto-generate key if needed
+                        # Always auto-generate a key if we're using a keystore with PQC algorithm
+                        # and no key_id is provided, or explicitly requested with --auto-generate-key
+                        if (key_id is None and args.algorithm.startswith('kyber')) or getattr(args, 'auto_generate_key', False):
+                            # Set the auto_generate_key flag for the auto_generate_pqc_key function
+                            if not hasattr(args, 'auto_generate_key') or not args.auto_generate_key:
+                                if not args.quiet:
+                                    print("Auto-generating key for keystore")
+                                setattr(args, 'auto_generate_key', True)
+                            # Auto-generate key
                             # This will update hash_config with key_id
                             auto_generate_pqc_key(args, hash_config)
                         
@@ -1980,8 +1987,15 @@ def main():
                     
                     # Check if we should auto-generate a key
                     key_id = getattr(args, 'key_id', None)
-                    if getattr(args, 'auto_generate_key', False) and args.algorithm.startswith('kyber'):
-                        # Auto-generate key if needed
+                    # Always auto-generate a key if we're using a keystore with PQC algorithm
+                    # and no key_id is provided, or explicitly requested with --auto-generate-key
+                    if (key_id is None and args.algorithm.startswith('kyber')) or getattr(args, 'auto_generate_key', False):
+                        # Set the auto_generate_key flag for the auto_generate_pqc_key function
+                        if not hasattr(args, 'auto_generate_key') or not args.auto_generate_key:
+                            if not args.quiet:
+                                print("Auto-generating key for keystore")
+                            setattr(args, 'auto_generate_key', True)
+                        # Auto-generate key
                         # This will update hash_config with key_id
                         auto_generate_pqc_key(args, hash_config)
                     
