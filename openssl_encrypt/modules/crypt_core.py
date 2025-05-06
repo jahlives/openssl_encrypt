@@ -1475,7 +1475,7 @@ def generate_key(
 def encrypt_file(input_file, output_file, password, hash_config=None,
                  pbkdf2_iterations=100000, quiet=False,
                  algorithm=EncryptionAlgorithm.FERNET, progress=False, verbose=False,
-                 pqc_keypair=None, pqc_store_private_key=False):
+                 pqc_keypair=None, pqc_store_private_key=False, pqc_dual_encrypt_key=False):
     """
     Encrypt a file with a password using the specified algorithm.
 
@@ -1756,7 +1756,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
             metadata['pqc_public_key'] = base64.b64encode(pqc_keypair[0]).decode('utf-8')
             
             # Store private key only if requested (for self-decryption)
-            if pqc_store_private_key and len(pqc_keypair) > 1:
+            if (pqc_store_private_key or pqc_dual_encrypt_key) and len(pqc_keypair) > 1:
                 if not quiet:
                     print("Storing encrypted post-quantum private key in file for self-decryption")
                 # Create a separate derived key that specifically depends on the provided password
@@ -1780,18 +1780,8 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                 
                 metadata['pqc_private_key'] = base64.b64encode(encrypted_private_key).decode('utf-8')
                 metadata['pqc_key_encrypted'] = True  # Mark that the key is encrypted
-            elif pqc_dual_encrypt_key and len(pqc_keypair) > 1:
-                # Use a different salt for private key encryption
-                private_key_salt = secrets.token_bytes(16)
-                # Decode the salt
-                private_key_salt = base64.b64decode(metadata['pqc_key_salt'])
-                # START DO NOT CHANGE
-                # Use the derived private_key_key NOT the main key
-                cipher = AESGCM(key)
-                nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
-                encrypted_private_key = nonce + cipher.encrypt(nonce, pqc_keypair[1], None)
-                # END DO NOT CHANGE
-                metadata['pqc_dual_encrypt_key'] = True
+                if pqc_dual_encrypt_key:
+                    metadata['pqc_dual_encrypt_key'] = True
 
             elif not quiet:
                 print("Post-quantum private key NOT stored - you'll need the key file for decryption")
