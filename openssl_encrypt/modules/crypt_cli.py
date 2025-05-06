@@ -46,6 +46,9 @@ from .password_policy import (
     get_password_strength
 )
 from . import crypt_errors
+# Import keystore-related modules
+from .keystore_wrapper import encrypt_file_with_keystore, decrypt_file_with_keystore
+from .keystore_utils import extract_key_id_from_metadata, get_keystore_password, get_pqc_key_for_decryption, auto_generate_pqc_key
 
 
 def debug_hash_config(args, hash_config, message="Hash configuration"):
@@ -564,6 +567,35 @@ def main():
         help=argparse.SUPPRESS  # Hidden legacy option
     )
 
+    # Add Keystore options
+    keystore_group = parser.add_argument_group('Keystore Options', 'Configure keystore integration for key management')
+    keystore_group.add_argument(
+        '--keystore',
+        help='Path to the keystore file'
+    )
+    keystore_group.add_argument(
+        '--keystore-password',
+        help='Password for the keystore (will prompt if not provided)'
+    )
+    keystore_group.add_argument(
+        '--keystore-password-file',
+        help='File containing the keystore password'
+    )
+    keystore_group.add_argument(
+        '--key-id',
+        help='ID of the key to use from keystore'
+    )
+    keystore_group.add_argument(
+        '--dual-encrypt-key',
+        action='store_true',
+        help='Use dual encryption for the key (requires both keystore and file passwords)'
+    )
+    keystore_group.add_argument(
+        '--auto-generate-key',
+        action='store_true',
+        help='Automatically generate and store a PQC key in the keystore if needed'
+    )
+    
     # Add Post-Quantum Cryptography options
     pqc_group = parser.add_argument_group('Post-Quantum Cryptography Options')
     pqc_group.add_argument(
@@ -1558,20 +1590,63 @@ def main():
                         public_key, private_key = cipher.generate_keypair()
                         pqc_keypair = (public_key, private_key)
 
-                    # Encrypt to temporary file
-                    success = encrypt_file(
-                        args.input,
-                        temp_output,
-                        password,
-                        hash_config,
-                        args.pbkdf2_iterations,
-                        args.quiet,
-                        algorithm=args.algorithm,
-                        progress=args.progress,
-                        verbose=args.verbose,
-                        pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
-                        pqc_store_private_key=args.pqc_store_key
-                    )
+                    # Check if we should use keystore integration
+                    if hasattr(args, 'keystore') and args.keystore:
+                        # Get keystore password if needed
+                        keystore_password = None
+                        if hasattr(args, 'keystore_password') and args.keystore_password:
+                            keystore_password = args.keystore_password
+                        elif hasattr(args, 'keystore_password_file') and args.keystore_password_file:
+                            try:
+                                with open(args.keystore_password_file, 'r') as f:
+                                    keystore_password = f.read().strip()
+                            except Exception as e:
+                                if not args.quiet:
+                                    print(f"Warning: Failed to read keystore password from file: {e}")
+                                    keystore_password = getpass.getpass("Enter keystore password: ")
+                        else:
+                            keystore_password = getpass.getpass("Enter keystore password: ")
+                        
+                        # Check if we should auto-generate a key
+                        key_id = getattr(args, 'key_id', None)
+                        if getattr(args, 'auto_generate_key', False) and args.algorithm.startswith('kyber'):
+                            # Auto-generate key if needed
+                            # This will update hash_config with key_id
+                            auto_generate_pqc_key(args, hash_config)
+                        
+                        # Encrypt using keystore integration
+                        success = encrypt_file_with_keystore(
+                            args.input,
+                            temp_output,
+                            password,
+                            hash_config=hash_config,
+                            pbkdf2_iterations=args.pbkdf2_iterations,
+                            quiet=args.quiet,
+                            algorithm=args.algorithm,
+                            pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
+                            keystore_file=args.keystore,
+                            keystore_password=keystore_password,
+                            key_id=key_id,
+                            dual_encryption=getattr(args, 'dual_encrypt_key', False),
+                            progress=args.progress,
+                            verbose=args.verbose,
+                            pqc_store_private_key=args.pqc_store_key
+                        )
+                    else:
+                        # Use standard encryption
+                        success = encrypt_file(
+                            args.input,
+                            temp_output,
+                            password,
+                            hash_config,
+                            args.pbkdf2_iterations,
+                            args.quiet,
+                            algorithm=args.algorithm,
+                            progress=args.progress,
+                            verbose=args.verbose,
+                            pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
+                            pqc_store_private_key=args.pqc_store_key
+                        )
 
                     if success:
                         # Apply the original permissions to the temp file
@@ -1777,19 +1852,63 @@ def main():
 
             # Direct encryption to output file (when not overwriting)
             if not args.overwrite:
-                success = encrypt_file(
-                    args.input,
-                    output_file,
-                    password,
-                    hash_config,
-                    args.pbkdf2_iterations,
-                    args.quiet,
-                    algorithm=args.algorithm,
-                    progress=args.progress,
-                    verbose=args.verbose,
-                    pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
-                    pqc_store_private_key=args.pqc_store_key
-                )
+                # Check if we should use keystore integration
+                if hasattr(args, 'keystore') and args.keystore:
+                    # Get keystore password if needed
+                    keystore_password = None
+                    if hasattr(args, 'keystore_password') and args.keystore_password:
+                        keystore_password = args.keystore_password
+                    elif hasattr(args, 'keystore_password_file') and args.keystore_password_file:
+                        try:
+                            with open(args.keystore_password_file, 'r') as f:
+                                keystore_password = f.read().strip()
+                        except Exception as e:
+                            if not args.quiet:
+                                print(f"Warning: Failed to read keystore password from file: {e}")
+                                keystore_password = getpass.getpass("Enter keystore password: ")
+                    else:
+                        keystore_password = getpass.getpass("Enter keystore password: ")
+                    
+                    # Check if we should auto-generate a key
+                    key_id = getattr(args, 'key_id', None)
+                    if getattr(args, 'auto_generate_key', False) and args.algorithm.startswith('kyber'):
+                        # Auto-generate key if needed
+                        # This will update hash_config with key_id
+                        auto_generate_pqc_key(args, hash_config)
+                    
+                    # Encrypt using keystore integration
+                    success = encrypt_file_with_keystore(
+                        args.input,
+                        output_file,
+                        password,
+                        hash_config=hash_config,
+                        pbkdf2_iterations=args.pbkdf2_iterations,
+                        quiet=args.quiet,
+                        algorithm=args.algorithm,
+                        pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
+                        keystore_file=args.keystore,
+                        keystore_password=keystore_password,
+                        key_id=key_id,
+                        dual_encryption=getattr(args, 'dual_encrypt_key', False),
+                        progress=args.progress,
+                        verbose=args.verbose,
+                        pqc_store_private_key=args.pqc_store_key
+                    )
+                else:
+                    # Use standard encryption
+                    success = encrypt_file(
+                        args.input,
+                        output_file,
+                        password,
+                        hash_config,
+                        args.pbkdf2_iterations,
+                        args.quiet,
+                        algorithm=args.algorithm,
+                        progress=args.progress,
+                        verbose=args.verbose,
+                        pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
+                        pqc_store_private_key=args.pqc_store_key
+                    )
 
             if success:
                 if not args.quiet:
@@ -1946,16 +2065,51 @@ def main():
                             if not args.quiet:
                                 print(f"Warning: Failed to load PQC key file: {e}")
 
-                    # Decrypt to temporary file first
-                    success = decrypt_file(
-                        args.input,
-                        temp_output,
-                        password,
-                        args.quiet,
-                        progress=args.progress,
-                        verbose=args.verbose,
-                        pqc_private_key=pqc_private_key
-                    )
+                    # Check if we should use keystore integration
+                    if hasattr(args, 'keystore') and args.keystore:
+                        # Get keystore password if needed
+                        keystore_password = None
+                        if hasattr(args, 'keystore_password') and args.keystore_password:
+                            keystore_password = args.keystore_password
+                        elif hasattr(args, 'keystore_password_file') and args.keystore_password_file:
+                            try:
+                                with open(args.keystore_password_file, 'r') as f:
+                                    keystore_password = f.read().strip()
+                            except Exception as e:
+                                if not args.quiet:
+                                    print(f"Warning: Failed to read keystore password from file: {e}")
+                                    keystore_password = getpass.getpass("Enter keystore password: ")
+                        else:
+                            keystore_password = getpass.getpass("Enter keystore password: ")
+                        
+                        # Determine key ID if not provided
+                        key_id = getattr(args, 'key_id', None)
+                        
+                        # Decrypt using keystore integration
+                        success = decrypt_file_with_keystore(
+                            args.input,
+                            temp_output,
+                            password,
+                            quiet=args.quiet,
+                            pqc_private_key=pqc_private_key,
+                            keystore_file=args.keystore,
+                            keystore_password=keystore_password,
+                            key_id=key_id,
+                            dual_encryption=getattr(args, 'dual_encrypt_key', False),
+                            progress=args.progress,
+                            verbose=args.verbose
+                        )
+                    else:
+                        # Use standard decryption
+                        success = decrypt_file(
+                            args.input,
+                            temp_output,
+                            password,
+                            args.quiet,
+                            progress=args.progress,
+                            verbose=args.verbose,
+                            pqc_private_key=pqc_private_key
+                        )
                     if success:
                         # Apply the original permissions to the temp file
                         os.chmod(temp_output, original_permissions)
@@ -2042,15 +2196,51 @@ def main():
                         if not args.quiet:
                             print(f"Warning: Failed to load PQC key file: {e}")
 
-                success = decrypt_file(
-                    args.input,
-                    args.output,
-                    password,
-                    args.quiet,
-                    progress=args.progress,
-                    verbose=args.verbose,
-                    pqc_private_key=pqc_private_key
-                )
+                # Check if we should use keystore integration
+                if hasattr(args, 'keystore') and args.keystore:
+                    # Get keystore password if needed
+                    keystore_password = None
+                    if hasattr(args, 'keystore_password') and args.keystore_password:
+                        keystore_password = args.keystore_password
+                    elif hasattr(args, 'keystore_password_file') and args.keystore_password_file:
+                        try:
+                            with open(args.keystore_password_file, 'r') as f:
+                                keystore_password = f.read().strip()
+                        except Exception as e:
+                            if not args.quiet:
+                                print(f"Warning: Failed to read keystore password from file: {e}")
+                                keystore_password = getpass.getpass("Enter keystore password: ")
+                    else:
+                        keystore_password = getpass.getpass("Enter keystore password: ")
+                    
+                    # Determine key ID if not provided
+                    key_id = getattr(args, 'key_id', None)
+                    
+                    # Decrypt using keystore integration
+                    success = decrypt_file_with_keystore(
+                        args.input,
+                        args.output,
+                        password,
+                        quiet=args.quiet,
+                        pqc_private_key=pqc_private_key,
+                        keystore_file=args.keystore,
+                        keystore_password=keystore_password,
+                        key_id=key_id,
+                        dual_encryption=getattr(args, 'dual_encrypt_key', False),
+                        progress=args.progress,
+                        verbose=args.verbose
+                    )
+                else:
+                    # Use standard decryption
+                    success = decrypt_file(
+                        args.input,
+                        args.output,
+                        password,
+                        args.quiet,
+                        progress=args.progress,
+                        verbose=args.verbose,
+                        pqc_private_key=pqc_private_key
+                    )
                 if success and not args.quiet:
                     print(f"\nFile decrypted successfully: {args.output}")
 
@@ -2126,15 +2316,52 @@ def main():
 
                 # Decrypt to screen if no output file specified (useful for
                 # text files)
-                decrypted = decrypt_file(
-                    args.input,
-                    None,
-                    password,
-                    args.quiet,
-                    progress=args.progress,
-                    verbose=args.verbose,
-                    pqc_private_key=pqc_private_key
-                )
+                
+                # Check if we should use keystore integration
+                if hasattr(args, 'keystore') and args.keystore:
+                    # Get keystore password if needed
+                    keystore_password = None
+                    if hasattr(args, 'keystore_password') and args.keystore_password:
+                        keystore_password = args.keystore_password
+                    elif hasattr(args, 'keystore_password_file') and args.keystore_password_file:
+                        try:
+                            with open(args.keystore_password_file, 'r') as f:
+                                keystore_password = f.read().strip()
+                        except Exception as e:
+                            if not args.quiet:
+                                print(f"Warning: Failed to read keystore password from file: {e}")
+                                keystore_password = getpass.getpass("Enter keystore password: ")
+                    else:
+                        keystore_password = getpass.getpass("Enter keystore password: ")
+                    
+                    # Determine key ID if not provided
+                    key_id = getattr(args, 'key_id', None)
+                    
+                    # Decrypt using keystore integration
+                    decrypted = decrypt_file_with_keystore(
+                        args.input,
+                        None,
+                        password,
+                        quiet=args.quiet,
+                        pqc_private_key=pqc_private_key,
+                        keystore_file=args.keystore,
+                        keystore_password=keystore_password,
+                        key_id=key_id,
+                        dual_encryption=getattr(args, 'dual_encrypt_key', False),
+                        progress=args.progress,
+                        verbose=args.verbose
+                    )
+                else:
+                    # Use standard decryption
+                    decrypted = decrypt_file(
+                        args.input,
+                        None,
+                        password,
+                        args.quiet,
+                        progress=args.progress,
+                        verbose=args.verbose,
+                        pqc_private_key=pqc_private_key
+                    )
                 try:
                     # Try to decode as text
                     if not args.quiet:
