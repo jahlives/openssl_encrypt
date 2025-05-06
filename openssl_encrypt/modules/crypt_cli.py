@@ -595,6 +595,11 @@ def main():
         action='store_true',
         help='Automatically generate and store a PQC key in the keystore if needed'
     )
+    keystore_group.add_argument(
+        '--auto-create-keystore',
+        action='store_true',
+        help='Automatically create keystore if it does not exist'
+    )
     
     # Add Post-Quantum Cryptography options
     pqc_group = parser.add_argument_group('Post-Quantum Cryptography Options')
@@ -1592,6 +1597,58 @@ def main():
 
                     # Check if we should use keystore integration
                     if hasattr(args, 'keystore') and args.keystore:
+                        # First, check if the keystore exists
+                        if not os.path.exists(args.keystore):
+                            # Keystore doesn't exist
+                            create_new = False
+                            if getattr(args, 'auto_create_keystore', False):
+                                # Auto-create keystore is enabled
+                                if not args.quiet:
+                                    print(f"Keystore not found at {args.keystore}, creating a new one")
+                                create_new = True
+                            else:
+                                # Prompt the user if they want to create a new keystore or abort
+                                if not args.quiet:
+                                    print(f"Keystore not found at {args.keystore}")
+                                    print("Use --auto-create-keystore option to automatically create keystore")
+                                    create_prompt = input("Would you like to create a new keystore? (y/n): ").lower().strip()
+                                    create_new = create_prompt.startswith('y')
+                            
+                            if create_new:
+                                # Create a new keystore
+                                from .keystore_cli import PQCKeystore, KeystoreSecurityLevel
+                                
+                                # Get keystore password
+                                keystore_password = None
+                                if hasattr(args, 'keystore_password') and args.keystore_password:
+                                    keystore_password = args.keystore_password
+                                elif hasattr(args, 'keystore_password_file') and args.keystore_password_file:
+                                    try:
+                                        with open(args.keystore_password_file, 'r') as f:
+                                            keystore_password = f.read().strip()
+                                    except Exception as e:
+                                        if not args.quiet:
+                                            print(f"Warning: Failed to read keystore password from file: {e}")
+                                            keystore_password = getpass.getpass("Enter keystore password: ")
+                                else:
+                                    keystore_password = getpass.getpass("Enter new keystore password: ")
+                                    confirm = getpass.getpass("Confirm new keystore password: ")
+                                    if keystore_password != confirm:
+                                        if not args.quiet:
+                                            print("Passwords do not match")
+                                        raise ValueError("Keystore passwords do not match")
+                                
+                                # Create the keystore
+                                keystore = PQCKeystore(args.keystore)
+                                keystore.create_keystore(keystore_password, KeystoreSecurityLevel.STANDARD)
+                                if not args.quiet:
+                                    print(f"Created new keystore at {args.keystore}")
+                            else:
+                                # Abort
+                                if not args.quiet:
+                                    print(f"Encryption aborted: Keystore not found at {args.keystore}")
+                                return 1
+                        
                         # Get keystore password if needed
                         keystore_password = None
                         if hasattr(args, 'keystore_password') and args.keystore_password:
@@ -1854,6 +1911,58 @@ def main():
             if not args.overwrite:
                 # Check if we should use keystore integration
                 if hasattr(args, 'keystore') and args.keystore:
+                    # First, check if the keystore exists
+                    if not os.path.exists(args.keystore):
+                        # Keystore doesn't exist
+                        create_new = False
+                        if getattr(args, 'auto_create_keystore', False):
+                            # Auto-create keystore is enabled
+                            if not args.quiet:
+                                print(f"Keystore not found at {args.keystore}, creating a new one")
+                            create_new = True
+                        else:
+                            # Prompt the user if they want to create a new keystore or abort
+                            if not args.quiet:
+                                print(f"Keystore not found at {args.keystore}")
+                                print("Use --auto-create-keystore option to automatically create keystore")
+                                create_prompt = input("Would you like to create a new keystore? (y/n): ").lower().strip()
+                                create_new = create_prompt.startswith('y')
+                        
+                        if create_new:
+                            # Create a new keystore
+                            from .keystore_cli import PQCKeystore, KeystoreSecurityLevel
+                            
+                            # Get keystore password
+                            keystore_password = None
+                            if hasattr(args, 'keystore_password') and args.keystore_password:
+                                keystore_password = args.keystore_password
+                            elif hasattr(args, 'keystore_password_file') and args.keystore_password_file:
+                                try:
+                                    with open(args.keystore_password_file, 'r') as f:
+                                        keystore_password = f.read().strip()
+                                except Exception as e:
+                                    if not args.quiet:
+                                        print(f"Warning: Failed to read keystore password from file: {e}")
+                                        keystore_password = getpass.getpass("Enter keystore password: ")
+                            else:
+                                keystore_password = getpass.getpass("Enter new keystore password: ")
+                                confirm = getpass.getpass("Confirm new keystore password: ")
+                                if keystore_password != confirm:
+                                    if not args.quiet:
+                                        print("Passwords do not match")
+                                    raise ValueError("Keystore passwords do not match")
+                            
+                            # Create the keystore
+                            keystore = PQCKeystore(args.keystore)
+                            keystore.create_keystore(keystore_password, KeystoreSecurityLevel.STANDARD)
+                            if not args.quiet:
+                                print(f"Created new keystore at {args.keystore}")
+                        else:
+                            # Abort
+                            if not args.quiet:
+                                print(f"Encryption aborted: Keystore not found at {args.keystore}")
+                            return 1
+                    
                     # Get keystore password if needed
                     keystore_password = None
                     if hasattr(args, 'keystore_password') and args.keystore_password:
