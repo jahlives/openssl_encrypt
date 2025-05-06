@@ -241,7 +241,8 @@ class PQCKeystore:
         
     def add_key(self, algorithm: str, public_key: bytes, private_key: bytes, 
                  description: str = "", tags: List[str] = None, 
-                 use_master_password: bool = True, key_password: str = None) -> str:
+                 use_master_password: bool = True, key_password: str = None,
+                 dual_encryption: bool = False, file_password: str = None) -> str:
         """
         Add a key to the keystore
         
@@ -253,6 +254,8 @@ class PQCKeystore:
             tags: Optional list of tags for the key
             use_master_password: Whether to use the master password or a separate one
             key_password: Password for the key if not using master password
+            dual_encryption: Whether to use dual encryption with file password
+            file_password: File password for dual encryption
             
         Returns:
             The key ID
@@ -268,6 +271,9 @@ class PQCKeystore:
             
         if not use_master_password and not key_password:
             raise KeystoreError("Key password required when not using master password")
+            
+        if dual_encryption and not file_password:
+            raise KeystoreError("File password required for dual encryption")
         
         # Generate a new key ID
         key_id = str(uuid.uuid4())
@@ -275,9 +281,44 @@ class PQCKeystore:
         # Encode keys as base64 for storage
         public_key_b64 = base64.b64encode(public_key).decode('utf-8')
         
-        # Encrypt private key
+        # Apply dual encryption if enabled
+        private_key_to_encrypt = private_key
+        dual_encryption_salt = None
+        
+        if dual_encryption and file_password:
+            try:
+                # Generate a salt for file password key derivation
+                dual_encryption_salt = os.urandom(16)
+                
+                # Determine security level
+                security_level = KeystoreSecurityLevel(self.keystore_data.get("security_level", "standard"))
+                
+                # Derive encryption key from file password
+                file_encryption_key = self._derive_key(file_password, dual_encryption_salt, security_level)
+                
+                # Use AES-GCM to encrypt the private key with the file key
+                from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+                
+                # Generate a nonce for AES-GCM
+                nonce = os.urandom(12)
+                
+                # Create the cipher with the file key
+                cipher = AESGCM(file_encryption_key)
+                
+                # Encrypt the private key
+                ciphertext = cipher.encrypt(nonce, private_key, None)
+                
+                # Combine the nonce and ciphertext
+                private_key_to_encrypt = nonce + ciphertext
+                
+                # Clean up
+                secure_memzero(file_encryption_key)
+            except Exception as e:
+                raise KeystoreError(f"Failed to apply dual encryption: {e}")
+        
+        # Encrypt private key with keystore mechanism
         if use_master_password:
-            encrypted_private_key = self._encrypt_data(private_key)
+            encrypted_private_key = self._encrypt_data(private_key_to_encrypt)
         else:
             # Generate a key-specific salt
             key_salt = os.urandom(16)
@@ -288,7 +329,7 @@ class PQCKeystore:
             key_encryption_key = self._derive_key(key_password, key_salt, security_level)
             
             # Encrypt with key-specific encryption key
-            encrypted_private_key = self._encrypt_data_with_key(private_key, key_encryption_key)
+            encrypted_private_key = self._encrypt_data_with_key(private_key_to_encrypt, key_encryption_key)
             
             # Clean up the key
             secure_memzero(key_encryption_key)
@@ -309,15 +350,21 @@ class PQCKeystore:
         if not use_master_password:
             self.keystore_data["keys"][key_id]["salt"] = base64.b64encode(key_salt).decode('utf-8')
             
+        # Add dual encryption flag and salt if using dual encryption
+        if dual_encryption:
+            self.keystore_data["keys"][key_id]["dual_encryption"] = True
+            self.keystore_data["keys"][key_id]["dual_encryption_salt"] = base64.b64encode(dual_encryption_salt).decode('utf-8')
+            
         return key_id
         
-    def get_key(self, key_id: str, key_password: str = None) -> Tuple[bytes, bytes]:
+    def get_key(self, key_id: str, key_password: str = None, file_password: str = None) -> Tuple[bytes, bytes]:
         """
         Get a key from the keystore
         
         Args:
             key_id: The key ID
             key_password: Password for the key if not using master password
+            file_password: File password for dual encryption
             
         Returns:
             Tuple of (public_key, private_key)
@@ -330,8 +377,9 @@ class PQCKeystore:
         if not self.keystore_data:
             raise KeystoreError("Keystore not loaded")
             
-        # Check key cache first
-        if key_id in self._key_cache:
+        # Check key cache first - skip cache if file_password provided
+        # as the cache doesn't store dual-encryption information
+        if key_id in self._key_cache and file_password is None:
             return self._key_cache[key_id]
             
         # Get key from keystore
@@ -384,9 +432,52 @@ class PQCKeystore:
                 
             # Clean up
             secure_memzero(key_encryption_key)
+        
+        # Handle dual encryption if needed
+        dual_encryption = key_data.get("dual_encryption", False)
+        if dual_encryption and file_password is not None:
+            try:
+                # Extract the dual encryption salt
+                if "dual_encryption_salt" not in key_data:
+                    raise KeystoreError("Missing dual encryption salt")
+                    
+                dual_salt = base64.b64decode(key_data["dual_encryption_salt"])
+                
+                # Determine security level
+                security_level = KeystoreSecurityLevel(self.keystore_data.get("security_level", "standard"))
+                
+                # Derive file encryption key
+                file_encryption_key = self._derive_key(file_password, dual_salt, security_level)
+                
+                # Import necessary AEAD cipher for decryption
+                from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+                
+                # For dual-encrypted keys, we expect:
+                # [12-byte nonce][ciphertext]
+                nonce = private_key[:12]
+                ciphertext = private_key[12:]
+                
+                # Create the cipher with the file key
+                cipher = AESGCM(file_encryption_key)
+                
+                try:
+                    # Decrypt the private key
+                    private_key = cipher.decrypt(nonce, ciphertext, None)
+                except Exception:
+                    # Clean up and raise error - this is a file password error
+                    secure_memzero(file_encryption_key)
+                    raise KeystorePasswordError("Incorrect file password for dual-encrypted key")
+                
+                # Clean up
+                secure_memzero(file_encryption_key)
+            except Exception as e:
+                if isinstance(e, KeystorePasswordError):
+                    raise  # Re-raise password errors
+                raise KeystoreError(f"Failed to handle dual encryption: {e}")
             
-        # Cache the key pair
-        self._key_cache[key_id] = (public_key, private_key)
+        # Cache the key pair if not using dual encryption
+        if not dual_encryption:
+            self._key_cache[key_id] = (public_key, private_key)
         
         return public_key, private_key
         
@@ -896,7 +987,7 @@ class PQCKeystore:
 
 def get_key_from_keystore(keystore_path: str, key_id: str, 
                          keystore_password: str, key_password: str = None,
-                         quiet: bool = False) -> Tuple[bytes, bytes]:
+                         quiet: bool = False, file_password: str = None) -> Tuple[bytes, bytes]:
     """
     Get a key from a keystore (convenience function)
     
@@ -906,6 +997,7 @@ def get_key_from_keystore(keystore_path: str, key_id: str,
         keystore_password: Password for the keystore
         key_password: Password for the key if not using master password
         quiet: Whether to suppress output
+        file_password: File password for dual encryption
         
     Returns:
         Tuple of (public_key, private_key)
@@ -921,7 +1013,7 @@ def get_key_from_keystore(keystore_path: str, key_id: str,
         
     # Get the key
     try:
-        public_key, private_key = keystore.get_key(key_id, key_password)
+        public_key, private_key = keystore.get_key(key_id, key_password, file_password)
     except Exception as e:
         if not quiet:
             print(f"Error getting key: {e}")
@@ -938,7 +1030,8 @@ def add_key_to_keystore(keystore_path: str, algorithm: str, public_key: bytes,
                        description: str = "", tags: List[str] = None,
                        use_master_password: bool = True, key_password: str = None,
                        create_if_missing: bool = False, security_level: str = "standard",
-                       quiet: bool = False) -> str:
+                       quiet: bool = False, dual_encryption: bool = False, 
+                       file_password: str = None) -> str:
     """
     Add a key to a keystore (convenience function)
     
@@ -955,6 +1048,8 @@ def add_key_to_keystore(keystore_path: str, algorithm: str, public_key: bytes,
         create_if_missing: Whether to create the keystore if it doesn't exist
         security_level: Security level for new keystores ("standard", "high", "paranoid")
         quiet: Whether to suppress output
+        dual_encryption: Whether to use dual encryption with file password
+        file_password: File password for dual encryption
         
     Returns:
         The key ID
@@ -989,7 +1084,9 @@ def add_key_to_keystore(keystore_path: str, algorithm: str, public_key: bytes,
             description=description,
             tags=tags,
             use_master_password=use_master_password,
-            key_password=key_password
+            key_password=key_password,
+            dual_encryption=dual_encryption,
+            file_password=file_password
         )
         
         # Save the keystore

@@ -227,6 +227,13 @@ def get_pqc_key_for_decryption(args, hash_config=None):
                 if getattr(args, 'verbose', False):
                     print(f"Failed to extract embedded private key: {e}")
     
+    # Check for dual encryption flag in hash_config
+    dual_encryption = False
+    if hash_config and 'dual_encryption' in hash_config:
+        dual_encryption = hash_config['dual_encryption']
+        if not getattr(args, 'quiet', False) and dual_encryption:
+            print("Dual encryption is enabled for this file")
+    
     # If we have a keystore and key ID, try to retrieve the key
     if key_id and key_id != "EMBEDDED_PRIVATE_KEY" and hasattr(args, 'keystore') and args.keystore:
         try:
@@ -236,13 +243,22 @@ def get_pqc_key_for_decryption(args, hash_config=None):
             # Import now to avoid circular imports
             from .keystore_cli import get_key_from_keystore
             
+            # Get the file password for dual encryption if needed
+            file_password = None
+            if dual_encryption and hasattr(args, 'password'):
+                # For dual encryption, we need both the keystore password and the file password
+                file_password = args.password
+                if not getattr(args, 'quiet', False):
+                    print(f"Using file password for dual-encrypted key")
+            
             # Get key from keystore
             public_key, private_key = get_key_from_keystore(
                 args.keystore,
                 key_id,
                 keystore_password,
-                None,
-                getattr(args, 'quiet', False)
+                None,  # key_password
+                getattr(args, 'quiet', False),
+                file_password
             )
             
             pqc_keypair = (public_key, private_key)
@@ -250,6 +266,8 @@ def get_pqc_key_for_decryption(args, hash_config=None):
             
             if not getattr(args, 'quiet', False):
                 print(f"Successfully retrieved key from keystore using ID from metadata")
+                if dual_encryption:
+                    print("Key was dual-encrypted with both keystore and file passwords")
                 
             return pqc_keypair, pqc_private_key, key_id
         except Exception as e:
@@ -337,6 +355,21 @@ def auto_generate_pqc_key(args, hash_config):
     if not hasattr(args, 'algorithm') or not args.algorithm.startswith('kyber'):
         return None, None
         
+    # Check for dual encryption flag
+    dual_encryption = False
+    if hasattr(args, 'dual_encrypt_key') and args.dual_encrypt_key:
+        dual_encryption = True
+        # Make sure the file password is available for dual encryption
+        if not hasattr(args, 'password') or not args.password:
+            if not getattr(args, 'quiet', False):
+                print("Warning: Dual encryption requested but no file password provided. Disabling dual encryption.")
+            dual_encryption = False
+        else:
+            # Set the dual encryption flag in hash_config
+            hash_config["dual_encryption"] = True
+            if not getattr(args, 'quiet', False):
+                print("Enabling dual encryption for key - file will require both keystore and file passwords")
+        
     # Check if we have a keystore
     if hasattr(args, 'keystore') and args.keystore:
         try:
@@ -362,22 +395,30 @@ def auto_generate_pqc_key(args, hash_config):
             else:
                 keystore.load_keystore(keystore_password)
             
-            # Check for existing keys
+            # Check for existing keys - also match dual_encryption status
             keys = keystore.list_keys()
-            matching_keys = [k for k in keys if k["algorithm"].lower().replace("-", "") == 
-                            pqc_algorithm.lower().replace("-", "")]
+            matching_keys = [k for k in keys 
+                            if k["algorithm"].lower().replace("-", "") == pqc_algorithm.lower().replace("-", "")
+                            and k.get("dual_encryption", False) == dual_encryption]
             
             if matching_keys:
                 # Use existing key
                 key_id = matching_keys[0]["key_id"]
-                public_key, private_key = keystore.get_key(key_id)
+                if dual_encryption and hasattr(args, 'password'):
+                    public_key, private_key = keystore.get_key(key_id, None, args.password)
+                else:
+                    public_key, private_key = keystore.get_key(key_id)
                 
                 if not getattr(args, 'quiet', False):
                     print(f"Using existing {matching_keys[0]['algorithm']} key from keystore")
+                    if dual_encryption:
+                        print("This key uses dual encryption (keystore password + file password)")
             else:
                 # Generate new key
                 if not getattr(args, 'quiet', False):
                     print(f"Generating new {pqc_algorithm} key for keystore")
+                    if dual_encryption:
+                        print("Using dual encryption for this key")
                 
                 # Get base algorithm name (without -hybrid)
                 base_algo = args.algorithm.replace('-hybrid', '')
@@ -386,13 +427,20 @@ def auto_generate_pqc_key(args, hash_config):
                 cipher = PQCipher(base_algo, quiet=getattr(args, 'quiet', False))
                 public_key, private_key = cipher.generate_keypair()
                 
+                # Get file password if we're using dual encryption
+                file_password = None
+                if dual_encryption and hasattr(args, 'password'):
+                    file_password = args.password
+                
                 # Add to keystore
                 key_id = keystore.add_key(
                     algorithm=pqc_algorithm,
                     public_key=public_key,
                     private_key=private_key,
                     use_master_password=True,
-                    description=f"Auto-generated {pqc_algorithm} key"
+                    description=f"Auto-generated {pqc_algorithm} key{' with dual encryption' if dual_encryption else ''}",
+                    dual_encryption=dual_encryption,
+                    file_password=file_password
                 )
                 
                 # Save keystore
@@ -403,6 +451,10 @@ def auto_generate_pqc_key(args, hash_config):
             
             # Store key ID in metadata
             hash_config["pqc_keystore_key_id"] = key_id
+            
+            # If we're using dual encryption, store that in metadata
+            if dual_encryption:
+                hash_config["dual_encryption"] = True
             
             # If requested, also store the private key in metadata for self-decryption
             if hasattr(args, 'pqc_store_key') and args.pqc_store_key:

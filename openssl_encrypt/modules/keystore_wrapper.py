@@ -27,6 +27,7 @@ def encrypt_file_with_keystore(
     keystore_file: Optional[str] = None,
     keystore_password: Optional[str] = None,
     key_id: Optional[str] = None,
+    dual_encryption: bool = False,
     **kwargs
 ) -> bool:
     """
@@ -44,6 +45,7 @@ def encrypt_file_with_keystore(
         keystore_file: Path to keystore file
         keystore_password: Password for keystore
         key_id: ID of the key to use from keystore
+        dual_encryption: Whether to use dual encryption (requires both keystore and file passwords)
         **kwargs: Additional arguments for encrypt_file
         
     Returns:
@@ -73,6 +75,12 @@ def encrypt_file_with_keystore(
         if not quiet:
             print(f"Storing key ID in metadata: {key_id}")
         hash_config_copy["pqc_keystore_key_id"] = key_id
+        
+        # If dual encryption is enabled, set the flag in the metadata
+        if dual_encryption:
+            if not quiet:
+                print("Setting dual encryption flag in metadata")
+            hash_config_copy["dual_encryption"] = True
     
     # Call the original encrypt_file
     result = original_encrypt_file(
@@ -90,11 +98,11 @@ def encrypt_file_with_keystore(
     if not result:
         return False
     
-    # Verify that the key ID is in the metadata
+    # Verify that the key ID and dual encryption flag are in the metadata
     if key_id is not None:
         # Open the encrypted file and check metadata
         with open(output_file, 'rb') as f:
-            content = f.read(3000)  # Read enough for the header
+            content = f.read(8192)  # Read enough for the header - increased for large keys
             
         # Find the colon separator
         colon_pos = content.find(b':')
@@ -105,6 +113,7 @@ def encrypt_file_with_keystore(
                 
                 try:
                     metadata = json.loads(metadata_json)
+                    need_update = False
                     
                     # Check if key ID is in metadata
                     if ('hash_config' in metadata and 
@@ -114,12 +123,27 @@ def encrypt_file_with_keystore(
                         if not quiet:
                             print("Key ID not found in metadata, adding it manually")
                         
-                        # Key ID is missing from metadata, add it and rewrite the file
+                        # Key ID is missing from metadata, add it
                         if 'hash_config' not in metadata:
                             metadata['hash_config'] = {}
                         
                         metadata['hash_config']['pqc_keystore_key_id'] = key_id
+                        need_update = True
+                    
+                    # Check if dual_encryption flag is missing
+                    if dual_encryption and ('hash_config' in metadata and 
+                                          'dual_encryption' not in metadata['hash_config']):
+                        if not quiet:
+                            print("Dual encryption flag missing from metadata, adding it")
                         
+                        if 'hash_config' not in metadata:
+                            metadata['hash_config'] = {}
+                        
+                        metadata['hash_config']['dual_encryption'] = True
+                        need_update = True
+                    
+                    # If we need to update the metadata, rewrite the file
+                    if need_update:
                         # Convert back to JSON and base64
                         new_metadata_json = json.dumps(metadata)
                         new_metadata_b64 = base64.b64encode(new_metadata_json.encode('utf-8'))
@@ -133,7 +157,10 @@ def encrypt_file_with_keystore(
                             f.write(full_content[colon_pos:])
                         
                         if not quiet:
-                            print("Updated metadata with key ID")
+                            if dual_encryption:
+                                print("Updated metadata with key ID and dual encryption flag")
+                            else:
+                                print("Updated metadata with key ID")
                 except json.JSONDecodeError:
                     if not quiet:
                         print("Warning: Could not parse metadata as JSON")
@@ -158,6 +185,7 @@ def decrypt_file_with_keystore(
     keystore_file: Optional[str] = None,
     keystore_password: Optional[str] = None,
     key_id: Optional[str] = None,
+    dual_encryption: bool = False,
     **kwargs
 ) -> bool:
     """
@@ -172,11 +200,37 @@ def decrypt_file_with_keystore(
         keystore_file: Path to keystore file
         keystore_password: Password for keystore
         key_id: ID of the key to use from keystore
+        dual_encryption: Whether this file uses dual encryption
         **kwargs: Additional arguments for decrypt_file
         
     Returns:
         bool: Success or failure
     """
+    # Check for dual encryption in metadata if not explicitly specified
+    if not dual_encryption:
+        # Check if this file uses dual encryption
+        try:
+            with open(input_file, 'rb') as f:
+                content = f.read(8192)  # Read enough for the header
+                
+            # Find the colon separator
+            colon_pos = content.find(b':')
+            if colon_pos > 0:
+                metadata_b64 = content[:colon_pos]
+                try:
+                    metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
+                    metadata = json.loads(metadata_json)
+                    
+                    # Check for dual encryption flag
+                    if 'hash_config' in metadata and 'dual_encryption' in metadata['hash_config']:
+                        dual_encryption = metadata['hash_config']['dual_encryption']
+                        if dual_encryption and not quiet:
+                            print("File uses dual encryption - requires both keystore and file passwords")
+                except Exception:
+                    pass  # Ignore parsing errors
+        except Exception:
+            pass  # Ignore file reading errors
+    
     # If key_id is not provided, try to extract it from metadata
     if key_id is None and keystore_file is not None:
         extracted_key_id = extract_key_id_from_metadata(input_file, not quiet)
@@ -200,10 +254,30 @@ def decrypt_file_with_keystore(
             
             keystore.load_keystore(keystore_password)
             
-            _, private_key = keystore.get_key(key_id)
+            # Determine if we need to pass the file password for dual encryption
+            file_password = None
+            if dual_encryption:
+                # For dual-encrypted keys, we need to pass the file password
+                if isinstance(password, bytes):
+                    # Convert bytes to string if needed
+                    try:
+                        file_password = password.decode('utf-8')
+                    except UnicodeDecodeError:
+                        # If we can't decode as UTF-8, use as bytes
+                        file_password = password
+                else:
+                    file_password = password
+                
+                if not quiet:
+                    print(f"Using file password for dual-encrypted key")
+            
+            # Get the key with or without file password for dual encryption
+            _, private_key = keystore.get_key(key_id, None, file_password)
             
             if not quiet:
                 print(f"Retrieved private key for key ID {key_id} from keystore")
+                if dual_encryption:
+                    print("Key successfully decrypted with both keystore and file passwords")
             
             pqc_private_key = private_key
         except Exception as e:

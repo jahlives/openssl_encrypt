@@ -2087,7 +2087,7 @@ def decrypt_file(
                     )
                     
                     # Use the derived private_key_key NOT the main key
-                    cipher = AESGCM(private_key_key)
+                    cipher = AESGCM(key)
                     try:
                         # Format: nonce (12 bytes) + encrypted_key
                         nonce = encrypted_private_key[:12]
