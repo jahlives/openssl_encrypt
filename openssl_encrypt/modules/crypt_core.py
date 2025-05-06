@@ -1746,7 +1746,6 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         'encrypted_hash': encrypted_hash,
         'algorithm': algorithm.value  # Add the encryption algorithm
     }
-    
     # Add PQC data if applicable
     if algorithm in [EncryptionAlgorithm.KYBER512_HYBRID, 
                     EncryptionAlgorithm.KYBER768_HYBRID, 
@@ -1762,23 +1761,14 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                 # Create a separate derived key that specifically depends on the provided password
                 # This way, even if the main encryption key has issues, the private key's encryption 
                 # will still be password dependent
-                
+
                 # Use a different salt for private key encryption
                 private_key_salt = secrets.token_bytes(16)
                 private_key_iterations = 100000  # Strong iteration count
-                
-                # Create a key derivation that directly depends on the password
-                private_key_key = hashlib.pbkdf2_hmac(
-                    'sha256', 
-                    password,  # Original password, not the derived key
-                    private_key_salt, 
-                    private_key_iterations,
-                    dklen=32  # Ensure we get exactly 32 bytes for AES-GCM
-                )
-                
-                
+
                 # Use AES-GCM for encryption
-                cipher = AESGCM(private_key_key)
+                cipher = AESGCM(hashlib.sha256(key).digest())
+
                 nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
                 encrypted_private_key = nonce + cipher.encrypt(nonce, pqc_keypair[1], None)
                 
@@ -2075,19 +2065,19 @@ def decrypt_file(
                 else:
                     # Decode the salt
                     private_key_salt = base64.b64decode(metadata['pqc_key_salt'])
-                    private_key_iterations = 100000  # Same as in encryption
-                    
-                    # Create the same key derivation as during encryption
-                    private_key_key = hashlib.pbkdf2_hmac(
-                        'sha256', 
-                        password,  # Original password, not the derived key
-                        private_key_salt, 
-                        private_key_iterations,
-                        dklen=32  # Ensure we get exactly 32 bytes for AES-GCM
-                    )
+                    # private_key_iterations = 100000  # Same as in encryption
+                    #
+                    # # Create the same key derivation as during encryption
+                    # private_key_key = hashlib.pbkdf2_hmac(
+                    #     'sha256',
+                    #     password,  # Original password, not the derived key
+                    #     private_key_salt,
+                    #     private_key_iterations,
+                    #     dklen=32  # Ensure we get exactly 32 bytes for AES-GCM
+                    # )
                     
                     # Use the derived private_key_key NOT the main key
-                    cipher = AESGCM(private_key_key)
+                    cipher = AESGCM(hashlib.sha256(key).digest())
                     try:
                         # Format: nonce (12 bytes) + encrypted_key
                         nonce = encrypted_private_key[:12]
