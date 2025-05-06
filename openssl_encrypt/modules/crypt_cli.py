@@ -2085,6 +2085,12 @@ def main():
                         # Determine key ID if not provided
                         key_id = getattr(args, 'key_id', None)
                         
+                        # Double-check: If no key ID provided or extracted from metadata,
+                        # print a warning and suggest user to provide key ID manually
+                        if key_id is None and not args.quiet:
+                            print("\nWarning: No key ID found in metadata and --key-id not provided.")
+                            print("If decryption fails, please specify the key ID with --key-id parameter.")
+                        
                         # Decrypt using keystore integration
                         success = decrypt_file_with_keystore(
                             args.input,
@@ -2216,6 +2222,9 @@ def main():
                     # Determine key ID if not provided
                     key_id = getattr(args, 'key_id', None)
                     
+                    # The keystore_wrapper.py will now handle cases with no key ID,
+                    # including trying the only key in the keystore
+                    
                     # Decrypt using keystore integration
                     success = decrypt_file_with_keystore(
                         args.input,
@@ -2336,6 +2345,9 @@ def main():
                     
                     # Determine key ID if not provided
                     key_id = getattr(args, 'key_id', None)
+                    
+                    # The keystore_wrapper.py will now handle cases with no key ID,
+                    # including trying the only key in the keystore
                     
                     # Decrypt using keystore integration
                     decrypted = decrypt_file_with_keystore(

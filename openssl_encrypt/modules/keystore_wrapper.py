@@ -239,6 +239,37 @@ def decrypt_file_with_keystore(
             if not quiet:
                 print(f"Using key ID from metadata: {extracted_key_id}")
             key_id = extracted_key_id
+        elif not quiet:
+            # Key ID wasn't found in metadata
+            if key_id:
+                print(f"No key ID found in metadata, using specified key ID: {key_id}")
+            else:
+                # Try to load keystore and check if there's only one key
+                try:
+                    from .keystore_cli import PQCKeystore
+                    keystore = PQCKeystore(keystore_file)
+                    
+                    # If no keystore password provided, prompt for it
+                    if keystore_password is None:
+                        keystore_password = getpass.getpass("Enter keystore password: ")
+                    
+                    keystore.load_keystore(keystore_password)
+                    keys = keystore.list_keys()
+                    
+                    if len(keys) == 1:
+                        key_id = keys[0]["key_id"]
+                        print(f"No key ID found in metadata, but only one key in keystore. Using key ID: {key_id}")
+                    elif len(keys) > 1:
+                        print(f"No key ID found in metadata. Multiple keys in keystore ({len(keys)}). Please specify using --key-id parameter.")
+                        # Can optionally list available keys here
+                        if not quiet:
+                            print("Available keys:")
+                            for k in keys:
+                                print(f"  - {k['key_id']} ({k.get('algorithm', 'unknown')})")
+                    else:
+                        print("No key ID found in metadata and no keys in keystore. Please specify using --key-id parameter.")
+                except Exception as e:
+                    print(f"No key ID found in metadata. Please specify using --key-id parameter. (Error loading keystore: {e})")
     
     # If we have a keystore and key ID, get the private key
     if key_id is not None and keystore_file is not None:
