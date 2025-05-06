@@ -81,6 +81,22 @@ def encrypt_file_with_keystore(
             if not quiet:
                 print("Setting dual encryption flag in metadata")
             hash_config_copy["dual_encryption"] = True
+            
+            # Add a password verification hash for later validation
+            import hashlib
+            # Generate a random salt for verification
+            pw_verify_salt = os.urandom(16)
+            # Create a hash of the password with the salt
+            if isinstance(password, bytes):
+                pw_verify_bytes = password
+            else:
+                pw_verify_bytes = password.encode('utf-8')
+            pw_hash = hashlib.pbkdf2_hmac('sha256', pw_verify_bytes, pw_verify_salt, 10000)
+            # Store in metadata (encoded as base64)
+            hash_config_copy["pqc_dual_encrypt_verify_salt"] = base64.b64encode(pw_verify_salt).decode('utf-8')
+            hash_config_copy["pqc_dual_encrypt_verify"] = base64.b64encode(pw_hash).decode('utf-8')
+            if not quiet:
+                print("Adding password verification hash to metadata")
     
     # Call the original encrypt_file
     result = original_encrypt_file(
@@ -231,6 +247,53 @@ def decrypt_file_with_keystore(
         except Exception:
             pass  # Ignore file reading errors
     
+    # If dual encryption is enabled, verify the file password using the hash in metadata
+    if dual_encryption:
+        try:
+            # Read the metadata again (or use what we already read)
+            if not 'metadata' in locals() or metadata is None:
+                with open(input_file, 'rb') as f:
+                    content = f.read(8192)  # Read enough for the header
+                
+                # Find the colon separator
+                colon_pos = content.find(b':')
+                if colon_pos > 0:
+                    metadata_b64 = content[:colon_pos]
+                    metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
+                    metadata = json.loads(metadata_json)
+            
+            # Check for password verification fields
+            if ('hash_config' in metadata and 
+                'pqc_dual_encrypt_verify' in metadata['hash_config'] and
+                'pqc_dual_encrypt_verify_salt' in metadata['hash_config']):
+                
+                # Get stored values
+                verify_hash = base64.b64decode(metadata['hash_config']['pqc_dual_encrypt_verify'])
+                verify_salt = base64.b64decode(metadata['hash_config']['pqc_dual_encrypt_verify_salt'])
+                
+                # Calculate hash with current password
+                import hashlib
+                if isinstance(password, bytes):
+                    pw_verify_bytes = password
+                else:
+                    pw_verify_bytes = password.encode('utf-8')
+                current_pw_hash = hashlib.pbkdf2_hmac('sha256', pw_verify_bytes, verify_salt, 10000)
+                
+                # Verify hash matches
+                if current_pw_hash != verify_hash:
+                    if not quiet:
+                        print("Password verification failed - incorrect file password")
+                    raise ValueError("Invalid file password for dual-encrypted file")
+                elif not quiet:
+                    print("File password verification successful")
+                    
+        except ValueError:
+            # Re-raise these as they're expected for validation failures
+            raise
+        except Exception as e:
+            if not quiet:
+                print(f"Warning: Error in password verification: {e}")
+    
     # If key_id is not provided, try to extract it from metadata
     if key_id is None and keystore_file is not None:
         extracted_key_id = extract_key_id_from_metadata(input_file, not quiet)
@@ -348,12 +411,17 @@ def decrypt_file_with_keystore(
     except Exception as e:
         error_msg = str(e).lower()
         # Check if this might be a password error from dual encryption
-        if dual_encryption and ("invalid input" in error_msg or 
-                               "invalid parameter" in error_msg or
-                               "decryption failed" in error_msg):
+        if dual_encryption and (
+            "invalid input" in error_msg or 
+            "invalid parameter" in error_msg or
+            "decryption failed" in error_msg or
+            "invalid file password" in error_msg or
+            "mac" in error_msg or
+            "verification" in error_msg
+        ):
             if not quiet:
                 print(f"Decryption failed - possible invalid file password: {e}")
-            raise ValueError(f"Invalid file password for dual-encrypted key: {e}")
+            raise ValueError(f"Invalid file password for dual-encrypted file: {e}")
         else:
             # Re-raise the original error
             raise
