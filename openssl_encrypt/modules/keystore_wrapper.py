@@ -270,9 +270,28 @@ def decrypt_file_with_keystore(
                 
                 if not quiet:
                     print(f"Using file password for dual-encrypted key")
+                    
+                # Verify the file password format
+                if not file_password:
+                    raise ValueError("File password is required for dual-encrypted files")
             
             # Get the key with or without file password for dual encryption
-            _, private_key = keystore.get_key(key_id, None, file_password)
+            try:
+                _, private_key = keystore.get_key(key_id, None, file_password)
+            except Exception as e:
+                error_msg = str(e).lower()
+                # Check for various password/decryption error messages
+                if dual_encryption and ("incorrect file password" in error_msg or 
+                                       "invalid" in error_msg or 
+                                       "failed to handle dual encryption" in error_msg or
+                                       "could not decrypt" in error_msg):
+                    # This is an expected error for incorrect file passwords with dual encryption
+                    if not quiet:
+                        print(f"Dual encryption verification failed: {e}")
+                    raise ValueError(f"Invalid file password for dual-encrypted key: {e}")
+                else:
+                    # Pass through other errors
+                    raise
             
             if not quiet:
                 print(f"Retrieved private key for key ID {key_id} from keystore")
@@ -284,12 +303,26 @@ def decrypt_file_with_keystore(
             if not quiet:
                 print(f"Error retrieving key from keystore: {e}")
     
-    # Call the original decrypt_file
-    return original_decrypt_file(
-        input_file,
-        output_file,
-        password,
-        quiet=quiet,
-        pqc_private_key=pqc_private_key,
-        **kwargs
-    )
+    # Call the original decrypt_file with improved error handling
+    try:
+        result = original_decrypt_file(
+            input_file,
+            output_file,
+            password,
+            quiet=quiet,
+            pqc_private_key=pqc_private_key,
+            **kwargs
+        )
+        return result
+    except Exception as e:
+        error_msg = str(e).lower()
+        # Check if this might be a password error from dual encryption
+        if dual_encryption and ("invalid input" in error_msg or 
+                               "invalid parameter" in error_msg or
+                               "decryption failed" in error_msg):
+            if not quiet:
+                print(f"Decryption failed - possible invalid file password: {e}")
+            raise ValueError(f"Invalid file password for dual-encrypted key: {e}")
+        else:
+            # Re-raise the original error
+            raise
