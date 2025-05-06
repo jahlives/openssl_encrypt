@@ -1694,7 +1694,8 @@ def main():
                             dual_encryption=getattr(args, 'dual_encrypt_key', False),
                             progress=args.progress,
                             verbose=args.verbose,
-                            pqc_store_private_key=args.pqc_store_key
+                            pqc_store_private_key=args.pqc_store_key,
+                            pqc_dual_encryption=getattr(args, 'pqc_dual_encrypt_key', False)
                         )
                     else:
                         # Use standard encryption

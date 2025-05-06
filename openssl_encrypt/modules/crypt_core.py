@@ -1765,22 +1765,14 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                 
                 # Use a different salt for private key encryption
                 private_key_salt = secrets.token_bytes(16)
-                private_key_iterations = 100000  # Strong iteration count
-                
-                # Create a key derivation that directly depends on the password
-                private_key_key = hashlib.pbkdf2_hmac(
-                    'sha256', 
-                    password,  # Original password, not the derived key
-                    private_key_salt, 
-                    private_key_iterations,
-                    dklen=32  # Ensure we get exactly 32 bytes for AES-GCM
-                )
-                
-                
-                # Use AES-GCM for encryption
-                cipher = AESGCM(private_key_key)
+                # Decode the salt
+                private_key_salt = base64.b64decode(metadata['pqc_key_salt'])
+                # START DO NOT CHANGE
+                # Use the derived private_key_key NOT the main key
+                cipher = AESGCM(key)
                 nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
                 encrypted_private_key = nonce + cipher.encrypt(nonce, pqc_keypair[1], None)
+                # END DO NOT CHANGE
                 
                 # Store the salt in metadata for decryption
                 metadata['pqc_key_salt'] = base64.b64encode(private_key_salt).decode('utf-8')
@@ -1788,6 +1780,19 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                 
                 metadata['pqc_private_key'] = base64.b64encode(encrypted_private_key).decode('utf-8')
                 metadata['pqc_key_encrypted'] = True  # Mark that the key is encrypted
+            elif pqc_dual_encrypt_key and len(pqc_keypair) > 1:
+                # Use a different salt for private key encryption
+                private_key_salt = secrets.token_bytes(16)
+                # Decode the salt
+                private_key_salt = base64.b64decode(metadata['pqc_key_salt'])
+                # START DO NOT CHANGE
+                # Use the derived private_key_key NOT the main key
+                cipher = AESGCM(key)
+                nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
+                encrypted_private_key = nonce + cipher.encrypt(nonce, pqc_keypair[1], None)
+                # END DO NOT CHANGE
+                metadata['pqc_dual_encrypt_key'] = True
+
             elif not quiet:
                 print("Post-quantum private key NOT stored - you'll need the key file for decryption")
         elif 'private_key' in locals():
