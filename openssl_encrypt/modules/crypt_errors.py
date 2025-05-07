@@ -29,6 +29,7 @@ class ErrorCategory(Enum):
     PLATFORM = auto()        # Platform-specific errors
     PERMISSION = auto()      # Permission/access errors
     CONFIGURATION = auto()   # Configuration errors
+    KEYSTORE = auto()        # Keystore operations errors
 
 
 # Standard error messages by category - no sensitive details included
@@ -42,7 +43,8 @@ STANDARD_ERROR_MESSAGES = {
     ErrorCategory.INTERNAL: "Internal error occurred",
     ErrorCategory.PLATFORM: "Platform-specific operation failed",
     ErrorCategory.PERMISSION: "Operation not permitted",
-    ErrorCategory.CONFIGURATION: "Invalid configuration"
+    ErrorCategory.CONFIGURATION: "Invalid configuration",
+    ErrorCategory.KEYSTORE: "Keystore operation failed"
 }
 
 
@@ -57,7 +59,8 @@ DEBUG_ERROR_MESSAGES = {
     ErrorCategory.INTERNAL: "Internal error occurred: {details}",
     ErrorCategory.PLATFORM: "Platform-specific operation failed: {details}",
     ErrorCategory.PERMISSION: "Operation not permitted: {details}",
-    ErrorCategory.CONFIGURATION: "Invalid configuration: {details}"
+    ErrorCategory.CONFIGURATION: "Invalid configuration: {details}",
+    ErrorCategory.KEYSTORE: "Keystore operation failed: {details}"
 }
 
 
@@ -278,6 +281,8 @@ def secure_error_handler(func=None, error_category=None):
                     raise PermissionError(details=details, original_exception=e)
                 elif error_category == ErrorCategory.CONFIGURATION:
                     raise ConfigurationError(details=details, original_exception=e)
+                elif error_category == ErrorCategory.KEYSTORE:
+                    raise KeystoreError(details=details, original_exception=e)
                 else:
                     # Default to internal error if category not specified
                     raise InternalError(details=details, original_exception=e)
@@ -308,6 +313,42 @@ def secure_key_derivation_error_handler(f):
 def secure_authentication_error_handler(f):
     """Specialized error handler for authentication operations."""
     return secure_error_handler(f, ErrorCategory.AUTHENTICATION)
+
+
+# Keystore Exceptions
+class KeystoreError(SecureError):
+    """Base exception for keystore operations."""
+    def __init__(self, details=None, original_exception=None):
+        super().__init__(ErrorCategory.KEYSTORE, details, original_exception)
+
+
+class KeystorePasswordError(KeystoreError):
+    """Exception for keystore password errors."""
+    def __init__(self, details=None, original_exception=None):
+        super().__init__(details, original_exception)
+
+
+class KeyNotFoundError(KeystoreError):
+    """Exception for key not found in keystore."""
+    def __init__(self, details=None, original_exception=None):
+        super().__init__(details, original_exception)
+
+
+class KeystoreCorruptedError(KeystoreError):
+    """Exception for corrupted keystore files."""
+    def __init__(self, details=None, original_exception=None):
+        super().__init__(details, original_exception)
+
+
+class KeystoreVersionError(KeystoreError):
+    """Exception for unsupported keystore versions."""
+    def __init__(self, details=None, original_exception=None):
+        super().__init__(details, original_exception)
+
+
+def secure_keystore_error_handler(f):
+    """Specialized error handler for keystore operations."""
+    return secure_error_handler(f, ErrorCategory.KEYSTORE)
 
 
 def constant_time_compare(a, b):
