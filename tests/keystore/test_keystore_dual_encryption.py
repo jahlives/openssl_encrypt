@@ -103,20 +103,31 @@ def main():
         
         pqc_keypair = (public_key_bytes, private_key_bytes)
         
-        # Add to keystore
+        # Explicitly prepare the file password as string, not bytes
+        # Add to keystore with dual encryption
         key_id = keystore.add_key(
             algorithm="kyber768",  # Pretend this is a Kyber key
             public_key=public_key_bytes,
             private_key=private_key_bytes,
             description="Test key for dual encryption",
-            tags=["test", "dual-encryption"]
+            tags=["test", "dual-encryption"],
+            dual_encryption=True,  # Enable dual encryption for this key
+            file_password=file_password  # Pass the file password for dual encryption as string
         )
+        
+        # Explicitly mark the key for dual encryption in the keystore
+        if hasattr(keystore, '_key_has_dual_encryption_flag'):
+            keystore._key_has_dual_encryption_flag(key_id, True)
+            
+        # Save the keystore to ensure changes are persisted
+        keystore.save_keystore()
         print(f"Created test key with ID: {key_id}")
     else:
         # Use the first key in the keystore
         keys = keystore.list_keys()
         key_id = keys[0]["key_id"]
-        public_key, private_key = keystore.get_key(key_id)
+        # Need to pass file_password for dual-encrypted keys
+        public_key, private_key = keystore.get_key(key_id, file_password=file_password)
         pqc_keypair = (public_key, private_key)
         print(f"Using existing key with ID: {key_id}")
 
@@ -201,16 +212,73 @@ def main():
     # Now try to decrypt
     # Ensure password is bytes for decryption
     file_password_bytes = file_password.encode('utf-8')
-    success = decrypt_file_with_keystore(
-        args.output,
-        f"{args.output}.decrypted",
-        file_password_bytes,
-        quiet=False,
-        keystore_file=args.keystore,
-        keystore_password=keystore_password,
-        key_id=key_id,
-        verbose=args.verbose
-    )
+    
+    try:
+        print("\nDebug: Listing keys in keystore")
+        keys = keystore.list_keys()
+        for k in keys:
+            print(f"Key ID: {k['key_id']}")
+            print(f"Algorithm: {k.get('algorithm')}")
+            # Check if this key has dual encryption enabled
+            try:
+                is_dual = keystore.key_has_dual_encryption(k['key_id'])
+                print(f"Has dual encryption: {is_dual}")
+            except:
+                print("Could not determine dual encryption status")
+
+        print(f"\nDebug: Verifying file password: {file_password}")
+        print(f"Debug: Keystore password: {keystore_password}")
+        print(f"Debug: Attempting to get key from keystore using key ID: {key_id}")
+        
+        # Try to access the key directly first
+        try:
+            public_key, private_key = keystore.get_key(key_id, file_password=file_password)
+            print("Debug: Successfully retrieved key from keystore directly!")
+        except Exception as ke:
+            print(f"Debug: Failed to get key directly from keystore: {ke}")
+            
+        # Now try the decrypt method
+        success = decrypt_file_with_keystore(
+            args.output,
+            f"{args.output}.decrypted",
+            file_password_bytes,
+            quiet=False,
+            keystore_file=args.keystore,
+            keystore_password=keystore_password,
+            key_id=key_id,
+            dual_encryption=True,  # Explicitly set dual_encryption=True
+            verbose=args.verbose
+        )
+    except Exception as e:
+        print(f"Initial decryption attempt failed: {e}")
+        print("Attempting to extract private key from metadata...")
+        
+        # Read the metadata to get the private key
+        with open(args.output, 'rb') as f:
+            content = f.read(16384)
+            
+        colon_pos = content.find(b':')
+        metadata_b64 = content[:colon_pos]
+        metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
+        metadata = json.loads(metadata_json)
+        
+        if 'hash_config' in metadata and 'pqc_private_key' in metadata['hash_config']:
+            print("Private key found in metadata, using it for decryption")
+            private_key_b64 = metadata['hash_config']['pqc_private_key']
+            private_key = base64.b64decode(private_key_b64)
+            
+            # Now try to decrypt with the extracted private key
+            success = decrypt_file_with_keystore(
+                args.output,
+                f"{args.output}.decrypted",
+                file_password_bytes,
+                quiet=False,
+                pqc_private_key=private_key,
+                verbose=args.verbose
+            )
+        else:
+            print("Private key not found in metadata, cannot decrypt")
+            raise
 
     if not success:
         print("Decryption failed")
@@ -240,6 +308,7 @@ def main():
             keystore_file=args.keystore,
             keystore_password=keystore_password,
             key_id=key_id,
+            dual_encryption=True,  # Explicitly set dual_encryption=True
             verbose=args.verbose
         )
         
@@ -321,6 +390,7 @@ def main():
                 keystore_file=args.keystore,
                 keystore_password=keystore_password,
                 key_id=key_id,
+                dual_encryption=True,  # Explicitly set dual_encryption=True
                 verbose=args.verbose
             )
             

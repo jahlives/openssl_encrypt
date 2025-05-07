@@ -97,7 +97,7 @@ The implementation spans several key components:
 
 We've created several test scripts to verify the dual encryption implementation:
 
-### 1. Basic Test (`test_dual_encryption_fix.py`)
+### 1. Basic Test (`tests/dual_encryption/test_dual_encryption_fix.py`)
 - Creates a keystore and adds a key with dual encryption
 - Encrypts a file using the dual encryption feature
 - Verifies that the key ID and dual_encryption flag are properly stored in metadata
@@ -110,12 +110,12 @@ We've created several test scripts to verify the dual encryption implementation:
 - Verifies proper error handling for incorrect passwords
 - Checks metadata flag storage and recognition
 
-### 3. CLI Test (`test_dual_encryption_cli.py`)
+### 3. CLI Test (`tests/dual_encryption/test_dual_encryption_cli.py`)
 - Tests dual encryption through the command-line interface
 - Ensures CLI arguments properly enable dual encryption
 - Verifies CLI error handling for incorrect passwords
 
-### 4. Comprehensive Test (`test_dual_encryption_comprehensive.py`)
+### 4. Comprehensive Test (`tests/dual_encryption/test_dual_encryption_comprehensive.py`)
 - Performs end-to-end testing of both API and CLI interfaces
 - Verifies metadata handling across different interfaces
 - Tests all error cases and edge conditions
@@ -200,6 +200,17 @@ The dual encryption flag is automatically detected from the file's metadata duri
 
 7. **Key ID Verification:** The key ID is verified during decryption to ensure the correct key is being used.
 
+8. **Private Key Removal:** Private keys are completely removed from metadata before saving encrypted files:
+   - Implementation creates a completely new metadata object rather than modifying the existing one
+   - Only essential fields are copied to the new metadata object
+   - A comprehensive list of fields to exclude is maintained to ensure no sensitive data is inadvertently included
+   - This prevents private key exposure through metadata examination
+
+9. **Dual Encryption Flag Consistency:** The implementation checks for multiple flag variants:
+   - Both `dual_encryption` and `pqc_dual_encrypt_key` flags are recognized
+   - This ensures backward compatibility with various flag naming conventions
+   - The system consistently sets a standardized flag regardless of input flag name
+
 ## Improved Error Handling
 
 The implementation includes robust error handling for dual encryption:
@@ -218,6 +229,22 @@ The implementation includes robust error handling for dual encryption:
    - Informs users when a file requires both passwords
    - Gives actionable error messages when decryption fails
 
+4. **Missing Keystore Detection:**
+   - Improved error checking for missing or inaccessible keystore files
+   - Clear error messages when a keystore is missing but required
+   - Prevents silent failure when keystore cannot be accessed
+
+5. **File Password Validation:**
+   - Strict validation of file password format (string or bytes)
+   - Proper encoding conversion between string and bytes formats
+   - Size and format validation before attempting decryption
+   - Early detection of invalid password formats
+
+6. **Verbose Mode Support:**
+   - Added proper handling of verbose parameter through kwargs
+   - Debug information is provided when verbose mode is enabled
+   - Helps troubleshoot encryption/decryption issues in development
+
 ## Backward Compatibility
 
 The implementation maintains backward compatibility:
@@ -226,8 +253,50 @@ The implementation maintains backward compatibility:
 - The keystore format is compatible with existing keystores
 - Metadata format remains backward compatible
 
+## Recent Implementation Fixes
+
+The following major improvements have been made to the dual encryption implementation:
+
+1. **Private Key Metadata Cleaning:**
+   - Fixed the metadata cleaning process in `keystore_wrapper.py`
+   - Implemented a complete metadata reconstruction approach rather than selective deletion
+   - Ensures no sensitive key material remains in the metadata after encryption
+   - Created a comprehensive list of fields to exclude from clean metadata
+
+2. **Dual Encryption Flag Handling:**
+   - Unified dual encryption flag detection by checking for multiple flag names
+   - In `keystore_cli.py`, added support for both `dual_encryption` and `from_dual_encrypted_file` flags
+   - Standardized flag setting to ensure consistent behavior regardless of input flag name
+   - Fixed flag checking during key retrieval operations
+
+3. **Keystore Access Validation:**
+   - Added explicit checks for keystore availability during decryption
+   - Fixed error handling in `decrypt_file_with_keystore` to properly report missing keystores
+   - Implemented proper error propagation from keystore operations to the calling code
+   - Added detailed error messages for keystore access issues
+
+4. **File Password Handling:**
+   - Improved validation of file password format and type
+   - Added proper conversion between string and bytes formats for passwords
+   - Fixed encoding issues with Unicode passwords
+   - Added robust error handling for password format issues
+
+5. **Verbose Mode Support:**
+   - Fixed the verbose parameter handling in `keystore_wrapper.py`
+   - Implemented proper kwargs access with default fallback values
+   - Added informative debug output when verbose mode is enabled
+   - Improved error reporting for debugging purposes
+
+6. **Test Implementation:**
+   - Updated `tests/keystore/test_keystore_dual_encryption.py` to properly test dual encryption features
+   - Added comprehensive tests for error conditions and edge cases
+   - Fixed test cases to properly create and use dual-encrypted keys
+   - Added validation of metadata cleaning during tests
+
 ## Conclusion
 
 The dual encryption implementation successfully enhances the security of the PQC keystore by requiring both the keystore master password and the individual file password for decryption. This defense-in-depth approach significantly improves the security posture of the system against various types of attacks.
 
 By requiring both passwords to be correct, the implementation ensures that even if the keystore and its master password are compromised, an attacker would still need to know the specific file password used for each encrypted file. This provides a substantial security improvement for sensitive data protection.
+
+The recent fixes have addressed key issues in the implementation, making it more robust, secure, and user-friendly. The improved error handling, metadata cleaning, and flag consistency ensure that the system behaves predictably and securely in all usage scenarios.

@@ -30,6 +30,7 @@ import json
 import yaml
 import pytest
 import secrets
+import uuid
 
 
 
@@ -51,8 +52,12 @@ from modules.crypt_errors import (
     KeyDerivationError, InternalError, secure_error_handler, 
     secure_encrypt_error_handler, secure_decrypt_error_handler,
     constant_time_pkcs7_unpad, constant_time_compare,
-    secure_key_derivation_error_handler, ErrorCategory
+    secure_key_derivation_error_handler, ErrorCategory,
+    KeystoreError, KeystorePasswordError, KeyNotFoundError, 
+    KeystoreCorruptedError, KeystoreVersionError
 )
+from modules.keystore_cli import PQCKeystore, KeystoreSecurityLevel
+from modules.pqc import PQCipher, PQCAlgorithm, check_pqc_support, LIBOQS_AVAILABLE
 
 
 
@@ -2718,6 +2723,538 @@ class TestCamelliaImplementation(unittest.TestCase):
             encrypted = self.cipher.encrypt(self.test_nonce, data)
             decrypted = self.cipher.decrypt(self.test_nonce, encrypted)
             self.assertEqual(data, decrypted)
+
+
+@unittest.skipIf(not LIBOQS_AVAILABLE, "liboqs-python not available, skipping keystore tests")
+class TestKeystoreOperations(unittest.TestCase):
+    """Test cases for PQC keystore operations."""
+
+    def setUp(self):
+        """Set up test environment."""
+        # Create a temporary directory for test files
+        self.test_dir = tempfile.mkdtemp()
+        
+        # Create paths for test keystores
+        self.keystore_path = os.path.join(self.test_dir, "test_keystore.pqc")
+        self.second_keystore_path = os.path.join(self.test_dir, "test_keystore2.pqc")
+        
+        # Test passwords
+        self.keystore_password = "TestKeystorePassword123!"
+        self.new_password = "NewKeystorePassword456!"
+        self.file_password = "TestFilePassword789!"
+        
+        # Get available PQC algorithms
+        _, _, self.supported_algorithms = check_pqc_support()
+        
+        # Find a suitable test algorithm
+        self.test_algorithm = self._find_test_algorithm()
+        
+        # Skip the whole suite if no suitable algorithm is available
+        if not self.test_algorithm:
+            self.skipTest("No suitable post-quantum algorithm available")
+            
+    def tearDown(self):
+        """Clean up after tests."""
+        # Remove all files in the temporary directory
+        for file in os.listdir(self.test_dir):
+            file_path = os.path.join(self.test_dir, file)
+            try:
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+            except Exception:
+                pass
+                
+        # Remove the directory itself
+        try:
+            os.rmdir(self.test_dir)
+        except Exception:
+            pass
+            
+    def _find_test_algorithm(self):
+        """Find a suitable Kyber/ML-KEM algorithm for testing."""
+        # Try to find a good test algorithm
+        for algo_name in ['Kyber768', 'ML-KEM-768', 'Kyber-768', 
+                         'Kyber512', 'ML-KEM-512', 'Kyber-512',
+                         'Kyber1024', 'ML-KEM-1024', 'Kyber-1024']:
+            # Direct match
+            if algo_name in self.supported_algorithms:
+                return algo_name
+                
+            # Try case-insensitive match
+            for supported in self.supported_algorithms:
+                if supported.lower() == algo_name.lower():
+                    return supported
+                
+            # Try with/without hyphens
+            normalized_name = algo_name.lower().replace('-', '').replace('_', '')
+            for supported in self.supported_algorithms:
+                normalized_supported = supported.lower().replace('-', '').replace('_', '')
+                if normalized_supported == normalized_name:
+                    return supported
+        
+        # If no specific match found, return the first KEM algorithm if any
+        for supported in self.supported_algorithms:
+            if 'kyber' in supported.lower() or 'ml-kem' in supported.lower():
+                return supported
+                
+        # Last resort: just return the first algorithm
+        return self.supported_algorithms[0] if self.supported_algorithms else None
+            
+    def test_create_keystore(self):
+        """Test creating a new keystore."""
+        # Create a new keystore
+        keystore = PQCKeystore(self.keystore_path)
+        keystore.create_keystore(self.keystore_password)
+        
+        # Verify keystore file exists
+        self.assertTrue(os.path.exists(self.keystore_path))
+        
+        # Verify keystore can be loaded
+        keystore2 = PQCKeystore(self.keystore_path)
+        keystore2.load_keystore(self.keystore_password)
+        
+        # Verify keystore data
+        self.assertIn("version", keystore2.keystore_data)
+        self.assertEqual(keystore2.keystore_data["version"], PQCKeystore.KEYSTORE_VERSION)
+        self.assertIn("keys", keystore2.keystore_data)
+        self.assertEqual(len(keystore2.keystore_data["keys"]), 0)
+        
+    def test_create_keystore_with_different_security_levels(self):
+        """Test creating keystores with different security levels."""
+        # Test creating with standard security
+        keystore1 = PQCKeystore(self.keystore_path)
+        keystore1.create_keystore(self.keystore_password, KeystoreSecurityLevel.STANDARD)
+        self.assertEqual(keystore1.keystore_data["security_level"], "standard")
+        
+        # Test creating with high security
+        keystore2 = PQCKeystore(self.second_keystore_path)
+        keystore2.create_keystore(self.keystore_password, KeystoreSecurityLevel.HIGH)
+        self.assertEqual(keystore2.keystore_data["security_level"], "high")
+        
+    def test_create_keystore_already_exists(self):
+        """Test creating a keystore that already exists raises an error."""
+        # Create a new keystore
+        keystore = PQCKeystore(self.keystore_path)
+        keystore.create_keystore(self.keystore_password)
+        
+        # Verify keystore file exists
+        self.assertTrue(os.path.exists(self.keystore_path))
+        
+        # Try to create the same keystore again
+        keystore2 = PQCKeystore(self.keystore_path)
+        with self.assertRaises(KeystoreError):
+            keystore2.create_keystore(self.keystore_password)
+            
+    def test_load_keystore_nonexistent(self):
+        """Test loading a non-existent keystore raises an error."""
+        keystore = PQCKeystore(self.keystore_path)
+        with self.assertRaises(FileNotFoundError):
+            keystore.load_keystore(self.keystore_password)
+            
+    def test_load_keystore_wrong_password(self):
+        """Test loading a keystore with the wrong password raises an error."""
+        # Create a new keystore
+        keystore = PQCKeystore(self.keystore_path)
+        keystore.create_keystore(self.keystore_password)
+        
+        # Try to load with wrong password
+        keystore2 = PQCKeystore(self.keystore_path)
+        with self.assertRaises(KeystorePasswordError):
+            keystore2.load_keystore("WrongPassword123!")
+            
+    def test_add_and_get_key(self):
+        """Test adding a key to the keystore and retrieving it."""
+        # Create a new keystore
+        keystore = PQCKeystore(self.keystore_path)
+        keystore.create_keystore(self.keystore_password)
+        
+        # Generate key pair
+        cipher = PQCipher(self.test_algorithm)
+        public_key, private_key = cipher.generate_keypair()
+        
+        # Add key to keystore
+        key_id = keystore.add_key(
+            algorithm=self.test_algorithm,
+            public_key=public_key,
+            private_key=private_key,
+            description="Test key",
+            tags=["test", "unit-test"]
+        )
+        
+        # Verify key ID is UUID format
+        self.assertIsNotNone(key_id)
+        try:
+            uuid_obj = uuid.UUID(key_id)
+            self.assertEqual(str(uuid_obj), key_id)
+        except ValueError:
+            self.fail("Key ID is not a valid UUID")
+            
+        # Get key
+        retrieved_public_key, retrieved_private_key = keystore.get_key(key_id)
+        
+        # Verify keys match
+        self.assertEqual(public_key, retrieved_public_key)
+        self.assertEqual(private_key, retrieved_private_key)
+        
+        # Verify key is in the keystore data
+        self.assertIn(key_id, keystore.keystore_data["keys"])
+        key_data = keystore.keystore_data["keys"][key_id]
+        self.assertEqual(key_data["algorithm"], self.test_algorithm)
+        self.assertEqual(key_data["description"], "Test key")
+        self.assertEqual(key_data["tags"], ["test", "unit-test"])
+        
+    def test_add_key_with_key_password(self):
+        """Test adding a key with a key-specific password."""
+        # Create a new keystore
+        keystore = PQCKeystore(self.keystore_path)
+        keystore.create_keystore(self.keystore_password)
+        
+        # Generate key pair
+        cipher = PQCipher(self.test_algorithm)
+        public_key, private_key = cipher.generate_keypair()
+        
+        # Add key to keystore with key-specific password
+        key_password = "KeySpecificPassword123!"
+        key_id = keystore.add_key(
+            algorithm=self.test_algorithm,
+            public_key=public_key,
+            private_key=private_key,
+            description="Test key with password",
+            use_master_password=False,
+            key_password=key_password
+        )
+        
+        # Get key with key-specific password
+        retrieved_public_key, retrieved_private_key = keystore.get_key(
+            key_id, key_password=key_password
+        )
+        
+        # Verify keys match
+        self.assertEqual(public_key, retrieved_public_key)
+        self.assertEqual(private_key, retrieved_private_key)
+        
+        # Get key data and verify use_master_password is False
+        key_data = keystore.keystore_data["keys"][key_id]
+        self.assertFalse(key_data.get("use_master_password", True))
+            
+    def test_remove_key(self):
+        """Test removing a key from the keystore."""
+        # Create a new keystore
+        keystore = PQCKeystore(self.keystore_path)
+        keystore.create_keystore(self.keystore_password)
+        
+        # Generate key pair
+        cipher = PQCipher(self.test_algorithm)
+        public_key, private_key = cipher.generate_keypair()
+        
+        # Add key to keystore
+        key_id = keystore.add_key(
+            algorithm=self.test_algorithm,
+            public_key=public_key,
+            private_key=private_key,
+            description="Test key to remove"
+        )
+        
+        # Verify key is in keystore
+        self.assertIn(key_id, keystore.keystore_data["keys"])
+        
+        # Remove key
+        result = keystore.remove_key(key_id)
+        self.assertTrue(result)
+        
+        # Verify key is no longer in keystore
+        self.assertNotIn(key_id, keystore.keystore_data["keys"])
+        
+        # Try to get the key - should fail
+        with self.assertRaises(KeyNotFoundError):
+            keystore.get_key(key_id)
+            
+        # Try to remove a non-existent key
+        result = keystore.remove_key("nonexistent-key-id")
+        self.assertFalse(result)
+        
+    def test_change_master_password(self):
+        """Test changing the master password of the keystore."""
+        # Create a new keystore
+        keystore = PQCKeystore(self.keystore_path)
+        keystore.create_keystore(self.keystore_password)
+        
+        # Generate key pair
+        cipher = PQCipher(self.test_algorithm)
+        public_key, private_key = cipher.generate_keypair()
+        
+        # Add key to keystore
+        key_id = keystore.add_key(
+            algorithm=self.test_algorithm,
+            public_key=public_key,
+            private_key=private_key,
+            description="Test key"
+        )
+        
+        # Make sure to save keystore explicitly
+        keystore.save_keystore()
+        
+        # Change master password
+        keystore.change_master_password(self.keystore_password, self.new_password)
+        
+        # Try to load keystore with old password - should fail
+        keystore2 = PQCKeystore(self.keystore_path)
+        with self.assertRaises(KeystorePasswordError):
+            keystore2.load_keystore(self.keystore_password)
+            
+        # Load keystore with new password
+        keystore3 = PQCKeystore(self.keystore_path)
+        keystore3.load_keystore(self.new_password)
+        
+        # Check if keystore has keys
+        self.assertIn("keys", keystore3.keystore_data)
+        self.assertGreater(len(keystore3.keystore_data["keys"]), 0)
+        
+        # Verify key is accessible in this keystore
+        # We can still use the key_id since it should be the same
+        self.assertIn(key_id, keystore3.keystore_data["keys"])
+        
+        # Retrieve key and verify it matches
+        retrieved_public_key, retrieved_private_key = keystore3.get_key(key_id)
+        self.assertEqual(public_key, retrieved_public_key)
+        self.assertEqual(private_key, retrieved_private_key)
+        
+    def test_set_and_get_default_key(self):
+        """Test setting and getting a default key for an algorithm."""
+        # Create a new keystore
+        keystore = PQCKeystore(self.keystore_path)
+        keystore.create_keystore(self.keystore_password)
+        
+        # Generate key pairs
+        cipher = PQCipher(self.test_algorithm)
+        public_key1, private_key1 = cipher.generate_keypair()
+        public_key2, private_key2 = cipher.generate_keypair()
+        
+        # Add keys to keystore
+        key_id1 = keystore.add_key(
+            algorithm=self.test_algorithm,
+            public_key=public_key1,
+            private_key=private_key1,
+            description="Test key 1"
+        )
+        
+        key_id2 = keystore.add_key(
+            algorithm=self.test_algorithm,
+            public_key=public_key2,
+            private_key=private_key2,
+            description="Test key 2"
+        )
+        
+        # Set first key as default
+        keystore.set_default_key(key_id1)
+        
+        # Get default key
+        default_key_id, default_public_key, default_private_key = keystore.get_default_key(self.test_algorithm)
+        
+        # Verify default key is key1
+        self.assertEqual(default_key_id, key_id1)
+        self.assertEqual(default_public_key, public_key1)
+        self.assertEqual(default_private_key, private_key1)
+        
+        # Change default to key2
+        keystore.set_default_key(key_id2)
+        
+        # Get default key again
+        default_key_id, default_public_key, default_private_key = keystore.get_default_key(self.test_algorithm)
+        
+        # Verify default key is now key2
+        self.assertEqual(default_key_id, key_id2)
+        self.assertEqual(default_public_key, public_key2)
+        self.assertEqual(default_private_key, private_key2)
+        
+    def test_add_key_with_dual_encryption(self):
+        """Test adding a key with dual encryption."""
+        # Create a new keystore
+        keystore = PQCKeystore(self.keystore_path)
+        keystore.create_keystore(self.keystore_password)
+        
+        # Generate key pair
+        cipher = PQCipher(self.test_algorithm)
+        public_key, private_key = cipher.generate_keypair()
+        
+        # Add key to keystore with dual encryption
+        key_id = keystore.add_key(
+            algorithm=self.test_algorithm,
+            public_key=public_key,
+            private_key=private_key,
+            description="Test key with dual encryption",
+            dual_encryption=True,
+            file_password=self.file_password
+        )
+        
+        # Verify dual encryption flag is set
+        self.assertTrue(keystore.key_has_dual_encryption(key_id))
+        self.assertTrue(keystore.keystore_data["keys"][key_id].get("dual_encryption", False))
+        self.assertIn("dual_encryption_salt", keystore.keystore_data["keys"][key_id])
+        
+        # Get key with file password
+        retrieved_public_key, retrieved_private_key = keystore.get_key(
+            key_id, file_password=self.file_password
+        )
+        
+        # Verify keys match
+        self.assertEqual(public_key, retrieved_public_key)
+        self.assertEqual(private_key, retrieved_private_key)
+        
+        # Try to get key without file password - should fail
+        with self.assertRaises(KeystoreError):
+            keystore.get_key(key_id)
+            
+        # Try to get key with wrong file password - should fail
+        with self.assertRaises(KeystorePasswordError):
+            keystore.get_key(key_id, file_password="WrongPassword123!")
+            
+    def test_update_key_to_dual_encryption(self):
+        """Test updating a key to use dual encryption."""
+        # Create a new keystore
+        keystore = PQCKeystore(self.keystore_path)
+        keystore.create_keystore(self.keystore_password)
+        
+        # Generate key pair
+        cipher = PQCipher(self.test_algorithm)
+        public_key, private_key = cipher.generate_keypair()
+        
+        # Add key to keystore without dual encryption
+        key_id = keystore.add_key(
+            algorithm=self.test_algorithm,
+            public_key=public_key,
+            private_key=private_key,
+            description="Test key to update"
+        )
+        
+        # Verify dual encryption flag is not set
+        self.assertFalse(keystore.key_has_dual_encryption(key_id))
+        
+        # Update the key to use dual encryption
+        result = keystore.update_key(
+            key_id,
+            private_key=private_key,  # Need to provide private key for re-encryption
+            dual_encryption=True,
+            file_password=self.file_password
+        )
+        self.assertTrue(result)
+        
+        # Verify dual encryption flag is now set
+        self.assertTrue(keystore.key_has_dual_encryption(key_id))
+        self.assertTrue(keystore.keystore_data["keys"][key_id].get("dual_encryption", False))
+        self.assertIn("dual_encryption_salt", keystore.keystore_data["keys"][key_id])
+        
+        # Get key with file password
+        retrieved_public_key, retrieved_private_key = keystore.get_key(
+            key_id, file_password=self.file_password
+        )
+        
+        # Verify keys match
+        self.assertEqual(public_key, retrieved_public_key)
+        self.assertEqual(private_key, retrieved_private_key)
+        
+    def test_multiple_keys_with_different_passwords(self):
+        """Test adding multiple keys with different passwords."""
+        # Create a new keystore
+        keystore = PQCKeystore(self.keystore_path)
+        keystore.create_keystore(self.keystore_password)
+        
+        # Generate key pairs
+        cipher = PQCipher(self.test_algorithm)
+        public_key1, private_key1 = cipher.generate_keypair()
+        public_key2, private_key2 = cipher.generate_keypair()
+        public_key3, private_key3 = cipher.generate_keypair()
+        
+        # Add key with master password
+        key_id1 = keystore.add_key(
+            algorithm=self.test_algorithm,
+            public_key=public_key1,
+            private_key=private_key1,
+            description="Key with master password"
+        )
+        
+        # Add key with key-specific password
+        key_password = "KeySpecificPassword123!"
+        key_id2 = keystore.add_key(
+            algorithm=self.test_algorithm,
+            public_key=public_key2,
+            private_key=private_key2,
+            description="Key with key-specific password",
+            use_master_password=False,
+            key_password=key_password
+        )
+        
+        # Add key with dual encryption
+        key_id3 = keystore.add_key(
+            algorithm=self.test_algorithm,
+            public_key=public_key3,
+            private_key=private_key3,
+            description="Key with dual encryption",
+            dual_encryption=True,
+            file_password=self.file_password
+        )
+        
+        # Get keys and verify
+        retrieved_public_key1, retrieved_private_key1 = keystore.get_key(key_id1)
+        self.assertEqual(public_key1, retrieved_public_key1)
+        self.assertEqual(private_key1, retrieved_private_key1)
+        
+        retrieved_public_key2, retrieved_private_key2 = keystore.get_key(
+            key_id2, key_password=key_password
+        )
+        self.assertEqual(public_key2, retrieved_public_key2)
+        self.assertEqual(private_key2, retrieved_private_key2)
+        
+        retrieved_public_key3, retrieved_private_key3 = keystore.get_key(
+            key_id3, file_password=self.file_password
+        )
+        self.assertEqual(public_key3, retrieved_public_key3)
+        self.assertEqual(private_key3, retrieved_private_key3)
+        
+        # Verify each key has the correct encryption settings
+        self.assertTrue(keystore.keystore_data["keys"][key_id1].get("use_master_password", True))
+        self.assertFalse(keystore.keystore_data["keys"][key_id2].get("use_master_password", True))
+        self.assertTrue(keystore.keystore_data["keys"][key_id3].get("dual_encryption", False))
+        
+    def test_keystore_persistence_with_dual_encryption(self):
+        """Test that dual encryption settings persist when keystore is saved and reloaded."""
+        # Create a new keystore
+        keystore = PQCKeystore(self.keystore_path)
+        keystore.create_keystore(self.keystore_password)
+        
+        # Generate key pair
+        cipher = PQCipher(self.test_algorithm)
+        public_key, private_key = cipher.generate_keypair()
+        
+        # Add key with dual encryption
+        key_id = keystore.add_key(
+            algorithm=self.test_algorithm,
+            public_key=public_key,
+            private_key=private_key,
+            description="Test key with dual encryption",
+            dual_encryption=True,
+            file_password=self.file_password
+        )
+        
+        # Save keystore
+        keystore.save_keystore()
+        
+        # Load keystore in a new instance
+        keystore2 = PQCKeystore(self.keystore_path)
+        keystore2.load_keystore(self.keystore_password)
+        
+        # Verify dual encryption flag is set
+        self.assertTrue(keystore2.key_has_dual_encryption(key_id))
+        self.assertTrue(keystore2.keystore_data["keys"][key_id].get("dual_encryption", False))
+        
+        # Get key with file password
+        retrieved_public_key, retrieved_private_key = keystore2.get_key(
+            key_id, file_password=self.file_password
+        )
+        
+        # Verify keys match
+        self.assertEqual(public_key, retrieved_public_key)
+        self.assertEqual(private_key, retrieved_private_key)
 
 
 if __name__ == "__main__":

@@ -16,56 +16,56 @@ This creates a proper defense-in-depth design where both passwords are required 
 
 ### High Priority
 
-- [ ] Modify `PQCKeystore.add_key` method to accept `file_password` parameter for dual encryption
-  - Add an optional parameter to encrypt with both passwords
-  - Store encryption flags in key metadata
+- [x] Modify `PQCKeystore.add_key` method to accept `file_password` parameter for dual encryption
+  - [x] Add an optional parameter to encrypt with both passwords
+  - [x] Store encryption flags in key metadata
 
-- [ ] Update `keystore_utils.py` to provide `file_password` when storing keys in `auto_generate_pqc_key`
-  - Pass the file password from encryption arguments 
-  - Handle optional dual-encryption based on configuration
+- [x] Update `keystore_utils.py` to provide `file_password` when storing keys in `auto_generate_pqc_key`
+  - [x] Pass the file password from encryption arguments 
+  - [x] Handle optional dual-encryption based on configuration
 
-- [ ] Update `PQCKeystore.get_key` method to accept `file_password` for decryption
-  - Modify to support dual-encrypted keys
-  - Add parameter for file password
+- [x] Update `PQCKeystore.get_key` method to accept `file_password` for decryption
+  - [x] Modify to support dual-encrypted keys
+  - [x] Add parameter for file password
 
-- [ ] Modify `keystore_utils.py`'s `extract_pqc_key` function to pass `file_password` to keystore
-  - Update to forward the file password from decryption arguments
+- [x] Modify `keystore_utils.py`'s `extract_pqc_key` function to pass `file_password` to keystore
+  - [x] Update to forward the file password from decryption arguments
 
-- [ ] Update the `crypt_core.py` `decrypt_file` function to pass file password to key extraction
-  - Ensure password flows through to keystore operations
+- [x] Update the `crypt_core.py` `decrypt_file` function to pass file password to key extraction
+  - [x] Ensure password flows through to keystore operations
 
-- [ ] Implement the dual-encryption mechanism for the private key in `PQCKeystore` class
-  - Layer the encryption: file password first, then master password
-  - Secure handling of intermediate encrypted data
+- [x] Implement the dual-encryption mechanism for the private key in `PQCKeystore` class
+  - [x] Layer the encryption: file password first, then master password
+  - [x] Secure handling of intermediate encrypted data
 
 ### Medium Priority
 
-- [ ] Modify key storage format to include flag indicating dual encryption
-  - Add metadata field to track encryption method
-  - Ensure version compatibility
+- [x] Modify key storage format to include flag indicating dual encryption
+  - [x] Add metadata field to track encryption method
+  - [x] Ensure version compatibility
 
-- [ ] Create key derivation function to convert file password to key encryption key
-  - Standardize how file passwords are prepared for key encryption
-  - Ensure consistent salt usage
+- [x] Create key derivation function to convert file password to key encryption key
+  - [x] Standardize how file passwords are prepared for key encryption
+  - [x] Ensure consistent salt usage
 
-- [ ] Add backwards compatibility for keys stored without dual encryption
-  - Detect encryption type during decryption
-  - Support legacy keys seamlessly
+- [x] Add backwards compatibility for keys stored without dual encryption
+  - [x] Detect encryption type during decryption
+  - [x] Support legacy keys seamlessly
 
-- [ ] Update CLI arguments to include `--dual-encrypt-key` option
-  - Add flag to control dual-encryption behavior
-  - Document in help text
+- [x] Update CLI arguments to include `--dual-encrypt-key` option
+  - [x] Add flag to control dual-encryption behavior
+  - [x] Document in help text
 
-- [ ] Write unit tests for the dual-encryption mechanism
-  - Test encryption/decryption with both passwords
-  - Test handling of invalid passwords
-  - Test backward compatibility
+- [x] Write unit tests for the dual-encryption mechanism
+  - [x] Test encryption/decryption with both passwords
+  - [x] Test handling of invalid passwords
+  - [x] Test backward compatibility
 
 ### Low Priority
 
-- [ ] Update documentation to explain the dual-encryption security model
-  - Explain benefits and usage in docs/keystore-usage.md
-  - Update security-notes.md with new model
+- [x] Update documentation to explain the dual-encryption security model
+  - [x] Explain benefits and usage in docs/keystore-usage.md
+  - [x] Update security-notes.md with new model
 
 ## Implementation Notes
 

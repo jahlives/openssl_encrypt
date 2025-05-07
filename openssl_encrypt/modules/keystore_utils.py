@@ -355,7 +355,10 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
     Returns:
         str: The key ID used to store the key
     """
-    if 'pqc_private_key' not in metadata or not metadata.get('pqc_dual_encrypt_key', False):
+    # Check for either of the dual encryption flags
+    dual_encrypt_enabled = metadata.get('pqc_dual_encrypt_key', False) or metadata.get('dual_encryption', False)
+    
+    if 'pqc_private_key' not in metadata or not dual_encrypt_enabled:
         if not quiet:
             print("No PQC private key in metadata or dual encryption not enabled")
         return None
