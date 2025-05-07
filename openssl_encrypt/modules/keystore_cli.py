@@ -685,6 +685,163 @@ class PQCKeystore:
         # Save the keystore
         self.save_keystore()
         
+    def update_key(self, key_id: str, algorithm: str = None, public_key: bytes = None, 
+                  private_key: bytes = None, description: str = None, tags: List[str] = None, 
+                  dual_encryption: bool = None, file_password: str = None) -> bool:
+        """
+        Update an existing key in the keystore
+        
+        Args:
+            key_id: The key ID to update
+            algorithm: New algorithm name (or None to keep existing)
+            public_key: New public key (or None to keep existing)
+            private_key: New private key (or None to keep existing)
+            description: New description (or None to keep existing)
+            tags: New tags (or None to keep existing)
+            dual_encryption: Whether to use dual encryption
+            file_password: File password for dual encryption
+            
+        Returns:
+            bool: True if update was successful
+            
+        Raises:
+            KeystoreError: If the keystore hasn't been loaded or key doesn't exist
+        """
+        if not self.keystore_data:
+            raise KeystoreError("Keystore not loaded")
+            
+        # Get key from keystore
+        if "keys" not in self.keystore_data or key_id not in self.keystore_data["keys"]:
+            raise KeyNotFoundError(f"Key not found: {key_id}")
+            
+        key_data = self.keystore_data["keys"][key_id]
+        
+        # Check dual encryption status
+        current_dual_encryption = key_data.get("dual_encryption", False)
+        new_dual_encryption = dual_encryption if dual_encryption is not None else current_dual_encryption
+        
+        # If enabling dual encryption, make sure file password is provided
+        if new_dual_encryption and not current_dual_encryption and not file_password:
+            raise KeystoreError("File password required to enable dual encryption")
+            
+        # If updating private key, handle encryption
+        if private_key is not None:
+            # If using dual encryption, encrypt with file password first
+            private_key_to_encrypt = private_key
+            
+            if new_dual_encryption:
+                try:
+                    # Generate a salt for file password key derivation or use existing
+                    if "dual_encryption_salt" in key_data:
+                        dual_encryption_salt = base64.b64decode(key_data["dual_encryption_salt"])
+                    else:
+                        dual_encryption_salt = os.urandom(16)
+                    
+                    # Determine security level
+                    security_level = KeystoreSecurityLevel(self.keystore_data.get("security_level", "standard"))
+                    
+                    # Derive encryption key from file password
+                    file_encryption_key = self._derive_key(file_password, dual_encryption_salt, security_level)
+                    
+                    # Use AES-GCM to encrypt the private key with the file key
+                    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+                    
+                    # Generate a nonce for AES-GCM
+                    nonce = os.urandom(12)
+                    
+                    # Create the cipher with the file key
+                    cipher = AESGCM(file_encryption_key)
+                    
+                    # Encrypt the private key
+                    ciphertext = cipher.encrypt(nonce, private_key, None)
+                    
+                    # Combine the nonce and ciphertext
+                    private_key_to_encrypt = nonce + ciphertext
+                    
+                    # Clean up
+                    secure_memzero(file_encryption_key)
+                    
+                    # Update dual encryption flag and salt
+                    key_data["dual_encryption"] = True
+                    key_data["dual_encryption_salt"] = base64.b64encode(dual_encryption_salt).decode('utf-8')
+                except Exception as e:
+                    raise KeystoreError(f"Failed to apply dual encryption: {e}")
+                    
+            # Encrypt with keystore mechanism (always uses master password for simplicity)
+            encrypted_private_key = self._encrypt_data(private_key_to_encrypt)
+            
+            # Update the private key
+            key_data["private_key"] = base64.b64encode(encrypted_private_key).decode('utf-8')
+            
+            # Remove from cache
+            if key_id in self._key_cache:
+                del self._key_cache[key_id]
+            
+        # Update other fields if provided
+        if algorithm is not None:
+            key_data["algorithm"] = algorithm
+            
+        if public_key is not None:
+            key_data["public_key"] = base64.b64encode(public_key).decode('utf-8')
+            
+        if description is not None:
+            key_data["description"] = description
+            
+        if tags is not None:
+            key_data["tags"] = tags
+        
+        # Save the keystore
+        self.save_keystore()
+        
+        return True
+    
+    def key_has_dual_encryption(self, key_id: str) -> bool:
+        """
+        Check if a key uses dual encryption
+        
+        Args:
+            key_id: The key ID to check
+            
+        Returns:
+            bool: True if the key uses dual encryption
+            
+        Raises:
+            KeystoreError: If the keystore hasn't been loaded
+            KeyNotFoundError: If the key doesn't exist
+        """
+        if not self.keystore_data:
+            raise KeystoreError("Keystore not loaded")
+            
+        # Get key from keystore
+        if "keys" not in self.keystore_data or key_id not in self.keystore_data["keys"]:
+            raise KeyNotFoundError(f"Key not found: {key_id}")
+            
+        key_data = self.keystore_data["keys"][key_id]
+        return key_data.get("dual_encryption", False)
+        
+    def _key_has_dual_encryption_flag(self, key_id: str, value: bool = True) -> None:
+        """
+        Mark a key as coming from a dual-encrypted file (metadata flag only)
+        
+        Args:
+            key_id: The key ID to mark
+            value: Flag value to set
+            
+        Raises:
+            KeystoreError: If the keystore hasn't been loaded
+            KeyNotFoundError: If the key doesn't exist
+        """
+        if not self.keystore_data:
+            raise KeystoreError("Keystore not loaded")
+            
+        # Get key from keystore
+        if "keys" not in self.keystore_data or key_id not in self.keystore_data["keys"]:
+            raise KeyNotFoundError(f"Key not found: {key_id}")
+            
+        # Set the flag and save
+        self.keystore_data["keys"][key_id]["from_dual_encrypted_file"] = value
+        self.save_keystore()
+        
     def get_default_key(self, algorithm: str, key_password: str = None) -> Tuple[str, bytes, bytes]:
         """
         Get the default key for an algorithm

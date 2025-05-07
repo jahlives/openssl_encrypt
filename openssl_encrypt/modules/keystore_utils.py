@@ -341,6 +341,133 @@ def get_pqc_key_for_decryption(args, hash_config=None):
     
     return None, None, None
 
+def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id=None, quiet=False):
+    """
+    Extract already-encrypted private key from metadata and store it in the keystore
+    
+    Args:
+        metadata: The file metadata containing the encrypted key
+        keystore_path: Path to the keystore file
+        keystore_password: Password for the keystore
+        key_id: Optional existing key ID to update (or create new if None)
+        quiet: Whether to suppress output
+        
+    Returns:
+        str: The key ID used to store the key
+    """
+    if 'pqc_private_key' not in metadata or not metadata.get('pqc_dual_encrypt_key', False):
+        if not quiet:
+            print("No PQC private key in metadata or dual encryption not enabled")
+        return None
+    
+    # Import necessary dependencies here to prevent circular imports
+    from .keystore_cli import PQCKeystore
+    from .secure_memory import secure_memzero
+    
+    # Track sensitive variables for secure cleanup
+    encrypted_private_key = None
+    
+    try:
+        # Get the encrypted private key and public key from metadata
+        # Note: The private key is already encrypted with file password in crypt_core.py
+        encrypted_private_key = base64.b64decode(metadata['pqc_private_key'])
+        public_key = base64.b64decode(metadata['pqc_public_key'])
+        
+        # Create or load keystore
+        keystore = PQCKeystore(keystore_path)
+        if not os.path.exists(keystore_path):
+            if not quiet:
+                print(f"Creating new keystore: {keystore_path}")
+            keystore.create_keystore(keystore_password)
+        else:
+            keystore.load_keystore(keystore_password)
+        
+        # Determine algorithm from metadata
+        algorithm = metadata.get('algorithm', 'kyber768-hybrid')
+        if algorithm.endswith('-hybrid'):
+            algorithm = algorithm[:-7]  # Remove -hybrid suffix
+        
+        # If we have a key ID and the key exists, update it
+        import datetime
+        description = f"Updated from file on {datetime.datetime.now().strftime('%Y-%m-%d')}"
+        tags = ["from-file", "dual-encrypted"]
+        
+        if key_id and key_id in [k['key_id'] for k in keystore.list_keys()]:
+            # Check if update_key method exists in PQCKeystore
+            if hasattr(keystore, 'update_key'):
+                if not quiet:
+                    print(f"Updating existing key in keystore: {key_id}")
+                # Update the key using the update_key method
+                keystore.update_key(
+                    key_id=key_id,
+                    private_key=encrypted_private_key,
+                    description=description,
+                    tags=tags
+                )
+            else:
+                # If update_key doesn't exist, try to remove and recreate the key
+                if not quiet:
+                    print(f"Replacing existing key in keystore: {key_id}")
+                keystore.remove_key(key_id)
+                keystore.add_key(
+                    algorithm=algorithm,
+                    public_key=public_key,
+                    private_key=encrypted_private_key,
+                    description=description,
+                    tags=tags,
+                    use_master_password=True
+                )
+                
+                # Mark the key as specially encrypted (for recordkeeping)
+                # This won't change how it's encrypted, but will indicate it's from a dual-encrypted file
+                if hasattr(keystore, '_key_has_dual_encryption_flag'):
+                    keystore._key_has_dual_encryption_flag(key_id, True)
+        else:
+            # Add as a new key
+            if not quiet:
+                print("Adding new key to keystore")
+            key_id = keystore.add_key(
+                algorithm=algorithm,
+                public_key=public_key,
+                private_key=encrypted_private_key,
+                description=description,
+                tags=tags,
+                use_master_password=True
+            )
+            
+            # Mark the key as specially encrypted (for recordkeeping)
+            # This won't change how it's encrypted, but will indicate it's from a dual-encrypted file
+            if hasattr(keystore, '_key_has_dual_encryption_flag'):
+                keystore._key_has_dual_encryption_flag(key_id, True)
+            
+            # Update metadata with the key ID
+            metadata['pqc_keystore_key_id'] = key_id
+        
+        if not quiet:
+            print(f"Successfully stored PQC key in keystore with ID: {key_id}")
+        
+        return key_id
+        
+    except Exception as e:
+        if not quiet:
+            print(f"Error storing PQC key in keystore: {e}")
+        return None
+    finally:
+        # Clean up sensitive data
+        try:
+            # Clear encrypted_private_key if it exists
+            if encrypted_private_key is not None:
+                try:
+                    # Use secure_memzero for byte arrays
+                    secure_memzero(encrypted_private_key)
+                except:
+                    # Fallback if secure_memzero fails
+                    encrypted_private_key = b'\x00' * len(encrypted_private_key)
+                encrypted_private_key = None
+        except:
+            # Last resort cleanup - just remove the reference
+            encrypted_private_key = None
+        
 def auto_generate_pqc_key(args, hash_config):
     """
     Auto-generate PQC key and add to keystore if needed

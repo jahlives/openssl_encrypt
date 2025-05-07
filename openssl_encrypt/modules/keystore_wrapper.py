@@ -28,6 +28,7 @@ def encrypt_file_with_keystore(
     keystore_password: Optional[str] = None,
     key_id: Optional[str] = None,
     dual_encryption: bool = False,
+    pqc_dual_encryption: bool = False,
     **kwargs
 ) -> bool:
     """
@@ -46,6 +47,7 @@ def encrypt_file_with_keystore(
         keystore_password: Password for keystore
         key_id: ID of the key to use from keystore
         dual_encryption: Whether to use dual encryption (requires both keystore and file passwords)
+        pqc_dual_encryption: Whether to use dual encryption for PQC keys (requires both keystore and file passwords)
         **kwargs: Additional arguments for encrypt_file
         
     Returns:
@@ -108,11 +110,120 @@ def encrypt_file_with_keystore(
         quiet=quiet,
         algorithm=algorithm,
         pqc_keypair=pqc_keypair,
+        pqc_dual_encrypt_key=pqc_dual_encryption,
         **kwargs
     )
     
     if not result:
         return False
+        
+    # If dual encryption is enabled for PQC keys, store the key in keystore and remove from metadata
+    if pqc_dual_encryption and key_id is not None and keystore_file is not None:
+        if not quiet:
+            print("Storing PQC key in keystore and removing from metadata")
+        
+        try:
+            # Read the metadata from the output file
+            with open(output_file, 'rb') as f:
+                content = f.read(8192)  # Read enough for the header
+                
+            # Find the colon separator
+            colon_pos = content.find(b':')
+            if colon_pos > 0:
+                metadata_b64 = content[:colon_pos]
+                encrypted_data = content[colon_pos:]
+                
+                try:
+                    metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
+                    metadata = json.loads(metadata_json)
+                    
+                    # Check if the private key is in the metadata
+                    if 'hash_config' in metadata and 'pqc_private_key' in metadata['hash_config']:
+                        # Import the store_pqc_key_in_keystore function locally to avoid circular imports
+                        from .keystore_utils import store_pqc_key_in_keystore
+                        
+                        # Store the key in the keystore
+                        store_pqc_key_in_keystore(
+                            metadata['hash_config'],
+                            keystore_file,
+                            keystore_password,
+                            key_id=key_id,
+                            quiet=quiet
+                        )
+                        
+                        # Create a clean copy of the metadata to avoid any reference issues
+                        import copy
+                        clean_metadata = copy.deepcopy(metadata)
+                        
+                        # Remove the private key from the metadata
+                        # We keep the dual encryption flag and key ID
+                        keys_to_remove = [
+                            'pqc_private_key',
+                            'pqc_key_salt',
+                            'pqc_key_encrypted'
+                        ]
+                        
+                        for key in keys_to_remove:
+                            if key in clean_metadata['hash_config']:
+                                del clean_metadata['hash_config'][key]
+                        
+                        # Keep pqc_dual_encrypt_key flag and pqc_keystore_key_id
+                        
+                        # Write the updated metadata back to the file
+                        new_metadata_json = json.dumps(clean_metadata)
+                        new_metadata_b64 = base64.b64encode(new_metadata_json.encode('utf-8'))
+                        
+                        with open(output_file, 'wb') as f:
+                            f.write(new_metadata_b64)
+                            f.write(encrypted_data)
+                        
+                        # Verify the keys were actually removed
+                        with open(output_file, 'rb') as f:
+                            verify_content = f.read(8192)
+                            
+                        verify_metadata_b64 = verify_content[:verify_content.find(b':')]
+                        verify_metadata_json = base64.b64decode(verify_metadata_b64).decode('utf-8')
+                        verify_metadata = json.loads(verify_metadata_json)
+                        
+                        if 'hash_config' in verify_metadata and any(key in verify_metadata['hash_config'] for key in keys_to_remove):
+                            if not quiet:
+                                print("WARNING: Some sensitive keys still in metadata. Trying a different approach...")
+                            
+                            # Create a completely new metadata object
+                            final_metadata = {
+                                'format_version': metadata.get('format_version', 3),
+                                'salt': metadata.get('salt', ''),
+                                'hash_config': {
+                                    k: v for k, v in metadata.get('hash_config', {}).items() 
+                                    if k not in keys_to_remove
+                                },
+                                'pbkdf2_iterations': metadata.get('pbkdf2_iterations', 100000),
+                                'original_hash': metadata.get('original_hash', ''),
+                                'encrypted_hash': metadata.get('encrypted_hash', ''),
+                                'algorithm': metadata.get('algorithm', '')
+                            }
+                            
+                            # Add public key if it exists
+                            if 'pqc_public_key' in metadata:
+                                final_metadata['pqc_public_key'] = metadata['pqc_public_key']
+                            
+                            # Write one more time
+                            final_metadata_json = json.dumps(final_metadata)
+                            final_metadata_b64 = base64.b64encode(final_metadata_json.encode('utf-8'))
+                            
+                            with open(output_file, 'wb') as f:
+                                f.write(final_metadata_b64)
+                                f.write(encrypted_data)
+                            
+                        if not quiet:
+                            print("Successfully stored PQC key in keystore and removed from metadata")
+                except Exception as e:
+                    if not quiet:
+                        print(f"Warning: Error processing metadata: {e}")
+        except Exception as e:
+            if not quiet:
+                print(f"Warning: Error storing PQC key in keystore: {e}")
+                print("Continuing with the private key stored in metadata for safety")
     
     # Verify that the key ID and dual encryption flag are in the metadata
     if key_id is not None:

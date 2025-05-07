@@ -1765,8 +1765,8 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                 
                 # Use a different salt for private key encryption
                 private_key_salt = secrets.token_bytes(16)
-                # Decode the salt
-                private_key_salt = base64.b64decode(metadata['pqc_key_salt'])
+                # Store the salt in metadata for decryption
+                metadata['pqc_key_salt'] = base64.b64encode(private_key_salt).decode('utf-8')
                 # START DO NOT CHANGE
                 # Use the derived private_key_key NOT the main key
                 cipher = AESGCM(key)
