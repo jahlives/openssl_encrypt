@@ -65,27 +65,15 @@ try:
             test_mechanisms = oqs.get_enabled_kem_mechanisms()
             if test_mechanisms:
                 test_kem = oqs.KeyEncapsulation(test_mechanisms[0])
-                if not hasattr(test_kem, 'generate_keypair') and not PQC_QUIET:
-                    print(f"Warning: oqs KeyEncapsulation has non-standard API: {dir(test_kem)}")
                 # Clean up test object
                 test_kem = None
-        except Exception as e:
-            if not PQC_QUIET:
-                print(f"Warning: oqs KEM initialization test failed: {e}")
+        except Exception:
+            pass
     else:
-        if not PQC_QUIET:
-            print("Warning: oqs module found but KEM mechanisms not available")
-            print(f"Available methods: {dir(oqs)}")
         LIBOQS_AVAILABLE = False
-except ImportError as e:
-    if not PQC_QUIET:
-        print(f"Post-quantum cryptography import failed: {e}")
-        print("To use post-quantum features, install: pip install liboqs-python")
+except ImportError:
     LIBOQS_AVAILABLE = False
-except Exception as e:
-    if not PQC_QUIET:
-        print(f"Error initializing oqs module: {e}")
-        print("Continuing without post-quantum cryptography support")
+except Exception:
     LIBOQS_AVAILABLE = False
 
 # Define supported PQC algorithms
@@ -153,11 +141,7 @@ def check_pqc_support(quiet: bool = False) -> Tuple[bool, Optional[str], list]:
             else:
                 # Fallback to known Kyber algorithms if API methods not found
                 supported_algorithms.extend(['Kyber512', 'Kyber768', 'Kyber1024', 'ML-KEM-512', 'ML-KEM-768', 'ML-KEM-1024'])
-                if not should_be_quiet:
-                    print("Notice: Using hardcoded algorithm list because API method not found")
-        except Exception as e:
-            if not should_be_quiet:
-                print(f"Warning: Error detecting KEM algorithms: {e}")
+        except Exception:
             # Force add Kyber algorithms as fallback
             supported_algorithms.extend(['Kyber512', 'Kyber768', 'Kyber1024'])
             
@@ -171,15 +155,8 @@ def check_pqc_support(quiet: bool = False) -> Tuple[bool, Optional[str], list]:
             # Skip printing warning about signature algorithms
             pass
             
-        # Don't print the full list as it's too verbose
-        # Just log the count for diagnostic purposes
-        # IMPORTANT: This is the line that was showing up in quiet mode
-        if supported_algorithms and not should_be_quiet:
-            print(f"Detected {len(supported_algorithms)} PQC mechanisms")
         return True, version, supported_algorithms
-    except Exception as e:
-        if not should_be_quiet:
-            print(f"Error checking post-quantum support: {e}")
+    except Exception:
         return False, None, ['Kyber512', 'Kyber768', 'Kyber1024']  # Provide fallback algorithms
 
 class PQCipher:
@@ -216,9 +193,6 @@ class PQCipher:
             
         # Check available algorithms
         supported = check_pqc_support(quiet=should_be_quiet)[2]
-        # Don't print full list, just indicate check completed
-        if not should_be_quiet:
-            print(f"PQC algorithm check complete")
         
         # Store quiet mode for use in other methods
         self.quiet = should_be_quiet
@@ -396,8 +370,6 @@ class PQCipher:
                 print(f"Error in post-quantum test encryption: {e}")
             # Fall back to a very simple format if all else fails
             simple_result = b"PQC_TEST_DATA:" + data
-            if not self.quiet:
-                print(f"Using simple format fallback - length: {len(simple_result)} bytes")
             return simple_result
     
     def decrypt(self, encrypted_data: bytes, private_key: bytes, file_contents: bytes = None) -> bytes:
