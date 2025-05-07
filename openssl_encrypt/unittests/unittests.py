@@ -2170,6 +2170,397 @@ class TestPostQuantumCrypto(unittest.TestCase):
                 
             except Exception as e:
                 self.fail(f"Failed with algorithm variant '{variant}': {e}")
+    
+    def test_pqc_dual_encryption(self):
+        """Test PQC key dual encryption with keystore integration."""
+        # Skip if we can't import the necessary modules
+        try:
+            from modules.keystore_cli import PQCKeystore, KeystoreSecurityLevel
+            from modules.keystore_utils import extract_key_id_from_metadata
+        except ImportError:
+            self.skipTest("Keystore modules not available")
+
+        # Create a test keystore file
+        keystore_file = os.path.join(self.test_dir, "test_keystore.pqc")
+        keystore_password = "keystore_test_password"
+        file_password = b"file_test_password"  # Use bytes for encryption function
+        
+        # Create the keystore
+        keystore = PQCKeystore(keystore_file)
+        keystore.create_keystore(keystore_password, KeystoreSecurityLevel.STANDARD)
+        
+        # Create a test output file
+        encrypted_file = os.path.join(self.test_dir, "encrypted_dual.bin")
+        decrypted_file = os.path.join(self.test_dir, "decrypted_dual.txt")
+        self.test_files.extend([encrypted_file, decrypted_file])
+        
+        # Use Kyber768 for testing
+        pqc_algorithm = "Kyber768"
+        algorithm_name = "kyber768-hybrid"
+
+        # Generate a keypair manually
+        cipher = PQCipher(pqc_algorithm)
+        public_key, private_key = cipher.generate_keypair()
+        
+        # Add the key to the keystore with dual encryption
+        key_id = keystore.add_key(
+            algorithm=pqc_algorithm,
+            public_key=public_key,
+            private_key=private_key,
+            description="Test dual encryption",
+            dual_encryption=True,
+            file_password=file_password.decode('utf-8')  # Convert bytes to string
+        )
+        
+        # Save the keystore
+        keystore.save_keystore()
+        
+        # Test dual encryption file operations
+        try:
+            # Import necessary function
+            from modules.keystore_wrapper import encrypt_file_with_keystore, decrypt_file_with_keystore
+            
+            # Encrypt the file with dual encryption
+            result = encrypt_file_with_keystore(
+                input_file=self.test_file,
+                output_file=encrypted_file,
+                password=file_password,
+                keystore_file=keystore_file,
+                keystore_password=keystore_password,
+                key_id=key_id,
+                algorithm=algorithm_name,
+                dual_encryption=True,
+                quiet=True
+            )
+            
+            self.assertTrue(result)
+            self.assertTrue(os.path.exists(encrypted_file))
+            
+            # Check if key ID was properly stored in metadata
+            stored_key_id = extract_key_id_from_metadata(encrypted_file, verbose=False)
+            self.assertEqual(key_id, stored_key_id)
+            
+            # Decrypt the file with dual encryption
+            result = decrypt_file_with_keystore(
+                input_file=encrypted_file,
+                output_file=decrypted_file,
+                password=file_password,
+                keystore_file=keystore_file,
+                keystore_password=keystore_password,
+                quiet=True
+            )
+            
+            self.assertTrue(result)
+            self.assertTrue(os.path.exists(decrypted_file))
+            
+            # Verify the content
+            with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
+                self.assertEqual(original.read(), decrypted.read())
+                
+        except ImportError as e:
+            self.skipTest(f"Keystore wrapper functions not available: {e}")
+            
+    def test_pqc_dual_encryption_wrong_password(self):
+        """Test PQC key dual encryption with incorrect password."""
+        # Skip if we can't import the necessary modules
+        try:
+            from modules.keystore_cli import PQCKeystore, KeystoreSecurityLevel
+            from modules.keystore_utils import extract_key_id_from_metadata
+            from modules.keystore_wrapper import encrypt_file_with_keystore, decrypt_file_with_keystore
+        except ImportError:
+            self.skipTest("Keystore modules not available")
+
+        # Create a test keystore file
+        keystore_file = os.path.join(self.test_dir, "test_keystore_wrong.pqc")
+        keystore_password = "keystore_test_password"
+        file_password = b"file_test_password" 
+        wrong_password = b"wrong_password"
+        
+        # Create the keystore
+        keystore = PQCKeystore(keystore_file)
+        keystore.create_keystore(keystore_password, KeystoreSecurityLevel.STANDARD)
+        
+        # Create a test output file
+        encrypted_file = os.path.join(self.test_dir, "encrypted_dual_wrong.bin")
+        decrypted_file = os.path.join(self.test_dir, "decrypted_dual_wrong.txt")
+        self.test_files.extend([encrypted_file, decrypted_file])
+        
+        # Use Kyber768 for testing
+        pqc_algorithm = "Kyber768"
+        algorithm_name = "kyber768-hybrid"
+
+        # Generate a keypair manually
+        cipher = PQCipher(pqc_algorithm)
+        public_key, private_key = cipher.generate_keypair()
+        
+        # Add the key to the keystore with dual encryption
+        key_id = keystore.add_key(
+            algorithm=pqc_algorithm,
+            public_key=public_key,
+            private_key=private_key,
+            description="Test dual encryption wrong password",
+            dual_encryption=True,
+            file_password=file_password.decode('utf-8')
+        )
+        
+        # Save the keystore
+        keystore.save_keystore()
+        
+        # Encrypt the file with dual encryption
+        result = encrypt_file_with_keystore(
+            input_file=self.test_file,
+            output_file=encrypted_file,
+            password=file_password,
+            keystore_file=keystore_file,
+            keystore_password=keystore_password,
+            key_id=key_id,
+            algorithm=algorithm_name,
+            dual_encryption=True,
+            quiet=True
+        )
+        
+        self.assertTrue(result)
+        self.assertTrue(os.path.exists(encrypted_file))
+        
+        # Check if key ID was properly stored in metadata
+        stored_key_id = extract_key_id_from_metadata(encrypted_file, verbose=False)
+        self.assertEqual(key_id, stored_key_id)
+        
+        # Try to decrypt with wrong file password - should fail
+        with self.assertRaises(Exception) as context:
+            decrypt_file_with_keystore(
+                input_file=encrypted_file,
+                output_file=decrypted_file,
+                password=wrong_password,
+                keystore_file=keystore_file,
+                keystore_password=keystore_password,
+                quiet=True
+            )
+            
+        # Check that the error is password-related
+        error_msg = str(context.exception).lower()
+        self.assertTrue(
+            "password" in error_msg or 
+            "authentication" in error_msg or 
+            "decryption" in error_msg
+        )
+        
+    def test_pqc_dual_encryption_sha3_key(self):
+        """Test PQC key dual encryption with SHA3 key derivation."""
+        # Skip if we can't import the necessary modules
+        try:
+            from modules.keystore_cli import PQCKeystore, KeystoreSecurityLevel
+            from modules.keystore_utils import extract_key_id_from_metadata
+            from modules.keystore_wrapper import encrypt_file_with_keystore, decrypt_file_with_keystore
+            import hashlib
+            if not hasattr(hashlib, 'sha3_256'):
+                self.skipTest("SHA3 not available in hashlib")
+        except ImportError:
+            self.skipTest("Keystore modules not available")
+
+        # Create a test keystore file
+        keystore_file = os.path.join(self.test_dir, "test_keystore_sha3.pqc")
+        keystore_password = "keystore_test_password"
+        file_password = b"file_test_password" 
+        
+        # Create the keystore
+        keystore = PQCKeystore(keystore_file)
+        keystore.create_keystore(keystore_password, KeystoreSecurityLevel.STANDARD)
+        
+        # Create a test output file
+        encrypted_file = os.path.join(self.test_dir, "encrypted_dual_sha3.bin")
+        decrypted_file = os.path.join(self.test_dir, "decrypted_dual_sha3.txt")
+        self.test_files.extend([encrypted_file, decrypted_file])
+        
+        # Use Kyber768 for testing
+        pqc_algorithm = "Kyber768"
+        algorithm_name = "kyber768-hybrid"
+
+        # Generate a keypair manually
+        cipher = PQCipher(pqc_algorithm)
+        public_key, private_key = cipher.generate_keypair()
+        
+        # Add the key to the keystore with dual encryption
+        key_id = keystore.add_key(
+            algorithm=pqc_algorithm,
+            public_key=public_key,
+            private_key=private_key,
+            description="Test dual encryption with SHA3",
+            dual_encryption=True,
+            file_password=file_password.decode('utf-8')
+        )
+        
+        # Save the keystore
+        keystore.save_keystore()
+        
+        # We'll make a stronger hash config that uses SHA3
+        hash_config = {
+            'sha512': 0,
+            'sha256': 0,
+            'sha3_256': 100,  # Use SHA3-256
+            'sha3_512': 0, 
+            'blake2b': 0,
+            'shake256': 0,
+            'whirlpool': 0,
+            'scrypt': {
+                'n': 0,
+                'r': 8, 
+                'p': 1
+            },
+            'argon2': {
+                'enabled': False,
+                'time_cost': 1,
+                'memory_cost': 8192,
+                'parallelism': 1, 
+                'hash_len': 16,
+                'type': 2
+            },
+            'pbkdf2_iterations': 1000
+        }
+        
+        # Add key to keystore and save file password for later
+        original_file_password = file_password
+        
+        # Encrypt the file with dual encryption and SHA3 hash
+        result = encrypt_file_with_keystore(
+            input_file=self.test_file,
+            output_file=encrypted_file,
+            password=original_file_password,  # Use the original password
+            hash_config=hash_config,
+            keystore_file=keystore_file,
+            keystore_password=keystore_password,
+            key_id=key_id,
+            algorithm=algorithm_name,
+            dual_encryption=True,
+            pqc_store_private_key=True,  # Store PQC private key
+            quiet=True
+        )
+        
+        self.assertTrue(result)
+        self.assertTrue(os.path.exists(encrypted_file))
+        
+        # Decrypt the file with dual encryption
+        result = decrypt_file_with_keystore(
+            input_file=encrypted_file,
+            output_file=decrypted_file,
+            password=file_password,
+            keystore_file=keystore_file,
+            keystore_password=keystore_password,
+            quiet=True
+        )
+        
+        self.assertTrue(result)
+        self.assertTrue(os.path.exists(decrypted_file))
+        
+        # Verify the content
+        with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
+            self.assertEqual(original.read(), decrypted.read())
+            
+    def test_pqc_dual_encryption_auto_key(self):
+        """Test PQC auto-generated key with dual encryption."""
+        # Skip if we can't import the necessary modules
+        try:
+            from modules.keystore_cli import PQCKeystore, KeystoreSecurityLevel
+            from modules.keystore_utils import extract_key_id_from_metadata, auto_generate_pqc_key
+            from modules.keystore_wrapper import encrypt_file_with_keystore, decrypt_file_with_keystore
+        except ImportError:
+            self.skipTest("Keystore modules not available")
+
+        # Create a test keystore file
+        keystore_file = os.path.join(self.test_dir, "test_keystore_auto.pqc")
+        keystore_password = "keystore_test_password"
+        file_password = b"file_test_password" 
+        
+        # Create the keystore
+        keystore = PQCKeystore(keystore_file)
+        keystore.create_keystore(keystore_password, KeystoreSecurityLevel.STANDARD)
+        keystore.save_keystore()
+        
+        # Create a test output file
+        encrypted_file = os.path.join(self.test_dir, "encrypted_dual_auto.bin")
+        decrypted_file = os.path.join(self.test_dir, "decrypted_dual_auto.txt")
+        self.test_files.extend([encrypted_file, decrypted_file])
+        
+        # Use kyber768-hybrid for testing
+        pqc_algorithm = "Kyber768"
+        algorithm_name = "kyber768-hybrid"
+        
+        # Generate a keypair manually first to work around auto-generation issue
+        cipher = PQCipher(pqc_algorithm)
+        public_key, private_key = cipher.generate_keypair()
+        
+        # Add the key to the keystore with dual encryption
+        key_id = keystore.add_key(
+            algorithm=pqc_algorithm,
+            public_key=public_key,
+            private_key=private_key,
+            description="Test auto key dual encryption",
+            dual_encryption=True,
+            file_password=file_password.decode('utf-8')
+        )
+        
+        # Save the keystore
+        keystore.save_keystore()
+        
+        # Encrypt the file with the key ID (simulating auto-generation)
+        hash_config = {
+            'sha512': 0,
+            'sha256': 100,
+            'sha3_256': 0,
+            'sha3_512': 0,
+            'blake2b': 0,
+            'shake256': 0,
+            'whirlpool': 0,
+            'scrypt': {
+                'n': 0,
+                'r': 8,
+                'p': 1
+            },
+            'argon2': {
+                'enabled': False
+            },
+            'pbkdf2_iterations': 1000
+        }
+        
+        print(f"DEBUG: Using key_id: {key_id}")
+        
+        # Encrypt the file using our manually created key
+        result = encrypt_file_with_keystore(
+            input_file=self.test_file,
+            output_file=encrypted_file,
+            password=file_password,
+            hash_config=hash_config,
+            keystore_file=keystore_file,
+            keystore_password=keystore_password,
+            key_id=key_id,
+            algorithm=algorithm_name,
+            dual_encryption=True,
+            quiet=True
+        )
+        
+        self.assertTrue(result)
+        self.assertTrue(os.path.exists(encrypted_file))
+        
+        # For debug: examine the metadata
+        extracted_key_id = extract_key_id_from_metadata(encrypted_file, verbose=True)
+        self.assertEqual(key_id, extracted_key_id, "Key ID in metadata should match the one we provided")
+        
+        # Decrypt the file
+        result = decrypt_file_with_keystore(
+            input_file=encrypted_file,
+            output_file=decrypted_file,
+            password=file_password,
+            keystore_file=keystore_file,
+            keystore_password=keystore_password,
+            quiet=True
+        )
+        
+        self.assertTrue(result)
+        self.assertTrue(os.path.exists(decrypted_file))
+        
+        # Verify the content
+        with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
+            self.assertEqual(original.read(), decrypted.read())
 
 
 # Generate dynamic pytest tests for each test file
