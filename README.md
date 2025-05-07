@@ -1,11 +1,8 @@
-# Breaking Changes: release 0.6.0 is a BREAKING release, before updating to this release DECRYPT your already encrypted data with the EXACT version used for encrypting. Then update and encrypt again
-[![Breaking Changes](https://img.shields.io/badge/WARNING-BREAKING%20CHANGES-red)](https://gitlab.rm-rf.ch/world/openssl_encrypt) The breaking change 0.6.0 was introduced because the final implementation of postquantum is not backwards compatible. Also further security changes and improvements were not possible to be backwards compatible
-# Version 0.6.0: Feature Complete Status
-  With the release of version **0.6.0**, openssl_encrypt is now **considered feature complete**. No new features will be added to the codebase, which should **significantly reduce the likelihood of breaking changes**. Moving forward, our development efforts will focus
-  exclusively on bug fixes, security updates, deployment enhancements, and documentation improvements. While we are committed to maintaining backward compatibility, we cannot provide an absolute guarantee against breaking changes, as security patches and
-  critical bug fixes occasionally necessitate such modifications. The project now enters an extended testing phase to ensure stability and reliability across all supported environments and use cases. We appreciate the community's continued feedback as we refine
-  and strengthen the existing functionality.
-
+# Breaking Changes: release 0.7.0 is a BREAKING release, before updating to this release DECRYPT your already encrypted data with the EXACT version used for encrypting. Then update and encrypt again
+[![Breaking Changes](https://img.shields.io/badge/WARNING-BREAKING%20CHANGES-red)](https://gitlab.rm-rf.ch/world/openssl_encrypt) The breaking change 0.7.0 was introduced because the final implementation of keystore required some bigger changes to the encryption/decryption logic which finally lead to the breaking changes in behaviour
+# Version 0.7.0: Feature Complete Status
+  With the release of version **0.7.0rc1**, openssl_encrypt is now really **considered feature complete**. No new features will be added to the codebase, which should **significantly reduce the likelihood of breaking changes**. Moving forward, our development efforts will focus
+  exclusively on bug fixes, security updates, deployment enhancements, and documentation improvements. The latest added feature was necessary as handling PQC keys is cumbersome. Therefore a keystore to have the PQC keys saved to is important as an alternative to store they keys (encrypted) in metadata
 # Secure File Encryption Tool
 A powerful tool for securely encrypting, decrypting, and shredding files with military-grade cryptography and multi-layer password hashing.
 ## History
@@ -21,6 +18,7 @@ you can create issues by [sending mail](mailto:issue+world-openssl-encrypt-2-iss
 - **Multi-hash Password Protection**: Optional layered hashing with SHA-256, SHA-512, SHA3-256, SHA3-512, Whirlpool, BLAKE2b and SHAKE-256 they all can be chained with different rounds to create key-stretching
 - **Multi-KDF Password Protection**: Optional layered KFD with PBKDF2, Scrypt, Argon2 and Ballon they all can be chained with different rounds to create key-stretching and very strong brute-force prevention
 - **Postquantum Resistance**: Using a hybrid approach to implement postquantum resistance. Still using symetrical encryption but with a key derived with `Kyber KEM` for postquantum resistance
+- **Keystore for PQC keys**: a local keystore can be used to maintain and manage the PQC keys used for encrypting your files
 - **Password Management**: Password confirmation to prevent typos, random password generation, and standalone password generator
 - **File Integrity Verification**: Built-in hash verification to detect corrupted or tampered files
 - **Secure File Shredding**: Military-grade secure deletion with multi-pass overwriting
