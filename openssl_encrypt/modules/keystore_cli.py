@@ -15,6 +15,10 @@ import datetime
 from enum import Enum
 from typing import Dict, Any, List, Tuple, Optional
 
+# Add UTC constant for Python < 3.11
+if not hasattr(datetime, 'UTC'):
+    datetime.UTC = datetime.timezone.utc
+
 from .crypt_errors import (
     KeystoreError, KeystorePasswordError, KeyNotFoundError, 
     KeystoreCorruptedError, KeystoreVersionError
@@ -107,8 +111,8 @@ class PQCKeystore:
         # Create keystore structure
         self.keystore_data = {
             "version": self.KEYSTORE_VERSION,
-            "created": datetime.datetime.utcnow().isoformat() + "Z",
-            "last_modified": datetime.datetime.utcnow().isoformat() + "Z",
+            "created": datetime.datetime.now(datetime.UTC).isoformat() + "Z",
+            "last_modified": datetime.datetime.now(datetime.UTC).isoformat() + "Z",
             "security_level": security_level.value,
             "encryption": {
                 "salt": base64.b64encode(salt).decode('utf-8'),
@@ -192,7 +196,7 @@ class PQCKeystore:
             raise KeystoreError("No keystore data to save")
             
         # Update modification timestamp
-        self.keystore_data["last_modified"] = datetime.datetime.utcnow().isoformat() + "Z"
+        self.keystore_data["last_modified"] = datetime.datetime.now(datetime.UTC).isoformat() + "Z"
         
         # Add a test key for password verification if it doesn't exist
         if "test_key" not in self.keystore_data and self.master_key:
@@ -338,7 +342,7 @@ class PQCKeystore:
         self.keystore_data.setdefault("keys", {})
         self.keystore_data["keys"][key_id] = {
             "algorithm": algorithm,
-            "created": datetime.datetime.utcnow().isoformat() + "Z",
+            "created": datetime.datetime.now(datetime.UTC).isoformat() + "Z",
             "description": description,
             "tags": tags or [],
             "use_master_password": use_master_password,
@@ -396,6 +400,22 @@ class PQCKeystore:
         
         use_master_password = key_data.get("use_master_password", True)
         
+        # Check for dual encryption flags
+        dual_encryption = key_data.get("dual_encryption", False) or \
+                         key_data.get("from_dual_encrypted_file", False)
+        
+        # Prepare file_password if it's provided
+        file_password_bytes = None
+        if file_password is not None:
+            if isinstance(file_password, str):
+                file_password_bytes = file_password.encode('utf-8')
+            else:
+                file_password_bytes = file_password
+        
+        # Validate file_password if dual encryption is enabled
+        if dual_encryption and file_password is None:
+            raise KeystoreError("File password required for dual-encrypted key")
+                
         if use_master_password:
             if not self.master_key:
                 raise KeystoreError("Master key not available")
@@ -434,19 +454,18 @@ class PQCKeystore:
             secure_memzero(key_encryption_key)
         
         # Handle dual encryption if needed
-        dual_encryption = key_data.get("dual_encryption", False)
-        if dual_encryption and file_password is not None:
+        if dual_encryption:
             try:
                 # Extract the dual encryption salt
                 if "dual_encryption_salt" not in key_data:
-                    raise KeystoreError("Missing dual encryption salt")
+                    raise KeystoreError("Missing dual encryption salt - make sure the key was created with dual encryption")
                     
                 dual_salt = base64.b64decode(key_data["dual_encryption_salt"])
                 
                 # Determine security level
                 security_level = KeystoreSecurityLevel(self.keystore_data.get("security_level", "standard"))
                 
-                # Derive file encryption key
+                # Derive file encryption key from file_password
                 file_encryption_key = self._derive_key(file_password, dual_salt, security_level)
                 
                 # Import necessary AEAD cipher for decryption
