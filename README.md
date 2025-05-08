@@ -1,8 +1,6 @@
-# Breaking Changes: release 0.7.0 is a BREAKING release, before updating to this release DECRYPT your already encrypted data with the EXACT version used for encrypting. Then update and encrypt again
-[![Breaking Changes](https://img.shields.io/badge/WARNING-BREAKING%20CHANGES-red)](https://gitlab.rm-rf.ch/world/openssl_encrypt) The breaking change 0.7.0 was introduced because the final implementation of keystore required some bigger changes to the encryption/decryption logic which finally lead to the breaking changes in behaviour
-# Version 0.7.1: Feature Complete Status
-  With the release of version **0.7.1** openssl_encrypt is now really **considered feature complete**. No new features will be added to the codebase, which should **significantly reduce the likelihood of breaking changes**. Moving forward, our development efforts will focus
-  exclusively on bug fixes, security updates, deployment enhancements, and documentation improvements. The latest added feature was necessary as handling PQC keys is cumbersome. Therefore a keystore to have the PQC keys saved to is important as an alternative to store they keys (encrypted) in metadata
+# Version 0.7.2: Restructured Metadata
+  With the release of version **0.7.2**, openssl_encrypt now uses a new metadata structure. `format_version` 4 represents that new structure. 
+  The change is implemented to avoid any breaking changes to prior versions. Therefore the code is able to process all supported format versions transparently. Unittests of existing (older metadata) encrypted file are passing. Tests for new structure yet to come
 # Secure File Encryption Tool
 A powerful tool for securely encrypting, decrypting, and shredding files with military-grade cryptography and multi-layer password hashing.
 ## History
