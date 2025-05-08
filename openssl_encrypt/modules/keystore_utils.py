@@ -34,7 +34,33 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
                 # First try direct JSON parsing
                 try:
                     metadata = json.loads(metadata_json)
-                    if 'hash_config' in metadata and 'pqc_keystore_key_id' in metadata['hash_config']:
+                    format_version = metadata.get('format_version', 1)
+                    
+                    # Handle format_version 4
+                    if format_version == 4:
+                        # First check in derivation_config.kdf_config
+                        if ('derivation_config' in metadata and 
+                            'kdf_config' in metadata['derivation_config'] and 
+                            'pqc_keystore_key_id' in metadata['derivation_config']['kdf_config']):
+                            key_id = metadata['derivation_config']['kdf_config']['pqc_keystore_key_id']
+                            if verbose:
+                                print(f"Found key ID in format version 4 metadata derivation_config: {key_id}")
+                            return key_id
+                        # Also check for dual_encryption flag in kdf_config
+                        elif ('derivation_config' in metadata and 
+                              'kdf_config' in metadata['derivation_config'] and 
+                              'dual_encryption' in metadata['derivation_config']['kdf_config'] and
+                              metadata['derivation_config']['kdf_config']['dual_encryption']):
+                            if verbose:
+                                print("Found dual_encryption flag in format version 4 metadata")
+                        # Check in the root level hash_config for backward compatibility
+                        elif 'hash_config' in metadata and 'pqc_keystore_key_id' in metadata['hash_config']:
+                            key_id = metadata['hash_config']['pqc_keystore_key_id']
+                            if verbose:
+                                print(f"Found key ID in format version 4 legacy location: {key_id}")
+                            return key_id
+                    # Handle format_version 1-3
+                    elif 'hash_config' in metadata and 'pqc_keystore_key_id' in metadata['hash_config']:
                         key_id = metadata['hash_config']['pqc_keystore_key_id']
                         if verbose:
                             print(f"Found key ID in metadata JSON: {key_id}")
@@ -103,9 +129,26 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
                 
                 try:
                     header_config = json.loads(metadata_json)
+                    format_version = header_config.get('format_version', 1)
                     
-                    # Check if there's a PQC public key in the metadata
-                    if 'hash_config' in header_config and 'pqc_public_key' in header_config['hash_config']:
+                    # Handle format_version 4
+                    if format_version == 4:
+                        # Check if there's a PQC public key in the metadata
+                        if ('encryption' in header_config and 'pqc_public_key' in header_config['encryption']):
+                            # This file has an embedded public key, which means it might have an embedded private key
+                            if verbose:
+                                print("Found embedded PQC public key in format v4 metadata")
+                            
+                            # Check for embedded private key
+                            if 'pqc_private_key' in header_config['encryption']:
+                                # Check for embedded private key marker
+                                private_key_marker = header_config['encryption'].get('pqc_private_key_embedded')
+                                if private_key_marker:
+                                    if verbose:
+                                        print("File has embedded private key")
+                                    return "EMBEDDED_PRIVATE_KEY"
+                    # Handle format_version 1-3
+                    elif 'hash_config' in header_config and 'pqc_public_key' in header_config['hash_config']:
                         # This file has an embedded public key, which means it might have an embedded private key
                         if verbose:
                             print("Found embedded PQC public key in metadata")
@@ -161,13 +204,14 @@ def get_keystore_password(args) -> str:
     # Prompt user for password (always prompt for keystore operations to ensure we get the right password)
     return getpass.getpass("Enter keystore password: ")
 
-def get_pqc_key_for_decryption(args, hash_config=None):
+def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
     """
     Get PQC key for decryption, checking keystore if available
     
     Args:
         args: Command-line arguments
         hash_config: Hash configuration with possible key ID
+        metadata: Full metadata if available (for format version 4 support)
         
     Returns:
         tuple: (pqc_keypair, pqc_private_key, key_id)
@@ -176,14 +220,28 @@ def get_pqc_key_for_decryption(args, hash_config=None):
     pqc_keypair = None
     pqc_private_key = None
     key_id = None
+    format_version = 3  # Default to format version 3
     
-    # Check if we have a key ID in the hash_config
-    if hash_config and 'pqc_keystore_key_id' in hash_config:
+    # Determine format version if metadata is provided
+    if metadata:
+        format_version = metadata.get('format_version', 3)
+    
+    # Check if we have a key ID in the hash_config or metadata
+    if format_version == 4 and metadata:
+        # Check for key ID in format version 4 structure
+        if ('derivation_config' in metadata and 
+            'kdf_config' in metadata['derivation_config'] and 
+            'pqc_keystore_key_id' in metadata['derivation_config']['kdf_config']):
+            key_id = metadata['derivation_config']['kdf_config']['pqc_keystore_key_id']
+            if not getattr(args, 'quiet', False):
+                print(f"Found key ID in metadata derivation_config: {key_id}")
+    elif hash_config and 'pqc_keystore_key_id' in hash_config:
+        # Legacy format (1-3)
         key_id = hash_config['pqc_keystore_key_id']
         if not getattr(args, 'quiet', False):
             print(f"Found key ID in hash_config: {key_id}")
     
-    # If no key ID in hash_config, try extracting from file
+    # If no key ID found yet, try extracting from file
     if not key_id and hasattr(args, 'input') and args.input:
         # Use the improved extract_key_id_from_metadata function
         # which now includes regex-based extraction for robustness
@@ -197,7 +255,7 @@ def get_pqc_key_for_decryption(args, hash_config=None):
             try:
                 # Read the file to extract the embedded private key
                 with open(args.input, 'rb') as f:
-                    file_data = f.read(4096)  # Read enough to get the embedded key
+                    file_data = f.read(8192)  # Read enough to get the embedded key
                 
                 parts = file_data.split(b':', 1)
                 if len(parts) > 1:
@@ -205,31 +263,64 @@ def get_pqc_key_for_decryption(args, hash_config=None):
                     metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
                     header_config = json.loads(metadata_json)
                     
-                    # Extract embedded private key
-                    if 'hash_config' in header_config:
-                        embedded_private_key = header_config['hash_config'].get('pqc_private_key')
-                        if embedded_private_key:
-                            if not getattr(args, 'quiet', False):
-                                print("Successfully retrieved embedded private key from metadata")
-                            
-                            # Decode the private key
-                            private_key = base64.b64decode(embedded_private_key)
-                            
-                            # Extract public key as well
-                            if 'pqc_public_key' in header_config['hash_config']:
-                                public_key = base64.b64decode(header_config['hash_config']['pqc_public_key'])
+                    # Get format version from metadata
+                    format_version = header_config.get('format_version', 3)
+                    
+                    if format_version == 4:
+                        # Extract from format version 4 structure
+                        if 'encryption' in header_config and 'pqc_private_key' in header_config['encryption']:
+                            embedded_private_key = header_config['encryption']['pqc_private_key']
+                            if embedded_private_key:
+                                if not getattr(args, 'quiet', False):
+                                    print("Successfully retrieved embedded private key from format v4 metadata")
                                 
-                                # Return the key pair
-                                pqc_keypair = (public_key, private_key)
-                                pqc_private_key = private_key
-                                return pqc_keypair, pqc_private_key, "EMBEDDED_PRIVATE_KEY"
+                                # Decode the private key
+                                private_key = base64.b64decode(embedded_private_key)
+                                
+                                # Extract public key as well
+                                if 'pqc_public_key' in header_config['encryption']:
+                                    public_key = base64.b64decode(header_config['encryption']['pqc_public_key'])
+                                    
+                                    # Return the key pair
+                                    pqc_keypair = (public_key, private_key)
+                                    pqc_private_key = private_key
+                                    return pqc_keypair, pqc_private_key, "EMBEDDED_PRIVATE_KEY"
+                    else:
+                        # Legacy format (v1-3)
+                        if 'hash_config' in header_config:
+                            embedded_private_key = header_config['hash_config'].get('pqc_private_key')
+                            if embedded_private_key:
+                                if not getattr(args, 'quiet', False):
+                                    print("Successfully retrieved embedded private key from metadata")
+                                
+                                # Decode the private key
+                                private_key = base64.b64decode(embedded_private_key)
+                                
+                                # Extract public key as well
+                                if 'pqc_public_key' in header_config['hash_config']:
+                                    public_key = base64.b64decode(header_config['hash_config']['pqc_public_key'])
+                                    
+                                    # Return the key pair
+                                    pqc_keypair = (public_key, private_key)
+                                    pqc_private_key = private_key
+                                    return pqc_keypair, pqc_private_key, "EMBEDDED_PRIVATE_KEY"
             except Exception as e:
                 if getattr(args, 'verbose', False):
                     print(f"Failed to extract embedded private key: {e}")
     
-    # Check for dual encryption flag in hash_config
+    # Check for dual encryption flag in metadata
     dual_encryption = False
-    if hash_config and 'dual_encryption' in hash_config:
+    
+    if format_version == 4 and metadata:
+        # Check for dual encryption flag in format version 4 structure
+        if ('derivation_config' in metadata and 
+            'kdf_config' in metadata['derivation_config'] and 
+            'dual_encryption' in metadata['derivation_config']['kdf_config']):
+            dual_encryption = metadata['derivation_config']['kdf_config']['dual_encryption']
+            if not getattr(args, 'quiet', False) and dual_encryption:
+                print("Dual encryption is enabled for this file (format v4)")
+    elif hash_config and 'dual_encryption' in hash_config:
+        # Legacy format (v1-3)
         dual_encryption = hash_config['dual_encryption']
         if not getattr(args, 'quiet', False) and dual_encryption:
             print("Dual encryption is enabled for this file")
@@ -355,27 +446,54 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
     Returns:
         str: The key ID used to store the key
     """
-    # Check for either of the dual encryption flags
-    dual_encrypt_enabled = metadata.get('pqc_dual_encrypt_key', False) or metadata.get('dual_encryption', False)
+    # Check format version to determine where to look for fields
+    format_version = metadata.get('format_version', 1)
     
-    if 'pqc_private_key' not in metadata or not dual_encrypt_enabled:
+    # Check for dual encryption flag based on format version
+    dual_encrypt_enabled = False
+    encrypted_private_key = None
+    public_key = None
+    algorithm = None
+    
+    if format_version == 4:
+        # Format version 4 structure
+        if 'derivation_config' in metadata and 'kdf_config' in metadata['derivation_config']:
+            dual_encrypt_enabled = metadata['derivation_config']['kdf_config'].get('dual_encryption', False)
+        
+        if 'encryption' in metadata:
+            # Check for private key in encryption section
+            if 'pqc_private_key' in metadata['encryption']:
+                encrypted_private_key = base64.b64decode(metadata['encryption']['pqc_private_key'])
+            
+            # Get public key from encryption section
+            if 'pqc_public_key' in metadata['encryption']:
+                public_key = base64.b64decode(metadata['encryption']['pqc_public_key'])
+            
+            # Get algorithm from encryption section
+            algorithm = metadata['encryption'].get('algorithm', 'kyber768-hybrid')
+    else:
+        # Legacy format (1-3)
+        dual_encrypt_enabled = metadata.get('pqc_dual_encrypt_key', False) or metadata.get('dual_encryption', False)
+        
+        if 'pqc_private_key' in metadata:
+            encrypted_private_key = base64.b64decode(metadata['pqc_private_key'])
+            
+        if 'pqc_public_key' in metadata:
+            public_key = base64.b64decode(metadata['pqc_public_key'])
+            
+        algorithm = metadata.get('algorithm', 'kyber768-hybrid')
+    
+    # Check if we have the necessary data to proceed
+    if encrypted_private_key is None or not dual_encrypt_enabled:
         if not quiet:
-            print("No PQC private key in metadata or dual encryption not enabled")
+            print(f"No PQC private key in metadata or dual encryption not enabled (format v{format_version})")
         return None
     
     # Import necessary dependencies here to prevent circular imports
     from .keystore_cli import PQCKeystore
     from .secure_memory import secure_memzero
     
-    # Track sensitive variables for secure cleanup
-    encrypted_private_key = None
-    
     try:
-        # Get the encrypted private key and public key from metadata
-        # Note: The private key is already encrypted with file password in crypt_core.py
-        encrypted_private_key = base64.b64decode(metadata['pqc_private_key'])
-        public_key = base64.b64decode(metadata['pqc_public_key'])
-        
         # Create or load keystore
         keystore = PQCKeystore(keystore_path)
         if not os.path.exists(keystore_path):
@@ -385,15 +503,18 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
         else:
             keystore.load_keystore(keystore_password)
         
-        # Determine algorithm from metadata
-        algorithm = metadata.get('algorithm', 'kyber768-hybrid')
+        # If algorithm is not found in metadata, use a default
+        if algorithm is None:
+            algorithm = 'kyber768-hybrid'
+            
+        # Clean algorithm name if it has -hybrid suffix
         if algorithm.endswith('-hybrid'):
             algorithm = algorithm[:-7]  # Remove -hybrid suffix
         
         # If we have a key ID and the key exists, update it
         import datetime
         description = f"Updated from file on {datetime.datetime.now().strftime('%Y-%m-%d')}"
-        tags = ["from-file", "dual-encrypted"]
+        tags = ["from-file", "dual-encrypted", f"format-v{format_version}"]
         
         if key_id and key_id in [k['key_id'] for k in keystore.list_keys()]:
             # Check if update_key method exists in PQCKeystore
@@ -443,8 +564,13 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
             if hasattr(keystore, '_key_has_dual_encryption_flag'):
                 keystore._key_has_dual_encryption_flag(key_id, True)
             
-            # Update metadata with the key ID
-            metadata['pqc_keystore_key_id'] = key_id
+            # Update metadata with the key ID based on format version
+            if format_version == 4:
+                if 'derivation_config' in metadata and 'kdf_config' in metadata['derivation_config']:
+                    metadata['derivation_config']['kdf_config']['pqc_keystore_key_id'] = key_id
+            else:
+                # Legacy format update
+                metadata['pqc_keystore_key_id'] = key_id
         
         if not quiet:
             print(f"Successfully stored PQC key in keystore with ID: {key_id}")
@@ -471,13 +597,14 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
             # Last resort cleanup - just remove the reference
             encrypted_private_key = None
         
-def auto_generate_pqc_key(args, hash_config):
+def auto_generate_pqc_key(args, hash_config, format_version=3):
     """
     Auto-generate PQC key and add to keystore if needed
     
     Args:
         args: Command-line arguments
         hash_config: Hash configuration to update with key ID
+        format_version: The format version being used (default: 3)
         
     Returns:
         tuple: (pqc_keypair, pqc_private_key)
@@ -495,8 +622,26 @@ def auto_generate_pqc_key(args, hash_config):
                 print("Warning: Dual encryption requested but no file password provided. Disabling dual encryption.")
             dual_encryption = False
         else:
-            # Set the dual encryption flag in hash_config
-            hash_config["dual_encryption"] = True
+            # Set the dual encryption flag in the appropriate location based on format version
+            if format_version == 4:
+                # Format version 4 structure
+                if not isinstance(hash_config, dict):
+                    hash_config = {}
+                    
+                # Ensure the hash_config includes the proper structure
+                hash_config['dual_encryption'] = True  # For backward compatibility
+                
+                # Add to the proper location in derivation_config.kdf_config
+                if 'derivation_config' not in hash_config:
+                    hash_config['derivation_config'] = {}
+                if 'kdf_config' not in hash_config['derivation_config']:
+                    hash_config['derivation_config']['kdf_config'] = {}
+                    
+                hash_config['derivation_config']['kdf_config']['dual_encryption'] = True
+            else:
+                # Legacy format (v1-3)
+                hash_config["dual_encryption"] = True
+                
             if not getattr(args, 'quiet', False):
                 print("Enabling dual encryption for key - file will require both keystore and file passwords")
         
@@ -579,17 +724,60 @@ def auto_generate_pqc_key(args, hash_config):
                 if not getattr(args, 'quiet', False):
                     print(f"Added new key to keystore with ID: {key_id}")
             
-            # Store key ID in metadata
-            hash_config["pqc_keystore_key_id"] = key_id
+            # Store key ID in metadata based on format version
+            if format_version == 4:
+                # Format version 4 structure
+                if not isinstance(hash_config, dict):
+                    hash_config = {}
+                
+                # Store key ID in both locations for maximum compatibility
+                # In legacy location for backward compatibility
+                hash_config["pqc_keystore_key_id"] = key_id
+                
+                # In the correct V4 hierarchical structure
+                if 'derivation_config' not in hash_config:
+                    hash_config['derivation_config'] = {}
+                if 'kdf_config' not in hash_config['derivation_config']:
+                    hash_config['derivation_config']['kdf_config'] = {}
+                    
+                hash_config['derivation_config']['kdf_config']['pqc_keystore_key_id'] = key_id
+            else:
+                # Legacy format (v1-3)
+                hash_config["pqc_keystore_key_id"] = key_id
             
             # If we're using dual encryption, store that in metadata
             if dual_encryption:
-                hash_config["dual_encryption"] = True
+                if format_version == 4:
+                    # Store in both locations for maximum compatibility
+                    # Legacy location for backward compatibility
+                    hash_config["dual_encryption"] = True
+                    
+                    # Format version 4 structure
+                    if 'derivation_config' not in hash_config:
+                        hash_config['derivation_config'] = {}
+                    if 'kdf_config' not in hash_config['derivation_config']:
+                        hash_config['derivation_config']['kdf_config'] = {}
+                        
+                    hash_config['derivation_config']['kdf_config']['dual_encryption'] = True
+                else:
+                    # Legacy format
+                    hash_config["dual_encryption"] = True
             
             # If requested, also store the private key in metadata for self-decryption
             if hasattr(args, 'pqc_store_key') and args.pqc_store_key:
-                hash_config["pqc_private_key"] = base64.b64encode(private_key).decode('utf-8')
-                hash_config["pqc_private_key_embedded"] = True
+                encoded_private_key = base64.b64encode(private_key).decode('utf-8')
+                if format_version == 4:
+                    # Store in format version 4 structure
+                    if 'encryption' not in hash_config:
+                        hash_config['encryption'] = {}
+                        
+                    hash_config['encryption']['pqc_private_key'] = encoded_private_key
+                    hash_config['encryption']['pqc_private_key_embedded'] = True
+                else:
+                    # Legacy format
+                    hash_config["pqc_private_key"] = encoded_private_key
+                    hash_config["pqc_private_key_embedded"] = True
+                    
                 if not getattr(args, 'quiet', False):
                     print("Storing private key in metadata for self-decryption")
             
@@ -616,12 +804,37 @@ def auto_generate_pqc_key(args, hash_config):
     
     # If requested, store the private key in metadata for self-decryption
     if hasattr(args, 'pqc_store_key') and args.pqc_store_key:
-        hash_config["pqc_private_key"] = base64.b64encode(private_key).decode('utf-8')
-        hash_config["pqc_private_key_embedded"] = True
+        encoded_private_key = base64.b64encode(private_key).decode('utf-8')
+        encoded_public_key = base64.b64encode(public_key).decode('utf-8')
+        
+        if format_version == 4:
+            # Store in format version 4 structure
+            if 'encryption' not in hash_config:
+                hash_config['encryption'] = {}
+                
+            hash_config['encryption']['pqc_private_key'] = encoded_private_key
+            hash_config['encryption']['pqc_private_key_embedded'] = True
+            hash_config['encryption']['pqc_public_key'] = encoded_public_key
+        else:
+            # Legacy format
+            hash_config["pqc_private_key"] = encoded_private_key
+            hash_config["pqc_private_key_embedded"] = True
+            hash_config["pqc_public_key"] = encoded_public_key
+            
         if not getattr(args, 'quiet', False):
             print("Storing private key in metadata for self-decryption")
-    
-    # Store the public key as well for verification
-    hash_config["pqc_public_key"] = base64.b64encode(public_key).decode('utf-8')
+    else:
+        # Store just the public key for verification
+        encoded_public_key = base64.b64encode(public_key).decode('utf-8')
+        
+        if format_version == 4:
+            # Store in format version 4 structure
+            if 'encryption' not in hash_config:
+                hash_config['encryption'] = {}
+                
+            hash_config['encryption']['pqc_public_key'] = encoded_public_key
+        else:
+            # Legacy format
+            hash_config["pqc_public_key"] = encoded_public_key
     
     return (public_key, private_key), private_key

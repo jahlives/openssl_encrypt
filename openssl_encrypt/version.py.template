@@ -23,7 +23,8 @@ VERSION_HISTORY = {
     "0.5.3": "Security release with additional buffer overflow protection and better secure memory handling",
     "0.6.0rc1": "Breaking release for postquantum colud not be made non-breaking finally. This release is considered feature complete",
     "0.7.0rc1": "Breaking release for keystore feature of PQC keys. This is the last feature added to the release candidate",
-    "0.7.1": "Breaking release for keystore feature of PQC keys. This is the last feature added to the release candidate. Passing all tests and updated docs"
+    "0.7.1": "Breaking release for keystore feature of PQC keys. This is the last feature added to the release candidate. Passing all tests and updated docs",
+    "0.7.2": "Added new metadata structure in a backward-compatible way. Passing all tests and updated docs"
 }
 
 # Check for updates
