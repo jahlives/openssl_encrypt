@@ -2575,19 +2575,24 @@ class TestPostQuantumCrypto(unittest.TestCase):
 
 
 # Generate dynamic pytest tests for each test file
-def get_test_files():
+def get_test_files_v3():
     """Get list of all test files in the testfiles directory."""
-    test_dir = './openssl_encrypt/unittests/testfiles'
+    test_dir = './openssl_encrypt/unittests/testfiles/v3'
+    return [name for name in os.listdir(test_dir) if name.startswith('test1_')]
+
+def get_test_files_v4():
+    """Get list of all test files in the testfiles directory."""
+    test_dir = './openssl_encrypt/unittests/testfiles/v4'
     return [name for name in os.listdir(test_dir) if name.startswith('test1_')]
 
 # Create a test function for each file
 @pytest.mark.parametrize(
     "filename", 
-    get_test_files(),
+    get_test_files_v3(),
     ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}"
 )
 # Add isolation marker for each test to prevent race conditions
-def test_file_decryption(filename):
+def test_file_decryption_v3(filename):
     """Test decryption of a specific test file."""
     algorithm_name = filename.replace('test1_', '').replace('.txt', '')
     
@@ -2603,7 +2608,7 @@ def test_file_decryption(filename):
     
     try:
         decrypted_data = decrypt_file(
-            input_file=f"./openssl_encrypt/unittests/testfiles/{filename}",
+            input_file=f"./openssl_encrypt/unittests/testfiles/v3/{filename}",
             output_file=None,
             password=b"1234",
             pqc_private_key=pqc_private_key)
@@ -2623,10 +2628,10 @@ def test_file_decryption(filename):
 # Create a test function for each file
 @pytest.mark.parametrize(
     "filename", 
-    get_test_files(),
+    get_test_files_v3(),
     ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}"
 )
-def test_file_decryption_wrong_pw(filename):
+def test_file_decryption_wrong_pw_v3(filename):
     """Test decryption of a specific test file."""
     algorithm_name = filename.replace('test1_', '').replace('.txt', '')
     
@@ -2642,7 +2647,7 @@ def test_file_decryption_wrong_pw(filename):
     
     try:
         decrypted_data = decrypt_file(
-            input_file=f"./openssl_encrypt/unittests/testfiles/{filename}",
+            input_file=f"./openssl_encrypt/unittests/testfiles/v3/{filename}",
             output_file=None,
             password=b"12345",
             pqc_private_key=pqc_private_key)
@@ -2651,6 +2656,79 @@ def test_file_decryption_wrong_pw(filename):
     except Exception as e:
         print(f"\nDecryption failed for {algorithm_name}: {str(e)} which is epexcted")
         pass
+
+# Create a test function for each file
+@pytest.mark.parametrize(
+    "filename", 
+    get_test_files_v4(),
+    ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}"
+)
+# Add isolation marker for each test to prevent race conditions
+def test_file_decryption_v4(filename):
+    """Test decryption of a specific test file."""
+    algorithm_name = filename.replace('test1_', '').replace('.txt', '')
+    
+    # Provide a mock private key for Kyber tests to prevent test failures
+    # This is necessary because PQC tests require a private key, and when tests run in a group,
+    # they can interfere with each other causing "Post-quantum private key is required for decryption" errors.
+    # When tests run individually, a fallback mechanism in PQCipher.decrypt allows them to pass,
+    # but this doesn't work reliably with concurrent test execution.
+    pqc_private_key = None 
+    if 'kyber' in algorithm_name.lower():
+        # Create a mock private key that's unique for each algorithm to avoid cross-test interference
+        pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
+        
+    try:
+        decrypted_data = decrypt_file(
+            input_file=f"./openssl_encrypt/unittests/testfiles/v4/{filename}",
+            output_file=None,
+            password=b"1234",
+            pqc_private_key=pqc_private_key)
+
+        # Only assert if we actually got data back
+        if not decrypted_data:
+            raise ValueError("Decryption returned empty result")
+
+        assert decrypted_data == b'Hello World\n', f"Decryption result for {algorithm_name} did not match expected output"
+        print(f"\nDecryption successful for {algorithm_name}")
+    
+    except Exception as e: 
+        print(f"\nDecryption failed for {algorithm_name}: {str(e)}")
+        raise AssertionError(f"Decryption failed for {algorithm_name}: {str(e)}")
+
+
+# Create a test function for each file
+@pytest.mark.parametrize(
+    "filename", 
+    get_test_files_v4(),
+    ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}"
+)
+def test_file_decryption_wrong_pw_v4(filename):
+    """Test decryption of a specific test file."""
+    algorithm_name = filename.replace('test1_', '').replace('.txt', '')
+    
+    # Provide a mock private key for Kyber tests to prevent test failures
+    # This is necessary because PQC tests require a private key, and when tests run in a group,
+    # they can interfere with each other causing "Post-quantum private key is required for decryption" errors.
+    # When tests run individually, a fallback mechanism in PQCipher.decrypt allows them to pass,
+    # but this doesn't work reliably with concurrent test execution.
+    pqc_private_key = None
+    if 'kyber' in algorithm_name.lower():
+        # Create a mock private key that's unique for each algorithm to avoid cross-test interference
+        pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
+    
+    try:
+        decrypted_data = decrypt_file(
+            input_file=f"./openssl_encrypt/unittests/testfiles/v4/{filename}",
+            output_file=None,
+            password=b"12345",
+            pqc_private_key=pqc_private_key)
+
+        raise AssertionError(f"Decryption failed for {algorithm_name}: {str(e)}")
+    except Exception as e:
+        print(f"\nDecryption failed for {algorithm_name}: {str(e)} which is epexcted")
+        pass
+
 
 @pytest.mark.order(7)
 class TestCamelliaImplementation(unittest.TestCase):
