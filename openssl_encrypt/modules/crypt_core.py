@@ -2149,10 +2149,25 @@ def decrypt_file(
         
         if 'pqc_public_key' in encryption:
             pqc_public_key = base64.b64decode(encryption['pqc_public_key'])
-            pqc_info = {
-                'public_key': pqc_public_key,
-                'private_key': pqc_private_key
-            }
+            # If a private key was passed explicitly via parameter, use it
+            if pqc_private_key:
+                pqc_info = {
+                    'public_key': pqc_public_key,
+                    'private_key': pqc_private_key
+                }
+            # If the private key is embedded in the metadata and not encrypted, use it directly
+            elif pqc_has_private_key and not pqc_key_is_encrypted:
+                embedded_private_key = base64.b64decode(encryption['pqc_private_key'])
+                pqc_info = {
+                    'public_key': pqc_public_key,
+                    'private_key': embedded_private_key
+                }
+            # Otherwise just store the public key and we'll get/decrypt the private key later
+            else:
+                pqc_info = {
+                    'public_key': pqc_public_key,
+                    'private_key': pqc_private_key  # This might be None, will be set later
+                }
     # Handle older format versions (1-3)
     elif format_version in [1, 2, 3]:
         salt = base64.b64decode(metadata['salt'])
@@ -2180,10 +2195,25 @@ def decrypt_file(
             
             if 'pqc_public_key' in metadata:
                 pqc_public_key = base64.b64decode(metadata['pqc_public_key'])
-                pqc_info = {
-                    'public_key': pqc_public_key,
-                    'private_key': pqc_private_key
-                }
+                # If a private key was passed explicitly via parameter, use it
+                if pqc_private_key:
+                    pqc_info = {
+                        'public_key': pqc_public_key,
+                        'private_key': pqc_private_key
+                    }
+                # If the private key is embedded in the metadata and not encrypted, use it directly
+                elif pqc_has_private_key and not pqc_key_is_encrypted:
+                    embedded_private_key = base64.b64decode(metadata['pqc_private_key'])
+                    pqc_info = {
+                        'public_key': pqc_public_key,
+                        'private_key': embedded_private_key
+                    }
+                # Otherwise just store the public key and we'll get/decrypt the private key later
+                else:
+                    pqc_info = {
+                        'public_key': pqc_public_key,
+                        'private_key': pqc_private_key  # This might be None, will be set later
+                    }
     else:
         raise ValueError(f"Unsupported file format version: {format_version}")
 

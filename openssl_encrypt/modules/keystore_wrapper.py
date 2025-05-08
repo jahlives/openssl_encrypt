@@ -140,14 +140,27 @@ def encrypt_file_with_keystore(
                     metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
                     metadata = json.loads(metadata_json)
                     
-                    # Check if the private key is in the metadata
-                    if 'hash_config' in metadata and 'pqc_private_key' in metadata['hash_config']:
+                    # Get format version
+                    format_version = metadata.get('format_version', 3)
+                    
+                    # Check if private key is in metadata based on format version
+                    pqc_private_key_present = False
+                    if format_version == 4:
+                        # Format version 4 - check in encryption section
+                        if ('encryption' in metadata and 'pqc_private_key' in metadata['encryption']):
+                            pqc_private_key_present = True
+                    else:
+                        # Legacy format - check in root level
+                        if 'pqc_private_key' in metadata:
+                            pqc_private_key_present = True
+                    
+                    if pqc_private_key_present:
                         # Import the store_pqc_key_in_keystore function locally to avoid circular imports
                         from .keystore_utils import store_pqc_key_in_keystore
                         
-                        # Store the key in the keystore
+                        # Store the key in the keystore - passing the complete metadata
                         store_pqc_key_in_keystore(
-                            metadata['hash_config'],
+                            metadata,
                             keystore_file,
                             keystore_password,
                             key_id=key_id,
@@ -158,44 +171,76 @@ def encrypt_file_with_keystore(
                         import copy
                         clean_metadata = copy.deepcopy(metadata)
                         
-                        # Remove the private key from the metadata using a completely new metadata object
-                        # This approach avoids potential reference issues with nested structures
-                        keys_to_remove = [
-                            'pqc_private_key',
-                            'pqc_key_salt',
-                            'pqc_key_encrypted',
-                            'pqc_private_key_embedded'  # Also remove this flag
-                        ]
-                        
-                        # Create a completely new metadata object with only the fields we want to keep
-                        clean_metadata = {
-                            'format_version': metadata.get('format_version', 3),
-                            'salt': metadata.get('salt', ''),
-                            'hash_config': {},
-                            'pbkdf2_iterations': metadata.get('pbkdf2_iterations', 100000),
-                            'original_hash': metadata.get('original_hash', ''),
-                            'encrypted_hash': metadata.get('encrypted_hash', ''),
-                            'algorithm': metadata.get('algorithm', '')
-                        }
-                        
-                        # Copy only the hash_config fields we want to keep
-                        for k, v in metadata.get('hash_config', {}).items():
-                            if k not in keys_to_remove:
-                                clean_metadata['hash_config'][k] = v
-                        
-                        # Ensure the important flags are preserved
-                        if 'hash_config' in metadata:
-                            # Ensure dual encryption flags are consistent
-                            if 'pqc_dual_encrypt_key' in metadata['hash_config'] or dual_encryption:
-                                clean_metadata['hash_config']['dual_encryption'] = True
+                        if format_version == 4:
+                            # Format version 4 structure
+                            # Remove private key fields from encryption section
+                            if 'encryption' in clean_metadata:
+                                keys_to_remove = [
+                                    'pqc_private_key',
+                                    'pqc_key_salt',
+                                    'pqc_key_encrypted',
+                                    'pqc_private_key_embedded'
+                                ]
+                                
+                                for key in keys_to_remove:
+                                    if key in clean_metadata['encryption']:
+                                        del clean_metadata['encryption'][key]
+                                        
+                                # Ensure the public key is preserved
+                                if 'pqc_public_key' in metadata['encryption']:
+                                    clean_metadata['encryption']['pqc_public_key'] = metadata['encryption']['pqc_public_key']
+                                    
+                            # Ensure dual encryption flag is set in kdf_config
+                            if 'derivation_config' in clean_metadata and 'kdf_config' in clean_metadata['derivation_config']:
+                                clean_metadata['derivation_config']['kdf_config']['dual_encryption'] = True
+                                
+                                # Ensure key ID is in kdf_config
+                                clean_metadata['derivation_config']['kdf_config']['pqc_keystore_key_id'] = key_id
+                                
+                                # Copy verification fields if they exist
+                                if 'pqc_dual_encrypt_verify' in metadata.get('hash_config', {}) and 'pqc_dual_encrypt_verify_salt' in metadata.get('hash_config', {}):
+                                    clean_metadata['derivation_config']['kdf_config']['pqc_dual_encrypt_verify'] = metadata['hash_config']['pqc_dual_encrypt_verify']
+                                    clean_metadata['derivation_config']['kdf_config']['pqc_dual_encrypt_verify_salt'] = metadata['hash_config']['pqc_dual_encrypt_verify_salt']
+                        else:
+                            # Format version 1-3 structure
+                            # Remove the private key from the metadata using a completely new metadata object
+                            # This approach avoids potential reference issues with nested structures
+                            keys_to_remove = [
+                                'pqc_private_key',
+                                'pqc_key_salt',
+                                'pqc_key_encrypted',
+                                'pqc_private_key_embedded'  # Also remove this flag
+                            ]
                             
-                            # Ensure key ID is preserved
-                            if 'pqc_keystore_key_id' in metadata['hash_config']:
-                                clean_metadata['hash_config']['pqc_keystore_key_id'] = metadata['hash_config']['pqc_keystore_key_id']
+                            # Create a completely new metadata object with only the fields we want to keep
+                            clean_metadata = {
+                                'format_version': metadata.get('format_version', 3),
+                                'salt': metadata.get('salt', ''),
+                                'hash_config': {},
+                                'pbkdf2_iterations': metadata.get('pbkdf2_iterations', 100000),
+                                'original_hash': metadata.get('original_hash', ''),
+                                'encrypted_hash': metadata.get('encrypted_hash', ''),
+                                'algorithm': metadata.get('algorithm', '')
+                            }
                             
-                            # Copy the public key
-                            if 'pqc_public_key' in metadata['hash_config']:
-                                clean_metadata['hash_config']['pqc_public_key'] = metadata['hash_config']['pqc_public_key']
+                            # Copy only the hash_config fields we want to keep
+                            for k, v in metadata.get('hash_config', {}).items():
+                                if k not in keys_to_remove:
+                                    clean_metadata['hash_config'][k] = v
+                            
+                            # Ensure the important flags are preserved
+                            if 'hash_config' in metadata:
+                                # Ensure dual encryption flags are consistent
+                                if 'pqc_dual_encrypt_key' in metadata['hash_config'] or dual_encryption:
+                                    clean_metadata['hash_config']['dual_encryption'] = True
+                                
+                                # Ensure key ID is preserved
+                                if 'pqc_keystore_key_id' in metadata['hash_config']:
+                                    clean_metadata['hash_config']['pqc_keystore_key_id'] = metadata['hash_config']['pqc_keystore_key_id']
+                                
+                                # Copy the public key
+                                if 'pqc_public_key' in metadata['hash_config']:
+                                    clean_metadata['hash_config']['pqc_public_key'] = metadata['hash_config']['pqc_public_key']
                         
                         # Write the updated metadata back to the file
                         new_metadata_json = json.dumps(clean_metadata)
@@ -205,7 +250,7 @@ def encrypt_file_with_keystore(
                             f.write(new_metadata_b64)
                             f.write(encrypted_data)
                         
-                        # Verify the keys were actually removed
+                        # Verify removal was successful
                         with open(output_file, 'rb') as f:
                             verify_content = f.read(8192)
                             
@@ -213,55 +258,22 @@ def encrypt_file_with_keystore(
                         verify_metadata_json = base64.b64decode(verify_metadata_b64).decode('utf-8')
                         verify_metadata = json.loads(verify_metadata_json)
                         
-                        if 'hash_config' in verify_metadata and any(key in verify_metadata['hash_config'] for key in keys_to_remove):
+                        private_key_still_present = False
+                        if format_version == 4:
+                            # Check encryption section for format version 4
+                            if 'encryption' in verify_metadata and 'pqc_private_key' in verify_metadata['encryption']:
+                                private_key_still_present = True
+                        else:
+                            # Check hash_config for older versions
+                            if 'hash_config' in verify_metadata and any(key in verify_metadata['hash_config'] for key in keys_to_remove):
+                                private_key_still_present = True
+                        
+                        if private_key_still_present:
                             if not quiet:
-                                print("WARNING: Some sensitive keys still in metadata. Trying one more approach...")
-                            
-                            # If some keys are still in metadata, build an even more minimal metadata
-                            minimal_metadata = {
-                                'format_version': metadata.get('format_version', 3),
-                                'salt': metadata.get('salt', ''),
-                                'hash_config': {
-                                    'dual_encryption': True,
-                                    'pqc_keystore_key_id': key_id
-                                },
-                                'pbkdf2_iterations': metadata.get('pbkdf2_iterations', 100000),
-                                'original_hash': metadata.get('original_hash', ''),
-                                'encrypted_hash': metadata.get('encrypted_hash', ''),
-                                'algorithm': metadata.get('algorithm', '')
-                            }
-                            
-                            # Add password verification fields if they exist
-                            if 'pqc_dual_encrypt_verify' in metadata.get('hash_config', {}) and 'pqc_dual_encrypt_verify_salt' in metadata.get('hash_config', {}):
-                                minimal_metadata['hash_config']['pqc_dual_encrypt_verify'] = metadata['hash_config']['pqc_dual_encrypt_verify']
-                                minimal_metadata['hash_config']['pqc_dual_encrypt_verify_salt'] = metadata['hash_config']['pqc_dual_encrypt_verify_salt']
-                            
-                            # Add public key if it exists
-                            if 'pqc_public_key' in metadata.get('hash_config', {}):
-                                minimal_metadata['hash_config']['pqc_public_key'] = metadata['hash_config']['pqc_public_key']
-                            
-                            # Write the minimal metadata
-                            minimal_metadata_json = json.dumps(minimal_metadata)
-                            minimal_metadata_b64 = base64.b64encode(minimal_metadata_json.encode('utf-8'))
-                            
-                            with open(output_file, 'wb') as f:
-                                f.write(minimal_metadata_b64)
-                                f.write(encrypted_data)
-                            
-                            # One more verification
-                            with open(output_file, 'rb') as f:
-                                final_content = f.read(8192)
-                            
-                            final_metadata_b64 = final_content[:final_content.find(b':')]
-                            final_metadata_json = base64.b64decode(final_metadata_b64).decode('utf-8')
-                            final_metadata = json.loads(final_metadata_json)
-                            
-                            if 'hash_config' in final_metadata and any(key in final_metadata['hash_config'] for key in keys_to_remove):
-                                if not quiet:
-                                    print("WARNING: Unable to completely remove private key from metadata!")
-                            
-                        if not quiet:
-                            print("Successfully stored PQC key in keystore and removed from metadata")
+                                print("WARNING: Unable to completely remove private key from metadata!")
+                        else:
+                            if not quiet:
+                                print("Successfully stored PQC key in keystore and removed from metadata")
                 except Exception as e:
                     if not quiet:
                         print(f"Warning: Error processing metadata: {e}")
@@ -286,33 +298,58 @@ def encrypt_file_with_keystore(
                 try:
                     metadata = json.loads(metadata_json)
                     need_update = False
+                    format_version = metadata.get('format_version', 3)
                     
-                    # Check if key ID is in metadata
-                    if ('hash_config' in metadata and 
-                        ('pqc_keystore_key_id' not in metadata['hash_config'] or 
-                         metadata['hash_config']['pqc_keystore_key_id'] != key_id)):
+                    if format_version == 4:
+                        # For format version 4, check in derivation_config.kdf_config
+                        if 'derivation_config' not in metadata:
+                            metadata['derivation_config'] = {}
+                        if 'kdf_config' not in metadata['derivation_config']:
+                            metadata['derivation_config']['kdf_config'] = {}
                         
-                        if not quiet:
-                            print("Key ID not found in metadata, adding it manually")
+                        kdf_config = metadata['derivation_config']['kdf_config']
                         
-                        # Key ID is missing from metadata, add it
-                        if 'hash_config' not in metadata:
-                            metadata['hash_config'] = {}
+                        # Check if key ID is missing
+                        if 'pqc_keystore_key_id' not in kdf_config or kdf_config['pqc_keystore_key_id'] != key_id:
+                            if not quiet:
+                                print("Key ID not found in metadata, adding it to kdf_config")
+                            kdf_config['pqc_keystore_key_id'] = key_id
+                            need_update = True
                         
-                        metadata['hash_config']['pqc_keystore_key_id'] = key_id
-                        need_update = True
-                    
-                    # Check if dual_encryption flag is missing
-                    if dual_encryption and ('hash_config' in metadata and 
-                                          'dual_encryption' not in metadata['hash_config']):
-                        if not quiet:
-                            print("Dual encryption flag missing from metadata, adding it")
+                        # Check if dual_encryption flag is missing
+                        if dual_encryption and 'dual_encryption' not in kdf_config:
+                            if not quiet:
+                                print("Dual encryption flag missing from metadata, adding it to kdf_config")
+                            kdf_config['dual_encryption'] = True
+                            need_update = True
+                    else:
+                        # For format version 1-3, check in hash_config
+                        # Check if key ID is missing
+                        if ('hash_config' in metadata and 
+                            ('pqc_keystore_key_id' not in metadata['hash_config'] or 
+                             metadata['hash_config']['pqc_keystore_key_id'] != key_id)):
+                            
+                            if not quiet:
+                                print("Key ID not found in metadata, adding it manually")
+                            
+                            # Key ID is missing from metadata, add it
+                            if 'hash_config' not in metadata:
+                                metadata['hash_config'] = {}
+                            
+                            metadata['hash_config']['pqc_keystore_key_id'] = key_id
+                            need_update = True
                         
-                        if 'hash_config' not in metadata:
-                            metadata['hash_config'] = {}
-                        
-                        metadata['hash_config']['dual_encryption'] = True
-                        need_update = True
+                        # Check if dual_encryption flag is missing
+                        if dual_encryption and ('hash_config' in metadata and 
+                                              'dual_encryption' not in metadata['hash_config']):
+                            if not quiet:
+                                print("Dual encryption flag missing from metadata, adding it")
+                            
+                            if 'hash_config' not in metadata:
+                                metadata['hash_config'] = {}
+                            
+                            metadata['hash_config']['dual_encryption'] = True
+                            need_update = True
                     
                     # If we need to update the metadata, rewrite the file
                     if need_update:
@@ -378,41 +415,81 @@ def decrypt_file_with_keystore(
     Returns:
         bool: Success or failure
     """
+    # Read the metadata first to determine format version and other details
+    format_version = 1
+    metadata = None
+    try:
+        with open(input_file, 'rb') as f:
+            content = f.read(8192)  # Read enough for the header
+            
+        # Find the colon separator
+        colon_pos = content.find(b':')
+        if colon_pos > 0:
+            metadata_b64 = content[:colon_pos]
+            try:
+                metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
+                metadata = json.loads(metadata_json)
+                format_version = metadata.get('format_version', 1)
+                if not quiet:
+                    print(f"Detected format version: {format_version}")
+            except Exception:
+                pass  # Ignore parsing errors
+    except Exception:
+        pass  # Ignore file reading errors
+    
     # Check for dual encryption in metadata if not explicitly specified
     if not dual_encryption:
         # Check if this file uses dual encryption
-        try:
-            with open(input_file, 'rb') as f:
-                content = f.read(8192)  # Read enough for the header
-                
-            # Find the colon separator
-            colon_pos = content.find(b':')
-            if colon_pos > 0:
-                metadata_b64 = content[:colon_pos]
-                try:
-                    metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
-                    metadata = json.loads(metadata_json)
+        if metadata:
+            # Check based on format version
+            if format_version == 4:
+                # Version 4 format - check in derivation_config.kdf_config
+                if ('derivation_config' in metadata and 
+                    'kdf_config' in metadata['derivation_config'] and 
+                    'dual_encryption' in metadata['derivation_config']['kdf_config']):
+                    dual_encryption = metadata['derivation_config']['kdf_config']['dual_encryption']
+                    if dual_encryption and not quiet:
+                        print("File uses dual encryption - requires both keystore and file passwords")
+            else:
+                # Version 3 format - check in hash_config
+                if 'hash_config' in metadata and 'dual_encryption' in metadata['hash_config']:
+                    dual_encryption = metadata['hash_config']['dual_encryption']
+                    if dual_encryption and not quiet:
+                        print("File uses dual encryption - requires both keystore and file passwords")
+        else:
+            # Try reading the metadata manually
+            try:
+                with open(input_file, 'rb') as f:
+                    content = f.read(8192)  # Read enough for the header
                     
-                    # Check for dual encryption flag, handling both v3 and v4 formats
-                    format_version = metadata.get('format_version', 1)
-                    if format_version == 4:
-                        # Version 4 format - check in derivation_config.kdf_config
-                        if ('derivation_config' in metadata and 
-                            'kdf_config' in metadata['derivation_config'] and 
-                            'dual_encryption' in metadata['derivation_config']['kdf_config']):
-                            dual_encryption = metadata['derivation_config']['kdf_config']['dual_encryption']
-                            if dual_encryption and not quiet:
-                                print("File uses dual encryption - requires both keystore and file passwords")
-                    else:
-                        # Version 3 format - check in hash_config
-                        if 'hash_config' in metadata and 'dual_encryption' in metadata['hash_config']:
-                            dual_encryption = metadata['hash_config']['dual_encryption']
-                            if dual_encryption and not quiet:
-                                print("File uses dual encryption - requires both keystore and file passwords")
-                except Exception:
-                    pass  # Ignore parsing errors
-        except Exception:
-            pass  # Ignore file reading errors
+                # Find the colon separator
+                colon_pos = content.find(b':')
+                if colon_pos > 0:
+                    metadata_b64 = content[:colon_pos]
+                    try:
+                        metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
+                        metadata = json.loads(metadata_json)
+                        
+                        # Check for dual encryption flag, handling both v3 and v4 formats
+                        format_version = metadata.get('format_version', 1)
+                        if format_version == 4:
+                            # Version 4 format - check in derivation_config.kdf_config
+                            if ('derivation_config' in metadata and 
+                                'kdf_config' in metadata['derivation_config'] and 
+                                'dual_encryption' in metadata['derivation_config']['kdf_config']):
+                                dual_encryption = metadata['derivation_config']['kdf_config']['dual_encryption']
+                                if dual_encryption and not quiet:
+                                    print("File uses dual encryption - requires both keystore and file passwords")
+                        else:
+                            # Version 3 format - check in hash_config
+                            if 'hash_config' in metadata and 'dual_encryption' in metadata['hash_config']:
+                                dual_encryption = metadata['hash_config']['dual_encryption']
+                                if dual_encryption and not quiet:
+                                    print("File uses dual encryption - requires both keystore and file passwords")
+                    except Exception:
+                        pass  # Ignore parsing errors
+            except Exception:
+                pass  # Ignore file reading errors
     
     # If dual encryption is enabled, verify the file password using the hash in metadata
     if dual_encryption:
@@ -483,7 +560,7 @@ def decrypt_file_with_keystore(
                 if not hmac.compare_digest(current_pw_hash, verify_hash):
                     if not quiet:
                         print("Password verification failed - incorrect file password")
-                    raise ValueError("Invalid file password for dual-encrypted file")
+                    raise ValueError("Invalid password for dual-encrypted file - password verification failed")
                 elif not quiet:
                     print("File password verification successful")
             else:
@@ -507,40 +584,41 @@ def decrypt_file_with_keystore(
             if not quiet:
                 print(f"Using key ID from metadata: {extracted_key_id}")
             key_id = extracted_key_id
-        elif not quiet:
-            # Key ID wasn't found in metadata
-            if key_id:
-                print(f"No key ID found in metadata, using specified key ID: {key_id}")
-            else:
-                # Try to load keystore and check if there's only one key
-                try:
-                    from .keystore_cli import PQCKeystore
-                    keystore = PQCKeystore(keystore_file)
-                    
-                    # If no keystore password provided, prompt for it
-                    if keystore_password is None:
-                        keystore_password = getpass.getpass("Enter keystore password: ")
-                    
-                    keystore.load_keystore(keystore_password)
-                    keys = keystore.list_keys()
-                    
-                    if len(keys) == 1:
-                        key_id = keys[0]["key_id"]
-                        print(f"No key ID found in metadata, but only one key in keystore. Using key ID: {key_id}")
-                    elif len(keys) > 1:
-                        print(f"No key ID found in metadata. Multiple keys in keystore ({len(keys)}). Please specify using --key-id parameter.")
-                        # Can optionally list available keys here
-                        if not quiet:
-                            print("Available keys:")
-                            for k in keys:
-                                print(f"  - {k['key_id']} ({k.get('algorithm', 'unknown')})")
-                    else:
-                        print("No key ID found in metadata and no keys in keystore. Please specify using --key-id parameter.")
-                except Exception as e:
-                    print(f"No key ID found in metadata. Please specify using --key-id parameter. (Error loading keystore: {e})")
     
-    # If we have a keystore and key ID, get the private key
-    if key_id is not None and keystore_file is not None:
+    # Try to get the PQC key using our improved helper function
+    if keystore_file is not None and key_id is not None and key_id != "EMBEDDED_PRIVATE_KEY":
+        from .keystore_utils import get_pqc_key_for_decryption
+        import getpass
+        
+        # Create minimal args object for get_pqc_key_for_decryption
+        class SimpleArgs:
+            pass
+            
+        args = SimpleArgs()
+        args.keystore = keystore_file
+        args.keystore_password = keystore_password
+        args.input = input_file
+        args.password = password
+        args.quiet = quiet
+        args.verbose = kwargs.get('verbose', False)
+        
+        # Get the key using our improved helper, passing the metadata we already extracted
+        pqc_keypair, retrieved_private_key, extracted_key_id = get_pqc_key_for_decryption(args, None, metadata)
+        
+        # Only update the private key if we got one
+        if retrieved_private_key:
+            if not quiet:
+                print(f"Successfully retrieved PQC key for decryption using helper function")
+            pqc_private_key = retrieved_private_key
+            
+            # Update the key_id in case it was found by the helper
+            if extracted_key_id and not key_id:
+                key_id = extracted_key_id
+        elif not quiet:
+            print(f"Trying alternative approach to retrieve private key")
+    
+    # If we don't have a private key yet, try the classic keystore approach
+    if pqc_private_key is None and key_id is not None and keystore_file is not None:
         from .keystore_cli import PQCKeystore, KeyNotFoundError
         import getpass
         
@@ -611,7 +689,7 @@ def decrypt_file_with_keystore(
                         # This is an expected error for incorrect file passwords with dual encryption
                         if not quiet:
                             print(f"Dual encryption verification failed: {e}")
-                        raise ValueError(f"Invalid file password for dual-encrypted key: {e}")
+                        raise ValueError(f"Invalid password for dual-encrypted key - password authentication failed")
                     else:
                         # Pass through other errors
                         raise
@@ -637,7 +715,7 @@ def decrypt_file_with_keystore(
             raise ValueError(f"Keystore not found at {keystore_file}")
         if not quiet:
             print("ERROR: Unable to retrieve key from keystore. Make sure both keystore and file passwords are correct.")
-        raise ValueError("Failed to retrieve key from keystore for dual-encrypted file")
+        raise ValueError("Failed to retrieve key from keystore for dual-encrypted file - password verification failed")
         
     # Check if we have the pqc_private_key before proceeding
     if dual_encryption and key_id is not None and key_id != "EMBEDDED_PRIVATE_KEY" and pqc_private_key is None:
@@ -647,12 +725,20 @@ def decrypt_file_with_keystore(
     
     # Call the original decrypt_file with improved error handling
     try:
+        # If we got a pqc_private_key from our helper function, use it
+        if 'pqc_private_key' not in locals() or pqc_private_key is None:
+            # We might still have a private key in kwargs
+            pqc_private_key = kwargs.get('pqc_private_key')
+            
+        if not quiet and pqc_private_key:
+            print("Using PQC private key for decryption")
+            
         result = original_decrypt_file(
             input_file,
             output_file,
             password,
             quiet=quiet,
-            pqc_private_key=pqc_private_key,
+            pqc_private_key=pqc_private_key,  # Pass the retrieved private key
             **kwargs
         )
         
@@ -677,7 +763,7 @@ def decrypt_file_with_keystore(
         ):
             if not quiet:
                 print(f"Decryption failed - possible invalid file password: {e}")
-            raise ValueError(f"Invalid file password for dual-encrypted file: {e}")
+            raise ValueError(f"Password verification failed for decryption - invalid password")
         else:
             # Re-raise the original error
             raise
