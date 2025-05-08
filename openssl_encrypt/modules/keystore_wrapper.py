@@ -393,11 +393,22 @@ def decrypt_file_with_keystore(
                     metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
                     metadata = json.loads(metadata_json)
                     
-                    # Check for dual encryption flag
-                    if 'hash_config' in metadata and 'dual_encryption' in metadata['hash_config']:
-                        dual_encryption = metadata['hash_config']['dual_encryption']
-                        if dual_encryption and not quiet:
-                            print("File uses dual encryption - requires both keystore and file passwords")
+                    # Check for dual encryption flag, handling both v3 and v4 formats
+                    format_version = metadata.get('format_version', 1)
+                    if format_version == 4:
+                        # Version 4 format - check in derivation_config.kdf_config
+                        if ('derivation_config' in metadata and 
+                            'kdf_config' in metadata['derivation_config'] and 
+                            'dual_encryption' in metadata['derivation_config']['kdf_config']):
+                            dual_encryption = metadata['derivation_config']['kdf_config']['dual_encryption']
+                            if dual_encryption and not quiet:
+                                print("File uses dual encryption - requires both keystore and file passwords")
+                    else:
+                        # Version 3 format - check in hash_config
+                        if 'hash_config' in metadata and 'dual_encryption' in metadata['hash_config']:
+                            dual_encryption = metadata['hash_config']['dual_encryption']
+                            if dual_encryption and not quiet:
+                                print("File uses dual encryption - requires both keystore and file passwords")
                 except Exception:
                     pass  # Ignore parsing errors
         except Exception:
@@ -435,14 +446,33 @@ def decrypt_file_with_keystore(
                     print("ERROR: File password is too short for dual-encryption (minimum 8 characters)")
                 raise ValueError("File password is too short for dual-encryption")
             
-            # Check for password verification fields
-            if ('hash_config' in metadata and 
-                'pqc_dual_encrypt_verify' in metadata['hash_config'] and
-                'pqc_dual_encrypt_verify_salt' in metadata['hash_config']):
-                
-                # Get stored values
-                verify_hash = base64.b64decode(metadata['hash_config']['pqc_dual_encrypt_verify'])
-                verify_salt = base64.b64decode(metadata['hash_config']['pqc_dual_encrypt_verify_salt'])
+            # Check for password verification fields based on format version
+            format_version = metadata.get('format_version', 1)
+            verify_hash = None
+            verify_salt = None
+            
+            if format_version == 4:
+                # Version 4 format - check in derivation_config.kdf_config
+                if ('derivation_config' in metadata and 
+                    'kdf_config' in metadata['derivation_config'] and
+                    'pqc_dual_encrypt_verify' in metadata['derivation_config']['kdf_config'] and
+                    'pqc_dual_encrypt_verify_salt' in metadata['derivation_config']['kdf_config']):
+                    
+                    # Get stored values
+                    verify_hash = base64.b64decode(metadata['derivation_config']['kdf_config']['pqc_dual_encrypt_verify'])
+                    verify_salt = base64.b64decode(metadata['derivation_config']['kdf_config']['pqc_dual_encrypt_verify_salt'])
+            else:
+                # Version 3 format - check in hash_config
+                if ('hash_config' in metadata and 
+                    'pqc_dual_encrypt_verify' in metadata['hash_config'] and
+                    'pqc_dual_encrypt_verify_salt' in metadata['hash_config']):
+                    
+                    # Get stored values
+                    verify_hash = base64.b64decode(metadata['hash_config']['pqc_dual_encrypt_verify'])
+                    verify_salt = base64.b64decode(metadata['hash_config']['pqc_dual_encrypt_verify_salt'])
+                    
+            # If we found verification fields, proceed with validation
+            if verify_hash and verify_salt:
                 
                 # Calculate hash with current password
                 import hashlib

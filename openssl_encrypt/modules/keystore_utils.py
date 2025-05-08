@@ -34,7 +34,19 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
                 # First try direct JSON parsing
                 try:
                     metadata = json.loads(metadata_json)
-                    if 'hash_config' in metadata and 'pqc_keystore_key_id' in metadata['hash_config']:
+                    format_version = metadata.get('format_version', 1)
+                    
+                    # Handle format_version 4
+                    if format_version == 4:
+                        if ('derivation_config' in metadata and 
+                            'kdf_config' in metadata['derivation_config'] and 
+                            'pqc_keystore_key_id' in metadata['derivation_config']['kdf_config']):
+                            key_id = metadata['derivation_config']['kdf_config']['pqc_keystore_key_id']
+                            if verbose:
+                                print(f"Found key ID in format version 4 metadata: {key_id}")
+                            return key_id
+                    # Handle format_version 1-3
+                    elif 'hash_config' in metadata and 'pqc_keystore_key_id' in metadata['hash_config']:
                         key_id = metadata['hash_config']['pqc_keystore_key_id']
                         if verbose:
                             print(f"Found key ID in metadata JSON: {key_id}")
@@ -103,9 +115,26 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
                 
                 try:
                     header_config = json.loads(metadata_json)
+                    format_version = header_config.get('format_version', 1)
                     
-                    # Check if there's a PQC public key in the metadata
-                    if 'hash_config' in header_config and 'pqc_public_key' in header_config['hash_config']:
+                    # Handle format_version 4
+                    if format_version == 4:
+                        # Check if there's a PQC public key in the metadata
+                        if ('encryption' in header_config and 'pqc_public_key' in header_config['encryption']):
+                            # This file has an embedded public key, which means it might have an embedded private key
+                            if verbose:
+                                print("Found embedded PQC public key in format v4 metadata")
+                            
+                            # Check for embedded private key
+                            if 'pqc_private_key' in header_config['encryption']:
+                                # Check for embedded private key marker
+                                private_key_marker = header_config['encryption'].get('pqc_private_key_embedded')
+                                if private_key_marker:
+                                    if verbose:
+                                        print("File has embedded private key")
+                                    return "EMBEDDED_PRIVATE_KEY"
+                    # Handle format_version 1-3
+                    elif 'hash_config' in header_config and 'pqc_public_key' in header_config['hash_config']:
                         # This file has an embedded public key, which means it might have an embedded private key
                         if verbose:
                             print("Found embedded PQC public key in metadata")

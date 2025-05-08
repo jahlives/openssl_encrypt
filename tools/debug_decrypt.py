@@ -46,19 +46,46 @@ def extract_key_id_from_metadata(encrypted_file, verbose=True):
                     metadata = json.loads(metadata_json)
                     log(f"Successfully parsed metadata as JSON")
                     
-                    if 'hash_config' in metadata:
-                        log(f"Found hash_config in metadata")
-                        
-                        if 'pqc_keystore_key_id' in metadata['hash_config']:
-                            key_id = metadata['hash_config']['pqc_keystore_key_id']
-                            log(f"Found key ID in hash_config: {key_id}")
-                            return key_id
+                    # Check format version for proper path
+                    format_version = metadata.get('format_version', 1)
+                    log(f"Metadata format version: {format_version}")
+                    
+                    if format_version == 4:
+                        # Format v4 structure - check in derivation_config.kdf_config
+                        if 'derivation_config' in metadata:
+                            log(f"Found derivation_config in v4 metadata")
+                            
+                            if 'kdf_config' in metadata['derivation_config']:
+                                log(f"Found kdf_config in derivation_config")
+                                
+                                if 'pqc_keystore_key_id' in metadata['derivation_config']['kdf_config']:
+                                    key_id = metadata['derivation_config']['kdf_config']['pqc_keystore_key_id']
+                                    log(f"Found key ID in v4 metadata kdf_config: {key_id}")
+                                    return key_id
+                                else:
+                                    log(f"No pqc_keystore_key_id in kdf_config")
+                                    log(f"kdf_config keys: {metadata['derivation_config']['kdf_config'].keys()}")
+                            else:
+                                log(f"No kdf_config found in derivation_config")
+                                log(f"derivation_config keys: {metadata['derivation_config'].keys()}")
                         else:
-                            log(f"No pqc_keystore_key_id in hash_config")
-                            log(f"hash_config keys: {metadata['hash_config'].keys()}")
+                            log(f"No derivation_config found in v4 metadata")
+                            log(f"Metadata keys: {metadata.keys()}")
                     else:
-                        log(f"No hash_config found in metadata")
-                        log(f"Metadata keys: {metadata.keys()}")
+                        # Format v1-3 structure - check in hash_config
+                        if 'hash_config' in metadata:
+                            log(f"Found hash_config in metadata")
+                            
+                            if 'pqc_keystore_key_id' in metadata['hash_config']:
+                                key_id = metadata['hash_config']['pqc_keystore_key_id']
+                                log(f"Found key ID in hash_config: {key_id}")
+                                return key_id
+                            else:
+                                log(f"No pqc_keystore_key_id in hash_config")
+                                log(f"hash_config keys: {metadata['hash_config'].keys()}")
+                        else:
+                            log(f"No hash_config found in metadata")
+                            log(f"Metadata keys: {metadata.keys()}")
                 except json.JSONDecodeError as e:
                     log(f"JSON parsing failed: {e}")
                     log("Trying regex fallback")
