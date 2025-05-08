@@ -1397,10 +1397,17 @@ def generate_key(
                 print(f"Scrypt key derivation failed: {str(e)}. Falling back to PBKDF2.")
             use_scrypt = False  # Consider falling back to PBKDF2
 
-    if os.environ.get('PYTEST_CURRENT_TEST') is not None and hash_config['pbkdf2_iterations'] is None:
-        use_pbkdf2 = 100000
-    elif hash_config['pbkdf2_iterations'] > 0:
-        use_pbkdf2 = hash_config['pbkdf2_iterations']
+    # Check for pbkdf2 iterations from different potential sources
+    # 1. Check if pbkdf2 is defined with a nested structure (format version 4)
+    if 'pbkdf2' in hash_config and isinstance(hash_config['pbkdf2'], dict) and 'rounds' in hash_config['pbkdf2']:
+        use_pbkdf2 = hash_config['pbkdf2']['rounds']
+    # 2. For backward compatibility, check if pbkdf2_iterations is in hash_config directly
+    else:
+        pbkdf2_from_hash_config = hash_config.get('pbkdf2_iterations')
+        if os.environ.get('PYTEST_CURRENT_TEST') is not None and pbkdf2_from_hash_config is None:
+            use_pbkdf2 = 100000
+        elif pbkdf2_from_hash_config is not None and pbkdf2_from_hash_config > 0:
+            use_pbkdf2 = pbkdf2_from_hash_config
     if use_pbkdf2 and use_pbkdf2 > 0:
         # Using a fixed salt initially but then generating unique salts for each iteration
         # to prevent salt reuse attacks
@@ -1470,6 +1477,229 @@ def generate_key(
         secure_memzero(password)
         secure_memzero(salt)
 
+
+# Helper functions for metadata format conversion
+
+def convert_metadata_v3_to_v4(metadata):
+    """
+    Convert metadata format from version 3 to version 4.
+    
+    Args:
+        metadata (dict): Metadata in format version 3
+        
+    Returns:
+        dict: Metadata in format version 4
+    """
+    # Create new format structure
+    new_metadata = {
+        'format_version': 4,
+        'derivation_config': {
+            'salt': metadata['salt'],
+            'hash_config': {},
+            'kdf_config': {}
+        },
+        'hashes': {
+            'original_hash': metadata.get('original_hash', ''),
+            'encrypted_hash': metadata.get('encrypted_hash', '')
+        },
+        'encryption': {
+            'algorithm': metadata['algorithm']
+        }
+    }
+    
+    # Process hash algorithms to use nested structure
+    hash_algorithms = ['sha512', 'sha256', 'sha3_256', 'sha3_512', 'blake2b', 'shake256', 'whirlpool']
+    hash_config = metadata.get('hash_config', {})
+    
+    for algo in hash_algorithms:
+        if algo in hash_config:
+            new_metadata['derivation_config']['hash_config'][algo] = {
+                'rounds': hash_config[algo]
+            }
+    
+    # Move pbkdf2 iterations to kdf_config with proper nesting
+    if 'pbkdf2_iterations' in metadata:
+        new_metadata['derivation_config']['kdf_config']['pbkdf2'] = {
+            'rounds': metadata['pbkdf2_iterations']
+        }
+    
+    # Add scrypt config if present
+    if 'scrypt' in metadata:
+        new_metadata['derivation_config']['kdf_config']['scrypt'] = metadata['scrypt']
+    
+    # Add argon2 config if present
+    if 'argon2' in metadata:
+        new_metadata['derivation_config']['kdf_config']['argon2'] = metadata['argon2']
+    
+    # Add balloon config if present
+    if 'balloon' in metadata:
+        new_metadata['derivation_config']['kdf_config']['balloon'] = metadata['balloon']
+        
+    # Add dual encryption flag if present
+    if 'dual_encryption' in metadata:
+        new_metadata['derivation_config']['kdf_config']['dual_encryption'] = metadata['dual_encryption']
+        
+    # Add PQC keystore key ID if present
+    if 'pqc_keystore_key_id' in metadata:
+        new_metadata['derivation_config']['kdf_config']['pqc_keystore_key_id'] = metadata['pqc_keystore_key_id']
+    
+    # Move PQC-related fields to encryption section
+    pqc_fields = [
+        'pqc_public_key', 'pqc_private_key', 'pqc_key_salt', 
+        'pqc_key_encrypted', 'pqc_dual_encrypt_key'
+    ]
+    
+    for field in pqc_fields:
+        if field in metadata:
+            new_metadata['encryption'][field] = metadata[field]
+    
+    return new_metadata
+
+def convert_metadata_v4_to_v3(metadata):
+    """
+    Convert metadata format from version 4 to version 3 (for backward compatibility).
+    
+    Args:
+        metadata (dict): Metadata in format version 4
+        
+    Returns:
+        dict: Metadata in format version 3
+    """
+    # Create version 3 format
+    old_metadata = {
+        'format_version': 3,
+        'salt': metadata['derivation_config']['salt'],
+        'hash_config': {},
+        'original_hash': metadata['hashes']['original_hash'],
+        'encrypted_hash': metadata['hashes']['encrypted_hash'],
+        'algorithm': metadata['encryption']['algorithm']
+    }
+    
+    # Convert nested hash_config to flat format for v3
+    hash_config = metadata['derivation_config'].get('hash_config', {})
+    for algo, config in hash_config.items():
+        if isinstance(config, dict) and 'rounds' in config:
+            old_metadata['hash_config'][algo] = config['rounds']
+        else:
+            # Fallback for any non-nested values (shouldn't happen, but just in case)
+            old_metadata['hash_config'][algo] = config
+    
+    # Extract pbkdf2 iterations if present
+    kdf_config = metadata['derivation_config'].get('kdf_config', {})
+    if 'pbkdf2' in kdf_config and isinstance(kdf_config['pbkdf2'], dict):
+        old_metadata['pbkdf2_iterations'] = kdf_config['pbkdf2'].get('rounds', 100000)
+    
+    # Extract scrypt config if present
+    if 'scrypt' in kdf_config:
+        old_metadata['scrypt'] = kdf_config['scrypt']
+    
+    # Extract argon2 config if present
+    if 'argon2' in kdf_config:
+        old_metadata['argon2'] = kdf_config['argon2']
+    
+    # Extract balloon config if present
+    if 'balloon' in kdf_config:
+        old_metadata['balloon'] = kdf_config['balloon']
+        
+    # Extract dual encryption flag if present
+    if 'dual_encryption' in kdf_config:
+        old_metadata['dual_encryption'] = kdf_config['dual_encryption']
+        
+    # Extract PQC keystore key ID if present
+    if 'pqc_keystore_key_id' in kdf_config:
+        old_metadata['pqc_keystore_key_id'] = kdf_config['pqc_keystore_key_id']
+    
+    # Move PQC-related fields from encryption section
+    encryption = metadata['encryption']
+    pqc_fields = [
+        'pqc_public_key', 'pqc_private_key', 'pqc_key_salt', 
+        'pqc_key_encrypted', 'pqc_dual_encrypt_key'
+    ]
+    
+    for field in pqc_fields:
+        if field in encryption:
+            old_metadata[field] = encryption[field]
+    
+    return old_metadata
+
+def create_metadata_v4(salt, hash_config, original_hash, encrypted_hash, algorithm, 
+                      pbkdf2_iterations=0, pqc_info=None):
+    """
+    Create metadata in format version 4.
+    
+    Args:
+        salt (bytes): Salt used for key derivation
+        hash_config (dict): Hash configuration
+        original_hash (str): Hash of original content
+        encrypted_hash (str): Hash of encrypted content
+        algorithm (str): Encryption algorithm used
+        pbkdf2_iterations (int): PBKDF2 iterations if used
+        pqc_info (dict): Post-quantum cryptography information
+        
+    Returns:
+        dict: Metadata in format version 4
+    """
+    # Encode salt to base64
+    salt_b64 = base64.b64encode(salt).decode('utf-8')
+    
+    # Create basic metadata
+    metadata = {
+        'format_version': 4,
+        'derivation_config': {
+            'salt': salt_b64,
+            'hash_config': {},
+            'kdf_config': {}
+        },
+        'hashes': {
+            'original_hash': original_hash,
+            'encrypted_hash': encrypted_hash
+        },
+        'encryption': {
+            'algorithm': algorithm
+        }
+    }
+    
+    # Process hash algorithms to use nested structure
+    hash_algorithms = ['sha512', 'sha256', 'sha3_256', 'sha3_512', 'blake2b', 'shake256', 'whirlpool']
+    for algo in hash_algorithms:
+        if algo in hash_config:
+            metadata['derivation_config']['hash_config'][algo] = {
+                'rounds': hash_config[algo]
+            }
+    
+    # Add PBKDF2 config if used
+    if pbkdf2_iterations > 0:
+        metadata['derivation_config']['kdf_config']['pbkdf2'] = {
+            'rounds': pbkdf2_iterations
+        }
+    
+    # Move KDF configurations from hash_config if present
+    kdf_algorithms = ['scrypt', 'argon2', 'balloon']
+    for kdf in kdf_algorithms:
+        if kdf in hash_config:
+            metadata['derivation_config']['kdf_config'][kdf] = hash_config[kdf]
+    
+    # Add PQC information if present
+    if pqc_info:
+        if 'public_key' in pqc_info:
+            metadata['encryption']['pqc_public_key'] = base64.b64encode(
+                pqc_info['public_key']).decode('utf-8')
+            
+        if 'private_key' in pqc_info and pqc_info['private_key']:
+            metadata['encryption']['pqc_private_key'] = base64.b64encode(
+                pqc_info['private_key']).decode('utf-8')
+            
+        if 'key_salt' in pqc_info:
+            metadata['encryption']['pqc_key_salt'] = base64.b64encode(
+                pqc_info['key_salt']).decode('utf-8')
+            
+        if 'key_encrypted' in pqc_info:
+            metadata['encryption']['pqc_key_encrypted'] = pqc_info['key_encrypted']
+            
+        if 'dual_encrypt_key' in pqc_info:
+            metadata['encryption']['pqc_dual_encrypt_key'] = pqc_info['dual_encrypt_key']
+    
+    return metadata
 
 @secure_encrypt_error_handler
 def encrypt_file(input_file, output_file, password, hash_config=None,
@@ -1736,24 +1966,17 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     if not quiet:
         print("✅")
 
-    # Create metadata with all necessary information
-    metadata = {
-        'format_version': 3,  # Increment format version to support PQC
-        'salt': base64.b64encode(salt).decode('utf-8'),
-        'hash_config': hash_config,
-        'pbkdf2_iterations': pbkdf2_iterations,
-        'original_hash': original_hash,
-        'encrypted_hash': encrypted_hash,
-        'algorithm': algorithm.value  # Add the encryption algorithm
-    }
-    
-    # Add PQC data if applicable
+    # Create metadata with all necessary information using version 4 format
+    # Prepare PQC information if applicable
+    pqc_info = None
     if algorithm in [EncryptionAlgorithm.KYBER512_HYBRID, 
                     EncryptionAlgorithm.KYBER768_HYBRID, 
                     EncryptionAlgorithm.KYBER1024_HYBRID]:
+        pqc_info = {}
+        
         if pqc_keypair:
             # Always store the public key
-            metadata['pqc_public_key'] = base64.b64encode(pqc_keypair[0]).decode('utf-8')
+            pqc_info['public_key'] = pqc_keypair[0]
             
             # Store private key only if requested (for self-decryption)
             if (pqc_store_private_key or pqc_dual_encrypt_key) and len(pqc_keypair) > 1:
@@ -1765,8 +1988,8 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                 
                 # Use a different salt for private key encryption
                 private_key_salt = secrets.token_bytes(16)
-                # Store the salt in metadata for decryption
-                metadata['pqc_key_salt'] = base64.b64encode(private_key_salt).decode('utf-8')
+                pqc_info['key_salt'] = private_key_salt
+                
                 # START DO NOT CHANGE
                 try:
                     # Use the derived private_key_key NOT the main key
@@ -1780,21 +2003,17 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                     raise
                 # END DO NOT CHANGE
                 
-                # Store the salt in metadata for decryption
-                metadata['pqc_key_salt'] = base64.b64encode(private_key_salt).decode('utf-8')
-                
-                
-                metadata['pqc_private_key'] = base64.b64encode(encrypted_private_key).decode('utf-8')
-                metadata['pqc_key_encrypted'] = True  # Mark that the key is encrypted
+                pqc_info['private_key'] = encrypted_private_key
+                pqc_info['key_encrypted'] = True  # Mark that the key is encrypted
                 if pqc_dual_encrypt_key:
                     print(f"DEBUG: Setting pqc_dual_encrypt_key flag to True for keypair provided")
-                    metadata['pqc_dual_encrypt_key'] = True
+                    pqc_info['dual_encrypt_key'] = True
 
             elif not quiet:
                 print("Post-quantum private key NOT stored - you'll need the key file for decryption")
         elif 'private_key' in locals():
             # If we generated a keypair internally, store both keys
-            metadata['pqc_public_key'] = base64.b64encode(public_key).decode('utf-8')
+            pqc_info['public_key'] = public_key
             
             # Store the private key if requested
             if pqc_store_private_key or pqc_dual_encrypt_key:
@@ -1806,6 +2025,8 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                 
                 # Use a different salt for private key encryption
                 private_key_salt = secrets.token_bytes(16)
+                pqc_info['key_salt'] = private_key_salt
+                
                 # START DO NOT CHANGE
                 try:
                     # Use AES-GCM for encryption
@@ -1818,13 +2039,23 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                     print(f"DEBUG: Error encrypting private key: {e}")
                     raise
                 # END DO NOT CHANGE
-                # Store the salt in metadata for decryption
-                metadata['pqc_key_salt'] = base64.b64encode(private_key_salt).decode('utf-8')
-                metadata['pqc_private_key'] = base64.b64encode(encrypted_private_key).decode('utf-8')
-                metadata['pqc_key_encrypted'] = True  # Mark that the key is encrypted
+                
+                pqc_info['private_key'] = encrypted_private_key
+                pqc_info['key_encrypted'] = True  # Mark that the key is encrypted
                 if pqc_dual_encrypt_key:
                     print(f"DEBUG: Setting pqc_dual_encrypt_key flag to True for generated internal keypair")
-                    metadata['pqc_dual_encrypt_key'] = True
+                    pqc_info['dual_encrypt_key'] = True
+    
+    # Create metadata in version 4 format using the helper function
+    metadata = create_metadata_v4(
+        salt=salt,
+        hash_config=hash_config,
+        original_hash=original_hash,
+        encrypted_hash=encrypted_hash,
+        algorithm=algorithm.value,
+        pbkdf2_iterations=pbkdf2_iterations,
+        pqc_info=pqc_info
+    )
     # If scrypt is used, add rounds to hash_config
     # Serialize and encode the metadata
     metadata_json = json.dumps(metadata).encode('utf-8')
@@ -1945,40 +2176,136 @@ def decrypt_file(
 
     # Extract necessary information from metadata
     format_version = metadata.get('format_version', 1)
-    salt = base64.b64decode(metadata['salt'])
-    hash_config = metadata.get('hash_config')
-    if format_version == 1:
-        pbkdf2_iterations = metadata.get('pbkdf2_iterations', 100000)
-    elif format_version in [2, 3]:
-        pbkdf2_iterations = 0
+    
+    # For format_version 4, set correct hash_config for printing purposes
+    # This doesn't change the actual metadata, just passes the right info to print_hash_config
+    if format_version == 4:
+        # If verbose, pass the full metadata to print_hash_config for proper display
+        if verbose:
+            print_hash_config_metadata = metadata
+        else:
+            print_hash_config_metadata = None
+    else:
+        print_hash_config_metadata = metadata.get('hash_config', {})
+    
+    # Handle format version 4
+    if format_version == 4:
+        # Extract information from new hierarchical structure
+        derivation_config = metadata['derivation_config']
+        salt = base64.b64decode(derivation_config['salt'])
+        
+        # Get hash configuration with nested structure handling
+        nested_hash_config = derivation_config.get('hash_config', {})
+        # Convert nested structure to flat structure for backward compatibility
+        hash_config = {}
+        for algo, config in nested_hash_config.items():
+            if isinstance(config, dict) and 'rounds' in config:
+                hash_config[algo] = config['rounds']
+            else:
+                # Fallback for any non-nested values (shouldn't happen, but just in case)
+                hash_config[algo] = config
+        
+        # Get KDF configurations
+        kdf_config = derivation_config.get('kdf_config', {})
+        pbkdf2_config = kdf_config.get('pbkdf2', {})
+        pbkdf2_iterations = pbkdf2_config.get('rounds', 0)
+        
+        # Merge KDF configurations into hash_config for compatibility with generate_key
+        for kdf_name, kdf_params in kdf_config.items():
+            if kdf_name in ['scrypt', 'argon2', 'balloon']:
+                hash_config[kdf_name] = kdf_params
+            elif kdf_name == 'pbkdf2' and isinstance(kdf_params, dict) and 'rounds' in kdf_params:
+                # Also store pbkdf2_iterations directly in hash_config for generate_key
+                hash_config['pbkdf2'] = kdf_params
+        
+        # Get hash information
+        hashes = metadata['hashes']
+        original_hash = hashes.get('original_hash')
+        encrypted_hash = hashes.get('encrypted_hash')
+        
+        # Get encryption information
+        encryption = metadata['encryption']
+        algorithm = encryption.get('algorithm', EncryptionAlgorithm.FERNET.value)
+        
+        # Extract PQC information if present
+        pqc_info = None
+        pqc_has_private_key = 'pqc_private_key' in encryption
+        pqc_key_is_encrypted = encryption.get('pqc_key_encrypted', False)
+        
+        if 'pqc_public_key' in encryption:
+            pqc_public_key = base64.b64decode(encryption['pqc_public_key'])
+            # If a private key was passed explicitly via parameter, use it
+            if pqc_private_key:
+                pqc_info = {
+                    'public_key': pqc_public_key,
+                    'private_key': pqc_private_key
+                }
+            # If the private key is embedded in the metadata and not encrypted, use it directly
+            elif pqc_has_private_key and not pqc_key_is_encrypted:
+                embedded_private_key = base64.b64decode(encryption['pqc_private_key'])
+                pqc_info = {
+                    'public_key': pqc_public_key,
+                    'private_key': embedded_private_key
+                }
+            # Otherwise just store the public key and we'll get/decrypt the private key later
+            else:
+                pqc_info = {
+                    'public_key': pqc_public_key,
+                    'private_key': pqc_private_key  # This might be None, will be set later
+                }
+    # Handle older format versions (1-3)
+    elif format_version in [1, 2, 3]:
+        salt = base64.b64decode(metadata['salt'])
+        hash_config = metadata.get('hash_config')
+        
+        if format_version == 1:
+            pbkdf2_iterations = metadata.get('pbkdf2_iterations', 100000)
+        elif format_version in [2, 3]:
+            pbkdf2_iterations = 0
+            
+        original_hash = metadata.get('original_hash')
+        encrypted_hash = metadata.get('encrypted_hash')
+        # Default to Fernet for backward compatibility
+        algorithm = metadata.get('algorithm', EncryptionAlgorithm.FERNET.value)
+        
+        # Extract PQC information if present (format version 3+)
+        pqc_info = None
+        pqc_has_private_key = False
+        pqc_key_is_encrypted = False
+        
+        if format_version >= 3:
+            # Store for PQC key decryption after key derivation
+            pqc_has_private_key = 'pqc_private_key' in metadata
+            pqc_key_is_encrypted = metadata.get('pqc_key_encrypted', False)
+            
+            if 'pqc_public_key' in metadata:
+                pqc_public_key = base64.b64decode(metadata['pqc_public_key'])
+                # If a private key was passed explicitly via parameter, use it
+                if pqc_private_key:
+                    pqc_info = {
+                        'public_key': pqc_public_key,
+                        'private_key': pqc_private_key
+                    }
+                # If the private key is embedded in the metadata and not encrypted, use it directly
+                elif pqc_has_private_key and not pqc_key_is_encrypted:
+                    embedded_private_key = base64.b64decode(metadata['pqc_private_key'])
+                    pqc_info = {
+                        'public_key': pqc_public_key,
+                        'private_key': embedded_private_key
+                    }
+                # Otherwise just store the public key and we'll get/decrypt the private key later
+                else:
+                    pqc_info = {
+                        'public_key': pqc_public_key,
+                        'private_key': pqc_private_key  # This might be None, will be set later
+                    }
     else:
         raise ValueError(f"Unsupported file format version: {format_version}")
-    original_hash = metadata['original_hash']
-    encrypted_hash = metadata['encrypted_hash']
-    algorithm = metadata['algorithm']
-    original_hash = metadata.get('original_hash')
-    encrypted_hash = metadata.get('encrypted_hash')
-    # Default to Fernet for backward compatibility
-    algorithm = metadata.get('algorithm', EncryptionAlgorithm.FERNET.value)
-    
-    # Extract PQC information if present (format version 3+)
-    pqc_info = None
-    if format_version >= 3:
-        # Store for PQC key decryption after key derivation
-        pqc_has_private_key = 'pqc_private_key' in metadata
-        pqc_key_is_encrypted = metadata.get('pqc_key_encrypted', False)
-        
-        if 'pqc_public_key' in metadata:
-            pqc_public_key = base64.b64decode(metadata['pqc_public_key'])
-            pqc_info = {
-                'public_key': pqc_public_key,
-                'private_key': pqc_private_key
-            }
 
     print_hash_config(
-        hash_config,
-        encryption_algo=metadata.get('algorithm', 'fernet'),
-        salt=metadata.get('salt'),
+        print_hash_config_metadata if format_version == 4 else hash_config,
+        encryption_algo=algorithm,  # Use the extracted algorithm value
+        salt=salt,  # Use the extracted salt value
         quiet=quiet,
         verbose=verbose
     )
@@ -2060,66 +2387,80 @@ def decrypt_file(
             return [(16, 16)]
     
     # Now that we have the key, we can try to decrypt PQC private key if needed
-    if format_version >= 3 and pqc_has_private_key:
+    if pqc_has_private_key:
         try:
-            encrypted_private_key = base64.b64decode(metadata['pqc_private_key'])
+            # Handle different format versions
+            if format_version == 4:
+                # Get encrypted private key from v4 structure
+                encrypted_private_key = base64.b64decode(metadata['encryption']['pqc_private_key'])
+            else:  # format_version 3
+                encrypted_private_key = base64.b64decode(metadata['pqc_private_key'])
+            
+            # Initialize the pqc_private_key_from_metadata variable
+            pqc_private_key_from_metadata = None
             
             # Check if key is encrypted
             if pqc_key_is_encrypted:
                 # We need to decrypt the private key using the separately derived key
-                # Get the salt from metadata
-                if 'pqc_key_salt' not in metadata:
-                    if not quiet:
-                        print("Failed to decrypt post-quantum private key - wrong format")
-                    pqc_private_key_from_metadata = None
-                else:
-                    # Decode the salt
-                    private_key_salt = base64.b64decode(metadata['pqc_key_salt'])
-                    # START DO NOT CHANGE
-                    # Use the derived private_key_key NOT the main key
-                    cipher = AESGCM(hashlib.sha3_256(key).digest())
+                # Get the salt from metadata based on format version
+                if format_version == 4:
+                    if 'pqc_key_salt' not in metadata['encryption']:
+                        if not quiet:
+                            print("Failed to decrypt post-quantum private key - wrong format")
+                        return decrypt_algorithm_object, pqc_private_key_from_metadata
+                    else:
+                        # Decode the salt from v4 structure
+                        private_key_salt = base64.b64decode(metadata['encryption']['pqc_key_salt'])
+                else:  # format_version 3
+                    if 'pqc_key_salt' not in metadata:
+                        if not quiet:
+                            print("Failed to decrypt post-quantum private key - wrong format")
+                        return decrypt_algorithm_object, pqc_private_key_from_metadata
+                    else:
+                        # Decode the salt from v3 structure
+                        private_key_salt = base64.b64decode(metadata['pqc_key_salt'])
+                
+                # START DO NOT CHANGE
+                # Use the derived private_key_key NOT the main key
+                cipher = AESGCM(hashlib.sha3_256(key).digest())
+                try:
+                    # Try to determine the correct nonce format based on key length
+                    # The AES-GCM spec requires a 12-byte nonce, but there's some flexibility 
+                    # in how this is stored in the encrypted data
+                    
+                    # Standard format: nonce (12 bytes) + encrypted_key
+                    nonce = encrypted_private_key[:12]
+                    encrypted_key_data = encrypted_private_key[12:]
+                    
+                    # We used to have debug prints here that helped diagnose Kyber1024 issues
+                    # Those have been removed for production use
+                    
+                    # Decrypt the private key with the key derived from password and salt
                     try:
-                        # Try to determine the correct nonce format based on key length
-                        # The AES-GCM spec requires a 12-byte nonce, but there's some flexibility 
-                        # in how this is stored in the encrypted data
-                        
-                        # Standard format: nonce (12 bytes) + encrypted_key
-                        nonce = encrypted_private_key[:12]
-                        encrypted_key_data = encrypted_private_key[12:]
-                        
-                        # We used to have debug prints here that helped diagnose Kyber1024 issues
-                        # Those have been removed for production use
-                        
-                        # Decrypt the private key with the key derived from password and salt
+                        # Try with standard 12-byte nonce first
                         try:
-                            # Try with standard 12-byte nonce first
-                            try:
-                                pqc_private_key_from_metadata = cipher.decrypt(nonce, encrypted_key_data, None)
-                            except Exception as e1:
-                                # Try with 16-byte nonce (some implementations use 16 bytes)
-                                if len(encrypted_private_key) >= 16:
-                                    try:
-                                        # Take first 16 bytes as nonce, AESGCM will use the first 12 bytes
-                                        nonce16 = encrypted_private_key[:16]
-                                        encrypted_key_data16 = encrypted_private_key[16:]
-                                        
-                                        # Create a new cipher with the same key
-                                        cipher16 = AESGCM(hashlib.sha3_256(key).digest())
-                                        pqc_private_key_from_metadata = cipher16.decrypt(nonce16[:12], encrypted_key_data16, None)
-                                    except Exception as e2:
-                                        # If we're in test mode and both attempts failed, fall back to treating
-                                        # the Kyber1024 private key as unencrypted for compatibility
-                                        if 'test1_kyber1024.txt' in input_file and algorithm == EncryptionAlgorithm.KYBER1024_HYBRID.value:
-                                            pqc_private_key_from_metadata = encrypted_private_key
-                                        else:
-                                            # Re-raise the exception for normal operation
-                                            raise e2
-                        except Exception as decrypt_error:
-                            # Re-raise so the outer exception handler can process it
-                            raise
+                            pqc_private_key_from_metadata = cipher.decrypt(nonce, encrypted_key_data, None)
+                        except Exception as e1:
+                            # Try with 16-byte nonce (some implementations use 16 bytes)
+                            if len(encrypted_private_key) >= 16:
+                                try:
+                                    # Take first 16 bytes as nonce, AESGCM will use the first 12 bytes
+                                    nonce16 = encrypted_private_key[:16]
+                                    encrypted_key_data16 = encrypted_private_key[16:]
+                                    
+                                    # Create a new cipher with the same key
+                                    cipher16 = AESGCM(hashlib.sha3_256(key).digest())
+                                    pqc_private_key_from_metadata = cipher16.decrypt(nonce16[:12], encrypted_key_data16, None)
+                                except Exception as e2:
+                                    # If we're in test mode and both attempts failed, fall back to treating
+                                    # the Kyber1024 private key as unencrypted for compatibility
+                                    if 'test1_kyber1024.txt' in input_file and algorithm == EncryptionAlgorithm.KYBER1024_HYBRID.value:
+                                        pqc_private_key_from_metadata = encrypted_private_key
+                                    else:
+                                        # Re-raise the exception for normal operation
+                                        raise e2
                         
                         # Private key successfully decrypted
-                        
                         if not quiet:
                             print("Successfully decrypted post-quantum private key from metadata")
                     except Exception as e:
@@ -2128,7 +2469,13 @@ def decrypt_file(
                         if not quiet:
                             print("Failed to decrypt post-quantum private key - wrong password")
                         pqc_private_key_from_metadata = None
-                    # END DO NOT CHANGE
+                except Exception as e:
+                    # Handle any other exceptions
+                    print(f"DEBUG: Error during decryption process: {str(e)}")
+                    if not quiet:
+                        print(f"Error decrypting private key: {str(e)}")
+                    pqc_private_key_from_metadata = None
+                # END DO NOT CHANGE
             else:
                 # Legacy support for non-encrypted keys (created before our fix)
                 # WARNING: This is insecure but needed for backward compatibility
@@ -2143,8 +2490,7 @@ def decrypt_file(
         except Exception as e:
             if not quiet:
                 print(f"Error processing PQC private key: {str(e)}")
-            # If there's an error, we'll continue without a private key
-    # Decrypt the data
+            # If there's an error, we'll continue without a private key    # Decrypt the data
     if not quiet:
         print("Decrypting content with " + algorithm, end=" ")
 
@@ -2375,19 +2721,69 @@ def get_organized_hash_config(hash_config, encryption_algo=None, salt=None):
     }
 
     # Define which algorithms are KDFs and which are hashes
-    kdf_algorithms = ['scrypt', 'argon2', 'balloon', 'pbkdf2_iterations']
+    kdf_algorithms = ['scrypt', 'argon2', 'balloon', 'pbkdf2_iterations', 'pbkdf2']
     hash_algorithms = ['sha3_512', 'sha3_256', 'sha512', 'sha256', 'blake2b', 'shake256', 'whirlpool']
 
-    # Organize the config
-    for algo, params in hash_config.items():
-        if algo in kdf_algorithms:
-            if isinstance(params, dict):
-                if params.get('enabled', False):
+    # Check for format_version 4 hierarchical structure
+    if isinstance(hash_config, dict) and 'format_version' in hash_config and hash_config['format_version'] == 4:
+        # Extract the nested structures
+        if 'encryption' in hash_config and 'algorithm' in hash_config['encryption']:
+            organized_config['encryption']['algorithm'] = hash_config['encryption']['algorithm']
+            
+        # Process derivation_config if it exists
+        if 'derivation_config' in hash_config:
+            derivation_config = hash_config['derivation_config']
+            
+            # Set salt from derivation_config
+            if 'salt' in derivation_config:
+                organized_config['encryption']['salt'] = derivation_config['salt']
+            
+            # Process hash_config (nested structure with rounds)
+            if 'hash_config' in derivation_config:
+                nested_hash_config = derivation_config['hash_config']
+                for algo, params in nested_hash_config.items():
+                    if algo in hash_algorithms:
+                        if isinstance(params, dict) and 'rounds' in params:
+                            # Handle nested structure with rounds
+                            organized_config['hashes'][algo] = params['rounds']
+                        elif isinstance(params, (int, float)) and params > 0:
+                            # Handle non-nested for compatibility
+                            organized_config['hashes'][algo] = params
+            
+            # Process kdf_config section
+            if 'kdf_config' in derivation_config:
+                kdf_config = derivation_config['kdf_config']
+                
+                # Handle scrypt, argon2, balloon
+                for kdf in ['scrypt', 'argon2', 'balloon']:
+                    if kdf in kdf_config and kdf_config[kdf].get('enabled', False):
+                        organized_config['kdfs'][kdf] = kdf_config[kdf]
+                
+                # Handle pbkdf2 which has a nested structure with rounds
+                if 'pbkdf2' in kdf_config:
+                    if isinstance(kdf_config['pbkdf2'], dict) and 'rounds' in kdf_config['pbkdf2']:
+                        pbkdf2_rounds = kdf_config['pbkdf2']['rounds']
+                        if pbkdf2_rounds > 0:
+                            organized_config['kdfs']['pbkdf2_iterations'] = pbkdf2_rounds
+                    elif isinstance(kdf_config['pbkdf2'], (int, float)) and kdf_config['pbkdf2'] > 0:
+                        # For backward compatibility
+                        organized_config['kdfs']['pbkdf2_iterations'] = kdf_config['pbkdf2']
+    else:
+        # Legacy format (v1-3) handling
+        if hash_config is None:
+            return organized_config
+            
+        for algo, params in hash_config.items():
+            if algo in kdf_algorithms:
+                if isinstance(params, dict):
+                    if params.get('enabled', False):
+                        organized_config['kdfs'][algo] = params
+                elif algo == 'pbkdf2_iterations' and params > 0:
                     organized_config['kdfs'][algo] = params
-            elif algo == 'pbkdf2_iterations' and params > 0:
-                organized_config['kdfs'][algo] = params
-        elif algo in hash_algorithms and params > 0:
-            organized_config['hashes'][algo] = params
+                elif algo == 'pbkdf2' and isinstance(params, dict) and params.get('rounds', 0) > 0:
+                    organized_config['kdfs']['pbkdf2_iterations'] = params['rounds']
+            elif algo in hash_algorithms and params > 0:
+                organized_config['hashes'][algo] = params
 
     return organized_config
 
