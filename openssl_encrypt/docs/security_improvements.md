@@ -44,4 +44,3 @@ This document tracks security improvements that have been identified and impleme
 - ✅ Add support for secure key storage
 - ✅ Implement key rotation mechanisms
 - ✅ Add hardware key storage support where available
-
