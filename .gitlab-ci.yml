@@ -110,13 +110,12 @@ test:
   script:
     - python3 -m pytest openssl_encrypt/unittests/unittests.py -v
   rules:
-    # Run tests on dev and release branches, and for tags (manually)
+    # Run tests on dev and release branches, and for tags
     - if: $CI_COMMIT_BRANCH == "dev"
     - if: $CI_COMMIT_BRANCH == "release"
       # Must succeed on release branch
       allow_failure: false
     - if: $CI_COMMIT_TAG
-      when: manual
   # Fallback configuration if the custom image is not available
   # This ensures the pipeline still works if the image hasn't been built yet
   retry:
@@ -160,11 +159,14 @@ test-fallback:
       # Must succeed on release branch
       allow_failure: false
     - if: $CI_COMMIT_TAG
-      when: manual
+      when: on_failure
 
 
 build:
   stage: build
+  needs:
+    - job: test
+      optional: true
   script:
     - python3 -m build
   artifacts:
