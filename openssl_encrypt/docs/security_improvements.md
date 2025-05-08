@@ -32,6 +32,7 @@ This document tracks security improvements that have been identified and impleme
 ## Pending Improvements
 
 ### 1. Fix potential timing side channels in Camellia implementation
+<<<<<<< HEAD
 - ✅ Audit and fix any remaining timing side channels
 - ✅ Review PKCS#7 unpadding for potential timing leaks
 
@@ -44,3 +45,17 @@ This document tracks security improvements that have been identified and impleme
 - ✅ Add support for secure key storage
 - ✅ Implement key rotation mechanisms
 - ✅ Add hardware key storage support where available
+=======
+- ⬜ Audit and fix any remaining timing side channels
+- ⬜ Review PKCS#7 unpadding for potential timing leaks
+
+### 2. Implement stronger password policies
+- ⬜ Add password strength validation
+- ⬜ Enforce minimum password length and complexity
+- ⬜ Add dictionary attack prevention measures
+
+### 3. Implement secure key storage
+- ⬜ Add support for secure key storage
+- ⬜ Implement key rotation mechanisms
+- ⬜ Add hardware key storage support where available
+>>>>>>> ab62b0e (docs: Add dual encryption and keystore documentation)
