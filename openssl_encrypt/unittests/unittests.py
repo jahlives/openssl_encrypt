@@ -248,6 +248,73 @@ def generate_cli_argument_tests():
         test_method = create_test(group, arg)
         test_method.__doc__ = f"Test that CLI argument '{arg}' from '{group}' exists."
         setattr(TestCryptCliArguments, test_name, test_method)
+    
+    # Add test that compares help output with our internal list
+    def test_help_arguments_covered(self):
+        """
+        Test that all arguments shown in the CLI help are covered in our test list.
+        Issues warnings for arguments in help but not in our test list.
+        """
+        import warnings
+        import subprocess
+        import re
+        
+        # Get all known arguments from our internal list
+        known_args = set()
+        for group, args in REQUIRED_ARGUMENT_GROUPS.items():
+            known_args.update(args)
+        
+        # Run the CLI help command to get the actual arguments
+        try:
+            # Try to locate crypt.py
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.dirname(script_dir)
+            cli_script = os.path.join(project_root, 'crypt.py')
+            
+            # Use the module path since crypt.py might not exist
+            result = subprocess.run(
+                "python -m openssl_encrypt.crypt --help", 
+                shell=True, 
+                capture_output=True, 
+                text=True
+            )
+            
+            help_text = result.stdout or result.stderr
+            
+            # Extract argument names from help text using regex
+            # Pattern matches long options (--argument-name)
+            arg_pattern = r'--([a-zA-Z0-9_-]+)'
+            help_args = re.findall(arg_pattern, help_text)
+            
+            # Remove duplicates
+            help_args = set(help_args)
+            
+            # Find arguments in help but not in our test list
+            missing_from_tests = set()
+            for arg in help_args:
+                if arg not in known_args:
+                    missing_from_tests.add(arg)
+            
+            # Issue warnings for arguments not in our test list
+            if missing_from_tests:
+                warning_msg = "\nCLI arguments found in help output but not in test list:\n"
+                for arg in sorted(missing_from_tests):
+                    warning_msg += f"  - {arg}\n"
+                warning_msg += "\nConsider adding these to REQUIRED_ARGUMENT_GROUPS."
+                warnings.warn(warning_msg, UserWarning)
+            
+            # Store the missing arguments as a test attribute for debugging
+            self.missing_from_tests = missing_from_tests
+            
+        except Exception as e:
+            warnings.warn(
+                f"Failed to run help command: {e}. "
+                f"Unable to verify if all CLI arguments are covered by tests.",
+                UserWarning
+            )
+    
+    # Add the test method to the class
+    setattr(TestCryptCliArguments, "test_help_arguments_covered", test_help_arguments_covered)
 
 
 # Call the function to generate the test methods
