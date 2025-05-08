@@ -779,6 +779,8 @@ def multi_hash_password(
     This function implements a layered approach to password hashing, allowing
     multiple different algorithms to be applied in sequence. This provides defense
     in depth against weaknesses in any single algorithm.
+    
+    Supports both flat (v3) and nested (v4) hash_config formats.
 
     Supported algorithms:
         - SHA-256
@@ -840,9 +842,16 @@ def multi_hash_password(
             # Initialize the secure buffer with password + salt
             secure_memcpy(hashed, password + salt)
 
-            # Apply each hash algorithm in sequence (only if iterations >
-            # 0)
-            for algorithm, params in hash_config.items():
+                    # Extract the correct hash configuration based on format (v3 vs v4)
+            if hash_config and 'derivation_config' in hash_config and 'hash_config' in hash_config['derivation_config']:
+                # Version 4 structure
+                hash_params = hash_config['derivation_config']['hash_config']
+            else:
+                # Original format (flat version 3)
+                hash_params = hash_config
+                
+            # Apply each hash algorithm in sequence (only if iterations > 0)
+            for algorithm, params in hash_params.items():
                 if algorithm == 'sha512' and params > 0:
                     if not quiet and not progress:
                         print(f"Applying {params} rounds of SHA-512", end= " ")
@@ -1048,6 +1057,19 @@ def generate_key(
     # Validate input parameters
     if password is None:
         raise ValidationError("Password cannot be None")
+    
+    # Ensure password is in bytes format with correct UTF-8 encoding
+    if isinstance(password, str):
+        # Make sure unicode strings are properly encoded as UTF-8 bytes
+        password = password.encode('utf-8')
+    elif isinstance(password, bytes):
+        # If already bytes, ensure it's properly UTF-8 encoded for consistency
+        try:
+            # Test if it's valid UTF-8
+            password.decode('utf-8').encode('utf-8')
+        except UnicodeError:
+            # If not, it might be using a different encoding - let's keep it as is
+            pass
         
     if salt is None:
         raise ValidationError("Salt cannot be None")
@@ -1106,10 +1128,19 @@ def generate_key(
 
     # Apply hash iterations if any are configured (SHA-256, SHA-512, SHA3-256,
     # etc.)
-    has_hash_iterations = hash_config and any(
-        hash_config.get(algo, 0) > 0 for algo in
-        ['sha256', 'sha512', 'sha3_256', 'sha3_512', 'blake2b', 'shake256', 'whirlpool']
-    ) or (hash_config and hash_config.get('scrypt', {}).get('n', 0) > 0)
+    # First, handle the new nested format (version 4)
+    if hash_config and 'derivation_config' in hash_config and 'hash_config' in hash_config['derivation_config']:
+        derived_hash_config = hash_config['derivation_config']['hash_config']
+        has_hash_iterations = any(
+            derived_hash_config.get(algo, 0) > 0 for algo in
+            ['sha256', 'sha512', 'sha3_256', 'sha3_512', 'blake2b', 'shake256', 'whirlpool']
+        )
+    else:
+        # Original format (flat version 3)
+        has_hash_iterations = hash_config and any(
+            hash_config.get(algo, 0) > 0 for algo in
+            ['sha256', 'sha512', 'sha3_256', 'sha3_512', 'blake2b', 'shake256', 'whirlpool']
+        ) or (hash_config and hash_config.get('scrypt', {}).get('n', 0) > 0)
 
     if has_hash_iterations:
         if not quiet and not progress:
@@ -1123,12 +1154,20 @@ def generate_key(
     argon2_available = ARGON2_AVAILABLE
 
     # Determine if we should use Argon2
-    # Only don't use Argon2 if it's explicitly disabled (enabled=False) in
-    # hash_config
-    use_argon2 = hash_config.get('argon2', {}).get('enabled', False)
-    use_scrypt = hash_config.get('scrypt', {}).get('enabled', False)
-    use_pbkdf2 = hash_config.get('pbkdf2', {}).get('pbkdf2-iterations', 0)
-    use_balloon = hash_config.get('balloon', {}).get('enabled', False)
+    # Account for both v3 and v4 hash config structures
+    if hash_config and 'derivation_config' in hash_config and 'kdf_config' in hash_config['derivation_config']:
+        # Version 4 structure
+        kdf_config = hash_config['derivation_config']['kdf_config']
+        use_argon2 = kdf_config.get('argon2', {}).get('enabled', False)
+        use_scrypt = kdf_config.get('scrypt', {}).get('enabled', False)
+        use_pbkdf2 = kdf_config.get('pbkdf2_iterations', 0) > 0
+        use_balloon = kdf_config.get('balloon', {}).get('enabled', False)
+    else:
+        # Original version 3 format
+        use_argon2 = hash_config.get('argon2', {}).get('enabled', False)
+        use_scrypt = hash_config.get('scrypt', {}).get('enabled', False)
+        use_pbkdf2 = hash_config.get('pbkdf2_iterations', 0) > 0
+        use_balloon = hash_config.get('balloon', {}).get('enabled', False)
 
     # If hash_config has argon2 section with enabled explicitly set to False, honor that
     # if hash_config and 'argon2' in hash_config and 'enabled' in hash_config['argon2']:
@@ -1143,9 +1182,15 @@ def generate_key(
         elif not quiet:
             print("Using Argon2 for key derivation")
 
-        # Get parameters from the argon2 section of hash_config, or use
-        # defaults
-        argon2_config = hash_config.get('argon2', {}) if hash_config else {}
+        # Get parameters from the argon2 section of hash_config, or use defaults
+        # Account for both v3 and v4 hash config structures
+        if hash_config and 'derivation_config' in hash_config and 'kdf_config' in hash_config['derivation_config']:
+            # Version 4 structure
+            argon2_config = hash_config['derivation_config']['kdf_config'].get('argon2', {})
+        else:
+            # Original version 3 format
+            argon2_config = hash_config.get('argon2', {}) if hash_config else {}
+            
         time_cost = argon2_config.get('time_cost', 3)
         memory_cost = argon2_config.get('memory_cost', 65536)
         parallelism = argon2_config.get('parallelism', 4)
@@ -1172,7 +1217,13 @@ def generate_key(
             raise ValueError("Failed to securely process password data")
 
         try:
-            for i in range(hash_config.get('argon2', {}).get('rounds', 1)):
+            # Get the number of rounds from the appropriate config structure
+            if hash_config and 'derivation_config' in hash_config and 'kdf_config' in hash_config['derivation_config']:
+                argon2_rounds = hash_config['derivation_config']['kdf_config'].get('argon2', {}).get('rounds', 1)
+            else:
+                argon2_rounds = hash_config.get('argon2', {}).get('rounds', 1)
+                
+            for i in range(argon2_rounds):
                 # Generate a new salt for each round to prevent salt reuse attacks
                 if i == 0:
                     # Use the original salt for the first round
@@ -1206,14 +1257,13 @@ def generate_key(
                 
                 # Securely clean up the round salt
                 secure_memzero(round_salt)
-                show_progress(
-                    "Argon2",
-                    i + 1,
-                    hash_config.get(
-                        'argon2',
-                        {}).get(
-                        'rounds',
-                        1))
+                # Show progress with the correct rounds value based on config structure
+                if hash_config and 'derivation_config' in hash_config and 'kdf_config' in hash_config['derivation_config']:
+                    total_rounds = hash_config['derivation_config']['kdf_config'].get('argon2', {}).get('rounds', 1)
+                else:
+                    total_rounds = hash_config.get('argon2', {}).get('rounds', 1)
+                
+                show_progress("Argon2", i + 1, total_rounds)
             # Always securely clean up sensitive data, even when they're copies
             try:
                 secure_memzero(base_salt)
@@ -1753,6 +1803,11 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         
     if password is None:
         raise ValidationError("Password cannot be None")
+    
+    # Ensure password is in bytes format with correct encoding
+    if isinstance(password, str):
+        password = password.encode('utf-8')
+        
     if isinstance(algorithm, str):
         algorithm = EncryptionAlgorithm(algorithm)
     # Generate a key from the password
@@ -2150,6 +2205,11 @@ def decrypt_file(
         
     if password is None:
         raise ValidationError("Password cannot be None")
+        
+    # Ensure password is in bytes format with correct encoding
+    if isinstance(password, str):
+        password = password.encode('utf-8')
+        
     KeyStretch.kind_action = 'decrypt'
     # Read the encrypted file
     if not quiet:
