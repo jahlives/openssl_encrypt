@@ -65,7 +65,12 @@ class TestFormatVersion4(unittest.TestCase):
                 "blake2b": 0,
                 "shake256": 0,
                 "whirlpool": 0,
-                "pbkdf2_iterations": 100000
+                "pbkdf2_iterations": 100000,
+                "derivation_config": {
+                    "kdf_config": {
+                        "pbkdf2": {"rounds": 100000}
+                    }
+                }
             }
             
             result = encrypt_file(
@@ -88,6 +93,19 @@ class TestFormatVersion4(unittest.TestCase):
             self.assertIn('salt', metadata['derivation_config'])
             self.assertIn('hash_config', metadata['derivation_config'])
             self.assertIn('kdf_config', metadata['derivation_config'])
+            
+            # Verify hash_config has nested structure with 'rounds'
+            hash_config = metadata['derivation_config']['hash_config']
+            for algo in ['sha256', 'sha512', 'sha3_256', 'sha3_512', 'blake2b', 'shake256', 'whirlpool']:
+                if algo in hash_config:
+                    self.assertIsInstance(hash_config[algo], dict)
+                    self.assertIn('rounds', hash_config[algo])
+            
+            # Verify pbkdf2 is in kdf_config with proper structure
+            kdf_config = metadata['derivation_config']['kdf_config']
+            if 'pbkdf2' in kdf_config:
+                self.assertIsInstance(kdf_config['pbkdf2'], dict)
+                self.assertIn('rounds', kdf_config['pbkdf2'])
             
             self.assertIn('hashes', metadata)
             self.assertIn('original_hash', metadata['hashes'])
@@ -139,7 +157,12 @@ class TestFormatVersion4(unittest.TestCase):
             "blake2b": 0,
             "shake256": 0,
             "whirlpool": 0,
-            "pbkdf2_iterations": 100000
+            "pbkdf2_iterations": 100000,
+            "derivation_config": {
+                "kdf_config": {
+                    "pbkdf2": {"rounds": 100000}
+                }
+            }
         }
         
         encrypt_file(
@@ -159,7 +182,13 @@ class TestFormatVersion4(unittest.TestCase):
         
         # Check the key fields are preserved in the conversion
         self.assertEqual(metadata_v3.get('salt'), metadata_v4['derivation_config']['salt'])
-        self.assertEqual(metadata_v3.get('hash_config'), metadata_v4['derivation_config']['hash_config'])
+        
+        # For hash_config, we need to handle the nested structure
+        v4_hash_config = metadata_v4['derivation_config']['hash_config']
+        for algo, config in v4_hash_config.items():
+            if isinstance(config, dict) and 'rounds' in config:
+                self.assertEqual(metadata_v3['hash_config'][algo], config['rounds'])
+                
         self.assertEqual(metadata_v3.get('original_hash'), metadata_v4['hashes']['original_hash'])
         self.assertEqual(metadata_v3.get('encrypted_hash'), metadata_v4['hashes']['encrypted_hash'])
         self.assertEqual(metadata_v3.get('algorithm'), metadata_v4['encryption']['algorithm'])
@@ -198,7 +227,12 @@ class TestFormatVersion4(unittest.TestCase):
             "blake2b": 0,
             "shake256": 0,
             "whirlpool": 0,
-            "pbkdf2_iterations": 100000
+            "pbkdf2_iterations": 100000,
+            "derivation_config": {
+                "kdf_config": {
+                    "pbkdf2": {"rounds": 100000}
+                }
+            }
         }
         
         encrypt_file(
@@ -280,6 +314,61 @@ class TestFormatVersion4(unittest.TestCase):
         os.unlink(temp_v4_decrypt.name)
         os.unlink(temp_v3_output.name)
         os.unlink(temp_v4_output.name)
+
+
+    def test_nested_kdf_config_structure(self):
+        """Test the nested structure in kdf_config for dual encryption and keystore keys."""
+        # Create a metadata structure in v3 format with dual encryption and keystore key ID
+        metadata_v3 = {
+            "format_version": 3,
+            "salt": "base64encodedstring",
+            "hash_config": {
+                "sha256": 10000,
+                "sha512": 0
+            },
+            "pbkdf2_iterations": 100000,
+            "dual_encryption": True,
+            "pqc_keystore_key_id": "12345678-1234-1234-1234-123456789012",
+            "original_hash": "abc123",
+            "encrypted_hash": "def456",
+            "algorithm": "kyber768-hybrid"
+        }
+        
+        # Convert to v4
+        metadata_v4 = convert_metadata_v3_to_v4(metadata_v3)
+        
+        # Verify structure
+        self.assertEqual(metadata_v4["format_version"], 4)
+        
+        # Verify hash structure
+        self.assertEqual(metadata_v4["derivation_config"]["hash_config"]["sha256"]["rounds"], 10000)
+        self.assertEqual(metadata_v4["derivation_config"]["hash_config"]["sha512"]["rounds"], 0)
+        
+        # Verify KDF structure
+        self.assertEqual(metadata_v4["derivation_config"]["kdf_config"]["pbkdf2"]["rounds"], 100000)
+        
+        # Verify dual encryption flag
+        self.assertTrue(metadata_v4["derivation_config"]["kdf_config"]["dual_encryption"])
+        
+        # Verify keystore key ID
+        self.assertEqual(
+            metadata_v4["derivation_config"]["kdf_config"]["pqc_keystore_key_id"],
+            "12345678-1234-1234-1234-123456789012"
+        )
+        
+        # Convert back to v3
+        metadata_v3_roundtrip = convert_metadata_v4_to_v3(metadata_v4)
+        
+        # Verify structure after round-trip
+        self.assertEqual(metadata_v3_roundtrip["format_version"], 3)
+        self.assertEqual(metadata_v3_roundtrip["hash_config"]["sha256"], 10000)
+        self.assertEqual(metadata_v3_roundtrip["hash_config"]["sha512"], 0)
+        self.assertEqual(metadata_v3_roundtrip["pbkdf2_iterations"], 100000)
+        self.assertTrue(metadata_v3_roundtrip["dual_encryption"])
+        self.assertEqual(
+            metadata_v3_roundtrip["pqc_keystore_key_id"], 
+            "12345678-1234-1234-1234-123456789012"
+        )
 
 
 if __name__ == "__main__":

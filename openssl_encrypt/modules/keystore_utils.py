@@ -627,6 +627,11 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
                 # Format version 4 structure
                 if not isinstance(hash_config, dict):
                     hash_config = {}
+                    
+                # Ensure the hash_config includes the proper structure
+                hash_config['dual_encryption'] = True  # For backward compatibility
+                
+                # Add to the proper location in derivation_config.kdf_config
                 if 'derivation_config' not in hash_config:
                     hash_config['derivation_config'] = {}
                 if 'kdf_config' not in hash_config['derivation_config']:
@@ -724,6 +729,12 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
                 # Format version 4 structure
                 if not isinstance(hash_config, dict):
                     hash_config = {}
+                
+                # Store key ID in both locations for maximum compatibility
+                # In legacy location for backward compatibility
+                hash_config["pqc_keystore_key_id"] = key_id
+                
+                # In the correct V4 hierarchical structure
                 if 'derivation_config' not in hash_config:
                     hash_config['derivation_config'] = {}
                 if 'kdf_config' not in hash_config['derivation_config']:
@@ -737,7 +748,11 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
             # If we're using dual encryption, store that in metadata
             if dual_encryption:
                 if format_version == 4:
-                    # Store in format version 4 structure
+                    # Store in both locations for maximum compatibility
+                    # Legacy location for backward compatibility
+                    hash_config["dual_encryption"] = True
+                    
+                    # Format version 4 structure
                     if 'derivation_config' not in hash_config:
                         hash_config['derivation_config'] = {}
                     if 'kdf_config' not in hash_config['derivation_config']:

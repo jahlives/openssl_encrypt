@@ -1397,10 +1397,17 @@ def generate_key(
                 print(f"Scrypt key derivation failed: {str(e)}. Falling back to PBKDF2.")
             use_scrypt = False  # Consider falling back to PBKDF2
 
-    if os.environ.get('PYTEST_CURRENT_TEST') is not None and hash_config['pbkdf2_iterations'] is None:
-        use_pbkdf2 = 100000
-    elif hash_config['pbkdf2_iterations'] > 0:
-        use_pbkdf2 = hash_config['pbkdf2_iterations']
+    # Check for pbkdf2 iterations from different potential sources
+    # 1. Check if pbkdf2 is defined with a nested structure (format version 4)
+    if 'pbkdf2' in hash_config and isinstance(hash_config['pbkdf2'], dict) and 'rounds' in hash_config['pbkdf2']:
+        use_pbkdf2 = hash_config['pbkdf2']['rounds']
+    # 2. For backward compatibility, check if pbkdf2_iterations is in hash_config directly
+    else:
+        pbkdf2_from_hash_config = hash_config.get('pbkdf2_iterations')
+        if os.environ.get('PYTEST_CURRENT_TEST') is not None and pbkdf2_from_hash_config is None:
+            use_pbkdf2 = 100000
+        elif pbkdf2_from_hash_config is not None and pbkdf2_from_hash_config > 0:
+            use_pbkdf2 = pbkdf2_from_hash_config
     if use_pbkdf2 and use_pbkdf2 > 0:
         # Using a fixed salt initially but then generating unique salts for each iteration
         # to prevent salt reuse attacks
@@ -1488,7 +1495,7 @@ def convert_metadata_v3_to_v4(metadata):
         'format_version': 4,
         'derivation_config': {
             'salt': metadata['salt'],
-            'hash_config': metadata['hash_config'],
+            'hash_config': {},
             'kdf_config': {}
         },
         'hashes': {
@@ -1500,7 +1507,17 @@ def convert_metadata_v3_to_v4(metadata):
         }
     }
     
-    # Move pbkdf2 iterations to kdf_config
+    # Process hash algorithms to use nested structure
+    hash_algorithms = ['sha512', 'sha256', 'sha3_256', 'sha3_512', 'blake2b', 'shake256', 'whirlpool']
+    hash_config = metadata.get('hash_config', {})
+    
+    for algo in hash_algorithms:
+        if algo in hash_config:
+            new_metadata['derivation_config']['hash_config'][algo] = {
+                'rounds': hash_config[algo]
+            }
+    
+    # Move pbkdf2 iterations to kdf_config with proper nesting
     if 'pbkdf2_iterations' in metadata:
         new_metadata['derivation_config']['kdf_config']['pbkdf2'] = {
             'rounds': metadata['pbkdf2_iterations']
@@ -1517,6 +1534,14 @@ def convert_metadata_v3_to_v4(metadata):
     # Add balloon config if present
     if 'balloon' in metadata:
         new_metadata['derivation_config']['kdf_config']['balloon'] = metadata['balloon']
+        
+    # Add dual encryption flag if present
+    if 'dual_encryption' in metadata:
+        new_metadata['derivation_config']['kdf_config']['dual_encryption'] = metadata['dual_encryption']
+        
+    # Add PQC keystore key ID if present
+    if 'pqc_keystore_key_id' in metadata:
+        new_metadata['derivation_config']['kdf_config']['pqc_keystore_key_id'] = metadata['pqc_keystore_key_id']
     
     # Move PQC-related fields to encryption section
     pqc_fields = [
@@ -1544,15 +1569,24 @@ def convert_metadata_v4_to_v3(metadata):
     old_metadata = {
         'format_version': 3,
         'salt': metadata['derivation_config']['salt'],
-        'hash_config': metadata['derivation_config']['hash_config'],
+        'hash_config': {},
         'original_hash': metadata['hashes']['original_hash'],
         'encrypted_hash': metadata['hashes']['encrypted_hash'],
         'algorithm': metadata['encryption']['algorithm']
     }
     
+    # Convert nested hash_config to flat format for v3
+    hash_config = metadata['derivation_config'].get('hash_config', {})
+    for algo, config in hash_config.items():
+        if isinstance(config, dict) and 'rounds' in config:
+            old_metadata['hash_config'][algo] = config['rounds']
+        else:
+            # Fallback for any non-nested values (shouldn't happen, but just in case)
+            old_metadata['hash_config'][algo] = config
+    
     # Extract pbkdf2 iterations if present
     kdf_config = metadata['derivation_config'].get('kdf_config', {})
-    if 'pbkdf2' in kdf_config:
+    if 'pbkdf2' in kdf_config and isinstance(kdf_config['pbkdf2'], dict):
         old_metadata['pbkdf2_iterations'] = kdf_config['pbkdf2'].get('rounds', 100000)
     
     # Extract scrypt config if present
@@ -1566,6 +1600,14 @@ def convert_metadata_v4_to_v3(metadata):
     # Extract balloon config if present
     if 'balloon' in kdf_config:
         old_metadata['balloon'] = kdf_config['balloon']
+        
+    # Extract dual encryption flag if present
+    if 'dual_encryption' in kdf_config:
+        old_metadata['dual_encryption'] = kdf_config['dual_encryption']
+        
+    # Extract PQC keystore key ID if present
+    if 'pqc_keystore_key_id' in kdf_config:
+        old_metadata['pqc_keystore_key_id'] = kdf_config['pqc_keystore_key_id']
     
     # Move PQC-related fields from encryption section
     encryption = metadata['encryption']
@@ -1605,7 +1647,7 @@ def create_metadata_v4(salt, hash_config, original_hash, encrypted_hash, algorit
         'format_version': 4,
         'derivation_config': {
             'salt': salt_b64,
-            'hash_config': hash_config,
+            'hash_config': {},
             'kdf_config': {}
         },
         'hashes': {
@@ -1617,11 +1659,25 @@ def create_metadata_v4(salt, hash_config, original_hash, encrypted_hash, algorit
         }
     }
     
+    # Process hash algorithms to use nested structure
+    hash_algorithms = ['sha512', 'sha256', 'sha3_256', 'sha3_512', 'blake2b', 'shake256', 'whirlpool']
+    for algo in hash_algorithms:
+        if algo in hash_config:
+            metadata['derivation_config']['hash_config'][algo] = {
+                'rounds': hash_config[algo]
+            }
+    
     # Add PBKDF2 config if used
     if pbkdf2_iterations > 0:
         metadata['derivation_config']['kdf_config']['pbkdf2'] = {
             'rounds': pbkdf2_iterations
         }
+    
+    # Move KDF configurations from hash_config if present
+    kdf_algorithms = ['scrypt', 'argon2', 'balloon']
+    for kdf in kdf_algorithms:
+        if kdf in hash_config:
+            metadata['derivation_config']['kdf_config'][kdf] = hash_config[kdf]
     
     # Add PQC information if present
     if pqc_info:
@@ -2121,17 +2177,46 @@ def decrypt_file(
     # Extract necessary information from metadata
     format_version = metadata.get('format_version', 1)
     
+    # For format_version 4, set correct hash_config for printing purposes
+    # This doesn't change the actual metadata, just passes the right info to print_hash_config
+    if format_version == 4:
+        # If verbose, pass the full metadata to print_hash_config for proper display
+        if verbose:
+            print_hash_config_metadata = metadata
+        else:
+            print_hash_config_metadata = None
+    else:
+        print_hash_config_metadata = metadata.get('hash_config', {})
+    
     # Handle format version 4
     if format_version == 4:
         # Extract information from new hierarchical structure
         derivation_config = metadata['derivation_config']
         salt = base64.b64decode(derivation_config['salt'])
-        hash_config = derivation_config.get('hash_config')
+        
+        # Get hash configuration with nested structure handling
+        nested_hash_config = derivation_config.get('hash_config', {})
+        # Convert nested structure to flat structure for backward compatibility
+        hash_config = {}
+        for algo, config in nested_hash_config.items():
+            if isinstance(config, dict) and 'rounds' in config:
+                hash_config[algo] = config['rounds']
+            else:
+                # Fallback for any non-nested values (shouldn't happen, but just in case)
+                hash_config[algo] = config
         
         # Get KDF configurations
         kdf_config = derivation_config.get('kdf_config', {})
         pbkdf2_config = kdf_config.get('pbkdf2', {})
         pbkdf2_iterations = pbkdf2_config.get('rounds', 0)
+        
+        # Merge KDF configurations into hash_config for compatibility with generate_key
+        for kdf_name, kdf_params in kdf_config.items():
+            if kdf_name in ['scrypt', 'argon2', 'balloon']:
+                hash_config[kdf_name] = kdf_params
+            elif kdf_name == 'pbkdf2' and isinstance(kdf_params, dict) and 'rounds' in kdf_params:
+                # Also store pbkdf2_iterations directly in hash_config for generate_key
+                hash_config['pbkdf2'] = kdf_params
         
         # Get hash information
         hashes = metadata['hashes']
@@ -2218,9 +2303,9 @@ def decrypt_file(
         raise ValueError(f"Unsupported file format version: {format_version}")
 
     print_hash_config(
-        hash_config,
-        encryption_algo=metadata.get('algorithm', 'fernet'),
-        salt=metadata.get('salt'),
+        print_hash_config_metadata if format_version == 4 else hash_config,
+        encryption_algo=algorithm,  # Use the extracted algorithm value
+        salt=salt,  # Use the extracted salt value
         quiet=quiet,
         verbose=verbose
     )
@@ -2636,19 +2721,69 @@ def get_organized_hash_config(hash_config, encryption_algo=None, salt=None):
     }
 
     # Define which algorithms are KDFs and which are hashes
-    kdf_algorithms = ['scrypt', 'argon2', 'balloon', 'pbkdf2_iterations']
+    kdf_algorithms = ['scrypt', 'argon2', 'balloon', 'pbkdf2_iterations', 'pbkdf2']
     hash_algorithms = ['sha3_512', 'sha3_256', 'sha512', 'sha256', 'blake2b', 'shake256', 'whirlpool']
 
-    # Organize the config
-    for algo, params in hash_config.items():
-        if algo in kdf_algorithms:
-            if isinstance(params, dict):
-                if params.get('enabled', False):
+    # Check for format_version 4 hierarchical structure
+    if isinstance(hash_config, dict) and 'format_version' in hash_config and hash_config['format_version'] == 4:
+        # Extract the nested structures
+        if 'encryption' in hash_config and 'algorithm' in hash_config['encryption']:
+            organized_config['encryption']['algorithm'] = hash_config['encryption']['algorithm']
+            
+        # Process derivation_config if it exists
+        if 'derivation_config' in hash_config:
+            derivation_config = hash_config['derivation_config']
+            
+            # Set salt from derivation_config
+            if 'salt' in derivation_config:
+                organized_config['encryption']['salt'] = derivation_config['salt']
+            
+            # Process hash_config (nested structure with rounds)
+            if 'hash_config' in derivation_config:
+                nested_hash_config = derivation_config['hash_config']
+                for algo, params in nested_hash_config.items():
+                    if algo in hash_algorithms:
+                        if isinstance(params, dict) and 'rounds' in params:
+                            # Handle nested structure with rounds
+                            organized_config['hashes'][algo] = params['rounds']
+                        elif isinstance(params, (int, float)) and params > 0:
+                            # Handle non-nested for compatibility
+                            organized_config['hashes'][algo] = params
+            
+            # Process kdf_config section
+            if 'kdf_config' in derivation_config:
+                kdf_config = derivation_config['kdf_config']
+                
+                # Handle scrypt, argon2, balloon
+                for kdf in ['scrypt', 'argon2', 'balloon']:
+                    if kdf in kdf_config and kdf_config[kdf].get('enabled', False):
+                        organized_config['kdfs'][kdf] = kdf_config[kdf]
+                
+                # Handle pbkdf2 which has a nested structure with rounds
+                if 'pbkdf2' in kdf_config:
+                    if isinstance(kdf_config['pbkdf2'], dict) and 'rounds' in kdf_config['pbkdf2']:
+                        pbkdf2_rounds = kdf_config['pbkdf2']['rounds']
+                        if pbkdf2_rounds > 0:
+                            organized_config['kdfs']['pbkdf2_iterations'] = pbkdf2_rounds
+                    elif isinstance(kdf_config['pbkdf2'], (int, float)) and kdf_config['pbkdf2'] > 0:
+                        # For backward compatibility
+                        organized_config['kdfs']['pbkdf2_iterations'] = kdf_config['pbkdf2']
+    else:
+        # Legacy format (v1-3) handling
+        if hash_config is None:
+            return organized_config
+            
+        for algo, params in hash_config.items():
+            if algo in kdf_algorithms:
+                if isinstance(params, dict):
+                    if params.get('enabled', False):
+                        organized_config['kdfs'][algo] = params
+                elif algo == 'pbkdf2_iterations' and params > 0:
                     organized_config['kdfs'][algo] = params
-            elif algo == 'pbkdf2_iterations' and params > 0:
-                organized_config['kdfs'][algo] = params
-        elif algo in hash_algorithms and params > 0:
-            organized_config['hashes'][algo] = params
+                elif algo == 'pbkdf2' and isinstance(params, dict) and params.get('rounds', 0) > 0:
+                    organized_config['kdfs']['pbkdf2_iterations'] = params['rounds']
+            elif algo in hash_algorithms and params > 0:
+                organized_config['hashes'][algo] = params
 
     return organized_config
 
