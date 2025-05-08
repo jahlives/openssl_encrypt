@@ -1,4 +1,6 @@
 # Version 0.7.2: Restructured Metadata
+[![PyPI version](https://img.shields.io/pypi/v/openssl_encrypt.svg)](https://pypi.org/project/openssl-encrypt/)
+
   With the release of version **0.7.2**, openssl_encrypt now uses a new metadata structure. `format_version` 4 represents that new structure. 
   The change is implemented to avoid any breaking changes to prior versions. Therefore the code is able to process all supported format versions transparently. Unittests of existing (older metadata) encrypted file are passing. Tests for new structure yet to come
 # Secure File Encryption Tool
