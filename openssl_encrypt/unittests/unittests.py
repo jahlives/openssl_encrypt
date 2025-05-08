@@ -18,6 +18,7 @@ import string
 import json
 import time
 import statistics
+import re
 from unittest import mock
 from pathlib import Path
 from cryptography.fernet import InvalidToken
@@ -60,16 +61,197 @@ from modules.keystore_cli import PQCKeystore, KeystoreSecurityLevel
 from modules.pqc import PQCipher, PQCAlgorithm, check_pqc_support, LIBOQS_AVAILABLE
 
 
+# Dictionary of required CLI arguments grouped by category based on help output
+# Each key is a category name, and the value is a list of arguments to check for
+REQUIRED_ARGUMENT_GROUPS = {
+    'Core Actions': [
+        'action',              # Positional argument for action
+        'help',                # Help flag
+        'progress',            # Show progress bar
+        'verbose',             # Show hash/kdf details 
+        'template',            # Template name
+        'quick',               # Quick configuration
+        'standard',            # Standard configuration
+        'paranoid',            # Maximum security configuration
+        'algorithm',           # Encryption algorithm 
+        'password',            # Password option
+        'random',              # Generate random password
+        'input',               # Input file/directory
+        'output',              # Output file
+        'quiet',               # Suppress output
+        'overwrite',           # Overwrite input file
+        'shred',               # Securely delete original
+        'shred-passes',        # Number of passes for secure deletion
+        'recursive',           # Process directories recursively
+    ],
+    'Hash Options': [
+        'sha512-rounds',       # SHA hash rounds
+        'sha256-rounds',
+        'sha3-256-rounds',
+        'sha3-512-rounds',
+        'blake2b-rounds',
+        'shake256-rounds',
+        'whirlpool-rounds',
+        'pbkdf2-iterations',   # PBKDF2 options
+    ],
+    'Scrypt Options': [
+        'enable-scrypt',       # Scrypt options
+        'scrypt-rounds',
+        'scrypt-n',
+        'scrypt-r',
+        'scrypt-p',
+    ],
+    'Keystore Options': [
+        'keystore',            # Keystore options
+        'keystore-password',
+        'keystore-password-file',
+        'key-id',
+        'dual-encrypt-key',
+        'auto-generate-key',
+        'auto-create-keystore',
+    ],
+    'Post-Quantum Cryptography': [
+        'pqc-keyfile',         # PQC options
+        'pqc-store-key',
+        'pqc-gen-key',
+    ],
+    'Argon2 Options': [
+        'enable-argon2',       # Argon2 options
+        'argon2-rounds',
+        'argon2-time',
+        'argon2-memory',
+        'argon2-parallelism',
+        'argon2-hash-len',
+        'argon2-type',
+        'argon2-preset',
+    ],
+    'Balloon Hashing': [
+        'enable-balloon',      # Balloon hashing options
+        'balloon-time-cost',
+        'balloon-space-cost',
+        'balloon-parallelism',
+        'balloon-rounds',
+        'balloon-hash-len',
+    ],
+    'Password Generation': [
+        'length',              # Password generation options
+        'use-digits',
+        'use-lowercase',
+        'use-uppercase',
+        'use-special',
+    ],
+    'Password Policy': [
+        'password-policy',     # Password policy options
+        'min-password-length',
+        'min-password-entropy',
+        'disable-common-password-check',
+        'force-password',
+        'custom-password-list',
+    ]
+}
 
-# Add the parent directory to the path to allow imports
-sys.path.insert(
-    0,
-    os.path.abspath(
-        os.path.join(
-            os.path.dirname(__file__),
-            '..')))
 
-# Import the modules to test
+@pytest.mark.order(0)
+class TestCryptCliArguments(unittest.TestCase):
+    """
+    Test cases for CLI arguments in crypt_cli.py.
+    
+    These tests run first to verify all required CLI arguments are present
+    in the command-line interface.
+    """
+    
+    @classmethod
+    def setUpClass(cls):
+        """Set up the test class by reading the source code once."""
+        # Get the source code of the CLI module
+        cli_module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'modules', 'crypt_cli.py'))
+        with open(cli_module_path, 'r') as f:
+            cls.source_code = f.read()
+    
+    def _argument_exists(self, arg):
+        """Check if an argument exists in the source code."""
+        # Convert dashes to underscores for checking variable names
+        arg_var = arg.replace('-', '_')
+        
+        # Multiple patterns to check for the argument
+        patterns = [
+            f"--{arg}",            # Command line flag
+            f"args.{arg_var}",     # Variable reference
+            f"'{arg}'",            # String literal
+            f'"{arg}"',            # Double-quoted string
+            f"{arg_var}=",         # Variable assignment
+        ]
+        
+        # Check if any of the patterns match
+        for pattern in patterns:
+            if pattern in self.source_code:
+                return True
+        
+        return False
+
+    def test_all_arguments_exist(self):
+        """Test that all required CLI arguments exist (aggregate test)."""
+        # Flatten the dictionary into a list of all required arguments
+        required_arguments = []
+        for group, args in REQUIRED_ARGUMENT_GROUPS.items():
+            required_arguments.extend(args)
+        
+        # Check all arguments at once
+        missing_args = []
+        for arg in required_arguments:
+            if not self._argument_exists(arg):
+                missing_args.append(arg)
+        
+        # Group missing arguments by category for more meaningful error messages
+        if missing_args:
+            missing_by_group = {}
+            for group, args in REQUIRED_ARGUMENT_GROUPS.items():
+                group_missing = [arg for arg in args if arg in missing_args]
+                if group_missing:
+                    missing_by_group[group] = group_missing
+            
+            error_msg = "Missing required CLI arguments:\n"
+            for group, args in missing_by_group.items():
+                error_msg += f"\n{group}:\n"
+                for arg in args:
+                    error_msg += f"  - {arg}\n"
+            
+            self.fail(error_msg)
+
+
+# Dynamically generate test methods for each argument
+def generate_cli_argument_tests():
+    """
+    Dynamically generate test methods for each required CLI argument.
+    This allows individual tests to fail independently, making it clear
+    which specific arguments are missing.
+    """
+    # Get all arguments
+    all_args = []
+    for group, args in REQUIRED_ARGUMENT_GROUPS.items():
+        for arg in args:
+            all_args.append((group, arg))
+    
+    # Generate a test method for each argument
+    for group, arg in all_args:
+        test_name = f"test_argument_{arg.replace('-', '_')}"
+        
+        def create_test(group_name, argument_name):
+            def test_method(self):
+                exists = self._argument_exists(argument_name)
+                self.assertTrue(
+                    exists, 
+                    f"CLI argument '{argument_name}' from group '{group_name}' is missing in crypt_cli.py"
+                )
+            return test_method
+        
+        test_method = create_test(group, arg)
+        test_method.__doc__ = f"Test that CLI argument '{arg}' from '{group}' exists."
+        setattr(TestCryptCliArguments, test_name, test_method)
+
+
+# Call the function to generate the test methods
+generate_cli_argument_tests()
 
 
 class TestCryptCore(unittest.TestCase):
@@ -1019,7 +1201,7 @@ class TestCryptUtils(unittest.TestCase):
         all_files = expand_glob_patterns(all_files_pattern)
         self.assertEqual(len(all_files), 6)  # 2 files each of 3 extensions
 
-@pytest.mark.order(0)
+@pytest.mark.order(1)
 class TestCLIInterface(unittest.TestCase):
     """Test the command-line interface functionality."""
 
