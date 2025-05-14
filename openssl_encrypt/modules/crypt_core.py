@@ -1605,6 +1605,47 @@ def convert_metadata_v3_to_v4(metadata):
     
     return new_metadata
 
+def convert_metadata_v5_to_v4(metadata):
+    """
+    Convert metadata format from version 5 to version 4 (for backward compatibility).
+    
+    Args:
+        metadata (dict): Metadata in format version 5
+        
+    Returns:
+        dict: Metadata in format version 4
+    """
+    # Create version 4 format (mostly the same as v5, just removing encryption_data)
+    v4_metadata = {
+        'format_version': 4,
+        'derivation_config': metadata['derivation_config'],
+        'hashes': metadata['hashes'],
+        'encryption': {k: v for k, v in metadata['encryption'].items() if k != 'encryption_data'}
+    }
+    
+    return v4_metadata
+
+def convert_metadata_v4_to_v5(metadata, encryption_data='aes-gcm'):
+    """
+    Convert metadata format from version 4 to version 5.
+    
+    Args:
+        metadata (dict): Metadata in format version 4
+        encryption_data (str, optional): The symmetric encryption algorithm to use for data encryption
+        
+    Returns:
+        dict: Metadata in format version 5
+    """
+    # Create version 5 format (mostly the same as v4, just adding encryption_data)
+    v5_metadata = {
+        'format_version': 5,
+        'derivation_config': metadata['derivation_config'],
+        'hashes': metadata['hashes'],
+        'encryption': {**metadata['encryption'], 'encryption_data': encryption_data}
+    }
+    
+    return v5_metadata
+
 def convert_metadata_v4_to_v3(metadata):
     """
     Convert metadata format from version 4 to version 3 (for backward compatibility).
@@ -1672,10 +1713,10 @@ def convert_metadata_v4_to_v3(metadata):
     
     return old_metadata
 
-def create_metadata_v4(salt, hash_config, original_hash, encrypted_hash, algorithm, 
-                      pbkdf2_iterations=0, pqc_info=None):
+def create_metadata_v5(salt, hash_config, original_hash, encrypted_hash, algorithm, 
+                       pbkdf2_iterations=0, pqc_info=None, encryption_data='aes-gcm'):
     """
-    Create metadata in format version 4.
+    Create metadata in format version 5.
     
     Args:
         salt (bytes): Salt used for key derivation
@@ -1685,16 +1726,17 @@ def create_metadata_v4(salt, hash_config, original_hash, encrypted_hash, algorit
         algorithm (str): Encryption algorithm used
         pbkdf2_iterations (int): PBKDF2 iterations if used
         pqc_info (dict): Post-quantum cryptography information
+        encryption_data (str): The symmetric encryption algorithm to use for data encryption
         
     Returns:
-        dict: Metadata in format version 4
+        dict: Metadata in format version 5
     """
     # Encode salt to base64
     salt_b64 = base64.b64encode(salt).decode('utf-8')
     
     # Create basic metadata
     metadata = {
-        'format_version': 4,
+        'format_version': 5,
         'derivation_config': {
             'salt': salt_b64,
             'hash_config': {},
@@ -1705,7 +1747,8 @@ def create_metadata_v4(salt, hash_config, original_hash, encrypted_hash, algorit
             'encrypted_hash': encrypted_hash
         },
         'encryption': {
-            'algorithm': algorithm
+            'algorithm': algorithm,
+            'encryption_data': encryption_data
         }
     }
     
@@ -1751,11 +1794,34 @@ def create_metadata_v4(salt, hash_config, original_hash, encrypted_hash, algorit
     
     return metadata
 
+def create_metadata_v4(salt, hash_config, original_hash, encrypted_hash, algorithm, 
+                      pbkdf2_iterations=0, pqc_info=None):
+    """
+    Create metadata in format version 4.
+    
+    Args:
+        salt (bytes): Salt used for key derivation
+        hash_config (dict): Hash configuration
+        original_hash (str): Hash of original content
+        encrypted_hash (str): Hash of encrypted content
+        algorithm (str): Encryption algorithm used
+        pbkdf2_iterations (int): PBKDF2 iterations if used
+        pqc_info (dict): Post-quantum cryptography information
+        
+    Returns:
+        dict: Metadata in format version 4
+    """
+    # Create metadata v5 and then downgrade to v4
+    v5_metadata = create_metadata_v5(salt, hash_config, original_hash, encrypted_hash, 
+                                     algorithm, pbkdf2_iterations, pqc_info)
+    return convert_metadata_v5_to_v4(v5_metadata)
+
 @secure_encrypt_error_handler
 def encrypt_file(input_file, output_file, password, hash_config=None,
                  pbkdf2_iterations=100000, quiet=False,
                  algorithm=EncryptionAlgorithm.FERNET, progress=False, verbose=False,
-                 pqc_keypair=None, pqc_store_private_key=False, pqc_dual_encrypt_key=False):
+                 pqc_keypair=None, pqc_store_private_key=False, pqc_dual_encrypt_key=False,
+                 encryption_data='aes-gcm'):
     """
     Encrypt a file with a password using the specified algorithm.
 
@@ -1768,6 +1834,10 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         quiet (bool): Whether to suppress progress output
         progress (bool): Whether to show progress bar
         verbose (bool): Whether to show verbose output
+        pqc_keypair (tuple, optional): Tuple of (public_key, private_key) for PQC algorithms
+        pqc_store_private_key (bool): Whether to store the private key in the file
+        pqc_dual_encrypt_key (bool): Whether to encrypt the key with both password and keystore
+        encryption_data (str): Symmetric algorithm to use for data encryption with PQC algorithms
         algorithm (EncryptionAlgorithm): Encryption algorithm to use (default: Fernet)
         pqc_keypair (tuple, optional): Post-quantum keypair (public_key, private_key) for hybrid encryption
         pqc_store_private_key (bool): Whether to store the private key in the metadata for self-decryption
@@ -2101,15 +2171,16 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                     print(f"DEBUG: Setting pqc_dual_encrypt_key flag to True for generated internal keypair")
                     pqc_info['dual_encrypt_key'] = True
     
-    # Create metadata in version 4 format using the helper function
-    metadata = create_metadata_v4(
+    # Create metadata in version 5 format using the helper function
+    metadata = create_metadata_v5(
         salt=salt,
         hash_config=hash_config,
         original_hash=original_hash,
         encrypted_hash=encrypted_hash,
         algorithm=algorithm.value,
         pbkdf2_iterations=pbkdf2_iterations,
-        pqc_info=pqc_info
+        pqc_info=pqc_info,
+        encryption_data=encryption_data
     )
     # If scrypt is used, add rounds to hash_config
     # Serialize and encode the metadata
@@ -2237,9 +2308,9 @@ def decrypt_file(
     # Extract necessary information from metadata
     format_version = metadata.get('format_version', 1)
     
-    # For format_version 4, set correct hash_config for printing purposes
+    # For format_version 4 or 5, set correct hash_config for printing purposes
     # This doesn't change the actual metadata, just passes the right info to print_hash_config
-    if format_version == 4:
+    if format_version in [4, 5]:
         # If verbose, pass the full metadata to print_hash_config for proper display
         if verbose:
             print_hash_config_metadata = metadata
@@ -2248,8 +2319,8 @@ def decrypt_file(
     else:
         print_hash_config_metadata = metadata.get('hash_config', {})
     
-    # Handle format version 4
-    if format_version == 4:
+    # Handle format version 4 or 5
+    if format_version in [4, 5]:
         # Extract information from new hierarchical structure
         derivation_config = metadata['derivation_config']
         salt = base64.b64decode(derivation_config['salt'])
@@ -2450,8 +2521,8 @@ def decrypt_file(
     if pqc_has_private_key:
         try:
             # Handle different format versions
-            if format_version == 4:
-                # Get encrypted private key from v4 structure
+            if format_version in [4, 5]:
+                # Get encrypted private key from v4/v5 structure
                 encrypted_private_key = base64.b64decode(metadata['encryption']['pqc_private_key'])
             else:  # format_version 3
                 encrypted_private_key = base64.b64decode(metadata['pqc_private_key'])
@@ -2463,13 +2534,13 @@ def decrypt_file(
             if pqc_key_is_encrypted:
                 # We need to decrypt the private key using the separately derived key
                 # Get the salt from metadata based on format version
-                if format_version == 4:
+                if format_version in [4, 5]:
                     if 'pqc_key_salt' not in metadata['encryption']:
                         if not quiet:
                             print("Failed to decrypt post-quantum private key - wrong format")
                         return decrypt_algorithm_object, pqc_private_key_from_metadata
                     else:
-                        # Decode the salt from v4 structure
+                        # Decode the salt from v4/v5 structure
                         private_key_salt = base64.b64decode(metadata['encryption']['pqc_key_salt'])
                 else:  # format_version 3
                     if 'pqc_key_salt' not in metadata:

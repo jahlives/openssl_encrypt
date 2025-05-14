@@ -2723,6 +2723,111 @@ class TestPostQuantumCrypto(unittest.TestCase):
         
         # Verify the result
         self.assertEqual(decrypted_data, test_data)
+        
+    def test_pqc_encryption_data_algorithms(self):
+        """Test encryption and decryption with different data encryption algorithms."""
+        # Load the file content
+        with open(self.test_file, 'rb') as f:
+            test_data = f.read()
+        
+        # Test with multiple encryption_data options
+        algorithms = [
+            'aes-gcm', 
+            'aes-gcm-siv', 
+            'aes-ocb3', 
+            'aes-siv', 
+            'chacha20-poly1305', 
+            'xchacha20-poly1305'
+        ]
+        
+        for algo in algorithms:
+            # Create encrypted filename for this algorithm
+            encrypted_file = os.path.join(self.test_dir, f"encrypted_{algo.replace('-', '_')}.enc")
+            self.test_files.append(encrypted_file)
+            
+            # Create a cipher with this encryption_data algorithm
+            cipher = PQCipher(self.test_algorithm, encryption_data=algo)
+            
+            # Generate keypair
+            public_key, private_key = cipher.generate_keypair()
+            
+            try:
+                # Encrypt the data with PQC
+                encrypted_data = cipher.encrypt(test_data, public_key)
+                
+                # Write to file
+                with open(encrypted_file, 'wb') as f:
+                    f.write(encrypted_data)
+                
+                # Read from file
+                with open(encrypted_file, 'rb') as f:
+                    file_data = f.read()
+                
+                # Decrypt with same cipher
+                decrypted_data = cipher.decrypt(file_data, private_key)
+                
+                # Verify the result
+                self.assertEqual(decrypted_data, test_data, 
+                                f"Failed with encryption_data={algo}")
+                
+                # Also test decryption with a new cipher instance
+                cipher2 = PQCipher(self.test_algorithm, encryption_data=algo)
+                decrypted_data2 = cipher2.decrypt(file_data, private_key)
+                self.assertEqual(decrypted_data2, test_data,
+                                f"Failed with new cipher instance using encryption_data={algo}")
+                                
+            except Exception as e:
+                self.fail(f"Error with encryption_data={algo}: {str(e)}")
+                
+    def test_pqc_encryption_data_metadata(self):
+        """Test that the encryption_data parameter is correctly stored in metadata."""
+        # Prepare files
+        test_in = os.path.join(self.test_dir, "test_encrypt_data_metadata.txt")
+        test_out = os.path.join(self.test_dir, "test_encrypt_data_metadata.enc")
+        self.test_files.extend([test_in, test_out])
+        
+        # Create test file
+        with open(test_in, "w") as f:
+            f.write("This is a test for metadata encryption_data parameter")
+            
+        # Test different data encryption algorithms
+        algorithms = ['aes-gcm', 'chacha20-poly1305', 'aes-siv']
+        
+        for algo in algorithms:
+            # Encrypt with specific encryption_data
+            encrypt_file(
+                test_in, 
+                test_out,
+                self.test_password, 
+                self.basic_hash_config,
+                algorithm="kyber768-hybrid",
+                encryption_data=algo
+            )
+            
+            # Now read the file and extract metadata
+            with open(test_out, 'rb') as f:
+                content = f.read()
+                
+            # Find the metadata separator
+            separator_index = content.find(b':')
+            if separator_index == -1:
+                self.fail("Failed to find metadata separator")
+                
+            # Extract and parse metadata
+            metadata_b64 = content[:separator_index]
+            metadata_json = base64.b64decode(metadata_b64)
+            metadata = json.loads(metadata_json)
+            
+            # Check that we have format_version 5
+            self.assertEqual(metadata['format_version'], 5, 
+                           f"Expected format_version 5, got {metadata.get('format_version')}")
+            
+            # Check that encryption_data is set correctly
+            self.assertIn('encryption', metadata, "Missing 'encryption' section in metadata")
+            self.assertIn('encryption_data', metadata['encryption'], 
+                         "Missing 'encryption_data' in metadata encryption section")
+            self.assertEqual(metadata['encryption']['encryption_data'], algo,
+                           f"Expected encryption_data={algo}, got {metadata['encryption'].get('encryption_data')}")
 
     def test_algorithm_compatibility(self):
         """Test compatibility between different algorithm name formats."""
