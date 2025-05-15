@@ -3395,6 +3395,51 @@ def test_file_decryption_v4(filename):
     ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}"
 )
 def test_file_decryption_wrong_pw_v4(filename):
+    """Test decryption of a specific test file with wrong password.
+    
+    This test verifies that trying to decrypt a file with an incorrect password
+    properly fails and raises an exception rather than succeeding with wrong credentials.
+    """
+    algorithm_name = filename.replace('test1_', '').replace('.txt', '')
+    
+    # Do NOT provide a mock private key - we want to test that decryption fails
+    # with wrong password, even for PQC algorithms
+    
+    try:
+        # Try to decrypt with an incorrect password (correct is '1234' but we use '12345')
+        decrypted_data = decrypt_file(
+            input_file=f"./openssl_encrypt/unittests/testfiles/v4/{filename}",
+            output_file=None,
+            password=b"12345",  # Wrong password
+            pqc_private_key=None)  # No key provided - should fail with wrong password
+            
+        # If we get here, decryption succeeded with wrong password, which is a failure
+        pytest.fail(f"Security issue: Decryption succeeded with wrong password for {algorithm_name}")
+    except Exception as e:
+        # This is the expected path - decryption should fail with wrong password
+        print(f"\nDecryption correctly failed for {algorithm_name} with wrong password: {str(e)}")
+        # Test passes because the exception was raised as expected
+        pass
+
+
+# Test function for v5 files with incorrect password
+def get_test_files_v5():
+    """Get a list of test files for v5 format."""
+    try:
+        files = os.listdir("./openssl_encrypt/unittests/testfiles/v5")
+        return [f for f in files if f.startswith("test1_")]
+    except:
+        return []
+
+
+# Create a test function for each file
+@pytest.mark.parametrize(
+    "filename", 
+    get_test_files_v5(),
+    ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}"
+)
+# Add isolation marker for each test to prevent race conditions
+def test_file_decryption_v5(filename):
     """Test decryption of a specific test file."""
     algorithm_name = filename.replace('test1_', '').replace('.txt', '')
     
@@ -3403,21 +3448,61 @@ def test_file_decryption_wrong_pw_v4(filename):
     # they can interfere with each other causing "Post-quantum private key is required for decryption" errors.
     # When tests run individually, a fallback mechanism in PQCipher.decrypt allows them to pass,
     # but this doesn't work reliably with concurrent test execution.
-    pqc_private_key = None
+    pqc_private_key = None 
     if 'kyber' in algorithm_name.lower():
         # Create a mock private key that's unique for each algorithm to avoid cross-test interference
         pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
-    
+
     try:
         decrypted_data = decrypt_file(
-            input_file=f"./openssl_encrypt/unittests/testfiles/v4/{filename}",
+            input_file=f"./openssl_encrypt/unittests/testfiles/v5/{filename}",
             output_file=None,
-            password=b"12345",
+            password=b"1234",
             pqc_private_key=pqc_private_key)
 
+        # Only assert if we actually got data back
+        if not decrypted_data:
+            raise ValueError("Decryption returned empty result")
+
+        assert decrypted_data == b'Hello World\n', f"Decryption result for {algorithm_name} did not match expected output"
+        print(f"\nDecryption successful for {algorithm_name}")
+    
+    except Exception as e: 
+        print(f"\nDecryption failed for {algorithm_name}: {str(e)}")
         raise AssertionError(f"Decryption failed for {algorithm_name}: {str(e)}")
+
+
+@pytest.mark.parametrize(
+    "filename", 
+    get_test_files_v5(),
+    ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}"
+)
+def test_file_decryption_wrong_pw_v5(filename):
+    """Test decryption of v5 test files with wrong password.
+    
+    This test verifies that trying to decrypt a v5 format file with an incorrect password
+    properly fails and raises an exception rather than succeeding with wrong credentials.
+    This is particularly important for PQC dual encryption which should validate both passwords.
+    """
+    algorithm_name = filename.replace('test1_', '').replace('.txt', '')
+    
+    # Do NOT provide a mock private key - we want to test that decryption fails
+    # with wrong password, even for PQC algorithms
+    
+    try:
+        # Try to decrypt with an incorrect password (correct is '1234' but we use '12345')
+        decrypted_data = decrypt_file(
+            input_file=f"./openssl_encrypt/unittests/testfiles/v5/{filename}",
+            output_file=None,
+            password=b"12345",  # Wrong password
+            pqc_private_key=None)  # No key provided - should fail with wrong password
+            
+        # If we get here, decryption succeeded with wrong password, which is a failure
+        pytest.fail(f"Security issue: Decryption succeeded with wrong password for {algorithm_name} (v5)")
     except Exception as e:
-        print(f"\nDecryption failed for {algorithm_name}: {str(e)} which is epexcted")
+        # This is the expected path - decryption should fail with wrong password
+        print(f"\nDecryption correctly failed for {algorithm_name} (v5) with wrong password: {str(e)}")
+        # Test passes because the exception was raised as expected
         pass
 
 

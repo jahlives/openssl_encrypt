@@ -2583,13 +2583,9 @@ def decrypt_file(
                                     cipher16 = AESGCM(hashlib.sha3_256(key).digest())
                                     pqc_private_key_from_metadata = cipher16.decrypt(nonce16[:12], encrypted_key_data16, None)
                                 except Exception as e2:
-                                    # If we're in test mode and both attempts failed, fall back to treating
-                                    # the Kyber1024 private key as unencrypted for compatibility
-                                    if 'test1_kyber1024.txt' in input_file and algorithm == EncryptionAlgorithm.KYBER1024_HYBRID.value:
-                                        pqc_private_key_from_metadata = encrypted_private_key
-                                    else:
-                                        # Re-raise the exception for normal operation
-                                        raise e2
+                                    # Re-raise the exception for normal operation
+                                    # NOTE: Removed special case handling for test1_kyber1024.txt to ensure proper password validation
+                                    raise e2
                         
                         # Private key successfully decrypted
                         if not quiet:
@@ -2617,6 +2613,11 @@ def decrypt_file(
             # If no private key was provided explicitly, use the one from metadata
             if pqc_private_key is None:
                 pqc_private_key = pqc_private_key_from_metadata
+                
+                # If we needed to decrypt a private key but failed (wrong password case)
+                # We should fail the entire decryption process
+                if pqc_key_is_encrypted and pqc_private_key is None:
+                    raise ValueError("Failed to decrypt post-quantum private key - wrong password provided")
                 
         except Exception as e:
             if not quiet:
@@ -2657,16 +2658,12 @@ def decrypt_file(
                         # Now decrypt with both the encrypted data and original file
                         pqc_result = cipher.decrypt(encrypted_data, pqc_private_key, 
                                             file_contents=original_file_contents)
-                        # For test files, we know the expected content
-                        if os.environ.get('PYTEST_CURRENT_TEST') is not None and pqc_result is None:
-                            return b'Hello World\n'
+                        # NOTE: Removed special case handling for test environment to ensure proper password validation
                         return pqc_result
                 else:
                     # Standard approach without file contents
                     pqc_result = cipher.decrypt(encrypted_data, pqc_private_key)
-                    # For test files, we know the expected content
-                    if os.environ.get('PYTEST_CURRENT_TEST') is not None and pqc_result is None:
-                        return b'Hello World\n'
+                    # NOTE: Removed special case handling for test environment to ensure proper password validation
                     return pqc_result
             except Exception as e:
                 # Use generic error message to prevent oracle attacks
