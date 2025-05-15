@@ -404,6 +404,22 @@ def main():
              '  kyber512-hybrid (post-quantum key exchange with AES-256-GCM, NIST level 1), \n'
              '  kyber768-hybrid (post-quantum key exchange with AES-256-GCM, NIST level 3), \n'
              '  kyber1024-hybrid (post-quantum key exchange with AES-256-GCM, NIST level 5)')
+    
+    # Data encryption algorithm to use with Kyber
+    parser.add_argument(
+        '--encryption-data',
+        type=str,
+        choices=[
+            'aes-gcm', 'aes-gcm-siv', 'aes-ocb3', 'aes-siv', 
+            'chacha20-poly1305', 'xchacha20-poly1305'],
+        default='aes-gcm',
+        help='Symmetric encryption algorithm to use for data encryption when using Kyber: \n'
+             '  aes-gcm (default, AES-256 in GCM mode), \n'
+             '  aes-gcm-siv (AES-256 in GCM-SIV mode, resistant to nonce reuse), \n'
+             '  aes-ocb3 (AES-256 in OCB3 mode, faster than GCM), \n'
+             '  aes-siv (AES in SIV mode, synthetic IV), \n'
+             '  chacha20-poly1305 (modern AEAD cipher with 12-byte nonce), \n'
+             '  xchacha20-poly1305 (ChaCha20-Poly1305 with 24-byte nonce)')
     # Define common options
     parser.add_argument(
         '--password', '-p',
@@ -1710,7 +1726,8 @@ def main():
                             progress=args.progress,
                             verbose=args.verbose,
                             pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
-                            pqc_store_private_key=args.pqc_store_key
+                            pqc_store_private_key=args.pqc_store_key,
+                            encryption_data=args.encryption_data
                         )
 
                     if success:
@@ -2031,7 +2048,8 @@ def main():
                         progress=args.progress,
                         verbose=args.verbose,
                         pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
-                        pqc_store_private_key=args.pqc_store_key
+                        pqc_store_private_key=args.pqc_store_key,
+                        encryption_data=args.encryption_data
                     )
 
             if success:

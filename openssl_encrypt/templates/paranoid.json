@@ -33,5 +33,6 @@
     "pbkdf2_iterations": 0,
     "type": "id",
     "algorithm": "xchacha20-poly1305"
-  }
+  },
+  "encryption_data": "xchacha20-poly1305"
 }

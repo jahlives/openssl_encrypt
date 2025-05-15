@@ -2723,6 +2723,111 @@ class TestPostQuantumCrypto(unittest.TestCase):
         
         # Verify the result
         self.assertEqual(decrypted_data, test_data)
+        
+    def test_pqc_encryption_data_algorithms(self):
+        """Test encryption and decryption with different data encryption algorithms."""
+        # Load the file content
+        with open(self.test_file, 'rb') as f:
+            test_data = f.read()
+        
+        # Test with multiple encryption_data options
+        algorithms = [
+            'aes-gcm', 
+            'aes-gcm-siv', 
+            'aes-ocb3', 
+            'aes-siv', 
+            'chacha20-poly1305', 
+            'xchacha20-poly1305'
+        ]
+        
+        for algo in algorithms:
+            # Create encrypted filename for this algorithm
+            encrypted_file = os.path.join(self.test_dir, f"encrypted_{algo.replace('-', '_')}.enc")
+            self.test_files.append(encrypted_file)
+            
+            # Create a cipher with this encryption_data algorithm
+            cipher = PQCipher(self.test_algorithm, encryption_data=algo)
+            
+            # Generate keypair
+            public_key, private_key = cipher.generate_keypair()
+            
+            try:
+                # Encrypt the data with PQC
+                encrypted_data = cipher.encrypt(test_data, public_key)
+                
+                # Write to file
+                with open(encrypted_file, 'wb') as f:
+                    f.write(encrypted_data)
+                
+                # Read from file
+                with open(encrypted_file, 'rb') as f:
+                    file_data = f.read()
+                
+                # Decrypt with same cipher
+                decrypted_data = cipher.decrypt(file_data, private_key)
+                
+                # Verify the result
+                self.assertEqual(decrypted_data, test_data, 
+                                f"Failed with encryption_data={algo}")
+                
+                # Also test decryption with a new cipher instance
+                cipher2 = PQCipher(self.test_algorithm, encryption_data=algo)
+                decrypted_data2 = cipher2.decrypt(file_data, private_key)
+                self.assertEqual(decrypted_data2, test_data,
+                                f"Failed with new cipher instance using encryption_data={algo}")
+                                
+            except Exception as e:
+                self.fail(f"Error with encryption_data={algo}: {str(e)}")
+                
+    def test_pqc_encryption_data_metadata(self):
+        """Test that the encryption_data parameter is correctly stored in metadata."""
+        # Prepare files
+        test_in = os.path.join(self.test_dir, "test_encrypt_data_metadata.txt")
+        test_out = os.path.join(self.test_dir, "test_encrypt_data_metadata.enc")
+        self.test_files.extend([test_in, test_out])
+        
+        # Create test file
+        with open(test_in, "w") as f:
+            f.write("This is a test for metadata encryption_data parameter")
+            
+        # Test different data encryption algorithms
+        algorithms = ['aes-gcm', 'chacha20-poly1305', 'aes-siv']
+        
+        for algo in algorithms:
+            # Encrypt with specific encryption_data
+            encrypt_file(
+                test_in, 
+                test_out,
+                self.test_password, 
+                self.basic_hash_config,
+                algorithm="kyber768-hybrid",
+                encryption_data=algo
+            )
+            
+            # Now read the file and extract metadata
+            with open(test_out, 'rb') as f:
+                content = f.read()
+                
+            # Find the metadata separator
+            separator_index = content.find(b':')
+            if separator_index == -1:
+                self.fail("Failed to find metadata separator")
+                
+            # Extract and parse metadata
+            metadata_b64 = content[:separator_index]
+            metadata_json = base64.b64decode(metadata_b64)
+            metadata = json.loads(metadata_json)
+            
+            # Check that we have format_version 5
+            self.assertEqual(metadata['format_version'], 5, 
+                           f"Expected format_version 5, got {metadata.get('format_version')}")
+            
+            # Check that encryption_data is set correctly
+            self.assertIn('encryption', metadata, "Missing 'encryption' section in metadata")
+            self.assertIn('encryption_data', metadata['encryption'], 
+                         "Missing 'encryption_data' in metadata encryption section")
+            self.assertEqual(metadata['encryption']['encryption_data'], algo,
+                           f"Expected encryption_data={algo}, got {metadata['encryption'].get('encryption_data')}")
 
     def test_algorithm_compatibility(self):
         """Test compatibility between different algorithm name formats."""
@@ -3290,6 +3395,51 @@ def test_file_decryption_v4(filename):
     ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}"
 )
 def test_file_decryption_wrong_pw_v4(filename):
+    """Test decryption of a specific test file with wrong password.
+    
+    This test verifies that trying to decrypt a file with an incorrect password
+    properly fails and raises an exception rather than succeeding with wrong credentials.
+    """
+    algorithm_name = filename.replace('test1_', '').replace('.txt', '')
+    
+    # Do NOT provide a mock private key - we want to test that decryption fails
+    # with wrong password, even for PQC algorithms
+    
+    try:
+        # Try to decrypt with an incorrect password (correct is '1234' but we use '12345')
+        decrypted_data = decrypt_file(
+            input_file=f"./openssl_encrypt/unittests/testfiles/v4/{filename}",
+            output_file=None,
+            password=b"12345",  # Wrong password
+            pqc_private_key=None)  # No key provided - should fail with wrong password
+            
+        # If we get here, decryption succeeded with wrong password, which is a failure
+        pytest.fail(f"Security issue: Decryption succeeded with wrong password for {algorithm_name}")
+    except Exception as e:
+        # This is the expected path - decryption should fail with wrong password
+        print(f"\nDecryption correctly failed for {algorithm_name} with wrong password: {str(e)}")
+        # Test passes because the exception was raised as expected
+        pass
+
+
+# Test function for v5 files with incorrect password
+def get_test_files_v5():
+    """Get a list of test files for v5 format."""
+    try:
+        files = os.listdir("./openssl_encrypt/unittests/testfiles/v5")
+        return [f for f in files if f.startswith("test1_")]
+    except:
+        return []
+
+
+# Create a test function for each file
+@pytest.mark.parametrize(
+    "filename", 
+    get_test_files_v5(),
+    ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}"
+)
+# Add isolation marker for each test to prevent race conditions
+def test_file_decryption_v5(filename):
     """Test decryption of a specific test file."""
     algorithm_name = filename.replace('test1_', '').replace('.txt', '')
     
@@ -3298,21 +3448,61 @@ def test_file_decryption_wrong_pw_v4(filename):
     # they can interfere with each other causing "Post-quantum private key is required for decryption" errors.
     # When tests run individually, a fallback mechanism in PQCipher.decrypt allows them to pass,
     # but this doesn't work reliably with concurrent test execution.
-    pqc_private_key = None
+    pqc_private_key = None 
     if 'kyber' in algorithm_name.lower():
         # Create a mock private key that's unique for each algorithm to avoid cross-test interference
         pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
-    
+
     try:
         decrypted_data = decrypt_file(
-            input_file=f"./openssl_encrypt/unittests/testfiles/v4/{filename}",
+            input_file=f"./openssl_encrypt/unittests/testfiles/v5/{filename}",
             output_file=None,
-            password=b"12345",
+            password=b"1234",
             pqc_private_key=pqc_private_key)
 
+        # Only assert if we actually got data back
+        if not decrypted_data:
+            raise ValueError("Decryption returned empty result")
+
+        assert decrypted_data == b'Hello World\n', f"Decryption result for {algorithm_name} did not match expected output"
+        print(f"\nDecryption successful for {algorithm_name}")
+    
+    except Exception as e: 
+        print(f"\nDecryption failed for {algorithm_name}: {str(e)}")
         raise AssertionError(f"Decryption failed for {algorithm_name}: {str(e)}")
+
+
+@pytest.mark.parametrize(
+    "filename", 
+    get_test_files_v5(),
+    ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}"
+)
+def test_file_decryption_wrong_pw_v5(filename):
+    """Test decryption of v5 test files with wrong password.
+    
+    This test verifies that trying to decrypt a v5 format file with an incorrect password
+    properly fails and raises an exception rather than succeeding with wrong credentials.
+    This is particularly important for PQC dual encryption which should validate both passwords.
+    """
+    algorithm_name = filename.replace('test1_', '').replace('.txt', '')
+    
+    # Do NOT provide a mock private key - we want to test that decryption fails
+    # with wrong password, even for PQC algorithms
+    
+    try:
+        # Try to decrypt with an incorrect password (correct is '1234' but we use '12345')
+        decrypted_data = decrypt_file(
+            input_file=f"./openssl_encrypt/unittests/testfiles/v5/{filename}",
+            output_file=None,
+            password=b"12345",  # Wrong password
+            pqc_private_key=None)  # No key provided - should fail with wrong password
+            
+        # If we get here, decryption succeeded with wrong password, which is a failure
+        pytest.fail(f"Security issue: Decryption succeeded with wrong password for {algorithm_name} (v5)")
     except Exception as e:
-        print(f"\nDecryption failed for {algorithm_name}: {str(e)} which is epexcted")
+        # This is the expected path - decryption should fail with wrong password
+        print(f"\nDecryption correctly failed for {algorithm_name} (v5) with wrong password: {str(e)}")
+        # Test passes because the exception was raised as expected
         pass
 
 
