@@ -74,6 +74,7 @@ REQUIRED_ARGUMENT_GROUPS = {
         'standard',            # Standard configuration
         'paranoid',            # Maximum security configuration
         'algorithm',           # Encryption algorithm 
+        'encryption-data',     # Data encryption algorithm for hybrid encryption
         'password',            # Password option
         'random',              # Generate random password
         'input',               # Input file/directory
