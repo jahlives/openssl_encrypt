@@ -164,15 +164,16 @@ class PQCipher:
     Post-Quantum Cipher implementation using liboqs
     
     This implementation combines post-quantum key encapsulation with 
-    symmetric encryption using AES-256-GCM.
+    configurable symmetric encryption algorithms.
     """
-    def __init__(self, algorithm: Union[PQCAlgorithm, str], quiet: bool = False):
+    def __init__(self, algorithm: Union[PQCAlgorithm, str], quiet: bool = False, encryption_data: str = 'aes-gcm'):
         """
         Initialize a post-quantum cipher instance
         
         Args:
             algorithm (Union[PQCAlgorithm, str]): The post-quantum algorithm to use
             quiet (bool): Whether to suppress output messages
+            encryption_data (str): Symmetric encryption algorithm to use ('aes-gcm', 'chacha20-poly1305', etc.)
         
         Raises:
             ValueError: If liboqs is not available or algorithm not supported
@@ -185,9 +186,19 @@ class PQCipher:
             raise ImportError("liboqs-python is required for post-quantum cryptography. "
                              "Install with: pip install liboqs-python")
         
+        # Store the encryption_data parameter
+        self.encryption_data = encryption_data
+        
+        # Import required symmetric encryption algorithms
         try:
-            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+            from cryptography.hazmat.primitives.ciphers.aead import (
+                AESGCM, ChaCha20Poly1305, AESSIV, AESGCMSIV, AESOCB3
+            )
             self.AESGCM = AESGCM
+            self.ChaCha20Poly1305 = ChaCha20Poly1305
+            self.AESSIV = AESSIV
+            self.AESGCMSIV = AESGCMSIV
+            self.AESOCB3 = AESOCB3
         except ImportError:
             raise ImportError("The 'cryptography' library is required")
             
@@ -570,8 +581,31 @@ class PQCipher:
                 with SecureBytes(shared_secret) as secure_shared_secret:
                     symmetric_key = SecureBytes(hashlib.sha256(secure_shared_secret).digest())
                 
-                # Decrypt the data using AES-GCM
-                cipher = self.AESGCM(symmetric_key)
+                # Select the appropriate cipher based on encryption_data
+                if self.encryption_data == 'aes-gcm':
+                    cipher = self.AESGCM(symmetric_key)
+                elif self.encryption_data == 'chacha20-poly1305':
+                    cipher = self.ChaCha20Poly1305(symmetric_key)
+                elif self.encryption_data == 'xchacha20-poly1305':
+                    # XChaCha20Poly1305 needs to be imported separately if available
+                    try:
+                        from cryptography.hazmat.primitives.ciphers.aead import XChaCha20Poly1305
+                        cipher = XChaCha20Poly1305(symmetric_key)
+                    except ImportError:
+                        if not self.quiet:
+                            print("XChaCha20Poly1305 not available, falling back to ChaCha20Poly1305")
+                        cipher = self.ChaCha20Poly1305(symmetric_key)
+                elif self.encryption_data == 'aes-gcm-siv':
+                    cipher = self.AESGCMSIV(symmetric_key)
+                elif self.encryption_data == 'aes-siv':
+                    cipher = self.AESSIV(symmetric_key)
+                elif self.encryption_data == 'aes-ocb3':
+                    cipher = self.AESOCB3(symmetric_key)
+                else:
+                    # Default to AES-GCM for unknown algorithms
+                    if not self.quiet:
+                        print(f"Unknown encryption algorithm {self.encryption_data}, falling back to aes-gcm")
+                    cipher = self.AESGCM(symmetric_key)
                 try:
                     # Check if we have an empty or very small ciphertext
                     if len(ciphertext) == 0:

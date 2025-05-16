@@ -300,7 +300,29 @@ def encrypt_file_with_keystore(
                     need_update = False
                     format_version = metadata.get('format_version', 3)
                     
-                    if format_version == 4:
+                    if format_version == 5:
+                        # For format version 5, use the same structure as v4 (derivation_config.kdf_config)
+                        if 'derivation_config' not in metadata:
+                            metadata['derivation_config'] = {}
+                        if 'kdf_config' not in metadata['derivation_config']:
+                            metadata['derivation_config']['kdf_config'] = {}
+                        
+                        kdf_config = metadata['derivation_config']['kdf_config']
+                        
+                        # Check if key ID is missing
+                        if 'pqc_keystore_key_id' not in kdf_config or kdf_config['pqc_keystore_key_id'] != key_id:
+                            if not quiet:
+                                print("Key ID not found in metadata, adding it to kdf_config (v5)")
+                            kdf_config['pqc_keystore_key_id'] = key_id
+                            need_update = True
+                        
+                        # Check if dual_encryption flag is missing
+                        if dual_encryption and 'dual_encryption' not in kdf_config:
+                            if not quiet:
+                                print("Dual encryption flag missing from metadata, adding it to kdf_config (v5)")
+                            kdf_config['dual_encryption'] = True
+                            need_update = True
+                    elif format_version == 4:
                         # For format version 4, check in derivation_config.kdf_config
                         if 'derivation_config' not in metadata:
                             metadata['derivation_config'] = {}
@@ -442,7 +464,15 @@ def decrypt_file_with_keystore(
         # Check if this file uses dual encryption
         if metadata:
             # Check based on format version
-            if format_version == 4:
+            if format_version == 5:
+                # Version 5 format - check in derivation_config.kdf_config (same as v4)
+                if ('derivation_config' in metadata and 
+                    'kdf_config' in metadata['derivation_config'] and 
+                    'dual_encryption' in metadata['derivation_config']['kdf_config']):
+                    dual_encryption = metadata['derivation_config']['kdf_config']['dual_encryption']
+                    if dual_encryption and not quiet:
+                        print("File uses dual encryption - requires both keystore and file passwords (v5)")
+            elif format_version == 4:
                 # Version 4 format - check in derivation_config.kdf_config
                 if ('derivation_config' in metadata and 
                     'kdf_config' in metadata['derivation_config'] and 
@@ -470,9 +500,17 @@ def decrypt_file_with_keystore(
                         metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
                         metadata = json.loads(metadata_json)
                         
-                        # Check for dual encryption flag, handling both v3 and v4 formats
+                        # Check for dual encryption flag, handling v3, v4, and v5 formats
                         format_version = metadata.get('format_version', 1)
-                        if format_version == 4:
+                        if format_version == 5:
+                            # Version 5 format - check in derivation_config.kdf_config (same as v4)
+                            if ('derivation_config' in metadata and 
+                                'kdf_config' in metadata['derivation_config'] and 
+                                'dual_encryption' in metadata['derivation_config']['kdf_config']):
+                                dual_encryption = metadata['derivation_config']['kdf_config']['dual_encryption']
+                                if dual_encryption and not quiet:
+                                    print("File uses dual encryption - requires both keystore and file passwords (v5)")
+                        elif format_version == 4:
                             # Version 4 format - check in derivation_config.kdf_config
                             if ('derivation_config' in metadata and 
                                 'kdf_config' in metadata['derivation_config'] and 
@@ -528,7 +566,17 @@ def decrypt_file_with_keystore(
             verify_hash = None
             verify_salt = None
             
-            if format_version == 4:
+            if format_version == 5:
+                # Version 5 format - check in derivation_config.kdf_config (same as v4)
+                if ('derivation_config' in metadata and 
+                    'kdf_config' in metadata['derivation_config'] and
+                    'pqc_dual_encrypt_verify' in metadata['derivation_config']['kdf_config'] and
+                    'pqc_dual_encrypt_verify_salt' in metadata['derivation_config']['kdf_config']):
+                    
+                    # Get stored values
+                    verify_hash = base64.b64decode(metadata['derivation_config']['kdf_config']['pqc_dual_encrypt_verify'])
+                    verify_salt = base64.b64decode(metadata['derivation_config']['kdf_config']['pqc_dual_encrypt_verify_salt'])
+            elif format_version == 4:
                 # Version 4 format - check in derivation_config.kdf_config
                 if ('derivation_config' in metadata and 
                     'kdf_config' in metadata['derivation_config'] and
