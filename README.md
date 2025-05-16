@@ -1,5 +1,5 @@
-# Version 0.8.1: Restructured Metadata
-With the release of version **0.8.1**, openssl_encrypt now uses a new metadata structure. `format_version` 5 represents that new structure. 
+# Version 0.8.2: Restructured Metadata
+With the release of version **0.8.2**, openssl_encrypt now uses a new metadata structure. `format_version` 5 represents that new structure. Additionally fixed some issues with `Python` < 3.12 and added a more resiliant way to include `whirlpool` during build for for `Python` >= 3.9 
   The change is implemented to avoid any breaking changes to prior versions. Therefore the code is able to process all supported format versions transparently. Unittests of existing (older metadata) encrypted file are passing. Tests for new structure yet to come
 # Secure File Encryption Tool
 A powerful tool for securely encrypting, decrypting, and shredding files with military-grade cryptography and multi-layer password hashing.
