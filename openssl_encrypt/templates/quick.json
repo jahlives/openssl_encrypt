@@ -26,5 +26,6 @@
     "pbkdf2_iterations": 10000,
     "type": "id",
     "algorithm": "fernet"
-  }
+  },
+  "encryption_data": "aes-gcm"
 }

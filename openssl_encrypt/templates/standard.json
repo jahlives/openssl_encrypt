@@ -26,5 +26,6 @@
                 "pbkdf2_iterations": 0,
                 "type": "id",
                 "algorithm": "aes-gcm-siv"
-            }
+            },
+  "encryption_data": "aes-gcm"
 }
