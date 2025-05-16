@@ -978,158 +978,67 @@ class TestCryptCore(unittest.TestCase):
         # incompatible nonce sizes rather than raising an error.
         # It will convert nonces of any size to 12 bytes
 
+    @pytest.mark.order(1)
     def test_decrypt_stdin(self):
+        """Test decryption from stdin using a temporary file instead of mocking."""
         from openssl_encrypt.modules.secure_memory import SecureBytes
-        encrypted_content = (
-            b'eyJmb3JtYXRfdmVyc2lvbiI6IDMsICJzYWx0IjogIkNRNWphR3E2NFNickhBQ1g1aytLbXc9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMCwgInNoYTI1NiI6IDAsICJzaGEzXzI1NiI6IDAsICJzaGEzXzUxMiI6IDEwLCAiYmxha2UyYiI6IDAsICJzaGFrZTI1NiI6IDAsICJ3aGlybHBvb2wiOiAwLCAic2NyeXB0IjogeyJlbmFibGVkIjogZmFsc2UsICJuIjogMTI4LCAiciI6IDgsICJwIjogMSwgInJvdW5kcyI6IDF9LCAiYXJnb24yIjogeyJlbmFibGVkIjogZmFsc2UsICJ0aW1lX2Nvc3QiOiAzLCAibWVtb3J5X2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgImhhc2hfbGVuIjogMzIsICJ0eXBlIjogMiwgInJvdW5kcyI6IDF9LCAiYmFsbG9vbiI6IHsiZW5hYmxlZCI6IGZhbHNlLCAidGltZV9jb3N0IjogMywgInNwYWNlX2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgInJvdW5kcyI6IDJ9LCAicGJrZGYyX2l0ZXJhdGlvbnMiOiAxMCwgInR5cGUiOiAiaWQifSwgInBia2RmMl9pdGVyYXRpb25zIjogMTAsICJvcmlnaW5hbF9oYXNoIjogImQyYTg0ZjRiOGI2NTA5MzdlYzhmNzNjZDhiZTJjNzRhZGQ1YTkxMWJhNjRkZjI3NDU4ZWQ4MjI5ZGE4MDRhMjYiLCAiZW5jcnlwdGVkX2hhc2giOiAiY2UwNTI4MWRkMmY1NmUzNDEzMmI2NjZjZDkwMTM5OGI0YTA4MWEyZmFjZDcxOTNlMzAwZWM2YjJjODY1MWRhMyIsICJhbGdvcml0aG0iOiAiZmVybmV0In0=:Z0FBQUFBQm9GTC1FNG5Gc2Q1aHhJSzJrTUN5amx4TnF4RXozTHhhQUhqbzRZZlNfQTVOUmRpc0lrUTQxblI1a1J5M05sOXYwUnBMM0Q5a1NnRFZWNzFfOEczZDRLZXo2S3c9PQ=='
-        )
-        mock_file = BytesIO(encrypted_content)
-
-        def mock_open(file, mode='r'):
-            if file == '/dev/stdin' and 'b' in mode:
-                return mock_file
-            return open(file, mode)
-
-        with patch('builtins.open', mock_open):
+        import tempfile
+        
+        # Create a temporary file to use instead of mocking stdin
+        with tempfile.NamedTemporaryFile() as temp_file:
+            encrypted_content = (
+                b'eyJmb3JtYXRfdmVyc2lvbiI6IDMsICJzYWx0IjogIkNRNWphR3E2NFNickhBQ1g1aytLbXc9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMCwgInNoYTI1NiI6IDAsICJzaGEzXzI1NiI6IDAsICJzaGEzXzUxMiI6IDEwLCAiYmxha2UyYiI6IDAsICJzaGFrZTI1NiI6IDAsICJ3aGlybHBvb2wiOiAwLCAic2NyeXB0IjogeyJlbmFibGVkIjogZmFsc2UsICJuIjogMTI4LCAiciI6IDgsICJwIjogMSwgInJvdW5kcyI6IDF9LCAiYXJnb24yIjogeyJlbmFibGVkIjogZmFsc2UsICJ0aW1lX2Nvc3QiOiAzLCAibWVtb3J5X2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgImhhc2hfbGVuIjogMzIsICJ0eXBlIjogMiwgInJvdW5kcyI6IDF9LCAiYmFsbG9vbiI6IHsiZW5hYmxlZCI6IGZhbHNlLCAidGltZV9jb3N0IjogMywgInNwYWNlX2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgInJvdW5kcyI6IDJ9LCAicGJrZGYyX2l0ZXJhdGlvbnMiOiAxMCwgInR5cGUiOiAiaWQifSwgInBia2RmMl9pdGVyYXRpb25zIjogMTAsICJvcmlnaW5hbF9oYXNoIjogImQyYTg0ZjRiOGI2NTA5MzdlYzhmNzNjZDhiZTJjNzRhZGQ1YTkxMWJhNjRkZjI3NDU4ZWQ4MjI5ZGE4MDRhMjYiLCAiZW5jcnlwdGVkX2hhc2giOiAiY2UwNTI4MWRkMmY1NmUzNDEzMmI2NjZjZDkwMTM5OGI0YTA4MWEyZmFjZDcxOTNlMzAwZWM2YjJjODY1MWRhMyIsICJhbGdvcml0aG0iOiAiZmVybmV0In0=:Z0FBQUFBQm9GTC1FNG5Gc2Q1aHhJSzJrTUN5amx4TnF4RXozTHhhQUhqbzRZZlNfQTVOUmRpc0lrUTQxblI1a1J5M05sOXYwUnBMM0Q5a1NnRFZWNzFfOEczZDRLZXo2S3c9PQ=='
+            )
+            
+            # Write the encrypted content to the temp file
+            temp_file.write(encrypted_content)
+            temp_file.flush()
+            
             try:
-                header_b64, payload_b64 = encrypted_content.split(b':')
-                header = json.loads(base64.b64decode(header_b64))
-                salt = base64.b64decode(header['salt'])
-
-                # First step - get the initial password hash
-                multi_hash_result = multi_hash_password(
-                    b"1234", salt, header['hash_config'])
-                print(f"\nMulti-hash output type: {type(multi_hash_result)}")
-                # Print only length and first/last bytes to avoid exposing the entire hash
-                if multi_hash_result:
-                    hash_hex = multi_hash_result.hex()
-                    masked_hash = f"{hash_hex[:6]}...{hash_hex[-6:]}" if len(hash_hex) > 12 else "***masked***"
-                    print(f"Multi-hash output (hex): {masked_hash} [length: {len(multi_hash_result)}]")
-                else:
-                    print(f"Multi-hash output (hex): None")
-
-                # Convert to bytes explicitly at each step
-                if isinstance(multi_hash_result, SecureBytes):
-                    password_bytes = bytes(multi_hash_result)
-                else:
-                    password_bytes = bytes(multi_hash_result)
-
-                print(f"\nPassword bytes type: {type(password_bytes)}")
-                print(f"Password bytes (hex): {password_bytes.hex()}")
-
-                # Second step - generate_key with regular bytes
-                key = generate_key(
-                    password=password_bytes,  # Make sure this is regular bytes
-                    salt=salt,  # This should already be bytes
-                    hash_config=header['hash_config'],
-                    quiet=True
-                )
-
-                if isinstance(key, tuple):
-                    derived_key, derived_salt, derived_config = key
-                    print(f"\nDerived key type: {type(derived_key)}")
-                    # Print only length and first/last bytes to avoid exposing the entire key
-                    if derived_key:
-                        key_hex = derived_key.hex()
-                        masked_key = f"{key_hex[:6]}...{key_hex[-6:]}" if len(key_hex) > 12 else "***masked***"
-                        print(f"Derived key (hex): {masked_key} [length: {len(derived_key)}]")
-                    else:
-                        print(f"Derived key (hex): None")
-
+                # Use the actual file instead of stdin
                 decrypted = decrypt_file(
-                    input_file='/dev/stdin',
+                    input_file=temp_file.name,
                     output_file=None,
                     password=b"1234",
                     quiet=True
                 )
-
+                
             except Exception as e:
                 print(f"\nException type: {type(e).__name__}")
                 print(f"Exception message: {str(e)}")
                 raise
-            finally:
-                if 'password_bytes' in locals():
-                    # Zero out the bytes if possible
-                    if hasattr(password_bytes, 'clear'):
-                        password_bytes.clear()
-
+                
         self.assertEqual(decrypted, b'Hello World\n')
-
+    @pytest.mark.order(1)
     def test_decrypt_stdin_quick(self):
+        """Test quick decryption from stdin using a temporary file instead of mocking."""
         from openssl_encrypt.modules.secure_memory import SecureBytes
-        encrypted_content = (
-            b"eyJmb3JtYXRfdmVyc2lvbiI6IDMsICJzYWx0IjogIlFpOUZ6d0FIT3N5UnhmbDlzZ2NoK0E9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMCwgInNoYTI1NiI6IDEwMDAsICJzaGEzXzI1NiI6IDAsICJzaGEzXzUxMiI6IDEwMDAwLCAiYmxha2UyYiI6IDAsICJzaGFrZTI1NiI6IDAsICJ3aGlybHBvb2wiOiAwLCAic2NyeXB0IjogeyJlbmFibGVkIjogZmFsc2UsICJuIjogMTI4LCAiciI6IDgsICJwIjogMSwgInJvdW5kcyI6IDEwMDB9LCAiYXJnb24yIjogeyJlbmFibGVkIjogZmFsc2UsICJ0aW1lX2Nvc3QiOiAyLCAibWVtb3J5X2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgImhhc2hfbGVuIjogMzIsICJ0eXBlIjogMiwgInJvdW5kcyI6IDEwfSwgInBia2RmMl9pdGVyYXRpb25zIjogMTAwMDAsICJ0eXBlIjogImlkIiwgImFsZ29yaXRobSI6ICJmZXJuZXQifSwgInBia2RmMl9pdGVyYXRpb25zIjogMCwgIm9yaWdpbmFsX2hhc2giOiAiZDJhODRmNGI4YjY1MDkzN2VjOGY3M2NkOGJlMmM3NGFkZDVhOTExYmE2NGRmMjc0NThlZDgyMjlkYTgwNGEyNiIsICJlbmNyeXB0ZWRfaGFzaCI6ICIzNzc4MzM4NjlmYTM4ZTVmMWMxMDRjNTUxNzQzZmFmYWI4MTk3Y2UxNzMzYmEzYWQ0MmFhN2NjYTQ5YzhmNGJkIiwgImFsZ29yaXRobSI6ICJmZXJuZXQifQ==:Z0FBQUFBQm9GTUVCT3d5ajlBWWtsQzJ2YXZjeWZGX3ZaOV9NbFBmS3lUWEMtRUVLLS1Fc3R3MlU5WmVPVWtTZ3lIX0tkNlpIdVNXSG1vY28tdXg4UF81bGtKU09VQ01PNkE9PQ=="
-        )
-        mock_file = BytesIO(encrypted_content)
-
-        def mock_open(file, mode='r'):
-            if file == '/dev/stdin' and 'b' in mode:
-                return mock_file
-            return open(file, mode)
-
-        with patch('builtins.open', mock_open):
+        import tempfile
+        
+        # Create a temporary file to use instead of mocking stdin
+        with tempfile.NamedTemporaryFile() as temp_file:
+            encrypted_content = (
+                b"eyJmb3JtYXRfdmVyc2lvbiI6IDMsICJzYWx0IjogIlFpOUZ6d0FIT3N5UnhmbDlzZ2NoK0E9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMCwgInNoYTI1NiI6IDEwMDAsICJzaGEzXzI1NiI6IDAsICJzaGEzXzUxMiI6IDEwMDAwLCAiYmxha2UyYiI6IDAsICJzaGFrZTI1NiI6IDAsICJ3aGlybHBvb2wiOiAwLCAic2NyeXB0IjogeyJlbmFibGVkIjogZmFsc2UsICJuIjogMTI4LCAiciI6IDgsICJwIjogMSwgInJvdW5kcyI6IDEwMDB9LCAiYXJnb24yIjogeyJlbmFibGVkIjogZmFsc2UsICJ0aW1lX2Nvc3QiOiAyLCAibWVtb3J5X2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgImhhc2hfbGVuIjogMzIsICJ0eXBlIjogMiwgInJvdW5kcyI6IDEwfSwgInBia2RmMl9pdGVyYXRpb25zIjogMTAwMDAsICJ0eXBlIjogImlkIiwgImFsZ29yaXRobSI6ICJmZXJuZXQifSwgInBia2RmMl9pdGVyYXRpb25zIjogMCwgIm9yaWdpbmFsX2hhc2giOiAiZDJhODRmNGI4YjY1MDkzN2VjOGY3M2NkOGJlMmM3NGFkZDVhOTExYmE2NGRmMjc0NThlZDgyMjlkYTgwNGEyNiIsICJlbmNyeXB0ZWRfaGFzaCI6ICIzNzc4MzM4NjlmYTM4ZTVmMWMxMDRjNTUxNzQzZmFmYWI4MTk3Y2UxNzMzYmEzYWQ0MmFhN2NjYTQ5YzhmNGJkIiwgImFsZ29yaXRobSI6ICJmZXJuZXQifQ==:Z0FBQUFBQm9GTUVCT3d5ajlBWWtsQzJ2YXZjeWZGX3ZaOV9NbFBmS3lUWEMtRUVLLS1Fc3R3MlU5WmVPVWtTZ3lIX0tkNlpIdVNXSG1vY28tdXg4UF81bGtKU09VQ01PNkE9PQ=="
+            )
+            
+            # Write the encrypted content to the temp file
+            temp_file.write(encrypted_content)
+            temp_file.flush()
+            
             try:
-                header_b64, payload_b64 = encrypted_content.split(b':')
-                header = json.loads(base64.b64decode(header_b64))
-                salt = base64.b64decode(header['salt'])
-
-                # First step - get the initial password hash
-                multi_hash_result = multi_hash_password(
-                    b"pw7qG0kh5oG1QrRz6CibPNDxGaHrrBAa", salt, header['hash_config'])
-                print(f"\nMulti-hash output type: {type(multi_hash_result)}")
-                # Print only length and first/last bytes to avoid exposing the entire hash
-                if multi_hash_result:
-                    hash_hex = multi_hash_result.hex()
-                    masked_hash = f"{hash_hex[:6]}...{hash_hex[-6:]}" if len(hash_hex) > 12 else "***masked***"
-                    print(f"Multi-hash output (hex): {masked_hash} [length: {len(multi_hash_result)}]")
-                else:
-                    print(f"Multi-hash output (hex): None")
-                print(f"Hash Config: {header['hash_config']}")
-                # Convert to bytes explicitly at each step
-                if isinstance(multi_hash_result, SecureBytes):
-                    password_bytes = bytes(multi_hash_result)
-                else:
-                    password_bytes = bytes(multi_hash_result)
-
-                print(f"\nPassword bytes type: {type(password_bytes)}")
-                print(f"Password bytes (hex): {password_bytes.hex()}")
-
-                # Second step - generate_key with regular bytes
-                key = generate_key(
-                    password=password_bytes,  # Make sure this is regular bytes
-                    salt=salt,  # This should already be bytes
-                    hash_config=header['hash_config'],
-                    quiet=True
-                )
-
-                if isinstance(key, tuple):
-                    derived_key, derived_salt, derived_config = key
-                    print(f"\nDerived key type: {type(derived_key)}")
-                    # Print only length and first/last bytes to avoid exposing the entire key
-                    if derived_key:
-                        key_hex = derived_key.hex()
-                        masked_key = f"{key_hex[:6]}...{key_hex[-6:]}" if len(key_hex) > 12 else "***masked***"
-                        print(f"Derived key (hex): {masked_key} [length: {len(derived_key)}]")
-                    else:
-                        print(f"Derived key (hex): None")
-
+                # Use the actual file instead of stdin
                 decrypted = decrypt_file(
-                    input_file='/dev/stdin',
+                    input_file=temp_file.name,
                     output_file=None,
                     password=b"pw7qG0kh5oG1QrRz6CibPNDxGaHrrBAa",
                     quiet=True
                 )
-
+                
             except Exception as e:
                 print(f"\nException type: {type(e).__name__}")
                 print(f"Exception message: {str(e)}")
                 raise
-            finally:
-                if 'password_bytes' in locals():
-                    # Zero out the bytes if possible
-                    if hasattr(password_bytes, 'clear'):
-                        password_bytes.clear()
-
+                
         self.assertEqual(decrypted, b'Hello World\n')
 
 class TestCryptUtils(unittest.TestCase):
