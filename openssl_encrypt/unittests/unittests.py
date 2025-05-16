@@ -86,6 +86,7 @@ REQUIRED_ARGUMENT_GROUPS = {
         'recursive',           # Process directories recursively
     ],
     'Hash Options': [
+        'kdf-rounds',          # Global KDF rounds setting
         'sha512-rounds',       # SHA hash rounds
         'sha256-rounds',
         'sha3-256-rounds',
@@ -1416,6 +1417,189 @@ class TestCLIInterface(unittest.TestCase):
                 "Password Hashing Algorithm Recommendations",
                 content)
             self.assertIn("Argon2", content)
+            
+    @mock.patch('getpass.getpass')
+    def test_implicit_enable_kdf_from_rounds(self, mock_getpass):
+        """Test that KDFs are implicitly enabled when their rounds are specified."""
+        # Set up mock password input
+        mock_getpass.return_value = "TestPassword123!"
+        
+        # Output file
+        encrypted_file = os.path.join(self.test_dir, "implicit_enable.bin")
+        
+        # Create custom output capture
+        output_capture = StringIO()
+        original_stdout = sys.stdout
+        sys.stdout = output_capture
+        
+        try:
+            # Configure CLI args - specify rounds without enable flags
+            sys.argv = [
+                "crypt.py", "encrypt",
+                "--input", self.test_file,
+                "--output", encrypted_file,
+                "--force-password",
+                "--argon2-rounds", "3",  # Should implicitly enable Argon2
+                "--scrypt-rounds", "2",  # Should implicitly enable Scrypt
+                "--balloon-rounds", "1", # Should implicitly enable Balloon
+                "--verbose"
+            ]
+            
+            with mock.patch('sys.exit') as mock_exit:
+                cli_main()
+                # Check exit code
+                mock_exit.assert_called_once_with(0)
+            
+            # Check output for implicit enabling messages
+            output = output_capture.getvalue()
+            self.assertIn("Setting --enable-argon2", output)
+            self.assertIn("Setting --enable-scrypt", output)
+            self.assertIn("Setting --enable-balloon", output)
+            
+            # Verify the encrypted file was created
+            self.assertTrue(os.path.exists(encrypted_file))
+            
+        finally:
+            sys.stdout = original_stdout
+            
+    @mock.patch('getpass.getpass')
+    def test_implicit_rounds_from_enable(self, mock_getpass):
+        """Test that default rounds are set when KDFs are enabled without specified rounds."""
+        # Set up mock password input
+        mock_getpass.return_value = "TestPassword123!"
+        
+        # Output file
+        encrypted_file = os.path.join(self.test_dir, "implicit_rounds.bin")
+        
+        # Create custom output capture
+        output_capture = StringIO()
+        original_stdout = sys.stdout
+        sys.stdout = output_capture
+        
+        try:
+            # Configure CLI args - specify enable flags without rounds
+            sys.argv = [
+                "crypt.py", "encrypt",
+                "--input", self.test_file,
+                "--output", encrypted_file,
+                "--force-password",
+                "--enable-argon2",  # Should get default rounds=10
+                "--enable-scrypt",  # Should get default rounds=10
+                "--enable-balloon", # Should get default rounds=10
+                "--verbose"
+            ]
+            
+            with mock.patch('sys.exit') as mock_exit:
+                cli_main()
+                # Check exit code
+                mock_exit.assert_called_once_with(0)
+            
+            # Check output for implicit rounds messages
+            output = output_capture.getvalue()
+            self.assertIn("Setting --argon2-rounds=10 (default of 10)", output)
+            self.assertIn("Setting --scrypt-rounds=10 (default of 10)", output)
+            self.assertIn("Setting --balloon-rounds=10 (default of 10)", output)
+            
+            # Verify the encrypted file was created
+            self.assertTrue(os.path.exists(encrypted_file))
+            
+        finally:
+            sys.stdout = original_stdout
+            
+    @mock.patch('getpass.getpass')
+    def test_global_kdf_rounds(self, mock_getpass):
+        """Test that global KDF rounds parameter works correctly."""
+        # Set up mock password input
+        mock_getpass.return_value = "TestPassword123!"
+        
+        # Output file
+        encrypted_file = os.path.join(self.test_dir, "global_rounds.bin")
+        
+        # Create custom output capture
+        output_capture = StringIO()
+        original_stdout = sys.stdout
+        sys.stdout = output_capture
+        
+        try:
+            # Configure CLI args - use global rounds
+            sys.argv = [
+                "crypt.py", "encrypt",
+                "--input", self.test_file,
+                "--output", encrypted_file,
+                "--force-password",
+                "--enable-argon2",
+                "--enable-scrypt",
+                "--enable-balloon",
+                "--kdf-rounds", "3",  # Global rounds value
+                "--verbose"
+            ]
+            
+            with mock.patch('sys.exit') as mock_exit:
+                cli_main()
+                # Check exit code
+                mock_exit.assert_called_once_with(0)
+            
+            # Check output for global rounds messages
+            output = output_capture.getvalue()
+            self.assertIn("Setting --argon2-rounds=3 (--kdf-rounds=3)", output)
+            self.assertIn("Setting --scrypt-rounds=3 (--kdf-rounds=3)", output)
+            self.assertIn("Setting --balloon-rounds=3 (--kdf-rounds=3)", output)
+            
+            # Verify the encrypted file was created
+            self.assertTrue(os.path.exists(encrypted_file))
+            
+        finally:
+            sys.stdout = original_stdout
+            
+    @mock.patch('getpass.getpass')
+    def test_specific_rounds_override_global(self, mock_getpass):
+        """Test that specific rounds parameters override the global setting."""
+        # Set up mock password input
+        mock_getpass.return_value = "TestPassword123!"
+        
+        # Output file
+        encrypted_file = os.path.join(self.test_dir, "override_rounds.bin")
+        
+        # Create custom output capture
+        output_capture = StringIO()
+        original_stdout = sys.stdout
+        sys.stdout = output_capture
+        
+        try:
+            # Configure CLI args with mixed specific and global rounds
+            sys.argv = [
+                "crypt.py", "encrypt",
+                "--input", self.test_file,
+                "--output", encrypted_file,
+                "--force-password",
+                "--enable-argon2",
+                "--argon2-rounds", "5",  # Specific value
+                "--enable-scrypt",       # Should use global value
+                "--enable-balloon",      # Should use global value
+                "--kdf-rounds", "2",     # Global value
+                "--verbose"
+            ]
+            
+            with mock.patch('sys.exit') as mock_exit:
+                cli_main()
+                # Check exit code
+                mock_exit.assert_called_once_with(0)
+            
+            # Examine output to verify rounds values
+            output = output_capture.getvalue()
+            
+            # Specific value for Argon2
+            self.assertNotIn("Setting --argon2-rounds", output)  # Already set explicitly
+            
+            # Global values for others
+            self.assertIn("Setting --scrypt-rounds=2 (--kdf-rounds=2)", output)
+            self.assertIn("Setting --balloon-rounds=2 (--kdf-rounds=2)", output)
+            
+            # Verify the encrypted file was created
+            self.assertTrue(os.path.exists(encrypted_file))
+            
+        finally:
+            sys.stdout = original_stdout
 
 
 class TestFileOperations(unittest.TestCase):
