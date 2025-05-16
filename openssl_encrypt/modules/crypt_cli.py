@@ -915,11 +915,8 @@ def main():
         print("====================")
         if argon2_available:
             print(f"✓ Argon2 is AVAILABLE (version {version})")
-            print(
-                f"✓ Supported variants: {
-                ', '.join(
-                    'Argon2' +
-                    t for t in supported_types)}")
+            variants = ', '.join('Argon2' + t for t in supported_types)
+            print(f"✓ Supported variants: {variants}")
 
             # Try a test hash to verify functionality
             try:
@@ -1415,8 +1412,7 @@ def main():
 
         if not args.quiet:
             print(
-                f"Using Argon2 preset '{
-                args.argon2_preset}' with parameters:")
+                f"Using Argon2 preset '{args.argon2_preset}' with parameters:")
             print(f"  - Time cost: {args.argon2_time}")
             print(f"  - Memory: {args.argon2_memory} KB")
             print(f"  - Parallelism: {args.argon2_parallelism}")
