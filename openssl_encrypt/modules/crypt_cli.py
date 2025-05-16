@@ -476,6 +476,14 @@ def main():
     # Group hash configuration arguments for better organization
     hash_group = parser.add_argument_group(
         'Hash Options', 'Configure hashing algorithms for key derivation')
+        
+    # Add global KDF rounds parameter
+    hash_group.add_argument(
+        '--kdf-rounds',
+        type=int,
+        default=0,
+        help='Default number of rounds for all KDFs when enabled without specific rounds (overrides the default of 10)'
+    )
 
     # SHA family arguments - updated to match the template naming
     hash_group.add_argument(
@@ -553,8 +561,8 @@ def main():
     scrypt_group.add_argument(
         '--scrypt-rounds',
         type=int,
-        default=1,
-        help='Use scrypt rounds for interating (default: 1)'
+        default=0,  # Changed from 1 to 0 to make the implicit setting work
+        help='Use scrypt rounds for iterating (default when enabled: 10)'
     )
     scrypt_group.add_argument(
         '--scrypt-n',
@@ -646,8 +654,8 @@ def main():
     argon2_group.add_argument(
         '--argon2-rounds',
         type=int,
-        default=1,
-        help='Argon2 time cost parameter (default: 1)'
+        default=0,  # Changed from 1 to 0 to make the implicit setting work
+        help='Argon2 time cost parameter (default when enabled: 10)'
     )
     argon2_group.add_argument(
         '--argon2-time',
@@ -719,8 +727,8 @@ def main():
     balloon_group.add_argument(
         '--balloon-rounds',
         type=int,
-        default=2,
-        help='Number of rounds for Balloon hashing. More rounds increase security but also processing time.'
+        default=0,  # Changed from 2 to 0 to make the implicit setting work
+        help='Number of rounds for Balloon hashing (default when enabled: 10). More rounds increase security but also processing time.'
     )
     balloon_group.add_argument(
         '--balloon-hash-len',
@@ -1365,6 +1373,50 @@ def main():
         if not args.quiet:
             print(
                 f"Using default of {MIN_SHA_ITERATIONS} iterations for SHAKE-256")
+
+    # Determine default rounds value to use - either from --kdf-rounds or default of 10
+    default_rounds = args.kdf_rounds if args.kdf_rounds > 0 else 10
+    
+    # Implicitly set --enable-XXX if --XXX-rounds is provided
+    # Scrypt
+    if args.scrypt_rounds > 0 and not args.enable_scrypt:
+        if not args.quiet:
+            print(f"Setting --enable-scrypt since --scrypt-rounds={args.scrypt_rounds} was provided")
+        args.enable_scrypt = True
+    elif args.enable_scrypt and args.scrypt_rounds <= 0:
+        if not args.quiet:
+            rounds_src = f"--kdf-rounds={default_rounds}" if args.kdf_rounds > 0 else "default of 10"
+            print(f"Setting --scrypt-rounds={default_rounds} ({rounds_src}) since --enable-scrypt was provided without rounds")
+        args.scrypt_rounds = default_rounds
+    
+    # Argon2
+    if args.argon2_rounds > 0 and not args.enable_argon2:
+        if not args.quiet and ARGON2_AVAILABLE:
+            print(f"Setting --enable-argon2 since --argon2-rounds={args.argon2_rounds} was provided")
+        args.enable_argon2 = True
+    elif args.enable_argon2 and args.argon2_rounds <= 0:
+        if not args.quiet and ARGON2_AVAILABLE:
+            rounds_src = f"--kdf-rounds={default_rounds}" if args.kdf_rounds > 0 else "default of 10"
+            print(f"Setting --argon2-rounds={default_rounds} ({rounds_src}) since --enable-argon2 was provided without rounds")
+        args.argon2_rounds = default_rounds
+    
+    # Balloon
+    if args.balloon_rounds > 0 and not args.enable_balloon:
+        if not args.quiet:
+            print(f"Setting --enable-balloon since --balloon-rounds={args.balloon_rounds} was provided")
+        args.enable_balloon = True
+    elif args.enable_balloon and args.balloon_rounds <= 0:
+        if not args.quiet:
+            rounds_src = f"--kdf-rounds={default_rounds}" if args.kdf_rounds > 0 else "default of 10"
+            print(f"Setting --balloon-rounds={default_rounds} ({rounds_src}) since --enable-balloon was provided without rounds")
+        args.balloon_rounds = default_rounds
+        
+    # Debug output to verify parameter values (uncomment for debugging)
+    # if args.verbose:
+    #     print(f"DEBUG - Parameter values after implicit settings:")
+    #     print(f"DEBUG - Scrypt: enabled={args.enable_scrypt}, rounds={args.scrypt_rounds}")
+    #     print(f"DEBUG - Argon2: enabled={args.enable_argon2}, rounds={args.argon2_rounds}")
+    #     print(f"DEBUG - Balloon: enabled={args.enable_balloon}, rounds={args.balloon_rounds}")
 
     # Handle Argon2 presets if specified
     if args.argon2_preset and ARGON2_AVAILABLE:

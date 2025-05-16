@@ -89,6 +89,7 @@ python -m openssl_encrypt.crypt ACTION [OPTIONS]
 
 | Option | Description |
 |--------|-------------|
+| `--kdf-rounds` | Global rounds setting for all enabled KDFs without specific rounds (overrides default of 10) |
 | `--sha256-rounds` | Number of SHA-256 iterations (default: 1,000,000 if enabled) |
 | `--sha512-rounds` | Number of SHA-512 iterations (default: 1,000,000 if enabled) |
 | `--sha3-256-rounds` | Number of SHA3-256 iterations (default: 1,000,000 if enabled) |
@@ -100,8 +101,8 @@ python -m openssl_encrypt.crypt ACTION [OPTIONS]
 
 | Option | Description |
 |--------|-------------|
-| `--enable-scrypt` | Enable Scrypt password hashing |
-| `--scrypt-rounds` | Scrypt iteration rounds (default: 1) |
+| `--enable-scrypt` | Enable Scrypt password hashing (implicitly enables if --scrypt-rounds is set) |
+| `--scrypt-rounds` | Scrypt iteration rounds (default: 10 when enabled, or value from --kdf-rounds if specified) |
 | `--scrypt-n` | CPU/memory cost factor (default: 128, use power of 2) |
 | `--scrypt-r` | Block size parameter (default: 8) |
 | `--scrypt-p` | Parallelization parameter (default: 1) |
@@ -110,8 +111,8 @@ python -m openssl_encrypt.crypt ACTION [OPTIONS]
 
 | Option | Description |
 |--------|-------------|
-| `--enable-argon2` | Enable Argon2 password hashing |
-| `--argon2-rounds` | Time cost (default: 1) |
+| `--enable-argon2` | Enable Argon2 password hashing (implicitly enables if --argon2-rounds is set) |
+| `--argon2-rounds` | Time cost (default: 10 when enabled, or value from --kdf-rounds if specified) |
 | `--argon2-time` | Time cost parameter (default: 3) |
 | `--argon2-memory` | Memory usage in KB (default: 65536 - 64MB) |
 | `--argon2-parallelism` | Parallelism factor (default: 4) |
@@ -123,11 +124,11 @@ python -m openssl_encrypt.crypt ACTION [OPTIONS]
 
 | Option | Description |
 |--------|-------------|
-| `--enable-balloon` | Enable Balloon Hashing KDF |
+| `--enable-balloon` | Enable Balloon Hashing KDF (implicitly enables if --balloon-rounds is set) |
 | `--balloon-time-cost` | Time cost parameter (default: 3) |
 | `--balloon-space-cost` | Memory usage in bytes (default: 65536) |
 | `--balloon-parallelism` | Thread count (default: 4) |
-| `--balloon-rounds` | Number of rounds (default: 2) |
+| `--balloon-rounds` | Number of rounds (default: 10 when enabled, or value from --kdf-rounds if specified) |
 | `--balloon-hash-len` | Hash output length in bytes (default: 32) |
 
 #### Read Input from stdin
