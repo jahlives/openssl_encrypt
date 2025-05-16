@@ -221,10 +221,39 @@ from .secure_memory import (
 
 # Try to import optional dependencies
 try:
-    import pywhirlpool
+    # First try to setup Whirlpool if needed
+    try:
+        from openssl_encrypt.modules.setup_whirlpool import setup_whirlpool
+        setup_result = setup_whirlpool()
+    except ImportError:
+        setup_result = False
 
-    WHIRLPOOL_AVAILABLE = True
-except ImportError:
+    # Try importing whirlpool directly
+    try:
+        import whirlpool
+        WHIRLPOOL_AVAILABLE = True
+    except ImportError:
+        # Fall back to older pywhirlpool package
+        try:
+            import pywhirlpool
+            WHIRLPOOL_AVAILABLE = True
+        except ImportError:
+            WHIRLPOOL_AVAILABLE = False
+
+    if not WHIRLPOOL_AVAILABLE and setup_result:
+        # If setup succeeded but import failed, try one more time after clearing cache
+        import sys
+        if 'whirlpool' in sys.modules:
+            del sys.modules['whirlpool']
+        try:
+            import whirlpool
+            WHIRLPOOL_AVAILABLE = True
+        except ImportError:
+            WHIRLPOOL_AVAILABLE = False
+            
+except Exception as e:
+    import logging
+    logging.getLogger(__name__).warning(f"Error importing Whirlpool module: {e}")
     WHIRLPOOL_AVAILABLE = False
 
 # Try to import argon2 library
@@ -976,12 +1005,31 @@ def multi_hash_password(
                         # Whirlpool produces 64 bytes
                         with secure_buffer(64, zero=False) as hash_buffer:
                             for i in range(params):
-                                result = pywhirlpool.whirlpool(
-                                    bytes(hashed)).digest()
-                                secure_memcpy(hash_buffer, result)
-                                secure_memcpy(hashed, hash_buffer)
-                                show_progress("Whirlpool", i + 1, params)
-                                KeyStretch.hash_stretch = True
+                                try:
+                                    # Check which module is available and use its interface
+                                    if 'whirlpool' in globals():
+                                        # Modern whirlpool package or our wrapper
+                                        result = whirlpool.new(bytes(hashed)).digest()
+                                    elif 'pywhirlpool' in globals():
+                                        # Original pywhirlpool package
+                                        result = pywhirlpool.whirlpool(bytes(hashed)).digest()
+                                    else:
+                                        # This shouldn't happen since WHIRLPOOL_AVAILABLE is True
+                                        raise ImportError("No whirlpool module available")
+                                        
+                                    secure_memcpy(hash_buffer, result)
+                                    secure_memcpy(hashed, hash_buffer)
+                                    show_progress("Whirlpool", i + 1, params)
+                                    KeyStretch.hash_stretch = True
+                                except Exception as e:
+                                    # Log the error and fall back to SHA-512
+                                    if not quiet:
+                                        print(f"Warning: Whirlpool error ({str(e)}), falling back to SHA-512")
+                                    result = hashlib.sha512(hashed).digest()
+                                    secure_memcpy(hash_buffer, result)
+                                    secure_memcpy(hashed, hash_buffer)
+                                    show_progress("SHA-512 (fallback)", i + 1, params)
+                                    KeyStretch.hash_stretch = True
                             if not quiet and not progress:
                                 print("✅")
                     else:

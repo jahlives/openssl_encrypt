@@ -1,6 +1,8 @@
-from setuptools import setup, find_packages
+from setuptools import setup, find_packages, Command
 import os
 import subprocess
+import sys
+import logging
 
 
 # Read the contents of your README file
@@ -46,18 +48,45 @@ __git_commit__ = "{git_hash}"
 ''')
 
 
+# Custom install command that runs setup_whirlpool after installation
+class PostInstallCommand(Command):
+    description = "Command to run post install tasks"
+    user_options = []
+    
+    def initialize_options(self):
+        pass
+        
+    def finalize_options(self):
+        pass
+        
+    def run(self):
+        try:
+            # Run the post-install script
+            import subprocess
+            subprocess.check_call([sys.executable, "-m", "openssl_encrypt.post_install"])
+        except Exception as e:
+            print(f"Warning: Failed to run post-install setup: {e}")
+            print("You may need to manually install Whirlpool: pip install whirlpool-py311")
+
+
 setup(
+    cmdclass={
+        'post_install': PostInstallCommand,
+    },
     name="openssl_encrypt",
     version=VERSION,
     install_requires=[
-	"cryptography>=42.0.0,<43.0.0",
-    	"argon2-cffi>=23.1.0,<24.0.0",
-    	"pywin32>=306,<307; sys_platform == 'win32'",
+        "cryptography>=42.0.0,<43.0.0",
+        "argon2-cffi>=23.1.0,<24.0.0",
+        "pywin32>=306,<307; sys_platform == 'win32'",
         "PyYAML",
+        "Whirlpool; python_version < '3.11'",
+        "whirlpool-py311; python_version >= '3.11'",
     ],
     entry_points={
         'console_scripts': [
             'openssl-encrypt=openssl_encrypt.cli:main',
+            'whirlpool-setup=openssl_encrypt.modules.setup_whirlpool:setup_whirlpool',
         ],
     },
     extras_require={

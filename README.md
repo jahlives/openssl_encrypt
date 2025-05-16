@@ -7,7 +7,7 @@ A powerful tool for securely encrypting, decrypting, and shredding files with mi
 The project is historically named `openssl-encrypt` because it once was a python script wrapper around openssl. But that did not work anymore with recent python versions.
 Therefore I decided to do a complete rewrite in pure python also using modern cipher and hashes. So the projectname is a "homage" to the root of all :-)
 
-**Important note**: although `whirlpool` is supported by this tool, I do not recommend using this hashing algorithm. That is because building `whirlpool` via pip fails on recent Python versions (>= Python 3.12). If you want to use it you should have a look at [pyenv](https://github.com/pyenv/pyenv) which allows multiple Python versions to exist in peaceful co-existence. `whirlpool` will remain in the code also in future versions of this application \
+**Whirlpool support**: The `whirlpool` hash algorithm is now supported on all Python versions, including Python 3.11, 3.12, and 3.13. The package will automatically detect your Python version and install the appropriate Whirlpool implementation. If you encounter any issues with Whirlpool, please see the [Whirlpool Installation Guide](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/whirlpool_installation.md) for manual setup instructions.
 ## Issues
 you can create issues by [sending mail](mailto:issue+world-openssl-encrypt-2-issue-+gitlab@rm-rf.ch) to the linked address
 
@@ -51,6 +51,7 @@ you can create issues by [sending mail](mailto:issue+world-openssl-encrypt-2-iss
 - [docs/security-notes.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/security-notes.md) - Notes about security
 - [docs/buffer_overflow_prevention.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/buffer_overflow_prevention.md) - Security implementation
 - [docs/security_improvements.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/security_improvements.md) - Security enhancement details
+- [docs/whirlpool_installation.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/whirlpool_installation.md) - Whirlpool installation guide
 - [docs/keystore_cli_guide.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/keystore_cli_guide.md) - Keystore CLI documentation
 - [docs/DUAL_ENCRYPTION_TESTS.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/DUAL_ENCRYPTION_TESTS.md) - Dual encryption test details
 - [docs/PQC_DUAL_ENCRYPTION.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/PQC_DUAL_ENCRYPTION.md) - PQC dual encryption documentation
