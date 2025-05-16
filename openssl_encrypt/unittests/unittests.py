@@ -74,6 +74,7 @@ REQUIRED_ARGUMENT_GROUPS = {
         'standard',            # Standard configuration
         'paranoid',            # Maximum security configuration
         'algorithm',           # Encryption algorithm 
+        'encryption-data',     # Data encryption algorithm for PQC
         'password',            # Password option
         'random',              # Generate random password
         'input',               # Input file/directory
@@ -3348,6 +3349,77 @@ def test_file_decryption_wrong_pw_v3(filename):
         print(f"\nDecryption failed for {algorithm_name}: {str(e)} which is epexcted")
         pass
 
+
+@pytest.mark.parametrize(
+    "filename", 
+    get_test_files_v3(),
+    ids=lambda name: f"wrong_algorithm_{name.replace('test1_', '').replace('.txt', '')}"
+)
+def test_file_decryption_wrong_algorithm_v3(filename):
+    """
+    Test decryption of v3 files with wrong algorithm.
+    
+    This test verifies that trying to decrypt a v3 format file with the correct password
+    but wrong algorithm setting properly fails and raises an exception rather than succeeding.
+    """
+    algorithm_name = filename.replace('test1_', '').replace('.txt', '')
+    
+    # Read the file content and extract metadata to find current algorithm
+    with open(f"./openssl_encrypt/unittests/testfiles/v3/{filename}", 'r') as f:
+        content = f.read()
+    
+    # Split file content by colon to get the metadata part
+    metadata_b64 = content.split(':', 1)[0]
+    metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
+    metadata = json.loads(metadata_json)
+    
+    # Get current algorithm from metadata
+    current_algorithm = metadata.get("algorithm", "")
+    
+    # Define available algorithms
+    available_algorithms = [
+        "fernet", "aes-gcm", "chacha20-poly1305", "xchacha20-poly1305", 
+        "aes-siv", "aes-gcm-siv", "aes-ocb3", "kyber512-hybrid",
+        "kyber768-hybrid", "kyber1024-hybrid"
+    ]
+    
+    # Choose a different algorithm
+    wrong_algorithm = None
+    for alg in available_algorithms:
+        if alg != current_algorithm:
+            wrong_algorithm = alg
+            break
+    
+    # Fallback if we couldn't find a different algorithm (should never happen)
+    if not wrong_algorithm:
+        wrong_algorithm = "fernet" if current_algorithm != "fernet" else "aes-gcm"
+    
+    # Provide a mock private key for Kyber tests
+    pqc_private_key = None
+    if wrong_algorithm.startswith("kyber"):
+        pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
+    
+    try:
+        # Try to decrypt with correct password but wrong algorithm
+        decrypted_data = decrypt_file(
+            input_file=f"./openssl_encrypt/unittests/testfiles/v3/{filename}",
+            output_file=None,
+            password=b"test_password",  # Correct password
+            algorithm=wrong_algorithm,  # Wrong algorithm
+            pqc_private_key=pqc_private_key)
+            
+        # If we get here, decryption succeeded with wrong algorithm, which is a failure
+        pytest.fail(f"Security issue: Decryption succeeded with wrong algorithm for {algorithm_name} (v3)")
+    except (DecryptionError, AuthenticationError, ValidationError) as e:
+        # This is the expected path - decryption should fail with wrong algorithm
+        print(f"\nDecryption correctly failed for {algorithm_name} (v3) with wrong algorithm: {str(e)}")
+        # Test passes because the exception was raised as expected
+        pass
+    except Exception as e:
+        # Unexpected exception type
+        pytest.fail(f"Unexpected exception for {algorithm_name} with wrong algorithm: {str(e)}")
+
+
 # Create a test function for each file
 @pytest.mark.parametrize(
     "filename", 
@@ -3420,6 +3492,76 @@ def test_file_decryption_wrong_pw_v4(filename):
         print(f"\nDecryption correctly failed for {algorithm_name} with wrong password: {str(e)}")
         # Test passes because the exception was raised as expected
         pass
+
+
+@pytest.mark.parametrize(
+    "filename", 
+    get_test_files_v4(),
+    ids=lambda name: f"wrong_algorithm_{name.replace('test1_', '').replace('.txt', '')}"
+)
+def test_file_decryption_wrong_algorithm_v4(filename):
+    """
+    Test decryption of v4 files with wrong algorithm.
+    
+    This test verifies that trying to decrypt a v4 format file with the correct password
+    but wrong algorithm setting properly fails and raises an exception rather than succeeding.
+    """
+    algorithm_name = filename.replace('test1_', '').replace('.txt', '')
+    
+    # Read the file content and extract metadata to find current algorithm
+    with open(f"./openssl_encrypt/unittests/testfiles/v4/{filename}", 'r') as f:
+        content = f.read()
+    
+    # Split file content by colon to get the metadata part
+    metadata_b64 = content.split(':', 1)[0]
+    metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
+    metadata = json.loads(metadata_json)
+    
+    # Get current algorithm from metadata
+    current_algorithm = metadata.get("algorithm", "")
+    
+    # Define available algorithms
+    available_algorithms = [
+        "fernet", "aes-gcm", "chacha20-poly1305", "xchacha20-poly1305", 
+        "aes-siv", "aes-gcm-siv", "aes-ocb3", "kyber512-hybrid",
+        "kyber768-hybrid", "kyber1024-hybrid"
+    ]
+    
+    # Choose a different algorithm
+    wrong_algorithm = None
+    for alg in available_algorithms:
+        if alg != current_algorithm:
+            wrong_algorithm = alg
+            break
+    
+    # Fallback if we couldn't find a different algorithm (should never happen)
+    if not wrong_algorithm:
+        wrong_algorithm = "fernet" if current_algorithm != "fernet" else "aes-gcm"
+    
+    # Provide a mock private key for Kyber tests
+    pqc_private_key = None
+    if wrong_algorithm.startswith("kyber"):
+        pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
+    
+    try:
+        # Try to decrypt with correct password but wrong algorithm
+        decrypted_data = decrypt_file(
+            input_file=f"./openssl_encrypt/unittests/testfiles/v4/{filename}",
+            output_file=None,
+            password=b"1234",  # Correct password
+            algorithm=wrong_algorithm,  # Wrong algorithm
+            pqc_private_key=pqc_private_key)
+            
+        # If we get here, decryption succeeded with wrong algorithm, which is a failure
+        pytest.fail(f"Security issue: Decryption succeeded with wrong algorithm for {algorithm_name} (v4)")
+    except (DecryptionError, AuthenticationError, ValidationError) as e:
+        # This is the expected path - decryption should fail with wrong algorithm
+        print(f"\nDecryption correctly failed for {algorithm_name} (v4) with wrong algorithm: {str(e)}")
+        # Test passes because the exception was raised as expected
+        pass
+    except Exception as e:
+        # Unexpected exception type
+        pytest.fail(f"Unexpected exception for {algorithm_name} with wrong algorithm: {str(e)}")
 
 
 # Test function for v5 files with incorrect password
@@ -3504,6 +3646,152 @@ def test_file_decryption_wrong_pw_v5(filename):
         print(f"\nDecryption correctly failed for {algorithm_name} (v5) with wrong password: {str(e)}")
         # Test passes because the exception was raised as expected
         pass
+
+
+def get_kyber_test_files_v5():
+    """Get a list of Kyber test files for v5 format."""
+    try:
+        files = os.listdir("./openssl_encrypt/unittests/testfiles/v5")
+        return [f for f in files if f.startswith("test1_kyber")]
+    except Exception as e:
+        print(f"Error getting Kyber test files: {str(e)}")
+        return []
+
+
+@pytest.mark.parametrize(
+    "filename", 
+    get_test_files_v5(),
+    ids=lambda name: f"wrong_algorithm_{name.replace('test1_', '').replace('.txt', '')}"
+)
+def test_file_decryption_wrong_algorithm_v5(filename):
+    """
+    Test decryption of v5 files with wrong algorithm.
+    
+    This test verifies that trying to decrypt a v5 format file with the correct password
+    but wrong algorithm setting properly fails and raises an exception rather than succeeding.
+    """
+    algorithm_name = filename.replace('test1_', '').replace('.txt', '')
+    
+    # Read the file content and extract metadata to find current algorithm
+    with open(f"./openssl_encrypt/unittests/testfiles/v5/{filename}", 'r') as f:
+        content = f.read()
+    
+    # Split file content by colon to get the metadata part
+    metadata_b64 = content.split(':', 1)[0]
+    metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
+    metadata = json.loads(metadata_json)
+    
+    # Get current algorithm from metadata
+    current_algorithm = metadata.get("encryption", {}).get("algorithm", "")
+    
+    # Define available algorithms
+    available_algorithms = [
+        "fernet", "aes-gcm", "chacha20-poly1305", "xchacha20-poly1305", 
+        "aes-siv", "aes-gcm-siv", "aes-ocb3", "kyber512-hybrid",
+        "kyber768-hybrid", "kyber1024-hybrid"
+    ]
+    
+    # Choose a different algorithm
+    wrong_algorithm = None
+    for alg in available_algorithms:
+        if alg != current_algorithm:
+            wrong_algorithm = alg
+            break
+    
+    # Fallback if we couldn't find a different algorithm (should never happen)
+    if not wrong_algorithm:
+        wrong_algorithm = "fernet" if current_algorithm != "fernet" else "aes-gcm"
+    
+    # Provide a mock private key for Kyber tests
+    pqc_private_key = None
+    if wrong_algorithm.startswith("kyber"):
+        pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
+    
+    try:
+        # Try to decrypt with correct password but wrong algorithm
+        decrypted_data = decrypt_file(
+            input_file=f"./openssl_encrypt/unittests/testfiles/v5/{filename}",
+            output_file=None,
+            password=b"1234",  # Correct password
+            algorithm=wrong_algorithm,  # Wrong algorithm
+            pqc_private_key=pqc_private_key)
+            
+        # If we get here, decryption succeeded with wrong algorithm, which is a failure
+        pytest.fail(f"Security issue: Decryption succeeded with wrong algorithm for {algorithm_name} (v5)")
+    except (DecryptionError, AuthenticationError, ValidationError) as e:
+        # This is the expected path - decryption should fail with wrong algorithm
+        print(f"\nDecryption correctly failed for {algorithm_name} (v5) with wrong algorithm: {str(e)}")
+        # Test passes because the exception was raised as expected
+        pass
+    except Exception as e:
+        # Unexpected exception type
+        pytest.fail(f"Unexpected exception for {algorithm_name} with wrong algorithm: {str(e)}")
+
+
+@pytest.mark.parametrize(
+    "filename", 
+    get_kyber_test_files_v5(),
+    ids=lambda name: f"wrong_encryption_data_{name.replace('test1_', '').replace('.txt', '')}"
+)
+def test_file_decryption_wrong_encryption_data_v5(filename):
+    """Test decryption of v5 Kyber files with wrong encryption_data.
+    
+    This test verifies that trying to decrypt a v5 format Kyber file with the correct password
+    but wrong encryption_data setting properly fails and raises an exception rather than succeeding.
+    """
+    algorithm_name = filename.replace('test1_', '').replace('.txt', '')
+    
+    # Read the file content and extract metadata to find current encryption_data
+    with open(f"./openssl_encrypt/unittests/testfiles/v5/{filename}", 'r') as f:
+        content = f.read()
+    
+    # Split file content by colon to get the metadata part
+    metadata_b64 = content.split(':', 1)[0]
+    metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
+    metadata = json.loads(metadata_json)
+    
+    # Get current encryption_data from metadata
+    current_encryption_data = metadata.get("encryption", {}).get("encryption_data", "")
+    
+    # Available encryption_data options
+    encryption_data_options = [
+        "aes-gcm", "aes-gcm-siv", "aes-ocb3", "aes-siv", 
+        "chacha20-poly1305", "xchacha20-poly1305"
+    ]
+    
+    # Choose a different encryption_data option
+    wrong_encryption_data = None
+    for option in encryption_data_options:
+        if option != current_encryption_data:
+            wrong_encryption_data = option
+            break
+            
+    # Fallback if we couldn't find a different option (should never happen)
+    if not wrong_encryption_data:
+        wrong_encryption_data = "aes-gcm" if current_encryption_data != "aes-gcm" else "aes-siv"
+    
+    # Provide a mock private key for Kyber tests
+    pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
+    
+    try:
+        # Try to decrypt with correct password but wrong encryption_data
+        decrypted_data = decrypt_file(
+            input_file=f"./openssl_encrypt/unittests/testfiles/v5/{filename}",
+            output_file=None,
+            password=b"1234",  # Correct password
+            encryption_data=wrong_encryption_data,  # Wrong encryption_data
+            pqc_private_key=pqc_private_key)
+            
+        # If we get here, decryption succeeded with wrong encryption_data, which is a failure
+        pytest.fail(f"Security issue: Decryption succeeded with wrong encryption_data for {algorithm_name} (v5)")
+    except (DecryptionError, AuthenticationError, ValidationError) as e:
+        # This is the expected path - decryption should fail with wrong encryption_data
+        print(f"\nDecryption correctly failed for {algorithm_name} (v5) with wrong encryption_data: {str(e)}")
+        # Test passes because the exception was raised as expected
+        pass
+    except Exception as e:
+        # Unexpected exception type
+        pytest.fail(f"Unexpected exception for {algorithm_name} with wrong encryption_data: {str(e)}")
 
 
 @pytest.mark.order(7)
