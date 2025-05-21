@@ -149,12 +149,51 @@ The following has been implemented:
   - Set up reporting of vulnerabilities
   - Define failure thresholds (e.g., block merge on high severity issues)
 
+#### Implementation Notes
+
+The following has been implemented:
+
+1. **GitLab CI Configuration**:
+   - Added security stage to CI pipeline
+   - Configured dependency scanning with Safety
+   - Added code security scanning with Bandit
+   - Implemented Software Bill of Materials (SBOM) generation
+
+2. **Security Reporting**:
+   - Set up artifacts for security scan results
+   - Configured GitLab security dashboard integration
+   - Added detailed report formats for analysis
+
+3. **CI Documentation**:
+   - Created `CI_SECURITY_SCANNING.md` with comprehensive documentation
+   - Included instructions for viewing and addressing findings
+   - Added guides for running scans locally
+
 ### 3.3 Software Bill of Materials (SBOM)
 
 - **Implement SBOM generation**
   - Add CycloneDX or SPDX format SBOM generation
   - Configure to run in CI pipeline
   - Document SBOM usage and interpretation
+
+#### Implementation Notes
+
+The following has been implemented:
+
+1. **SBOM Generation**:
+   - Added CycloneDX SBOM generation to CI pipeline
+   - Configured to generate detailed component inventory
+   - Set up artifact storage for the SBOM output
+
+2. **Integration with CI Pipeline**:
+   - Added dedicated `sbom-generation` job
+   - Generated SBOM is attached as an artifact
+   - Preview of the SBOM is displayed in CI logs
+
+3. **Documentation**:
+   - Added SBOM explanation in `CI_SECURITY_SCANNING.md`
+   - Included details on interpreting SBOM contents
+   - Documented SBOM usage for compliance and security
 
 ## Phase 4: Ongoing Monitoring and Response (Continuous)
 

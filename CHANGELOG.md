@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added pre-commit hooks for security scanning
 - Integrated Bandit for Python security code analysis
 - Added Safety for dependency vulnerability checking
+- Added security scanning to CI pipeline
+- Implemented Software Bill of Materials (SBOM) generation
+- Added GitLab security dashboard integration
 
 ### Build System
 
@@ -33,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added DEPENDENCY_MANAGEMENT.md with dependency handling guidelines
 - Created VERSION_PINNING_POLICY.md with detailed versioning guidelines
 - Added SECURITY_SCANNING_GUIDE.md for security tools usage
+- Added CI_SECURITY_SCANNING.md for CI pipeline security integration
 - Added this CHANGELOG file to track notable changes
 
 ## [0.8.2] - Previous Release
