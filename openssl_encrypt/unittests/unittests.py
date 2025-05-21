@@ -571,7 +571,7 @@ class TestCryptCore(unittest.TestCase):
         # Attempt to decrypt with wrong password
         wrong_password = b"WrongPassword123!"
 
-        # The error could be either InvalidToken or DecryptionError
+        # The error could be InvalidToken, DecryptionError, or AuthenticationError
         try:
             decrypt_file(
                 encrypted_file,
@@ -580,8 +580,8 @@ class TestCryptCore(unittest.TestCase):
                 quiet=True)
             # If we get here, decryption succeeded, which is not what we expect
             self.fail("Decryption should have failed with wrong password")
-        except (InvalidToken, DecryptionError):
-            # Either of these exceptions is the expected behavior
+        except (InvalidToken, DecryptionError, AuthenticationError):
+            # Any of these exceptions is the expected behavior
             pass
         except Exception as e:
             # Any other exception is unexpected

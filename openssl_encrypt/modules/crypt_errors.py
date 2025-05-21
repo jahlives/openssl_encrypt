@@ -339,32 +339,15 @@ def secure_error_handler(func=None, error_category=None):
                 elif error_category == ErrorCategory.CONFIGURATION:
                     raise ConfigurationError(details=details, original_exception=e)
                 elif error_category == ErrorCategory.KEYSTORE:
-                    # Temporary store the error details and type
-                    # We'll create and raise the proper KeystoreError after it's defined
-                    # This resolves the forward reference issue
-                    _keystore_error_details = details
-                    _keystore_error_original = e
-                    _keystore_error_category = ErrorCategory.KEYSTORE
-                    # The actual error will be raised at the end of the wrapper function
+                    # Instead of using the delayed mechanism, directly import and use KeystoreError
+                    # This avoids issues with forward references and local variable scope
+                    # Direct import solves the circular import issue
+                    raise KeystoreError(details=details, original_exception=e)
                 else:
                     # Default to internal error if category not specified
                     raise InternalError(details=details, original_exception=e)
             
-            # If we get here, it means we might need to create and raise a KeystoreError
-            # This happens after the KeystoreError class has been defined
-            try:
-                if '_keystore_error_details' in locals():
-                    # Add a timing jitter before raising to mask timing differences
-                    add_timing_jitter()
-                    
-                    # Create and raise the KeystoreError
-                    raise KeystoreError(details=_keystore_error_details, 
-                                      original_exception=_keystore_error_original)
-            except Exception as unexpected_error:
-                # In case KeystoreError creation itself fails, fall back to InternalError
-                # This ensures we don't have uncaught exceptions in the error handler
-                add_timing_jitter()
-                raise InternalError("Error in keystore operation", original_exception=unexpected_error)
+            # No need for additional error handling here since we raise KeystoreError directly
         
         return wrapper
     
@@ -392,6 +375,11 @@ def secure_key_derivation_error_handler(f):
 def secure_authentication_error_handler(f):
     """Specialized error handler for authentication operations."""
     return secure_error_handler(f, ErrorCategory.AUTHENTICATION)
+
+
+def secure_keystore_error_handler(f):
+    """Specialized error handler for keystore operations."""
+    return secure_error_handler(f, ErrorCategory.KEYSTORE)
 
 
 # Keystore Exceptions
