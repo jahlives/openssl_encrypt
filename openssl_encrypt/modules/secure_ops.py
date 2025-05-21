@@ -164,26 +164,33 @@ class SecureContainer:
     
     This class provides a way to store sensitive data in memory with
     extra protection. It automatically wipes the data when it's no longer needed.
+    It supports various data types and implements basic context manager protocol.
     """
     
-    def __init__(self, data: Optional[Union[bytes, bytearray, str]] = None):
+    def __init__(self, data: Optional[Union[bytes, bytearray, str, int, list, dict]] = None):
         """
         Initialize a secure container for sensitive data.
         
         Args:
-            data: Initial data to store in the container
+            data: Initial data to store in the container. Supports various types including:
+                 bytes, bytearray, str, int, list, and dict.
         """
-        if isinstance(data, str):
-            data = data.encode('utf-8')
-            
+        self._data = bytearray()
         if data is not None:
-            self._data = bytearray(data)
-        else:
-            self._data = bytearray()
+            self.set(data)
             
     def __del__(self):
         """Securely wipe data when object is garbage collected."""
         self.clear()
+    
+    def __enter__(self):
+        """Support for context manager protocol."""
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Securely wipe data when exiting context."""
+        self.clear()
+        return False  # Don't suppress exceptions
         
     def clear(self) -> None:
         """Securely wipe the contained data."""
@@ -192,25 +199,84 @@ class SecureContainer:
         self._data = bytearray()
         
     def get(self) -> bytes:
-        """Get the stored data."""
+        """Get the stored data as bytes."""
         return bytes(self._data)
+    
+    def get_as_str(self) -> str:
+        """Get the stored data as a string, assuming UTF-8 encoding."""
+        return self._data.decode('utf-8')
+    
+    def get_as_int(self) -> int:
+        """Get the stored data as an integer."""
+        return int.from_bytes(self._data, byteorder='big')
+    
+    def get_as_object(self):
+        """Get the stored data as a Python object, assuming JSON encoding."""
+        import json
+        return json.loads(self.get_as_str())
         
-    def set(self, data: Union[bytes, bytearray, str]) -> None:
+    def set(self, data: Union[bytes, bytearray, str, int, list, dict]) -> None:
         """
         Set new data, securely wiping the old data.
         
         Args:
-            data: New data to store
+            data: New data to store. Supports various types including:
+                 bytes, bytearray, str, int, list, and dict.
         """
         # Clear existing data
         self.clear()
         
-        # Set new data
-        if isinstance(data, str):
-            data = data.encode('utf-8')
-            
-        self._data = bytearray(data)
+        # Handle different data types
+        if isinstance(data, (bytes, bytearray)):
+            self._data = bytearray(data)
+        elif isinstance(data, str):
+            self._data = bytearray(data.encode('utf-8'))
+        elif isinstance(data, int):
+            # Store integers as big-endian bytes
+            byte_length = max(1, (data.bit_length() + 7) // 8)
+            self._data = bytearray(data.to_bytes(byte_length, byteorder='big'))
+        elif isinstance(data, (list, dict)):
+            # Convert more complex objects to JSON
+            import json
+            json_str = json.dumps(data)
+            self._data = bytearray(json_str.encode('utf-8'))
+        elif data is None:
+            # Initialize as empty
+            self._data = bytearray()
+        else:
+            raise TypeError(f"Unsupported data type: {type(data)}")
+    
+    def append(self, data: Union[bytes, bytearray, str, int]) -> None:
+        """
+        Append data to the existing container content.
         
+        Args:
+            data: Data to append. Supports bytes, bytearray, str, and int.
+        """
+        if isinstance(data, (bytes, bytearray)):
+            self._data.extend(data)
+        elif isinstance(data, str):
+            self._data.extend(data.encode('utf-8'))
+        elif isinstance(data, int):
+            # Single integer value gets appended as a byte
+            self._data.append(data & 0xFF)
+        else:
+            raise TypeError(f"Cannot append data of type: {type(data)}")
+    
     def __len__(self) -> int:
-        """Get the length of the stored data."""
+        """Get the length of the stored data in bytes."""
         return len(self._data)
+    
+    def __bool__(self) -> bool:
+        """Return True if the container has data, False otherwise."""
+        return len(self._data) > 0
+    
+    def __eq__(self, other) -> bool:
+        """Compare this container's contents with another value in constant time."""
+        if isinstance(other, SecureContainer):
+            return constant_time_compare(self._data, other._data)
+        elif isinstance(other, (bytes, bytearray)):
+            return constant_time_compare(self._data, other)
+        elif isinstance(other, str):
+            return constant_time_compare(self._data, other.encode('utf-8'))
+        return False
