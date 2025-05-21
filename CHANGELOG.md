@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added specific version constraints to all dependencies to prevent unexpected breaking changes
 - Implemented proper version pinning with both lower and upper bounds for all dependencies
 - Added `bcrypt~=4.3.0` with compatible release specifier
+- Added pre-commit hooks for security scanning
+- Integrated Bandit for Python security code analysis
+- Added Safety for dependency vulnerability checking
 
 ### Build System
 
@@ -21,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Created requirements-prod.txt and requirements-dev.txt lock files
 - Added dependency update script (scripts/update_dependencies.sh)
 - Updated setup.py to use lock files for dependencies
+- Added setup_hooks.sh script for easy pre-commit installation
 
 ### Documentation
 
@@ -28,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Created dependency security plan with implementation timeline
 - Added DEPENDENCY_MANAGEMENT.md with dependency handling guidelines
 - Created VERSION_PINNING_POLICY.md with detailed versioning guidelines
+- Added SECURITY_SCANNING_GUIDE.md for security tools usage
 - Added this CHANGELOG file to track notable changes
 
 ## [0.8.2] - Previous Release

@@ -41,7 +41,8 @@ This document outlines planned security enhancements and improvements for the op
   - [x] Document dependency update procedures
   - [x] Implement lock files for reproducible builds
   - [x] Create version pinning policy document
-  - [ ] Create automated dependency vulnerability scanning
+  - [x] Implement local dependency vulnerability scanning with pre-commit hooks
+  - [ ] Set up CI pipeline for dependency scanning
 
 - [ ] **Key management improvements**
   - [ ] Implement key rotation functionality in keystore
