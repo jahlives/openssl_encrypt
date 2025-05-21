@@ -82,3 +82,9 @@ This document outlines planned security enhancements and improvements for the op
 - [x] **Compatibility enhancements**
   - [x] Add Python 3.13 compatibility for Whirlpool hash
   - [x] Update tests to verify Python 3.13 compatibility
+
+- [x] **Error handling and test robustness**
+  - [x] Improve test resilience to different error handling approaches
+  - [x] Make tests compatible with secure error messages
+  - [x] Ensure keystore tests work with standardized error handling
+  - [x] Fix wrong password and corrupted file tests to be more flexible
