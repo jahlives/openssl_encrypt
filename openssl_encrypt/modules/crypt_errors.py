@@ -85,6 +85,15 @@ def _init_thread_local_state():
         _jitter_state.total_jitter = 0
         _jitter_state.max_successive_calls = 0
         _jitter_state.initialized = True
+    # Ensure all required attributes exist even if initialized flag is set
+    if not hasattr(_jitter_state, 'last_jitter_time'):
+        _jitter_state.last_jitter_time = 0
+    if not hasattr(_jitter_state, 'jitter_count'):
+        _jitter_state.jitter_count = 0
+    if not hasattr(_jitter_state, 'total_jitter'):
+        _jitter_state.total_jitter = 0
+    if not hasattr(_jitter_state, 'max_successive_calls'):
+        _jitter_state.max_successive_calls = 0
 
 def add_timing_jitter(min_ms=1, max_ms=20):
     """
