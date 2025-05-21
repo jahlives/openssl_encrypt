@@ -80,6 +80,10 @@ class XChaCha20Poly1305:
         Raises:
             ValidationError: If nonce validation fails
         """
+        # Import required libraries just once at the method level
+        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+        from cryptography.hazmat.primitives import hashes
+        
         # Validate nonce
         if nonce is None:
             raise ValidationError("Nonce cannot be None")
@@ -99,8 +103,6 @@ class XChaCha20Poly1305:
             # First, use the HChaCha20 function to mix the key with the first 16 bytes
             # Since we don't have direct access to HChaCha20, we'll use HKDF with BLAKE2b
             # to derive a secure 12-byte nonce from the original 24-byte nonce
-            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-            from cryptography.hazmat.primitives import hashes
             
             # Use the first 16 bytes of the nonce as the HKDF salt (mimicking HChaCha20 input)
             # and the remaining 8 bytes as the info parameter to ensure uniqueness
@@ -120,8 +122,6 @@ class XChaCha20Poly1305:
         else:
             # For any other size, use a strong deterministic process to create a 12-byte nonce
             # Use HKDF with SHA256 for better security than simple truncation
-            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-            from cryptography.hazmat.primitives import hashes
             
             # Use the nonce as the info parameter to ensure uniqueness
             hkdf = HKDF(
