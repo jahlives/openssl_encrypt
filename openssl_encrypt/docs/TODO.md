@@ -35,10 +35,10 @@ This document outlines planned security enhancements and improvements for the op
   - [ ] Add support for newer post-quantum resistant algorithms
   - [ ] Implement a clear algorithm upgrade path for existing users
 
-- [ ] **Dependency security**
-  - [ ] Conduct comprehensive review of all dependencies
-  - [ ] Implement dependency pinning with security checks
-  - [ ] Document dependency update procedures
+- [x] **Dependency security**
+  - [x] Conduct comprehensive review of all dependencies
+  - [x] Implement dependency pinning with security checks
+  - [x] Document dependency update procedures
   - [ ] Create automated dependency vulnerability scanning
 
 - [ ] **Key management improvements**

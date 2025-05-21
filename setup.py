@@ -76,12 +76,12 @@ setup(
     name="openssl_encrypt",
     version=VERSION,
     install_requires=[
-        "cryptography>=42.0.0,<43.0.0",
+        "cryptography>=44.0.1,<45.0.0",  # Updated to fix CVE-2024-12797
         "argon2-cffi>=23.1.0,<24.0.0",
         "pywin32>=306,<307; sys_platform == 'win32'",
-        "PyYAML",
-        "Whirlpool; python_version < '3.11'",
-        "whirlpool-py311; python_version >= '3.11'",
+        "PyYAML>=6.0.2,<7.0.0",
+        "bcrypt~=4.3.0",
+        "whirlpool-py311>=1.0.0,<2.0.0; python_version >= '3.11'",
     ],
     entry_points={
         'console_scripts': [
@@ -91,10 +91,10 @@ setup(
     },
     extras_require={
         "dev": [
-            "pytest>=8.0.0",
-            "pytest-cov>=4.1.0",
-            "black>=24.1.0",
-            "pylint>=3.0.0",
+            "pytest>=8.0.0,<9.0.0",
+            "pytest-cov>=4.1.0,<5.0.0",
+            "black>=24.1.0,<25.0.0",
+            "pylint>=3.0.0,<4.0.0",
         ],
     },
     project_urls={
