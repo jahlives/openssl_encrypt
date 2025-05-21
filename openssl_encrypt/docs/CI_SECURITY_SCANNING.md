@@ -26,26 +26,34 @@ The dependency scanning job checks for known vulnerabilities in both production 
 
 ### How It Works
 
-1. The job uses the `safety` tool to scan dependencies listed in:
+1. The job uses the `pip-audit` tool (maintained by Google) to scan dependencies listed in:
    - `requirements-prod.txt` (production dependencies)
    - `requirements-dev.txt` (development dependencies)
-2. Results are displayed in the job output and saved as JSON reports
-3. GitLab integrates these reports into the Security Dashboard
+2. Results are processed by the custom `gitlab_dependency_scan.py` script
+3. Results are displayed in the job output and saved as JSON reports
+4. GitLab integrates these reports into the Security Dashboard
 
 ### Interpreting Results
 
-Vulnerabilities are organized by severity (high, medium, low):
+Vulnerabilities are organized by package and severity (high, medium, low):
 
-```
-+==============================================================================+
-|                                                                              |
-|                               SAFETY REPORT                                  |
-|                                                                              |
-+=========================+===============+==========+======================+=============+
-| package                 | installed     | affected | vulnerability        | severity    |
-+=========================+===============+==========+======================+=============+
-| cryptography            | 44.0.3        | <45.0.0  | CVE-2024-XXXXX       | Medium      |
-+=========================+===============+==========+======================+=============+
+```json
+[
+  {
+    "name": "cryptography",
+    "version": "44.0.3",
+    "vulnerabilities": [
+      {
+        "id": "PYSEC-2024-XXXX",
+        "description": "Vulnerability in cryptography package allows remote attackers...",
+        "fix_versions": [
+          "45.0.0"
+        ],
+        "cve_id": "CVE-2024-XXXXX"
+      }
+    ]
+  }
+]
 ```
 
 ## Code Security Scanning
@@ -132,10 +140,12 @@ You can run the same security checks locally before pushing changes:
 
 ```bash
 # Install the required tools
-pip install safety bandit cyclonedx-bom
+pip install pip-audit bandit cyclonedx-bom
 
 # Run dependency scanning
-safety scan -r requirements-prod.txt --output text
+pip-audit -r requirements-prod.txt --format json
+# Or use our custom script
+python scripts/gitlab_dependency_scan.py
 
 # Run code security scanning
 bandit -r openssl_encrypt/ -c .bandit.yaml
@@ -146,7 +156,7 @@ cyclonedx-py -r -i requirements-prod.txt -o bom.json
 
 ## Additional Resources
 
-- [Safety Documentation](https://pyup.io/safety/docs/)
+- [pip-audit Documentation](https://pypi.org/project/pip-audit/)
 - [Bandit Documentation](https://bandit.readthedocs.io/)
 - [CycloneDX Documentation](https://cyclonedx.org/)
 - [GitLab Security Dashboard](https://docs.gitlab.com/ee/user/application_security/security_dashboard/)

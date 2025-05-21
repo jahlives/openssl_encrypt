@@ -18,7 +18,7 @@ fi
 
 # Install the required security tools
 echo "Installing security scanning tools..."
-pip install bandit safety
+pip install bandit pip-audit
 
 # Install the git hooks
 echo "Installing git hooks..."

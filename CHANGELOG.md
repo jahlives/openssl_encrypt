@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `bcrypt~=4.3.0` with compatible release specifier
 - Added pre-commit hooks for security scanning
 - Integrated Bandit for Python security code analysis
-- Added Safety for dependency vulnerability checking
+- Added pip-audit for dependency vulnerability scanning (replacing Safety)
+- Created custom gitlab_dependency_scan.py script for reliable CI security scanning
 - Added security scanning to CI pipeline
 - Implemented Software Bill of Materials (SBOM) generation
 - Added GitLab security dashboard integration

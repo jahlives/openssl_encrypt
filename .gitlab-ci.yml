@@ -105,53 +105,23 @@ dependency-scan:
   stage: security
   image: python:3.13
   script:
-    - pip install safety bandit
-    # Use the newer scan command instead of check
-    - safety scan -r requirements-prod.txt --output json > safety-prod-report.json
-    # Check for vulnerable development dependencies
-    - safety scan -r requirements-dev.txt --output json > safety-dev-report.json
-    # Generate GitLab report format
-    - |
-      cat > gl-dependency-scanning-report.json <<EOF
-      {
-        "version": "14.0.0",
-        "vulnerabilities": [],
-        "scan": {
-          "analyzer": {
-            "id": "safety",
-            "name": "Safety",
-            "version": "3.0.0",
-            "vendor": {
-              "name": "GitLab"
-            }
-          },
-          "scanner": {
-            "id": "safety",
-            "name": "Safety",
-            "version": "3.0.0",
-            "vendor": {
-              "name": "GitLab"
-            }
-          },
-          "type": "dependency_scanning",
-          "start_time": "$(date -u '+%Y-%m-%dT%H:%M:%S')",
-          "end_time": "$(date -u '+%Y-%m-%dT%H:%M:%S')",
-          "status": "success"
-        }
-      }
-      EOF
+    - pip install pip-audit bandit
+    # Use custom script that handles dependency scanning and GitLab report generation
+    - python scripts/gitlab_dependency_scan.py
     # Display results for visibility in logs
     - echo "=== Production Dependencies Scan ==="
-    - cat safety-prod-report.json
+    - cat pip-audit-prod-results.json || echo "No production scan results available"
     - echo "=== Development Dependencies Scan ==="
-    - cat safety-dev-report.json
+    - cat pip-audit-dev-results.json || echo "No development scan results available"
+    - echo "=== GitLab Dependency Scanning Report ==="
+    - cat gl-dependency-scanning-report.json || echo "No report available"
   artifacts:
     reports:
       dependency_scanning: gl-dependency-scanning-report.json
     paths:
       - gl-dependency-scanning-report.json
-      - safety-prod-report.json
-      - safety-dev-report.json
+      - pip-audit-prod-results.json
+      - pip-audit-dev-results.json
     expire_in: 1 week
   rules:
     - if: $CI_COMMIT_BRANCH == "dev"

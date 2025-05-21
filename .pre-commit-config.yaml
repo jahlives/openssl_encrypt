@@ -44,10 +44,9 @@ repos:
         args: ["-c", ".bandit.yaml", "-r", "openssl_encrypt"]
         additional_dependencies: ['bandit[toml]']
 
-# Python package safety check
--   repo: https://github.com/pyupio/safety
-    rev: 2.4.0
+# Python package vulnerability scanning with pip-audit
+-   repo: https://github.com/pypa/pip-audit
+    rev: v2.9.0
     hooks:
-    -   id: safety
-        args: ["scan", "--file=requirements-prod.txt", "--output=text"]
-        additional_dependencies: ['safety>=3.0.0']
+    -   id: pip-audit
+        args: ["--requirement=requirements-prod.txt"]
