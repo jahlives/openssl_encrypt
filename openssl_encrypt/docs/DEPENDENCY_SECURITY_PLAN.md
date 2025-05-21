@@ -62,6 +62,23 @@ These changes follow the approach of allowing patch updates (which typically con
     - requirements-dev.txt
     - requirements-prod.txt
 
+#### Implementation Notes
+
+The following has been implemented:
+
+1. **Lock File Creation**:
+   - Created `requirements-prod.in` and `requirements-dev.in` source files
+   - Generated precise lock files with `pip-compile`
+   - Integrated lock files with setup.py
+
+2. **Dependency Update Workflow**:
+   - Added `scripts/update_dependencies.sh` for easy dependency updates
+   - Created documentation for the dependency management process
+
+3. **Reproducible Builds**:
+   - Lock files ensure exact versions for reproducible builds
+   - Explicit dependencies for development vs. production environments
+
 ### 2.2 Create Version Pinning Policy
 
 - **Document version pinning approach**

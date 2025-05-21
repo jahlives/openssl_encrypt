@@ -14,10 +14,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Implemented proper version pinning with both lower and upper bounds for all dependencies
 - Added `bcrypt~=4.3.0` with compatible release specifier
 
+### Build System
+
+- Added pyproject.toml for properly specifying build dependencies
+- Implemented lock files using pip-tools for reproducible builds
+- Created requirements-prod.txt and requirements-dev.txt lock files
+- Added dependency update script (scripts/update_dependencies.sh)
+- Updated setup.py to use lock files for dependencies
+
 ### Documentation
 
 - Added comprehensive dependency inventory and security assessment
 - Created dependency security plan with implementation timeline
+- Added DEPENDENCY_MANAGEMENT.md with dependency handling guidelines
 - Added this CHANGELOG file to track notable changes
 
 ## [0.8.2] - Previous Release

@@ -77,13 +77,10 @@ setup(
     },
     name="openssl_encrypt",
     version=VERSION,
+    # Read requirements from requirements-prod.txt
     install_requires=[
-        "cryptography>=44.0.1,<45.0.0",  # Updated to fix CVE-2024-12797
-        "argon2-cffi>=23.1.0,<24.0.0",
-        "pywin32>=306,<307; sys_platform == 'win32'",
-        "PyYAML>=6.0.2,<7.0.0",
-        "bcrypt~=4.3.0",
-        "whirlpool-py311>=1.0.0,<2.0.0; python_version >= '3.11'",
+        line.strip() for line in open('requirements-prod.txt')
+        if line.strip() and not line.startswith('#') and not line.startswith('-')
     ],
     entry_points={
         'console_scripts': [
@@ -91,12 +88,13 @@ setup(
             'whirlpool-setup=openssl_encrypt.modules.setup_whirlpool:setup_whirlpool',
         ],
     },
+    # Read dev requirements from requirements-dev.txt
     extras_require={
         "dev": [
-            "pytest>=8.0.0,<9.0.0",
-            "pytest-cov>=4.1.0,<5.0.0",
-            "black>=24.1.0,<25.0.0",
-            "pylint>=3.0.0,<4.0.0",
+            line.strip() for line in open('requirements-dev.txt')
+            if line.strip() and not line.startswith('#') and not line.startswith('-')
+            and line.strip() not in [l.strip() for l in open('requirements-prod.txt')
+                                    if l.strip() and not l.startswith('#') and not l.startswith('-')]
         ],
     },
     project_urls={
