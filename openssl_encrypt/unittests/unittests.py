@@ -5672,5 +5672,141 @@ class TestSecurityEnhancements(unittest.TestCase):
         self.assertTrue(verify_memory_zeroed(test_buffer))
 
 
+class TestConstantTimeCompare(unittest.TestCase):
+    """Tests for constant-time comparison functions."""
+    
+    def test_correctness(self):
+        """Test that constant_time_compare returns correct results."""
+        from openssl_encrypt.modules.secure_ops import constant_time_compare
+        
+        # Equal values should return True
+        self.assertTrue(constant_time_compare(b"hello", b"hello"))
+        
+        # Different values should return False
+        self.assertFalse(constant_time_compare(b"hello", b"world"))
+        
+        # Different lengths should return False
+        self.assertFalse(constant_time_compare(b"hello", b"hello!"))
+        
+        # Empty values should compare correctly
+        self.assertTrue(constant_time_compare(b"", b""))
+        self.assertFalse(constant_time_compare(b"", b"a"))
+        
+        # None values should be handled safely
+        self.assertTrue(constant_time_compare(None, None))
+        self.assertFalse(constant_time_compare(None, b"x"))  # Not an empty string
+        self.assertFalse(constant_time_compare(b"x", None))
+    
+    def test_timing_consistency(self):
+        """Test that timing of constant_time_compare is consistent regardless of input."""
+        from openssl_encrypt.modules.secure_ops import constant_time_compare
+        
+        # Create pairs of inputs with varying levels of similarity
+        pairs = [
+            (b"a" * 1000, b"a" * 1000),  # Equal
+            (b"a" * 1000, b"a" * 999 + b"b"),  # Differ at the end
+            (b"a" * 1000, b"b" + b"a" * 999),  # Differ at the beginning
+            (b"a" * 1000, b"a" * 500 + b"b" + b"a" * 499),  # Differ in the middle
+            (b"a" * 1000, b"b" * 1000),  # Completely different
+        ]
+        
+        # Measure timing for each pair multiple times
+        times = {i: [] for i in range(len(pairs))}
+        
+        # Use multiple iterations to get statistically significant results
+        for _ in range(20):
+            for i, (a, b) in enumerate(pairs):
+                start = time.perf_counter()
+                constant_time_compare(a, b)
+                end = time.perf_counter()
+                times[i].append(end - start)
+        
+        # Calculate statistics for each pair
+        stats = {
+            i: {
+                "mean": statistics.mean(times[i]),
+                "stdev": statistics.stdev(times[i]) if len(times[i]) > 1 else 0
+            }
+            for i in range(len(pairs))
+        }
+        
+        # Verify that times are reasonably consistent
+        # We use a loose threshold since many factors can affect timing
+        means = [stats[i]["mean"] for i in range(len(pairs))]
+        max_mean = max(means)
+        min_mean = min(means)
+        
+        # Check that the difference between max and min is not too large
+        # This is a very generous threshold that should accommodate most
+        # environmental variations while still catching egregious issues
+        self.assertLess(max_mean / min_mean if min_mean > 0 else 1, 2.0,
+                     "Timing difference between different inputs is too large")
+
+
+class TestConstantTimePKCS7Unpad(unittest.TestCase):
+    """Tests for constant-time PKCS#7 unpadding."""
+    
+    def test_valid_padding(self):
+        """Test unpadding with valid PKCS#7 padding."""
+        from openssl_encrypt.modules.secure_ops import constant_time_pkcs7_unpad
+        
+        # Test with valid padding values
+        for padding_value in range(1, 17):
+            data = b"A" * (16 - padding_value) + bytes([padding_value] * padding_value)
+            unpadded, is_valid = constant_time_pkcs7_unpad(data, 16)
+            self.assertTrue(is_valid)
+            self.assertEqual(unpadded, b"A" * (16 - padding_value))
+    
+    def test_invalid_padding(self):
+        """Test unpadding with invalid PKCS#7 padding."""
+        from openssl_encrypt.modules.secure_ops import constant_time_pkcs7_unpad
+        
+        # Test with inconsistent padding bytes
+        data = b"A" * 12 + bytes([4, 3, 4, 4])
+        unpadded, is_valid = constant_time_pkcs7_unpad(data, 16)
+        self.assertFalse(is_valid)
+        
+        # Test with padding value too large
+        data = b"A" * 15 + bytes([17])
+        unpadded, is_valid = constant_time_pkcs7_unpad(data, 16)
+        self.assertFalse(is_valid)
+        
+        # Test with padding value zero
+        data = b"A" * 15 + bytes([0])
+        unpadded, is_valid = constant_time_pkcs7_unpad(data, 16)
+        self.assertFalse(is_valid)
+    
+    def test_empty_data(self):
+        """Test unpadding with empty input."""
+        from openssl_encrypt.modules.secure_ops import constant_time_pkcs7_unpad
+        
+        unpadded, is_valid = constant_time_pkcs7_unpad(b"", 16)
+        self.assertFalse(is_valid)
+        self.assertEqual(unpadded, b"")
+
+
+class TestVerifyMAC(unittest.TestCase):
+    """Tests for MAC verification functions."""
+    
+    def test_mac_verification(self):
+        """Test basic MAC verification functionality."""
+        from openssl_encrypt.modules.secure_ops import verify_mac
+        
+        # Generate random MACs
+        mac1 = secrets.token_bytes(32)
+        mac2 = secrets.token_bytes(32)
+        
+        # Same MACs should verify
+        self.assertTrue(verify_mac(mac1, mac1))
+        
+        # Different MACs should not verify
+        self.assertFalse(verify_mac(mac1, mac2))
+        
+        # None values should be handled safely
+        self.assertFalse(verify_mac(None, mac1))
+        self.assertFalse(verify_mac(mac1, None))
+        self.assertTrue(verify_mac(None, None))
+
+
 if __name__ == "__main__":
     unittest.main()

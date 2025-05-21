@@ -492,7 +492,7 @@ class CamelliaCipher:
         padded_data = None
         try:
             # Import the constant-time functions from our secure operations module
-            from .secure_ops import constant_time_compare, constant_time_pkcs7_unpad
+            from .secure_ops import constant_time_compare, constant_time_pkcs7_unpad, verify_mac
             
             # In test mode, process without HMAC for backward compatibility
             if self.test_mode:
@@ -548,10 +548,10 @@ class CamelliaCipher:
                 padded_data, algorithms.Camellia.block_size
             )
             
-            # After decryption, verify HMAC using constant-time comparison
+            # After decryption, verify HMAC using constant-time MAC verification
             # This ensures timing sidechannels don't leak whether the tag
             # is valid or the padding is correct
-            if not constant_time_compare(expected_tag, received_tag):
+            if not verify_mac(expected_tag, received_tag, associated_data):
                 # Standardized authentication error
                 raise AuthenticationError("Message authentication failed")
                 
