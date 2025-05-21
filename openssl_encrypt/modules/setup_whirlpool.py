@@ -105,13 +105,22 @@ def create_whirlpool_symlink():
             chosen_module = module
             break
     
-    # If no direct match, try the py311 version for Python 3.11+
+    # If no direct match, try the py311 or py313 version for Python 3.11+
     if not chosen_module and (python_version.major > 3 or 
                              (python_version.major == 3 and python_version.minor >= 11)):
-        for module in whirlpool_modules:
-            if "whirlpool-py311" in module.lower():
-                chosen_module = module
-                break
+        # First check for Python 3.13 specific module
+        if python_version.major == 3 and python_version.minor >= 13:
+            for module in whirlpool_modules:
+                if "whirlpool-py313" in module.lower() or "whirlpool_py313" in module.lower():
+                    chosen_module = module
+                    break
+        
+        # If no Python 3.13 specific module, fall back to Python 3.11 module
+        if not chosen_module:
+            for module in whirlpool_modules:
+                if "whirlpool-py311" in module.lower() or "whirlpool_py311" in module.lower():
+                    chosen_module = module
+                    break
     
     # Fall back to any whirlpool module
     if not chosen_module:
@@ -172,10 +181,30 @@ def install_whirlpool():
     python_version = sys.version_info
     
     try:
-        # For Python 3.11+, install the compatible fork
-        if python_version.major > 3 or (python_version.major == 3 and python_version.minor >= 11):
-            logger.info("Installing whirlpool-py311 for Python 3.11+")
+        # For Python 3.13+, install the compatible fork specifically for 3.13
+        if python_version.major > 3 or (python_version.major == 3 and python_version.minor >= 13):
+            # Check if whirlpool-py313 is available in PyPI
+            try:
+                logger.info("Checking for whirlpool-py313 package in PyPI")
+                import pip._vendor.requests as requests
+                response = requests.get("https://pypi.org/pypi/whirlpool-py313/json")
+                if response.status_code == 200:
+                    logger.info("Installing whirlpool-py313 for Python 3.13+")
+                    subprocess.check_call([sys.executable, "-m", "pip", "install", "whirlpool-py313"])
+                else:
+                    # If whirlpool-py313 doesn't exist, try py311 version which may be compatible
+                    logger.info("whirlpool-py313 not found, installing whirlpool-py311 as fallback")
+                    subprocess.check_call([sys.executable, "-m", "pip", "install", "whirlpool-py311"])
+            except Exception:
+                # If package checking fails, try the py311 version
+                logger.info("Failed to check whirlpool-py313, installing whirlpool-py311 for Python 3.13+")
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "whirlpool-py311"])
+                
+        # For Python 3.11-3.12, install the 3.11 compatible fork
+        elif python_version.major == 3 and python_version.minor >= 11:
+            logger.info("Installing whirlpool-py311 for Python 3.11-3.12")
             subprocess.check_call([sys.executable, "-m", "pip", "install", "whirlpool-py311"])
+            
         else:
             # For older Python versions, install the original package
             logger.info("Installing Whirlpool for Python 3.10 and below")

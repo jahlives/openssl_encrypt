@@ -42,7 +42,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from modules.crypt_core import (
     encrypt_file, decrypt_file, EncryptionAlgorithm,
     generate_key, ARGON2_AVAILABLE, WHIRLPOOL_AVAILABLE, multi_hash_password,
-    CamelliaCipher
+    CamelliaCipher, XChaCha20Poly1305
 )
 from modules.crypt_utils import (
     generate_strong_password, secure_shred_file, expand_glob_patterns
@@ -55,7 +55,7 @@ from modules.crypt_errors import (
     constant_time_pkcs7_unpad, constant_time_compare,
     secure_key_derivation_error_handler, ErrorCategory,
     KeystoreError, KeystorePasswordError, KeyNotFoundError, 
-    KeystoreCorruptedError, KeystoreVersionError
+    KeystoreCorruptedError, KeystoreVersionError, secure_keystore_error_handler
 )
 from modules.keystore_cli import PQCKeystore, KeystoreSecurityLevel
 from modules.pqc import PQCipher, PQCAlgorithm, check_pqc_support, LIBOQS_AVAILABLE
@@ -5031,6 +5031,118 @@ class TestKeystoreOperations(unittest.TestCase):
         # Verify keys match
         self.assertEqual(public_key, retrieved_public_key)
         self.assertEqual(private_key, retrieved_private_key)
+
+
+class TestCryptErrorsFixes(unittest.TestCase):
+    """Test fixes for error handling issues in crypt_errors."""
+    
+    def test_keystore_error_reference(self):
+        """Test that KeystoreError can be properly raised from the error handler."""
+        
+        # Define a function that will be decorated with the secure_keystore_error_handler
+        @secure_keystore_error_handler
+        def function_that_raises():
+            """Function that will raise an exception to be caught by the handler."""
+            # Use RuntimeError instead of ValueError to avoid special handling in the decorator
+            raise RuntimeError("Test exception")
+        
+        # The decorator should catch the error and translate it to a KeystoreError
+        with self.assertRaises(KeystoreError):
+            function_that_raises()
+    
+    def test_secure_error_handler_with_keystore_category(self):
+        """Test that secure_error_handler properly handles ErrorCategory.KEYSTORE."""
+        
+        # Define a function that will be decorated with secure_error_handler
+        # and explicitly set the error category to KEYSTORE
+        @secure_error_handler(error_category=ErrorCategory.KEYSTORE)
+        def function_with_explicit_category():
+            """Function with explicit ErrorCategory.KEYSTORE that raises exception."""
+            # Use RuntimeError instead of ValueError to avoid special handling in the decorator
+            raise RuntimeError("Test exception with explicit category")
+        
+        # The decorator should catch the error and translate it to a KeystoreError
+        with self.assertRaises(KeystoreError):
+            function_with_explicit_category()
+            
+    def test_xchacha20poly1305_nonce_handling(self):
+        """Test that XChaCha20Poly1305 properly handles nonces of different lengths."""
+        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.backends import default_backend
+        import secrets
+        
+        # Create an instance with a valid key
+        key = secrets.token_bytes(32)  # 32 bytes for ChaCha20Poly1305
+        cipher = XChaCha20Poly1305(key)
+        
+        # Test with a 24-byte nonce (XChaCha20Poly1305 standard)
+        nonce_24 = secrets.token_bytes(24)
+        processed_nonce_24 = cipher._process_nonce(nonce_24)
+        self.assertEqual(len(processed_nonce_24), 12)
+        
+        # Test with a 12-byte nonce (ChaCha20Poly1305 standard)
+        nonce_12 = secrets.token_bytes(12)
+        processed_nonce_12 = cipher._process_nonce(nonce_12)
+        self.assertEqual(len(processed_nonce_12), 12)
+        self.assertEqual(processed_nonce_12, nonce_12)  # Should remain unchanged
+        
+        # Test with a non-standard nonce length
+        nonce_16 = secrets.token_bytes(16)
+        processed_nonce_16 = cipher._process_nonce(nonce_16)
+        self.assertEqual(len(processed_nonce_16), 12)
+        
+        # Test cryptographic properties: different nonces should produce different outputs
+        # for the same plaintext
+        plaintext = b"Test message"
+        
+        # Encrypt with 24-byte nonce
+        ciphertext_24 = cipher.encrypt(nonce_24, plaintext)
+        
+        # Encrypt with 12-byte nonce
+        ciphertext_12 = cipher.encrypt(nonce_12, plaintext)
+        
+        # Encrypt with 16-byte nonce
+        ciphertext_16 = cipher.encrypt(nonce_16, plaintext)
+        
+        # All ciphertexts should be different
+        self.assertNotEqual(ciphertext_24, ciphertext_12)
+        self.assertNotEqual(ciphertext_24, ciphertext_16)
+        self.assertNotEqual(ciphertext_12, ciphertext_16)
+        
+        # Verify we can decrypt with the same nonce
+        decrypted_24 = cipher.decrypt(nonce_24, ciphertext_24)
+        decrypted_12 = cipher.decrypt(nonce_12, ciphertext_12)
+        decrypted_16 = cipher.decrypt(nonce_16, ciphertext_16)
+        
+        # All decryptions should produce the original plaintext
+        self.assertEqual(decrypted_24, plaintext)
+        self.assertEqual(decrypted_12, plaintext)
+        self.assertEqual(decrypted_16, plaintext)
+        
+    def test_optimized_timing_jitter(self):
+        """Test the optimized timing jitter function that handles sequences of calls."""
+        import time
+        from modules.crypt_errors import add_timing_jitter
+        
+        # Test the jitter function actually adds delays
+        start_time = time.time()
+        add_timing_jitter(1, 5)
+        duration_ms = (time.time() - start_time) * 1000
+        
+        # The delay should be at least 1ms, but not excessive
+        self.assertGreater(duration_ms, 0.5)  # Allow some timing measurement error
+        
+        # Test that multiple rapid calls use the optimized path
+        start_time = time.time()
+        for _ in range(10):
+            add_timing_jitter(1, 20)
+        total_duration_ms = (time.time() - start_time) * 1000
+        
+        # The total jitter for 10 calls should be less than if each call had the full jitter
+        # Without optimization, 10 calls with average jitter of 10ms would be ~100ms
+        # With optimization, we expect significantly less
+        self.assertLess(total_duration_ms, 100)  # Should be much less than 10 * avg(1, 20)ms
 
 
 if __name__ == "__main__":

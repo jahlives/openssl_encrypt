@@ -15,6 +15,7 @@ import functools
 import inspect
 from enum import Enum, auto
 import traceback
+import threading
 
 
 class ErrorCategory(Enum):
@@ -64,6 +65,52 @@ DEBUG_ERROR_MESSAGES = {
 }
 
 
+# Thread-local storage for jitter state 
+_jitter_state = threading.local()
+
+def add_timing_jitter(min_ms=1, max_ms=20):
+    """
+    Add random timing jitter to prevent timing analysis of operations.
+    
+    This function uses thread-local storage to keep track of recent jitter
+    values and avoids adding excessive jitter when called multiple times
+    in quick succession.
+    
+    Args:
+        min_ms (int): Minimum jitter in milliseconds (default: 1)
+        max_ms (int): Maximum jitter in milliseconds (default: 20)
+    """
+    # Initialize thread-local state if not already done
+    if not hasattr(_jitter_state, 'last_jitter_time'):
+        _jitter_state.last_jitter_time = 0
+        _jitter_state.jitter_count = 0
+    
+    # Get current time
+    current_time = time.time()
+    
+    # Check if we've added jitter recently (within 10ms)
+    time_since_last = current_time - _jitter_state.last_jitter_time
+    if time_since_last < 0.01:  # 10ms
+        # If called multiple times in quick succession, reduce jitter
+        _jitter_state.jitter_count += 1
+        if _jitter_state.jitter_count > 3:
+            # After 3 quick calls, use minimal jitter
+            jitter_ms = min_ms
+        else:
+            # For first few quick calls, use a reduced range
+            jitter_ms = secrets.randbelow(max(2, max_ms // _jitter_state.jitter_count)) + min_ms
+    else:
+        # Normal jitter for isolated calls
+        _jitter_state.jitter_count = 1
+        jitter_ms = secrets.randbelow(max_ms - min_ms + 1) + min_ms
+    
+    # Store the current time
+    _jitter_state.last_jitter_time = current_time
+    
+    # Apply the jitter
+    time.sleep(jitter_ms / 1000.0)
+
+
 class SecureError(Exception):
     """
     Base exception for all secure cryptographic operations.
@@ -104,9 +151,8 @@ class SecureError(Exception):
         
     def _add_timing_jitter(self):
         """Add random timing jitter to prevent timing analysis of errors."""
-        # Use secure random for cryptographic security
-        jitter_ms = secrets.randbelow(20) + 1  # 1-20ms
-        time.sleep(jitter_ms / 1000.0)
+        # Use the optimized timing jitter function
+        add_timing_jitter(1, 20)
 
 
 # Specialized exception classes for different operation types
@@ -190,24 +236,21 @@ def secure_error_handler(func=None, error_category=None):
         @functools.wraps(f)
         def wrapper(*args, **kwargs):
             # Add random timing jitter before execution
-            jitter_ms = secrets.randbelow(20) + 1  # 1-20ms
-            time.sleep(jitter_ms / 1000.0)
+            add_timing_jitter()
             
             try:
                 # Execute the wrapped function
                 result = f(*args, **kwargs)
                 
                 # Add random timing jitter after successful execution
-                jitter_ms = secrets.randbelow(20) + 1  # 1-20ms
-                time.sleep(jitter_ms / 1000.0)
+                add_timing_jitter()
                 
                 return result
                 
             except SecureError:
                 # If it's already a secure error, just re-raise it
                 # Add jitter before re-raising
-                jitter_ms = secrets.randbelow(20) + 1  # 1-20ms
-                time.sleep(jitter_ms / 1000.0)
+                add_timing_jitter()
                 raise
                 
             except ValueError as e:
@@ -215,15 +258,13 @@ def secure_error_handler(func=None, error_category=None):
                 if os.environ.get('PYTEST_CURRENT_TEST') is not None and "Invalid file format:" in str(e):
                     # For test_corrupted_encrypted_file, we need to pass through the ValueError
                     # Add jitter before re-raising
-                    jitter_ms = secrets.randbelow(20) + 1  # 1-20ms
-                    time.sleep(jitter_ms / 1000.0)
+                    add_timing_jitter()
                     # Re-raise original ValueError for test compatibility
                     raise
                 
                 # Otherwise, assume validation error for ValueError
                 # Add jitter before raising standardized error
-                jitter_ms = secrets.randbelow(20) + 1  # 1-20ms
-                time.sleep(jitter_ms / 1000.0)
+                add_timing_jitter()
                 
                 # Get details only in debug mode
                 details = str(e) if (
@@ -239,23 +280,20 @@ def secure_error_handler(func=None, error_category=None):
                     # Allow InvalidToken to pass through for wrong password test
                     if e.__class__.__name__ == 'InvalidToken':
                         # Add jitter before re-raising
-                        jitter_ms = secrets.randbelow(20) + 1  # 1-20ms
-                        time.sleep(jitter_ms / 1000.0)
+                        add_timing_jitter()
                         # Re-raise the original exception for test compatibility
                         raise
                     
                     # Allow FileNotFoundError to pass through for directory tests
                     if isinstance(e, FileNotFoundError):
                         # Add jitter before re-raising
-                        jitter_ms = secrets.randbelow(20) + 1  # 1-20ms
-                        time.sleep(jitter_ms / 1000.0)
+                        add_timing_jitter()
                         # Re-raise the original exception for test compatibility
                         raise
                 
                 # Generic exception handling with appropriate categorization
                 # Add jitter before raising standardized error
-                jitter_ms = secrets.randbelow(20) + 1  # 1-20ms
-                time.sleep(jitter_ms / 1000.0)
+                add_timing_jitter()
                 
                 # Get details only in debug mode
                 details = str(e) if (
@@ -282,10 +320,22 @@ def secure_error_handler(func=None, error_category=None):
                 elif error_category == ErrorCategory.CONFIGURATION:
                     raise ConfigurationError(details=details, original_exception=e)
                 elif error_category == ErrorCategory.KEYSTORE:
-                    raise KeystoreError(details=details, original_exception=e)
+                    # Temporary store the error details and type
+                    # We'll create and raise the proper KeystoreError after it's defined
+                    # This resolves the forward reference issue
+                    _keystore_error_details = details
+                    _keystore_error_original = e
+                    _keystore_error_category = ErrorCategory.KEYSTORE
+                    # The actual error will be raised at the end of the wrapper function
                 else:
                     # Default to internal error if category not specified
                     raise InternalError(details=details, original_exception=e)
+            
+            # If we get here, it means we need to create and raise a KeystoreError
+            # This happens after the KeystoreError class has been defined
+            if '_keystore_error_details' in locals():
+                raise KeystoreError(details=_keystore_error_details, 
+                                   original_exception=_keystore_error_original)
         
         return wrapper
     
@@ -367,8 +417,7 @@ def constant_time_compare(a, b):
         bool: True if the sequences match, False otherwise
     """
     # Add a small random delay to further mask timing differences
-    jitter_ms = secrets.randbelow(5) + 1  # 1-5ms
-    time.sleep(jitter_ms / 1000.0)
+    add_timing_jitter(1, 5)  # 1-5ms
     
     if len(a) != len(b):
         # Always process the full length of the longer sequence
@@ -394,8 +443,7 @@ def constant_time_compare(a, b):
                 result |= 1 if x != y else 0
     
     # Add another small delay to mask the processing time
-    jitter_ms = secrets.randbelow(5) + 1  # 1-5ms
-    time.sleep(jitter_ms / 1000.0)
+    add_timing_jitter(1, 5)  # 1-5ms
     
     return result == 0
 
@@ -421,8 +469,7 @@ def constant_time_pkcs7_unpad(padded_data, block_size=16):
         data and a boolean indicating if the padding was valid.
     """
     # Add a small random delay to further mask timing differences
-    jitter_ms = secrets.randbelow(5) + 1  # 1-5ms
-    time.sleep(jitter_ms / 1000.0)
+    add_timing_jitter(1, 5)  # 1-5ms
     
     # Initial assumption - padding is invalid until proven otherwise
     is_valid = False
@@ -454,7 +501,6 @@ def constant_time_pkcs7_unpad(padded_data, block_size=16):
     unpadded_data = padded_data[:unpadded_len]
     
     # Add another small delay to mask the processing time
-    jitter_ms = secrets.randbelow(5) + 1  # 1-5ms
-    time.sleep(jitter_ms / 1000.0)
+    add_timing_jitter(1, 5)  # 1-5ms
     
     return unpadded_data, is_valid
