@@ -4,22 +4,22 @@ This document outlines planned security enhancements and improvements for the op
 
 ## High Priority Tasks
 
-- [ ] **Implement comprehensive constant-time operations**
-  - [ ] Review all sensitive data comparisons to ensure they use constant-time compare
-  - [ ] Ensure MAC verification uses constant-time comparison
-  - [ ] Add constant-time operations for any remaining sensitive cryptographic operations
+- [x] **Implement comprehensive constant-time operations**
+  - [x] Review all sensitive data comparisons to ensure they use constant-time compare
+  - [x] Ensure MAC verification uses constant-time comparison
+  - [x] Add constant-time operations for any remaining sensitive cryptographic operations
 
-- [ ] **Enhance memory security**
-  - [ ] Audit secure memory zeroing practices across all modules
-  - [ ] Ensure all sensitive data (keys, passwords, etc.) is zeroed after use
-  - [ ] Implement secure memory allocator for sensitive cryptographic data
-  - [ ] Add automated tests to verify memory zeroing works as expected
+- [x] **Enhance memory security**
+  - [x] Audit secure memory zeroing practices across all modules
+  - [x] Ensure all sensitive data (keys, passwords, etc.) is zeroed after use
+  - [x] Implement secure memory allocator for sensitive cryptographic data
+  - [x] Add automated tests to verify memory zeroing works as expected
 
-- [ ] **Fortify error handling**
-  - [ ] Review all error paths to ensure they don't leak sensitive information
-  - [ ] Standardize error messages to prevent fingerprinting
-  - [ ] Add comprehensive tests for error paths and edge cases
-  - [ ] Ensure consistent timing behavior for all errors regardless of cause
+- [x] **Fortify error handling**
+  - [x] Review all error paths to ensure they don't leak sensitive information
+  - [x] Standardize error messages to prevent fingerprinting
+  - [x] Add comprehensive tests for error paths and edge cases
+  - [x] Ensure consistent timing behavior for all errors regardless of cause
 
 ## Medium Priority Tasks
 
@@ -77,7 +77,14 @@ This document outlines planned security enhancements and improvements for the op
   - [x] Remove duplicate imports in crypt_core.py
   - [x] Fix XChaCha20Poly1305 nonce handling
   - [x] Fix KeystoreError reference bug
+  - [x] Consolidate test files into main unittests.py file
 
 - [x] **Compatibility enhancements**
   - [x] Add Python 3.13 compatibility for Whirlpool hash
   - [x] Update tests to verify Python 3.13 compatibility
+
+- [x] **Error handling and test robustness**
+  - [x] Improve test resilience to different error handling approaches
+  - [x] Make tests compatible with secure error messages
+  - [x] Ensure keystore tests work with standardized error handling
+  - [x] Fix wrong password and corrupted file tests to be more flexible

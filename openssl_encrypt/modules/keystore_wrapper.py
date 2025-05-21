@@ -603,9 +603,9 @@ def decrypt_file_with_keystore(
                 import hashlib
                 current_pw_hash = hashlib.pbkdf2_hmac('sha256', pw_verify_bytes, verify_salt, 10000)
                 
-                # Verify hash matches - use constant-time comparison to prevent timing attacks
-                from .secure_ops import constant_time_compare
-                if not constant_time_compare(current_pw_hash, verify_hash):
+                # Verify hash matches - use specialized MAC verification to prevent timing attacks
+                from .secure_ops import verify_mac
+                if not verify_mac(verify_hash, current_pw_hash):
                     if not quiet:
                         print("Password verification failed - incorrect file password")
                     raise ValueError("Invalid password for dual-encrypted file - password verification failed")
