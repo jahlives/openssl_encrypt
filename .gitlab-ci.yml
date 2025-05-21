@@ -11,6 +11,7 @@ default:
 stages:
   - docker
   - sync
+  - security
   - prepare
   - test
   - build
@@ -98,6 +99,68 @@ sync-wiki:
     - if: $CI_COMMIT_BRANCH == "dev"
       when: manual
       allow_failure: true
+
+# Dependency security scanning
+dependency-scan:
+  stage: security
+  image: python:3.13
+  script:
+    - pip install safety bandit
+    # Check for vulnerable dependencies
+    - safety check -r requirements-prod.txt --full-report --output text
+    # Check for vulnerable development dependencies
+    - safety check -r requirements-dev.txt --full-report --output text
+  artifacts:
+    reports:
+      dependency_scanning: gl-dependency-scanning-report.json
+    paths:
+      - gl-dependency-scanning-report.json
+    expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# Python code security scanning
+code-security-scan:
+  stage: security
+  image: python:3.13
+  before_script:
+    - pip install bandit
+  script:
+    - bandit -r openssl_encrypt/ -c .bandit.yaml -f json -o gl-sast-report.json
+    - bandit -r openssl_encrypt/ -c .bandit.yaml -f txt || true  # Display results in terminal but don't fail
+  artifacts:
+    reports:
+      sast: gl-sast-report.json
+    paths:
+      - gl-sast-report.json
+    expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    
+# Software Bill of Materials generation
+sbom-generation:
+  stage: security
+  image: python:3.13
+  before_script:
+    - pip install cyclonedx-bom
+  script:
+    - cyclonedx-py -r -i requirements-prod.txt -o bom.json
+    - python -c "import json; f = open('bom.json', 'r'); data = json.load(f); f.close(); print(json.dumps(data, indent=2))" | head -n 50  # Display first 50 lines as a preview
+  artifacts:
+    paths:
+      - bom.json
+    expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
 test:
   stage: test
