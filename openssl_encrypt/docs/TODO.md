@@ -1,85 +1,83 @@
-# PQC Keystore Dual-Encryption Enhancement
+# openssl_encrypt Security Enhancement TODO List
 
-## Overview
-This enhancement adds a dual-encryption mechanism for PQC private keys stored in keystores. 
-Currently, private keys in keystores are encrypted only with the keystore password, creating 
-a security risk: if someone obtains the keystore password, they can decrypt any file encrypted 
-with those keys without needing the individual file passwords.
+This document outlines planned security enhancements and improvements for the openssl_encrypt library.
 
-The enhancement will encrypt private keys with both:
-1. The keystore master password (as currently implemented)
-2. The individual file password used during encryption
+## High Priority Tasks
 
-This creates a proper defense-in-depth design where both passwords are required for decryption.
+- [ ] **Implement comprehensive constant-time operations**
+  - [ ] Review all sensitive data comparisons to ensure they use constant-time compare
+  - [ ] Ensure MAC verification uses constant-time comparison
+  - [ ] Add constant-time operations for any remaining sensitive cryptographic operations
 
-## Implementation Tasks
+- [ ] **Enhance memory security**
+  - [ ] Audit secure memory zeroing practices across all modules
+  - [ ] Ensure all sensitive data (keys, passwords, etc.) is zeroed after use
+  - [ ] Implement secure memory allocator for sensitive cryptographic data
+  - [ ] Add automated tests to verify memory zeroing works as expected
 
-### High Priority
+- [ ] **Fortify error handling**
+  - [ ] Review all error paths to ensure they don't leak sensitive information
+  - [ ] Standardize error messages to prevent fingerprinting
+  - [ ] Add comprehensive tests for error paths and edge cases
+  - [ ] Ensure consistent timing behavior for all errors regardless of cause
 
-- [x] Modify `PQCKeystore.add_key` method to accept `file_password` parameter for dual encryption
-  - [x] Add an optional parameter to encrypt with both passwords
-  - [x] Store encryption flags in key metadata
+## Medium Priority Tasks
 
-- [x] Update `keystore_utils.py` to provide `file_password` when storing keys in `auto_generate_pqc_key`
-  - [x] Pass the file password from encryption arguments 
-  - [x] Handle optional dual-encryption based on configuration
+- [ ] **Add static code analysis to CI pipeline**
+  - [ ] Integrate Bandit for Python security static analysis
+  - [ ] Add security linting rules specific to cryptographic code
+  - [ ] Implement automated checks for insecure cryptographic patterns
+  - [ ] Set up continuous monitoring for security issues
 
-- [x] Update `PQCKeystore.get_key` method to accept `file_password` for decryption
-  - [x] Modify to support dual-encrypted keys
-  - [x] Add parameter for file password
+- [ ] **Cryptographic algorithm upgrades**
+  - [ ] Review all algorithms against current NIST and industry standards
+  - [ ] Mark deprecated algorithms as legacy
+  - [ ] Add support for newer post-quantum resistant algorithms
+  - [ ] Implement a clear algorithm upgrade path for existing users
 
-- [x] Modify `keystore_utils.py`'s `extract_pqc_key` function to pass `file_password` to keystore
-  - [x] Update to forward the file password from decryption arguments
+- [ ] **Dependency security**
+  - [ ] Conduct comprehensive review of all dependencies
+  - [ ] Implement dependency pinning with security checks
+  - [ ] Document dependency update procedures
+  - [ ] Create automated dependency vulnerability scanning
 
-- [x] Update the `crypt_core.py` `decrypt_file` function to pass file password to key extraction
-  - [x] Ensure password flows through to keystore operations
+- [ ] **Key management improvements**
+  - [ ] Implement key rotation functionality in keystore
+  - [ ] Add key usage tracking and expiration
+  - [ ] Enforce key separation for different purposes
+  - [ ] Support hardware-based key storage where available
 
-- [x] Implement the dual-encryption mechanism for the private key in `PQCKeystore` class
-  - [x] Layer the encryption: file password first, then master password
-  - [x] Secure handling of intermediate encrypted data
+## Low Priority Tasks
 
-### Medium Priority
+- [ ] **Documentation enhancements**
+  - [ ] Create comprehensive security.md documentation
+  - [ ] Document thread safety considerations
+  - [ ] Add detailed cryptographic design documentation
+  - [ ] Create security best practices guide for library users
 
-- [x] Modify key storage format to include flag indicating dual encryption
-  - [x] Add metadata field to track encryption method
-  - [x] Ensure version compatibility
+- [ ] **Advanced testing**
+  - [ ] Implement fuzzing tests for input boundary conditions
+  - [ ] Add side-channel resistance tests
+  - [ ] Create known-answer tests for all cryptographic operations
+  - [ ] Develop benchmark suite for timing consistency verification
 
-- [x] Create key derivation function to convert file password to key encryption key
-  - [x] Standardize how file passwords are prepared for key encryption
-  - [x] Ensure consistent salt usage
+- [ ] **Usability improvements**
+  - [ ] Simplify secure configuration selection for users
+  - [ ] Add clear security level indicators for configuration options
+  - [ ] Improve error messages for better troubleshooting
+  - [ ] Create configuration validation tools to detect insecure settings
 
-- [x] Add backwards compatibility for keys stored without dual encryption
-  - [x] Detect encryption type during decryption
-  - [x] Support legacy keys seamlessly
+## Completed Enhancements
 
-- [x] Update CLI arguments to include `--dual-encrypt-key` option
-  - [x] Add flag to control dual-encryption behavior
-  - [x] Document in help text
+- [x] **Thread safety improvements**
+  - [x] Implement thread-local timing jitter in crypt_errors.py
+  - [x] Add comprehensive tests for thread safety
 
-- [x] Write unit tests for the dual-encryption mechanism
-  - [x] Test encryption/decryption with both passwords
-  - [x] Test handling of invalid passwords
-  - [x] Test backward compatibility
+- [x] **Code quality improvements**
+  - [x] Remove duplicate imports in crypt_core.py
+  - [x] Fix XChaCha20Poly1305 nonce handling
+  - [x] Fix KeystoreError reference bug
 
-### Low Priority
-
-- [x] Update documentation to explain the dual-encryption security model
-  - [x] Explain benefits and usage in docs/keystore-usage.md
-  - [x] Update security-notes.md with new model
-
-## Implementation Notes
-
-1. For the encryption mechanism:
-   - Use a layered approach: encrypt with file password first, then with keystore password
-   - This ensures you need both passwords to decrypt
-   - Store the salt used for the file password derivation in the key metadata
-
-2. For backward compatibility:
-   - Check for the dual-encryption flag during decryption
-   - If not present, use the current single-password approach
-   - If present, apply both decryption steps
-
-3. Security considerations:
-   - Ensure secure handling of keys in memory
-   - Use unique salts for each encryption operation
-   - Clean up sensitive data promptly using secure_memzero
+- [x] **Compatibility enhancements**
+  - [x] Add Python 3.13 compatibility for Whirlpool hash
+  - [x] Update tests to verify Python 3.13 compatibility
