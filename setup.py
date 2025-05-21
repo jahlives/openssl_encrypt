@@ -4,6 +4,8 @@ import subprocess
 import sys
 import logging
 
+# Dependencies are now specified in pyproject.toml
+
 
 # Read the contents of your README file
 this_directory = os.path.abspath(os.path.dirname(__file__))
