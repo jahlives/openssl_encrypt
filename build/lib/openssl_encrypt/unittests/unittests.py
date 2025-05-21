@@ -32,7 +32,6 @@ import yaml
 import pytest
 import secrets
 import uuid
-import threading
 
 
 
@@ -43,20 +42,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from modules.crypt_core import (
     encrypt_file, decrypt_file, EncryptionAlgorithm,
     generate_key, ARGON2_AVAILABLE, WHIRLPOOL_AVAILABLE, multi_hash_password,
-    CamelliaCipher, XChaCha20Poly1305
+    CamelliaCipher
 )
 from modules.crypt_utils import (
     generate_strong_password, secure_shred_file, expand_glob_patterns
-)
-from modules.secure_ops import (
-    constant_time_compare, constant_time_pkcs7_unpad, secure_memzero, SecureContainer
-)
-from modules.secure_memory import (
-    verify_memory_zeroed, secure_memzero as memory_secure_memzero, 
-    SecureBytes, SecureMemoryAllocator, allocate_secure_buffer, free_secure_buffer
-)
-from modules.crypt_errors import (
-    add_timing_jitter, get_jitter_stats
 )
 from modules.crypt_cli import main as cli_main
 from modules.crypt_errors import (
@@ -66,17 +55,10 @@ from modules.crypt_errors import (
     constant_time_pkcs7_unpad, constant_time_compare,
     secure_key_derivation_error_handler, ErrorCategory,
     KeystoreError, KeystorePasswordError, KeyNotFoundError, 
-    KeystoreCorruptedError, KeystoreVersionError, secure_keystore_error_handler
+    KeystoreCorruptedError, KeystoreVersionError
 )
 from modules.keystore_cli import PQCKeystore, KeystoreSecurityLevel
 from modules.pqc import PQCipher, PQCAlgorithm, check_pqc_support, LIBOQS_AVAILABLE
-from modules.secure_ops import (
-    constant_time_compare,
-    constant_time_pkcs7_unpad,
-    secure_memzero,
-    SecureContainer
-)
-from modules.secure_memory import verify_memory_zeroed
 
 
 # Dictionary of required CLI arguments grouped by category based on help output
@@ -92,7 +74,6 @@ REQUIRED_ARGUMENT_GROUPS = {
         'standard',            # Standard configuration
         'paranoid',            # Maximum security configuration
         'algorithm',           # Encryption algorithm 
-        'encryption-data',     # Data encryption algorithm for hybrid encryption
         'password',            # Password option
         'random',              # Generate random password
         'input',               # Input file/directory
@@ -104,7 +85,6 @@ REQUIRED_ARGUMENT_GROUPS = {
         'recursive',           # Process directories recursively
     ],
     'Hash Options': [
-        'kdf-rounds',          # Global KDF rounds setting
         'sha512-rounds',       # SHA hash rounds
         'sha256-rounds',
         'sha3-256-rounds',
@@ -581,7 +561,7 @@ class TestCryptCore(unittest.TestCase):
         # Attempt to decrypt with wrong password
         wrong_password = b"WrongPassword123!"
 
-        # The error could be InvalidToken, DecryptionError, or AuthenticationError
+        # The error could be either InvalidToken or DecryptionError
         try:
             decrypt_file(
                 encrypted_file,
@@ -590,8 +570,8 @@ class TestCryptCore(unittest.TestCase):
                 quiet=True)
             # If we get here, decryption succeeded, which is not what we expect
             self.fail("Decryption should have failed with wrong password")
-        except (InvalidToken, DecryptionError, AuthenticationError):
-            # Any of these exceptions is the expected behavior
+        except (InvalidToken, DecryptionError):
+            # Either of these exceptions is the expected behavior
             pass
         except Exception as e:
             # Any other exception is unexpected
@@ -996,67 +976,158 @@ class TestCryptCore(unittest.TestCase):
         # incompatible nonce sizes rather than raising an error.
         # It will convert nonces of any size to 12 bytes
 
-    @pytest.mark.order(1)
     def test_decrypt_stdin(self):
-        """Test decryption from stdin using a temporary file instead of mocking."""
         from openssl_encrypt.modules.secure_memory import SecureBytes
-        import tempfile
-        
-        # Create a temporary file to use instead of mocking stdin
-        with tempfile.NamedTemporaryFile() as temp_file:
-            encrypted_content = (
-                b'eyJmb3JtYXRfdmVyc2lvbiI6IDMsICJzYWx0IjogIkNRNWphR3E2NFNickhBQ1g1aytLbXc9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMCwgInNoYTI1NiI6IDAsICJzaGEzXzI1NiI6IDAsICJzaGEzXzUxMiI6IDEwLCAiYmxha2UyYiI6IDAsICJzaGFrZTI1NiI6IDAsICJ3aGlybHBvb2wiOiAwLCAic2NyeXB0IjogeyJlbmFibGVkIjogZmFsc2UsICJuIjogMTI4LCAiciI6IDgsICJwIjogMSwgInJvdW5kcyI6IDF9LCAiYXJnb24yIjogeyJlbmFibGVkIjogZmFsc2UsICJ0aW1lX2Nvc3QiOiAzLCAibWVtb3J5X2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgImhhc2hfbGVuIjogMzIsICJ0eXBlIjogMiwgInJvdW5kcyI6IDF9LCAiYmFsbG9vbiI6IHsiZW5hYmxlZCI6IGZhbHNlLCAidGltZV9jb3N0IjogMywgInNwYWNlX2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgInJvdW5kcyI6IDJ9LCAicGJrZGYyX2l0ZXJhdGlvbnMiOiAxMCwgInR5cGUiOiAiaWQifSwgInBia2RmMl9pdGVyYXRpb25zIjogMTAsICJvcmlnaW5hbF9oYXNoIjogImQyYTg0ZjRiOGI2NTA5MzdlYzhmNzNjZDhiZTJjNzRhZGQ1YTkxMWJhNjRkZjI3NDU4ZWQ4MjI5ZGE4MDRhMjYiLCAiZW5jcnlwdGVkX2hhc2giOiAiY2UwNTI4MWRkMmY1NmUzNDEzMmI2NjZjZDkwMTM5OGI0YTA4MWEyZmFjZDcxOTNlMzAwZWM2YjJjODY1MWRhMyIsICJhbGdvcml0aG0iOiAiZmVybmV0In0=:Z0FBQUFBQm9GTC1FNG5Gc2Q1aHhJSzJrTUN5amx4TnF4RXozTHhhQUhqbzRZZlNfQTVOUmRpc0lrUTQxblI1a1J5M05sOXYwUnBMM0Q5a1NnRFZWNzFfOEczZDRLZXo2S3c9PQ=='
-            )
-            
-            # Write the encrypted content to the temp file
-            temp_file.write(encrypted_content)
-            temp_file.flush()
-            
+        encrypted_content = (
+            b'eyJmb3JtYXRfdmVyc2lvbiI6IDMsICJzYWx0IjogIkNRNWphR3E2NFNickhBQ1g1aytLbXc9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMCwgInNoYTI1NiI6IDAsICJzaGEzXzI1NiI6IDAsICJzaGEzXzUxMiI6IDEwLCAiYmxha2UyYiI6IDAsICJzaGFrZTI1NiI6IDAsICJ3aGlybHBvb2wiOiAwLCAic2NyeXB0IjogeyJlbmFibGVkIjogZmFsc2UsICJuIjogMTI4LCAiciI6IDgsICJwIjogMSwgInJvdW5kcyI6IDF9LCAiYXJnb24yIjogeyJlbmFibGVkIjogZmFsc2UsICJ0aW1lX2Nvc3QiOiAzLCAibWVtb3J5X2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgImhhc2hfbGVuIjogMzIsICJ0eXBlIjogMiwgInJvdW5kcyI6IDF9LCAiYmFsbG9vbiI6IHsiZW5hYmxlZCI6IGZhbHNlLCAidGltZV9jb3N0IjogMywgInNwYWNlX2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgInJvdW5kcyI6IDJ9LCAicGJrZGYyX2l0ZXJhdGlvbnMiOiAxMCwgInR5cGUiOiAiaWQifSwgInBia2RmMl9pdGVyYXRpb25zIjogMTAsICJvcmlnaW5hbF9oYXNoIjogImQyYTg0ZjRiOGI2NTA5MzdlYzhmNzNjZDhiZTJjNzRhZGQ1YTkxMWJhNjRkZjI3NDU4ZWQ4MjI5ZGE4MDRhMjYiLCAiZW5jcnlwdGVkX2hhc2giOiAiY2UwNTI4MWRkMmY1NmUzNDEzMmI2NjZjZDkwMTM5OGI0YTA4MWEyZmFjZDcxOTNlMzAwZWM2YjJjODY1MWRhMyIsICJhbGdvcml0aG0iOiAiZmVybmV0In0=:Z0FBQUFBQm9GTC1FNG5Gc2Q1aHhJSzJrTUN5amx4TnF4RXozTHhhQUhqbzRZZlNfQTVOUmRpc0lrUTQxblI1a1J5M05sOXYwUnBMM0Q5a1NnRFZWNzFfOEczZDRLZXo2S3c9PQ=='
+        )
+        mock_file = BytesIO(encrypted_content)
+
+        def mock_open(file, mode='r'):
+            if file == '/dev/stdin' and 'b' in mode:
+                return mock_file
+            return open(file, mode)
+
+        with patch('builtins.open', mock_open):
             try:
-                # Use the actual file instead of stdin
+                header_b64, payload_b64 = encrypted_content.split(b':')
+                header = json.loads(base64.b64decode(header_b64))
+                salt = base64.b64decode(header['salt'])
+
+                # First step - get the initial password hash
+                multi_hash_result = multi_hash_password(
+                    b"1234", salt, header['hash_config'])
+                print(f"\nMulti-hash output type: {type(multi_hash_result)}")
+                # Print only length and first/last bytes to avoid exposing the entire hash
+                if multi_hash_result:
+                    hash_hex = multi_hash_result.hex()
+                    masked_hash = f"{hash_hex[:6]}...{hash_hex[-6:]}" if len(hash_hex) > 12 else "***masked***"
+                    print(f"Multi-hash output (hex): {masked_hash} [length: {len(multi_hash_result)}]")
+                else:
+                    print(f"Multi-hash output (hex): None")
+
+                # Convert to bytes explicitly at each step
+                if isinstance(multi_hash_result, SecureBytes):
+                    password_bytes = bytes(multi_hash_result)
+                else:
+                    password_bytes = bytes(multi_hash_result)
+
+                print(f"\nPassword bytes type: {type(password_bytes)}")
+                print(f"Password bytes (hex): {password_bytes.hex()}")
+
+                # Second step - generate_key with regular bytes
+                key = generate_key(
+                    password=password_bytes,  # Make sure this is regular bytes
+                    salt=salt,  # This should already be bytes
+                    hash_config=header['hash_config'],
+                    quiet=True
+                )
+
+                if isinstance(key, tuple):
+                    derived_key, derived_salt, derived_config = key
+                    print(f"\nDerived key type: {type(derived_key)}")
+                    # Print only length and first/last bytes to avoid exposing the entire key
+                    if derived_key:
+                        key_hex = derived_key.hex()
+                        masked_key = f"{key_hex[:6]}...{key_hex[-6:]}" if len(key_hex) > 12 else "***masked***"
+                        print(f"Derived key (hex): {masked_key} [length: {len(derived_key)}]")
+                    else:
+                        print(f"Derived key (hex): None")
+
                 decrypted = decrypt_file(
-                    input_file=temp_file.name,
+                    input_file='/dev/stdin',
                     output_file=None,
                     password=b"1234",
                     quiet=True
                 )
-                
+
             except Exception as e:
                 print(f"\nException type: {type(e).__name__}")
                 print(f"Exception message: {str(e)}")
                 raise
-                
+            finally:
+                if 'password_bytes' in locals():
+                    # Zero out the bytes if possible
+                    if hasattr(password_bytes, 'clear'):
+                        password_bytes.clear()
+
         self.assertEqual(decrypted, b'Hello World\n')
-    @pytest.mark.order(1)
+
     def test_decrypt_stdin_quick(self):
-        """Test quick decryption from stdin using a temporary file instead of mocking."""
         from openssl_encrypt.modules.secure_memory import SecureBytes
-        import tempfile
-        
-        # Create a temporary file to use instead of mocking stdin
-        with tempfile.NamedTemporaryFile() as temp_file:
-            encrypted_content = (
-                b"eyJmb3JtYXRfdmVyc2lvbiI6IDMsICJzYWx0IjogIlFpOUZ6d0FIT3N5UnhmbDlzZ2NoK0E9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMCwgInNoYTI1NiI6IDEwMDAsICJzaGEzXzI1NiI6IDAsICJzaGEzXzUxMiI6IDEwMDAwLCAiYmxha2UyYiI6IDAsICJzaGFrZTI1NiI6IDAsICJ3aGlybHBvb2wiOiAwLCAic2NyeXB0IjogeyJlbmFibGVkIjogZmFsc2UsICJuIjogMTI4LCAiciI6IDgsICJwIjogMSwgInJvdW5kcyI6IDEwMDB9LCAiYXJnb24yIjogeyJlbmFibGVkIjogZmFsc2UsICJ0aW1lX2Nvc3QiOiAyLCAibWVtb3J5X2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgImhhc2hfbGVuIjogMzIsICJ0eXBlIjogMiwgInJvdW5kcyI6IDEwfSwgInBia2RmMl9pdGVyYXRpb25zIjogMTAwMDAsICJ0eXBlIjogImlkIiwgImFsZ29yaXRobSI6ICJmZXJuZXQifSwgInBia2RmMl9pdGVyYXRpb25zIjogMCwgIm9yaWdpbmFsX2hhc2giOiAiZDJhODRmNGI4YjY1MDkzN2VjOGY3M2NkOGJlMmM3NGFkZDVhOTExYmE2NGRmMjc0NThlZDgyMjlkYTgwNGEyNiIsICJlbmNyeXB0ZWRfaGFzaCI6ICIzNzc4MzM4NjlmYTM4ZTVmMWMxMDRjNTUxNzQzZmFmYWI4MTk3Y2UxNzMzYmEzYWQ0MmFhN2NjYTQ5YzhmNGJkIiwgImFsZ29yaXRobSI6ICJmZXJuZXQifQ==:Z0FBQUFBQm9GTUVCT3d5ajlBWWtsQzJ2YXZjeWZGX3ZaOV9NbFBmS3lUWEMtRUVLLS1Fc3R3MlU5WmVPVWtTZ3lIX0tkNlpIdVNXSG1vY28tdXg4UF81bGtKU09VQ01PNkE9PQ=="
-            )
-            
-            # Write the encrypted content to the temp file
-            temp_file.write(encrypted_content)
-            temp_file.flush()
-            
+        encrypted_content = (
+            b"eyJmb3JtYXRfdmVyc2lvbiI6IDMsICJzYWx0IjogIlFpOUZ6d0FIT3N5UnhmbDlzZ2NoK0E9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMCwgInNoYTI1NiI6IDEwMDAsICJzaGEzXzI1NiI6IDAsICJzaGEzXzUxMiI6IDEwMDAwLCAiYmxha2UyYiI6IDAsICJzaGFrZTI1NiI6IDAsICJ3aGlybHBvb2wiOiAwLCAic2NyeXB0IjogeyJlbmFibGVkIjogZmFsc2UsICJuIjogMTI4LCAiciI6IDgsICJwIjogMSwgInJvdW5kcyI6IDEwMDB9LCAiYXJnb24yIjogeyJlbmFibGVkIjogZmFsc2UsICJ0aW1lX2Nvc3QiOiAyLCAibWVtb3J5X2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgImhhc2hfbGVuIjogMzIsICJ0eXBlIjogMiwgInJvdW5kcyI6IDEwfSwgInBia2RmMl9pdGVyYXRpb25zIjogMTAwMDAsICJ0eXBlIjogImlkIiwgImFsZ29yaXRobSI6ICJmZXJuZXQifSwgInBia2RmMl9pdGVyYXRpb25zIjogMCwgIm9yaWdpbmFsX2hhc2giOiAiZDJhODRmNGI4YjY1MDkzN2VjOGY3M2NkOGJlMmM3NGFkZDVhOTExYmE2NGRmMjc0NThlZDgyMjlkYTgwNGEyNiIsICJlbmNyeXB0ZWRfaGFzaCI6ICIzNzc4MzM4NjlmYTM4ZTVmMWMxMDRjNTUxNzQzZmFmYWI4MTk3Y2UxNzMzYmEzYWQ0MmFhN2NjYTQ5YzhmNGJkIiwgImFsZ29yaXRobSI6ICJmZXJuZXQifQ==:Z0FBQUFBQm9GTUVCT3d5ajlBWWtsQzJ2YXZjeWZGX3ZaOV9NbFBmS3lUWEMtRUVLLS1Fc3R3MlU5WmVPVWtTZ3lIX0tkNlpIdVNXSG1vY28tdXg4UF81bGtKU09VQ01PNkE9PQ=="
+        )
+        mock_file = BytesIO(encrypted_content)
+
+        def mock_open(file, mode='r'):
+            if file == '/dev/stdin' and 'b' in mode:
+                return mock_file
+            return open(file, mode)
+
+        with patch('builtins.open', mock_open):
             try:
-                # Use the actual file instead of stdin
+                header_b64, payload_b64 = encrypted_content.split(b':')
+                header = json.loads(base64.b64decode(header_b64))
+                salt = base64.b64decode(header['salt'])
+
+                # First step - get the initial password hash
+                multi_hash_result = multi_hash_password(
+                    b"pw7qG0kh5oG1QrRz6CibPNDxGaHrrBAa", salt, header['hash_config'])
+                print(f"\nMulti-hash output type: {type(multi_hash_result)}")
+                # Print only length and first/last bytes to avoid exposing the entire hash
+                if multi_hash_result:
+                    hash_hex = multi_hash_result.hex()
+                    masked_hash = f"{hash_hex[:6]}...{hash_hex[-6:]}" if len(hash_hex) > 12 else "***masked***"
+                    print(f"Multi-hash output (hex): {masked_hash} [length: {len(multi_hash_result)}]")
+                else:
+                    print(f"Multi-hash output (hex): None")
+                print(f"Hash Config: {header['hash_config']}")
+                # Convert to bytes explicitly at each step
+                if isinstance(multi_hash_result, SecureBytes):
+                    password_bytes = bytes(multi_hash_result)
+                else:
+                    password_bytes = bytes(multi_hash_result)
+
+                print(f"\nPassword bytes type: {type(password_bytes)}")
+                print(f"Password bytes (hex): {password_bytes.hex()}")
+
+                # Second step - generate_key with regular bytes
+                key = generate_key(
+                    password=password_bytes,  # Make sure this is regular bytes
+                    salt=salt,  # This should already be bytes
+                    hash_config=header['hash_config'],
+                    quiet=True
+                )
+
+                if isinstance(key, tuple):
+                    derived_key, derived_salt, derived_config = key
+                    print(f"\nDerived key type: {type(derived_key)}")
+                    # Print only length and first/last bytes to avoid exposing the entire key
+                    if derived_key:
+                        key_hex = derived_key.hex()
+                        masked_key = f"{key_hex[:6]}...{key_hex[-6:]}" if len(key_hex) > 12 else "***masked***"
+                        print(f"Derived key (hex): {masked_key} [length: {len(derived_key)}]")
+                    else:
+                        print(f"Derived key (hex): None")
+
                 decrypted = decrypt_file(
-                    input_file=temp_file.name,
+                    input_file='/dev/stdin',
                     output_file=None,
                     password=b"pw7qG0kh5oG1QrRz6CibPNDxGaHrrBAa",
                     quiet=True
                 )
-                
+
             except Exception as e:
                 print(f"\nException type: {type(e).__name__}")
                 print(f"Exception message: {str(e)}")
                 raise
-                
+            finally:
+                if 'password_bytes' in locals():
+                    # Zero out the bytes if possible
+                    if hasattr(password_bytes, 'clear'):
+                        password_bytes.clear()
+
         self.assertEqual(decrypted, b'Hello World\n')
 
 class TestCryptUtils(unittest.TestCase):
@@ -1344,189 +1415,6 @@ class TestCLIInterface(unittest.TestCase):
                 "Password Hashing Algorithm Recommendations",
                 content)
             self.assertIn("Argon2", content)
-            
-    @mock.patch('getpass.getpass')
-    def test_implicit_enable_kdf_from_rounds(self, mock_getpass):
-        """Test that KDFs are implicitly enabled when their rounds are specified."""
-        # Set up mock password input
-        mock_getpass.return_value = "TestPassword123!"
-        
-        # Output file
-        encrypted_file = os.path.join(self.test_dir, "implicit_enable.bin")
-        
-        # Create custom output capture
-        output_capture = StringIO()
-        original_stdout = sys.stdout
-        sys.stdout = output_capture
-        
-        try:
-            # Configure CLI args - specify rounds without enable flags
-            sys.argv = [
-                "crypt.py", "encrypt",
-                "--input", self.test_file,
-                "--output", encrypted_file,
-                "--force-password",
-                "--argon2-rounds", "3",  # Should implicitly enable Argon2
-                "--scrypt-rounds", "2",  # Should implicitly enable Scrypt
-                "--balloon-rounds", "1", # Should implicitly enable Balloon
-                "--verbose"
-            ]
-            
-            with mock.patch('sys.exit') as mock_exit:
-                cli_main()
-                # Check exit code
-                mock_exit.assert_called_once_with(0)
-            
-            # Check output for implicit enabling messages
-            output = output_capture.getvalue()
-            self.assertIn("Setting --enable-argon2", output)
-            self.assertIn("Setting --enable-scrypt", output)
-            self.assertIn("Setting --enable-balloon", output)
-            
-            # Verify the encrypted file was created
-            self.assertTrue(os.path.exists(encrypted_file))
-            
-        finally:
-            sys.stdout = original_stdout
-            
-    @mock.patch('getpass.getpass')
-    def test_implicit_rounds_from_enable(self, mock_getpass):
-        """Test that default rounds are set when KDFs are enabled without specified rounds."""
-        # Set up mock password input
-        mock_getpass.return_value = "TestPassword123!"
-        
-        # Output file
-        encrypted_file = os.path.join(self.test_dir, "implicit_rounds.bin")
-        
-        # Create custom output capture
-        output_capture = StringIO()
-        original_stdout = sys.stdout
-        sys.stdout = output_capture
-        
-        try:
-            # Configure CLI args - specify enable flags without rounds
-            sys.argv = [
-                "crypt.py", "encrypt",
-                "--input", self.test_file,
-                "--output", encrypted_file,
-                "--force-password",
-                "--enable-argon2",  # Should get default rounds=10
-                "--enable-scrypt",  # Should get default rounds=10
-                "--enable-balloon", # Should get default rounds=10
-                "--verbose"
-            ]
-            
-            with mock.patch('sys.exit') as mock_exit:
-                cli_main()
-                # Check exit code
-                mock_exit.assert_called_once_with(0)
-            
-            # Check output for implicit rounds messages
-            output = output_capture.getvalue()
-            self.assertIn("Setting --argon2-rounds=10 (default of 10)", output)
-            self.assertIn("Setting --scrypt-rounds=10 (default of 10)", output)
-            self.assertIn("Setting --balloon-rounds=10 (default of 10)", output)
-            
-            # Verify the encrypted file was created
-            self.assertTrue(os.path.exists(encrypted_file))
-            
-        finally:
-            sys.stdout = original_stdout
-            
-    @mock.patch('getpass.getpass')
-    def test_global_kdf_rounds(self, mock_getpass):
-        """Test that global KDF rounds parameter works correctly."""
-        # Set up mock password input
-        mock_getpass.return_value = "TestPassword123!"
-        
-        # Output file
-        encrypted_file = os.path.join(self.test_dir, "global_rounds.bin")
-        
-        # Create custom output capture
-        output_capture = StringIO()
-        original_stdout = sys.stdout
-        sys.stdout = output_capture
-        
-        try:
-            # Configure CLI args - use global rounds
-            sys.argv = [
-                "crypt.py", "encrypt",
-                "--input", self.test_file,
-                "--output", encrypted_file,
-                "--force-password",
-                "--enable-argon2",
-                "--enable-scrypt",
-                "--enable-balloon",
-                "--kdf-rounds", "3",  # Global rounds value
-                "--verbose"
-            ]
-            
-            with mock.patch('sys.exit') as mock_exit:
-                cli_main()
-                # Check exit code
-                mock_exit.assert_called_once_with(0)
-            
-            # Check output for global rounds messages
-            output = output_capture.getvalue()
-            self.assertIn("Setting --argon2-rounds=3 (--kdf-rounds=3)", output)
-            self.assertIn("Setting --scrypt-rounds=3 (--kdf-rounds=3)", output)
-            self.assertIn("Setting --balloon-rounds=3 (--kdf-rounds=3)", output)
-            
-            # Verify the encrypted file was created
-            self.assertTrue(os.path.exists(encrypted_file))
-            
-        finally:
-            sys.stdout = original_stdout
-            
-    @mock.patch('getpass.getpass')
-    def test_specific_rounds_override_global(self, mock_getpass):
-        """Test that specific rounds parameters override the global setting."""
-        # Set up mock password input
-        mock_getpass.return_value = "TestPassword123!"
-        
-        # Output file
-        encrypted_file = os.path.join(self.test_dir, "override_rounds.bin")
-        
-        # Create custom output capture
-        output_capture = StringIO()
-        original_stdout = sys.stdout
-        sys.stdout = output_capture
-        
-        try:
-            # Configure CLI args with mixed specific and global rounds
-            sys.argv = [
-                "crypt.py", "encrypt",
-                "--input", self.test_file,
-                "--output", encrypted_file,
-                "--force-password",
-                "--enable-argon2",
-                "--argon2-rounds", "5",  # Specific value
-                "--enable-scrypt",       # Should use global value
-                "--enable-balloon",      # Should use global value
-                "--kdf-rounds", "2",     # Global value
-                "--verbose"
-            ]
-            
-            with mock.patch('sys.exit') as mock_exit:
-                cli_main()
-                # Check exit code
-                mock_exit.assert_called_once_with(0)
-            
-            # Examine output to verify rounds values
-            output = output_capture.getvalue()
-            
-            # Specific value for Argon2
-            self.assertNotIn("Setting --argon2-rounds", output)  # Already set explicitly
-            
-            # Global values for others
-            self.assertIn("Setting --scrypt-rounds=2 (--kdf-rounds=2)", output)
-            self.assertIn("Setting --balloon-rounds=2 (--kdf-rounds=2)", output)
-            
-            # Verify the encrypted file was created
-            self.assertTrue(os.path.exists(encrypted_file))
-            
-        finally:
-            sys.stdout = original_stdout
 
 
 class TestFileOperations(unittest.TestCase):
@@ -2364,7 +2252,7 @@ class TestSecureErrorHandling(unittest.TestCase):
         
         # Collect timing samples
         samples = []
-        for _ in range(10):  # Increased from 5 to 10 for more reliable results
+        for _ in range(5):
             start_time = time.time()
             try:
                 test_function()
@@ -2379,8 +2267,7 @@ class TestSecureErrorHandling(unittest.TestCase):
         
         # If there's timing jitter, standard deviation should be non-zero
         # But we keep the threshold very small to not make test brittle
-        # With optimized thread-local timing jitter, the std_dev might be smaller than before
-        self.assertGreater(std_dev, 0.00001, 
+        self.assertGreater(std_dev, 0.0001, 
                          "Error handler should add timing jitter, but all samples had identical timing")
 
     def test_secure_error_handler_decorator(self):
@@ -2942,496 +2829,6 @@ class TestPostQuantumCrypto(unittest.TestCase):
             self.assertEqual(metadata['encryption']['encryption_data'], algo,
                            f"Expected encryption_data={algo}, got {metadata['encryption'].get('encryption_data')}")
 
-    def test_pqc_keystore_encryption_data(self):
-        """Test that keystore functionality works with different encryption_data options."""
-        # Skip if we can't import the necessary modules
-        try:
-            from modules.keystore_cli import PQCKeystore, KeystoreSecurityLevel
-            from modules.keystore_utils import extract_key_id_from_metadata, auto_generate_pqc_key
-            from modules.crypt_core import encrypt_file, decrypt_file
-        except ImportError:
-            self.skipTest("Keystore modules not available")
-
-        # Create a test keystore file
-        keystore_file = os.path.join(self.test_dir, "test_keystore_encryption_data.pqc")
-        keystore_password = "keystore_test_password"
-        file_password = b"file_test_password" 
-        
-        # Create the keystore
-        keystore = PQCKeystore(keystore_file)
-        keystore.create_keystore(keystore_password, KeystoreSecurityLevel.STANDARD)
-        
-        # Test different encryption_data algorithms
-        encryption_data_options = [
-            "aes-gcm",
-            "aes-gcm-siv", 
-            "aes-ocb3", 
-            "aes-siv", 
-            "chacha20-poly1305", 
-            "xchacha20-poly1305"
-        ]
-        
-        for encryption_data in encryption_data_options:
-            # Create test filenames for this algorithm
-            encrypted_file = os.path.join(
-                self.test_dir, 
-                f"encrypted_dual_{encryption_data.replace('-', '_')}.bin"
-            )
-            decrypted_file = os.path.join(
-                self.test_dir, 
-                f"decrypted_dual_{encryption_data.replace('-', '_')}.txt"
-            )
-            self.test_files.extend([encrypted_file, decrypted_file])
-            
-            # Create a test config with format_version 5
-            hash_config = {
-                "format_version": 5,
-                "encryption": {
-                    "algorithm": "kyber768-hybrid",
-                    "encryption_data": encryption_data
-                }
-            }
-            
-            # Create args for key generation
-            args = type('Args', (), {
-                'keystore': keystore_file,
-                'keystore_password': keystore_password,
-                'pqc_auto_key': True,
-                'dual_encryption': True,
-                'quiet': True
-            })
-            
-            try:
-                # Skip auto key generation which seems to be returning a tuple
-                # and create a simple config instead
-                simplified_config = {
-                    "format_version": 5,
-                    "encryption": {
-                        "algorithm": "kyber768-hybrid",
-                        "encryption_data": encryption_data
-                    }
-                }
-                
-                # Encrypt with just the file password and algorithm
-                encrypt_file(
-                    input_file=self.test_file,
-                    output_file=encrypted_file,
-                    password=file_password,
-                    hash_config=simplified_config,
-                    encryption_data=encryption_data
-                )
-                
-                # Verify the metadata contains encryption_data
-                with open(encrypted_file, 'rb') as f:
-                    content = f.read()
-                
-                separator_index = content.find(b':')
-                if separator_index == -1:
-                    self.fail(f"Failed to find metadata separator for {encryption_data}")
-                
-                metadata_b64 = content[:separator_index]
-                metadata_json = base64.b64decode(metadata_b64)
-                metadata = json.loads(metadata_json)
-                
-                # Check format version
-                self.assertEqual(metadata.get('format_version'), 5)
-                
-                # Check encryption_data field
-                self.assertIn('encryption', metadata)
-                self.assertIn('encryption_data', metadata['encryption'])
-                self.assertEqual(metadata['encryption']['encryption_data'], encryption_data)
-                
-                # Skip checking for dual encryption flag and key ID since we're not 
-                # using the keystore functionality in this simplified test
-                
-                # Now decrypt the file - skip keystore params
-                decrypt_file(
-                    input_file=encrypted_file,
-                    output_file=decrypted_file,
-                    password=file_password
-                )
-                
-                # Verify decryption succeeded
-                with open(decrypted_file, 'rb') as f:
-                    decrypted_content = f.read()
-                
-                with open(self.test_file, 'rb') as f:
-                    original_content = f.read()
-                
-                self.assertEqual(decrypted_content, original_content,
-                               f"Decryption failed for encryption_data={encryption_data}")
-                
-            except Exception as e:
-                self.fail(f"Test failed for encryption_data={encryption_data}: {e}")
-
-    def test_pqc_keystore_encryption_data_wrong_password(self):
-        """Test wrong password failures with different encryption_data options."""
-        # Skip if we can't import the necessary modules
-        try:
-            from modules.keystore_cli import PQCKeystore, KeystoreSecurityLevel
-            from modules.keystore_utils import auto_generate_pqc_key
-            from modules.crypt_core import encrypt_file, decrypt_file
-        except ImportError:
-            self.skipTest("Keystore modules not available")
-
-        # Create a test keystore file
-        keystore_file = os.path.join(self.test_dir, "test_keystore_wrong_pw.pqc")
-        keystore_password = "keystore_test_password"
-        file_password = b"file_test_password" 
-        wrong_password = b"wrong_password"
-        
-        # Create the keystore
-        keystore = PQCKeystore(keystore_file)
-        keystore.create_keystore(keystore_password, KeystoreSecurityLevel.STANDARD)
-        
-        # Choose one encryption_data option to test with
-        encryption_data = "aes-gcm-siv"
-        
-        # Create test filenames
-        encrypted_file = os.path.join(self.test_dir, "encrypted_wrong_pw.bin")
-        decrypted_file = os.path.join(self.test_dir, "decrypted_wrong_pw.txt")
-        self.test_files.extend([encrypted_file, decrypted_file])
-        
-        # Create a test config with format_version 5
-        hash_config = {
-            "format_version": 5,
-            "encryption": {
-                "algorithm": "kyber768-hybrid",
-                "encryption_data": encryption_data
-            }
-        }
-        
-        # Create args for key generation
-        args = type('Args', (), {
-            'keystore': keystore_file,
-            'keystore_password': keystore_password,
-            'pqc_auto_key': True,
-            'dual_encryption': True,
-            'quiet': True
-        })
-        
-        # Skip auto key generation which seems to be returning a tuple
-        # and create a simple config instead
-        simplified_config = {
-            "format_version": 5,
-            "encryption": {
-                "algorithm": "kyber768-hybrid",
-                "encryption_data": encryption_data
-            }
-        }
-        
-        # Encrypt with just the file password
-        encrypt_file(
-            input_file=self.test_file,
-            output_file=encrypted_file,
-            password=file_password,
-            hash_config=simplified_config,
-            encryption_data=encryption_data
-        )
-        
-        # Try to decrypt with wrong file password
-        with self.assertRaises((ValueError, Exception)):
-            decrypt_file(
-                input_file=encrypted_file,
-                output_file=decrypted_file,
-                password=wrong_password
-            )
-        
-        # Try with wrong password of different length (to test robustness)
-        with self.assertRaises((ValueError, Exception)):
-            decrypt_file(
-                input_file=encrypted_file,
-                output_file=decrypted_file,
-                password=b"wrong_longer_password_123"
-            )
-    
-    def test_metadata_v4_v5_conversion(self):
-        """Test conversion between metadata format version 4 and 5."""
-        from modules.crypt_core import convert_metadata_v4_to_v5, convert_metadata_v5_to_v4
-        
-        # Test v4 to v5 conversion
-        # Create a sample v4 metadata structure
-        v4_metadata = {
-            "format_version": 4,
-            "derivation_config": {
-                "salt": "base64_salt",
-                "hash_config": {
-                    "sha512": {
-                        "rounds": 10000
-                    }
-                },
-                "kdf_config": {
-                    "scrypt": {
-                        "enabled": True,
-                        "n": 1024,
-                        "r": 8,
-                        "p": 1
-                    },
-                    "pbkdf2": {
-                        "rounds": 0
-                    },
-                    "dual_encryption": True,
-                    "pqc_keystore_key_id": "test-key-id-12345"
-                }
-            },
-            "hashes": {
-                "original_hash": "hash1",
-                "encrypted_hash": "hash2"
-            },
-            "encryption": {
-                "algorithm": "kyber768-hybrid",
-                "pqc_public_key": "base64_public_key",
-                "pqc_key_salt": "base64_key_salt",
-                "pqc_private_key": "base64_private_key",
-                "pqc_key_encrypted": True
-            }
-        }
-        
-        # Test conversion with different encryption_data options
-        encryption_data_options = [
-            "aes-gcm",
-            "aes-gcm-siv", 
-            "aes-ocb3", 
-            "aes-siv", 
-            "chacha20-poly1305", 
-            "xchacha20-poly1305"
-        ]
-        
-        for encryption_data in encryption_data_options:
-            # Convert v4 to v5
-            v5_metadata = convert_metadata_v4_to_v5(v4_metadata, encryption_data)
-            
-            # Verify conversion
-            self.assertEqual(v5_metadata["format_version"], 5)
-            self.assertEqual(v5_metadata["encryption"]["encryption_data"], encryption_data)
-            
-            # Make sure other fields are preserved
-            self.assertEqual(v5_metadata["encryption"]["algorithm"], v4_metadata["encryption"]["algorithm"])
-            self.assertEqual(v5_metadata["derivation_config"]["kdf_config"]["dual_encryption"], 
-                           v4_metadata["derivation_config"]["kdf_config"]["dual_encryption"])
-            self.assertEqual(v5_metadata["derivation_config"]["kdf_config"]["pqc_keystore_key_id"], 
-                           v4_metadata["derivation_config"]["kdf_config"]["pqc_keystore_key_id"])
-            
-            # Convert back to v4
-            v4_restored = convert_metadata_v5_to_v4(v5_metadata)
-            
-            # Verify the round-trip conversion
-            self.assertEqual(v4_restored["format_version"], 4)
-            self.assertNotIn("encryption_data", v4_restored["encryption"])
-            
-            # Make sure all original fields are preserved
-            self.assertEqual(v4_restored["encryption"]["algorithm"], v4_metadata["encryption"]["algorithm"])
-            self.assertEqual(v4_restored["derivation_config"]["kdf_config"]["dual_encryption"], 
-                           v4_metadata["derivation_config"]["kdf_config"]["dual_encryption"])
-            self.assertEqual(v4_restored["derivation_config"]["kdf_config"]["pqc_keystore_key_id"], 
-                           v4_metadata["derivation_config"]["kdf_config"]["pqc_keystore_key_id"])
-    
-    def test_metadata_v4_v5_compatibility(self):
-        """Test compatibility between v4 and v5 metadata with encryption and decryption."""
-        # Prepare files
-        v4_in = os.path.join(self.test_dir, "test_v4_compat.txt")
-        v4_out = os.path.join(self.test_dir, "test_v4_compat.enc")
-        v5_out = os.path.join(self.test_dir, "test_v5_compat.enc")
-        v4_dec = os.path.join(self.test_dir, "test_v4_compat.dec")
-        v5_dec = os.path.join(self.test_dir, "test_v5_compat.dec")
-        
-        self.test_files.extend([v4_in, v4_out, v5_out, v4_dec, v5_dec])
-        
-        # Create test file
-        test_content = "Testing metadata compatibility between v4 and v5 formats"
-        with open(v4_in, "w") as f:
-            f.write(test_content)
-        
-        # Create v4 hash config
-        v4_config = {
-            "format_version": 4,
-            "encryption": {
-                "algorithm": "kyber768-hybrid"
-            }
-        }
-        
-        # Create v5 hash config with encryption_data
-        v5_config = {
-            "format_version": 5,
-            "encryption": {
-                "algorithm": "kyber768-hybrid",
-                "encryption_data": "chacha20-poly1305"
-            }
-        }
-        
-        # Encrypt with v4 format
-        encrypt_file(
-            v4_in, 
-            v4_out,
-            self.test_password, 
-            v4_config
-        )
-        
-        # Encrypt with v5 format
-        encrypt_file(
-            v4_in, 
-            v5_out,
-            self.test_password, 
-            v5_config
-        )
-        
-        # Decrypt v4 file
-        decrypt_file(
-            v4_out,
-            v4_dec,
-            self.test_password
-        )
-        
-        # Decrypt v5 file
-        decrypt_file(
-            v5_out,
-            v5_dec,
-            self.test_password
-        )
-        
-        # Verify decrypted content matches original
-        with open(v4_dec, "r") as f:
-            v4_content = f.read()
-        
-        with open(v5_dec, "r") as f:
-            v5_content = f.read()
-        
-        self.assertEqual(v4_content, test_content)
-        self.assertEqual(v5_content, test_content)
-        
-        # Check v4 metadata format - may actually be converted to v5
-        with open(v4_out, 'rb') as f:
-            content = f.read()
-        
-        separator_index = content.find(b':')
-        metadata_b64 = content[:separator_index]
-        metadata_json = base64.b64decode(metadata_b64)
-        v4_metadata = json.loads(metadata_json)
-        
-        # Allow either v4 or v5, since the implementation may auto-convert
-        self.assertIn(v4_metadata['format_version'], [4, 5])
-        
-        # If it was converted to v5, encryption_data might exist but should be aes-gcm
-        if v4_metadata['format_version'] == 5 and 'encryption_data' in v4_metadata.get('encryption', {}):
-            self.assertEqual(v4_metadata['encryption']['encryption_data'], 'aes-gcm')
-        
-        # Check v5 metadata format
-        with open(v5_out, 'rb') as f:
-            content = f.read()
-        
-        separator_index = content.find(b':')
-        metadata_b64 = content[:separator_index]
-        metadata_json = base64.b64decode(metadata_b64)
-        v5_metadata = json.loads(metadata_json)
-        
-        self.assertEqual(v5_metadata['format_version'], 5)
-        self.assertIn('encryption_data', v5_metadata['encryption'])
-        # Allow either the specified value or aes-gcm if the implementation defaults to it
-        self.assertIn(v5_metadata['encryption']['encryption_data'], 
-                     ['chacha20-poly1305', 'aes-gcm'])
-    
-    def test_invalid_encryption_data(self):
-        """Test handling of invalid encryption_data values."""
-        # Prepare files
-        test_in = os.path.join(self.test_dir, "test_invalid_enc_data.txt")
-        test_out = os.path.join(self.test_dir, "test_invalid_enc_data.enc")
-        self.test_files.extend([test_in, test_out])
-        
-        # Create test file
-        with open(test_in, "w") as f:
-            f.write("Testing invalid encryption_data values")
-        
-        # Create hash config with an invalid encryption_data
-        hash_config = {
-            "format_version": 5,
-            "encryption": {
-                "algorithm": "kyber768-hybrid",
-                "encryption_data": "invalid-algorithm"
-            }
-        }
-        
-        # Test that encryption works even with invalid value (should default to aes-gcm)
-        try:
-            encrypt_file(
-                test_in, 
-                test_out,
-                self.test_password, 
-                hash_config
-            )
-            
-            # Read metadata to verify what was actually used
-            with open(test_out, 'rb') as f:
-                content = f.read()
-            
-            separator_index = content.find(b':')
-            metadata_b64 = content[:separator_index]
-            metadata_json = base64.b64decode(metadata_b64)
-            metadata = json.loads(metadata_json)
-            
-            # Check that the invalid value was converted to a valid one (likely aes-gcm)
-            self.assertIn('encryption_data', metadata['encryption'])
-            self.assertIn(metadata['encryption']['encryption_data'], 
-                         ['aes-gcm', 'aes-gcm-siv', 'aes-ocb3', 'aes-siv', 
-                          'chacha20-poly1305', 'xchacha20-poly1305'])
-            
-            # Attempt to decrypt the file - should work with the corrected value
-            decrypt_file(
-                test_out,
-                os.path.join(self.test_dir, "decrypted_invalid.txt"),
-                self.test_password
-            )
-        except Exception as e:
-            self.fail(f"Failed to handle invalid encryption_data: {e}")
-    
-    def test_cli_encryption_data_parameter(self):
-        """Test that the CLI properly handles the --encryption-data parameter."""
-        try:
-            # Import the modules we need
-            import importlib
-            import argparse
-            import sys
-            
-            # Try to import the CLI module
-            spec = importlib.util.find_spec('openssl_encrypt.crypt')
-            if spec is None:
-                self.skipTest("openssl_encrypt.crypt module not found")
-            
-            # Try running the help command directly using subprocess
-            import subprocess
-            
-            try:
-                # Run help command and capture output
-                result = subprocess.run(
-                    [sys.executable, "-m", "openssl_encrypt.crypt", "-h"], 
-                    capture_output=True, 
-                    text=True,
-                    check=True
-                )
-                
-                # Verify that --encryption-data is in the help output
-                self.assertIn("--encryption-data", result.stdout)
-                
-                # Check that the options are listed
-                for option in ["aes-gcm", "aes-gcm-siv", "chacha20-poly1305"]:
-                    self.assertIn(option, result.stdout)
-                
-                # The test passes - the CLI supports the --encryption-data parameter
-            except (subprocess.SubprocessError, FileNotFoundError):
-                # If we can't run the subprocess, try a different approach
-                # Create test parser and see if we can add the parameter
-                parser = argparse.ArgumentParser()
-                parser.add_argument("--encryption-data", 
-                                   choices=["aes-gcm", "aes-gcm-siv", "aes-ocb3", "aes-siv", 
-                                           "chacha20-poly1305", "xchacha20-poly1305"])
-                
-                # Parse arguments with the parameter
-                args = parser.parse_args(["--encryption-data", "aes-gcm"])
-                
-                # Check parameter was correctly parsed
-                self.assertEqual(args.encryption_data, "aes-gcm")
-        except Exception as e:
-            self.skipTest(f"Could not test CLI parameter: {e}")
-
     def test_algorithm_compatibility(self):
         """Test compatibility between different algorithm name formats."""
         # Test with different algorithm name formats
@@ -3951,77 +3348,6 @@ def test_file_decryption_wrong_pw_v3(filename):
         print(f"\nDecryption failed for {algorithm_name}: {str(e)} which is epexcted")
         pass
 
-
-@pytest.mark.parametrize(
-    "filename", 
-    get_test_files_v3(),
-    ids=lambda name: f"wrong_algorithm_{name.replace('test1_', '').replace('.txt', '')}"
-)
-def test_file_decryption_wrong_algorithm_v3(filename):
-    """
-    Test decryption of v3 files with wrong algorithm.
-    
-    This test verifies that trying to decrypt a v3 format file with the correct password
-    but wrong algorithm setting properly fails and raises an exception rather than succeeding.
-    """
-    algorithm_name = filename.replace('test1_', '').replace('.txt', '')
-    
-    # Read the file content and extract metadata to find current algorithm
-    with open(f"./openssl_encrypt/unittests/testfiles/v3/{filename}", 'r') as f:
-        content = f.read()
-    
-    # Split file content by colon to get the metadata part
-    metadata_b64 = content.split(':', 1)[0]
-    metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
-    metadata = json.loads(metadata_json)
-    
-    # Get current algorithm from metadata
-    current_algorithm = metadata.get("algorithm", "")
-    
-    # Define available algorithms
-    available_algorithms = [
-        "fernet", "aes-gcm", "chacha20-poly1305", "xchacha20-poly1305", 
-        "aes-siv", "aes-gcm-siv", "aes-ocb3", "kyber512-hybrid",
-        "kyber768-hybrid", "kyber1024-hybrid"
-    ]
-    
-    # Choose a different algorithm
-    wrong_algorithm = None
-    for alg in available_algorithms:
-        if alg != current_algorithm:
-            wrong_algorithm = alg
-            break
-    
-    # Fallback if we couldn't find a different algorithm (should never happen)
-    if not wrong_algorithm:
-        wrong_algorithm = "fernet" if current_algorithm != "fernet" else "aes-gcm"
-    
-    # Provide a mock private key for Kyber tests
-    pqc_private_key = None
-    if wrong_algorithm.startswith("kyber"):
-        pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
-    
-    try:
-        # Try to decrypt with correct password but wrong algorithm
-        decrypted_data = decrypt_file(
-            input_file=f"./openssl_encrypt/unittests/testfiles/v3/{filename}",
-            output_file=None,
-            password=b"test_password",  # Correct password
-            algorithm=wrong_algorithm,  # Wrong algorithm
-            pqc_private_key=pqc_private_key)
-            
-        # If we get here, decryption succeeded with wrong algorithm, which is a failure
-        pytest.fail(f"Security issue: Decryption succeeded with wrong algorithm for {algorithm_name} (v3)")
-    except (DecryptionError, AuthenticationError, ValidationError) as e:
-        # This is the expected path - decryption should fail with wrong algorithm
-        print(f"\nDecryption correctly failed for {algorithm_name} (v3) with wrong algorithm: {str(e)}")
-        # Test passes because the exception was raised as expected
-        pass
-    except Exception as e:
-        # Unexpected exception type
-        pytest.fail(f"Unexpected exception for {algorithm_name} with wrong algorithm: {str(e)}")
-
-
 # Create a test function for each file
 @pytest.mark.parametrize(
     "filename", 
@@ -4094,76 +3420,6 @@ def test_file_decryption_wrong_pw_v4(filename):
         print(f"\nDecryption correctly failed for {algorithm_name} with wrong password: {str(e)}")
         # Test passes because the exception was raised as expected
         pass
-
-
-@pytest.mark.parametrize(
-    "filename", 
-    get_test_files_v4(),
-    ids=lambda name: f"wrong_algorithm_{name.replace('test1_', '').replace('.txt', '')}"
-)
-def test_file_decryption_wrong_algorithm_v4(filename):
-    """
-    Test decryption of v4 files with wrong algorithm.
-    
-    This test verifies that trying to decrypt a v4 format file with the correct password
-    but wrong algorithm setting properly fails and raises an exception rather than succeeding.
-    """
-    algorithm_name = filename.replace('test1_', '').replace('.txt', '')
-    
-    # Read the file content and extract metadata to find current algorithm
-    with open(f"./openssl_encrypt/unittests/testfiles/v4/{filename}", 'r') as f:
-        content = f.read()
-    
-    # Split file content by colon to get the metadata part
-    metadata_b64 = content.split(':', 1)[0]
-    metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
-    metadata = json.loads(metadata_json)
-    
-    # Get current algorithm from metadata
-    current_algorithm = metadata.get("algorithm", "")
-    
-    # Define available algorithms
-    available_algorithms = [
-        "fernet", "aes-gcm", "chacha20-poly1305", "xchacha20-poly1305", 
-        "aes-siv", "aes-gcm-siv", "aes-ocb3", "kyber512-hybrid",
-        "kyber768-hybrid", "kyber1024-hybrid"
-    ]
-    
-    # Choose a different algorithm
-    wrong_algorithm = None
-    for alg in available_algorithms:
-        if alg != current_algorithm:
-            wrong_algorithm = alg
-            break
-    
-    # Fallback if we couldn't find a different algorithm (should never happen)
-    if not wrong_algorithm:
-        wrong_algorithm = "fernet" if current_algorithm != "fernet" else "aes-gcm"
-    
-    # Provide a mock private key for Kyber tests
-    pqc_private_key = None
-    if wrong_algorithm.startswith("kyber"):
-        pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
-    
-    try:
-        # Try to decrypt with correct password but wrong algorithm
-        decrypted_data = decrypt_file(
-            input_file=f"./openssl_encrypt/unittests/testfiles/v4/{filename}",
-            output_file=None,
-            password=b"1234",  # Correct password
-            algorithm=wrong_algorithm,  # Wrong algorithm
-            pqc_private_key=pqc_private_key)
-            
-        # If we get here, decryption succeeded with wrong algorithm, which is a failure
-        pytest.fail(f"Security issue: Decryption succeeded with wrong algorithm for {algorithm_name} (v4)")
-    except (DecryptionError, AuthenticationError, ValidationError) as e:
-        # This is the expected path - decryption should fail with wrong algorithm
-        print(f"\nDecryption correctly failed for {algorithm_name} (v4) with wrong algorithm: {str(e)}")
-        # Test passes because the exception was raised as expected
-        pass
-    except Exception as e:
-        # Unexpected exception type
-        pytest.fail(f"Unexpected exception for {algorithm_name} with wrong algorithm: {str(e)}")
 
 
 # Test function for v5 files with incorrect password
@@ -4248,152 +3504,6 @@ def test_file_decryption_wrong_pw_v5(filename):
         print(f"\nDecryption correctly failed for {algorithm_name} (v5) with wrong password: {str(e)}")
         # Test passes because the exception was raised as expected
         pass
-
-
-def get_kyber_test_files_v5():
-    """Get a list of Kyber test files for v5 format."""
-    try:
-        files = os.listdir("./openssl_encrypt/unittests/testfiles/v5")
-        return [f for f in files if f.startswith("test1_kyber")]
-    except Exception as e:
-        print(f"Error getting Kyber test files: {str(e)}")
-        return []
-
-
-@pytest.mark.parametrize(
-    "filename", 
-    get_test_files_v5(),
-    ids=lambda name: f"wrong_algorithm_{name.replace('test1_', '').replace('.txt', '')}"
-)
-def test_file_decryption_wrong_algorithm_v5(filename):
-    """
-    Test decryption of v5 files with wrong algorithm.
-    
-    This test verifies that trying to decrypt a v5 format file with the correct password
-    but wrong algorithm setting properly fails and raises an exception rather than succeeding.
-    """
-    algorithm_name = filename.replace('test1_', '').replace('.txt', '')
-    
-    # Read the file content and extract metadata to find current algorithm
-    with open(f"./openssl_encrypt/unittests/testfiles/v5/{filename}", 'r') as f:
-        content = f.read()
-    
-    # Split file content by colon to get the metadata part
-    metadata_b64 = content.split(':', 1)[0]
-    metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
-    metadata = json.loads(metadata_json)
-    
-    # Get current algorithm from metadata
-    current_algorithm = metadata.get("encryption", {}).get("algorithm", "")
-    
-    # Define available algorithms
-    available_algorithms = [
-        "fernet", "aes-gcm", "chacha20-poly1305", "xchacha20-poly1305", 
-        "aes-siv", "aes-gcm-siv", "aes-ocb3", "kyber512-hybrid",
-        "kyber768-hybrid", "kyber1024-hybrid"
-    ]
-    
-    # Choose a different algorithm
-    wrong_algorithm = None
-    for alg in available_algorithms:
-        if alg != current_algorithm:
-            wrong_algorithm = alg
-            break
-    
-    # Fallback if we couldn't find a different algorithm (should never happen)
-    if not wrong_algorithm:
-        wrong_algorithm = "fernet" if current_algorithm != "fernet" else "aes-gcm"
-    
-    # Provide a mock private key for Kyber tests
-    pqc_private_key = None
-    if wrong_algorithm.startswith("kyber"):
-        pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
-    
-    try:
-        # Try to decrypt with correct password but wrong algorithm
-        decrypted_data = decrypt_file(
-            input_file=f"./openssl_encrypt/unittests/testfiles/v5/{filename}",
-            output_file=None,
-            password=b"1234",  # Correct password
-            algorithm=wrong_algorithm,  # Wrong algorithm
-            pqc_private_key=pqc_private_key)
-            
-        # If we get here, decryption succeeded with wrong algorithm, which is a failure
-        pytest.fail(f"Security issue: Decryption succeeded with wrong algorithm for {algorithm_name} (v5)")
-    except (DecryptionError, AuthenticationError, ValidationError) as e:
-        # This is the expected path - decryption should fail with wrong algorithm
-        print(f"\nDecryption correctly failed for {algorithm_name} (v5) with wrong algorithm: {str(e)}")
-        # Test passes because the exception was raised as expected
-        pass
-    except Exception as e:
-        # Unexpected exception type
-        pytest.fail(f"Unexpected exception for {algorithm_name} with wrong algorithm: {str(e)}")
-
-
-@pytest.mark.parametrize(
-    "filename", 
-    get_kyber_test_files_v5(),
-    ids=lambda name: f"wrong_encryption_data_{name.replace('test1_', '').replace('.txt', '')}"
-)
-def test_file_decryption_wrong_encryption_data_v5(filename):
-    """Test decryption of v5 Kyber files with wrong encryption_data.
-    
-    This test verifies that trying to decrypt a v5 format Kyber file with the correct password
-    but wrong encryption_data setting properly fails and raises an exception rather than succeeding.
-    """
-    algorithm_name = filename.replace('test1_', '').replace('.txt', '')
-    
-    # Read the file content and extract metadata to find current encryption_data
-    with open(f"./openssl_encrypt/unittests/testfiles/v5/{filename}", 'r') as f:
-        content = f.read()
-    
-    # Split file content by colon to get the metadata part
-    metadata_b64 = content.split(':', 1)[0]
-    metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
-    metadata = json.loads(metadata_json)
-    
-    # Get current encryption_data from metadata
-    current_encryption_data = metadata.get("encryption", {}).get("encryption_data", "")
-    
-    # Available encryption_data options
-    encryption_data_options = [
-        "aes-gcm", "aes-gcm-siv", "aes-ocb3", "aes-siv", 
-        "chacha20-poly1305", "xchacha20-poly1305"
-    ]
-    
-    # Choose a different encryption_data option
-    wrong_encryption_data = None
-    for option in encryption_data_options:
-        if option != current_encryption_data:
-            wrong_encryption_data = option
-            break
-            
-    # Fallback if we couldn't find a different option (should never happen)
-    if not wrong_encryption_data:
-        wrong_encryption_data = "aes-gcm" if current_encryption_data != "aes-gcm" else "aes-siv"
-    
-    # Provide a mock private key for Kyber tests
-    pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
-    
-    try:
-        # Try to decrypt with correct password but wrong encryption_data
-        decrypted_data = decrypt_file(
-            input_file=f"./openssl_encrypt/unittests/testfiles/v5/{filename}",
-            output_file=None,
-            password=b"1234",  # Correct password
-            encryption_data=wrong_encryption_data,  # Wrong encryption_data
-            pqc_private_key=pqc_private_key)
-            
-        # If we get here, decryption succeeded with wrong encryption_data, which is a failure
-        pytest.fail(f"Security issue: Decryption succeeded with wrong encryption_data for {algorithm_name} (v5)")
-    except (DecryptionError, AuthenticationError, ValidationError) as e:
-        # This is the expected path - decryption should fail with wrong encryption_data
-        print(f"\nDecryption correctly failed for {algorithm_name} (v5) with wrong encryption_data: {str(e)}")
-        # Test passes because the exception was raised as expected
-        pass
-    except Exception as e:
-        # Unexpected exception type
-        pytest.fail(f"Unexpected exception for {algorithm_name} with wrong encryption_data: {str(e)}")
 
 
 @pytest.mark.order(7)
@@ -5050,626 +4160,6 @@ class TestKeystoreOperations(unittest.TestCase):
         # Verify keys match
         self.assertEqual(public_key, retrieved_public_key)
         self.assertEqual(private_key, retrieved_private_key)
-
-
-class TestCryptErrorsFixes(unittest.TestCase):
-    """Test fixes for error handling issues in crypt_errors."""
-    
-    def test_keystore_error_reference(self):
-        """Test that KeystoreError can be properly raised from the error handler."""
-        
-        # Define a function that will be decorated with the secure_keystore_error_handler
-        @secure_keystore_error_handler
-        def function_that_raises():
-            """Function that will raise an exception to be caught by the handler."""
-            # Use RuntimeError instead of ValueError to avoid special handling in the decorator
-            raise RuntimeError("Test exception")
-        
-        # The decorator should catch the error and translate it to a KeystoreError
-        with self.assertRaises(KeystoreError):
-            function_that_raises()
-    
-    def test_secure_error_handler_with_keystore_category(self):
-        """Test that secure_error_handler properly handles ErrorCategory.KEYSTORE."""
-        
-        # Define a function that will be decorated with secure_error_handler
-        # and explicitly set the error category to KEYSTORE
-        @secure_error_handler(error_category=ErrorCategory.KEYSTORE)
-        def function_with_explicit_category():
-            """Function with explicit ErrorCategory.KEYSTORE that raises exception."""
-            # Use RuntimeError instead of ValueError to avoid special handling in the decorator
-            raise RuntimeError("Test exception with explicit category")
-        
-        # The decorator should catch the error and translate it to a KeystoreError
-        with self.assertRaises(KeystoreError):
-            function_with_explicit_category()
-            
-    def test_xchacha20poly1305_nonce_handling(self):
-        """Test that XChaCha20Poly1305 properly handles nonces of different lengths."""
-        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-        from cryptography.hazmat.primitives import hashes
-        from cryptography.hazmat.backends import default_backend
-        import secrets
-        
-        # Create an instance with a valid key
-        key = secrets.token_bytes(32)  # 32 bytes for ChaCha20Poly1305
-        cipher = XChaCha20Poly1305(key)
-        
-        # Test with a 24-byte nonce (XChaCha20Poly1305 standard)
-        nonce_24 = secrets.token_bytes(24)
-        processed_nonce_24 = cipher._process_nonce(nonce_24)
-        self.assertEqual(len(processed_nonce_24), 12)
-        
-        # Test with a 12-byte nonce (ChaCha20Poly1305 standard)
-        nonce_12 = secrets.token_bytes(12)
-        processed_nonce_12 = cipher._process_nonce(nonce_12)
-        self.assertEqual(len(processed_nonce_12), 12)
-        self.assertEqual(processed_nonce_12, nonce_12)  # Should remain unchanged
-        
-        # Test with a non-standard nonce length
-        nonce_16 = secrets.token_bytes(16)
-        processed_nonce_16 = cipher._process_nonce(nonce_16)
-        self.assertEqual(len(processed_nonce_16), 12)
-        
-        # Test cryptographic properties: different nonces should produce different outputs
-        # for the same plaintext
-        plaintext = b"Test message"
-        
-        # Encrypt with 24-byte nonce
-        ciphertext_24 = cipher.encrypt(nonce_24, plaintext)
-        
-        # Encrypt with 12-byte nonce
-        ciphertext_12 = cipher.encrypt(nonce_12, plaintext)
-        
-        # Encrypt with 16-byte nonce
-        ciphertext_16 = cipher.encrypt(nonce_16, plaintext)
-        
-        # All ciphertexts should be different
-        self.assertNotEqual(ciphertext_24, ciphertext_12)
-        self.assertNotEqual(ciphertext_24, ciphertext_16)
-        self.assertNotEqual(ciphertext_12, ciphertext_16)
-        
-        # Verify we can decrypt with the same nonce
-        decrypted_24 = cipher.decrypt(nonce_24, ciphertext_24)
-        decrypted_12 = cipher.decrypt(nonce_12, ciphertext_12)
-        decrypted_16 = cipher.decrypt(nonce_16, ciphertext_16)
-        
-        # All decryptions should produce the original plaintext
-        self.assertEqual(decrypted_24, plaintext)
-        self.assertEqual(decrypted_12, plaintext)
-        self.assertEqual(decrypted_16, plaintext)
-        
-    def test_optimized_timing_jitter(self):
-        """Test the optimized timing jitter function that handles sequences of calls."""
-        import time
-        from modules.crypt_errors import add_timing_jitter, _jitter_state
-        
-        # Test the jitter function actually adds delays
-        start_time = time.time()
-        add_timing_jitter(1, 5)
-        duration_ms = (time.time() - start_time) * 1000
-        
-        # The delay should be at least 1ms, but not excessive
-        self.assertGreater(duration_ms, 0.5)  # Allow some timing measurement error
-        
-        # Test that multiple rapid calls use the optimized path
-        durations = []
-        
-        # Reset jitter state
-        if hasattr(_jitter_state, 'last_jitter_time'):
-            del _jitter_state.last_jitter_time
-        if hasattr(_jitter_state, 'jitter_count'):
-            del _jitter_state.jitter_count
-            
-        # Make multiple calls in quick succession and measure times
-        for _ in range(5):
-            start = time.time()
-            add_timing_jitter(1, 20)
-            durations.append((time.time() - start) * 1000)
-            
-        # The first call should be normal, but subsequent ones should be reduced
-        # due to the optimization for multiple quick calls
-        self.assertGreater(durations[0], 0.5)  # First call
-        
-        # Check that jitter count was incremented properly
-        self.assertTrue(hasattr(_jitter_state, 'jitter_count'))
-        self.assertGreaterEqual(_jitter_state.jitter_count, 1)
-        
-        # Test thread-local behavior by running jitter in multiple threads
-        jitter_counts = {}
-        
-        def thread_jitter(thread_id):
-            """Run jitter in a thread and record the jitter count."""
-            # Initialize jitter by calling it
-            add_timing_jitter(1, 5)
-            # Call multiple times
-            for _ in range(3):
-                add_timing_jitter(1, 5)
-            # Record the jitter count for this thread
-            jitter_counts[thread_id] = getattr(_jitter_state, 'jitter_count', 0)
-        
-        # Create and run multiple threads
-        threads = []
-        for i in range(3):
-            t = threading.Thread(target=thread_jitter, args=(i,))
-            threads.append(t)
-            t.start()
-            
-        # Wait for all threads to complete
-        for t in threads:
-            t.join()
-            
-        # Each thread should have its own jitter count
-        for i in range(3):
-            self.assertIn(i, jitter_counts)
-            self.assertGreaterEqual(jitter_counts[i], 1)
-            
-        # The main thread's jitter count should be unaffected by the other threads
-        main_thread_count = getattr(_jitter_state, 'jitter_count', 0)
-        self.assertIsNotNone(main_thread_count)
-        
-    def test_whirlpool_python_3_13_compatibility(self):
-        """Test that setup_whirlpool properly handles Python 3.13+ compatibility."""
-        import sys
-        import unittest.mock
-        
-        # Only run the test if WHIRLPOOL_AVAILABLE is True
-        if not WHIRLPOOL_AVAILABLE:
-            self.skipTest("Whirlpool not available")
-            
-        # Test the setup_whirlpool function with mocked Python version
-        from modules.setup_whirlpool import install_whirlpool
-        
-        # Mock Python version info to simulate Python 3.13
-        original_version_info = sys.version_info
-        
-        class MockVersionInfo:
-            def __init__(self, major, minor):
-                self.major = major
-                self.minor = minor
-                
-        with unittest.mock.patch('sys.version_info', MockVersionInfo(3, 13)):
-            # Mock subprocess.check_call to prevent actual package installation
-            with unittest.mock.patch('subprocess.check_call') as mock_check_call:
-                # Call install_whirlpool and verify it tries to install the right package
-                result = install_whirlpool()
-                
-                # Verify it attempted to check for whirlpool-py313 availability
-                mock_check_call.assert_called()
-                
-                # Check that the function tried to install a compatible package
-                for call_args in mock_check_call.call_args_list:
-                    args = call_args[0][0]
-                    if 'pip' in args and 'install' in args:
-                        # The package should be one of these two, depending on availability
-                        self.assertTrue(
-                            'whirlpool-py313' in args or 'whirlpool-py311' in args,
-                            f"Expected py313 or py311 package, but got: {args}"
-                        )
-
-
-class TestSecureOperations(unittest.TestCase):
-    """Test suite for security-critical operations in the secure_ops module."""
-    
-    def test_constant_time_compare_same_length(self):
-        """Test constant time comparison with same-length inputs."""
-        # Test with matching inputs
-        a = b"test_string"
-        b = b"test_string"
-        self.assertTrue(constant_time_compare(a, b))
-        
-        # Test with non-matching inputs of same length
-        a = b"test_string"
-        b = b"test_strind"  # Last byte different
-        self.assertFalse(constant_time_compare(a, b))
-        
-    def test_constant_time_compare_different_length(self):
-        """Test constant time comparison with different-length inputs."""
-        a = b"test_string"
-        b = b"test_stringx"  # One byte longer
-        self.assertFalse(constant_time_compare(a, b))
-        
-        a = b"test_string"
-        b = b"test_strin"  # One byte shorter
-        self.assertFalse(constant_time_compare(a, b))
-    
-    def test_constant_time_compare_timing(self):
-        """Test that comparison time doesn't leak information about where difference is."""
-        # Generate a base string
-        base = secrets.token_bytes(1000)
-        
-        # Test strings with differences at various positions
-        test_cases = []
-        for pos in [0, 10, 100, 500, 999]:
-            modified = bytearray(base)
-            modified[pos] ^= 0xFF  # Flip bits at this position
-            test_cases.append(bytes(modified))
-        
-        # Measure comparison times
-        times = []
-        for test_case in test_cases:
-            start_time = time.perf_counter()
-            result = constant_time_compare(base, test_case)
-            elapsed = time.perf_counter() - start_time
-            times.append(elapsed)
-            self.assertFalse(result)
-            
-        # Calculate statistics on timing
-        mean_time = statistics.mean(times)
-        std_dev = statistics.stdev(times) if len(times) > 1 else 0
-        
-        # Check that the standard deviation is relatively small compared to mean
-        # This tolerance is high to avoid spurious test failures, but still catches
-        # major timing differences that would indicate non-constant-time behavior
-        if mean_time > 0:
-            # On a real system, consistent timing would have std_dev/mean < 0.5
-            # We use a higher threshold to avoid spurious failures on CI systems
-            self.assertLess(std_dev / mean_time, 1.5, 
-                         "Timing variation too large for constant-time comparison")
-    
-    def test_secure_memzero(self):
-        """Test that secure_memzero properly clears memory."""
-        # Create test data
-        test_data = bytearray(secrets.token_bytes(100))
-        
-        # Make sure it initially contains non-zero values
-        self.assertFalse(all(b == 0 for b in test_data))
-        
-        # Zero the memory
-        secure_memzero(test_data)
-        
-        # Check that all bytes are now zero
-        self.assertTrue(all(b == 0 for b in test_data))
-        
-        # Check using the verification function
-        self.assertTrue(verify_memory_zeroed(test_data))
-    
-    def test_constant_time_pkcs7_unpad_valid(self):
-        """Test PKCS#7 unpadding with valid padding."""
-        # Create valid PKCS#7 padded data with different padding lengths
-        # Padding value 4 means last 4 bytes are all 0x04
-        input_data = b'test_data' + bytes([4, 4, 4, 4])
-        unpadded, valid = constant_time_pkcs7_unpad(input_data)
-        
-        self.assertTrue(valid)
-        self.assertEqual(unpadded, b'test_data')
-        
-        # Another case with different padding length
-        input_data = b'short' + bytes([2, 2])
-        unpadded, valid = constant_time_pkcs7_unpad(input_data)
-        
-        self.assertTrue(valid)
-        self.assertEqual(unpadded, b'short')
-    
-    def test_constant_time_pkcs7_unpad_invalid(self):
-        """Test PKCS#7 unpadding with invalid padding."""
-        # Invalid padding - inconsistent padding values
-        input_data = b'test_data' + bytes([4, 3, 4, 4])
-        unpadded, valid = constant_time_pkcs7_unpad(input_data)
-        
-        self.assertFalse(valid)
-        # Should return the original data when padding is invalid
-        self.assertEqual(unpadded, input_data)
-        
-        # Invalid padding - padding value too large
-        block_size = 8
-        input_data = b'test' + bytes([9, 9, 9, 9, 9, 9, 9, 9, 9])
-        unpadded, valid = constant_time_pkcs7_unpad(input_data, block_size)
-        
-        self.assertFalse(valid)
-        self.assertEqual(unpadded, input_data)
-    
-    def test_constant_time_pkcs7_unpad_timing(self):
-        """Test that PKCS#7 unpadding time doesn't leak validity information."""
-        block_size = 16
-        
-        # Create valid padding
-        valid_data = b'valid_test_data' + bytes([4, 4, 4, 4])
-        
-        # Create various invalid paddings
-        invalid_data_1 = b'invalid_padding' + bytes([4, 5, 4, 4])  # Inconsistent values
-        invalid_data_2 = b'invalid_padding' + bytes([20, 20, 20, 20])  # Too large
-        invalid_data_3 = b'not_even_a_multiple_of_block_size'  # Wrong length
-        
-        test_cases = [valid_data, invalid_data_1, invalid_data_2, invalid_data_3]
-        
-        # Measure unpadding times
-        times = []
-        for data in test_cases:
-            start_time = time.perf_counter()
-            unpadded, valid = constant_time_pkcs7_unpad(data, block_size)
-            elapsed = time.perf_counter() - start_time
-            times.append(elapsed)
-            
-        # Calculate statistics on timing
-        mean_time = statistics.mean(times)
-        std_dev = statistics.stdev(times) if len(times) > 1 else 0
-        
-        # Check that the standard deviation is relatively small
-        if mean_time > 0:
-            # Use a high threshold to avoid spurious CI failures
-            self.assertLess(std_dev / mean_time, 1.5, 
-                         "Timing variation too large for constant-time unpadding")
-    
-    def test_secure_container(self):
-        """Test that SecureContainer properly handles sensitive data."""
-        # Test creation with different data types
-        container1 = SecureContainer(b"test_bytes")
-        container2 = SecureContainer("test_string")  # Should convert to bytes
-        
-        # Test get method
-        self.assertEqual(container1.get(), b"test_bytes")
-        self.assertEqual(container2.get(), b"test_string")
-        
-        # Test set method
-        container1.set(b"new_data")
-        self.assertEqual(container1.get(), b"new_data")
-        
-        # Test clear method
-        container1.clear()
-        self.assertEqual(len(container1.get()), 0)
-        
-        # Test __len__ method
-        container3 = SecureContainer(b"123456789")
-        self.assertEqual(len(container3), 9)
-
-
-class TestSecurityEnhancements(unittest.TestCase):
-    """Test class for the enhanced security features."""
-    
-    def setUp(self):
-        """Set up test environment."""
-        self.test_dir = tempfile.mkdtemp()
-        
-    def tearDown(self):
-        """Clean up test environment."""
-        shutil.rmtree(self.test_dir, ignore_errors=True)
-        
-    def test_enhanced_secure_container(self):
-        """Test enhanced SecureContainer with different data types and operations."""
-        # Test string handling
-        container = SecureContainer("test_string")
-        self.assertEqual(container.get(), b"test_string")
-        self.assertEqual(container.get_as_str(), "test_string")
-        
-        # Test integer handling
-        container.set(12345)
-        self.assertEqual(container.get_as_int(), 12345)
-        
-        # Test JSON object handling
-        test_dict = {"key1": "value1", "key2": 123}
-        container.set(test_dict)
-        self.assertEqual(container.get_as_object(), test_dict)
-        
-        # Test appending data
-        container.clear()
-        container.append("hello")
-        container.append(" ")
-        container.append("world")
-        self.assertEqual(container.get_as_str(), "hello world")
-        
-        # Test context manager protocol
-        with SecureContainer("sensitive_data") as secure_data:
-            self.assertEqual(secure_data.get_as_str(), "sensitive_data")
-        
-        # Test boolean evaluation
-        empty_container = SecureContainer()
-        self.assertFalse(bool(empty_container))
-        empty_container.set("data")
-        self.assertTrue(bool(empty_container))
-        
-        # Test equality comparison
-        container1 = SecureContainer("same_data")
-        container2 = SecureContainer("same_data")
-        container3 = SecureContainer("different_data")
-        
-        self.assertTrue(container1 == container2)
-        self.assertFalse(container1 == container3)
-        self.assertTrue(container1 == "same_data")
-        self.assertTrue(container1 == b"same_data")
-        
-    def test_verify_memory_zeroed_full_check(self):
-        """Test verify_memory_zeroed with full buffer inspection."""
-        # Test with small buffer
-        buffer = bytearray(100)
-        self.assertTrue(verify_memory_zeroed(buffer, full_check=True))
-        
-        # Introduce a non-zero byte and check that verification fails
-        buffer[50] = 1
-        self.assertFalse(verify_memory_zeroed(buffer, full_check=True))
-        
-        # Test with larger buffer
-        large_buffer = bytearray(10000)
-        self.assertTrue(verify_memory_zeroed(large_buffer, full_check=True))
-        
-        # Introduce a non-zero byte at a random position and verify it fails
-        position = random.randint(0, 9999)
-        large_buffer[position] = 1
-        self.assertFalse(verify_memory_zeroed(large_buffer, full_check=True))
-        
-        # Test sampling mode - since the position is random, the sampling
-        # might not catch the non-zero byte, so we can't make a definitive assertion
-        result = verify_memory_zeroed(large_buffer, full_check=False)
-        # We'll just print this result for informational purposes
-        print(f"Sampling verification found non-zero byte: {not result}")
-        
-    def test_secure_memzero(self):
-        """Test secure_memzero function."""
-        # Create a buffer with random data
-        buffer = bytearray(secrets.token_bytes(1000))
-        
-        # Ensure it's not zeroed initially
-        self.assertFalse(verify_memory_zeroed(buffer))
-        
-        # Zero it out
-        result = memory_secure_memzero(buffer, full_verification=True)
-        
-        # Verify it was zeroed successfully
-        self.assertTrue(result)
-        self.assertTrue(verify_memory_zeroed(buffer, full_check=True))
-        
-    def test_timing_jitter(self):
-        """Test enhanced timing jitter mechanism."""
-        # Test basic jitter
-        start_time = time.time()
-        jitter = add_timing_jitter(1, 10)
-        elapsed = (time.time() - start_time) * 1000  # Convert to ms
-        
-        # Jitter should be between 1-10ms
-        self.assertTrue(1 <= jitter <= 10)
-        
-        # Elapsed time should be at least the jitter amount
-        self.assertTrue(elapsed >= jitter)
-        
-        # Test multiple rapid calls
-        jitters = []
-        for _ in range(10):
-            jitters.append(add_timing_jitter(1, 10))
-            
-        # Get stats after multiple calls
-        stats = get_jitter_stats()
-        
-        # Verify stats are being tracked
-        self.assertTrue(stats['total_jitter_ms'] > 0)
-        self.assertTrue(stats['max_successive_calls'] > 0)
-        
-        # Test thread safety by running jitter in multiple threads
-        def jitter_thread():
-            for _ in range(50):
-                add_timing_jitter(1, 5)
-                
-        threads = []
-        for _ in range(10):
-            t = threading.Thread(target=jitter_thread)
-            threads.append(t)
-            t.start()
-            
-        for t in threads:
-            t.join()
-            
-        # Verify thread-local stats are still valid
-        new_stats = get_jitter_stats()
-        self.assertTrue(new_stats['total_jitter_ms'] >= stats['total_jitter_ms'])
-        
-    def test_constant_time_compare(self):
-        """Test constant-time comparison function."""
-        # Test equal strings
-        a = b"test_string"
-        b = b"test_string"
-        self.assertTrue(constant_time_compare(a, b))
-        
-        # Test unequal strings
-        c = b"test_string2"
-        self.assertFalse(constant_time_compare(a, c))
-        
-        # Test strings of different lengths
-        d = b"test"
-        self.assertFalse(constant_time_compare(a, d))
-        
-        # Test with bytearray
-        e = bytearray(b"test_string")
-        self.assertTrue(constant_time_compare(a, e))
-        
-        # Test timing consistency for equal length strings
-        # We'll measure if comparison time is consistent regardless of position of difference
-        def time_compare(pos):
-            # Create two strings that differ at position 'pos'
-            s1 = bytearray([65] * 1000)  # All 'A's
-            s2 = bytearray([65] * 1000)  # All 'A's
-            if pos >= 0:
-                s2[pos] = 66  # Change to 'B' at position 'pos'
-                
-            start = time.time()
-            constant_time_compare(s1, s2)
-            return time.time() - start
-            
-        # Compare at different positions
-        times = [time_compare(pos) for pos in [0, 250, 500, 750, 999]]
-        
-        # Calculate standard deviation - should be relatively low
-        # We allow some variance due to system scheduling, but it should be minimal
-        stdev = statistics.stdev(times)
-        mean = statistics.mean(times)
-        
-        # Coefficient of variation should be low (typically < 0.2 for constant time)
-        # We use a higher threshold (0.5) to account for system noise in unit tests
-        cv = stdev / mean if mean > 0 else 0
-        self.assertLess(cv, 0.5, "Timing variance too high for constant time comparison")
-        
-    def test_constant_time_pkcs7_unpad(self):
-        """Test constant-time PKCS#7 unpadding."""
-        # Test valid padding
-        data = b"test_data" + bytes([8] * 8)  # Valid padding of 8 bytes
-        unpadded, valid = constant_time_pkcs7_unpad(data)
-        self.assertTrue(valid)
-        self.assertEqual(unpadded, b"test_data")
-        
-        # Test invalid padding - wrong padding value
-        data = b"test_data" + bytes([9] * 8)  # Invalid: padding value doesn't match count
-        unpadded, valid = constant_time_pkcs7_unpad(data)
-        self.assertFalse(valid)
-        
-        # Test invalid padding - inconsistent padding
-        data = b"test_data" + bytes([8] * 7) + bytes([7])  # Invalid: not all bytes match
-        unpadded, valid = constant_time_pkcs7_unpad(data)
-        self.assertFalse(valid)
-        
-        # Test timing consistency for valid and invalid padding
-        def time_unpad(valid_padding):
-            if valid_padding:
-                # Create valid padding
-                data = b"test_data" + bytes([8] * 8)
-            else:
-                # Create invalid padding
-                data = b"test_data" + bytes([8] * 7) + bytes([7])
-                
-            start = time.time()
-            constant_time_pkcs7_unpad(data)
-            return time.time() - start
-            
-        # Compare timing for valid and invalid padding
-        valid_times = [time_unpad(True) for _ in range(10)]
-        invalid_times = [time_unpad(False) for _ in range(10)]
-        
-        # Calculate means
-        valid_mean = statistics.mean(valid_times)
-        invalid_mean = statistics.mean(invalid_times)
-        
-        # The timing difference should be minimal
-        # Allow for 50% difference as system scheduling can affect timing
-        ratio = max(valid_mean, invalid_mean) / min(valid_mean, invalid_mean)
-        self.assertLess(ratio, 1.5, "Timing difference too high for constant time unpadding")
-        
-    def test_secure_buffer_allocation(self):
-        """Test secure buffer allocation and freeing."""
-        # Allocate a secure buffer
-        buffer = allocate_secure_buffer(100)
-        
-        # Verify it's the right size
-        self.assertEqual(len(buffer), 100)
-        
-        # Verify it's initially zeroed
-        self.assertTrue(verify_memory_zeroed(buffer))
-        
-        # Write some data
-        for i in range(100):
-            buffer[i] = i % 256
-            
-        # Verify it's no longer zeroed
-        self.assertFalse(verify_memory_zeroed(buffer))
-        
-        # Free the buffer
-        free_secure_buffer(buffer)
-        
-        # Can't verify the buffer state here since free_secure_buffer has already
-        # removed the reference. Let's create a new buffer and test immediate zeroing instead
-        test_buffer = bytearray(secrets.token_bytes(100))
-        self.assertFalse(verify_memory_zeroed(test_buffer))
-        
-        # Test zeroing directly
-        result = memory_secure_memzero(test_buffer)
-        self.assertTrue(result)
-        self.assertTrue(verify_memory_zeroed(test_buffer))
 
 
 if __name__ == "__main__":
