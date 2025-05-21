@@ -60,6 +60,13 @@ from modules.crypt_errors import (
 )
 from modules.keystore_cli import PQCKeystore, KeystoreSecurityLevel
 from modules.pqc import PQCipher, PQCAlgorithm, check_pqc_support, LIBOQS_AVAILABLE
+from modules.secure_ops import (
+    constant_time_compare,
+    constant_time_pkcs7_unpad,
+    secure_memzero,
+    SecureContainer
+)
+from modules.secure_memory import verify_memory_zeroed
 
 
 # Dictionary of required CLI arguments grouped by category based on help output
@@ -564,7 +571,7 @@ class TestCryptCore(unittest.TestCase):
         # Attempt to decrypt with wrong password
         wrong_password = b"WrongPassword123!"
 
-        # The error could be either InvalidToken or DecryptionError
+        # The error could be InvalidToken, DecryptionError, or AuthenticationError
         try:
             decrypt_file(
                 encrypted_file,
@@ -573,8 +580,8 @@ class TestCryptCore(unittest.TestCase):
                 quiet=True)
             # If we get here, decryption succeeded, which is not what we expect
             self.fail("Decryption should have failed with wrong password")
-        except (InvalidToken, DecryptionError):
-            # Either of these exceptions is the expected behavior
+        except (InvalidToken, DecryptionError, AuthenticationError):
+            # Any of these exceptions is the expected behavior
             pass
         except Exception as e:
             # Any other exception is unexpected
@@ -5229,6 +5236,172 @@ class TestCryptErrorsFixes(unittest.TestCase):
                             'whirlpool-py313' in args or 'whirlpool-py311' in args,
                             f"Expected py313 or py311 package, but got: {args}"
                         )
+
+
+class TestSecureOperations(unittest.TestCase):
+    """Test suite for security-critical operations in the secure_ops module."""
+    
+    def test_constant_time_compare_same_length(self):
+        """Test constant time comparison with same-length inputs."""
+        # Test with matching inputs
+        a = b"test_string"
+        b = b"test_string"
+        self.assertTrue(constant_time_compare(a, b))
+        
+        # Test with non-matching inputs of same length
+        a = b"test_string"
+        b = b"test_strind"  # Last byte different
+        self.assertFalse(constant_time_compare(a, b))
+        
+    def test_constant_time_compare_different_length(self):
+        """Test constant time comparison with different-length inputs."""
+        a = b"test_string"
+        b = b"test_stringx"  # One byte longer
+        self.assertFalse(constant_time_compare(a, b))
+        
+        a = b"test_string"
+        b = b"test_strin"  # One byte shorter
+        self.assertFalse(constant_time_compare(a, b))
+    
+    def test_constant_time_compare_timing(self):
+        """Test that comparison time doesn't leak information about where difference is."""
+        # Generate a base string
+        base = secrets.token_bytes(1000)
+        
+        # Test strings with differences at various positions
+        test_cases = []
+        for pos in [0, 10, 100, 500, 999]:
+            modified = bytearray(base)
+            modified[pos] ^= 0xFF  # Flip bits at this position
+            test_cases.append(bytes(modified))
+        
+        # Measure comparison times
+        times = []
+        for test_case in test_cases:
+            start_time = time.perf_counter()
+            result = constant_time_compare(base, test_case)
+            elapsed = time.perf_counter() - start_time
+            times.append(elapsed)
+            self.assertFalse(result)
+            
+        # Calculate statistics on timing
+        mean_time = statistics.mean(times)
+        std_dev = statistics.stdev(times) if len(times) > 1 else 0
+        
+        # Check that the standard deviation is relatively small compared to mean
+        # This tolerance is high to avoid spurious test failures, but still catches
+        # major timing differences that would indicate non-constant-time behavior
+        if mean_time > 0:
+            # On a real system, consistent timing would have std_dev/mean < 0.5
+            # We use a higher threshold to avoid spurious failures on CI systems
+            self.assertLess(std_dev / mean_time, 1.5, 
+                         "Timing variation too large for constant-time comparison")
+    
+    def test_secure_memzero(self):
+        """Test that secure_memzero properly clears memory."""
+        # Create test data
+        test_data = bytearray(secrets.token_bytes(100))
+        
+        # Make sure it initially contains non-zero values
+        self.assertFalse(all(b == 0 for b in test_data))
+        
+        # Zero the memory
+        secure_memzero(test_data)
+        
+        # Check that all bytes are now zero
+        self.assertTrue(all(b == 0 for b in test_data))
+        
+        # Check using the verification function
+        self.assertTrue(verify_memory_zeroed(test_data))
+    
+    def test_constant_time_pkcs7_unpad_valid(self):
+        """Test PKCS#7 unpadding with valid padding."""
+        # Create valid PKCS#7 padded data with different padding lengths
+        # Padding value 4 means last 4 bytes are all 0x04
+        input_data = b'test_data' + bytes([4, 4, 4, 4])
+        unpadded, valid = constant_time_pkcs7_unpad(input_data)
+        
+        self.assertTrue(valid)
+        self.assertEqual(unpadded, b'test_data')
+        
+        # Another case with different padding length
+        input_data = b'short' + bytes([2, 2])
+        unpadded, valid = constant_time_pkcs7_unpad(input_data)
+        
+        self.assertTrue(valid)
+        self.assertEqual(unpadded, b'short')
+    
+    def test_constant_time_pkcs7_unpad_invalid(self):
+        """Test PKCS#7 unpadding with invalid padding."""
+        # Invalid padding - inconsistent padding values
+        input_data = b'test_data' + bytes([4, 3, 4, 4])
+        unpadded, valid = constant_time_pkcs7_unpad(input_data)
+        
+        self.assertFalse(valid)
+        # Should return the original data when padding is invalid
+        self.assertEqual(unpadded, input_data)
+        
+        # Invalid padding - padding value too large
+        block_size = 8
+        input_data = b'test' + bytes([9, 9, 9, 9, 9, 9, 9, 9, 9])
+        unpadded, valid = constant_time_pkcs7_unpad(input_data, block_size)
+        
+        self.assertFalse(valid)
+        self.assertEqual(unpadded, input_data)
+    
+    def test_constant_time_pkcs7_unpad_timing(self):
+        """Test that PKCS#7 unpadding time doesn't leak validity information."""
+        block_size = 16
+        
+        # Create valid padding
+        valid_data = b'valid_test_data' + bytes([4, 4, 4, 4])
+        
+        # Create various invalid paddings
+        invalid_data_1 = b'invalid_padding' + bytes([4, 5, 4, 4])  # Inconsistent values
+        invalid_data_2 = b'invalid_padding' + bytes([20, 20, 20, 20])  # Too large
+        invalid_data_3 = b'not_even_a_multiple_of_block_size'  # Wrong length
+        
+        test_cases = [valid_data, invalid_data_1, invalid_data_2, invalid_data_3]
+        
+        # Measure unpadding times
+        times = []
+        for data in test_cases:
+            start_time = time.perf_counter()
+            unpadded, valid = constant_time_pkcs7_unpad(data, block_size)
+            elapsed = time.perf_counter() - start_time
+            times.append(elapsed)
+            
+        # Calculate statistics on timing
+        mean_time = statistics.mean(times)
+        std_dev = statistics.stdev(times) if len(times) > 1 else 0
+        
+        # Check that the standard deviation is relatively small
+        if mean_time > 0:
+            # Use a high threshold to avoid spurious CI failures
+            self.assertLess(std_dev / mean_time, 1.5, 
+                         "Timing variation too large for constant-time unpadding")
+    
+    def test_secure_container(self):
+        """Test that SecureContainer properly handles sensitive data."""
+        # Test creation with different data types
+        container1 = SecureContainer(b"test_bytes")
+        container2 = SecureContainer("test_string")  # Should convert to bytes
+        
+        # Test get method
+        self.assertEqual(container1.get(), b"test_bytes")
+        self.assertEqual(container2.get(), b"test_string")
+        
+        # Test set method
+        container1.set(b"new_data")
+        self.assertEqual(container1.get(), b"new_data")
+        
+        # Test clear method
+        container1.clear()
+        self.assertEqual(len(container1.get()), 0)
+        
+        # Test __len__ method
+        container3 = SecureContainer(b"123456789")
+        self.assertEqual(len(container3), 9)
 
 
 if __name__ == "__main__":

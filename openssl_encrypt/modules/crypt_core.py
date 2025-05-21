@@ -491,8 +491,8 @@ class CamelliaCipher:
         
         padded_data = None
         try:
-            # Import the constant-time unpadding function
-            from .crypt_errors import constant_time_pkcs7_unpad, constant_time_compare
+            # Import the constant-time functions from our secure operations module
+            from .secure_ops import constant_time_compare, constant_time_pkcs7_unpad
             
             # In test mode, process without HMAC for backward compatibility
             if self.test_mode:

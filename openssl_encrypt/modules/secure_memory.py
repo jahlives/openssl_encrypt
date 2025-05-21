@@ -1192,14 +1192,9 @@ def secure_compare(a, b):
     Returns:
         bool: True if the sequences match, False otherwise
     """
-    if len(a) != len(b):
-        return False
-
-    result = 0
-    for x, y in zip(a, b):
-        result |= x ^ y
-
-    return result == 0
+    # Use the centralized implementation in secure_ops
+    from .secure_ops import constant_time_compare
+    return constant_time_compare(a, b)
     
 
 def secure_erase_system_memory(trigger_gc=True, full_sweep=False):

@@ -353,8 +353,10 @@ def verify(
     Returns:
         bool: True if password matches hash, otherwise False.
     """
-    return secrets.compare_digest(
-        balloon(password, salt, space_cost, time_cost, delta).hex(), hash
+    from .secure_ops import constant_time_compare
+    return constant_time_compare(
+        balloon(password, salt, space_cost, time_cost, delta).hex().encode('utf-8'), 
+        hash.encode('utf-8') if isinstance(hash, str) else hash
     )
 
 
@@ -383,13 +385,14 @@ def verify_m(
     Returns:
         bool: True if password matches hash, otherwise False.
     """
-    return secrets.compare_digest(
+    from .secure_ops import constant_time_compare
+    return constant_time_compare(
         balloon_m(
             password,
             salt,
             space_cost,
             time_cost,
             parallel_cost,
-            delta).hex(),
-        hash,
+            delta).hex().encode('utf-8'),
+        hash.encode('utf-8') if isinstance(hash, str) else hash
     )
