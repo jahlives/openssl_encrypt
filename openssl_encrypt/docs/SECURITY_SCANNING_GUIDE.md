@@ -47,6 +47,8 @@ Configuration is in `.bandit.yaml`.
 - Compare against the Python security advisory database
 - Block commits that would introduce known vulnerable dependencies
 
+Note: We use the newer `safety scan` command instead of the deprecated `safety check` command.
+
 ### Running Checks Manually
 
 You can run the checks without committing:

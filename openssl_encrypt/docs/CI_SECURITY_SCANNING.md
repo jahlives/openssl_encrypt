@@ -135,7 +135,7 @@ You can run the same security checks locally before pushing changes:
 pip install safety bandit cyclonedx-bom
 
 # Run dependency scanning
-safety check -r requirements-prod.txt
+safety scan -r requirements-prod.txt --output text
 
 # Run code security scanning
 bandit -r openssl_encrypt/ -c .bandit.yaml

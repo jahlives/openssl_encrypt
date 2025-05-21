@@ -49,5 +49,5 @@ repos:
     rev: 2.4.0
     hooks:
     -   id: safety
-        args: ["check", "--file=requirements-prod.txt", "--full-report"]
-        additional_dependencies: ['safety>=2.4.0']
+        args: ["scan", "--file=requirements-prod.txt", "--output=text"]
+        additional_dependencies: ['safety>=3.0.0']
