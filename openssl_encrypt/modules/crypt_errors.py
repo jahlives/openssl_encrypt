@@ -37,19 +37,19 @@ class ErrorCategory(Enum):
 # These messages are carefully designed to provide consistent error
 # patterns that don't leak information while still being useful
 STANDARD_ERROR_MESSAGES = {
-    # Generic format: "{operation} {result_status}"
-    # This prevents different error sources from being distinguishable
+    # Generic format: "Security {operation} {result_status}"
+    # This provides uniform format while still indicating the general category
     ErrorCategory.VALIDATION: "Security validation check failed",
-    ErrorCategory.ENCRYPTION: "Security operation failed",
-    ErrorCategory.DECRYPTION: "Security operation failed",
-    ErrorCategory.AUTHENTICATION: "Security verification failed",
-    ErrorCategory.KEY_DERIVATION: "Security operation failed",
-    ErrorCategory.MEMORY: "Security operation failed",
-    ErrorCategory.INTERNAL: "Security operation failed",
-    ErrorCategory.PLATFORM: "Security operation failed",
-    ErrorCategory.PERMISSION: "Security operation failed",
-    ErrorCategory.CONFIGURATION: "Security configuration invalid",
-    ErrorCategory.KEYSTORE: "Security operation failed"
+    ErrorCategory.ENCRYPTION: "Security encryption operation failed",
+    ErrorCategory.DECRYPTION: "Security decryption operation failed",
+    ErrorCategory.AUTHENTICATION: "Security verification check failed",
+    ErrorCategory.KEY_DERIVATION: "Security key derivation failed",
+    ErrorCategory.MEMORY: "Security memory operation failed",
+    ErrorCategory.INTERNAL: "Security internal operation failed",
+    ErrorCategory.PLATFORM: "Security system compatibility check failed",
+    ErrorCategory.PERMISSION: "Security permission check failed",
+    ErrorCategory.CONFIGURATION: "Security configuration validation failed",
+    ErrorCategory.KEYSTORE: "Security keystore operation failed"
 }
 
 
@@ -59,16 +59,16 @@ DEBUG_ERROR_MESSAGES = {
     # Format: "{standard_message} - Debug info: {details}"
     # This ensures test/dev environments still get useful information
     ErrorCategory.VALIDATION: "Security validation check failed - Debug info: {details}",
-    ErrorCategory.ENCRYPTION: "Security operation failed - Debug info: {details}",
-    ErrorCategory.DECRYPTION: "Security operation failed - Debug info: {details}",
-    ErrorCategory.AUTHENTICATION: "Security verification failed - Debug info: {details}",
-    ErrorCategory.KEY_DERIVATION: "Security operation failed - Debug info: {details}",
-    ErrorCategory.MEMORY: "Security operation failed - Debug info: {details}",
-    ErrorCategory.INTERNAL: "Security operation failed - Debug info: {details}",
-    ErrorCategory.PLATFORM: "Security operation failed - Debug info: {details}",
-    ErrorCategory.PERMISSION: "Security operation failed - Debug info: {details}",
-    ErrorCategory.CONFIGURATION: "Security configuration invalid - Debug info: {details}",
-    ErrorCategory.KEYSTORE: "Security operation failed - Debug info: {details}"
+    ErrorCategory.ENCRYPTION: "Security encryption operation failed - Debug info: {details}",
+    ErrorCategory.DECRYPTION: "Security decryption operation failed - Debug info: {details}",
+    ErrorCategory.AUTHENTICATION: "Security verification check failed - Debug info: {details}",
+    ErrorCategory.KEY_DERIVATION: "Security key derivation failed - Debug info: {details}",
+    ErrorCategory.MEMORY: "Security memory operation failed - Debug info: {details}",
+    ErrorCategory.INTERNAL: "Security internal operation failed - Debug info: {details}",
+    ErrorCategory.PLATFORM: "Security system compatibility check failed - Debug info: {details}",
+    ErrorCategory.PERMISSION: "Security permission check failed - Debug info: {details}",
+    ErrorCategory.CONFIGURATION: "Security configuration validation failed - Debug info: {details}",
+    ErrorCategory.KEYSTORE: "Security keystore operation failed - Debug info: {details}"
 }
 
 
@@ -444,6 +444,11 @@ def secure_key_derivation_error_handler(f):
 def secure_authentication_error_handler(f):
     """Specialized error handler for authentication operations."""
     return secure_error_handler(f, ErrorCategory.AUTHENTICATION)
+
+
+def secure_memory_error_handler(f):
+    """Specialized error handler for secure memory operations."""
+    return secure_error_handler(f, ErrorCategory.MEMORY)
 
 
 def secure_keystore_error_handler(f):
