@@ -60,6 +60,8 @@ You can also manually update dependencies:
 
 ## Version Pinning Strategy
 
+We follow a comprehensive version pinning policy that categorizes dependencies based on their security impact and usage. For detailed guidelines, see [VERSION_PINNING_POLICY.md](./VERSION_PINNING_POLICY.md).
+
 ### In Source Files (`.in`)
 
 - **Security-critical dependencies**: Use both lower and upper bounds

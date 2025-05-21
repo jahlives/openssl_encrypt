@@ -86,6 +86,26 @@ The following has been implemented:
   - Create guidelines for when to use exact pinning (`==`) vs. compatible releases (`~=`) vs. minor updates (`>=x.y.z,<x.y+1.0`)
   - Document procedure for exception handling (when strict pinning might be relaxed)
 
+#### Implementation Notes
+
+The following has been implemented:
+
+1. **Version Pinning Policy Document**:
+   - Created VERSION_PINNING_POLICY.md with comprehensive guidelines
+   - Defined specific approaches for different dependency types
+   - Documented when to use each version specifier
+
+2. **Categorization of Dependencies**:
+   - Security-critical dependencies: Strict bounds (e.g., `cryptography>=44.0.1,<45.0.0`)
+   - Standard dependencies: Compatible release specifier (e.g., `bcrypt~=4.3.0`)
+   - Development dependencies: Major version cap (e.g., `pytest>=8.0.0,<9.0.0`)
+   - Platform-specific dependencies: Environment markers with appropriate constraints
+
+3. **Exception Handling Process**:
+   - Established criteria for exceptions to the policy
+   - Defined process for documenting and approving exceptions
+   - Set up verification methods to ensure compliance
+
 ### 2.3 Set Up Dependency Update Workflow
 
 - **Create dependency update process**
