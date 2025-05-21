@@ -34,34 +34,41 @@ class ErrorCategory(Enum):
 
 
 # Standard error messages by category - no sensitive details included
+# These messages are carefully designed to provide consistent error
+# patterns that don't leak information while still being useful
 STANDARD_ERROR_MESSAGES = {
-    ErrorCategory.VALIDATION: "Invalid input parameter",
-    ErrorCategory.ENCRYPTION: "Encryption operation failed",
-    ErrorCategory.DECRYPTION: "Decryption operation failed",
-    ErrorCategory.AUTHENTICATION: "Data integrity verification failed",
-    ErrorCategory.KEY_DERIVATION: "Key derivation failed",
-    ErrorCategory.MEMORY: "Secure memory operation failed",
-    ErrorCategory.INTERNAL: "Internal error occurred",
-    ErrorCategory.PLATFORM: "Platform-specific operation failed",
-    ErrorCategory.PERMISSION: "Operation not permitted",
-    ErrorCategory.CONFIGURATION: "Invalid configuration",
-    ErrorCategory.KEYSTORE: "Keystore operation failed"
+    # Generic format: "{operation} {result_status}"
+    # This prevents different error sources from being distinguishable
+    ErrorCategory.VALIDATION: "Security validation check failed",
+    ErrorCategory.ENCRYPTION: "Security operation failed",
+    ErrorCategory.DECRYPTION: "Security operation failed",
+    ErrorCategory.AUTHENTICATION: "Security verification failed",
+    ErrorCategory.KEY_DERIVATION: "Security operation failed",
+    ErrorCategory.MEMORY: "Security operation failed",
+    ErrorCategory.INTERNAL: "Security operation failed",
+    ErrorCategory.PLATFORM: "Security operation failed",
+    ErrorCategory.PERMISSION: "Security operation failed",
+    ErrorCategory.CONFIGURATION: "Security configuration invalid",
+    ErrorCategory.KEYSTORE: "Security operation failed"
 }
 
 
 # Extended error messages for test/development environments only
+# These include more details for debugging while maintaining a consistent format
 DEBUG_ERROR_MESSAGES = {
-    ErrorCategory.VALIDATION: "Invalid input parameter: {details}",
-    ErrorCategory.ENCRYPTION: "Encryption operation failed: {details}",
-    ErrorCategory.DECRYPTION: "Decryption operation failed: {details}",
-    ErrorCategory.AUTHENTICATION: "Data integrity verification failed: {details}",
-    ErrorCategory.KEY_DERIVATION: "Key derivation failed: {details}",
-    ErrorCategory.MEMORY: "Secure memory operation failed: {details}",
-    ErrorCategory.INTERNAL: "Internal error occurred: {details}",
-    ErrorCategory.PLATFORM: "Platform-specific operation failed: {details}",
-    ErrorCategory.PERMISSION: "Operation not permitted: {details}",
-    ErrorCategory.CONFIGURATION: "Invalid configuration: {details}",
-    ErrorCategory.KEYSTORE: "Keystore operation failed: {details}"
+    # Format: "{standard_message} - Debug info: {details}"
+    # This ensures test/dev environments still get useful information
+    ErrorCategory.VALIDATION: "Security validation check failed - Debug info: {details}",
+    ErrorCategory.ENCRYPTION: "Security operation failed - Debug info: {details}",
+    ErrorCategory.DECRYPTION: "Security operation failed - Debug info: {details}",
+    ErrorCategory.AUTHENTICATION: "Security verification failed - Debug info: {details}",
+    ErrorCategory.KEY_DERIVATION: "Security operation failed - Debug info: {details}",
+    ErrorCategory.MEMORY: "Security operation failed - Debug info: {details}",
+    ErrorCategory.INTERNAL: "Security operation failed - Debug info: {details}",
+    ErrorCategory.PLATFORM: "Security operation failed - Debug info: {details}",
+    ErrorCategory.PERMISSION: "Security operation failed - Debug info: {details}",
+    ErrorCategory.CONFIGURATION: "Security configuration invalid - Debug info: {details}",
+    ErrorCategory.KEYSTORE: "Security operation failed - Debug info: {details}"
 }
 
 
@@ -254,13 +261,20 @@ def secure_error_handler(func=None, error_category=None):
                 raise
                 
             except ValueError as e:
-                # Special handling for specific ValueError scenarios in tests
+                # Special handling for test cases, but with timing protections
                 if os.environ.get('PYTEST_CURRENT_TEST') is not None and "Invalid file format:" in str(e):
-                    # For test_corrupted_encrypted_file, we need to pass through the ValueError
-                    # Add jitter before re-raising
+                    # Add consistent timing jitter to mask any timing differences
+                    # This ensures even test cases don't leak timing information
                     add_timing_jitter()
-                    # Re-raise original ValueError for test compatibility
-                    raise
+                    # Create a new standardized error that's safe for tests
+                    error_message = "Invalid file format detected"
+                    # In test mode, we'll wrap the original exception in a ValidationError
+                    # This maintains compatibility while ensuring consistent handling
+                    if os.environ.get('PASS_THROUGH_TEST_ERRORS') == '1':
+                        # Only if explicitly requested will we pass through raw errors
+                        raise
+                    # Otherwise use secure error handling even in tests
+                    raise ValidationError(error_message, original_exception=e)
                 
                 # Otherwise, assume validation error for ValueError
                 # Add jitter before raising standardized error
@@ -275,14 +289,19 @@ def secure_error_handler(func=None, error_category=None):
                 raise ValidationError(details=details, original_exception=e)
                 
             except Exception as e:
-                # Special handling for several exceptions in test environment
+                # Special handling for test environment with improved security
                 if os.environ.get('PYTEST_CURRENT_TEST') is not None:
-                    # Allow InvalidToken to pass through for wrong password test
+                    # Secure handling of InvalidToken for wrong password tests
                     if e.__class__.__name__ == 'InvalidToken':
-                        # Add jitter before re-raising
+                        # Add consistent timing jitter
                         add_timing_jitter()
-                        # Re-raise the original exception for test compatibility
-                        raise
+                        # Create a standardized authentication error for consistency
+                        # This better masks timing differences between error paths
+                        if os.environ.get('PASS_THROUGH_TEST_ERRORS') == '1':
+                            # Only pass through raw errors if explicitly requested
+                            raise
+                        # Otherwise wrap in a secure authentication error
+                        raise AuthenticationError("Authentication failed", original_exception=e)
                     
                     # Allow FileNotFoundError to pass through for directory tests
                     if isinstance(e, FileNotFoundError):
@@ -331,11 +350,21 @@ def secure_error_handler(func=None, error_category=None):
                     # Default to internal error if category not specified
                     raise InternalError(details=details, original_exception=e)
             
-            # If we get here, it means we need to create and raise a KeystoreError
+            # If we get here, it means we might need to create and raise a KeystoreError
             # This happens after the KeystoreError class has been defined
-            if '_keystore_error_details' in locals():
-                raise KeystoreError(details=_keystore_error_details, 
-                                   original_exception=_keystore_error_original)
+            try:
+                if '_keystore_error_details' in locals():
+                    # Add a timing jitter before raising to mask timing differences
+                    add_timing_jitter()
+                    
+                    # Create and raise the KeystoreError
+                    raise KeystoreError(details=_keystore_error_details, 
+                                      original_exception=_keystore_error_original)
+            except Exception as unexpected_error:
+                # In case KeystoreError creation itself fails, fall back to InternalError
+                # This ensures we don't have uncaught exceptions in the error handler
+                add_timing_jitter()
+                raise InternalError("Error in keystore operation", original_exception=unexpected_error)
         
         return wrapper
     
