@@ -27,9 +27,9 @@ __pycache__/
 gitignore
 openssl_encrypt/gitignore
 
-# Requirements files
-requirements-*.in
-requirements-*.txt
+# Exclude specific requirements files needed for build
+# requirements-*.in
+# requirements-*.txt
 
 # Dependency scanning and audit reports
 pip-audit-*.json
