@@ -31,6 +31,10 @@ openssl_encrypt/gitignore
 requirements-*.in
 requirements-*.txt
 
+# Dependency scanning and audit reports
+pip-audit-*.json
+gl-dependency-*.json
+
 # Created by https://www.toptal.com/developers/gitignore/api/pycharm
 # Edit at https://www.toptal.com/developers/gitignore?templates=pycharm
 
