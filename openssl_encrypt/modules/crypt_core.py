@@ -397,10 +397,27 @@ try:
     from .pqc import PQCipher, check_pqc_support, PQCAlgorithm
     # Always initialize quietly during module import to prevent unwanted output
     PQC_AVAILABLE, PQC_VERSION, PQC_ALGORITHMS = check_pqc_support(quiet=True) 
+    
+    # Try to import extended PQC adapter for additional algorithms
+    try:
+        from .pqc_adapter import (
+            ExtendedPQCipher,
+            get_available_pq_algorithms,
+            LIBOQS_AVAILABLE
+        )
+        # Use the extended algorithms list if available
+        if LIBOQS_AVAILABLE:
+            PQC_ALGORITHMS = get_available_pq_algorithms(quiet=True)
+            # Also override PQCipher with the extended version for new algorithms
+            PQCipher = ExtendedPQCipher
+    except ImportError:
+        # Adapter not available, continue with basic PQCipher
+        pass
 except ImportError:
     PQC_AVAILABLE = False
     PQC_VERSION = None
     PQC_ALGORITHMS = []
+    LIBOQS_AVAILABLE = False
 
 
 class EncryptionAlgorithm(Enum):
@@ -420,6 +437,17 @@ class EncryptionAlgorithm(Enum):
     KYBER512_HYBRID = "kyber512-hybrid"  # Deprecated: use ML_KEM_512_HYBRID instead
     KYBER768_HYBRID = "kyber768-hybrid"  # Deprecated: use ML_KEM_768_HYBRID instead
     KYBER1024_HYBRID = "kyber1024-hybrid"  # Deprecated: use ML_KEM_1024_HYBRID instead
+    
+    # ML-KEM with ChaCha20-Poly1305 instead of AES-GCM
+    ML_KEM_512_CHACHA20 = "ml-kem-512-chacha20"
+    ML_KEM_768_CHACHA20 = "ml-kem-768-chacha20"
+    ML_KEM_1024_CHACHA20 = "ml-kem-1024-chacha20"
+    
+    # Additional post-quantum algorithms (via liboqs)
+    # HQC hybrid modes (NIST selection March 2025)
+    HQC_128_HYBRID = "hqc-128-hybrid"
+    HQC_192_HYBRID = "hqc-192-hybrid"
+    HQC_256_HYBRID = "hqc-256-hybrid"
     
     @classmethod
     def from_string(cls, algorithm_str: str) -> 'EncryptionAlgorithm':
@@ -2234,9 +2262,25 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
             
             # Map algorithm to PQCAlgorithm
             pqc_algo_map = {
+                # Legacy Kyber mappings
                 EncryptionAlgorithm.KYBER512_HYBRID: PQCAlgorithm.KYBER512,
                 EncryptionAlgorithm.KYBER768_HYBRID: PQCAlgorithm.KYBER768,
-                EncryptionAlgorithm.KYBER1024_HYBRID: PQCAlgorithm.KYBER1024
+                EncryptionAlgorithm.KYBER1024_HYBRID: PQCAlgorithm.KYBER1024,
+                
+                # Standardized ML-KEM mappings
+                EncryptionAlgorithm.ML_KEM_512_HYBRID: PQCAlgorithm.ML_KEM_512,
+                EncryptionAlgorithm.ML_KEM_768_HYBRID: PQCAlgorithm.ML_KEM_768,
+                EncryptionAlgorithm.ML_KEM_1024_HYBRID: PQCAlgorithm.ML_KEM_1024,
+                
+                # ML-KEM with ChaCha20
+                EncryptionAlgorithm.ML_KEM_512_CHACHA20: PQCAlgorithm.ML_KEM_512,
+                EncryptionAlgorithm.ML_KEM_768_CHACHA20: PQCAlgorithm.ML_KEM_768,
+                EncryptionAlgorithm.ML_KEM_1024_CHACHA20: PQCAlgorithm.ML_KEM_1024,
+                
+                # HQC mappings
+                EncryptionAlgorithm.HQC_128_HYBRID: "HQC-128",
+                EncryptionAlgorithm.HQC_192_HYBRID: "HQC-192",
+                EncryptionAlgorithm.HQC_256_HYBRID: "HQC-256"
             }
             
             # Get public key from keypair or generate new keypair
@@ -2249,7 +2293,9 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                 # We'll add these to metadata later
             
             # Initialize PQC cipher and encrypt
-            cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet)
+            # Use encryption_data parameter if provided
+            encryption_data_param = kwargs.get('encryption_data', 'aes-gcm')
+            cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet, encryption_data=encryption_data_param)
             return cipher.encrypt(data, public_key)
         else:
             # Check if we're in test mode - this affects nonce generation for some algorithms
@@ -2312,7 +2358,9 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                     # We'll add these to metadata later
                 
                 # Initialize PQC cipher and encrypt
-                cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet)
+                # Use encryption_data parameter if provided
+                encryption_data_param = kwargs.get('encryption_data', 'aes-gcm')
+                cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet, encryption_data=encryption_data_param)
                 return cipher.encrypt(data, public_key)
             else:
                 raise ValueError(f"Unknown encryption algorithm: {algorithm}")
@@ -2476,7 +2524,8 @@ def decrypt_file(
         quiet=False,
         progress=False,
         verbose=False,
-        pqc_private_key=None):
+        pqc_private_key=None,
+        encryption_data='aes-gcm'):
     """
     Decrypt a file with a password.
 
@@ -2488,6 +2537,7 @@ def decrypt_file(
         progress (bool): Whether to show progress bar
         verbose (bool): Whether to show verbose output
         pqc_private_key (bytes, optional): Post-quantum private key for hybrid decryption
+        encryption_data (str): Encryption data algorithm to use for hybrid encryption (default: 'aes-gcm')
     
     Returns:
         Union[bool, bytes]: True if decryption was successful and output_file is specified,
@@ -2891,7 +2941,8 @@ def decrypt_file(
                 raise ValueError("Post-quantum private key is required for decryption")
             
             # Initialize PQC cipher and decrypt
-            cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet)
+            # Use encryption_data parameter passed to the parent function
+            cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet, encryption_data=encryption_data)
             try:
                 # Pass the full file contents for recovery if needed
                 # This allows the PQCipher to try to recover the original content

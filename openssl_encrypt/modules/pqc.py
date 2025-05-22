@@ -18,6 +18,7 @@ from enum import Enum
 from typing import Tuple, Optional, Union
 
 from .secure_memory import SecureBytes, secure_memzero, secure_string
+from .algorithm_warnings import warn_deprecated_algorithm, is_deprecated, get_recommended_replacement
 
 def public_key_part(private_key: bytes) -> bytes:
     """
