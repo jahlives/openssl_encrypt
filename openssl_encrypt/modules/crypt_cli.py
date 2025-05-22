@@ -43,6 +43,16 @@ from .crypt_utils import (
     request_confirmation
 )
 from .algorithm_warnings import warn_deprecated_algorithm, is_deprecated, get_recommended_replacement
+# Try to import the CLI helper module
+try:
+    from .crypt_cli_helper import enhance_cli_args, add_extended_algorithm_help
+except ImportError:
+    # Dummy implementations if the helper is not available
+    def enhance_cli_args(args):
+        return args
+    
+    def add_extended_algorithm_help(parser):
+        pass
 from .password_policy import (
     PasswordPolicy, validate_password, validate_password_or_raise,
     get_password_strength
@@ -434,6 +444,9 @@ def main():
         choices=all_algorithms,
         default=EncryptionAlgorithm.FERNET.value,
         help=algorithm_help_text)
+    
+    # Add extended algorithm help
+    add_extended_algorithm_help(parser)
     
     # Data encryption algorithm to use with Kyber/ML-KEM
     # Build help text with deprecated warnings
@@ -899,6 +912,9 @@ def main():
     )
 
     args = parser.parse_args()
+    
+    # Enhance the args with better defaults for extended algorithms
+    args = enhance_cli_args(args)
 
     # Handle legacy options and map to new names
     # SHA family mappings
