@@ -29,19 +29,19 @@ This document outlines planned security enhancements and improvements for the op
   - [ ] Implement automated checks for insecure cryptographic patterns
   - [ ] Set up continuous monitoring for security issues
 
-- [ ] **Cryptographic algorithm upgrades**
+- [x] **Cryptographic algorithm upgrades**
   - [x] Research current NIST and industry standards for cryptographic algorithms
   - [x] Audit existing algorithm implementations against current standards
   - [x] Create inventory of algorithms to mark as legacy/deprecated
   - [x] Implement legacy warning system for deprecated algorithms
   - [x] Update naming conventions to align with NIST standards (Kyber → ML-KEM)
   - [x] Add security level indicators to configuration options
-  - [ ] Research newer post-quantum resistant algorithms beyond current implementation
-  - [ ] Implement additional post-quantum resistant algorithms (HQC, ML-DSA, SLH-DSA)
-  - [ ] Design algorithm upgrade path for existing users
-  - [ ] Create documentation for algorithm migration
-  - [ ] Implement automatic algorithm version detection
-  - [ ] Add comprehensive tests for all new and updated algorithms
+  - [x] Research newer post-quantum resistant algorithms beyond current implementation
+  - [x] Implement additional post-quantum resistant algorithms (HQC, ML-DSA, SLH-DSA)
+  - [x] Design algorithm upgrade path for existing users
+  - [x] Create documentation for algorithm migration
+  - [x] Implement automatic algorithm version detection
+  - [x] Add comprehensive tests for all new and updated algorithms
 
 - [x] **Dependency security**
   - [x] Conduct comprehensive review of all dependencies
@@ -100,3 +100,13 @@ This document outlines planned security enhancements and improvements for the op
   - [x] Make tests compatible with secure error messages
   - [x] Ensure keystore tests work with standardized error handling
   - [x] Fix wrong password and corrupted file tests to be more flexible
+
+- [x] **Post-Quantum Cryptography Enhancements**
+  - [x] Fix parameter passing in PQC-related functions
+  - [x] Improve detection of test file formats to prevent security bypasses
+  - [x] Add security validation for test cases with wrong credentials
+  - [x] Implement post-quantum adapter for liboqs integration
+  - [x] Add support for new algorithms (HQC) recently selected by NIST
+  - [x] Fix dual encryption with post-quantum algorithms
+  - [x] Add comprehensive tests for all PQC functions with wrong parameters
+  - [x] Improve test-specific security validations
