@@ -109,7 +109,7 @@ parse_filename() {
                 for h in "${HASHES[@]}"; do
                     if [[ "$hash_name" == "$h" ]]; then
                         # Add flag for hash with specified rounds
-                        extra_args+=" --${hash_name//-/_}_rounds $hash_rounds"
+                        extra_args+=" --${hash_name}-rounds $hash_rounds"
                         break
                     fi
                 done
@@ -130,11 +130,11 @@ parse_filename() {
                     fi
                     
                     # Add flag with specified rounds
-                    extra_args+=" --${hash_name//-/_}_rounds $hash_rounds"
+                    extra_args+=" --${hash_name}-rounds $hash_rounds"
                     break
                 elif [[ "$part" == "$h" ]]; then
                     # No rounds specified, use default
-                    extra_args+=" --${h//-/_}_rounds 1"
+                    extra_args+=" --${h}-rounds 1"
                     break
                 fi
             done
@@ -175,7 +175,7 @@ parse_filename() {
                                 ;;
                             "scrypt")
                                 # For scrypt, the rounds parameter is used for the 'n' parameter
-                                extra_args+=" --scrypt-n $kdf_rounds"
+                                extra_args+=" --scrypt-rounds $kdf_rounds"
                                 ;;
                             "pbkdf2")
                                 extra_args+=" --pbkdf2-iterations $kdf_rounds"
@@ -209,7 +209,7 @@ parse_filename() {
                             extra_args+=" --balloon-rounds $kdf_rounds"
                             ;;
                         "scrypt")
-                            extra_args+=" --scrypt-n $kdf_rounds"
+                            extra_args+=" --scrypt-rounds $kdf_rounds"
                             ;;
                         "pbkdf2")
                             extra_args+=" --pbkdf2-iterations $kdf_rounds"
@@ -226,7 +226,7 @@ parse_filename() {
                             extra_args+=" --balloon-rounds 1"
                             ;;
                         "scrypt")
-                            extra_args+=" --scrypt-n 1"
+                            extra_args+=" --scrypt-rounds 1"
                             ;;
                         "pbkdf2")
                             extra_args+=" --pbkdf2-iterations 1"
@@ -257,7 +257,7 @@ parse_filename() {
     fi
     
     # Add default KDF if none specified
-    if [[ ! "$extra_args" =~ (argon2-rounds|balloon-rounds|scrypt-n|pbkdf2-iterations) ]]; then
+    if [[ ! "$extra_args" =~ (argon2-rounds|balloon-rounds|scrypt-rounds|pbkdf2-iterations) ]]; then
         extra_args+=" --pbkdf2-iterations 10000"
     fi
     
