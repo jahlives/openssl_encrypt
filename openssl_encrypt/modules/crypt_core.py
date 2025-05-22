@@ -382,9 +382,14 @@ class EncryptionAlgorithm(Enum):
     AES_GCM_SIV = "aes-gcm-siv"
     AES_OCB3 = "aes-ocb3"
     CAMELLIA = "camellia"
-    KYBER512_HYBRID = "kyber512-hybrid"
-    KYBER768_HYBRID = "kyber768-hybrid"
-    KYBER1024_HYBRID = "kyber1024-hybrid"
+    # NIST FIPS 203 standardized naming (ML-KEM)
+    ML_KEM_512_HYBRID = "ml-kem-512-hybrid"
+    ML_KEM_768_HYBRID = "ml-kem-768-hybrid"
+    ML_KEM_1024_HYBRID = "ml-kem-1024-hybrid"
+    # Legacy Kyber naming scheme (deprecated, will be removed in future)
+    KYBER512_HYBRID = "kyber512-hybrid"  # Deprecated: use ML_KEM_512_HYBRID instead
+    KYBER768_HYBRID = "kyber768-hybrid"  # Deprecated: use ML_KEM_768_HYBRID instead
+    KYBER1024_HYBRID = "kyber1024-hybrid"  # Deprecated: use ML_KEM_1024_HYBRID instead
 
 
 class KeyStretch:

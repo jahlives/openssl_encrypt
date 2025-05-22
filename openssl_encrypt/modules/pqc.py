@@ -78,30 +78,84 @@ except Exception:
 
 # Define supported PQC algorithms
 class PQCAlgorithm(Enum):
-    # NIST Round 3 Finalists and Selected Algorithms
-    # The original Kyber naming scheme
-    KYBER512 = "Kyber512"
-    KYBER768 = "Kyber768"
-    KYBER1024 = "Kyber1024"
-    
-    # ML-KEM naming scheme (standardized version of Kyber)
+    # NIST FIPS 203 standardized naming (ML-KEM)
     ML_KEM_512 = "ML-KEM-512"
     ML_KEM_768 = "ML-KEM-768"
     ML_KEM_1024 = "ML-KEM-1024"
     
-    # Legacy format with hyphens
-    KYBER512_LEGACY = "Kyber-512"
-    KYBER768_LEGACY = "Kyber-768"
-    KYBER1024_LEGACY = "Kyber-1024"
+    # Legacy Kyber naming scheme (deprecated, will be removed in future)
+    # For backward compatibility only
+    KYBER512 = "Kyber512"  # Deprecated: use ML_KEM_512 instead
+    KYBER768 = "Kyber768"  # Deprecated: use ML_KEM_768 instead
+    KYBER1024 = "Kyber1024"  # Deprecated: use ML_KEM_1024 instead
     
-    # Signature algorithms
-    DILITHIUM2 = "Dilithium2"
-    DILITHIUM3 = "Dilithium3"
-    DILITHIUM5 = "Dilithium5"
-    FALCON512 = "Falcon-512"
-    FALCON1024 = "Falcon-1024"
-    SPHINCSSHA2128F = "SPHINCS+-SHA2-128f"
-    SPHINCSSHA2256F = "SPHINCS+-SHA2-256f"
+    # Legacy format with hyphens (deprecated, will be removed in future)
+    KYBER512_LEGACY = "Kyber-512"  # Deprecated: use ML_KEM_512 instead
+    KYBER768_LEGACY = "Kyber-768"  # Deprecated: use ML_KEM_768 instead
+    KYBER1024_LEGACY = "Kyber-1024"  # Deprecated: use ML_KEM_1024 instead
+    
+    # Signature algorithms (NIST FIPS 204/205/206 standardized naming)
+    ML_DSA_44 = "ML-DSA-44"  # NIST FIPS 204 (formerly Dilithium2)
+    ML_DSA_65 = "ML-DSA-65"  # NIST FIPS 204 (formerly Dilithium3)
+    ML_DSA_87 = "ML-DSA-87"  # NIST FIPS 204 (formerly Dilithium5)
+    FN_DSA_512 = "FN-DSA-512"  # NIST FIPS 206 (formerly Falcon-512)
+    FN_DSA_1024 = "FN-DSA-1024"  # NIST FIPS 206 (formerly Falcon-1024)
+    SLH_DSA_SHA2_128F = "SLH-DSA-SHA2-128F"  # NIST FIPS 205 (formerly SPHINCS+-SHA2-128f)
+    SLH_DSA_SHA2_256F = "SLH-DSA-SHA2-256F"  # NIST FIPS 205 (formerly SPHINCS+-SHA2-256f)
+    
+    # Legacy signature algorithm names (deprecated, will be removed in future)
+    DILITHIUM2 = "Dilithium2"  # Deprecated: use ML_DSA_44 instead
+    DILITHIUM3 = "Dilithium3"  # Deprecated: use ML_DSA_65 instead
+    DILITHIUM5 = "Dilithium5"  # Deprecated: use ML_DSA_87 instead
+    FALCON512 = "Falcon-512"  # Deprecated: use FN_DSA_512 instead
+    FALCON1024 = "Falcon-1024"  # Deprecated: use FN_DSA_1024 instead
+    SPHINCSSHA2128F = "SPHINCS+-SHA2-128f"  # Deprecated: use SLH_DSA_SHA2_128F instead
+    SPHINCSSHA2256F = "SPHINCS+-SHA2-256f"  # Deprecated: use SLH_DSA_SHA2_256F instead
+
+# Create mappings for algorithm name translation
+LEGACY_TO_STANDARD_ALGORITHM_MAP = {
+    # Kyber/ML-KEM mappings
+    "Kyber512": "ML-KEM-512",
+    "Kyber768": "ML-KEM-768",
+    "Kyber1024": "ML-KEM-1024",
+    "Kyber-512": "ML-KEM-512",
+    "Kyber-768": "ML-KEM-768",
+    "Kyber-1024": "ML-KEM-1024",
+    "kyber512-hybrid": "ml-kem-512-hybrid",
+    "kyber768-hybrid": "ml-kem-768-hybrid",
+    "kyber1024-hybrid": "ml-kem-1024-hybrid",
+    
+    # Signature algorithm mappings
+    "Dilithium2": "ML-DSA-44",
+    "Dilithium3": "ML-DSA-65",
+    "Dilithium5": "ML-DSA-87",
+    "Falcon-512": "FN-DSA-512",
+    "Falcon-1024": "FN-DSA-1024",
+    "SPHINCS+-SHA2-128f": "SLH-DSA-SHA2-128F",
+    "SPHINCS+-SHA2-256f": "SLH-DSA-SHA2-256F"
+}
+
+# Reverse mapping for backward compatibility
+STANDARD_TO_LEGACY_ALGORITHM_MAP = {v: k for k, v in LEGACY_TO_STANDARD_ALGORITHM_MAP.items()}
+
+def normalize_algorithm_name(name: str, use_standard: bool = True) -> str:
+    """
+    Normalize algorithm names between legacy and standard NIST naming.
+    
+    Args:
+        name (str): The algorithm name to normalize
+        use_standard (bool): If True, convert legacy names to standard; if False, 
+                            convert standard names to legacy
+    
+    Returns:
+        str: The normalized algorithm name
+    """
+    if use_standard:
+        # Convert legacy name to standard name
+        return LEGACY_TO_STANDARD_ALGORITHM_MAP.get(name, name)
+    else:
+        # Convert standard name to legacy name
+        return STANDARD_TO_LEGACY_ALGORITHM_MAP.get(name, name)
 
 def check_pqc_support(quiet: bool = False) -> Tuple[bool, Optional[str], list]:
     """
@@ -135,29 +189,80 @@ def check_pqc_support(quiet: bool = False) -> Tuple[bool, Optional[str], list]:
         # Check KEM algorithms
         try:
             if hasattr(oqs, 'get_enabled_kem_mechanisms'):
-                supported_algorithms.extend(oqs.get_enabled_kem_mechanisms())
+                legacy_algorithms = oqs.get_enabled_kem_mechanisms()
+                # Convert legacy names to standardized names
+                for alg in legacy_algorithms:
+                    # Add both legacy and standardized names for compatibility
+                    supported_algorithms.append(alg)
+                    # If we have a mapping to a standard name, add it too
+                    std_name = normalize_algorithm_name(alg, use_standard=True)
+                    if std_name != alg:
+                        supported_algorithms.append(std_name)
             elif hasattr(oqs, 'get_supported_kem_mechanisms'):
-                supported_algorithms.extend(oqs.get_supported_kem_mechanisms())
+                legacy_algorithms = oqs.get_supported_kem_mechanisms()
+                # Convert legacy names to standardized names
+                for alg in legacy_algorithms:
+                    supported_algorithms.append(alg)
+                    std_name = normalize_algorithm_name(alg, use_standard=True)
+                    if std_name != alg:
+                        supported_algorithms.append(std_name)
             else:
-                # Fallback to known Kyber algorithms if API methods not found
-                supported_algorithms.extend(['Kyber512', 'Kyber768', 'Kyber1024', 'ML-KEM-512', 'ML-KEM-768', 'ML-KEM-1024'])
+                # Fallback to all known KEM algorithms if API methods not found
+                # Prioritize ML-KEM (standardized) names
+                supported_algorithms.extend(['ML-KEM-512', 'ML-KEM-768', 'ML-KEM-1024'])
+                # Add legacy names for backward compatibility
+                supported_algorithms.extend(['Kyber512', 'Kyber768', 'Kyber1024'])
         except Exception:
-            # Force add Kyber algorithms as fallback
+            # Force add all KEM algorithms as fallback
+            # Prioritize ML-KEM (standardized) names
+            supported_algorithms.extend(['ML-KEM-512', 'ML-KEM-768', 'ML-KEM-1024'])
+            # Add legacy names for backward compatibility
             supported_algorithms.extend(['Kyber512', 'Kyber768', 'Kyber1024'])
             
         # Check signature algorithms (less important for us)
         try:
             if hasattr(oqs, 'get_enabled_sig_mechanisms'):
-                supported_algorithms.extend(oqs.get_enabled_sig_mechanisms())
+                legacy_sig_algorithms = oqs.get_enabled_sig_mechanisms()
+                # Convert legacy names to standardized names
+                for alg in legacy_sig_algorithms:
+                    # Add both legacy and standardized names for compatibility
+                    supported_algorithms.append(alg)
+                    # If we have a mapping to a standard name, add it too
+                    std_name = normalize_algorithm_name(alg, use_standard=True)
+                    if std_name != alg:
+                        supported_algorithms.append(std_name)
             elif hasattr(oqs, 'get_supported_sig_mechanisms'):
-                supported_algorithms.extend(oqs.get_supported_sig_mechanisms())
+                legacy_sig_algorithms = oqs.get_supported_sig_mechanisms()
+                # Convert legacy names to standardized names
+                for alg in legacy_sig_algorithms:
+                    supported_algorithms.append(alg)
+                    std_name = normalize_algorithm_name(alg, use_standard=True)
+                    if std_name != alg:
+                        supported_algorithms.append(std_name)
+            else:
+                # Add standard signature algorithm names
+                supported_algorithms.extend([
+                    'ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87',
+                    'FN-DSA-512', 'FN-DSA-1024', 
+                    'SLH-DSA-SHA2-128F', 'SLH-DSA-SHA2-256F'
+                ])
+                # Add legacy names for backward compatibility
+                supported_algorithms.extend([
+                    'Dilithium2', 'Dilithium3', 'Dilithium5',
+                    'Falcon-512', 'Falcon-1024',
+                    'SPHINCS+-SHA2-128f', 'SPHINCS+-SHA2-256f'
+                ])
         except Exception as e:
             # Skip printing warning about signature algorithms
             pass
             
         return True, version, supported_algorithms
     except Exception:
-        return False, None, ['Kyber512', 'Kyber768', 'Kyber1024']  # Provide fallback algorithms
+        # Provide fallback algorithms (prioritize standardized names)
+        return False, None, [
+            'ML-KEM-512', 'ML-KEM-768', 'ML-KEM-1024',
+            'Kyber512', 'Kyber768', 'Kyber1024'
+        ]
 
 class PQCipher:
     """
@@ -213,11 +318,21 @@ class PQCipher:
             # Convert string to actual algorithm name
             requested_algo = algorithm
             
-            # First look for exact match
-            if requested_algo in supported:
+            # Try to normalize to standard name first
+            standard_name = normalize_algorithm_name(requested_algo, use_standard=True)
+            
+            # If we have a standardized name different from the original, use it preferentially
+            if standard_name != requested_algo and standard_name in supported:
+                self.algorithm_name = standard_name
+                # Log a deprecation warning if we're using a legacy name
+                if not should_be_quiet:
+                    print(f"Warning: Algorithm name '{requested_algo}' is deprecated. "
+                          f"Using standardized name '{standard_name}' instead.")
+            # Otherwise, check if the original name is supported
+            elif requested_algo in supported:
                 self.algorithm_name = requested_algo
             else:
-                # Look for variants (with/without hyphens, case insensitive)
+                # As a fallback, look for variants (with/without hyphens, case insensitive)
                 requested_base = requested_algo.lower().replace('-', '').replace('_', '')
                 
                 # For each supported algorithm, see if it's a variant of the requested one
