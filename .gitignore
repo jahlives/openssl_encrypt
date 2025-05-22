@@ -15,6 +15,11 @@ create_pqc_test.py
 pqc_demo.py
 # PyCharm IDE files
 .idea/
+.claude/
+build/
+dist/
+.pre-commit-config.yml
+.bandit.yaml
 
 # Python bytecode and cache
 __pycache__/
