@@ -2293,9 +2293,8 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                 # We'll add these to metadata later
             
             # Initialize PQC cipher and encrypt
-            # Use encryption_data parameter if provided
-            encryption_data_param = kwargs.get('encryption_data', 'aes-gcm')
-            cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet, encryption_data=encryption_data_param)
+            # Use encryption_data parameter passed to the parent function
+            cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet, encryption_data=encryption_data)
             return cipher.encrypt(data, public_key)
         else:
             # Check if we're in test mode - this affects nonce generation for some algorithms
@@ -2358,9 +2357,8 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                     # We'll add these to metadata later
                 
                 # Initialize PQC cipher and encrypt
-                # Use encryption_data parameter if provided
-                encryption_data_param = kwargs.get('encryption_data', 'aes-gcm')
-                cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet, encryption_data=encryption_data_param)
+                # Use encryption_data parameter passed to the parent function
+                cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet, encryption_data=encryption_data)
                 return cipher.encrypt(data, public_key)
             else:
                 raise ValueError(f"Unknown encryption algorithm: {algorithm}")
