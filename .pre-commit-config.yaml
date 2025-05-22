@@ -1,0 +1,52 @@
+repos:
+# Standard pre-commit hooks
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+    -   id: trailing-whitespace
+    -   id: end-of-file-fixer
+    -   id: check-yaml
+    -   id: check-added-large-files
+    -   id: check-json
+    -   id: detect-private-key
+    -   id: debug-statements
+
+# Python code formatting with Black
+-   repo: https://github.com/psf/black
+    rev: 24.1.0
+    hooks:
+    -   id: black
+        language_version: python3
+
+# Python import sorting with isort
+-   repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+    -   id: isort
+        args: ["--profile", "black"]
+
+# Python linting with pylint
+-   repo: https://github.com/pycqa/pylint
+    rev: v3.1.0
+    hooks:
+    -   id: pylint
+        args: [
+          "--disable=C0111,C0103,C0303,W1201,W1202,C0301,W0613,R0913,R0914,W0511,R0902,R0903,R0904,W0212",
+          "--extension-pkg-whitelist=cryptography,argon2,pytest",
+          "--jobs=4"
+        ]
+
+# Python security checks with bandit
+-   repo: https://github.com/PyCQA/bandit
+    rev: 1.7.8
+    hooks:
+    -   id: bandit
+        args: ["-c", ".bandit.yaml", "-r", "openssl_encrypt"]
+        additional_dependencies: ['bandit[toml]']
+
+# Python package vulnerability scanning with pip-audit
+-   repo: https://github.com/pypa/pip-audit
+    rev: v2.9.0
+    hooks:
+    -   id: pip-audit
+        args: ["--requirement=requirements-prod.txt"]

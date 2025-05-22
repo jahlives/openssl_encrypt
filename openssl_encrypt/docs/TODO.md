@@ -35,11 +35,15 @@ This document outlines planned security enhancements and improvements for the op
   - [ ] Add support for newer post-quantum resistant algorithms
   - [ ] Implement a clear algorithm upgrade path for existing users
 
-- [ ] **Dependency security**
-  - [ ] Conduct comprehensive review of all dependencies
-  - [ ] Implement dependency pinning with security checks
-  - [ ] Document dependency update procedures
-  - [ ] Create automated dependency vulnerability scanning
+- [x] **Dependency security**
+  - [x] Conduct comprehensive review of all dependencies
+  - [x] Implement dependency pinning with security checks
+  - [x] Document dependency update procedures
+  - [x] Implement lock files for reproducible builds
+  - [x] Create version pinning policy document
+  - [x] Implement local dependency vulnerability scanning with pre-commit hooks
+  - [x] Set up CI pipeline for dependency scanning
+  - [x] Generate Software Bill of Materials (SBOM)
 
 - [ ] **Key management improvements**
   - [ ] Implement key rotation functionality in keystore

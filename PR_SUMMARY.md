@@ -1,78 +1,45 @@
-# PR Summary: Configurable Data Encryption for Kyber
+# PR Summary: Switch from Safety to pip-audit for Dependency Scanning
 
-## Summary
+## Overview
 
-This PR adds the ability to select the symmetric encryption algorithm used for data encryption when using Kyber for key encapsulation. Previously, Kyber algorithms always used AES-GCM for data encryption, but this PR introduces a new `encryption_data` parameter that allows choosing from multiple symmetric algorithms.
+This PR replaces Safety with pip-audit for dependency vulnerability scanning in CI/CD pipelines. Safety's recent changes requiring login made it unreliable in CI environments, while pip-audit (maintained by Google) provides a more robust solution that works without login requirements.
 
-## Changes Made
+## Changes
 
-1. **New metadata format (version 5)**:
-   - Added `encryption_data` field to the `encryption` section
-   - Implemented `convert_metadata_v4_to_v5` and `convert_metadata_v5_to_v4` functions
-   - Created `create_metadata_v5` function that replaces `create_metadata_v4`
+### Primary Changes
 
-2. **PQCipher enhancements**:
-   - Modified to support multiple symmetric encryption algorithms
-   - Added `encryption_data` parameter to the constructor
-   - Updated the encrypt/decrypt methods to use the specified algorithm
+1. **Replaced Safety with pip-audit**:
+   - Updated the gitlab_dependency_scan.py script to use pip-audit instead of Safety
+   - Modified output format handling to work with pip-audit's JSON structure
+   - Updated report generation to properly identify pip-audit as the scanning tool
 
-3. **CLI enhancements**:
-   - Added `--encryption-data` parameter to select the data encryption algorithm
-   - Updated function calls in the CLI to pass the new parameter
+2. **Updated CI Pipeline Configuration**:
+   - Modified .gitlab-ci.yml to install and use pip-audit
+   - Updated artifact paths to match new output file names
 
-4. **Documentation**:
-   - Created `metadata_format_v5.md` that documents the new format
-   - Added `pqc_data_encryption.md` with examples and usage information
-   - Updated templates to include the new parameter
+3. **Updated Documentation**:
+   - Revised CI_SECURITY_SCANNING.md to reference pip-audit
+   - Updated SECURITY_SCANNING_GUIDE.md with pip-audit usage and output format
+   - Added pip-audit information to the CHANGELOG.md
 
-5. **Testing**:
-   - Added unit tests to verify the new functionality
-   - Created integration tests in `test_encryption_data.py`
+4. **Updated Development Tools**:
+   - Modified .pre-commit-config.yaml to use pip-audit instead of Safety
+   - Updated scripts/setup_hooks.sh to install pip-audit
 
-## New Features
+### Benefits
 
-Users can now select one of the following algorithms for data encryption with Kyber:
-
-- `aes-gcm` (default)
-- `aes-gcm-siv`
-- `aes-ocb3`
-- `aes-siv`
-- `chacha20-poly1305`
-- `xchacha20-poly1305`
-
-## Backward Compatibility
-
-- All v4 and earlier encrypted files remain compatible
-- The v5 format includes proper conversion functions
-- Default behavior remains the same (AES-GCM) if no algorithm is specified
+- **Reliability**: pip-audit works without requiring login, making it more reliable in CI environments
+- **Maintained by Google**: Well-maintained tool with regular updates
+- **OSV Integration**: Uses multiple vulnerability databases including OSV
+- **Structured Output**: Provides well-structured JSON output for better integration
 
 ## Testing
 
-The implementation was thoroughly tested with:
+- Verified local execution of pip-audit works correctly
+- Tested the gitlab_dependency_scan.py script with pip-audit
+- Confirmed proper generation of GitLab-compatible report
 
-1. Unit tests in `unittests.py`:
-   - `test_pqc_encryption_data_algorithms`: Tests each symmetric algorithm with PQCipher
-   - `test_pqc_encryption_data_metadata`: Verifies metadata format and field presence
+## Next Steps
 
-2. Integration tests in `test_encryption_data.py`:
-   - Tests all combinations of Kyber variants and encryption algorithms
-   - Verifies end-to-end encryption and decryption
-
-## Usage
-
-From the command line:
-```bash
-openssl_encrypt encrypt --algorithm kyber768-hybrid --encryption-data chacha20-poly1305 \
-    --input myfile.txt --output myfile.enc
-```
-
-From the API:
-```python
-encrypt_file(
-    input_file="myfile.txt",
-    output_file="myfile.enc",
-    password="password123",
-    algorithm="kyber768-hybrid",
-    encryption_data="xchacha20-poly1305"
-)
-```
+- Monitor CI pipeline execution to ensure the change works as expected
+- Consider integrating additional vulnerability data sources in the future

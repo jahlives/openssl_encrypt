@@ -1,6 +1,9 @@
-# Version 0.8.2: Restructured Metadata
-With the release of version **0.8.2**, openssl_encrypt now uses a new metadata structure. `format_version` 5 represents that new structure. Additionally fixed some issues with `Python` < 3.12 and added a more resiliant way to include `whirlpool` during build for for `Python` >= 3.9 
-  The change is implemented to avoid any breaking changes to prior versions. Therefore the code is able to process all supported format versions transparently. Unittests of existing (older metadata) encrypted file are passing. Tests for new structure yet to come
+# Version 0.9.0: Security and Infrastructure Updates (May 2025)
+We've enhanced security by upgrading cryptography to 44.0.1 (fixing CVE-2024-12797) and implementing strict version pinning across all dependencies. Our codebase is fortified with
+   constant-time cryptographic operations, secure memory handling with zero-after-use practices, and standardized error handling that prevents information leakage. Thread safety
+  improvements include thread-local timing jitter, while our Python 3.13 compatibility ensures broad platform support. Development infrastructure now features reproducible builds
+  via pip-tools lock files, pre-commit hooks for local scanning, and a multi-stage CI pipeline with automated vulnerability detection (using pip-audit), code analysis, and SBOM
+  generation. These enhancements collectively strengthen security while providing a robust foundation for continued development.
 # Secure File Encryption Tool
 A powerful tool for securely encrypting, decrypting, and shredding files with military-grade cryptography and multi-layer password hashing.
 ## History
