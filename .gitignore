@@ -27,6 +27,10 @@ __pycache__/
 gitignore
 openssl_encrypt/gitignore
 
+# Requirements files
+requirements-*.in
+requirements-*.txt
+
 # Created by https://www.toptal.com/developers/gitignore/api/pycharm
 # Edit at https://www.toptal.com/developers/gitignore?templates=pycharm
 
