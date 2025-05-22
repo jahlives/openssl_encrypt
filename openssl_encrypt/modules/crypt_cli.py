@@ -28,6 +28,7 @@ import yaml
 from .crypt_core import (
     encrypt_file,
     decrypt_file,
+    EncryptionAlgorithm,
     check_argon2_support,
     get_file_permissions,
     WHIRLPOOL_AVAILABLE,
@@ -41,6 +42,7 @@ from .crypt_utils import (
     display_password_with_timeout, show_security_recommendations,
     request_confirmation
 )
+from .algorithm_warnings import warn_deprecated_algorithm, is_deprecated, get_recommended_replacement
 from .password_policy import (
     PasswordPolicy, validate_password, validate_password_or_raise,
     get_password_strength
@@ -386,40 +388,82 @@ def main():
         help='Action to perform: encrypt/decrypt files, shred data, generate passwords, '
              'show security recommendations, check Argon2 support, check post-quantum cryptography support or display version file contents')
 
+    # Get all available algorithms, marking deprecated ones
+    all_algorithms = [algo.value for algo in EncryptionAlgorithm]
+    recommended_algorithms = [algo.value for algo in EncryptionAlgorithm.get_recommended_algorithms()]
+    
+    # Build help text with deprecated warnings
+    algorithm_help_text = 'Encryption algorithm to use:\n'
+    for algo in sorted(all_algorithms):
+        if algo == EncryptionAlgorithm.FERNET.value:
+            description = 'default, AES-128-CBC with authentication'
+        elif algo == EncryptionAlgorithm.AES_GCM.value:
+            description = 'AES-256 in GCM mode, high security, widely trusted'
+        elif algo == EncryptionAlgorithm.AES_GCM_SIV.value:
+            description = 'AES-256 in GCM-SIV mode, resistant to nonce reuse'
+        elif algo == EncryptionAlgorithm.AES_OCB3.value:
+            description = 'AES-256 in OCB3 mode, faster than GCM (DEPRECATED)'
+        elif algo == EncryptionAlgorithm.AES_SIV.value:
+            description = 'AES in SIV mode, synthetic IV'
+        elif algo == EncryptionAlgorithm.CHACHA20_POLY1305.value:
+            description = 'modern AEAD cipher with 12-byte nonce'
+        elif algo == EncryptionAlgorithm.XCHACHA20_POLY1305.value:
+            description = 'ChaCha20-Poly1305 with 24-byte nonce, safer for high-volume encryption'
+        elif algo == EncryptionAlgorithm.CAMELLIA.value:
+            description = 'Camellia in CBC mode (DEPRECATED)'
+        elif algo == EncryptionAlgorithm.ML_KEM_512_HYBRID.value:
+            description = 'post-quantum key exchange with AES-256-GCM, NIST level 1 (NIST FIPS 203)'
+        elif algo == EncryptionAlgorithm.ML_KEM_768_HYBRID.value:
+            description = 'post-quantum key exchange with AES-256-GCM, NIST level 3 (NIST FIPS 203)'
+        elif algo == EncryptionAlgorithm.ML_KEM_1024_HYBRID.value:
+            description = 'post-quantum key exchange with AES-256-GCM, NIST level 5 (NIST FIPS 203)'
+        elif algo == EncryptionAlgorithm.KYBER512_HYBRID.value:
+            description = 'post-quantum key exchange with AES-256-GCM, NIST level 1 (DEPRECATED - use ml-kem-512-hybrid)'
+        elif algo == EncryptionAlgorithm.KYBER768_HYBRID.value:
+            description = 'post-quantum key exchange with AES-256-GCM, NIST level 3 (DEPRECATED - use ml-kem-768-hybrid)'
+        elif algo == EncryptionAlgorithm.KYBER1024_HYBRID.value:
+            description = 'post-quantum key exchange with AES-256-GCM, NIST level 5 (DEPRECATED - use ml-kem-1024-hybrid)'
+        else:
+            description = 'encryption algorithm'
+            
+        algorithm_help_text += f'  {algo} ({description}),\n'
+        
     parser.add_argument(
         '--algorithm',
         type=str,
-        choices=[
-            algo.value for algo in EncryptionAlgorithm],
+        choices=all_algorithms,
         default=EncryptionAlgorithm.FERNET.value,
-        help='Encryption algorithm to use: \n'
-             '  fernet (default, AES-128-CBC with authentication), \n'
-             '  aes-gcm (AES-256 in GCM mode, high security, widely trusted), \n'
-             '  aes-gcm-siv (AES-256 in GCM-SIV mode, resistant to nonce reuse), \n'
-             '  aes-ocb3 (AES-256 in OCB3 mode, faster than GCM), \n'
-             '  aes-siv (AES in SIV mode, synthetic IV), \n'
-             '  chacha20-poly1305 (modern AEAD cipher with 12-byte nonce), \n'
-             '  xchacha20-poly1305 (ChaCha20-Poly1305 with 24-byte nonce, safer for high-volume encryption), \n'
-             '  camellia (Camellia in CBC mode), \n'
-             '  kyber512-hybrid (post-quantum key exchange with AES-256-GCM, NIST level 1), \n'
-             '  kyber768-hybrid (post-quantum key exchange with AES-256-GCM, NIST level 3), \n'
-             '  kyber1024-hybrid (post-quantum key exchange with AES-256-GCM, NIST level 5)')
+        help=algorithm_help_text)
     
-    # Data encryption algorithm to use with Kyber
+    # Data encryption algorithm to use with Kyber/ML-KEM
+    # Build help text with deprecated warnings
+    data_algorithms = ['aes-gcm', 'aes-gcm-siv', 'aes-ocb3', 'aes-siv', 'chacha20-poly1305', 'xchacha20-poly1305']
+    data_algo_help = 'Symmetric encryption algorithm to use for data encryption when using Kyber/ML-KEM: \n'
+    
+    for algo in data_algorithms:
+        if algo == 'aes-gcm':
+            description = 'default, AES-256 in GCM mode'
+        elif algo == 'aes-gcm-siv':
+            description = 'AES-256 in GCM-SIV mode, resistant to nonce reuse'
+        elif algo == 'aes-ocb3':
+            description = 'AES-256 in OCB3 mode, faster than GCM (DEPRECATED - security concerns with short nonces)'
+        elif algo == 'aes-siv':
+            description = 'AES in SIV mode, synthetic IV'
+        elif algo == 'chacha20-poly1305':
+            description = 'modern AEAD cipher with 12-byte nonce'
+        elif algo == 'xchacha20-poly1305':
+            description = 'ChaCha20-Poly1305 with 24-byte nonce, safer for high-volume encryption'
+        else:
+            description = 'encryption algorithm'
+            
+        data_algo_help += f'  {algo} ({description}), \n'
+    
     parser.add_argument(
         '--encryption-data',
         type=str,
-        choices=[
-            'aes-gcm', 'aes-gcm-siv', 'aes-ocb3', 'aes-siv', 
-            'chacha20-poly1305', 'xchacha20-poly1305'],
+        choices=data_algorithms,
         default='aes-gcm',
-        help='Symmetric encryption algorithm to use for data encryption when using Kyber: \n'
-             '  aes-gcm (default, AES-256 in GCM mode), \n'
-             '  aes-gcm-siv (AES-256 in GCM-SIV mode, resistant to nonce reuse), \n'
-             '  aes-ocb3 (AES-256 in OCB3 mode, faster than GCM), \n'
-             '  aes-siv (AES in SIV mode, synthetic IV), \n'
-             '  chacha20-poly1305 (modern AEAD cipher with 12-byte nonce), \n'
-             '  xchacha20-poly1305 (ChaCha20-Poly1305 with 24-byte nonce)')
+        help=data_algo_help)
     # Define common options
     parser.add_argument(
         '--password', '-p',
@@ -1535,6 +1579,22 @@ def main():
     exit_code = 0
     try:
         if args.action == 'encrypt':
+            # Check if main algorithm is deprecated and issue warning
+            if is_deprecated(args.algorithm):
+                replacement = get_recommended_replacement(args.algorithm)
+                warn_deprecated_algorithm(args.algorithm, "command-line encryption")
+                if not args.quiet and replacement:
+                    print(f"Warning: The algorithm '{args.algorithm}' is deprecated.")
+                    print(f"Consider using '{replacement}' instead for better security.")
+            
+            # Check if data encryption algorithm is deprecated for PQC
+            if args.algorithm.endswith('-hybrid') and is_deprecated(args.encryption_data):
+                data_replacement = get_recommended_replacement(args.encryption_data)
+                warn_deprecated_algorithm(args.encryption_data, "PQC data encryption")
+                if not args.quiet and data_replacement:
+                    print(f"Warning: The data encryption algorithm '{args.encryption_data}' is deprecated.")
+                    print(f"Consider using '{data_replacement}' instead for better security.")
+                    
             # Handle output file path
             if args.overwrite:
                 output_file = args.input

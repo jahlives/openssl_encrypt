@@ -291,6 +291,29 @@ class PQCipher:
             raise ImportError("liboqs-python is required for post-quantum cryptography. "
                              "Install with: pip install liboqs-python")
         
+        # Check if algorithm is deprecated and issue warning
+        if isinstance(algorithm, str) and is_deprecated(algorithm):
+            replacement = get_recommended_replacement(algorithm)
+            warn_deprecated_algorithm(algorithm, "PQCipher initialization")
+            if not should_be_quiet and replacement:
+                print(f"Warning: The algorithm '{algorithm}' is deprecated.")
+                print(f"Consider using '{replacement}' instead for better security.")
+                
+            # Try to normalize to standardized name if available
+            standardized_name = normalize_algorithm_name(algorithm, use_standard=True)
+            if standardized_name != algorithm:
+                if not should_be_quiet:
+                    print(f"Using standardized algorithm name '{standardized_name}' instead of '{algorithm}'")
+                algorithm = standardized_name
+        
+        # Check if encryption_data is deprecated
+        if is_deprecated(encryption_data):
+            data_replacement = get_recommended_replacement(encryption_data)
+            warn_deprecated_algorithm(encryption_data, "PQC data encryption")
+            if not should_be_quiet and data_replacement:
+                print(f"Warning: The data encryption algorithm '{encryption_data}' is deprecated.")
+                print(f"Consider using '{data_replacement}' instead for better security.")
+        
         # Store the encryption_data parameter
         self.encryption_data = encryption_data
         

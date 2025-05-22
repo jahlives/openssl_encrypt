@@ -18,6 +18,9 @@ import hmac
 import json
 import math
 import os
+import functools
+import warnings
+from typing import Callable, Any, Optional, TypeVar, cast
 import secrets
 import stat
 import sys
@@ -43,6 +46,33 @@ from .crypt_errors import AuthenticationError, InternalError, KeyDerivationError
 from .crypt_errors import secure_encrypt_error_handler, secure_decrypt_error_handler
 from .crypt_errors import secure_key_derivation_error_handler, secure_error_handler
 from .crypt_errors import constant_time_compare  # Error handling imports are at the top of file
+
+# Import algorithm warning system
+from .algorithm_warnings import warn_deprecated_algorithm, is_deprecated, get_recommended_replacement
+
+# Define type variable for generic function
+F = TypeVar('F', bound=Callable[..., Any])
+
+def deprecated_algorithm(algorithm: str, context: Optional[str] = None) -> Callable[[F], F]:
+    """
+    Decorator to mark functions using deprecated algorithms.
+    
+    Args:
+        algorithm: The algorithm name that is deprecated
+        context: Optional context information about how the algorithm is being used
+        
+    Returns:
+        Decorator function
+    """
+    def decorator(func: F) -> F:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            # Issue deprecation warning
+            warn_deprecated_algorithm(algorithm, context or func.__name__, show_stack=False)
+            # Call the original function
+            return func(*args, **kwargs)
+        return cast(F, wrapper)
+    return decorator
 
 class XChaCha20Poly1305:
     def __init__(self, key):
@@ -390,6 +420,98 @@ class EncryptionAlgorithm(Enum):
     KYBER512_HYBRID = "kyber512-hybrid"  # Deprecated: use ML_KEM_512_HYBRID instead
     KYBER768_HYBRID = "kyber768-hybrid"  # Deprecated: use ML_KEM_768_HYBRID instead
     KYBER1024_HYBRID = "kyber1024-hybrid"  # Deprecated: use ML_KEM_1024_HYBRID instead
+    
+    @classmethod
+    def from_string(cls, algorithm_str: str) -> 'EncryptionAlgorithm':
+        """
+        Get EncryptionAlgorithm enum from string representation.
+        
+        Args:
+            algorithm_str: String representation of the algorithm
+            
+        Returns:
+            EncryptionAlgorithm: The corresponding enum value
+            
+        Raises:
+            ValueError: If algorithm string is not recognized
+        """
+        # Check if the algorithm is deprecated and issue warning if so
+        if is_deprecated(algorithm_str):
+            replacement = get_recommended_replacement(algorithm_str)
+            context = f"algorithm selection '{algorithm_str}'"
+            warn_deprecated_algorithm(algorithm_str, context)
+        
+        # First try exact match (case-sensitive)
+        try:
+            return cls(algorithm_str)
+        except ValueError:
+            # Try case-insensitive match
+            for alg in cls:
+                if alg.value.lower() == algorithm_str.lower():
+                    if alg.value != algorithm_str:
+                        warnings.warn(
+                            f"Algorithm '{algorithm_str}' was matched case-insensitively to '{alg.value}'. "
+                            f"Please use the exact case for consistency.",
+                            UserWarning
+                        )
+                    return alg
+                    
+            # Try normalized match (without hyphens or underscores)
+            normalized_input = algorithm_str.lower().replace('-', '').replace('_', '')
+            for alg in cls:
+                normalized_enum = alg.value.lower().replace('-', '').replace('_', '')
+                if normalized_enum == normalized_input:
+                    warnings.warn(
+                        f"Algorithm '{algorithm_str}' was matched after normalization to '{alg.value}'. "
+                        f"Please use the standard format for consistency.",
+                        UserWarning
+                    )
+                    return alg
+        
+        # If we get here, no match was found
+        raise ValueError(f"Unknown encryption algorithm: {algorithm_str}")
+    
+    @classmethod
+    def get_recommended_algorithms(cls, security_level: int = 3) -> list['EncryptionAlgorithm']:
+        """
+        Get a list of recommended algorithms based on security level.
+        
+        Args:
+            security_level: Desired security level (1, 3, or 5)
+                            1 = AES-128 equivalent (ML-KEM-512)
+                            3 = AES-192 equivalent (ML-KEM-768) - recommended minimum
+                            5 = AES-256 equivalent (ML-KEM-1024) - highest security
+        
+        Returns:
+            List of recommended EncryptionAlgorithm values
+        """
+        # Base recommendations for all security levels
+        recommended = [
+            cls.AES_GCM,
+            cls.CHACHA20_POLY1305,
+            cls.XCHACHA20_POLY1305,
+            cls.AES_GCM_SIV
+        ]
+        
+        # Add PQC algorithms based on security level
+        if security_level >= 5:
+            recommended.append(cls.ML_KEM_1024_HYBRID)
+        elif security_level >= 3:
+            recommended.append(cls.ML_KEM_768_HYBRID)
+        else:
+            recommended.append(cls.ML_KEM_512_HYBRID)
+            
+        return recommended
+    
+    def is_deprecated(self) -> bool:
+        """Check if this algorithm is deprecated."""
+        return is_deprecated(self.value)
+    
+    def get_replacement(self) -> Optional[str]:
+        """Get the recommended replacement if this algorithm is deprecated."""
+        if self.is_deprecated():
+            return get_recommended_replacement(self.value)
+        return None
 
 
 class KeyStretch:
@@ -400,6 +522,9 @@ class KeyStretch:
 
 class CamelliaCipher:
     def __init__(self, key):
+        # Issue deprecation warning for Camellia algorithm
+        warn_deprecated_algorithm("camellia", "CamelliaCipher.__init__")
+        
         try:
             self.key = SecureBytes(key)
             # Derive a separate HMAC key from the provided key to prevent key reuse
