@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 
 # Enhanced script to generate test files with parameters derived from filenames
-# Filename format: test_[algo]_[hash1+hash2+...]_[kdf1+kdf2+...]_[encryption_data].txt
-# Example: test_aes-gcm_sha512+sha256_argon2+pbkdf2_standard.txt
+# Filename format: test_[prefix]_[algo]_[hash1+hash2+...]_[kdf1+kdf2+...]_[encryption_data].txt
+# Example: test_v5_aes-gcm_sha512+sha256_argon2+pbkdf2_standard.txt
 # 
-# Note: Different metadata versions are handled by output directories (v3, v4, v5),
-# not in the filename itself.
+# The prefix (v3, v4, v5) in the filename determines which metadata version and output directory to use.
 
-# Output directory - default to v5 but can be changed
-OUTPUT='openssl_encrypt/unittests/testfiles/v5'
+# Default settings
+DEFAULT_PREFIX="v5"  # Default prefix if none specified in filename
 TEST_PASSWORD="1234"
 TEST_CONTENT="Hello World"
+
+# Base directory for test files
+BASE_OUTPUT_DIR="openssl_encrypt/unittests/testfiles"
 
 # Available encryption algorithms
 ALGORITHMS=("aes-gcm" "aes-gcm-siv" "aes-ocb3" "aes-siv" "chacha20-poly1305" "xchacha20-poly1305" 
@@ -38,9 +40,15 @@ parse_filename() {
     local parts=(${filename//_/ })
     
     # Initialize variables with defaults
+    local prefix="$DEFAULT_PREFIX"
     local algo="aes-gcm"
     local enc_data=""
     local extra_args=""
+    
+    # Check if second part is a prefix/version (v3, v4, v5, etc.)
+    if [[ ${#parts[@]} -gt 1 && ${parts[1]} =~ ^v[0-9]+$ ]]; then
+        prefix="${parts[1]}"
+    fi
     
     # Extract parameters from filename parts
     for part in "${parts[@]}"; do
@@ -153,25 +161,33 @@ parse_filename() {
         extra_args+=" --pbkdf2-iterations 10000"
     fi
     
-    echo "$algo" "$extra_args"
+    echo "$prefix" "$algo" "$extra_args"
 }
 
 # Function to generate a test file with given parameters
 generate_test_file() {
     local filename="$1"
-    local algo="$2"
-    local extra_args="$3"
+    local prefix="$2"
+    local algo="$3"
+    local extra_args="$4"
+    
+    # Set output directory based on prefix
+    local output_dir="${BASE_OUTPUT_DIR}/${prefix}"
+    
+    # Ensure output directory exists
+    mkdir -p "${output_dir}"
     
     echo "Generating test file: ${filename}"
+    echo "  Metadata version: ${prefix}"
     echo "  Algorithm: ${algo}"
     echo "  Extra args: ${extra_args}"
     
     # Execute the encryption command
-    python -m openssl_encrypt.crypt encrypt -i /tmp/test_input.txt -o "${OUTPUT}/${filename}" \
+    python -m openssl_encrypt.crypt encrypt -i /tmp/test_input.txt -o "${output_dir}/${filename}" \
         --algorithm "${algo}" --password "${TEST_PASSWORD}" --force-password ${extra_args}
         
     # Verify that the file was created successfully
-    if [[ -f "${OUTPUT}/${filename}" ]]; then
+    if [[ -f "${output_dir}/${filename}" ]]; then
         echo "  Created successfully!"
     else
         echo "  ERROR: Failed to create test file!"
@@ -179,72 +195,99 @@ generate_test_file() {
     echo
 }
 
+# Show usage information
+show_usage() {
+    echo "Usage: $0 [test_filename.txt ...]"
+    echo ""
+    echo "Examples:"
+    echo "  $0                             # Generate default test files"
+    echo "  $0 test_v4_aes-gcm_sha512_pbkdf2.txt # Generate file with v4 metadata"
+    echo "  $0 test_v3_ml-kem-768-hybrid_sha512+sha256_argon2+pbkdf2_aes-gcm.txt"
+    echo ""
+    echo "Filename format: test_[prefix]_[algo]_[hash1+hash2+...]_[kdf1+kdf2+...]_[encryption_data].txt"
+    echo "  - [prefix]: v3, v4, v5, etc. - determines metadata version and output directory"
+}
+
+# Check for help flag
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    show_usage
+    exit 0
+fi
+
 # Generate test files based on command line arguments or default patterns
 if [[ $# -gt 0 ]]; then
     # Generate files based on command line arguments
     for filename in "$@"; do
-        read algo extra_args < <(parse_filename "$filename")
-        generate_test_file "$filename" "$algo" "$extra_args"
+        read prefix algo extra_args < <(parse_filename "$filename")
+        generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
     done
 else
     # Generate a standard set of test files with various combinations
     
-    # Basic tests with different algorithms
-    for algo in "aes-gcm" "aes-gcm-siv" "chacha20-poly1305" "xchacha20-poly1305" "fernet"; do
-        filename="test_${algo}_sha512_pbkdf2.txt"
-        read algo extra_args < <(parse_filename "$filename")
-        generate_test_file "$filename" "$algo" "$extra_args"
-    done
-    
-    # Tests with different KDFs
-    for kdf in "pbkdf2" "argon2" "balloon" "scrypt"; do
-        filename="test_aes-gcm_sha512_${kdf}.txt"
-        read algo extra_args < <(parse_filename "$filename")
-        generate_test_file "$filename" "$algo" "$extra_args"
-    done
-    
-    # Tests with multiple KDFs
-    filename="test_aes-gcm_sha512_pbkdf2+argon2.txt"
-    read algo extra_args < <(parse_filename "$filename")
-    generate_test_file "$filename" "$algo" "$extra_args"
-    
-    filename="test_aes-gcm_sha512_argon2+balloon.txt"
-    read algo extra_args < <(parse_filename "$filename")
-    generate_test_file "$filename" "$algo" "$extra_args"
-    
-    # Tests with different hashes
-    for hash in "sha256" "sha512" "sha3-256" "sha3-512" "blake2b"; do
-        filename="test_aes-gcm_${hash}_pbkdf2.txt"
-        read algo extra_args < <(parse_filename "$filename")
-        generate_test_file "$filename" "$algo" "$extra_args"
-    done
-    
-    # Tests with multiple hashes
-    filename="test_aes-gcm_sha256+sha512_pbkdf2.txt"
-    read algo extra_args < <(parse_filename "$filename")
-    generate_test_file "$filename" "$algo" "$extra_args"
-    
-    filename="test_aes-gcm_sha512+blake2b+whirlpool_pbkdf2.txt"
-    read algo extra_args < <(parse_filename "$filename")
-    generate_test_file "$filename" "$algo" "$extra_args"
-    
-    # Test with multiple hashes and multiple KDFs
-    filename="test_aes-gcm_sha256+sha512_pbkdf2+argon2.txt"
-    read algo extra_args < <(parse_filename "$filename")
-    generate_test_file "$filename" "$algo" "$extra_args"
-    
-    # Tests with PQC algorithms and multiple hashes/KDFs
-    for pqc in "ml-kem-512-hybrid" "ml-kem-768-hybrid"; do
-        filename="test_${pqc}_sha512+sha256_argon2+pbkdf2_aes-gcm.txt"
-        read algo extra_args < <(parse_filename "$filename")
-        generate_test_file "$filename" "$algo" "$extra_args"
-    done
-    
-    # Tests with HQC algorithms and multiple hashes/KDFs if available
-    for pqc in "hqc-128-hybrid"; do
-        filename="test_${pqc}_sha512+blake2b_argon2+balloon_chacha20-poly1305.txt"
-        read algo extra_args < <(parse_filename "$filename")
-        generate_test_file "$filename" "$algo" "$extra_args"
+    # Generate tests for each metadata version
+    for metadata_version in "v3" "v4" "v5"; do
+        echo "Generating default test files for metadata version ${metadata_version}..."
+        
+        # Basic tests with different algorithms
+        for algo in "aes-gcm" "aes-gcm-siv" "chacha20-poly1305" "xchacha20-poly1305" "fernet"; do
+            filename="test_${metadata_version}_${algo}_sha512_pbkdf2.txt"
+            read prefix algo extra_args < <(parse_filename "$filename")
+            generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
+        done
+        
+        # Tests with different KDFs
+        for kdf in "pbkdf2" "argon2" "balloon" "scrypt"; do
+            filename="test_${metadata_version}_aes-gcm_sha512_${kdf}.txt"
+            read prefix algo extra_args < <(parse_filename "$filename")
+            generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
+        done
+        
+        # Tests with multiple KDFs (only for v5 for simplicity)
+        if [[ "$metadata_version" == "v5" ]]; then
+            # Tests with multiple KDFs
+            filename="test_${metadata_version}_aes-gcm_sha512_pbkdf2+argon2.txt"
+            read prefix algo extra_args < <(parse_filename "$filename")
+            generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
+            
+            filename="test_${metadata_version}_aes-gcm_sha512_argon2+balloon.txt"
+            read prefix algo extra_args < <(parse_filename "$filename")
+            generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
+            
+            # Tests with different hashes
+            for hash in "sha256" "sha512" "sha3-256" "sha3-512" "blake2b"; do
+                filename="test_${metadata_version}_aes-gcm_${hash}_pbkdf2.txt"
+                read prefix algo extra_args < <(parse_filename "$filename")
+                generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
+            done
+            
+            # Tests with multiple hashes
+            filename="test_${metadata_version}_aes-gcm_sha256+sha512_pbkdf2.txt"
+            read prefix algo extra_args < <(parse_filename "$filename")
+            generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
+            
+            filename="test_${metadata_version}_aes-gcm_sha512+blake2b+whirlpool_pbkdf2.txt"
+            read prefix algo extra_args < <(parse_filename "$filename")
+            generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
+            
+            # Test with multiple hashes and multiple KDFs
+            filename="test_${metadata_version}_aes-gcm_sha256+sha512_pbkdf2+argon2.txt"
+            read prefix algo extra_args < <(parse_filename "$filename")
+            generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
+            
+            # Tests with PQC algorithms and multiple hashes/KDFs
+            for pqc in "ml-kem-512-hybrid" "ml-kem-768-hybrid"; do
+                filename="test_${metadata_version}_${pqc}_sha512+sha256_argon2+pbkdf2_aes-gcm.txt"
+                read prefix algo extra_args < <(parse_filename "$filename")
+                generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
+            done
+            
+            # Tests with HQC algorithms and multiple hashes/KDFs if available
+            for pqc in "hqc-128-hybrid"; do
+                filename="test_${metadata_version}_${pqc}_sha512+blake2b_argon2+balloon_chacha20-poly1305.txt"
+                read prefix algo extra_args < <(parse_filename "$filename")
+                generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
+            done
+        fi
     done
 fi
 
