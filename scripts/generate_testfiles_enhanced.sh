@@ -336,6 +336,11 @@ while [[ $# -gt 0 ]]; do
             DRY_RUN=true
             shift
             ;;
+        -b|--base)
+           shift
+           BASE_OUTPUT_DIR="$1"
+           shift
+           ;;
         *)
             break
             ;;
