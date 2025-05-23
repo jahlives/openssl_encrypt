@@ -15,6 +15,10 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
+# Import and apply ML-KEM patches for CLI support
+from openssl_encrypt.modules import ml_kem_patch
+ml_kem_patch.apply_patches()
+
 # Use absolute import when running as script
 if __name__ == "__main__":
     from openssl_encrypt.modules.crypt_cli import main
