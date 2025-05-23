@@ -1739,11 +1739,8 @@ def main():
                         if not args.quiet:
                             print(f"Generating ephemeral post-quantum key pair for {args.algorithm}")
                             if args.pqc_store_key:
-                                if args.verbose or args.debug:
-                                    logger.info("Private key will be stored in the encrypted file for self-decryption")
-                                else:
-                                    # Keep this as a print since it's important information
-                                    print("Private key will be stored in the encrypted file for self-decryption")
+                                # Only log this message with INFO level so it only appears in verbose mode
+                                logger.info("Private key will be stored in the encrypted file for self-decryption")
                             else:
                                 # Keep this as a print since it's a warning
                                 print(
@@ -2067,11 +2064,8 @@ def main():
                     if not args.quiet:
                         print(f"Generating ephemeral post-quantum key pair for {args.algorithm}")
                         if args.pqc_store_key:
-                            if args.verbose or args.debug:
-                                logger.info("Private key will be stored in the encrypted file for self-decryption")
-                            else:
-                                # Keep this as a print since it's important information
-                                print("Private key will be stored in the encrypted file for self-decryption")
+                            # Only log this message with INFO level so it only appears in verbose mode
+                            logger.info("Private key will be stored in the encrypted file for self-decryption")
                         else:
                             # Keep this as a print since it's a warning
                             print("WARNING: Private key will NOT be stored - you must use a key file for decryption")

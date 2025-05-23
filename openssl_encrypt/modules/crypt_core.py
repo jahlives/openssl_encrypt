@@ -3227,10 +3227,8 @@ def print_hash_config(
     
     if quiet:
         return
-    if verbose or debug:
-        logger.info("Secure memory handling: Enabled")
-    else:
-        print("Secure memory handling: Enabled")
+    # Only log this message with INFO level so it only appears in verbose mode
+    logger.info("Secure memory handling: Enabled")
     organized = get_organized_hash_config(hash_config, encryption_algo, salt)
 
     if KeyStretch.kind_action == 'decrypt' and verbose:
