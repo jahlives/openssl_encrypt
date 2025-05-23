@@ -347,7 +347,8 @@ def main():
 
     # Set up argument parser
     parser = argparse.ArgumentParser(
-        description='Encrypt or decrypt a file with a password')
+        description='Encrypt or decrypt a file with a password',
+        formatter_class=argparse.RawTextHelpFormatter)
 
     # show or hide progess
     parser.add_argument(
@@ -446,7 +447,7 @@ def main():
         else:
             description = 'encryption algorithm'
             
-        algorithm_help_text += f'  {algo} ({description}),\n'
+        algorithm_help_text += f'  {algo}: {description}\n'
         
     parser.add_argument(
         '--algorithm',
@@ -461,7 +462,7 @@ def main():
     # Data encryption algorithm to use with Kyber/ML-KEM
     # Build help text with deprecated warnings
     data_algorithms = ['aes-gcm', 'aes-gcm-siv', 'aes-ocb3', 'aes-siv', 'chacha20-poly1305', 'xchacha20-poly1305']
-    data_algo_help = 'Symmetric encryption algorithm to use for data encryption when using Kyber/ML-KEM: \n'
+    data_algo_help = 'Symmetric encryption algorithm to use for data encryption when using Kyber/ML-KEM:\n'
     
     for algo in data_algorithms:
         if algo == 'aes-gcm':
@@ -479,7 +480,7 @@ def main():
         else:
             description = 'encryption algorithm'
             
-        data_algo_help += f'  {algo} ({description}), \n'
+        data_algo_help += f'  {algo}: {description}\n'
     
     parser.add_argument(
         '--encryption-data',

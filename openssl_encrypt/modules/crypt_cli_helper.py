@@ -61,11 +61,12 @@ def add_extended_algorithm_help(parser: Any) -> None:
         if action.dest == 'algorithm':
             # Add information about the extended algorithms
             original_help = action.help
-            extended_help = original_help + "\n\nExtended algorithms:\n"
+            extended_help = original_help + "\nExtended algorithms:\n"
             
             # Add info about ML-KEM with ChaCha20
-            extended_help += "  ML-KEM with ChaCha20 (post-quantum):\n"
-            extended_help += "    ml-kem-512-chacha20, ml-kem-768-chacha20, ml-kem-1024-chacha20\n"
+            extended_help += "  ml-kem-512-chacha20: ML-KEM-512 with ChaCha20-Poly1305 (post-quantum)\n"
+            extended_help += "  ml-kem-768-chacha20: ML-KEM-768 with ChaCha20-Poly1305 (post-quantum)\n"
+            extended_help += "  ml-kem-1024-chacha20: ML-KEM-1024 with ChaCha20-Poly1305 (post-quantum)\n"
             
             # Update the help text
             action.help = extended_help
