@@ -16,8 +16,12 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import math
 import os
+
+# Set up a module-level logger
+logger = logging.getLogger(__name__)
 import functools
 import warnings
 from typing import Callable, Any, Optional, TypeVar, cast
@@ -281,8 +285,7 @@ try:
     try:
         from openssl_encrypt.modules.setup_whirlpool import setup_whirlpool
         if python_version.major == 3 and python_version.minor >= 13:
-            import logging
-            logging.getLogger(__name__).info(f"Setting up Whirlpool for Python {python_version.major}.{python_version.minor}")
+            logger.debug(f"Setting up Whirlpool for Python {python_version.major}.{python_version.minor}")
         setup_result = setup_whirlpool()
     except ImportError:
         setup_result = False
@@ -3215,48 +3218,49 @@ def print_hash_config(
         salt=None,
         quiet=False,
         verbose=False):
+    
     if quiet:
         return
     print("Secure memory handling: Enabled")
     organized = get_organized_hash_config(hash_config, encryption_algo, salt)
 
     if KeyStretch.kind_action == 'decrypt' and verbose:
-        print("\nDecrypting with the following configuration:")
+        logger.info("\nDecrypting with the following configuration:")
     elif verbose:
-        print("\nEncrypting with the following configuration:")
+        logger.info("\nEncrypting with the following configuration:")
 
     if verbose:
         # Print Hashes
-        print("  Hash Functions:")
+        logger.info("  Hash Functions:")
         if not organized['hashes']:
-            print("    - No additional hashing algorithms used")
+            logger.info("    - No additional hashing algorithms used")
         else:
             for algo, iterations in organized['hashes'].items():
-                print(f"    - {algo.upper()}: {iterations} iterations")
+                logger.info(f"    - {algo.upper()}: {iterations} iterations")
         # Print KDFs
-        print("  Key Derivation Functions:")
+        logger.info("  Key Derivation Functions:")
         if not organized['kdfs']:
-            print("    - No KDFs used")
+            logger.info("    - No KDFs used")
         else:
             for algo, params in organized['kdfs'].items():
                 if algo == 'scrypt':
-                    print(
+                    logger.info(
                         f"    - Scrypt: n={params['n']}, r={params['r']}, p={params['p']}")
                 elif algo == 'argon2':
-                    print(f"    - Argon2: time_cost={params['time_cost']}, "
+                    logger.info(f"    - Argon2: time_cost={params['time_cost']}, "
                           f"memory_cost={params['memory_cost']}KB, "
                           f"parallelism={params['parallelism']}, "
                           f"hash_len={params['hash_len']}")
                 elif algo == 'balloon':
-                    print(f"    - Balloon: time_cost={params['time_cost']}, "
+                    logger.info(f"    - Balloon: time_cost={params['time_cost']}, "
                           f"space_cost={params['space_cost']}, "
                           f"parallelism={params['parallelism']}, "
                           f"rounds={params['rounds']}")
                 elif algo == 'pbkdf2_iterations':
-                    print(f"    - PBKDF2: {params} iterations")
-        print("  Encryption:")
-        print(f"    - Algorithm: {encryption_algo or 'Not specified'}")
+                    logger.info(f"    - PBKDF2: {params} iterations")
+        logger.info("  Encryption:")
+        logger.info(f"    - Algorithm: {encryption_algo or 'Not specified'}")
         salt_str = base64.b64encode(salt).decode(
             'utf-8') if isinstance(salt, bytes) else salt
-        print(f"    - Salt: {salt_str or 'Not specified'}")
-        print('')
+        logger.info(f"    - Salt: {salt_str or 'Not specified'}")
+        logger.info('')

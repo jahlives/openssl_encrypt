@@ -13,8 +13,7 @@ from pathlib import Path
 import subprocess
 import platform
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
+# Set up logging - let the parent module configure the level
 logger = logging.getLogger("setup_whirlpool")
 
 
@@ -67,7 +66,7 @@ def find_whirlpool_modules():
 def create_whirlpool_symlink():
     """Create a symbolic link to the appropriate Whirlpool module."""
     whirlpool_modules = find_whirlpool_modules()
-    logger.info(f"Found Whirlpool modules: {whirlpool_modules}")
+    logger.debug(f"Found Whirlpool modules: {whirlpool_modules}")
     
     if not whirlpool_modules:
         logger.warning("No Whirlpool modules found. Attempting to install...")
@@ -86,7 +85,7 @@ def create_whirlpool_symlink():
     try:
         # Try to import whirlpool directly
         import whirlpool
-        logger.info("Whirlpool module already working, no action needed")
+        logger.debug("Whirlpool module already working, no action needed")
         return True
     except ImportError:
         # Need to fix the import
@@ -140,7 +139,7 @@ def create_whirlpool_symlink():
     else:  # Unix/Linux/Mac
         target_name = os.path.join(module_dir, f"whirlpool.{version_suffix}-{platform.machine()}-linux-gnu.so")
     
-    logger.info(f"Creating symbolic link from {chosen_module} to {target_name}")
+    logger.debug(f"Creating symbolic link from {chosen_module} to {target_name}")
     
     try:
         # Remove existing file if it exists
@@ -155,7 +154,7 @@ def create_whirlpool_symlink():
         else:
             os.symlink(chosen_module, target_name)
         
-        logger.info("Successfully created Whirlpool module link")
+        logger.debug("Successfully created Whirlpool module link")
         
         # Verify the link works
         try:
@@ -165,7 +164,7 @@ def create_whirlpool_symlink():
             
             # Try importing again
             import whirlpool
-            logger.info("Verified Whirlpool module can now be imported")
+            logger.debug("Verified Whirlpool module can now be imported")
             return True
         except ImportError as e:
             logger.error(f"Created link but import still fails: {e}")
@@ -185,7 +184,7 @@ def install_whirlpool():
         if python_version.major > 3 or (python_version.major == 3 and python_version.minor >= 13):
             # Check if whirlpool-py313 is available in PyPI
             try:
-                logger.info("Checking for whirlpool-py313 package in PyPI")
+                logger.debug("Checking for whirlpool-py313 package in PyPI")
                 import pip._vendor.requests as requests
                 response = requests.get("https://pypi.org/pypi/whirlpool-py313/json")
                 if response.status_code == 200:
@@ -221,7 +220,7 @@ def setup_whirlpool():
     try:
         # First try to import normally
         import whirlpool
-        logger.info("Whirlpool module already working, no action needed")
+        logger.debug("Whirlpool module already working, no action needed")
         return True
     except ImportError:
         # Need to create the symlink
