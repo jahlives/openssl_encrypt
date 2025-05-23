@@ -29,11 +29,19 @@ This document outlines planned security enhancements and improvements for the op
   - [ ] Implement automated checks for insecure cryptographic patterns
   - [ ] Set up continuous monitoring for security issues
 
-- [ ] **Cryptographic algorithm upgrades**
-  - [ ] Review all algorithms against current NIST and industry standards
-  - [ ] Mark deprecated algorithms as legacy
-  - [ ] Add support for newer post-quantum resistant algorithms
-  - [ ] Implement a clear algorithm upgrade path for existing users
+- [x] **Cryptographic algorithm upgrades**
+  - [x] Research current NIST and industry standards for cryptographic algorithms
+  - [x] Audit existing algorithm implementations against current standards
+  - [x] Create inventory of algorithms to mark as legacy/deprecated
+  - [x] Implement legacy warning system for deprecated algorithms
+  - [x] Update naming conventions to align with NIST standards (Kyber → ML-KEM)
+  - [x] Add security level indicators to configuration options
+  - [x] Research newer post-quantum resistant algorithms beyond current implementation
+  - [x] Implement additional post-quantum resistant algorithms (HQC, ML-DSA, SLH-DSA)
+  - [x] Design algorithm upgrade path for existing users
+  - [x] Create documentation for algorithm migration
+  - [x] Implement automatic algorithm version detection
+  - [x] Add comprehensive tests for all new and updated algorithms
 
 - [x] **Dependency security**
   - [x] Conduct comprehensive review of all dependencies
@@ -53,11 +61,11 @@ This document outlines planned security enhancements and improvements for the op
 
 ## Low Priority Tasks
 
-- [ ] **Documentation enhancements**
-  - [ ] Create comprehensive security.md documentation
-  - [ ] Document thread safety considerations
-  - [ ] Add detailed cryptographic design documentation
-  - [ ] Create security best practices guide for library users
+- [x] **Documentation enhancements**
+  - [x] Create comprehensive security.md documentation
+  - [x] Document thread safety considerations
+  - [x] Add detailed cryptographic design documentation
+  - [x] Create security best practices guide for library users
 
 - [ ] **Advanced testing**
   - [ ] Implement fuzzing tests for input boundary conditions
@@ -92,3 +100,13 @@ This document outlines planned security enhancements and improvements for the op
   - [x] Make tests compatible with secure error messages
   - [x] Ensure keystore tests work with standardized error handling
   - [x] Fix wrong password and corrupted file tests to be more flexible
+
+- [x] **Post-Quantum Cryptography Enhancements**
+  - [x] Fix parameter passing in PQC-related functions
+  - [x] Improve detection of test file formats to prevent security bypasses
+  - [x] Add security validation for test cases with wrong credentials
+  - [x] Implement post-quantum adapter for liboqs integration
+  - [x] Add support for new algorithms (HQC) recently selected by NIST
+  - [x] Fix dual encryption with post-quantum algorithms
+  - [x] Add comprehensive tests for all PQC functions with wrong parameters
+  - [x] Improve test-specific security validations
