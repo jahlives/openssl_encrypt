@@ -2167,7 +2167,8 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         encryption_algo=algorithm_value,
         salt=salt,
         quiet=quiet,
-        verbose=verbose
+        verbose=verbose,
+        debug=debug
     )
 
     key, salt, hash_config = generate_key(
@@ -2737,7 +2738,8 @@ def decrypt_file(
         encryption_algo=algorithm,  # Use the extracted algorithm value
         salt=salt,  # Use the extracted salt value
         quiet=quiet,
-        verbose=verbose
+        verbose=verbose,
+        debug=debug
     )
 
     # Verify the hash of encrypted data
@@ -3220,11 +3222,15 @@ def print_hash_config(
         encryption_algo=None,
         salt=None,
         quiet=False,
-        verbose=False):
+        verbose=False,
+        debug=False):
     
     if quiet:
         return
-    print("Secure memory handling: Enabled")
+    if verbose or debug:
+        logger.info("Secure memory handling: Enabled")
+    else:
+        print("Secure memory handling: Enabled")
     organized = get_organized_hash_config(hash_config, encryption_algo, salt)
 
     if KeyStretch.kind_action == 'decrypt' and verbose:

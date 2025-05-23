@@ -1739,8 +1739,13 @@ def main():
                         if not args.quiet:
                             print(f"Generating ephemeral post-quantum key pair for {args.algorithm}")
                             if args.pqc_store_key:
-                                print("Private key will be stored in the encrypted file for self-decryption")
+                                if args.verbose or args.debug:
+                                    logger.info("Private key will be stored in the encrypted file for self-decryption")
+                                else:
+                                    # Keep this as a print since it's important information
+                                    print("Private key will be stored in the encrypted file for self-decryption")
                             else:
+                                # Keep this as a print since it's a warning
                                 print(
                                     "WARNING: Private key will NOT be stored - you must use a key file for decryption")
 
@@ -2062,8 +2067,13 @@ def main():
                     if not args.quiet:
                         print(f"Generating ephemeral post-quantum key pair for {args.algorithm}")
                         if args.pqc_store_key:
-                            print("Private key will be stored in the encrypted file for self-decryption")
+                            if args.verbose or args.debug:
+                                logger.info("Private key will be stored in the encrypted file for self-decryption")
+                            else:
+                                # Keep this as a print since it's important information
+                                print("Private key will be stored in the encrypted file for self-decryption")
                         else:
+                            # Keep this as a print since it's a warning
                             print("WARNING: Private key will NOT be stored - you must use a key file for decryption")
 
                     cipher = PQCipher(algo_map[args.algorithm], quiet=args.quiet)
