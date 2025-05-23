@@ -18,6 +18,10 @@ import tempfile
 import time
 import base64
 import hashlib
+import logging
+
+# Set up module-level logger
+logger = logging.getLogger(__name__)
 import secrets
 from enum import Enum
 from typing import Dict, Any, Optional
@@ -1441,34 +1445,34 @@ def main():
     # Scrypt
     if args.scrypt_rounds > 0 and not args.enable_scrypt:
         if not args.quiet:
-            print(f"Setting --enable-scrypt since --scrypt-rounds={args.scrypt_rounds} was provided")
+            logger.debug(f"Setting --enable-scrypt since --scrypt-rounds={args.scrypt_rounds} was provided")
         args.enable_scrypt = True
     elif args.enable_scrypt and args.scrypt_rounds <= 0:
         if not args.quiet:
             rounds_src = f"--kdf-rounds={default_rounds}" if args.kdf_rounds > 0 else "default of 10"
-            print(f"Setting --scrypt-rounds={default_rounds} ({rounds_src}) since --enable-scrypt was provided without rounds")
+            logger.debug(f"Setting --scrypt-rounds={default_rounds} ({rounds_src}) since --enable-scrypt was provided without rounds")
         args.scrypt_rounds = default_rounds
     
     # Argon2
     if args.argon2_rounds > 0 and not args.enable_argon2:
         if not args.quiet and ARGON2_AVAILABLE:
-            print(f"Setting --enable-argon2 since --argon2-rounds={args.argon2_rounds} was provided")
+            logger.debug(f"Setting --enable-argon2 since --argon2-rounds={args.argon2_rounds} was provided")
         args.enable_argon2 = True
     elif args.enable_argon2 and args.argon2_rounds <= 0:
         if not args.quiet and ARGON2_AVAILABLE:
             rounds_src = f"--kdf-rounds={default_rounds}" if args.kdf_rounds > 0 else "default of 10"
-            print(f"Setting --argon2-rounds={default_rounds} ({rounds_src}) since --enable-argon2 was provided without rounds")
+            logger.debug(f"Setting --argon2-rounds={default_rounds} ({rounds_src}) since --enable-argon2 was provided without rounds")
         args.argon2_rounds = default_rounds
     
     # Balloon
     if args.balloon_rounds > 0 and not args.enable_balloon:
         if not args.quiet:
-            print(f"Setting --enable-balloon since --balloon-rounds={args.balloon_rounds} was provided")
+            logger.debug(f"Setting --enable-balloon since --balloon-rounds={args.balloon_rounds} was provided")
         args.enable_balloon = True
     elif args.enable_balloon and args.balloon_rounds <= 0:
         if not args.quiet:
             rounds_src = f"--kdf-rounds={default_rounds}" if args.kdf_rounds > 0 else "default of 10"
-            print(f"Setting --balloon-rounds={default_rounds} ({rounds_src}) since --enable-balloon was provided without rounds")
+            logger.debug(f"Setting --balloon-rounds={default_rounds} ({rounds_src}) since --enable-balloon was provided without rounds")
         args.balloon_rounds = default_rounds
         
     # Debug output to verify parameter values (uncomment for debugging)
