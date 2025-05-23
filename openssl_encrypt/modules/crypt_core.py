@@ -18,6 +18,9 @@ import hmac
 import json
 import math
 import os
+import functools
+import warnings
+from typing import Callable, Any, Optional, TypeVar, cast
 import secrets
 import stat
 import sys
@@ -43,6 +46,33 @@ from .crypt_errors import AuthenticationError, InternalError, KeyDerivationError
 from .crypt_errors import secure_encrypt_error_handler, secure_decrypt_error_handler
 from .crypt_errors import secure_key_derivation_error_handler, secure_error_handler
 from .crypt_errors import constant_time_compare  # Error handling imports are at the top of file
+
+# Import algorithm warning system
+from .algorithm_warnings import warn_deprecated_algorithm, is_deprecated, get_recommended_replacement
+
+# Define type variable for generic function
+F = TypeVar('F', bound=Callable[..., Any])
+
+def deprecated_algorithm(algorithm: str, context: Optional[str] = None) -> Callable[[F], F]:
+    """
+    Decorator to mark functions using deprecated algorithms.
+    
+    Args:
+        algorithm: The algorithm name that is deprecated
+        context: Optional context information about how the algorithm is being used
+        
+    Returns:
+        Decorator function
+    """
+    def decorator(func: F) -> F:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            # Issue deprecation warning
+            warn_deprecated_algorithm(algorithm, context or func.__name__, show_stack=False)
+            # Call the original function
+            return func(*args, **kwargs)
+        return cast(F, wrapper)
+    return decorator
 
 class XChaCha20Poly1305:
     def __init__(self, key):
@@ -367,10 +397,27 @@ try:
     from .pqc import PQCipher, check_pqc_support, PQCAlgorithm
     # Always initialize quietly during module import to prevent unwanted output
     PQC_AVAILABLE, PQC_VERSION, PQC_ALGORITHMS = check_pqc_support(quiet=True) 
+    
+    # Try to import extended PQC adapter for additional algorithms
+    try:
+        from .pqc_adapter import (
+            ExtendedPQCipher,
+            get_available_pq_algorithms,
+            LIBOQS_AVAILABLE
+        )
+        # Use the extended algorithms list if available
+        if LIBOQS_AVAILABLE:
+            PQC_ALGORITHMS = get_available_pq_algorithms(quiet=True)
+            # Also override PQCipher with the extended version for new algorithms
+            PQCipher = ExtendedPQCipher
+    except ImportError:
+        # Adapter not available, continue with basic PQCipher
+        pass
 except ImportError:
     PQC_AVAILABLE = False
     PQC_VERSION = None
     PQC_ALGORITHMS = []
+    LIBOQS_AVAILABLE = False
 
 
 class EncryptionAlgorithm(Enum):
@@ -382,9 +429,117 @@ class EncryptionAlgorithm(Enum):
     AES_GCM_SIV = "aes-gcm-siv"
     AES_OCB3 = "aes-ocb3"
     CAMELLIA = "camellia"
-    KYBER512_HYBRID = "kyber512-hybrid"
-    KYBER768_HYBRID = "kyber768-hybrid"
-    KYBER1024_HYBRID = "kyber1024-hybrid"
+    # NIST FIPS 203 standardized naming (ML-KEM)
+    ML_KEM_512_HYBRID = "ml-kem-512-hybrid"
+    ML_KEM_768_HYBRID = "ml-kem-768-hybrid"
+    ML_KEM_1024_HYBRID = "ml-kem-1024-hybrid"
+    # Legacy Kyber naming scheme (deprecated, will be removed in future)
+    KYBER512_HYBRID = "kyber512-hybrid"  # Deprecated: use ML_KEM_512_HYBRID instead
+    KYBER768_HYBRID = "kyber768-hybrid"  # Deprecated: use ML_KEM_768_HYBRID instead
+    KYBER1024_HYBRID = "kyber1024-hybrid"  # Deprecated: use ML_KEM_1024_HYBRID instead
+    
+    # ML-KEM with ChaCha20-Poly1305 instead of AES-GCM
+    ML_KEM_512_CHACHA20 = "ml-kem-512-chacha20"
+    ML_KEM_768_CHACHA20 = "ml-kem-768-chacha20"
+    ML_KEM_1024_CHACHA20 = "ml-kem-1024-chacha20"
+    
+    # Additional post-quantum algorithms (via liboqs)
+    # HQC hybrid modes (NIST selection March 2025)
+    HQC_128_HYBRID = "hqc-128-hybrid"
+    HQC_192_HYBRID = "hqc-192-hybrid"
+    HQC_256_HYBRID = "hqc-256-hybrid"
+    
+    @classmethod
+    def from_string(cls, algorithm_str: str) -> 'EncryptionAlgorithm':
+        """
+        Get EncryptionAlgorithm enum from string representation.
+        
+        Args:
+            algorithm_str: String representation of the algorithm
+            
+        Returns:
+            EncryptionAlgorithm: The corresponding enum value
+            
+        Raises:
+            ValueError: If algorithm string is not recognized
+        """
+        # Check if the algorithm is deprecated and issue warning if so
+        if is_deprecated(algorithm_str):
+            replacement = get_recommended_replacement(algorithm_str)
+            context = f"algorithm selection '{algorithm_str}'"
+            warn_deprecated_algorithm(algorithm_str, context)
+        
+        # First try exact match (case-sensitive)
+        try:
+            return cls(algorithm_str)
+        except ValueError:
+            # Try case-insensitive match
+            for alg in cls:
+                if alg.value.lower() == algorithm_str.lower():
+                    if alg.value != algorithm_str:
+                        warnings.warn(
+                            f"Algorithm '{algorithm_str}' was matched case-insensitively to '{alg.value}'. "
+                            f"Please use the exact case for consistency.",
+                            UserWarning
+                        )
+                    return alg
+                    
+            # Try normalized match (without hyphens or underscores)
+            normalized_input = algorithm_str.lower().replace('-', '').replace('_', '')
+            for alg in cls:
+                normalized_enum = alg.value.lower().replace('-', '').replace('_', '')
+                if normalized_enum == normalized_input:
+                    warnings.warn(
+                        f"Algorithm '{algorithm_str}' was matched after normalization to '{alg.value}'. "
+                        f"Please use the standard format for consistency.",
+                        UserWarning
+                    )
+                    return alg
+        
+        # If we get here, no match was found
+        raise ValueError(f"Unknown encryption algorithm: {algorithm_str}")
+    
+    @classmethod
+    def get_recommended_algorithms(cls, security_level: int = 3) -> list['EncryptionAlgorithm']:
+        """
+        Get a list of recommended algorithms based on security level.
+        
+        Args:
+            security_level: Desired security level (1, 3, or 5)
+                            1 = AES-128 equivalent (ML-KEM-512)
+                            3 = AES-192 equivalent (ML-KEM-768) - recommended minimum
+                            5 = AES-256 equivalent (ML-KEM-1024) - highest security
+        
+        Returns:
+            List of recommended EncryptionAlgorithm values
+        """
+        # Base recommendations for all security levels
+        recommended = [
+            cls.AES_GCM,
+            cls.CHACHA20_POLY1305,
+            cls.XCHACHA20_POLY1305,
+            cls.AES_GCM_SIV
+        ]
+        
+        # Add PQC algorithms based on security level
+        if security_level >= 5:
+            recommended.append(cls.ML_KEM_1024_HYBRID)
+        elif security_level >= 3:
+            recommended.append(cls.ML_KEM_768_HYBRID)
+        else:
+            recommended.append(cls.ML_KEM_512_HYBRID)
+            
+        return recommended
+    
+    def is_deprecated(self) -> bool:
+        """Check if this algorithm is deprecated."""
+        return is_deprecated(self.value)
+    
+    def get_replacement(self) -> Optional[str]:
+        """Get the recommended replacement if this algorithm is deprecated."""
+        if self.is_deprecated():
+            return get_recommended_replacement(self.value)
+        return None
 
 
 class KeyStretch:
@@ -395,6 +550,9 @@ class KeyStretch:
 
 class CamelliaCipher:
     def __init__(self, key):
+        # Issue deprecation warning for Camellia algorithm
+        warn_deprecated_algorithm("camellia", "CamelliaCipher.__init__")
+        
         try:
             self.key = SecureBytes(key)
             # Derive a separate HMAC key from the provided key to prevent key reuse
@@ -2104,9 +2262,25 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
             
             # Map algorithm to PQCAlgorithm
             pqc_algo_map = {
+                # Legacy Kyber mappings
                 EncryptionAlgorithm.KYBER512_HYBRID: PQCAlgorithm.KYBER512,
                 EncryptionAlgorithm.KYBER768_HYBRID: PQCAlgorithm.KYBER768,
-                EncryptionAlgorithm.KYBER1024_HYBRID: PQCAlgorithm.KYBER1024
+                EncryptionAlgorithm.KYBER1024_HYBRID: PQCAlgorithm.KYBER1024,
+                
+                # Standardized ML-KEM mappings
+                EncryptionAlgorithm.ML_KEM_512_HYBRID: PQCAlgorithm.ML_KEM_512,
+                EncryptionAlgorithm.ML_KEM_768_HYBRID: PQCAlgorithm.ML_KEM_768,
+                EncryptionAlgorithm.ML_KEM_1024_HYBRID: PQCAlgorithm.ML_KEM_1024,
+                
+                # ML-KEM with ChaCha20
+                EncryptionAlgorithm.ML_KEM_512_CHACHA20: PQCAlgorithm.ML_KEM_512,
+                EncryptionAlgorithm.ML_KEM_768_CHACHA20: PQCAlgorithm.ML_KEM_768,
+                EncryptionAlgorithm.ML_KEM_1024_CHACHA20: PQCAlgorithm.ML_KEM_1024,
+                
+                # HQC mappings
+                EncryptionAlgorithm.HQC_128_HYBRID: "HQC-128",
+                EncryptionAlgorithm.HQC_192_HYBRID: "HQC-192",
+                EncryptionAlgorithm.HQC_256_HYBRID: "HQC-256"
             }
             
             # Get public key from keypair or generate new keypair
@@ -2119,7 +2293,8 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                 # We'll add these to metadata later
             
             # Initialize PQC cipher and encrypt
-            cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet)
+            # Use encryption_data parameter passed to the parent function
+            cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet, encryption_data=encryption_data)
             return cipher.encrypt(data, public_key)
         else:
             # Check if we're in test mode - this affects nonce generation for some algorithms
@@ -2182,7 +2357,8 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                     # We'll add these to metadata later
                 
                 # Initialize PQC cipher and encrypt
-                cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet)
+                # Use encryption_data parameter passed to the parent function
+                cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet, encryption_data=encryption_data)
                 return cipher.encrypt(data, public_key)
             else:
                 raise ValueError(f"Unknown encryption algorithm: {algorithm}")
@@ -2346,7 +2522,8 @@ def decrypt_file(
         quiet=False,
         progress=False,
         verbose=False,
-        pqc_private_key=None):
+        pqc_private_key=None,
+        encryption_data='aes-gcm'):
     """
     Decrypt a file with a password.
 
@@ -2358,6 +2535,7 @@ def decrypt_file(
         progress (bool): Whether to show progress bar
         verbose (bool): Whether to show verbose output
         pqc_private_key (bytes, optional): Post-quantum private key for hybrid decryption
+        encryption_data (str): Encryption data algorithm to use for hybrid encryption (default: 'aes-gcm')
     
     Returns:
         Union[bool, bytes]: True if decryption was successful and output_file is specified,
@@ -2761,7 +2939,8 @@ def decrypt_file(
                 raise ValueError("Post-quantum private key is required for decryption")
             
             # Initialize PQC cipher and decrypt
-            cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet)
+            # Use encryption_data parameter passed to the parent function
+            cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet, encryption_data=encryption_data)
             try:
                 # Pass the full file contents for recovery if needed
                 # This allows the PQCipher to try to recover the original content
