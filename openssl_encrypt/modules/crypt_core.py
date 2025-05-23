@@ -446,11 +446,11 @@ class EncryptionAlgorithm(Enum):
     ML_KEM_768_CHACHA20 = "ml-kem-768-chacha20"
     ML_KEM_1024_CHACHA20 = "ml-kem-1024-chacha20"
     
-    # Additional post-quantum algorithms (via liboqs)
+    # Additional post-quantum algorithms commented out until fully supported
     # HQC hybrid modes (NIST selection March 2025)
-    HQC_128_HYBRID = "hqc-128-hybrid"
-    HQC_192_HYBRID = "hqc-192-hybrid"
-    HQC_256_HYBRID = "hqc-256-hybrid"
+    # HQC_128_HYBRID = "hqc-128-hybrid"
+    # HQC_192_HYBRID = "hqc-192-hybrid"
+    # HQC_256_HYBRID = "hqc-256-hybrid"
     
     @classmethod
     def from_string(cls, algorithm_str: str) -> 'EncryptionAlgorithm':
@@ -2281,10 +2281,10 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                 EncryptionAlgorithm.ML_KEM_768_CHACHA20: PQCAlgorithm.ML_KEM_768,
                 EncryptionAlgorithm.ML_KEM_1024_CHACHA20: PQCAlgorithm.ML_KEM_1024,
                 
-                # HQC mappings
-                EncryptionAlgorithm.HQC_128_HYBRID: "HQC-128",
-                EncryptionAlgorithm.HQC_192_HYBRID: "HQC-192",
-                EncryptionAlgorithm.HQC_256_HYBRID: "HQC-256"
+                # HQC mappings commented out until fully supported
+                # EncryptionAlgorithm.HQC_128_HYBRID: "HQC-128",
+                # EncryptionAlgorithm.HQC_192_HYBRID: "HQC-192",
+                # EncryptionAlgorithm.HQC_256_HYBRID: "HQC-256"
             }
             
             # Get public key from keypair or generate new keypair
