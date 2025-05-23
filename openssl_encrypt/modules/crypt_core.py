@@ -2414,18 +2414,19 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                     # Use the derived private_key_key NOT the main key
                     cipher = AESGCM(hashlib.sha3_256(key).digest())
                     nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
-                    print(f"DEBUG: Encrypting private key (keypair): key length = {len(key)}, nonce length = {len(nonce)}, private key length = {len(pqc_keypair[1])}")
+                    # Use logger for DEBUG messages instead of print
+                    logger.debug(f"Encrypting private key (keypair): key length = {len(key)}, nonce length = {len(nonce)}, private key length = {len(pqc_keypair[1])}")
                     encrypted_private_key = nonce + cipher.encrypt(nonce, pqc_keypair[1], None)
-                    print(f"DEBUG: Successfully encrypted private key, length = {len(encrypted_private_key)}")
+                    logger.debug(f"Successfully encrypted private key, length = {len(encrypted_private_key)}")
                 except Exception as e:
-                    print(f"DEBUG: Error encrypting private key: {e}")
+                    logger.error(f"Error encrypting private key: {e}")
                     raise
                 # END DO NOT CHANGE
                 
                 pqc_info['private_key'] = encrypted_private_key
                 pqc_info['key_encrypted'] = True  # Mark that the key is encrypted
                 if pqc_dual_encrypt_key:
-                    print(f"DEBUG: Setting pqc_dual_encrypt_key flag to True for keypair provided")
+                    logger.debug(f"Setting pqc_dual_encrypt_key flag to True for keypair provided")
                     pqc_info['dual_encrypt_key'] = True
 
             elif not quiet:
@@ -2451,18 +2452,19 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                     # Use AES-GCM for encryption
                     cipher = AESGCM(hashlib.sha3_256(key).digest())
                     nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
-                    print(f"DEBUG: Encrypting private key: key length = {len(key)}, nonce length = {len(nonce)}, private key length = {len(private_key)}")
+                    # Use logger for DEBUG messages instead of print
+                    logger.debug(f"Encrypting private key: key length = {len(key)}, nonce length = {len(nonce)}, private key length = {len(private_key)}")
                     encrypted_private_key = nonce + cipher.encrypt(nonce, private_key, None)
-                    print(f"DEBUG: Successfully encrypted private key, length = {len(encrypted_private_key)}")
+                    logger.debug(f"Successfully encrypted private key, length = {len(encrypted_private_key)}")
                 except Exception as e:
-                    print(f"DEBUG: Error encrypting private key: {e}")
+                    logger.error(f"Error encrypting private key: {e}")
                     raise
                 # END DO NOT CHANGE
                 
                 pqc_info['private_key'] = encrypted_private_key
                 pqc_info['key_encrypted'] = True  # Mark that the key is encrypted
                 if pqc_dual_encrypt_key:
-                    print(f"DEBUG: Setting pqc_dual_encrypt_key flag to True for generated internal keypair")
+                    logger.debug(f"Setting pqc_dual_encrypt_key flag to True for generated internal keypair")
                     pqc_info['dual_encrypt_key'] = True
     
     # Create metadata in version 5 format using the helper function
@@ -2888,13 +2890,13 @@ def decrypt_file(
                             print("Successfully decrypted post-quantum private key from metadata")
                     except Exception as e:
                         # If decryption fails, it means the wrong password was used
-                        print(f"DEBUG: Failed to decrypt post-quantum private key - Error: {str(e)}")
+                        logger.debug(f"Failed to decrypt post-quantum private key - Error: {str(e)}")
                         if not quiet:
                             print("Failed to decrypt post-quantum private key - wrong password")
                         pqc_private_key_from_metadata = None
                 except Exception as e:
                     # Handle any other exceptions
-                    print(f"DEBUG: Error during decryption process: {str(e)}")
+                    logger.debug(f"Error during decryption process: {str(e)}")
                     if not quiet:
                         print(f"Error decrypting private key: {str(e)}")
                     pqc_private_key_from_metadata = None
