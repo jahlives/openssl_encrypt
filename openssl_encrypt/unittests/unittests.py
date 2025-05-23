@@ -19,6 +19,31 @@ import json
 import time
 import statistics
 import re
+import logging
+import warnings
+
+# Suppress specific deprecation warnings during tests
+# First try with Python warnings module
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
+
+# Also use pytest markers if pytest is available
+try:
+    import pytest
+    pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
+    pytestmark = pytest.mark.filterwarnings("ignore::UserWarning")
+except (ImportError, AttributeError):
+    pass
+
+# Monkey patch the warnings module for tests
+original_warn = warnings.warn
+def silent_warn(message, category=None, stacklevel=1, source=None):
+    # Only log to debug instead of showing warning
+    if category == DeprecationWarning or 'Algorithm' in str(message):
+        return
+    return original_warn(message, category, stacklevel, source)
+
+warnings.warn = silent_warn
 from unittest import mock
 from pathlib import Path
 from cryptography.fernet import InvalidToken
@@ -58,6 +83,28 @@ from modules.secure_memory import (
 from modules.crypt_errors import (
     add_timing_jitter, get_jitter_stats
 )
+
+
+class LogCapture(logging.Handler):
+    """A custom logging handler that captures log records for testing."""
+    
+    def __init__(self):
+        super().__init__()
+        self.records = []
+        self.output = StringIO()
+        
+    def emit(self, record):
+        self.records.append(record)
+        msg = self.format(record)
+        self.output.write(msg + '\n')
+        
+    def get_output(self):
+        return self.output.getvalue()
+        
+    def clear(self):
+        self.records = []
+        self.output = StringIO()
+
 from modules.crypt_cli import main as cli_main
 from modules.crypt_errors import (
     ValidationError, EncryptionError, DecryptionError, AuthenticationError,
@@ -1213,11 +1260,24 @@ class TestCLIInterface(unittest.TestCase):
 
         # Save original sys.argv
         self.original_argv = sys.argv
+        
+        # Set up log capture
+        self.log_capture = LogCapture()
+        self.log_capture.setLevel(logging.DEBUG)  # Capture all log levels
+        self.root_logger = logging.getLogger()
+        self.original_log_level = self.root_logger.level
+        self.original_handlers = self.root_logger.handlers.copy()
+        self.root_logger.setLevel(logging.DEBUG)
+        self.root_logger.handlers = [self.log_capture]
 
     def tearDown(self):
         """Clean up after tests."""
         # Restore original sys.argv
         sys.argv = self.original_argv
+        
+        # Restore original logging configuration
+        self.root_logger.handlers = self.original_handlers
+        self.root_logger.setLevel(self.original_log_level)
 
         # Remove temp directory
         try:
@@ -1359,6 +1419,9 @@ class TestCLIInterface(unittest.TestCase):
         original_stdout = sys.stdout
         sys.stdout = output_capture
         
+        # Clear the log capture
+        self.log_capture.clear()
+        
         try:
             # Configure CLI args - specify rounds without enable flags
             sys.argv = [
@@ -1369,7 +1432,7 @@ class TestCLIInterface(unittest.TestCase):
                 "--argon2-rounds", "3",  # Should implicitly enable Argon2
                 "--scrypt-rounds", "2",  # Should implicitly enable Scrypt
                 "--balloon-rounds", "1", # Should implicitly enable Balloon
-                "--verbose"
+                "--debug"  # Use debug flag to see DEBUG level messages
             ]
             
             with mock.patch('sys.exit') as mock_exit:
@@ -1377,11 +1440,15 @@ class TestCLIInterface(unittest.TestCase):
                 # Check exit code
                 mock_exit.assert_called_once_with(0)
             
+            # Get both stdout and log output
+            stdout_output = output_capture.getvalue()
+            log_output = self.log_capture.get_output()
+            combined_output = stdout_output + log_output
+            
             # Check output for implicit enabling messages
-            output = output_capture.getvalue()
-            self.assertIn("Setting --enable-argon2", output)
-            self.assertIn("Setting --enable-scrypt", output)
-            self.assertIn("Setting --enable-balloon", output)
+            self.assertIn("Setting --enable-argon2", combined_output)
+            self.assertIn("Setting --enable-scrypt", combined_output)
+            self.assertIn("Setting --enable-balloon", combined_output)
             
             # Verify the encrypted file was created
             self.assertTrue(os.path.exists(encrypted_file))
@@ -1403,6 +1470,9 @@ class TestCLIInterface(unittest.TestCase):
         original_stdout = sys.stdout
         sys.stdout = output_capture
         
+        # Clear the log capture
+        self.log_capture.clear()
+        
         try:
             # Configure CLI args - specify enable flags without rounds
             sys.argv = [
@@ -1413,7 +1483,7 @@ class TestCLIInterface(unittest.TestCase):
                 "--enable-argon2",  # Should get default rounds=10
                 "--enable-scrypt",  # Should get default rounds=10
                 "--enable-balloon", # Should get default rounds=10
-                "--verbose"
+                "--debug"  # Use debug flag to see DEBUG level messages
             ]
             
             with mock.patch('sys.exit') as mock_exit:
@@ -1421,11 +1491,15 @@ class TestCLIInterface(unittest.TestCase):
                 # Check exit code
                 mock_exit.assert_called_once_with(0)
             
+            # Get both stdout and log output
+            stdout_output = output_capture.getvalue()
+            log_output = self.log_capture.get_output()
+            combined_output = stdout_output + log_output
+            
             # Check output for implicit rounds messages
-            output = output_capture.getvalue()
-            self.assertIn("Setting --argon2-rounds=10 (default of 10)", output)
-            self.assertIn("Setting --scrypt-rounds=10 (default of 10)", output)
-            self.assertIn("Setting --balloon-rounds=10 (default of 10)", output)
+            self.assertIn("Setting --argon2-rounds=10 (default of 10)", combined_output)
+            self.assertIn("Setting --scrypt-rounds=10 (default of 10)", combined_output)
+            self.assertIn("Setting --balloon-rounds=10 (default of 10)", combined_output)
             
             # Verify the encrypted file was created
             self.assertTrue(os.path.exists(encrypted_file))
@@ -1447,6 +1521,9 @@ class TestCLIInterface(unittest.TestCase):
         original_stdout = sys.stdout
         sys.stdout = output_capture
         
+        # Clear the log capture
+        self.log_capture.clear()
+        
         try:
             # Configure CLI args - use global rounds
             sys.argv = [
@@ -1458,7 +1535,7 @@ class TestCLIInterface(unittest.TestCase):
                 "--enable-scrypt",
                 "--enable-balloon",
                 "--kdf-rounds", "3",  # Global rounds value
-                "--verbose"
+                "--debug"  # Use debug flag to see DEBUG level messages
             ]
             
             with mock.patch('sys.exit') as mock_exit:
@@ -1466,11 +1543,15 @@ class TestCLIInterface(unittest.TestCase):
                 # Check exit code
                 mock_exit.assert_called_once_with(0)
             
+            # Get both stdout and log output
+            stdout_output = output_capture.getvalue()
+            log_output = self.log_capture.get_output()
+            combined_output = stdout_output + log_output
+            
             # Check output for global rounds messages
-            output = output_capture.getvalue()
-            self.assertIn("Setting --argon2-rounds=3 (--kdf-rounds=3)", output)
-            self.assertIn("Setting --scrypt-rounds=3 (--kdf-rounds=3)", output)
-            self.assertIn("Setting --balloon-rounds=3 (--kdf-rounds=3)", output)
+            self.assertIn("Setting --argon2-rounds=3 (--kdf-rounds=3)", combined_output)
+            self.assertIn("Setting --scrypt-rounds=3 (--kdf-rounds=3)", combined_output)
+            self.assertIn("Setting --balloon-rounds=3 (--kdf-rounds=3)", combined_output)
             
             # Verify the encrypted file was created
             self.assertTrue(os.path.exists(encrypted_file))
@@ -1492,6 +1573,9 @@ class TestCLIInterface(unittest.TestCase):
         original_stdout = sys.stdout
         sys.stdout = output_capture
         
+        # Clear the log capture
+        self.log_capture.clear()
+        
         try:
             # Configure CLI args with mixed specific and global rounds
             sys.argv = [
@@ -1504,7 +1588,7 @@ class TestCLIInterface(unittest.TestCase):
                 "--enable-scrypt",       # Should use global value
                 "--enable-balloon",      # Should use global value
                 "--kdf-rounds", "2",     # Global value
-                "--verbose"
+                "--debug"  # Use debug flag to see DEBUG level messages
             ]
             
             with mock.patch('sys.exit') as mock_exit:
@@ -1512,15 +1596,19 @@ class TestCLIInterface(unittest.TestCase):
                 # Check exit code
                 mock_exit.assert_called_once_with(0)
             
+            # Get both stdout and log output
+            stdout_output = output_capture.getvalue()
+            log_output = self.log_capture.get_output()
+            combined_output = stdout_output + log_output
+            
             # Examine output to verify rounds values
-            output = output_capture.getvalue()
             
             # Specific value for Argon2
-            self.assertNotIn("Setting --argon2-rounds", output)  # Already set explicitly
+            self.assertNotIn("Setting --argon2-rounds", combined_output)  # Already set explicitly
             
             # Global values for others
-            self.assertIn("Setting --scrypt-rounds=2 (--kdf-rounds=2)", output)
-            self.assertIn("Setting --balloon-rounds=2 (--kdf-rounds=2)", output)
+            self.assertIn("Setting --scrypt-rounds=2 (--kdf-rounds=2)", combined_output)
+            self.assertIn("Setting --balloon-rounds=2 (--kdf-rounds=2)", combined_output)
             
             # Verify the encrypted file was created
             self.assertTrue(os.path.exists(encrypted_file))
@@ -2861,9 +2949,13 @@ class TestPostQuantumCrypto(unittest.TestCase):
         
     def test_pqc_encryption_data_algorithms(self):
         """Test encryption and decryption with different data encryption algorithms."""
-        # Load the file content
-        with open(self.test_file, 'rb') as f:
-            test_data = f.read()
+        # Temporarily disable warnings for this test
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            
+            # Load the file content
+            with open(self.test_file, 'rb') as f:
+                test_data = f.read()
         
         # Test with multiple encryption_data options
         algorithms = [
