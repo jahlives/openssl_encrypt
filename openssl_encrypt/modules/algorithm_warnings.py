@@ -39,6 +39,9 @@ class AlgorithmWarningConfig:
     # Controls whether to show warnings only once per algorithm
     _show_once = True
     
+    # Controls whether we're in verbose mode
+    _verbose_mode = False
+    
     # Track which warnings have been shown
     _warned_algorithms: Set[str] = set()
     
@@ -47,7 +50,8 @@ class AlgorithmWarningConfig:
                  show_warnings: bool = True, 
                  min_level: DeprecationLevel = DeprecationLevel.INFO,
                  log_warnings: bool = True,
-                 show_once: bool = True) -> None:
+                 show_once: bool = True,
+                 verbose_mode: bool = False) -> None:
         """
         Configure the warning system behavior.
         
@@ -56,11 +60,13 @@ class AlgorithmWarningConfig:
             min_level: Minimum warning level to display
             log_warnings: Whether to log warnings
             show_once: Whether to show each warning only once
+            verbose_mode: Whether verbose output is enabled
         """
         cls._show_warnings = show_warnings
         cls._min_warning_level = min_level
         cls._log_warnings = log_warnings
         cls._show_once = show_once
+        cls._verbose_mode = verbose_mode
     
     @classmethod
     def reset(cls) -> None:
@@ -69,6 +75,7 @@ class AlgorithmWarningConfig:
         cls._min_warning_level = DeprecationLevel.INFO
         cls._log_warnings = True
         cls._show_once = True
+        cls._verbose_mode = False
         cls._warned_algorithms.clear()
     
     @classmethod
@@ -235,8 +242,8 @@ def warn_deprecated_algorithm(algorithm: str, context: Optional[str] = None,
         f"Please migrate to {replacement}."
     )
     
-    # Issue warning
-    if AlgorithmWarningConfig._show_warnings:
+    # Issue warning - only use Python warnings for non-INFO warnings or when in verbose mode
+    if AlgorithmWarningConfig._show_warnings and (level != DeprecationLevel.INFO or AlgorithmWarningConfig._verbose_mode):
         category = {
             DeprecationLevel.INFO: UserWarning,
             DeprecationLevel.WARNING: DeprecationWarning,
@@ -246,10 +253,11 @@ def warn_deprecated_algorithm(algorithm: str, context: Optional[str] = None,
         
         warnings.warn(warning_msg, category=category, stacklevel=2 if show_stack else 1)
     
-    # Log warning
+    # Log warning - always log, but use DEBUG level for INFO-level warnings when not in verbose mode
     if AlgorithmWarningConfig._log_warnings:
+        # If it's an INFO level warning and we're not in verbose mode, use DEBUG instead
         log_level = {
-            DeprecationLevel.INFO: logging.INFO,
+            DeprecationLevel.INFO: logging.DEBUG if not AlgorithmWarningConfig._verbose_mode else logging.INFO,
             DeprecationLevel.WARNING: logging.WARNING,
             DeprecationLevel.DEPRECATED: logging.WARNING,
             DeprecationLevel.UNSAFE: logging.ERROR

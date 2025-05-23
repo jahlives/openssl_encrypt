@@ -46,7 +46,7 @@ from .crypt_utils import (
     display_password_with_timeout, show_security_recommendations,
     request_confirmation
 )
-from .algorithm_warnings import warn_deprecated_algorithm, is_deprecated, get_recommended_replacement
+from .algorithm_warnings import warn_deprecated_algorithm, is_deprecated, get_recommended_replacement, AlgorithmWarningConfig
 # Try to import the CLI helper module
 try:
     from .crypt_cli_helper import enhance_cli_args, add_extended_algorithm_help
@@ -919,6 +919,9 @@ def main():
     
     # Enhance the args with better defaults for extended algorithms
     args = enhance_cli_args(args)
+    
+    # Configure algorithm warnings based on verbose flag
+    AlgorithmWarningConfig.configure(verbose_mode=args.verbose)
 
     # Handle legacy options and map to new names
     # SHA family mappings
@@ -1603,7 +1606,7 @@ def main():
             if is_deprecated(args.algorithm):
                 replacement = get_recommended_replacement(args.algorithm)
                 warn_deprecated_algorithm(args.algorithm, "command-line encryption")
-                if not args.quiet and replacement:
+                if not args.quiet and replacement and (args.verbose or not args.algorithm.startswith(('kyber', 'ml-kem'))):
                     print(f"Warning: The algorithm '{args.algorithm}' is deprecated.")
                     print(f"Consider using '{replacement}' instead for better security.")
             
@@ -1611,7 +1614,7 @@ def main():
             if args.algorithm.endswith('-hybrid') and is_deprecated(args.encryption_data):
                 data_replacement = get_recommended_replacement(args.encryption_data)
                 warn_deprecated_algorithm(args.encryption_data, "PQC data encryption")
-                if not args.quiet and data_replacement:
+                if not args.quiet and data_replacement and (args.verbose or not args.encryption_data.startswith(('kyber', 'ml-kem'))):
                     print(f"Warning: The data encryption algorithm '{args.encryption_data}' is deprecated.")
                     print(f"Consider using '{data_replacement}' instead for better security.")
                     
