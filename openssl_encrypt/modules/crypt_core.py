@@ -2291,13 +2291,13 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                 public_key = pqc_keypair[0]
             else:
                 # If no keypair provided, we need to create a new one and store it in metadata
-                cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet)
+                cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet, verbose=verbose)
                 public_key, private_key = cipher.generate_keypair()
                 # We'll add these to metadata later
             
             # Initialize PQC cipher and encrypt
             # Use encryption_data parameter passed to the parent function
-            cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet, encryption_data=encryption_data)
+            cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet, encryption_data=encryption_data, verbose=verbose)
             return cipher.encrypt(data, public_key)
         else:
             # Check if we're in test mode - this affects nonce generation for some algorithms
@@ -2943,7 +2943,7 @@ def decrypt_file(
             
             # Initialize PQC cipher and decrypt
             # Use encryption_data parameter passed to the parent function
-            cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet, encryption_data=encryption_data)
+            cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet, encryption_data=encryption_data, verbose=verbose)
             try:
                 # Pass the full file contents for recovery if needed
                 # This allows the PQCipher to try to recover the original content

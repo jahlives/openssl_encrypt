@@ -124,7 +124,7 @@ class ExtendedPQCipher(PQCipher):
     algorithms, whether they are implemented natively or via liboqs.
     """
     def __init__(self, algorithm: Union[str, PQAlgorithm, CorePQCAlgorithm], 
-                 quiet: bool = False, encryption_data: str = 'aes-gcm'):
+                 quiet: bool = False, encryption_data: str = 'aes-gcm', verbose: bool = False):
         """
         Initialize an extended post-quantum cipher instance
         
@@ -132,6 +132,7 @@ class ExtendedPQCipher(PQCipher):
             algorithm: The post-quantum algorithm to use
             quiet: Whether to suppress output messages
             encryption_data: Symmetric encryption algorithm to use
+            verbose: Whether to show detailed information
         
         Raises:
             ValueError: If algorithm not supported
@@ -161,7 +162,7 @@ class ExtendedPQCipher(PQCipher):
         
         if self.is_kem and algorithm_str in native_kem_algorithms:
             # Use the parent class for native KEM algorithms
-            super().__init__(algorithm_str, quiet, encryption_data)
+            super().__init__(algorithm_str, quiet, encryption_data, verbose)
             self.use_liboqs = False
             self.encryption_data = encryption_data
         else:

@@ -272,7 +272,7 @@ class PQCipher:
     This implementation combines post-quantum key encapsulation with 
     configurable symmetric encryption algorithms.
     """
-    def __init__(self, algorithm: Union[PQCAlgorithm, str], quiet: bool = False, encryption_data: str = 'aes-gcm'):
+    def __init__(self, algorithm: Union[PQCAlgorithm, str], quiet: bool = False, encryption_data: str = 'aes-gcm', verbose: bool = False):
         """
         Initialize a post-quantum cipher instance
         
@@ -280,6 +280,7 @@ class PQCipher:
             algorithm (Union[PQCAlgorithm, str]): The post-quantum algorithm to use
             quiet (bool): Whether to suppress output messages
             encryption_data (str): Symmetric encryption algorithm to use ('aes-gcm', 'chacha20-poly1305', etc.)
+            verbose (bool): Whether to show detailed information
         
         Raises:
             ValueError: If liboqs is not available or algorithm not supported
@@ -287,6 +288,10 @@ class PQCipher:
         """
         # Respect both parameter and environment variable
         should_be_quiet = quiet or PQC_QUIET
+        
+        # Configure algorithm warnings system based on verbose flag
+        from .algorithm_warnings import AlgorithmWarningConfig
+        AlgorithmWarningConfig.configure(verbose_mode=verbose)
         
         if not LIBOQS_AVAILABLE:
             raise ImportError("liboqs-python is required for post-quantum cryptography. "
@@ -296,14 +301,16 @@ class PQCipher:
         if isinstance(algorithm, str) and is_deprecated(algorithm):
             replacement = get_recommended_replacement(algorithm)
             warn_deprecated_algorithm(algorithm, "PQCipher initialization")
-            if not should_be_quiet and replacement:
+            # Only show direct warning messages if verbose or not an INFO warning about Kyber vs ML-KEM
+            kyber_or_mlkem_warning = "kyber" in algorithm.lower() or "ml-kem" in algorithm.lower()
+            if not should_be_quiet and replacement and (verbose or not kyber_or_mlkem_warning):
                 print(f"Warning: The algorithm '{algorithm}' is deprecated.")
                 print(f"Consider using '{replacement}' instead for better security.")
                 
             # Try to normalize to standardized name if available
             standardized_name = normalize_algorithm_name(algorithm, use_standard=True)
             if standardized_name != algorithm:
-                if not should_be_quiet:
+                if not should_be_quiet and verbose:
                     print(f"Using standardized algorithm name '{standardized_name}' instead of '{algorithm}'")
                 algorithm = standardized_name
         
@@ -311,7 +318,8 @@ class PQCipher:
         if is_deprecated(encryption_data):
             data_replacement = get_recommended_replacement(encryption_data)
             warn_deprecated_algorithm(encryption_data, "PQC data encryption")
-            if not should_be_quiet and data_replacement:
+            # Only show direct warning messages if verbose or not an INFO level warning
+            if not should_be_quiet and data_replacement and verbose:
                 print(f"Warning: The data encryption algorithm '{encryption_data}' is deprecated.")
                 print(f"Consider using '{data_replacement}' instead for better security.")
         
@@ -407,7 +415,7 @@ class PQCipher:
                     self.algorithm_name = algorithm.value
         
         # Report the actual algorithm being used
-        if not self.quiet:
+        if not self.quiet and verbose:
             print(f"Using algorithm: {self.algorithm_name}")
         
         # All Kyber/ML-KEM algorithms are KEM algorithms
