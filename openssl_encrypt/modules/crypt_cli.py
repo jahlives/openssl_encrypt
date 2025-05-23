@@ -361,6 +361,12 @@ def main():
         action='store_true',
         help='Show hash/kdf details'
     )
+    
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Show detailed debug information'
+    )
 
     # Add template argument
     parser.add_argument(
@@ -920,8 +926,8 @@ def main():
     # Enhance the args with better defaults for extended algorithms
     args = enhance_cli_args(args)
     
-    # Configure algorithm warnings based on verbose flag
-    AlgorithmWarningConfig.configure(verbose_mode=args.verbose)
+    # Configure algorithm warnings based on verbose and debug flags
+    AlgorithmWarningConfig.configure(verbose_mode=args.verbose or args.debug)
 
     # Handle legacy options and map to new names
     # SHA family mappings
@@ -1856,6 +1862,7 @@ def main():
                             algorithm=args.algorithm,
                             progress=args.progress,
                             verbose=args.verbose,
+                            debug=args.debug,
                             pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
                             pqc_store_private_key=args.pqc_store_key,
                             encryption_data=args.encryption_data
@@ -2178,6 +2185,7 @@ def main():
                         algorithm=args.algorithm,
                         progress=args.progress,
                         verbose=args.verbose,
+                        debug=args.debug,
                         pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
                         pqc_store_private_key=args.pqc_store_key,
                         encryption_data=args.encryption_data
@@ -2387,6 +2395,7 @@ def main():
                             args.quiet,
                             progress=args.progress,
                             verbose=args.verbose,
+                            debug=args.debug,
                             pqc_private_key=pqc_private_key
                         )
                     if success:
@@ -2521,6 +2530,7 @@ def main():
                         args.quiet,
                         progress=args.progress,
                         verbose=args.verbose,
+                        debug=args.debug,
                         pqc_private_key=pqc_private_key
                     )
                 if success and not args.quiet:

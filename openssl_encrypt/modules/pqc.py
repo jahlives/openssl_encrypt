@@ -272,7 +272,8 @@ class PQCipher:
     This implementation combines post-quantum key encapsulation with 
     configurable symmetric encryption algorithms.
     """
-    def __init__(self, algorithm: Union[PQCAlgorithm, str], quiet: bool = False, encryption_data: str = 'aes-gcm', verbose: bool = False):
+    def __init__(self, algorithm: Union[PQCAlgorithm, str], quiet: bool = False, encryption_data: str = 'aes-gcm', 
+                 verbose: bool = False, debug: bool = False):
         """
         Initialize a post-quantum cipher instance
         
@@ -281,6 +282,7 @@ class PQCipher:
             quiet (bool): Whether to suppress output messages
             encryption_data (str): Symmetric encryption algorithm to use ('aes-gcm', 'chacha20-poly1305', etc.)
             verbose (bool): Whether to show detailed information
+            debug (bool): Whether to show debug level information
         
         Raises:
             ValueError: If liboqs is not available or algorithm not supported
@@ -289,9 +291,9 @@ class PQCipher:
         # Respect both parameter and environment variable
         should_be_quiet = quiet or PQC_QUIET
         
-        # Configure algorithm warnings system based on verbose flag
+        # Configure algorithm warnings system based on verbose or debug flag
         from .algorithm_warnings import AlgorithmWarningConfig
-        AlgorithmWarningConfig.configure(verbose_mode=verbose)
+        AlgorithmWarningConfig.configure(verbose_mode=verbose or debug)
         
         if not LIBOQS_AVAILABLE:
             raise ImportError("liboqs-python is required for post-quantum cryptography. "
