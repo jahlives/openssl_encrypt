@@ -33,15 +33,15 @@ This document outlines planned security enhancements and improvements for the op
   - [x] Research current NIST and industry standards for cryptographic algorithms
   - [x] Audit existing algorithm implementations against current standards
   - [x] Create inventory of algorithms to mark as legacy/deprecated
-  - [x] Implement legacy warning system for deprecated algorithms
-  - [x] Update naming conventions to align with NIST standards (Kyber → ML-KEM)
-  - [x] Add security level indicators to configuration options
+  - [ ] Implement legacy warning system for deprecated algorithms
+  - [ ] Update naming conventions to align with NIST standards (Kyber → ML-KEM)
+  - [ ] Add security level indicators to configuration options
   - [x] Research newer post-quantum resistant algorithms beyond current implementation
-  - [x] Implement additional post-quantum resistant algorithms (HQC, ML-DSA, SLH-DSA)
-  - [x] Design algorithm upgrade path for existing users
-  - [x] Create documentation for algorithm migration
-  - [x] Implement automatic algorithm version detection
-  - [x] Add comprehensive tests for all new and updated algorithms
+  - [ ] Implement additional post-quantum resistant algorithms (HQC, ML-DSA, SLH-DSA)
+  - [ ] Design algorithm upgrade path for existing users
+  - [ ] Create documentation for algorithm migration
+  - [ ] Implement automatic algorithm version detection
+  - [ ] Add comprehensive tests for all new and updated algorithms
 
 - [x] **Dependency security**
   - [x] Conduct comprehensive review of all dependencies
