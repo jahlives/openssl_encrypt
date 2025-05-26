@@ -816,13 +816,17 @@ class PQCipher:
                 elif self.encryption_data == 'chacha20-poly1305':
                     cipher = self.ChaCha20Poly1305(symmetric_key)
                 elif self.encryption_data == 'xchacha20-poly1305':
-                    # XChaCha20Poly1305 needs to be imported separately if available
+                    # Use the custom XChaCha20Poly1305 implementation from crypt_core
                     try:
-                        from cryptography.hazmat.primitives.ciphers.aead import XChaCha20Poly1305
+                        from openssl_encrypt.modules.crypt_core import XChaCha20Poly1305
                         cipher = XChaCha20Poly1305(symmetric_key)
-                    except ImportError:
+                    except ImportError as e:
                         if not self.quiet:
-                            print("XChaCha20Poly1305 not available, falling back to ChaCha20Poly1305")
+                            print(f"XChaCha20Poly1305 not available ({e}), falling back to ChaCha20Poly1305")
+                        cipher = self.ChaCha20Poly1305(symmetric_key)
+                    except Exception as e:
+                        if not self.quiet:
+                            print(f"XChaCha20Poly1305 creation failed ({e}), falling back to ChaCha20Poly1305")
                         cipher = self.ChaCha20Poly1305(symmetric_key)
                 elif self.encryption_data == 'aes-gcm-siv':
                     cipher = self.AESGCMSIV(symmetric_key)
