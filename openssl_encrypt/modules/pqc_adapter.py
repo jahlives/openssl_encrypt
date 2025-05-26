@@ -9,6 +9,7 @@ native implementations and liboqs-supported algorithms.
 
 import hashlib
 import logging
+import secrets
 from typing import Tuple, Optional, Dict, Union, List, Any
 
 from .secure_memory import SecureBytes, secure_memzero
@@ -37,10 +38,9 @@ ALGORITHM_TYPE_MAP = {
     "Kyber512": "kem",
     "Kyber768": "kem",
     "Kyber1024": "kem",
-    # HQC algorithms commented out until fully supported
-    # "HQC-128": "kem",
-    # "HQC-192": "kem",
-    # "HQC-256": "kem",
+    "HQC-128": "kem",
+    "HQC-192": "kem",
+    "HQC-256": "kem",
     
     # Digital Signature Algorithms (DSAs)
     "ML-DSA-44": "sig",
@@ -63,10 +63,10 @@ HYBRID_ALGORITHM_MAP = {
     "kyber768-hybrid": "Kyber768",
     "kyber1024-hybrid": "Kyber1024",
     
-    # HQC hybrid algorithms commented out until fully supported
-    # "hqc-128-hybrid": "HQC-128",
-    # "hqc-192-hybrid": "HQC-192",
-    # "hqc-256-hybrid": "HQC-256",
+    # HQC hybrid algorithms
+    "hqc-128-hybrid": "HQC-128",
+    "hqc-192-hybrid": "HQC-192",
+    "hqc-256-hybrid": "HQC-256",
     
     # ML-KEM with ChaCha20 (just for naming, actual cipher determined by user's choice)
     "ml-kem-512-chacha20": "ML-KEM-512",
@@ -76,10 +76,9 @@ HYBRID_ALGORITHM_MAP = {
 
 # New algorithms added by liboqs integration
 NEW_PQ_ALGORITHMS = [
-    # HQC algorithms commented out until fully supported
-    # "HQC-128",
-    # "HQC-192",
-    # "HQC-256",
+    "HQC-128",
+    "HQC-192",
+    "HQC-256",
     "ML-DSA-44",
     "ML-DSA-65",
     "ML-DSA-87",
@@ -95,7 +94,7 @@ SECURITY_LEVEL_MAP = {
     # Level 1 (roughly equivalent to AES-128)
     "ML-KEM-512": 1,
     "Kyber512": 1,
-    # "HQC-128": 1,  # Commented out until fully supported
+    "HQC-128": 1,
     "ML-DSA-44": 1,
     "SLH-DSA-SHA2-128F": 1,
     "FN-DSA-512": 1,
@@ -103,14 +102,14 @@ SECURITY_LEVEL_MAP = {
     # Level 3 (roughly equivalent to AES-192)
     "ML-KEM-768": 3,
     "Kyber768": 3,
-    # "HQC-192": 3,  # Commented out until fully supported
+    "HQC-192": 3,
     "ML-DSA-65": 3,
     "SLH-DSA-SHA2-192F": 3,
     
     # Level 5 (roughly equivalent to AES-256)
     "ML-KEM-1024": 5,
     "Kyber1024": 5,
-    # "HQC-256": 5,  # Commented out until fully supported
+    "HQC-256": 5,
     "ML-DSA-87": 5,
     "SLH-DSA-SHA2-256F": 5,
     "FN-DSA-1024": 5
@@ -179,25 +178,25 @@ class ExtendedPQCipher(PQCipher):
             self.encryption_data = encryption_data
             self.algorithm_name = algorithm_str
             
+            # Import required symmetric encryption algorithms for hybrid mode
+            try:
+                from cryptography.hazmat.primitives.ciphers.aead import (
+                    AESGCM, ChaCha20Poly1305, AESSIV, AESGCMSIV, AESOCB3
+                )
+                self.AESGCM = AESGCM
+                self.ChaCha20Poly1305 = ChaCha20Poly1305
+                self.AESSIV = AESSIV
+                self.AESGCMSIV = AESGCMSIV
+                self.AESOCB3 = AESOCB3
+            except ImportError:
+                raise ImportError("The 'cryptography' library is required")
+                
             if self.is_kem:
                 # Initialize KEM
                 self.liboqs_kem = PQEncapsulator(algorithm_str, quiet=quiet)
             else:
                 # Initialize signature algorithm
                 self.liboqs_sig = PQSigner(algorithm_str, quiet=quiet)
-                
-                # Import required symmetric encryption algorithms for hybrid mode
-                try:
-                    from cryptography.hazmat.primitives.ciphers.aead import (
-                        AESGCM, ChaCha20Poly1305, AESSIV, AESGCMSIV, AESOCB3
-                    )
-                    self.AESGCM = AESGCM
-                    self.ChaCha20Poly1305 = ChaCha20Poly1305
-                    self.AESSIV = AESSIV
-                    self.AESGCMSIV = AESGCMSIV
-                    self.AESOCB3 = AESOCB3
-                except ImportError:
-                    raise ImportError("The 'cryptography' library is required")
     
     def generate_keypair(self) -> Tuple[bytes, bytes]:
         """
@@ -239,7 +238,8 @@ class ExtendedPQCipher(PQCipher):
         ciphertext, shared_secret = self.liboqs_kem.encapsulate(public_key)
         
         # Use secure memory for sensitive operations
-        with SecureBytes(shared_secret) as secure_shared_secret:
+        secure_shared_secret = SecureBytes(shared_secret)
+        try:
             # Derive symmetric key using secure memory
             symmetric_key = SecureBytes(
                 hashlib.sha256(secure_shared_secret).digest()
@@ -280,6 +280,12 @@ class ExtendedPQCipher(PQCipher):
             result = ciphertext + nonce + encrypted_data
             
             return result
+        finally:
+            # Clean up secure memory
+            if 'secure_shared_secret' in locals():
+                secure_memzero(secure_shared_secret)
+            if 'symmetric_key' in locals():
+                secure_memzero(symmetric_key)
     
     def decrypt(self, encrypted_data: bytes, private_key: bytes, file_contents: bytes = None) -> bytes:
         """
@@ -497,22 +503,22 @@ def test_extended_pqcipher():
     except Exception as e:
         print(f"  Error: {e}")
     
-    # HQC-128 testing code commented out until fully supported
-    # if "HQC-128" in algorithms:
-    #     print("\nTesting with HQC-128 (liboqs implementation):")
-    #     try:
-    #         cipher = ExtendedPQCipher("HQC-128")
-    #         public_key, private_key = cipher.generate_keypair()
-    #         
-    #         message = b"Hello, post-quantum world!"
-    #         encrypted = cipher.encrypt(message, public_key)
-    #         decrypted = cipher.decrypt(encrypted, private_key)
-    #         
-    #         print(f"  Original message: {message}")
-    #         print(f"  Decrypted message: {decrypted}")
-    #         print(f"  Success: {message == decrypted}")
-    #     except Exception as e:
-    #         print(f"  Error: {e}")
+    # Test with HQC-128 (liboqs implementation) if available
+    if "HQC-128" in algorithms:
+        print("\nTesting with HQC-128 (liboqs implementation):")
+        try:
+            cipher = ExtendedPQCipher("HQC-128")
+            public_key, private_key = cipher.generate_keypair()
+            
+            message = b"Hello, post-quantum world!"
+            encrypted = cipher.encrypt(message, public_key)
+            decrypted = cipher.decrypt(encrypted, private_key)
+            
+            print(f"  Original message: {message}")
+            print(f"  Decrypted message: {decrypted}")
+            print(f"  Success: {message == decrypted}")
+        except Exception as e:
+            print(f"  Error: {e}")
     
     # Test with ML-DSA-44 (signature algorithm) if available
     if "ML-DSA-44" in algorithms:

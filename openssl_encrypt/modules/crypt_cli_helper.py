@@ -63,6 +63,10 @@ def add_extended_algorithm_help(parser: Any) -> None:
             original_help = action.help
             extended_help = original_help + "\nExtended algorithms:\n"
             
+            # Add info about HQC algorithms
+            extended_help += "  HQC hybrid modes (post-quantum):\n"
+            extended_help += "    hqc-128-hybrid, hqc-192-hybrid, hqc-256-hybrid\n"
+            
             # Add info about ML-KEM with ChaCha20
             extended_help += "  ml-kem-512-chacha20: ML-KEM-512 with ChaCha20-Poly1305 (post-quantum)\n"
             extended_help += "  ml-kem-768-chacha20: ML-KEM-768 with ChaCha20-Poly1305 (post-quantum)\n"

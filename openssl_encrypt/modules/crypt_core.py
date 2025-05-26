@@ -446,11 +446,11 @@ class EncryptionAlgorithm(Enum):
     ML_KEM_768_CHACHA20 = "ml-kem-768-chacha20"
     ML_KEM_1024_CHACHA20 = "ml-kem-1024-chacha20"
     
-    # Additional post-quantum algorithms commented out until fully supported
+    # Additional post-quantum algorithms (via liboqs)
     # HQC hybrid modes (NIST selection March 2025)
-    # HQC_128_HYBRID = "hqc-128-hybrid"
-    # HQC_192_HYBRID = "hqc-192-hybrid"
-    # HQC_256_HYBRID = "hqc-256-hybrid"
+    HQC_128_HYBRID = "hqc-128-hybrid"
+    HQC_192_HYBRID = "hqc-192-hybrid"
+    HQC_256_HYBRID = "hqc-256-hybrid"
     
     @classmethod
     def from_string(cls, algorithm_str: str) -> 'EncryptionAlgorithm':
@@ -1397,7 +1397,13 @@ def generate_key(
         key_length = 32  # Camellia requires 32 bytes
     elif algorithm in [EncryptionAlgorithm.KYBER512_HYBRID.value, 
                       EncryptionAlgorithm.KYBER768_HYBRID.value, 
-                      EncryptionAlgorithm.KYBER1024_HYBRID.value]:
+                      EncryptionAlgorithm.KYBER1024_HYBRID.value,
+                      EncryptionAlgorithm.ML_KEM_512_CHACHA20.value,
+                      EncryptionAlgorithm.ML_KEM_768_CHACHA20.value,
+                      EncryptionAlgorithm.ML_KEM_1024_CHACHA20.value,
+                      EncryptionAlgorithm.HQC_128_HYBRID.value,
+                      EncryptionAlgorithm.HQC_192_HYBRID.value,
+                      EncryptionAlgorithm.HQC_256_HYBRID.value]:
         key_length = 32  # PQC hybrid modes use AES-256-GCM internally, requiring 32 bytes
     else:
         raise ValueError(f"Unsupported algorithm: {algorithm}")
@@ -2258,7 +2264,16 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
             return f.encrypt(data)
         elif algorithm in [EncryptionAlgorithm.KYBER512_HYBRID, 
                       EncryptionAlgorithm.KYBER768_HYBRID, 
-                      EncryptionAlgorithm.KYBER1024_HYBRID]:
+                      EncryptionAlgorithm.KYBER1024_HYBRID,
+                      EncryptionAlgorithm.ML_KEM_512_HYBRID,
+                      EncryptionAlgorithm.ML_KEM_768_HYBRID,
+                      EncryptionAlgorithm.ML_KEM_1024_HYBRID,
+                      EncryptionAlgorithm.ML_KEM_512_CHACHA20,
+                      EncryptionAlgorithm.ML_KEM_768_CHACHA20,
+                      EncryptionAlgorithm.ML_KEM_1024_CHACHA20,
+                      EncryptionAlgorithm.HQC_128_HYBRID,
+                      EncryptionAlgorithm.HQC_192_HYBRID,
+                      EncryptionAlgorithm.HQC_256_HYBRID]:
             # PQC algorithms don't use nonces in the same way, handle separately
             if not PQC_AVAILABLE:
                 raise ImportError("Post-quantum cryptography support is not available. "
@@ -2281,10 +2296,10 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                 EncryptionAlgorithm.ML_KEM_768_CHACHA20: PQCAlgorithm.ML_KEM_768,
                 EncryptionAlgorithm.ML_KEM_1024_CHACHA20: PQCAlgorithm.ML_KEM_1024,
                 
-                # HQC mappings commented out until fully supported
-                # EncryptionAlgorithm.HQC_128_HYBRID: "HQC-128",
-                # EncryptionAlgorithm.HQC_192_HYBRID: "HQC-192",
-                # EncryptionAlgorithm.HQC_256_HYBRID: "HQC-256"
+                # HQC mappings
+                EncryptionAlgorithm.HQC_128_HYBRID: "HQC-128",
+                EncryptionAlgorithm.HQC_192_HYBRID: "HQC-192",
+                EncryptionAlgorithm.HQC_256_HYBRID: "HQC-256"
             }
             
             # Get public key from keypair or generate new keypair
@@ -2391,7 +2406,16 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     pqc_info = None
     if algorithm in [EncryptionAlgorithm.KYBER512_HYBRID, 
                     EncryptionAlgorithm.KYBER768_HYBRID, 
-                    EncryptionAlgorithm.KYBER1024_HYBRID]:
+                    EncryptionAlgorithm.KYBER1024_HYBRID,
+                    EncryptionAlgorithm.ML_KEM_512_HYBRID,
+                    EncryptionAlgorithm.ML_KEM_768_HYBRID,
+                    EncryptionAlgorithm.ML_KEM_1024_HYBRID,
+                    EncryptionAlgorithm.ML_KEM_512_CHACHA20,
+                    EncryptionAlgorithm.ML_KEM_768_CHACHA20,
+                    EncryptionAlgorithm.ML_KEM_1024_CHACHA20,
+                    EncryptionAlgorithm.HQC_128_HYBRID,
+                    EncryptionAlgorithm.HQC_192_HYBRID,
+                    EncryptionAlgorithm.HQC_256_HYBRID]:
         pqc_info = {}
         
         if pqc_keypair:
@@ -2934,12 +2958,37 @@ def decrypt_file(
         # Handle PQC algorithms first to ensure they're processed properly
         elif algorithm in [EncryptionAlgorithm.KYBER512_HYBRID.value, 
                      EncryptionAlgorithm.KYBER768_HYBRID.value, 
-                     EncryptionAlgorithm.KYBER1024_HYBRID.value]:
+                     EncryptionAlgorithm.KYBER1024_HYBRID.value,
+                     EncryptionAlgorithm.ML_KEM_512_HYBRID.value,
+                     EncryptionAlgorithm.ML_KEM_768_HYBRID.value,
+                     EncryptionAlgorithm.ML_KEM_1024_HYBRID.value,
+                     EncryptionAlgorithm.ML_KEM_512_CHACHA20.value,
+                     EncryptionAlgorithm.ML_KEM_768_CHACHA20.value,
+                     EncryptionAlgorithm.ML_KEM_1024_CHACHA20.value,
+                     EncryptionAlgorithm.HQC_128_HYBRID.value,
+                     EncryptionAlgorithm.HQC_192_HYBRID.value,
+                     EncryptionAlgorithm.HQC_256_HYBRID.value]:
             # Map algorithm to PQCAlgorithm
             pqc_algo_map = {
+                # Legacy Kyber mappings
                 EncryptionAlgorithm.KYBER512_HYBRID.value: PQCAlgorithm.KYBER512,
                 EncryptionAlgorithm.KYBER768_HYBRID.value: PQCAlgorithm.KYBER768,
-                EncryptionAlgorithm.KYBER1024_HYBRID.value: PQCAlgorithm.KYBER1024
+                EncryptionAlgorithm.KYBER1024_HYBRID.value: PQCAlgorithm.KYBER1024,
+                
+                # Standardized ML-KEM mappings
+                EncryptionAlgorithm.ML_KEM_512_HYBRID.value: PQCAlgorithm.ML_KEM_512,
+                EncryptionAlgorithm.ML_KEM_768_HYBRID.value: PQCAlgorithm.ML_KEM_768,
+                EncryptionAlgorithm.ML_KEM_1024_HYBRID.value: PQCAlgorithm.ML_KEM_1024,
+                
+                # ML-KEM with ChaCha20
+                EncryptionAlgorithm.ML_KEM_512_CHACHA20.value: PQCAlgorithm.ML_KEM_512,
+                EncryptionAlgorithm.ML_KEM_768_CHACHA20.value: PQCAlgorithm.ML_KEM_768,
+                EncryptionAlgorithm.ML_KEM_1024_CHACHA20.value: PQCAlgorithm.ML_KEM_1024,
+                
+                # HQC mappings
+                EncryptionAlgorithm.HQC_128_HYBRID.value: "HQC-128",
+                EncryptionAlgorithm.HQC_192_HYBRID.value: "HQC-192",
+                EncryptionAlgorithm.HQC_256_HYBRID.value: "HQC-256"
             }
             
             # Check if we have the private key

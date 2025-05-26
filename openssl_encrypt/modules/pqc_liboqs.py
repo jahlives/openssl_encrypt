@@ -212,7 +212,7 @@ class PQEncapsulator:
         Returns:
             tuple: (ciphertext, shared_secret)
         """
-        ciphertext, shared_secret = self.kem.encapsulate(public_key)
+        ciphertext, shared_secret = self.kem.encap_secret(public_key)
         return ciphertext, shared_secret
     
     def decapsulate(self, ciphertext: bytes, secret_key: Optional[bytes] = None) -> bytes:
@@ -230,7 +230,7 @@ class PQEncapsulator:
             # Set the secret key if provided
             self.kem.import_secret_key(secret_key)
         
-        shared_secret = self.kem.decapsulate(ciphertext)
+        shared_secret = self.kem.decap_secret(ciphertext)
         return shared_secret
     
     def __del__(self):
