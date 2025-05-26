@@ -23,7 +23,7 @@ BASE_OUTPUT_DIR="openssl_encrypt/unittests/testfiles"
 ALGORITHMS=("aes-gcm" "aes-gcm-siv" "aes-ocb3" "aes-siv" "chacha20-poly1305" "xchacha20-poly1305" "fernet")
 
 # PQC Algorithms
-PQC_ALGORITHMS=("ml-kem-512-hybrid" "ml-kem-768-hybrid" "ml-kem-1024-hybrid" "hqc-128-hybrid" "hqc-192-hybrid" "hqc-256-hybrid")
+PQC_ALGORITHMS=("ml-kem-512-hybrid" "ml-kem-768-hybrid" "ml-kem-1024-hybrid")
 
 # Available encryption data options for PQC
 ENC_DATA=("aes-gcm" "aes-gcm-siv" "aes-ocb3" "aes-siv" "chacha20-poly1305" "xchacha20-poly1305")

@@ -809,6 +809,7 @@ class PQCipher:
                         print(f"Error: Encryption data mismatch - provided '{self.encryption_data}' but metadata has '{metadata_encryption_data}'")
                     raise ValueError(f"Encryption data algorithm mismatch: provided '{self.encryption_data}' but metadata has '{metadata_encryption_data}'")
                 
+                
                 # Select the appropriate cipher based on encryption_data
                 if self.encryption_data == 'aes-gcm':
                     cipher = self.AESGCM(symmetric_key)

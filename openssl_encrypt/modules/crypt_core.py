@@ -2691,6 +2691,10 @@ def decrypt_file(
         encryption = metadata['encryption']
         algorithm = encryption.get('algorithm', EncryptionAlgorithm.FERNET.value)
         
+        # For v5 format, extract encryption_data from metadata (overrides parameter)
+        if format_version >= 5 and 'encryption_data' in encryption:
+            encryption_data = encryption['encryption_data']
+        
         # Extract PQC information if present
         pqc_info = None
         pqc_has_private_key = 'pqc_private_key' in encryption
