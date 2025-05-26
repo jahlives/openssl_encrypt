@@ -4010,7 +4010,7 @@ def test_file_decryption_v3(filename):
     # When tests run individually, a fallback mechanism in PQCipher.decrypt allows them to pass,
     # but this doesn't work reliably with concurrent test execution.
     pqc_private_key = None
-    if 'kyber' in algorithm_name.lower() or 'hqc' in algorithm_name.lower():
+    if 'kyber' in algorithm_name.lower():
         # Create a mock private key that's unique for each algorithm to avoid cross-test interference
         pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
     
@@ -4049,7 +4049,7 @@ def test_file_decryption_wrong_pw_v3(filename):
     # When tests run individually, a fallback mechanism in PQCipher.decrypt allows them to pass,
     # but this doesn't work reliably with concurrent test execution.
     pqc_private_key = None
-    if 'kyber' in algorithm_name.lower() or 'hqc' in algorithm_name.lower():
+    if 'kyber' in algorithm_name.lower():
         # Create a mock private key that's unique for each algorithm to avoid cross-test interference
         pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
     
@@ -4112,7 +4112,7 @@ def test_file_decryption_wrong_algorithm_v3(filename):
     
     # Provide a mock private key for PQC tests
     pqc_private_key = None
-    if wrong_algorithm.startswith("kyber") or wrong_algorithm.startswith("hqc"):
+    if wrong_algorithm.startswith("kyber"):
         pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
     
     try:
@@ -4151,7 +4151,7 @@ def test_file_decryption_v4(filename):
     # When tests run individually, a fallback mechanism in PQCipher.decrypt allows them to pass,
     # but this doesn't work reliably with concurrent test execution.
     pqc_private_key = None 
-    if 'kyber' in algorithm_name.lower() or 'hqc' in algorithm_name.lower():
+    if 'kyber' in algorithm_name.lower():
         # Create a mock private key that's unique for each algorithm to avoid cross-test interference
         pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
         
@@ -4254,7 +4254,7 @@ def test_file_decryption_wrong_algorithm_v4(filename):
     
     # Provide a mock private key for PQC tests
     pqc_private_key = None
-    if wrong_algorithm.startswith("kyber") or wrong_algorithm.startswith("hqc"):
+    if wrong_algorithm.startswith("kyber"):
         pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
     
     try:
@@ -4301,7 +4301,7 @@ def test_file_decryption_v5(filename):
     # When tests run individually, a fallback mechanism in PQCipher.decrypt allows them to pass,
     # but this doesn't work reliably with concurrent test execution.
     pqc_private_key = None 
-    if 'kyber' in algorithm_name.lower() or 'hqc' in algorithm_name.lower():
+    if 'kyber' in algorithm_name.lower():
         # Create a mock private key that's unique for each algorithm to avoid cross-test interference
         pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
 
@@ -4414,7 +4414,7 @@ def test_file_decryption_wrong_algorithm_v5(filename):
     
     # Provide a mock private key for PQC tests
     pqc_private_key = None
-    if wrong_algorithm.startswith("kyber") or wrong_algorithm.startswith("hqc"):
+    if wrong_algorithm.startswith("kyber"):
         pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
     
     try:
