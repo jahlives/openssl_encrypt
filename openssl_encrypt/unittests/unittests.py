@@ -7022,5 +7022,23 @@ class TestConcurrentPQCExecutionSafety(unittest.TestCase):
         print("✅ PQC concurrent execution best practices validated")
 
 
+# Import HQC and ML-KEM keystore integration tests
+try:
+    import sys
+    import os
+    # Get the project root directory (two levels up from unittests.py)
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    tests_path = os.path.join(project_root, 'tests')
+    if tests_path not in sys.path:
+        sys.path.insert(0, tests_path)
+    
+    from keystore.test_keystore_hqc_mlkem_integration import TestHQCMLKEMKeystoreIntegration
+    print("✅ HQC and ML-KEM keystore integration tests imported successfully")
+except ImportError as e:
+    print(f"⚠️  Could not import HQC/ML-KEM keystore integration tests: {e}")
+except Exception as e:
+    print(f"⚠️  Error importing keystore integration tests: {e}")
+
+
 if __name__ == "__main__":
     unittest.main()
