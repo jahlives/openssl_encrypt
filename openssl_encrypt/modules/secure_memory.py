@@ -333,6 +333,15 @@ class SecureBytes(bytearray):
     cleared when the object is garbage collected.
     """
 
+    def __enter__(self):
+        """Enter the context manager - return self."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit the context manager - securely clear memory."""
+        secure_memzero(self)
+        return False  # Don't suppress exceptions
+
     def __del__(self):
         """Securely clear memory before deletion."""
         secure_memzero(self)

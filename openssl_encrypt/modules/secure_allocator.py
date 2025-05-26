@@ -205,6 +205,18 @@ class SecureBytes(BaseSecureBytes):
             return self._secure_block.check_canaries()
         return True
     
+    def __enter__(self):
+        """Enter the context manager - return self."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit the context manager - securely clear memory."""
+        try:
+            secure_memzero(self)
+        except:
+            pass  # Fail silently to avoid masking original exceptions
+        return False  # Don't suppress exceptions
+    
     def __del__(self):
         """Ensure memory is securely wiped before deletion."""
         try:

@@ -227,11 +227,17 @@ class PQEncapsulator:
             bytes: The shared secret
         """
         if secret_key is not None:
-            # Set the secret key if provided
-            self.kem.import_secret_key(secret_key)
-        
-        shared_secret = self.kem.decap_secret(ciphertext)
-        return shared_secret
+            # Create a new KEM instance with the secret key for decapsulation
+            kem_with_secret = oqs.KeyEncapsulation(self.liboqs_algorithm, secret_key)
+            try:
+                shared_secret = kem_with_secret.decap_secret(ciphertext)
+                return shared_secret
+            finally:
+                kem_with_secret.free()
+        else:
+            # Use the existing KEM instance (secret key should already be set)
+            shared_secret = self.kem.decap_secret(ciphertext)
+            return shared_secret
     
     def __del__(self):
         """Clean up resources when the object is destroyed."""

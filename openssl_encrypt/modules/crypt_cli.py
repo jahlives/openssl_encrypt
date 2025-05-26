@@ -1642,7 +1642,10 @@ def main():
                     original_permissions = get_file_permissions(args.input)
                     # Handle PQC key operations
                     pqc_keypair = None
-                    if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid']:
+                    if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid',
+                                         'hqc-128-hybrid', 'hqc-192-hybrid', 'hqc-256-hybrid',
+                                         'ml-kem-512-hybrid', 'ml-kem-768-hybrid', 'ml-kem-1024-hybrid',
+                                         'ml-kem-512-chacha20', 'ml-kem-768-chacha20', 'ml-kem-1024-chacha20']:
                         # Check if we should generate and save a new key pair
                         if args.pqc_gen_key and args.pqc_keyfile:
                             from .pqc import PQCipher, PQCAlgorithm, check_pqc_support
@@ -1660,21 +1663,39 @@ def main():
                             kyber1024_options = [alg for alg in pqc_algorithms if
                                                  alg.lower().replace('-', '').replace('_', '') in ["kyber1024",
                                                                                                    "mlkem1024"]]
+                            hqc128_options = [alg for alg in pqc_algorithms if
+                                              alg.lower().replace('-', '').replace('_', '') in ["hqc128"]]
+                            hqc192_options = [alg for alg in pqc_algorithms if
+                                              alg.lower().replace('-', '').replace('_', '') in ["hqc192"]]
+                            hqc256_options = [alg for alg in pqc_algorithms if
+                                              alg.lower().replace('-', '').replace('_', '') in ["hqc256"]]
 
                             # Choose first available or fall back to default name
                             kyber512_algo = kyber512_options[0] if kyber512_options else "Kyber512"
                             kyber768_algo = kyber768_options[0] if kyber768_options else "Kyber768"
                             kyber1024_algo = kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                            hqc128_algo = hqc128_options[0] if hqc128_options else "HQC-128"
+                            hqc192_algo = hqc192_options[0] if hqc192_options else "HQC-192"
+                            hqc256_algo = hqc256_options[0] if hqc256_options else "HQC-256"
 
                             if not args.quiet:
                                 print(
-                                    f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}")
+                                    f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}, hqc-128-hybrid → {hqc128_algo}, hqc-192-hybrid → {hqc192_algo}, hqc-256-hybrid → {hqc256_algo}")
 
                             # Create direct string mapping instead of using enum
                             algo_map = {
                                 'kyber512-hybrid': kyber512_algo,
                                 'kyber768-hybrid': kyber768_algo,
-                                'kyber1024-hybrid': kyber1024_algo
+                                'kyber1024-hybrid': kyber1024_algo,
+                                'hqc-128-hybrid': hqc128_algo,
+                                'hqc-192-hybrid': hqc192_algo,
+                                'hqc-256-hybrid': hqc256_algo,
+                                'ml-kem-512-hybrid': kyber512_algo,
+                                'ml-kem-768-hybrid': kyber768_algo,
+                                'ml-kem-1024-hybrid': kyber1024_algo,
+                                'ml-kem-512-chacha20': kyber512_algo,
+                                'ml-kem-768-chacha20': kyber768_algo,
+                                'ml-kem-1024-chacha20': kyber1024_algo
                             }
 
                             # Generate key pair
@@ -1716,7 +1737,10 @@ def main():
                                     print(f"Loaded post-quantum key pair from {args.pqc_keyfile}")
 
                     # For PQC algorithms, we may need to generate a keypair if not specified
-                    if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid'] and not pqc_keypair:
+                    if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid',
+                                         'hqc-128-hybrid', 'hqc-192-hybrid', 'hqc-256-hybrid',
+                                         'ml-kem-512-hybrid', 'ml-kem-768-hybrid', 'ml-kem-1024-hybrid',
+                                         'ml-kem-512-chacha20', 'ml-kem-768-chacha20', 'ml-kem-1024-chacha20'] and not pqc_keypair:
                         # No keypair provided, generate an ephemeral one
                         from .pqc import PQCipher, check_pqc_support
 
@@ -1729,12 +1753,27 @@ def main():
                         kyber1024_options = [alg for alg in pqc_algorithms if
                                              alg.lower().replace('-', '').replace('_', '') in ["kyber1024",
                                                                                                "mlkem1024"]]
+                        hqc128_options = [alg for alg in pqc_algorithms if
+                                          alg.lower().replace('-', '').replace('_', '') in ["hqc128"]]
+                        hqc192_options = [alg for alg in pqc_algorithms if
+                                          alg.lower().replace('-', '').replace('_', '') in ["hqc192"]]
+                        hqc256_options = [alg for alg in pqc_algorithms if
+                                          alg.lower().replace('-', '').replace('_', '') in ["hqc256"]]
 
                         # Choose first available algorithm
                         algo_map = {
                             'kyber512-hybrid': kyber512_options[0] if kyber512_options else "Kyber512",
                             'kyber768-hybrid': kyber768_options[0] if kyber768_options else "Kyber768",
-                            'kyber1024-hybrid': kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                            'kyber1024-hybrid': kyber1024_options[0] if kyber1024_options else "Kyber1024",
+                            'hqc-128-hybrid': hqc128_options[0] if hqc128_options else "HQC-128",
+                            'hqc-192-hybrid': hqc192_options[0] if hqc192_options else "HQC-192",
+                            'hqc-256-hybrid': hqc256_options[0] if hqc256_options else "HQC-256",
+                            'ml-kem-512-hybrid': kyber512_options[0] if kyber512_options else "Kyber512",
+                            'ml-kem-768-hybrid': kyber768_options[0] if kyber768_options else "Kyber768",
+                            'ml-kem-1024-hybrid': kyber1024_options[0] if kyber1024_options else "Kyber1024",
+                            'ml-kem-512-chacha20': kyber512_options[0] if kyber512_options else "Kyber512",
+                            'ml-kem-768-chacha20': kyber768_options[0] if kyber768_options else "Kyber768",
+                            'ml-kem-1024-chacha20': kyber1024_options[0] if kyber1024_options else "Kyber1024"
                         }
 
                         if not args.quiet:
@@ -1902,7 +1941,10 @@ def main():
 
             # Handle PQC key operations (for non-overwriting case)
             pqc_keypair = None
-            if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid']:
+            if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid',
+                                 'hqc-128-hybrid', 'hqc-192-hybrid', 'hqc-256-hybrid',
+                                 'ml-kem-512-hybrid', 'ml-kem-768-hybrid', 'ml-kem-1024-hybrid',
+                                 'ml-kem-512-chacha20', 'ml-kem-768-chacha20', 'ml-kem-1024-chacha20']:
                 # Check if we should generate and save a new key pair
                 if args.pqc_gen_key and args.pqc_keyfile:
                     from .pqc import PQCipher, PQCAlgorithm, check_pqc_support
@@ -1917,21 +1959,39 @@ def main():
                                         alg.lower().replace('-', '').replace('_', '') in ["kyber768", "mlkem768"]]
                     kyber1024_options = [alg for alg in pqc_algorithms if
                                          alg.lower().replace('-', '').replace('_', '') in ["kyber1024", "mlkem1024"]]
+                    hqc128_options = [alg for alg in pqc_algorithms if
+                                      alg.lower().replace('-', '').replace('_', '') in ["hqc128"]]
+                    hqc192_options = [alg for alg in pqc_algorithms if
+                                      alg.lower().replace('-', '').replace('_', '') in ["hqc192"]]
+                    hqc256_options = [alg for alg in pqc_algorithms if
+                                      alg.lower().replace('-', '').replace('_', '') in ["hqc256"]]
 
                     # Choose first available or fall back to default name
                     kyber512_algo = kyber512_options[0] if kyber512_options else "Kyber512"
                     kyber768_algo = kyber768_options[0] if kyber768_options else "Kyber768"
                     kyber1024_algo = kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                    hqc128_algo = hqc128_options[0] if hqc128_options else "HQC-128"
+                    hqc192_algo = hqc192_options[0] if hqc192_options else "HQC-192"
+                    hqc256_algo = hqc256_options[0] if hqc256_options else "HQC-256"
 
                     if not args.quiet:
                         print(
-                            f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}")
+                            f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}, hqc-128-hybrid → {hqc128_algo}, hqc-192-hybrid → {hqc192_algo}, hqc-256-hybrid → {hqc256_algo}")
 
                     # Create direct string mapping
                     algo_map = {
                         'kyber512-hybrid': kyber512_algo,
                         'kyber768-hybrid': kyber768_algo,
-                        'kyber1024-hybrid': kyber1024_algo
+                        'kyber1024-hybrid': kyber1024_algo,
+                        'hqc-128-hybrid': hqc128_algo,
+                        'hqc-192-hybrid': hqc192_algo,
+                        'hqc-256-hybrid': hqc256_algo,
+                        'ml-kem-512-hybrid': kyber512_algo,
+                        'ml-kem-768-hybrid': kyber768_algo,
+                        'ml-kem-1024-hybrid': kyber1024_algo,
+                        'ml-kem-512-chacha20': kyber512_algo,
+                        'ml-kem-768-chacha20': kyber768_algo,
+                        'ml-kem-1024-chacha20': kyber1024_algo
                     }
 
                     # Generate key pair
@@ -2053,12 +2113,27 @@ def main():
                                         alg.lower().replace('-', '').replace('_', '') in ["kyber768", "mlkem768"]]
                     kyber1024_options = [alg for alg in pqc_algorithms if
                                          alg.lower().replace('-', '').replace('_', '') in ["kyber1024", "mlkem1024"]]
+                    hqc128_options = [alg for alg in pqc_algorithms if
+                                      alg.lower().replace('-', '').replace('_', '') in ["hqc128"]]
+                    hqc192_options = [alg for alg in pqc_algorithms if
+                                      alg.lower().replace('-', '').replace('_', '') in ["hqc192"]]
+                    hqc256_options = [alg for alg in pqc_algorithms if
+                                      alg.lower().replace('-', '').replace('_', '') in ["hqc256"]]
 
                     # Choose first available algorithm
                     algo_map = {
                         'kyber512-hybrid': kyber512_options[0] if kyber512_options else "Kyber512",
                         'kyber768-hybrid': kyber768_options[0] if kyber768_options else "Kyber768",
-                        'kyber1024-hybrid': kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                        'kyber1024-hybrid': kyber1024_options[0] if kyber1024_options else "Kyber1024",
+                        'hqc-128-hybrid': hqc128_options[0] if hqc128_options else "HQC-128",
+                        'hqc-192-hybrid': hqc192_options[0] if hqc192_options else "HQC-192",
+                        'hqc-256-hybrid': hqc256_options[0] if hqc256_options else "HQC-256",
+                        'ml-kem-512-hybrid': kyber512_options[0] if kyber512_options else "Kyber512",
+                        'ml-kem-768-hybrid': kyber768_options[0] if kyber768_options else "Kyber768",
+                        'ml-kem-1024-hybrid': kyber1024_options[0] if kyber1024_options else "Kyber1024",
+                        'ml-kem-512-chacha20': kyber512_options[0] if kyber512_options else "Kyber512",
+                        'ml-kem-768-chacha20': kyber768_options[0] if kyber768_options else "Kyber768",
+                        'ml-kem-1024-chacha20': kyber1024_options[0] if kyber1024_options else "Kyber1024"
                     }
 
                     # Generate a new ephemeral keypair

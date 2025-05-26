@@ -420,8 +420,8 @@ class PQCipher:
         if not self.quiet and verbose:
             print(f"Using algorithm: {self.algorithm_name}")
         
-        # All Kyber/ML-KEM algorithms are KEM algorithms
-        self.is_kem = any(x in self.algorithm_name.lower() for x in ["kyber", "ml-kem"])
+        # All Kyber/ML-KEM/HQC algorithms are KEM algorithms
+        self.is_kem = any(x in self.algorithm_name.lower() for x in ["kyber", "ml-kem", "hqc"])
         
         # Setting to allow bypassing integrity checks for test files
         # This is needed for existing encrypted files that might have integrity verification issues
