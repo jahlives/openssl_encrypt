@@ -112,7 +112,7 @@ def verify_memory_zeroed(data, full_check=True, sample_size=16):
                 
                 while len(random_points) < remaining_samples and attempts < max_attempts:
                     attempts += 1
-                    idx = random.randint(1, data_len - 2)
+                    idx = secrets.randbelow(data_len - 2) + 1
                     if idx not in excluded:
                         random_points.append(idx)
                         excluded.add(idx)  # Add to excluded set
@@ -230,7 +230,7 @@ def secure_memzero(data, full_verification=True):
                 
                 # Add random timing variations to prevent timing-based memory analysis
                 # This is especially important for cold boot attacks
-                time.sleep(random.uniform(0.001, 0.005))
+                time.sleep(secrets.randbelow(5) / 1000.0 + 0.001)
                 
                 # Try platform-specific secure zeroing methods
                 try:
@@ -470,10 +470,10 @@ class SecureMemoryAllocator:
             # This makes it harder for scanners to identify patterns
             try:
                 # Random memory access pattern to prevent predictable analysis
-                dummy_size = random.randint(64, 256)
+                dummy_size = secrets.randbelow(193) + 64  # 64-256 range
                 dummy = bytearray(dummy_size)
                 for i in range(0, dummy_size, 8):
-                    dummy[i] = random.randint(0, 255)
+                    dummy[i] = secrets.randbelow(256)
                 # Immediately clear to avoid leaving traces
                 dummy[:] = bytearray(dummy_size)
             except:
