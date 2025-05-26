@@ -252,7 +252,7 @@ class ExtendedPQCipher(PQCipher):
                 cipher = self.ChaCha20Poly1305(symmetric_key)
             elif self.encryption_data == 'xchacha20-poly1305':
                 try:
-                    from cryptography.hazmat.primitives.ciphers.aead import XChaCha20Poly1305
+                    from .crypt_core import XChaCha20Poly1305
                     cipher = XChaCha20Poly1305(symmetric_key)
                 except ImportError:
                     if not self.quiet:
@@ -335,7 +335,7 @@ class ExtendedPQCipher(PQCipher):
                     cipher = self.ChaCha20Poly1305(symmetric_key)
                 elif self.encryption_data == 'xchacha20-poly1305':
                     try:
-                        from cryptography.hazmat.primitives.ciphers.aead import XChaCha20Poly1305
+                        from .crypt_core import XChaCha20Poly1305
                         cipher = XChaCha20Poly1305(symmetric_key)
                     except ImportError:
                         if not self.quiet:
