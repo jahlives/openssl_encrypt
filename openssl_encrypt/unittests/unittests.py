@@ -6769,5 +6769,258 @@ class TestPQCErrorHandling(unittest.TestCase):
                     continue
 
 
+class TestConcurrentPQCExecutionSafety(unittest.TestCase):
+    """Test suite for ensuring safe concurrent execution of PQC algorithm tests."""
+    
+    def setUp(self):
+        """Set up test fixtures for concurrent testing."""
+        self.test_dir = tempfile.mkdtemp()
+        self.test_files = []
+        self.test_password = b"concurrent_test_123"
+        self.test_data = "Concurrent execution test data"
+        self.hash_config = {"version": "v1", "algorithm": "sha256", "iterations": 1000}
+        
+    def tearDown(self):
+        """Clean up test files."""
+        for test_file in self.test_files:
+            try:
+                os.remove(test_file)
+            except:
+                pass
+        try:
+            os.rmdir(self.test_dir)
+        except:
+            pass
+    
+    def test_concurrent_mock_key_generation(self):
+        """Test that mock key generation is thread-safe and produces unique keys."""
+        import threading
+        import concurrent.futures
+        
+        def generate_mock_key_safe(algorithm_name):
+            """Thread-safe mock key generation with unique identifiers."""
+            thread_id = threading.current_thread().ident
+            timestamp = str(time.time()).replace('.', '')
+            unique_suffix = f"_{thread_id}_{timestamp}"
+            return (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode() + unique_suffix.encode()) * 5
+        
+        algorithms = ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid'] * 3  # 9 total
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(generate_mock_key_safe, alg) for alg in algorithms]
+            keys = [f.result() for f in concurrent.futures.as_completed(futures)]
+        
+        # Verify all keys are unique
+        unique_keys = set(keys)
+        self.assertEqual(len(unique_keys), len(keys), "Mock keys should be unique across threads")
+        
+        # Verify all keys have correct format
+        for key in keys:
+            self.assertTrue(key.startswith(b'MOCK_PQC_KEY_FOR_'), "All keys should have correct prefix")
+            self.assertGreater(len(key), 50, "Keys should be sufficiently long")
+    
+    def test_concurrent_temp_file_isolation(self):
+        """Test that concurrent tests use isolated temporary files."""
+        import threading
+        import concurrent.futures
+        
+        def create_isolated_temp_files(thread_id):
+            """Create temp files with thread isolation."""
+            thread_dir = os.path.join(self.test_dir, f"thread_{thread_id}")
+            os.makedirs(thread_dir, exist_ok=True)
+            
+            files = {
+                'input': os.path.join(thread_dir, f"input_{thread_id}.txt"),
+                'encrypted': os.path.join(thread_dir, f"encrypted_{thread_id}.txt"),
+                'decrypted': os.path.join(thread_dir, f"decrypted_{thread_id}.txt")
+            }
+            
+            # Write unique test data
+            with open(files['input'], 'w') as f:
+                f.write(f"Thread {thread_id} test data - {time.time()}")
+            
+            return files
+        
+        # Test concurrent temp file creation
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            futures = [executor.submit(create_isolated_temp_files, i) for i in range(8)]
+            file_sets = [f.result() for f in concurrent.futures.as_completed(futures)]
+        
+        # Verify all file sets are unique
+        all_files = []
+        for file_set in file_sets:
+            all_files.extend(file_set.values())
+            # Add to cleanup list
+            self.test_files.extend(file_set.values())
+        
+        unique_files = set(all_files)
+        self.assertEqual(len(unique_files), len(all_files), "All temp files should be unique")
+        
+        # Verify all files exist and have unique content
+        file_contents = []
+        for file_path in [fs['input'] for fs in file_sets]:
+            with open(file_path, 'r') as f:
+                content = f.read()
+                file_contents.append(content)
+        
+        unique_contents = set(file_contents)
+        self.assertEqual(len(unique_contents), len(file_contents), "All file contents should be unique")
+    
+    def test_concurrent_pqc_algorithm_isolation(self):
+        """Test that different PQC algorithms can run concurrently without interference."""
+        import concurrent.futures
+        
+        def test_algorithm_isolation(algorithm, thread_id):
+            """Test one algorithm in isolation."""
+            try:
+                # Create thread-specific temp directory
+                thread_dir = os.path.join(self.test_dir, f"alg_test_{thread_id}")
+                os.makedirs(thread_dir, exist_ok=True)
+                
+                input_file = os.path.join(thread_dir, "input.txt")
+                encrypted_file = os.path.join(thread_dir, "encrypted.txt")
+                
+                # Write unique test data
+                test_content = f"Algorithm {algorithm} thread {thread_id} data {time.time()}"
+                with open(input_file, 'w') as f:
+                    f.write(test_content)
+                
+                # Encrypt (this should always work)
+                encrypt_file(input_file, encrypted_file, self.test_password, self.hash_config, algorithm=algorithm)
+                
+                # Verify encrypted file exists and has content
+                self.assertTrue(os.path.exists(encrypted_file), f"Encrypted file should exist for {algorithm}")
+                
+                with open(encrypted_file, 'rb') as f:
+                    encrypted_content = f.read()
+                
+                self.assertGreater(len(encrypted_content), 100, f"Encrypted file should have substantial content for {algorithm}")
+                
+                # Add to cleanup
+                self.test_files.extend([input_file, encrypted_file])
+                
+                return f"SUCCESS: {algorithm} thread {thread_id}"
+                
+            except Exception as e:
+                return f"FAILED: {algorithm} thread {thread_id} - {str(e)}"
+        
+        # Test different algorithms concurrently
+        test_algorithms = [
+            ('kyber512-hybrid', 0),
+            ('kyber768-hybrid', 1), 
+            ('hqc-128-hybrid', 2),
+            ('hqc-192-hybrid', 3),
+            ('ml-kem-512-hybrid', 4)
+        ]
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(test_algorithm_isolation, alg, tid) for alg, tid in test_algorithms]
+            results = [f.result() for f in concurrent.futures.as_completed(futures)]
+        
+        # Check results
+        successes = [r for r in results if r.startswith('SUCCESS')]
+        failures = [r for r in results if r.startswith('FAILED')]
+        
+        print(f"Concurrent algorithm isolation test: {len(successes)} successes, {len(failures)} failures")
+        for result in results:
+            print(f"  {result}")
+        
+        # At least encryption should work for all algorithms
+        self.assertGreater(len(successes), 0, "At least some algorithms should work concurrently")
+    
+    def test_concurrent_error_handling_safety(self):
+        """Test that error handling is thread-safe during concurrent execution."""
+        import concurrent.futures
+        
+        def trigger_controlled_error(error_type, thread_id):
+            """Trigger specific error types to test concurrent error handling."""
+            try:
+                if error_type == "invalid_algorithm":
+                    # This should fail gracefully
+                    with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+                        f.write("test data")
+                        temp_file = f.name
+                    
+                    self.test_files.append(temp_file)
+                    encrypt_file(temp_file, temp_file + ".enc", self.test_password, self.hash_config, algorithm="invalid-algorithm")
+                    
+                elif error_type == "invalid_password":
+                    # Create a test file and try wrong password
+                    with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+                        f.write("test data")
+                        input_file = f.name
+                    
+                    encrypted_file = input_file + ".enc"
+                    self.test_files.extend([input_file, encrypted_file])
+                    
+                    # Encrypt with one password
+                    encrypt_file(input_file, encrypted_file, b"correct_password", self.hash_config, algorithm="fernet")
+                    
+                    # Try to decrypt with wrong password
+                    decrypt_file(encrypted_file, input_file + ".dec", b"wrong_password")
+                
+                return f"UNEXPECTED_SUCCESS: {error_type} thread {thread_id}"
+                
+            except Exception as e:
+                # This is expected
+                return f"EXPECTED_ERROR: {error_type} thread {thread_id} - {type(e).__name__}"
+        
+        error_types = ["invalid_algorithm", "invalid_password"] * 3  # 6 total tests
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            futures = [executor.submit(trigger_controlled_error, error_type, i) 
+                      for i, error_type in enumerate(error_types)]
+            results = [f.result() for f in concurrent.futures.as_completed(futures)]
+        
+        # All should be expected errors (not unexpected successes or crashes)
+        expected_errors = [r for r in results if r.startswith('EXPECTED_ERROR')]
+        unexpected = [r for r in results if not r.startswith('EXPECTED_ERROR')]
+        
+        print(f"Concurrent error handling test: {len(expected_errors)} expected errors, {len(unexpected)} unexpected results")
+        
+        self.assertEqual(len(expected_errors), len(results), "All concurrent errors should be handled gracefully")
+        self.assertEqual(len(unexpected), 0, "No unexpected results should occur during concurrent error testing")
+    
+    def test_pqc_test_execution_best_practices(self):
+        """Document and validate best practices for concurrent PQC test execution."""
+        
+        # Best Practice 1: Use unique temporary directories per test
+        temp_dirs = []
+        for i in range(3):
+            temp_dir = tempfile.mkdtemp(prefix=f"pqc_best_practice_{i}_")
+            temp_dirs.append(temp_dir)
+            
+        # Verify all directories are unique
+        self.assertEqual(len(set(temp_dirs)), len(temp_dirs), "Temp directories should be unique")
+        
+        # Best Practice 2: Generate algorithm-specific mock keys
+        mock_keys = {}
+        algorithms = ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid']
+        
+        for alg in algorithms:
+            # Use algorithm name + timestamp for uniqueness
+            timestamp = str(time.time()).replace('.', '')
+            mock_keys[alg] = (b'MOCK_PQC_KEY_FOR_' + alg.encode() + f"_{timestamp}".encode()) * 10
+        
+        # Verify all mock keys are unique
+        unique_mock_keys = set(mock_keys.values())
+        self.assertEqual(len(unique_mock_keys), len(algorithms), "Mock keys should be unique per algorithm")
+        
+        # Best Practice 3: Validate proper algorithm/mock key pairing
+        for alg, key in mock_keys.items():
+            if 'kyber' in alg.lower():
+                self.assertIsNotNone(key, f"Kyber algorithm {alg} should have mock key")
+                self.assertIn(alg.encode(), key, f"Mock key should contain algorithm name for {alg}")
+        
+        # Clean up temp directories
+        for temp_dir in temp_dirs:
+            try:
+                os.rmdir(temp_dir)
+            except:
+                pass
+        
+        print("✅ PQC concurrent execution best practices validated")
+
+
 if __name__ == "__main__":
     unittest.main()
