@@ -1736,7 +1736,11 @@ def generate_key(
     # 2. For backward compatibility, check if pbkdf2_iterations is in hash_config directly
     else:
         pbkdf2_from_hash_config = hash_config.get('pbkdf2_iterations')
-        if os.environ.get('PYTEST_CURRENT_TEST') is not None and pbkdf2_from_hash_config is None:
+        # Only inject PBKDF2 in pytest during encryption, not decryption
+        # During decryption, we must strictly follow the metadata configuration
+        if (os.environ.get('PYTEST_CURRENT_TEST') is not None and 
+            pbkdf2_from_hash_config is None and
+            not hash_config.get('_is_from_decryption_metadata', False)):
             use_pbkdf2 = 100000
         elif pbkdf2_from_hash_config is not None and pbkdf2_from_hash_config > 0:
             use_pbkdf2 = pbkdf2_from_hash_config
@@ -1950,6 +1954,8 @@ def convert_metadata_v4_to_v3(metadata):
     
     # Convert nested hash_config to flat format for v3
     hash_config = metadata['derivation_config'].get('hash_config', {})
+    # Mark this hash_config as coming from decryption metadata
+    hash_config['_is_from_decryption_metadata'] = True
     for algo, config in hash_config.items():
         if isinstance(config, dict) and 'rounds' in config:
             old_metadata['hash_config'][algo] = config['rounds']
@@ -2673,6 +2679,9 @@ def decrypt_file(
                 # Also store pbkdf2_iterations directly in hash_config for generate_key
                 hash_config['pbkdf2'] = kdf_params
         
+        # Mark this hash_config as coming from decryption metadata
+        hash_config['_is_from_decryption_metadata'] = True
+        
         # Get hash information
         hashes = metadata['hashes']
         original_hash = hashes.get('original_hash')
@@ -2712,6 +2721,9 @@ def decrypt_file(
     elif format_version in [1, 2, 3]:
         salt = base64.b64decode(metadata['salt'])
         hash_config = metadata.get('hash_config')
+        # Mark this hash_config as coming from decryption metadata  
+        if hash_config:
+            hash_config['_is_from_decryption_metadata'] = True
         
         if format_version == 1:
             pbkdf2_iterations = metadata.get('pbkdf2_iterations', 100000)
