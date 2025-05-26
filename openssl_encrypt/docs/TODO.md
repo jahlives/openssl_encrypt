@@ -37,11 +37,11 @@ This document outlines planned security enhancements and improvements for the op
   - [ ] Update naming conventions to align with NIST standards (Kyber → ML-KEM)
   - [ ] Add security level indicators to configuration options
   - [x] Research newer post-quantum resistant algorithms beyond current implementation
-  - [ ] Implement additional post-quantum resistant algorithms (HQC, ML-DSA, SLH-DSA)
+  - [x] Implement additional post-quantum resistant algorithms (HQC completed, ML-DSA, SLH-DSA pending)
   - [ ] Design algorithm upgrade path for existing users
   - [ ] Create documentation for algorithm migration
   - [ ] Implement automatic algorithm version detection
-  - [ ] Add comprehensive tests for all new and updated algorithms
+  - [x] Add comprehensive tests for all new and updated algorithms (HQC completed)
 
 - [x] **Dependency security**
   - [x] Conduct comprehensive review of all dependencies
@@ -110,3 +110,15 @@ This document outlines planned security enhancements and improvements for the op
   - [x] Fix dual encryption with post-quantum algorithms
   - [x] Add comprehensive tests for all PQC functions with wrong parameters
   - [x] Improve test-specific security validations
+
+- [x] **HQC Algorithm Re-enablement (May 2025)**
+  - [x] Re-enable HQC-128, HQC-192, and HQC-256 hybrid algorithms after security fixes
+  - [x] Fix algorithm mapping issues in CLI for proper HQC support
+  - [x] Resolve liboqs API compatibility issues with HQC decapsulation
+  - [x] Fix PBKDF2 injection during pytest environment affecting private key decryption
+  - [x] Implement proper encryption_data extraction from v5 metadata during decryption
+  - [x] Add XChaCha20-Poly1305 support for PQC hybrid algorithms
+  - [x] Complete HQC unit test suite with all encryption_data algorithm combinations
+  - [x] Generate v5 format test files for HQC algorithms (HQC-128+AES-GCM, HQC-192+XChaCha20, HQC-256+AES-GCM-SIV)
+  - [x] Verify compatibility with all symmetric encryption algorithms (AES-GCM, AES-GCM-SIV, XChaCha20-Poly1305, ChaCha20-Poly1305, AES-SIV, AES-OCB3)
+  - [x] Update SecureBytes classes with proper context manager support (__enter__/__exit__ methods)
