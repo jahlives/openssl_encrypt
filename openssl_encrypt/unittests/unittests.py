@@ -4112,7 +4112,8 @@ def test_file_decryption_wrong_algorithm_v3(filename):
     
     # Provide a mock private key for PQC tests
     pqc_private_key = None
-    if wrong_algorithm.startswith("kyber"):
+    if 'kyber' in algorithm_name.lower():
+        # Create a mock private key that's unique for each algorithm to avoid cross-test interference
         pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
     
     try:
@@ -4254,7 +4255,8 @@ def test_file_decryption_wrong_algorithm_v4(filename):
     
     # Provide a mock private key for PQC tests
     pqc_private_key = None
-    if wrong_algorithm.startswith("kyber"):
+    if 'kyber' in algorithm_name.lower():
+        # Create a mock private key that's unique for each algorithm to avoid cross-test interference
         pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
     
     try:
@@ -4282,6 +4284,8 @@ def get_test_files_v5():
         return [f for f in files if f.startswith("test1_")]
     except:
         return []
+
+
 
 
 # Create a test function for each file
@@ -4414,7 +4418,8 @@ def test_file_decryption_wrong_algorithm_v5(filename):
     
     # Provide a mock private key for PQC tests
     pqc_private_key = None
-    if wrong_algorithm.startswith("kyber"):
+    if 'kyber' in algorithm_name.lower():
+        # Create a mock private key that's unique for each algorithm to avoid cross-test interference
         pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
     
     try:
@@ -4477,7 +4482,9 @@ def test_file_decryption_wrong_encryption_data_v5(filename):
         wrong_encryption_data = "aes-gcm" if current_encryption_data != "aes-gcm" else "aes-siv"
     
     # Provide a mock private key for PQC tests
-    pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
+    if 'kyber' in algorithm_name.lower():
+        # Create a mock private key that's unique for each algorithm to avoid cross-test interference
+        pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
     
     try:
         # Try to decrypt with wrong password (simulating wrong encryption_data)
@@ -6494,7 +6501,9 @@ def test_kyber_v5_wrong_encryption_data():
             continue  # Skip if we can't find a different option
         
         # Provide a mock private key for PQC tests
-        pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
+        if 'kyber' in algorithm_name.lower():
+            # Create a mock private key that's unique for each algorithm to avoid cross-test interference
+            pqc_private_key = (b'MOCK_PQC_KEY_FOR_' + algorithm_name.encode()) * 10
         
         # Decryption should fail with wrong encryption_data
         try:
