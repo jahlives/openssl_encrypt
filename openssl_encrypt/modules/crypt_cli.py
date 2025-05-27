@@ -67,6 +67,34 @@ from .keystore_wrapper import encrypt_file_with_keystore, decrypt_file_with_keys
 from .keystore_utils import extract_key_id_from_metadata, get_keystore_password, get_pqc_key_for_decryption, auto_generate_pqc_key
 
 
+def clear_password_environment():
+    """Securely clear password from environment variables with multiple overwrites"""
+    try:
+        if 'CRYPT_PASSWORD' in os.environ:
+            # Get the original length to overwrite with same size
+            original_length = len(os.environ['CRYPT_PASSWORD'])
+            
+            # Overwrite with random data multiple times (like secure_memory does)
+            import secrets
+            for _ in range(3):
+                # Overwrite with random bytes of same length
+                random_data = ''.join(secrets.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') 
+                                    for _ in range(original_length))
+                os.environ['CRYPT_PASSWORD'] = random_data
+            
+            # Overwrite with zeros
+            os.environ['CRYPT_PASSWORD'] = '0' * original_length
+            
+            # Overwrite with different pattern
+            os.environ['CRYPT_PASSWORD'] = 'X' * original_length
+            
+            # Finally delete the environment variable
+            del os.environ['CRYPT_PASSWORD']
+            
+    except Exception:
+        pass  # Best effort cleanup
+
+
 def debug_hash_config(args, hash_config, message="Hash configuration"):
     """Debug output for hash configuration"""
     print(f"\n{message}:")
@@ -327,8 +355,13 @@ def main():
             except Exception:
                 pass
 
+    def cleanup_all():
+        """Clean up temporary files and environment variables"""
+        cleanup_temp_files()
+        clear_password_environment()
+
     # Register cleanup function to run on normal exit
-    atexit.register(cleanup_temp_files)
+    atexit.register(cleanup_all)
 
     # Register signal handlers for common termination signals
     def signal_handler(signum, frame):
@@ -1237,6 +1270,12 @@ def main():
                 elif os.environ.get('CRYPT_PASSWORD'):
                     # Get password from environment variable
                     env_password = os.environ.get('CRYPT_PASSWORD')
+                    
+                    # Immediately clear the environment variable for security
+                    try:
+                        del os.environ['CRYPT_PASSWORD']
+                    except KeyError:
+                        pass  # Already cleared
                     
                     # Skip validation in test mode
                     in_test_mode = os.environ.get('PYTEST_CURRENT_TEST') is not None

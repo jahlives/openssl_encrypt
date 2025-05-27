@@ -24,6 +24,34 @@ except ImportError:
     # Fallback if secure memory modules are not available
     SECURE_MEMORY_AVAILABLE = False
 
+
+def secure_clear_env_password():
+    """Securely clear CRYPT_PASSWORD environment variable with multiple overwrites"""
+    try:
+        if 'CRYPT_PASSWORD' in os.environ:
+            # Get the original length to overwrite with same size
+            original_length = len(os.environ['CRYPT_PASSWORD'])
+            
+            # Overwrite with random data multiple times
+            import secrets
+            for _ in range(3):
+                # Overwrite with random data of same length
+                random_data = ''.join(secrets.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') 
+                                    for _ in range(original_length))
+                os.environ['CRYPT_PASSWORD'] = random_data
+            
+            # Overwrite with zeros
+            os.environ['CRYPT_PASSWORD'] = '0' * original_length
+            
+            # Overwrite with different pattern
+            os.environ['CRYPT_PASSWORD'] = 'X' * original_length
+            
+            # Finally delete the environment variable
+            del os.environ['CRYPT_PASSWORD']
+            
+    except Exception:
+        pass  # Best effort cleanup
+
 # Import the settings module
 try:
     from .modules.crypt_settings import SettingsTab, DEFAULT_CONFIG
@@ -231,6 +259,9 @@ class CryptGUI:
         self.password_timer_active = False
         self.countdown_seconds = 0
         self.countdown_label = None
+        
+        # Track if we set environment password (for secure cleanup)
+        self.env_password_set = False
         
         # Bind tab change event to clear password
         self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
@@ -881,6 +912,11 @@ class CryptGUI:
         self.decrypt_password_var.set("")
         if hasattr(self, 'generated_password_var'):
             self.generated_password_var.set("")
+        
+        # Securely clear environment variable if we set it
+        if hasattr(self, 'env_password_set') and self.env_password_set:
+            secure_clear_env_password()
+            self.env_password_set = False
 
     def _on_closing(self):
         """Handle window closing event"""
@@ -1164,6 +1200,11 @@ class CryptGUI:
                 self.progress_var.set(0)
                 self.current_algorithm = ""
                 self.last_progress_text = ""
+                
+                # Securely clear environment password after command execution if we set it
+                if hasattr(self, 'env_password_set') and self.env_password_set:
+                    secure_clear_env_password()
+                    self.env_password_set = False
 
         # Start the command in a separate thread
         threading.Thread(target=run_in_thread, daemon=True).start()
@@ -1236,6 +1277,7 @@ class CryptGUI:
         # Pass password via environment variable instead of command line for security
         env = os.environ.copy()
         env['CRYPT_PASSWORD'] = password
+        self.env_password_set = True  # Track that we set the environment variable
         
         # Note: Don't add -p flag since we're using environment variable
 
@@ -1402,6 +1444,7 @@ class CryptGUI:
         # Pass password via environment variable instead of command line for security  
         env = os.environ.copy()
         env['CRYPT_PASSWORD'] = password
+        self.env_password_set = True  # Track that we set the environment variable
         
         # Note: Don't add -p flag since we're using environment variable
 
