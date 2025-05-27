@@ -66,7 +66,7 @@ you can create issues by [sending mail](mailto:issue+world-openssl-encrypt-2-iss
 - [requirements.txt](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/requirements.txt) - Required Python packages
 - [README.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/README.md) - This documentation file
 
-all testfile files are ecrypted with password `1234` for your testing
+all testfile files are encrypted with password `1234` for your testing
 ## License
 
 [MIT License](LICENSE)
