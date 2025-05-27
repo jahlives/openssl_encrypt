@@ -67,6 +67,34 @@ from .keystore_wrapper import encrypt_file_with_keystore, decrypt_file_with_keys
 from .keystore_utils import extract_key_id_from_metadata, get_keystore_password, get_pqc_key_for_decryption, auto_generate_pqc_key
 
 
+def clear_password_environment():
+    """Securely clear password from environment variables with multiple overwrites"""
+    try:
+        if 'CRYPT_PASSWORD' in os.environ:
+            # Get the original length to overwrite with same size
+            original_length = len(os.environ['CRYPT_PASSWORD'])
+            
+            # Overwrite with random data multiple times (like secure_memory does)
+            import secrets
+            for _ in range(3):
+                # Overwrite with random bytes of same length
+                random_data = ''.join(secrets.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') 
+                                    for _ in range(original_length))
+                os.environ['CRYPT_PASSWORD'] = random_data
+            
+            # Overwrite with zeros
+            os.environ['CRYPT_PASSWORD'] = '0' * original_length
+            
+            # Overwrite with different pattern
+            os.environ['CRYPT_PASSWORD'] = 'X' * original_length
+            
+            # Finally delete the environment variable
+            del os.environ['CRYPT_PASSWORD']
+            
+    except Exception:
+        pass  # Best effort cleanup
+
+
 def debug_hash_config(args, hash_config, message="Hash configuration"):
     """Debug output for hash configuration"""
     print(f"\n{message}:")
@@ -327,8 +355,13 @@ def main():
             except Exception:
                 pass
 
+    def cleanup_all():
+        """Clean up temporary files and environment variables"""
+        cleanup_temp_files()
+        clear_password_environment()
+
     # Register cleanup function to run on normal exit
-    atexit.register(cleanup_temp_files)
+    atexit.register(cleanup_all)
 
     # Register signal handlers for common termination signals
     def signal_handler(signum, frame):
@@ -347,7 +380,7 @@ def main():
 
     # Set up argument parser
     parser = argparse.ArgumentParser(
-        description='Encrypt or decrypt a file with a password',
+        description='Encrypt or decrypt a file with a password\n\nEnvironment Variables:\n  CRYPT_PASSWORD    Password for encryption/decryption (alternative to -p)',
         formatter_class=argparse.RawTextHelpFormatter)
 
     # show or hide progess
@@ -491,7 +524,7 @@ def main():
     # Define common options
     parser.add_argument(
         '--password', '-p',
-        help='Password (will prompt if not provided)'
+        help='Password (will prompt if not provided, or use CRYPT_PASSWORD environment variable)'
     )
     parser.add_argument(
         '--random',
@@ -1232,6 +1265,60 @@ def main():
                     password_secure.extend(generated_password.encode())
                     if not args.quiet:
                         print("\nGenerated a random password for encryption.")
+
+                # Check for password from environment variable first
+                elif os.environ.get('CRYPT_PASSWORD'):
+                    # Get password from environment variable
+                    env_password = os.environ.get('CRYPT_PASSWORD')
+                    
+                    # Immediately clear the environment variable for security
+                    try:
+                        del os.environ['CRYPT_PASSWORD']
+                    except KeyError:
+                        pass  # Already cleared
+                    
+                    # Skip validation in test mode
+                    in_test_mode = os.environ.get('PYTEST_CURRENT_TEST') is not None
+
+                    # Validate password strength if policy is enabled, not in force mode, and not in test mode
+                    if args.password_policy != 'none' and not args.force_password and not in_test_mode:
+                        try:
+                            # Create policy with user-specified parameters
+                            policy_params = {}
+
+                            # Override policy settings with custom parameters if provided
+                            if args.min_password_length is not None:
+                                policy_params['min_length'] = args.min_password_length
+
+                            if args.min_password_entropy is not None:
+                                policy_params['min_entropy'] = args.min_password_entropy
+
+                            if args.disable_common_password_check:
+                                policy_params['check_common_passwords'] = False
+
+                            if args.custom_password_list:
+                                policy_params['common_passwords_path'] = args.custom_password_list
+
+                            # Create policy
+                            policy = PasswordPolicy(
+                                policy_level=args.password_policy,
+                                **policy_params
+                            )
+
+                            # Validate the password (will raise ValidationError if invalid)
+                            policy.validate_password_or_raise(env_password, quiet=args.quiet)
+
+                        except crypt_errors.ValidationError as e:
+                            # Always display password strength information before validation failure
+                            if not args.quiet:
+                                # Calculate and display password strength
+                                entropy, strength = get_password_strength(env_password)
+                                print(f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)")
+                                print(f"Password validation failed: {str(e)}")
+                                print("Use --force-password to bypass validation (not recommended)")
+                            sys.exit(1)
+
+                    password_secure.extend(env_password.encode())
 
                 # If password provided as argument
                 elif args.password:

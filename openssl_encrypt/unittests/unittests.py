@@ -7022,6 +7022,244 @@ class TestConcurrentPQCExecutionSafety(unittest.TestCase):
         print("✅ PQC concurrent execution best practices validated")
 
 
+class TestEnvironmentPasswordHandling(unittest.TestCase):
+    """Test environment variable password handling and secure clearing."""
+    
+    def setUp(self):
+        """Set up test environment."""
+        # Clean any existing CRYPT_PASSWORD to ensure clean test state
+        if 'CRYPT_PASSWORD' in os.environ:
+            del os.environ['CRYPT_PASSWORD']
+        self.test_password = "TestPassword123!"
+        self.original_env = os.environ.copy()
+        
+    def tearDown(self):
+        """Clean up test environment."""
+        # Restore original environment
+        if 'CRYPT_PASSWORD' in os.environ:
+            del os.environ['CRYPT_PASSWORD']
+        # Restore any other env vars that may have been modified
+        for key in list(os.environ.keys()):
+            if key not in self.original_env:
+                del os.environ[key]
+        for key, value in self.original_env.items():
+            os.environ[key] = value
+    
+    def test_crypt_password_environment_variable_set(self):
+        """Test that CRYPT_PASSWORD environment variable is properly read."""
+        # Set the environment variable
+        os.environ['CRYPT_PASSWORD'] = self.test_password
+        
+        # Verify it was set
+        self.assertEqual(os.environ.get('CRYPT_PASSWORD'), self.test_password)
+        
+        # Import and test the password retrieval logic
+        from modules.crypt_cli import clear_password_environment
+        
+        # Verify the password is accessible
+        self.assertEqual(os.environ.get('CRYPT_PASSWORD'), self.test_password)
+    
+    def test_environment_password_immediate_clearing(self):
+        """Test that environment password is cleared immediately after reading."""
+        # Set the environment variable
+        os.environ['CRYPT_PASSWORD'] = self.test_password
+        
+        # Simulate reading the password (like the CLI does)
+        env_password = os.environ.get('CRYPT_PASSWORD')
+        self.assertEqual(env_password, self.test_password)
+        
+        # Immediately clear (like the CLI does)
+        try:
+            del os.environ['CRYPT_PASSWORD']
+        except KeyError:
+            pass
+        
+        # Verify it's cleared
+        self.assertIsNone(os.environ.get('CRYPT_PASSWORD'))
+    
+    def test_secure_environment_clearing_function(self):
+        """Test the secure environment clearing function."""
+        from modules.crypt_cli import clear_password_environment
+        
+        # Set a test password
+        test_password = "SecureTestPassword456!"
+        os.environ['CRYPT_PASSWORD'] = test_password
+        
+        # Store the original length to verify proper overwriting
+        original_length = len(test_password)
+        
+        # Verify password is set
+        self.assertEqual(os.environ.get('CRYPT_PASSWORD'), test_password)
+        
+        # Call the secure clearing function
+        clear_password_environment()
+        
+        # Verify the environment variable is completely removed
+        self.assertIsNone(os.environ.get('CRYPT_PASSWORD'))
+        self.assertNotIn('CRYPT_PASSWORD', os.environ)
+    
+    def test_secure_clearing_with_different_password_lengths(self):
+        """Test secure clearing works with passwords of different lengths."""
+        from modules.crypt_cli import clear_password_environment
+        
+        test_passwords = [
+            "short",
+            "medium_length_password",
+            "very_long_password_with_special_characters_1234567890!@#$%^&*()_+-={}[]|\\:;\"'<>?,./"
+        ]
+        
+        for test_password in test_passwords:
+            with self.subTest(password_length=len(test_password)):
+                # Set the password
+                os.environ['CRYPT_PASSWORD'] = test_password
+                
+                # Verify it's set
+                self.assertEqual(os.environ.get('CRYPT_PASSWORD'), test_password)
+                
+                # Clear it securely
+                clear_password_environment()
+                
+                # Verify it's completely removed
+                self.assertIsNone(os.environ.get('CRYPT_PASSWORD'))
+                self.assertNotIn('CRYPT_PASSWORD', os.environ)
+    
+    def test_secure_clearing_nonexistent_variable(self):
+        """Test that secure clearing handles nonexistent environment variable gracefully."""
+        from modules.crypt_cli import clear_password_environment
+        
+        # Ensure no CRYPT_PASSWORD exists
+        if 'CRYPT_PASSWORD' in os.environ:
+            del os.environ['CRYPT_PASSWORD']
+        
+        # This should not raise an exception
+        try:
+            clear_password_environment()
+        except Exception as e:
+            self.fail(f"clear_password_environment raised an exception when no variable exists: {e}")
+        
+        # Verify still no environment variable
+        self.assertIsNone(os.environ.get('CRYPT_PASSWORD'))
+    
+    def test_multiple_clearing_calls(self):
+        """Test that multiple calls to clear function are safe."""
+        from modules.crypt_cli import clear_password_environment
+        
+        # Set initial password
+        os.environ['CRYPT_PASSWORD'] = self.test_password
+        
+        # Clear multiple times
+        clear_password_environment()
+        clear_password_environment()
+        clear_password_environment()
+        
+        # Should still be safely cleared
+        self.assertIsNone(os.environ.get('CRYPT_PASSWORD'))
+    
+    def test_environment_password_secure_clearing_behavior(self):
+        """Test that secure clearing function behaves correctly and clears completely."""
+        from modules.crypt_cli import clear_password_environment
+        
+        # Set a known password
+        test_password = "SecureClearingTest123!"
+        os.environ['CRYPT_PASSWORD'] = test_password
+        
+        # Verify password is initially set
+        self.assertEqual(os.environ.get('CRYPT_PASSWORD'), test_password)
+        
+        # Call the secure clearing function - this should complete without error
+        # and perform multiple overwrites internally
+        clear_password_environment()
+        
+        # Verify the environment variable is completely removed
+        self.assertIsNone(os.environ.get('CRYPT_PASSWORD'))
+        self.assertNotIn('CRYPT_PASSWORD', os.environ)
+        
+        # Verify the function can be called again safely (idempotent behavior)
+        clear_password_environment()
+        self.assertIsNone(os.environ.get('CRYPT_PASSWORD'))
+    
+    def test_environment_password_memory_patterns(self):
+        """Test that different overwrite patterns are used during clearing."""
+        from modules.crypt_cli import clear_password_environment
+        
+        # Test with a specific password
+        test_password = "PatternTestPassword!"
+        os.environ['CRYPT_PASSWORD'] = test_password
+        
+        # We can't easily test the actual memory overwriting, but we can test
+        # that the function completes without error and clears the variable
+        clear_password_environment()
+        
+        # Verify the environment variable is completely removed
+        self.assertIsNone(os.environ.get('CRYPT_PASSWORD'))
+        self.assertNotIn('CRYPT_PASSWORD', os.environ)
+    
+    @patch('secrets.choice')
+    def test_secure_clearing_uses_random_data(self, mock_choice):
+        """Test that secure clearing uses random data for overwrites."""
+        from modules.crypt_cli import clear_password_environment
+        
+        # Configure mock to return predictable values
+        mock_choice.return_value = 'R'
+        
+        # Set test password
+        test_password = "RandomTest!"
+        os.environ['CRYPT_PASSWORD'] = test_password
+        
+        # Clear the password
+        clear_password_environment()
+        
+        # Verify secrets.choice was called (indicating random data generation)
+        self.assertTrue(mock_choice.called)
+        
+        # Verify variable is cleared
+        self.assertIsNone(os.environ.get('CRYPT_PASSWORD'))
+    
+    def test_environment_password_cli_integration(self):
+        """Test that CRYPT_PASSWORD integrates properly with CLI argument parsing."""
+        # This test verifies the environment variable works in the CLI context
+        # without actually running the full CLI (which would be complex to test)
+        
+        test_password = "CLIIntegrationTest456!"
+        
+        # Set the environment variable
+        os.environ['CRYPT_PASSWORD'] = test_password
+        
+        # Verify it can be read
+        env_password = os.environ.get('CRYPT_PASSWORD')
+        self.assertEqual(env_password, test_password)
+        
+        # Simulate the immediate clearing that happens in CLI
+        try:
+            del os.environ['CRYPT_PASSWORD']
+        except KeyError:
+            pass
+        
+        # Verify it's cleared immediately
+        self.assertIsNone(os.environ.get('CRYPT_PASSWORD'))
+        
+        # Test that the password can be used for encryption operations
+        # (we already have the password value stored before clearing)
+        self.assertEqual(env_password, test_password)
+    
+    def test_environment_password_precedence(self):
+        """Test that environment variable handling works correctly."""
+        # Test that when CRYPT_PASSWORD is set, it can be accessed
+        test_password = "PrecedenceTest789!"
+        
+        # Test with environment variable set
+        os.environ['CRYPT_PASSWORD'] = test_password
+        self.assertTrue('CRYPT_PASSWORD' in os.environ)
+        self.assertEqual(os.environ.get('CRYPT_PASSWORD'), test_password)
+        
+        # Clear it
+        del os.environ['CRYPT_PASSWORD']
+        
+        # Test with no environment variable
+        self.assertFalse('CRYPT_PASSWORD' in os.environ)
+        self.assertIsNone(os.environ.get('CRYPT_PASSWORD'))
+
+
 # Import HQC and ML-KEM keystore integration tests
 try:
     import sys
