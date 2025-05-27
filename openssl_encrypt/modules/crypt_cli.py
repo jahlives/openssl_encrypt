@@ -347,7 +347,7 @@ def main():
 
     # Set up argument parser
     parser = argparse.ArgumentParser(
-        description='Encrypt or decrypt a file with a password',
+        description='Encrypt or decrypt a file with a password\n\nEnvironment Variables:\n  CRYPT_PASSWORD    Password for encryption/decryption (alternative to -p)',
         formatter_class=argparse.RawTextHelpFormatter)
 
     # show or hide progess
@@ -491,7 +491,7 @@ def main():
     # Define common options
     parser.add_argument(
         '--password', '-p',
-        help='Password (will prompt if not provided)'
+        help='Password (will prompt if not provided, or use CRYPT_PASSWORD environment variable)'
     )
     parser.add_argument(
         '--random',
@@ -1232,6 +1232,54 @@ def main():
                     password_secure.extend(generated_password.encode())
                     if not args.quiet:
                         print("\nGenerated a random password for encryption.")
+
+                # Check for password from environment variable first
+                elif os.environ.get('CRYPT_PASSWORD'):
+                    # Get password from environment variable
+                    env_password = os.environ.get('CRYPT_PASSWORD')
+                    
+                    # Skip validation in test mode
+                    in_test_mode = os.environ.get('PYTEST_CURRENT_TEST') is not None
+
+                    # Validate password strength if policy is enabled, not in force mode, and not in test mode
+                    if args.password_policy != 'none' and not args.force_password and not in_test_mode:
+                        try:
+                            # Create policy with user-specified parameters
+                            policy_params = {}
+
+                            # Override policy settings with custom parameters if provided
+                            if args.min_password_length is not None:
+                                policy_params['min_length'] = args.min_password_length
+
+                            if args.min_password_entropy is not None:
+                                policy_params['min_entropy'] = args.min_password_entropy
+
+                            if args.disable_common_password_check:
+                                policy_params['check_common_passwords'] = False
+
+                            if args.custom_password_list:
+                                policy_params['common_passwords_path'] = args.custom_password_list
+
+                            # Create policy
+                            policy = PasswordPolicy(
+                                policy_level=args.password_policy,
+                                **policy_params
+                            )
+
+                            # Validate the password (will raise ValidationError if invalid)
+                            policy.validate_password_or_raise(env_password, quiet=args.quiet)
+
+                        except crypt_errors.ValidationError as e:
+                            # Always display password strength information before validation failure
+                            if not args.quiet:
+                                # Calculate and display password strength
+                                entropy, strength = get_password_strength(env_password)
+                                print(f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)")
+                                print(f"Password validation failed: {str(e)}")
+                                print("Use --force-password to bypass validation (not recommended)")
+                            sys.exit(1)
+
+                    password_secure.extend(env_password.encode())
 
                 # If password provided as argument
                 elif args.password:

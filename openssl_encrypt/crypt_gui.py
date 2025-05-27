@@ -1236,6 +1236,8 @@ class CryptGUI:
         # Pass password via environment variable instead of command line for security
         env = os.environ.copy()
         env['CRYPT_PASSWORD'] = password
+        
+        # Note: Don't add -p flag since we're using environment variable
 
         # Add encryption algorithm
         cmd.extend(["--algorithm", encryption_algorithm])
@@ -1400,6 +1402,8 @@ class CryptGUI:
         # Pass password via environment variable instead of command line for security  
         env = os.environ.copy()
         env['CRYPT_PASSWORD'] = password
+        
+        # Note: Don't add -p flag since we're using environment variable
 
         # Run the command
         self.output_text.insert(tk.END, f" ".join(cmd) + "\n")
