@@ -15,6 +15,7 @@ import functools
 import inspect
 from enum import Enum, auto
 import traceback
+import threading
 
 
 class ErrorCategory(Enum):
@@ -33,35 +34,157 @@ class ErrorCategory(Enum):
 
 
 # Standard error messages by category - no sensitive details included
+# These messages are carefully designed to provide consistent error
+# patterns that don't leak information while still being useful
 STANDARD_ERROR_MESSAGES = {
-    ErrorCategory.VALIDATION: "Invalid input parameter",
-    ErrorCategory.ENCRYPTION: "Encryption operation failed",
-    ErrorCategory.DECRYPTION: "Decryption operation failed",
-    ErrorCategory.AUTHENTICATION: "Data integrity verification failed",
-    ErrorCategory.KEY_DERIVATION: "Key derivation failed",
-    ErrorCategory.MEMORY: "Secure memory operation failed",
-    ErrorCategory.INTERNAL: "Internal error occurred",
-    ErrorCategory.PLATFORM: "Platform-specific operation failed",
-    ErrorCategory.PERMISSION: "Operation not permitted",
-    ErrorCategory.CONFIGURATION: "Invalid configuration",
-    ErrorCategory.KEYSTORE: "Keystore operation failed"
+    # Generic format: "Security {operation} {result_status}"
+    # This provides uniform format while still indicating the general category
+    ErrorCategory.VALIDATION: "Security validation check failed",
+    ErrorCategory.ENCRYPTION: "Security encryption operation failed",
+    ErrorCategory.DECRYPTION: "Security decryption operation failed",
+    ErrorCategory.AUTHENTICATION: "Security verification check failed",
+    ErrorCategory.KEY_DERIVATION: "Security key derivation failed",
+    ErrorCategory.MEMORY: "Security memory operation failed",
+    ErrorCategory.INTERNAL: "Security internal operation failed",
+    ErrorCategory.PLATFORM: "Security system compatibility check failed",
+    ErrorCategory.PERMISSION: "Security permission check failed",
+    ErrorCategory.CONFIGURATION: "Security configuration validation failed",
+    ErrorCategory.KEYSTORE: "Security keystore operation failed"
 }
 
 
 # Extended error messages for test/development environments only
+# These include more details for debugging while maintaining a consistent format
 DEBUG_ERROR_MESSAGES = {
-    ErrorCategory.VALIDATION: "Invalid input parameter: {details}",
-    ErrorCategory.ENCRYPTION: "Encryption operation failed: {details}",
-    ErrorCategory.DECRYPTION: "Decryption operation failed: {details}",
-    ErrorCategory.AUTHENTICATION: "Data integrity verification failed: {details}",
-    ErrorCategory.KEY_DERIVATION: "Key derivation failed: {details}",
-    ErrorCategory.MEMORY: "Secure memory operation failed: {details}",
-    ErrorCategory.INTERNAL: "Internal error occurred: {details}",
-    ErrorCategory.PLATFORM: "Platform-specific operation failed: {details}",
-    ErrorCategory.PERMISSION: "Operation not permitted: {details}",
-    ErrorCategory.CONFIGURATION: "Invalid configuration: {details}",
-    ErrorCategory.KEYSTORE: "Keystore operation failed: {details}"
+    # Format: "{standard_message} - Debug info: {details}"
+    # This ensures test/dev environments still get useful information
+    ErrorCategory.VALIDATION: "Security validation check failed - Debug info: {details}",
+    ErrorCategory.ENCRYPTION: "Security encryption operation failed - Debug info: {details}",
+    ErrorCategory.DECRYPTION: "Security decryption operation failed - Debug info: {details}",
+    ErrorCategory.AUTHENTICATION: "Security verification check failed - Debug info: {details}",
+    ErrorCategory.KEY_DERIVATION: "Security key derivation failed - Debug info: {details}",
+    ErrorCategory.MEMORY: "Security memory operation failed - Debug info: {details}",
+    ErrorCategory.INTERNAL: "Security internal operation failed - Debug info: {details}",
+    ErrorCategory.PLATFORM: "Security system compatibility check failed - Debug info: {details}",
+    ErrorCategory.PERMISSION: "Security permission check failed - Debug info: {details}",
+    ErrorCategory.CONFIGURATION: "Security configuration validation failed - Debug info: {details}",
+    ErrorCategory.KEYSTORE: "Security keystore operation failed - Debug info: {details}"
 }
+
+
+# Thread-local storage for jitter state with mutex protection
+_jitter_state = threading.local()
+_jitter_mutex = threading.RLock()  # Reentrant lock for thread safety
+
+# Initialize the thread-local state on import
+def _init_thread_local_state():
+    """Initialize thread-local state if not already done."""
+    if not hasattr(_jitter_state, 'initialized'):
+        _jitter_state.last_jitter_time = 0
+        _jitter_state.jitter_count = 0
+        _jitter_state.total_jitter = 0
+        _jitter_state.max_successive_calls = 0
+        _jitter_state.initialized = True
+    # Ensure all required attributes exist even if initialized flag is set
+    if not hasattr(_jitter_state, 'last_jitter_time'):
+        _jitter_state.last_jitter_time = 0
+    if not hasattr(_jitter_state, 'jitter_count'):
+        _jitter_state.jitter_count = 0
+    if not hasattr(_jitter_state, 'total_jitter'):
+        _jitter_state.total_jitter = 0
+    if not hasattr(_jitter_state, 'max_successive_calls'):
+        _jitter_state.max_successive_calls = 0
+
+def add_timing_jitter(min_ms=1, max_ms=20):
+    """
+    Add random timing jitter to prevent timing analysis of operations.
+    
+    This function uses thread-local storage to keep track of recent jitter
+    values and avoids adding excessive jitter when called multiple times
+    in quick succession. It's also thread-safe and reentrant.
+    
+    Args:
+        min_ms (int): Minimum jitter in milliseconds (default: 1)
+        max_ms (int): Maximum jitter in milliseconds (default: 20)
+        
+    Returns:
+        float: The actual jitter time applied in milliseconds
+    """
+    # Bound inputs to reasonable values for security
+    min_ms = max(0, min(min_ms, 100))  # Between 0 and 100ms
+    max_ms = max(min_ms, min(max_ms, 500))  # Between min_ms and 500ms
+    
+    # Acquire thread-safety lock
+    with _jitter_mutex:
+        # Initialize thread-local state if needed
+        _init_thread_local_state()
+        
+        # Get current high-precision time
+        current_time = time.time()
+        
+        # Check if we've added jitter recently (within 10ms)
+        time_since_last = current_time - _jitter_state.last_jitter_time
+        
+        # Determine jitter amount based on call frequency
+        if time_since_last < 0.01:  # 10ms
+            # If called multiple times in quick succession, adapt jitter
+            _jitter_state.jitter_count += 1
+            _jitter_state.max_successive_calls = max(
+                _jitter_state.max_successive_calls, _jitter_state.jitter_count)
+                
+            if _jitter_state.jitter_count > 5:
+                # After many quick calls, use minimal fixed jitter to preserve performance
+                # But never drop below minimum
+                jitter_ms = min_ms
+            elif _jitter_state.jitter_count > 3:
+                # For several quick calls, use minimal jitter but add some variance
+                jitter_ms = min_ms + secrets.randbelow(2)
+            else:
+                # For first few quick calls, use a reduced range
+                # This maintains security while preventing excessive slowdowns
+                reduced_max = max(min_ms + 2, max_ms // _jitter_state.jitter_count)
+                jitter_ms = min_ms + secrets.randbelow(reduced_max - min_ms)
+        else:
+            # Normal jitter for isolated calls
+            _jitter_state.jitter_count = 1
+            
+            # Use high-entropy randomness for better security
+            jitter_range = max_ms - min_ms
+            if jitter_range > 0:
+                jitter_ms = min_ms + secrets.randbelow(jitter_range + 1)
+            else:
+                jitter_ms = min_ms
+                
+        # Store the current time and update statistics
+        _jitter_state.last_jitter_time = current_time
+        _jitter_state.total_jitter += jitter_ms
+    
+    # Release the lock before sleeping to prevent blocking other threads
+    # Apply the jitter - sleep is outside the lock to prevent blocking
+    time.sleep(jitter_ms / 1000.0)
+    
+    return jitter_ms
+
+def get_jitter_stats():
+    """
+    Get statistics about timing jitter usage.
+    
+    This function is useful for debugging and testing the jitter mechanism.
+    It provides information about jitter behavior across thread calls.
+    
+    Returns:
+        dict: Statistics about timing jitter usage
+    """
+    # Initialize if needed
+    _init_thread_local_state()
+    
+    # Thread-safe access to statistics
+    with _jitter_mutex:
+        return {
+            'total_jitter_ms': _jitter_state.total_jitter,
+            'max_successive_calls': _jitter_state.max_successive_calls,
+            'current_jitter_count': _jitter_state.jitter_count
+        }
 
 
 class SecureError(Exception):
@@ -104,9 +227,8 @@ class SecureError(Exception):
         
     def _add_timing_jitter(self):
         """Add random timing jitter to prevent timing analysis of errors."""
-        # Use secure random for cryptographic security
-        jitter_ms = secrets.randbelow(20) + 1  # 1-20ms
-        time.sleep(jitter_ms / 1000.0)
+        # Use the optimized timing jitter function
+        add_timing_jitter(1, 20)
 
 
 # Specialized exception classes for different operation types
@@ -190,40 +312,42 @@ def secure_error_handler(func=None, error_category=None):
         @functools.wraps(f)
         def wrapper(*args, **kwargs):
             # Add random timing jitter before execution
-            jitter_ms = secrets.randbelow(20) + 1  # 1-20ms
-            time.sleep(jitter_ms / 1000.0)
+            add_timing_jitter()
             
             try:
                 # Execute the wrapped function
                 result = f(*args, **kwargs)
                 
                 # Add random timing jitter after successful execution
-                jitter_ms = secrets.randbelow(20) + 1  # 1-20ms
-                time.sleep(jitter_ms / 1000.0)
+                add_timing_jitter()
                 
                 return result
                 
             except SecureError:
                 # If it's already a secure error, just re-raise it
                 # Add jitter before re-raising
-                jitter_ms = secrets.randbelow(20) + 1  # 1-20ms
-                time.sleep(jitter_ms / 1000.0)
+                add_timing_jitter()
                 raise
                 
             except ValueError as e:
-                # Special handling for specific ValueError scenarios in tests
+                # Special handling for test cases, but with timing protections
                 if os.environ.get('PYTEST_CURRENT_TEST') is not None and "Invalid file format:" in str(e):
-                    # For test_corrupted_encrypted_file, we need to pass through the ValueError
-                    # Add jitter before re-raising
-                    jitter_ms = secrets.randbelow(20) + 1  # 1-20ms
-                    time.sleep(jitter_ms / 1000.0)
-                    # Re-raise original ValueError for test compatibility
-                    raise
+                    # Add consistent timing jitter to mask any timing differences
+                    # This ensures even test cases don't leak timing information
+                    add_timing_jitter()
+                    # Create a new standardized error that's safe for tests
+                    error_message = "Invalid file format detected"
+                    # In test mode, we'll wrap the original exception in a ValidationError
+                    # This maintains compatibility while ensuring consistent handling
+                    if os.environ.get('PASS_THROUGH_TEST_ERRORS') == '1':
+                        # Only if explicitly requested will we pass through raw errors
+                        raise
+                    # Otherwise use secure error handling even in tests
+                    raise ValidationError(error_message, original_exception=e)
                 
                 # Otherwise, assume validation error for ValueError
                 # Add jitter before raising standardized error
-                jitter_ms = secrets.randbelow(20) + 1  # 1-20ms
-                time.sleep(jitter_ms / 1000.0)
+                add_timing_jitter()
                 
                 # Get details only in debug mode
                 details = str(e) if (
@@ -234,28 +358,30 @@ def secure_error_handler(func=None, error_category=None):
                 raise ValidationError(details=details, original_exception=e)
                 
             except Exception as e:
-                # Special handling for several exceptions in test environment
+                # Special handling for test environment with improved security
                 if os.environ.get('PYTEST_CURRENT_TEST') is not None:
-                    # Allow InvalidToken to pass through for wrong password test
+                    # Secure handling of InvalidToken for wrong password tests
                     if e.__class__.__name__ == 'InvalidToken':
-                        # Add jitter before re-raising
-                        jitter_ms = secrets.randbelow(20) + 1  # 1-20ms
-                        time.sleep(jitter_ms / 1000.0)
-                        # Re-raise the original exception for test compatibility
-                        raise
+                        # Add consistent timing jitter
+                        add_timing_jitter()
+                        # Create a standardized authentication error for consistency
+                        # This better masks timing differences between error paths
+                        if os.environ.get('PASS_THROUGH_TEST_ERRORS') == '1':
+                            # Only pass through raw errors if explicitly requested
+                            raise
+                        # Otherwise wrap in a secure authentication error
+                        raise AuthenticationError("Authentication failed", original_exception=e)
                     
                     # Allow FileNotFoundError to pass through for directory tests
                     if isinstance(e, FileNotFoundError):
                         # Add jitter before re-raising
-                        jitter_ms = secrets.randbelow(20) + 1  # 1-20ms
-                        time.sleep(jitter_ms / 1000.0)
+                        add_timing_jitter()
                         # Re-raise the original exception for test compatibility
                         raise
                 
                 # Generic exception handling with appropriate categorization
                 # Add jitter before raising standardized error
-                jitter_ms = secrets.randbelow(20) + 1  # 1-20ms
-                time.sleep(jitter_ms / 1000.0)
+                add_timing_jitter()
                 
                 # Get details only in debug mode
                 details = str(e) if (
@@ -282,10 +408,15 @@ def secure_error_handler(func=None, error_category=None):
                 elif error_category == ErrorCategory.CONFIGURATION:
                     raise ConfigurationError(details=details, original_exception=e)
                 elif error_category == ErrorCategory.KEYSTORE:
+                    # Instead of using the delayed mechanism, directly import and use KeystoreError
+                    # This avoids issues with forward references and local variable scope
+                    # Direct import solves the circular import issue
                     raise KeystoreError(details=details, original_exception=e)
                 else:
                     # Default to internal error if category not specified
                     raise InternalError(details=details, original_exception=e)
+            
+            # No need for additional error handling here since we raise KeystoreError directly
         
         return wrapper
     
@@ -313,6 +444,16 @@ def secure_key_derivation_error_handler(f):
 def secure_authentication_error_handler(f):
     """Specialized error handler for authentication operations."""
     return secure_error_handler(f, ErrorCategory.AUTHENTICATION)
+
+
+def secure_memory_error_handler(f):
+    """Specialized error handler for secure memory operations."""
+    return secure_error_handler(f, ErrorCategory.MEMORY)
+
+
+def secure_keystore_error_handler(f):
+    """Specialized error handler for keystore operations."""
+    return secure_error_handler(f, ErrorCategory.KEYSTORE)
 
 
 # Keystore Exceptions
@@ -366,38 +507,10 @@ def constant_time_compare(a, b):
     Returns:
         bool: True if the sequences match, False otherwise
     """
-    # Add a small random delay to further mask timing differences
-    jitter_ms = secrets.randbelow(5) + 1  # 1-5ms
-    time.sleep(jitter_ms / 1000.0)
-    
-    if len(a) != len(b):
-        # Always process the full length of the longer sequence
-        # to maintain constant time behavior
-        max_len = max(len(a), len(b))
-        result = 1  # Ensure we return False
-        
-        # Perform a full comparison anyway (constant time)
-        for i in range(max_len):
-            if i < len(a) and i < len(b):
-                result |= a[i] ^ b[i]
-            else:
-                # Process some operation to maintain timing consistency
-                result |= 1
-    else:
-        # Accumulate differences using bitwise OR
-        result = 0
-        for x, y in zip(a, b):
-            if isinstance(x, int) and isinstance(y, int):
-                result |= x ^ y
-            else:
-                # Handle case where x and y might be strings or other non-integer types
-                result |= 1 if x != y else 0
-    
-    # Add another small delay to mask the processing time
-    jitter_ms = secrets.randbelow(5) + 1  # 1-5ms
-    time.sleep(jitter_ms / 1000.0)
-    
-    return result == 0
+    # Use the centralized implementation in secure_ops to ensure consistency
+    # Import locally to avoid circular imports
+    from .secure_ops import constant_time_compare as _constant_time_compare
+    return _constant_time_compare(a, b)
 
 
 def constant_time_pkcs7_unpad(padded_data, block_size=16):
@@ -420,41 +533,7 @@ def constant_time_pkcs7_unpad(padded_data, block_size=16):
         padding, this function returns a tuple with the potentially unpadded
         data and a boolean indicating if the padding was valid.
     """
-    # Add a small random delay to further mask timing differences
-    jitter_ms = secrets.randbelow(5) + 1  # 1-5ms
-    time.sleep(jitter_ms / 1000.0)
-    
-    # Initial assumption - padding is invalid until proven otherwise
-    is_valid = False
-    padding_len = 0
-    data_len = len(padded_data)
-    
-    # Check for basic validity conditions
-    if padded_data and data_len > 0 and data_len % block_size == 0:
-        # Get padding length from last byte
-        last_byte = padded_data[-1]
-        
-        # Check if padding byte is in valid range (1 to block_size)
-        if last_byte > 0 and last_byte <= block_size:
-            # Initial assumption - padding is valid
-            is_valid = True
-            padding_len = last_byte
-            
-            # Verify all padding bytes are the same
-            for i in range(padding_len):
-                idx = data_len - i - 1
-                if idx < 0 or padded_data[idx] != last_byte:
-                    is_valid = False
-                    padding_len = 0  # Reset padding length if invalid
-    
-    # Calculate unpadded length - if padding is invalid, it remains the original length
-    unpadded_len = data_len - padding_len if is_valid else data_len
-    
-    # Create unpadded data
-    unpadded_data = padded_data[:unpadded_len]
-    
-    # Add another small delay to mask the processing time
-    jitter_ms = secrets.randbelow(5) + 1  # 1-5ms
-    time.sleep(jitter_ms / 1000.0)
-    
-    return unpadded_data, is_valid
+    # Use the centralized implementation in secure_ops to ensure consistency
+    # Import locally to avoid circular imports
+    from .secure_ops import constant_time_pkcs7_unpad as _constant_time_pkcs7_unpad
+    return _constant_time_pkcs7_unpad(padded_data, block_size)

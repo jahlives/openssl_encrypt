@@ -26,7 +26,10 @@ VERSION_HISTORY = {
     "0.7.1": "Breaking release for keystore feature of PQC keys. This is the last feature added to the release candidate. Passing all tests and updated docs",
     "0.7.2": "Added new metadata structure in a backward-compatible way. Passing all tests and updated docs",
     "0.8.1": "Added new metadata structure in a backward-compatible way. Now allows user defined data encryption when using PQC. Passing all tests and updates docs",
-    "0.8.2": "fixed some issues with python versions < 3.12 / added more resiliant whirlpool implementation during build of package"
+    "0.8.2": "fixed some issues with python versions < 3.12 / added more resiliant whirlpool implementation during build of package",
+    "0.9.0": "Major non-breaking security update: Implemented constant-time cryptographic operations, secure memory allocator, standardized error handling, Python 3.13 compatibility, and comprehensive dependency security with version pinning. Improved CI pipeline with pip-audit scanning and SBOM generation. All enhancements maintain backward compatibility.",
+    "0.9.1": "Extended post-quantum cryptography support: Added ML-KEM algorithms (512/768/1024), re-enabled HQC algorithms with comprehensive testing, enhanced keystore integration for all PQC algorithms, improved concurrent test execution safety, and removed bcrypt dependency due to incompatible salt handling."
+
 }
 
 # Check for updates

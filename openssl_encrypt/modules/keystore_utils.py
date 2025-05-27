@@ -7,7 +7,11 @@ import os
 import json
 import base64
 import getpass
+import logging
 from typing import Dict, Any, Tuple, Optional
+
+# Set up module-level logger
+logger = logging.getLogger(__name__)
 
 def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> Optional[str]:
     """
@@ -44,7 +48,7 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
                             'pqc_keystore_key_id' in metadata['derivation_config']['kdf_config']):
                             key_id = metadata['derivation_config']['kdf_config']['pqc_keystore_key_id']
                             if verbose:
-                                print(f"Found key ID in format version 5 metadata derivation_config: {key_id}")
+                                logger.info(f"Found key ID in format version 5 metadata derivation_config: {key_id}")
                             return key_id
                         # Also check for dual_encryption flag in kdf_config
                         elif ('derivation_config' in metadata and 
@@ -52,12 +56,12 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
                               'dual_encryption' in metadata['derivation_config']['kdf_config'] and
                               metadata['derivation_config']['kdf_config']['dual_encryption']):
                             if verbose:
-                                print("Found dual_encryption flag in format version 5 metadata")
+                                logger.info("Found dual_encryption flag in format version 5 metadata")
                         # Check in the root level hash_config for backward compatibility
                         elif 'hash_config' in metadata and 'pqc_keystore_key_id' in metadata['hash_config']:
                             key_id = metadata['hash_config']['pqc_keystore_key_id']
                             if verbose:
-                                print(f"Found key ID in format version 5 legacy location: {key_id}")
+                                logger.info(f"Found key ID in format version 5 legacy location: {key_id}")
                             return key_id
                     # Handle format_version 4
                     elif format_version == 4:
@@ -67,7 +71,7 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
                             'pqc_keystore_key_id' in metadata['derivation_config']['kdf_config']):
                             key_id = metadata['derivation_config']['kdf_config']['pqc_keystore_key_id']
                             if verbose:
-                                print(f"Found key ID in format version 4 metadata derivation_config: {key_id}")
+                                logger.info(f"Found key ID in format version 4 metadata derivation_config: {key_id}")
                             return key_id
                         # Also check for dual_encryption flag in kdf_config
                         elif ('derivation_config' in metadata and 
@@ -75,22 +79,22 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
                               'dual_encryption' in metadata['derivation_config']['kdf_config'] and
                               metadata['derivation_config']['kdf_config']['dual_encryption']):
                             if verbose:
-                                print("Found dual_encryption flag in format version 4 metadata")
+                                logger.info("Found dual_encryption flag in format version 4 metadata")
                         # Check in the root level hash_config for backward compatibility
                         elif 'hash_config' in metadata and 'pqc_keystore_key_id' in metadata['hash_config']:
                             key_id = metadata['hash_config']['pqc_keystore_key_id']
                             if verbose:
-                                print(f"Found key ID in format version 4 legacy location: {key_id}")
+                                logger.info(f"Found key ID in format version 4 legacy location: {key_id}")
                             return key_id
                     # Handle format_version 1-3
                     elif 'hash_config' in metadata and 'pqc_keystore_key_id' in metadata['hash_config']:
                         key_id = metadata['hash_config']['pqc_keystore_key_id']
                         if verbose:
-                            print(f"Found key ID in metadata JSON: {key_id}")
+                            logger.info(f"Found key ID in metadata JSON: {key_id}")
                         return key_id
                 except json.JSONDecodeError:
                     if verbose:
-                        print("JSON parsing failed, trying regex")
+                        logger.info("JSON parsing failed, trying regex")
                 
                 # Fall back to regex for UUID pattern
                 import re
@@ -105,16 +109,16 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
                             for match in matches:
                                 if metadata_json[i:].find(match) >= 0:
                                     if verbose:
-                                        print(f"Found key ID using regex: {match}")
+                                        logger.info(f"Found key ID using regex: {match}")
                                     return match
                     
                     # If we couldn't find one after the key name, just return the first match
                     if verbose:
-                        print(f"Found potential key ID: {matches[0]}")
+                        logger.info(f"Found potential key ID: {matches[0]}")
                     return matches[0]
             except Exception as e:
                 if verbose:
-                    print(f"Error decoding metadata: {e}")
+                    logger.info(f"Error decoding metadata: {e}")
         
         # Fall back to legacy OSENC format
         header_start = data.find(b'OSENC')
@@ -133,10 +137,10 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
                         return key_id
                 except Exception as e:
                     if verbose:
-                        print(f"Error parsing legacy header JSON: {e}")
+                        logger.info(f"Error parsing legacy header JSON: {e}")
     except Exception as e:
         if verbose:
-            print(f"Error extracting key ID from metadata: {e}")
+            logger.info(f"Error extracting key ID from metadata: {e}")
     
     # Check for embedded private key
     try:
@@ -160,7 +164,7 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
                         if ('encryption' in header_config and 'pqc_public_key' in header_config['encryption']):
                             # This file has an embedded public key, which means it might have an embedded private key
                             if verbose:
-                                print("Found embedded PQC public key in format v4 metadata")
+                                logger.info("Found embedded PQC public key in format v4 metadata")
                             
                             # Check for embedded private key
                             if 'pqc_private_key' in header_config['encryption']:
@@ -168,33 +172,33 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
                                 private_key_marker = header_config['encryption'].get('pqc_private_key_embedded')
                                 if private_key_marker:
                                     if verbose:
-                                        print("File has embedded private key")
+                                        logger.info("File has embedded private key")
                                     return "EMBEDDED_PRIVATE_KEY"
                     # Handle format_version 1-3
                     elif 'hash_config' in header_config and 'pqc_public_key' in header_config['hash_config']:
                         # This file has an embedded public key, which means it might have an embedded private key
                         if verbose:
-                            print("Found embedded PQC public key in metadata")
+                            logger.info("Found embedded PQC public key in metadata")
                         
                         # Check for embedded private key marker
                         private_key_marker = header_config['hash_config'].get('pqc_private_key_embedded')
                         if private_key_marker:
                             if verbose:
-                                print("File has embedded private key")
+                                logger.info("File has embedded private key")
                             return "EMBEDDED_PRIVATE_KEY"
                 except json.JSONDecodeError:
                     # If we can't parse as JSON but there's a match for private key
                     if metadata_json.find("pqc_private_key_embedded") >= 0:
                         if verbose:
-                            print("Found embedded private key indicator")
+                            logger.info("Found embedded private key indicator")
                         return "EMBEDDED_PRIVATE_KEY"
         except Exception as e:
             if verbose:
-                print(f"Error checking for embedded private key: {e}")
+                logger.info(f"Error checking for embedded private key: {e}")
                 
     except Exception as e:
         if verbose:
-            print(f"Error checking for embedded key: {e}")
+            logger.info(f"Error checking for embedded key: {e}")
     
     return None
 
@@ -337,7 +341,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                                     return pqc_keypair, pqc_private_key, "EMBEDDED_PRIVATE_KEY"
             except Exception as e:
                 if getattr(args, 'verbose', False):
-                    print(f"Failed to extract embedded private key: {e}")
+                    logger.info(f"Failed to extract embedded private key: {e}")
     
     # Check for dual encryption flag in metadata
     dual_encryption = False
@@ -402,7 +406,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
             return pqc_keypair, pqc_private_key, key_id
         except Exception as e:
             if getattr(args, 'verbose', False):
-                print(f"Failed to get key from keystore: {e}")
+                logger.info(f"Failed to get key from keystore: {e}")
     
     # Fall back to pqc_keyfile if specified
     if hasattr(args, 'pqc_keyfile') and args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
@@ -452,7 +456,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                         return pqc_keypair, pqc_private_key, None
                     except Exception as e:
                         if getattr(args, 'verbose', False):
-                            print(f"Failed to decrypt key from file: {e}")
+                            logger.info(f"Failed to decrypt key from file: {e}")
                 else:
                     # Unencrypted private key
                     public_key = base64.b64decode(key_data['public_key'])
@@ -467,7 +471,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                     return pqc_keypair, pqc_private_key, None
         except Exception as e:
             if getattr(args, 'verbose', False):
-                print(f"Failed to load key from file: {e}")
+                logger.info(f"Failed to load key from file: {e}")
     
     return None, None, None
 
@@ -880,7 +884,7 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
             return (public_key, private_key), private_key
         except Exception as e:
             if getattr(args, 'verbose', False):
-                print(f"Error with keystore: {e}, falling back to ephemeral key")
+                logger.info(f"Error with keystore: {e}, falling back to ephemeral key")
     
     # Fall back to ephemeral key
     if not getattr(args, 'quiet', False):

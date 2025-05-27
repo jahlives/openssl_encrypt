@@ -4,13 +4,15 @@ import subprocess
 import sys
 import logging
 
+# Dependencies are now specified in pyproject.toml
+
 
 # Read the contents of your README file
 this_directory = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
-VERSION = "0.8.2"  # Define version in a variable for reuse
+VERSION = "0.9.1"  # Define version in a variable for reuse
 
 # Get git commit hash
 git_hash = "unknown"
@@ -75,13 +77,10 @@ setup(
     },
     name="openssl_encrypt",
     version=VERSION,
+    # Read requirements from requirements-prod.txt
     install_requires=[
-        "cryptography>=42.0.0,<43.0.0",
-        "argon2-cffi>=23.1.0,<24.0.0",
-        "pywin32>=306,<307; sys_platform == 'win32'",
-        "PyYAML",
-        "Whirlpool; python_version < '3.11'",
-        "whirlpool-py311; python_version >= '3.11'",
+        line.strip() for line in open('requirements-prod.txt')
+        if line.strip() and not line.startswith('#') and not line.startswith('-')
     ],
     entry_points={
         'console_scripts': [
@@ -89,12 +88,13 @@ setup(
             'whirlpool-setup=openssl_encrypt.modules.setup_whirlpool:setup_whirlpool',
         ],
     },
+    # Read dev requirements from requirements-dev.txt
     extras_require={
         "dev": [
-            "pytest>=8.0.0",
-            "pytest-cov>=4.1.0",
-            "black>=24.1.0",
-            "pylint>=3.0.0",
+            line.strip() for line in open('requirements-dev.txt')
+            if line.strip() and not line.startswith('#') and not line.startswith('-')
+            and line.strip() not in [l.strip() for l in open('requirements-prod.txt')
+                                    if l.strip() and not l.startswith('#') and not l.startswith('-')]
         ],
     },
     project_urls={
