@@ -353,9 +353,16 @@ def verify(
     Returns:
         bool: True if password matches hash, otherwise False.
     """
-    return secrets.compare_digest(
-        balloon(password, salt, space_cost, time_cost, delta).hex(), hash
-    )
+    from .secure_ops import verify_mac
+    
+    # Compute the hash for the provided password
+    computed_hash = balloon(password, salt, space_cost, time_cost, delta).hex().encode('utf-8')
+    
+    # Convert hash to bytes if it's a string
+    expected_hash = hash.encode('utf-8') if isinstance(hash, str) else hash
+    
+    # Use verify_mac which provides better timing attack protection
+    return verify_mac(expected_hash, computed_hash)
 
 
 def verify_m(
@@ -383,13 +390,19 @@ def verify_m(
     Returns:
         bool: True if password matches hash, otherwise False.
     """
-    return secrets.compare_digest(
-        balloon_m(
-            password,
-            salt,
-            space_cost,
-            time_cost,
-            parallel_cost,
-            delta).hex(),
-        hash,
-    )
+    from .secure_ops import verify_mac
+    
+    # Compute the hash for the provided password
+    computed_hash = balloon_m(
+        password,
+        salt,
+        space_cost,
+        time_cost,
+        parallel_cost,
+        delta).hex().encode('utf-8')
+    
+    # Convert hash to bytes if it's a string
+    expected_hash = hash.encode('utf-8') if isinstance(hash, str) else hash
+    
+    # Use verify_mac which provides better timing attack protection
+    return verify_mac(expected_hash, computed_hash)

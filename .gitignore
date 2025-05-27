@@ -15,6 +15,11 @@ create_pqc_test.py
 pqc_demo.py
 # PyCharm IDE files
 .idea/
+.claude/
+build/
+dist/
+.pre-commit-config.yml
+.bandit.yaml
 
 # Python bytecode and cache
 __pycache__/
@@ -26,6 +31,14 @@ __pycache__/
 # Project-specific gitignore files
 gitignore
 openssl_encrypt/gitignore
+
+# Exclude specific requirements files needed for build
+# requirements-*.in
+# requirements-*.txt
+
+# Dependency scanning and audit reports
+pip-audit-*.json
+gl-dependency-*.json
 
 # Created by https://www.toptal.com/developers/gitignore/api/pycharm
 # Edit at https://www.toptal.com/developers/gitignore?templates=pycharm

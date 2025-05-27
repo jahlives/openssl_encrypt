@@ -35,17 +35,19 @@ def get_memory_page_size():
         return 4096
 
 
-def verify_memory_zeroed(data, sample_size=8):
+def verify_memory_zeroed(data, full_check=True, sample_size=16):
     """
-    Verify that a memory buffer has been properly zeroed.
+    Verify that a memory buffer has been properly zeroed using constant-time approach.
     
-    This function checks that the data has been properly zeroed by examining
-    a sample of bytes from the buffer. It uses a constant-time approach to
-    avoid timing side channels.
+    This function checks that the data has been properly zeroed using either a
+    comprehensive full-buffer check or a sampling approach. It employs constant-time
+    techniques to prevent timing side channels from revealing information about
+    the buffer contents.
     
     Args:
         data: The data buffer to verify (bytes, bytearray, or memoryview)
-        sample_size: Number of random sample points to check, default 8
+        full_check: Whether to check the entire buffer (True) or use sampling (False)
+        sample_size: Number of random sample points to check when not doing full check
         
     Returns:
         bool: True if the memory appears to be properly zeroed, False otherwise
@@ -59,47 +61,90 @@ def verify_memory_zeroed(data, sample_size=8):
         if data_len == 0:
             return True
             
-        # For very small buffers, check every byte
-        if data_len <= sample_size:
-            sample_size = data_len
+        # For small buffers or when full_check is requested, check every byte
+        if data_len <= 1024 or full_check:
+            # Check if all bytes are zero in constant time
+            result = 0
             
-        # Determine sample indices - either check all bytes or a random sample
-        if data_len <= 64:  # For small buffers, check everything
-            indices = list(range(data_len))
-        else:
-            # For large buffers, check beginning, end, and random samples in the middle
-            indices = [0, data_len // 4, data_len // 2, 3 * data_len // 4, data_len - 1]
-            
-            # Add some random sample points
-            random_indices = []
-            while len(random_indices) < sample_size - len(indices):
-                idx = random.randint(1, data_len - 2)  # Skip first and last bytes
-                if idx not in indices and idx not in random_indices:
-                    random_indices.append(idx)
+            # Process in chunks for large buffers to maintain efficiency while
+            # still doing a constant-time check of all bytes
+            chunk_size = min(1024, data_len)
+            for start_idx in range(0, data_len, chunk_size):
+                end_idx = min(start_idx + chunk_size, data_len)
+                
+                # Check all bytes in this chunk
+                for i in range(start_idx, end_idx):
+                    # Use bitwise OR to accumulate any non-zero values
+                    # This maintains constant-time behavior as we process all bytes
+                    result |= data[i]
                     
-            indices.extend(random_indices)
+            return result == 0
+        else:
+            # For very large buffers when full_check is False, use intelligent sampling
+            # This is a trade-off for extremely large buffers where full checking
+            # might be too costly, but still provides good coverage
             
-        # Check if all bytes are zero in constant time
-        result = 0
-        for idx in indices:
-            byte_val = data[idx]
-            # Use bitwise OR to accumulate any non-zero values
-            result |= byte_val
+            # Always check these critical regions:
+            # - Start of buffer (often contains headers)
+            # - End of buffer (often contains padding)
+            # - Quarter points (ensure even distribution)
+            critical_points = [0, data_len // 4, data_len // 2, (3 * data_len) // 4, data_len - 1]
             
-        return result == 0
+            # Add evenly distributed sampling points throughout the buffer
+            stride_points = []
+            if data_len > 100:
+                # Calculate stride to distribute sample_size points evenly
+                stride = max(1, data_len // (sample_size * 2))
+                for i in range(0, data_len, stride):
+                    if len(stride_points) >= sample_size:
+                        break
+                    if i not in critical_points:
+                        stride_points.append(i)
+            
+            # Add some random sample points for additional coverage
+            random_points = []
+            remaining_samples = sample_size - len(stride_points) - len(critical_points)
+            if remaining_samples > 0:
+                # Create an exclusion set for faster checks
+                excluded = set(critical_points + stride_points)
+                attempts = 0
+                max_attempts = remaining_samples * 10  # Avoid infinite loops
+                
+                while len(random_points) < remaining_samples and attempts < max_attempts:
+                    attempts += 1
+                    idx = secrets.randbelow(data_len - 2) + 1
+                    if idx not in excluded:
+                        random_points.append(idx)
+                        excluded.add(idx)  # Add to excluded set
+            
+            # Combine all points to check
+            all_points = critical_points + stride_points + random_points
+            
+            # Check all selected points in constant time
+            result = 0
+            for idx in all_points:
+                if 0 <= idx < data_len:  # Safety check
+                    result |= data[idx]
+                else:
+                    # If index is out of bounds, consider it a failure
+                    return False
+                    
+            return result == 0
         
     except Exception:
         # If any error occurs during verification, assume zeroing failed
         return False
 
 
-def secure_memzero(data):
+def secure_memzero(data, full_verification=True):
     """
     Securely wipe data with multiple rounds of overwriting followed by zeroing.
     Ensures the data is completely overwritten in memory and performs verification.
 
     Args:
         data: The data to be wiped (SecureBytes, bytes, bytearray, or memoryview)
+        full_verification: Whether to verify all bytes in the buffer (default True)
+                          Set to False for very large buffers if performance is critical
         
     Returns:
         bool: True if zeroing was successful and verified, False otherwise
@@ -185,7 +230,7 @@ def secure_memzero(data):
                 
                 # Add random timing variations to prevent timing-based memory analysis
                 # This is especially important for cold boot attacks
-                time.sleep(random.uniform(0.001, 0.005))
+                time.sleep(secrets.randbelow(5) / 1000.0 + 0.001)
                 
                 # Try platform-specific secure zeroing methods
                 try:
@@ -267,7 +312,7 @@ def secure_memzero(data):
             target_data[:] = bytearray(length)
             
             # Verify that memory has been properly zeroed
-            zeroing_successful = verify_memory_zeroed(target_data)
+            zeroing_successful = verify_memory_zeroed(target_data, full_check=full_verification)
 
     except Exception:
         # Last resort zeroing attempt
@@ -287,6 +332,15 @@ class SecureBytes(bytearray):
     This class extends bytearray to ensure its contents are securely
     cleared when the object is garbage collected.
     """
+
+    def __enter__(self):
+        """Enter the context manager - return self."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit the context manager - securely clear memory."""
+        secure_memzero(self)
+        return False  # Don't suppress exceptions
 
     def __del__(self):
         """Securely clear memory before deletion."""
@@ -332,7 +386,8 @@ class SecureMemoryAllocator:
         self.supports_madv_dontdump = False
         
         # Debug mode (disabled by default)
-        self.debug_mode = False
+        self.debug_mode = os.environ.get('DEBUG') == '1' or os.environ.get('PYTEST_CURRENT_TEST') is not None
+        self.quiet = not self.debug_mode  # Quiet mode is the opposite of debug mode
         
         # Attempt to configure advanced memory protections
         self._setup_advanced_protections()
@@ -424,10 +479,10 @@ class SecureMemoryAllocator:
             # This makes it harder for scanners to identify patterns
             try:
                 # Random memory access pattern to prevent predictable analysis
-                dummy_size = random.randint(64, 256)
+                dummy_size = secrets.randbelow(193) + 64  # 64-256 range
                 dummy = bytearray(dummy_size)
                 for i in range(0, dummy_size, 8):
-                    dummy[i] = random.randint(0, 255)
+                    dummy[i] = secrets.randbelow(256)
                 # Immediately clear to avoid leaving traces
                 dummy[:] = bytearray(dummy_size)
             except:
@@ -659,16 +714,16 @@ class SecureMemoryAllocator:
                                 # Try to get error code
                                 if hasattr(ctypes, 'get_errno'):
                                     errno = ctypes.get_errno()
-                                    if not quiet:
+                                    if not self.quiet:
                                         print(f"Memory locking failed with error code: {errno}")
                             
                         except (TypeError, ValueError, BufferError) as e:
-                            if not quiet:
+                            if not self.quiet:
                                 print(f"Buffer conversion error: {str(e)}")
                             return False
                     
                 except (ImportError, AttributeError, OSError) as e:
-                    if not quiet:
+                    if not self.quiet:
                         print(f"Memory locking error: {str(e)}")
                     return False
 
@@ -702,22 +757,22 @@ class SecureMemoryAllocator:
                             # Check for errors
                             if not lock_success:
                                 error_code = ctypes.get_last_error()
-                                if not quiet:
+                                if not self.quiet:
                                     print(f"Memory locking failed with error code: {error_code}")
                                     
                         except (TypeError, ValueError, BufferError) as e:
-                            if not quiet:
+                            if not self.quiet:
                                 print(f"Buffer conversion error: {str(e)}")
                             return False
                             
                 except (AttributeError, OSError) as e:
-                    if not quiet:
+                    if not self.quiet:
                         print(f"Memory locking error: {str(e)}")
                     return False
                     
         except Exception as e:
             # Log the error but continue execution
-            if not quiet:
+            if not self.quiet:
                 print(f"Memory locking unexpected error: {str(e)}")
             return False
             
@@ -816,12 +871,12 @@ class SecureMemoryAllocator:
                             unlock_success = (result == 0)
                             
                         except (TypeError, ValueError, BufferError) as e:
-                            if not quiet:
+                            if not self.quiet:
                                 print(f"Buffer conversion error during unlock: {str(e)}")
                             return False
                             
                 except (ImportError, AttributeError, OSError) as e:
-                    if not quiet:
+                    if not self.quiet:
                         print(f"Memory unlocking error: {str(e)}")
                     return False
 
@@ -856,22 +911,22 @@ class SecureMemoryAllocator:
                             # Check for errors
                             if not unlock_success:
                                 error_code = ctypes.get_last_error()
-                                if not quiet:
+                                if not self.quiet:
                                     print(f"Memory unlocking failed with error code: {error_code}")
                                     
                         except (TypeError, ValueError, BufferError) as e:
-                            if not quiet:
+                            if not self.quiet:
                                 print(f"Buffer conversion error during unlock: {str(e)}")
                             return False
                             
                 except (AttributeError, OSError) as e:
-                    if not quiet:
+                    if not self.quiet:
                         print(f"Memory unlocking error: {str(e)}")
                     return False
                     
         except Exception as e:
             # Log the error but continue execution
-            if not quiet:
+            if not self.quiet:
                 print(f"Memory unlocking unexpected error: {str(e)}")
             return False
             
@@ -902,12 +957,13 @@ def allocate_secure_buffer(size, zero=True):
     return _global_secure_allocator.allocate(size, zero)
 
 
-def free_secure_buffer(buffer):
+def free_secure_buffer(buffer, full_verification=True):
     """
     Explicitly free a secure buffer with zeroing verification.
 
     Args:
         buffer (SecureBytes): The secure buffer to free
+        full_verification: Whether to check all bytes (True) or use sampling (False)
         
     Returns:
         bool: True if freeing was successful and zeroing was verified, False otherwise
@@ -922,7 +978,7 @@ def free_secure_buffer(buffer):
         # Handle error cases
         try:
             # Last resort zeroing attempt if allocator's free method fails
-            zeroing_success = secure_memzero(buffer)
+            zeroing_success = secure_memzero(buffer, full_verification=full_verification)
             return zeroing_success
         except:
             return False
@@ -1137,7 +1193,7 @@ def secure_buffer(size, zero=True, verify_zeroing=True):
     finally:
         # Free secure buffer with verification
         if verify_zeroing:
-            zeroing_verified = free_secure_buffer(buffer)
+            zeroing_verified = free_secure_buffer(buffer, full_verification=verify_zeroing)
             
             # If in a critical security context and verification failed, raise exception
             if not zeroing_verified and os.environ.get('CRITICAL_SECURITY_CONTEXT') == '1':
@@ -1192,14 +1248,9 @@ def secure_compare(a, b):
     Returns:
         bool: True if the sequences match, False otherwise
     """
-    if len(a) != len(b):
-        return False
-
-    result = 0
-    for x, y in zip(a, b):
-        result |= x ^ y
-
-    return result == 0
+    # Use the centralized implementation in secure_ops
+    from .secure_ops import constant_time_compare
+    return constant_time_compare(a, b)
     
 
 def secure_erase_system_memory(trigger_gc=True, full_sweep=False):

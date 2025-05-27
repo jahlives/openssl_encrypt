@@ -76,13 +76,19 @@ python -m openssl_encrypt.crypt encrypt -i file.txt --whirlpool-rounds 500000
 
 # Custom PBKDF2 iterations
 python -m openssl_encrypt.crypt encrypt -i file.txt --pbkdf2-iterations 150000
+
+# Set global KDF rounds for all enabled KDFs
+python -m openssl_encrypt.crypt encrypt -i file.txt --enable-argon2 --enable-scrypt --enable-balloon --kdf-rounds 5
 ```
 
 ### Scrypt Configuration
 
 ```bash
-# Enable Scrypt with default parameters
+# Enable Scrypt with default parameters (rounds=10)
 python -m openssl_encrypt.crypt encrypt -i file.txt --enable-scrypt
+
+# Specify rounds directly (implicitly enables Scrypt)
+python -m openssl_encrypt.crypt encrypt -i file.txt --scrypt-rounds 5
 
 # Custom Scrypt configuration
 python -m openssl_encrypt.crypt encrypt -i file.txt --enable-scrypt --scrypt-rounds 2 --scrypt-n 256 --scrypt-r 16 --scrypt-p 2
@@ -94,8 +100,11 @@ python -m openssl_encrypt.crypt encrypt -i file.txt --enable-scrypt --scrypt-n 1
 ### Argon2 Configuration
 
 ```bash
-# Enable Argon2 with default parameters
+# Enable Argon2 with default parameters (rounds=10)
 python -m openssl_encrypt.crypt encrypt -i file.txt --enable-argon2
+
+# Specify rounds directly (implicitly enables Argon2)
+python -m openssl_encrypt.crypt encrypt -i file.txt --argon2-rounds 5
 
 # Custom Argon2 configuration
 python -m openssl_encrypt.crypt encrypt -i file.txt --enable-argon2 --argon2-rounds 2 --argon2-time 4
@@ -113,8 +122,11 @@ python -m openssl_encrypt.crypt encrypt -i file.txt --enable-argon2 --argon2-pre
 ### Balloon Hashing Configuration
 
 ```bash
-# Enable Balloon hashing with default parameters
+# Enable Balloon hashing with default parameters (rounds=10) 
 python -m openssl_encrypt.crypt encrypt -i file.txt --enable-balloon
+
+# Specify rounds directly (implicitly enables Balloon)
+python -m openssl_encrypt.crypt encrypt -i file.txt --balloon-rounds 3
 
 # Custom Balloon configuration
 python -m openssl_encrypt.crypt encrypt -i file.txt --enable-balloon --balloon-time-cost 4 --balloon-space-cost 131072
@@ -207,5 +219,11 @@ python -m openssl_encrypt.crypt encrypt -i file.txt --template quick --progress
 python -m openssl_encrypt.crypt encrypt -i secret.txt \
     --template paranoid \
     --shred --shred-passes 35 \
+    --progress --verbose
+    
+# Enable all KDFs with a single rounds setting (great for low-resource environments)
+python -m openssl_encrypt.crypt encrypt -i file.txt \
+    --enable-argon2 --enable-scrypt --enable-balloon \
+    --kdf-rounds 2 \
     --progress --verbose
 ```

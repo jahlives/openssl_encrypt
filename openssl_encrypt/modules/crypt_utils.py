@@ -10,7 +10,7 @@ import os
 import sys
 import time
 import signal
-import random
+import secrets
 import string
 import glob
 import json
@@ -58,27 +58,27 @@ def generate_strong_password(
 
     if use_lowercase:
         char_pool += string.ascii_lowercase
-        required_chars.append(random.choice(string.ascii_lowercase))
+        required_chars.append(secrets.choice(string.ascii_lowercase))
 
     if use_uppercase:
         char_pool += string.ascii_uppercase
-        required_chars.append(random.choice(string.ascii_uppercase))
+        required_chars.append(secrets.choice(string.ascii_uppercase))
 
     if use_digits:
         char_pool += string.digits
-        required_chars.append(random.choice(string.digits))
+        required_chars.append(secrets.choice(string.digits))
 
     if use_special:
         char_pool += string.punctuation
-        required_chars.append(random.choice(string.punctuation))
+        required_chars.append(secrets.choice(string.punctuation))
 
     # If no options selected, default to alphanumeric
     if not char_pool:
         char_pool = string.ascii_lowercase + string.ascii_uppercase + string.digits
         required_chars = [
-            random.choice(string.ascii_lowercase),
-            random.choice(string.ascii_uppercase),
-            random.choice(string.digits)
+            secrets.choice(string.ascii_lowercase),
+            secrets.choice(string.ascii_uppercase),
+            secrets.choice(string.digits)
         ]
 
     # Ensure we have room for all required characters
@@ -98,12 +98,12 @@ def generate_strong_password(
         # Fill remaining length with random characters from the pool
         remaining_length = length - len(required_chars)
         for _ in range(remaining_length):
-            password_chars.append(ord(random.choice(char_pool)))
+            password_chars.append(ord(secrets.choice(char_pool)))
 
         # Shuffle to ensure required characters aren't in predictable positions
         # Use Fisher-Yates algorithm for in-place shuffle
         for i in range(len(password_chars) - 1, 0, -1):
-            j = random.randrange(i + 1)
+            j = secrets.randbelow(i + 1)
             password_chars[i], password_chars[j] = password_chars[j], password_chars[i]
 
         # Convert to string

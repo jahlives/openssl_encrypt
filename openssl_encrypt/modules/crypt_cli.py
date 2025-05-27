@@ -18,6 +18,10 @@ import tempfile
 import time
 import base64
 import hashlib
+import logging
+
+# Set up module-level logger
+logger = logging.getLogger(__name__)
 import secrets
 from enum import Enum
 from typing import Dict, Any, Optional
@@ -28,6 +32,7 @@ import yaml
 from .crypt_core import (
     encrypt_file,
     decrypt_file,
+    EncryptionAlgorithm,
     check_argon2_support,
     get_file_permissions,
     WHIRLPOOL_AVAILABLE,
@@ -41,6 +46,17 @@ from .crypt_utils import (
     display_password_with_timeout, show_security_recommendations,
     request_confirmation
 )
+from .algorithm_warnings import warn_deprecated_algorithm, is_deprecated, get_recommended_replacement, AlgorithmWarningConfig
+# Try to import the CLI helper module
+try:
+    from .crypt_cli_helper import enhance_cli_args, add_extended_algorithm_help
+except ImportError:
+    # Dummy implementations if the helper is not available
+    def enhance_cli_args(args):
+        return args
+    
+    def add_extended_algorithm_help(parser):
+        pass
 from .password_policy import (
     PasswordPolicy, validate_password, validate_password_or_raise,
     get_password_strength
@@ -49,6 +65,34 @@ from . import crypt_errors
 # Import keystore-related modules
 from .keystore_wrapper import encrypt_file_with_keystore, decrypt_file_with_keystore
 from .keystore_utils import extract_key_id_from_metadata, get_keystore_password, get_pqc_key_for_decryption, auto_generate_pqc_key
+
+
+def clear_password_environment():
+    """Securely clear password from environment variables with multiple overwrites"""
+    try:
+        if 'CRYPT_PASSWORD' in os.environ:
+            # Get the original length to overwrite with same size
+            original_length = len(os.environ['CRYPT_PASSWORD'])
+            
+            # Overwrite with random data multiple times (like secure_memory does)
+            import secrets
+            for _ in range(3):
+                # Overwrite with random bytes of same length
+                random_data = ''.join(secrets.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') 
+                                    for _ in range(original_length))
+                os.environ['CRYPT_PASSWORD'] = random_data
+            
+            # Overwrite with zeros
+            os.environ['CRYPT_PASSWORD'] = '0' * original_length
+            
+            # Overwrite with different pattern
+            os.environ['CRYPT_PASSWORD'] = 'X' * original_length
+            
+            # Finally delete the environment variable
+            del os.environ['CRYPT_PASSWORD']
+            
+    except Exception:
+        pass  # Best effort cleanup
 
 
 def debug_hash_config(args, hash_config, message="Hash configuration"):
@@ -311,8 +355,13 @@ def main():
             except Exception:
                 pass
 
+    def cleanup_all():
+        """Clean up temporary files and environment variables"""
+        cleanup_temp_files()
+        clear_password_environment()
+
     # Register cleanup function to run on normal exit
-    atexit.register(cleanup_temp_files)
+    atexit.register(cleanup_all)
 
     # Register signal handlers for common termination signals
     def signal_handler(signum, frame):
@@ -331,7 +380,8 @@ def main():
 
     # Set up argument parser
     parser = argparse.ArgumentParser(
-        description='Encrypt or decrypt a file with a password')
+        description='Encrypt or decrypt a file with a password\n\nEnvironment Variables:\n  CRYPT_PASSWORD    Password for encryption/decryption (alternative to -p)',
+        formatter_class=argparse.RawTextHelpFormatter)
 
     # show or hide progess
     parser.add_argument(
@@ -344,6 +394,12 @@ def main():
         '--verbose',
         action='store_true',
         help='Show hash/kdf details'
+    )
+    
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Show detailed debug information'
     )
 
     # Add template argument
@@ -386,44 +442,89 @@ def main():
         help='Action to perform: encrypt/decrypt files, shred data, generate passwords, '
              'show security recommendations, check Argon2 support, check post-quantum cryptography support or display version file contents')
 
+    # Get all available algorithms, marking deprecated ones
+    all_algorithms = [algo.value for algo in EncryptionAlgorithm]
+    recommended_algorithms = [algo.value for algo in EncryptionAlgorithm.get_recommended_algorithms()]
+    
+    # Build help text with deprecated warnings
+    algorithm_help_text = 'Encryption algorithm to use:\n'
+    for algo in sorted(all_algorithms):
+        if algo == EncryptionAlgorithm.FERNET.value:
+            description = 'default, AES-128-CBC with authentication'
+        elif algo == EncryptionAlgorithm.AES_GCM.value:
+            description = 'AES-256 in GCM mode, high security, widely trusted'
+        elif algo == EncryptionAlgorithm.AES_GCM_SIV.value:
+            description = 'AES-256 in GCM-SIV mode, resistant to nonce reuse'
+        elif algo == EncryptionAlgorithm.AES_OCB3.value:
+            description = 'AES-256 in OCB3 mode, faster than GCM (DEPRECATED)'
+        elif algo == EncryptionAlgorithm.AES_SIV.value:
+            description = 'AES in SIV mode, synthetic IV'
+        elif algo == EncryptionAlgorithm.CHACHA20_POLY1305.value:
+            description = 'modern AEAD cipher with 12-byte nonce'
+        elif algo == EncryptionAlgorithm.XCHACHA20_POLY1305.value:
+            description = 'ChaCha20-Poly1305 with 24-byte nonce, safer for high-volume encryption'
+        elif algo == EncryptionAlgorithm.CAMELLIA.value:
+            description = 'Camellia in CBC mode (DEPRECATED)'
+        elif algo == EncryptionAlgorithm.ML_KEM_512_HYBRID.value:
+            description = 'post-quantum key exchange with AES-256-GCM, NIST level 1 (NIST FIPS 203)'
+        elif algo == EncryptionAlgorithm.ML_KEM_768_HYBRID.value:
+            description = 'post-quantum key exchange with AES-256-GCM, NIST level 3 (NIST FIPS 203)'
+        elif algo == EncryptionAlgorithm.ML_KEM_1024_HYBRID.value:
+            description = 'post-quantum key exchange with AES-256-GCM, NIST level 5 (NIST FIPS 203)'
+        elif algo == EncryptionAlgorithm.KYBER512_HYBRID.value:
+            description = 'post-quantum key exchange with AES-256-GCM, NIST level 1 (DEPRECATED - use ml-kem-512-hybrid)'
+        elif algo == EncryptionAlgorithm.KYBER768_HYBRID.value:
+            description = 'post-quantum key exchange with AES-256-GCM, NIST level 3 (DEPRECATED - use ml-kem-768-hybrid)'
+        elif algo == EncryptionAlgorithm.KYBER1024_HYBRID.value:
+            description = 'post-quantum key exchange with AES-256-GCM, NIST level 5 (DEPRECATED - use ml-kem-1024-hybrid)'
+        else:
+            description = 'encryption algorithm'
+            
+        algorithm_help_text += f'  {algo}: {description}\n'
+        
     parser.add_argument(
         '--algorithm',
         type=str,
-        choices=[
-            algo.value for algo in EncryptionAlgorithm],
+        choices=all_algorithms,
         default=EncryptionAlgorithm.FERNET.value,
-        help='Encryption algorithm to use: \n'
-             '  fernet (default, AES-128-CBC with authentication), \n'
-             '  aes-gcm (AES-256 in GCM mode, high security, widely trusted), \n'
-             '  aes-gcm-siv (AES-256 in GCM-SIV mode, resistant to nonce reuse), \n'
-             '  aes-ocb3 (AES-256 in OCB3 mode, faster than GCM), \n'
-             '  aes-siv (AES in SIV mode, synthetic IV), \n'
-             '  chacha20-poly1305 (modern AEAD cipher with 12-byte nonce), \n'
-             '  xchacha20-poly1305 (ChaCha20-Poly1305 with 24-byte nonce, safer for high-volume encryption), \n'
-             '  camellia (Camellia in CBC mode), \n'
-             '  kyber512-hybrid (post-quantum key exchange with AES-256-GCM, NIST level 1), \n'
-             '  kyber768-hybrid (post-quantum key exchange with AES-256-GCM, NIST level 3), \n'
-             '  kyber1024-hybrid (post-quantum key exchange with AES-256-GCM, NIST level 5)')
+        help=algorithm_help_text)
     
-    # Data encryption algorithm to use with Kyber
+    # Add extended algorithm help
+    add_extended_algorithm_help(parser)
+    
+    # Data encryption algorithm to use with Kyber/ML-KEM
+    # Build help text with deprecated warnings
+    data_algorithms = ['aes-gcm', 'aes-gcm-siv', 'aes-ocb3', 'aes-siv', 'chacha20-poly1305', 'xchacha20-poly1305']
+    data_algo_help = 'Symmetric encryption algorithm to use for data encryption when using Kyber/ML-KEM:\n'
+    
+    for algo in data_algorithms:
+        if algo == 'aes-gcm':
+            description = 'default, AES-256 in GCM mode'
+        elif algo == 'aes-gcm-siv':
+            description = 'AES-256 in GCM-SIV mode, resistant to nonce reuse'
+        elif algo == 'aes-ocb3':
+            description = 'AES-256 in OCB3 mode, faster than GCM (DEPRECATED - security concerns with short nonces)'
+        elif algo == 'aes-siv':
+            description = 'AES in SIV mode, synthetic IV'
+        elif algo == 'chacha20-poly1305':
+            description = 'modern AEAD cipher with 12-byte nonce'
+        elif algo == 'xchacha20-poly1305':
+            description = 'ChaCha20-Poly1305 with 24-byte nonce, safer for high-volume encryption'
+        else:
+            description = 'encryption algorithm'
+            
+        data_algo_help += f'  {algo}: {description}\n'
+    
     parser.add_argument(
         '--encryption-data',
         type=str,
-        choices=[
-            'aes-gcm', 'aes-gcm-siv', 'aes-ocb3', 'aes-siv', 
-            'chacha20-poly1305', 'xchacha20-poly1305'],
+        choices=data_algorithms,
         default='aes-gcm',
-        help='Symmetric encryption algorithm to use for data encryption when using Kyber: \n'
-             '  aes-gcm (default, AES-256 in GCM mode), \n'
-             '  aes-gcm-siv (AES-256 in GCM-SIV mode, resistant to nonce reuse), \n'
-             '  aes-ocb3 (AES-256 in OCB3 mode, faster than GCM), \n'
-             '  aes-siv (AES in SIV mode, synthetic IV), \n'
-             '  chacha20-poly1305 (modern AEAD cipher with 12-byte nonce), \n'
-             '  xchacha20-poly1305 (ChaCha20-Poly1305 with 24-byte nonce)')
+        help=data_algo_help)
     # Define common options
     parser.add_argument(
         '--password', '-p',
-        help='Password (will prompt if not provided)'
+        help='Password (will prompt if not provided, or use CRYPT_PASSWORD environment variable)'
     )
     parser.add_argument(
         '--random',
@@ -476,6 +577,14 @@ def main():
     # Group hash configuration arguments for better organization
     hash_group = parser.add_argument_group(
         'Hash Options', 'Configure hashing algorithms for key derivation')
+        
+    # Add global KDF rounds parameter
+    hash_group.add_argument(
+        '--kdf-rounds',
+        type=int,
+        default=0,
+        help='Default number of rounds for all KDFs when enabled without specific rounds (overrides the default of 10)'
+    )
 
     # SHA family arguments - updated to match the template naming
     hash_group.add_argument(
@@ -553,8 +662,8 @@ def main():
     scrypt_group.add_argument(
         '--scrypt-rounds',
         type=int,
-        default=1,
-        help='Use scrypt rounds for interating (default: 1)'
+        default=0,  # Changed from 1 to 0 to make the implicit setting work
+        help='Use scrypt rounds for iterating (default when enabled: 10)'
     )
     scrypt_group.add_argument(
         '--scrypt-n',
@@ -646,8 +755,8 @@ def main():
     argon2_group.add_argument(
         '--argon2-rounds',
         type=int,
-        default=1,
-        help='Argon2 time cost parameter (default: 1)'
+        default=0,  # Changed from 1 to 0 to make the implicit setting work
+        help='Argon2 time cost parameter (default when enabled: 10)'
     )
     argon2_group.add_argument(
         '--argon2-time',
@@ -719,8 +828,8 @@ def main():
     balloon_group.add_argument(
         '--balloon-rounds',
         type=int,
-        default=2,
-        help='Number of rounds for Balloon hashing. More rounds increase security but also processing time.'
+        default=0,  # Changed from 2 to 0 to make the implicit setting work
+        help='Number of rounds for Balloon hashing (default when enabled: 10). More rounds increase security but also processing time.'
     )
     balloon_group.add_argument(
         '--balloon-hash-len',
@@ -847,6 +956,12 @@ def main():
     )
 
     args = parser.parse_args()
+    
+    # Enhance the args with better defaults for extended algorithms
+    args = enhance_cli_args(args)
+    
+    # Configure algorithm warnings based on verbose and debug flags
+    AlgorithmWarningConfig.configure(verbose_mode=args.verbose or args.debug)
 
     # Handle legacy options and map to new names
     # SHA family mappings
@@ -1151,6 +1266,60 @@ def main():
                     if not args.quiet:
                         print("\nGenerated a random password for encryption.")
 
+                # Check for password from environment variable first
+                elif os.environ.get('CRYPT_PASSWORD'):
+                    # Get password from environment variable
+                    env_password = os.environ.get('CRYPT_PASSWORD')
+                    
+                    # Immediately clear the environment variable for security
+                    try:
+                        del os.environ['CRYPT_PASSWORD']
+                    except KeyError:
+                        pass  # Already cleared
+                    
+                    # Skip validation in test mode
+                    in_test_mode = os.environ.get('PYTEST_CURRENT_TEST') is not None
+
+                    # Validate password strength if policy is enabled, not in force mode, and not in test mode
+                    if args.password_policy != 'none' and not args.force_password and not in_test_mode:
+                        try:
+                            # Create policy with user-specified parameters
+                            policy_params = {}
+
+                            # Override policy settings with custom parameters if provided
+                            if args.min_password_length is not None:
+                                policy_params['min_length'] = args.min_password_length
+
+                            if args.min_password_entropy is not None:
+                                policy_params['min_entropy'] = args.min_password_entropy
+
+                            if args.disable_common_password_check:
+                                policy_params['check_common_passwords'] = False
+
+                            if args.custom_password_list:
+                                policy_params['common_passwords_path'] = args.custom_password_list
+
+                            # Create policy
+                            policy = PasswordPolicy(
+                                policy_level=args.password_policy,
+                                **policy_params
+                            )
+
+                            # Validate the password (will raise ValidationError if invalid)
+                            policy.validate_password_or_raise(env_password, quiet=args.quiet)
+
+                        except crypt_errors.ValidationError as e:
+                            # Always display password strength information before validation failure
+                            if not args.quiet:
+                                # Calculate and display password strength
+                                entropy, strength = get_password_strength(env_password)
+                                print(f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)")
+                                print(f"Password validation failed: {str(e)}")
+                                print("Use --force-password to bypass validation (not recommended)")
+                            sys.exit(1)
+
+                    password_secure.extend(env_password.encode())
+
                 # If password provided as argument
                 elif args.password:
                     # Skip validation in test mode
@@ -1366,6 +1535,50 @@ def main():
             print(
                 f"Using default of {MIN_SHA_ITERATIONS} iterations for SHAKE-256")
 
+    # Determine default rounds value to use - either from --kdf-rounds or default of 10
+    default_rounds = args.kdf_rounds if args.kdf_rounds > 0 else 10
+    
+    # Implicitly set --enable-XXX if --XXX-rounds is provided
+    # Scrypt
+    if args.scrypt_rounds > 0 and not args.enable_scrypt:
+        if not args.quiet:
+            logger.debug(f"Setting --enable-scrypt since --scrypt-rounds={args.scrypt_rounds} was provided")
+        args.enable_scrypt = True
+    elif args.enable_scrypt and args.scrypt_rounds <= 0:
+        if not args.quiet:
+            rounds_src = f"--kdf-rounds={default_rounds}" if args.kdf_rounds > 0 else "default of 10"
+            logger.debug(f"Setting --scrypt-rounds={default_rounds} ({rounds_src}) since --enable-scrypt was provided without rounds")
+        args.scrypt_rounds = default_rounds
+    
+    # Argon2
+    if args.argon2_rounds > 0 and not args.enable_argon2:
+        if not args.quiet and ARGON2_AVAILABLE:
+            logger.debug(f"Setting --enable-argon2 since --argon2-rounds={args.argon2_rounds} was provided")
+        args.enable_argon2 = True
+    elif args.enable_argon2 and args.argon2_rounds <= 0:
+        if not args.quiet and ARGON2_AVAILABLE:
+            rounds_src = f"--kdf-rounds={default_rounds}" if args.kdf_rounds > 0 else "default of 10"
+            logger.debug(f"Setting --argon2-rounds={default_rounds} ({rounds_src}) since --enable-argon2 was provided without rounds")
+        args.argon2_rounds = default_rounds
+    
+    # Balloon
+    if args.balloon_rounds > 0 and not args.enable_balloon:
+        if not args.quiet:
+            logger.debug(f"Setting --enable-balloon since --balloon-rounds={args.balloon_rounds} was provided")
+        args.enable_balloon = True
+    elif args.enable_balloon and args.balloon_rounds <= 0:
+        if not args.quiet:
+            rounds_src = f"--kdf-rounds={default_rounds}" if args.kdf_rounds > 0 else "default of 10"
+            logger.debug(f"Setting --balloon-rounds={default_rounds} ({rounds_src}) since --enable-balloon was provided without rounds")
+        args.balloon_rounds = default_rounds
+        
+    # Debug output to verify parameter values (uncomment for debugging)
+    # if args.verbose:
+    #     print(f"DEBUG - Parameter values after implicit settings:")
+    #     print(f"DEBUG - Scrypt: enabled={args.enable_scrypt}, rounds={args.scrypt_rounds}")
+    #     print(f"DEBUG - Argon2: enabled={args.enable_argon2}, rounds={args.argon2_rounds}")
+    #     print(f"DEBUG - Balloon: enabled={args.enable_balloon}, rounds={args.balloon_rounds}")
+
     # Handle Argon2 presets if specified
     if args.argon2_preset and ARGON2_AVAILABLE:
         args.enable_argon2 = True
@@ -1483,6 +1696,22 @@ def main():
     exit_code = 0
     try:
         if args.action == 'encrypt':
+            # Check if main algorithm is deprecated and issue warning
+            if is_deprecated(args.algorithm):
+                replacement = get_recommended_replacement(args.algorithm)
+                warn_deprecated_algorithm(args.algorithm, "command-line encryption")
+                if not args.quiet and replacement and (args.verbose or not args.algorithm.startswith(('kyber', 'ml-kem'))):
+                    print(f"Warning: The algorithm '{args.algorithm}' is deprecated.")
+                    print(f"Consider using '{replacement}' instead for better security.")
+            
+            # Check if data encryption algorithm is deprecated for PQC
+            if args.algorithm.endswith('-hybrid') and is_deprecated(args.encryption_data):
+                data_replacement = get_recommended_replacement(args.encryption_data)
+                warn_deprecated_algorithm(args.encryption_data, "PQC data encryption")
+                if not args.quiet and data_replacement and (args.verbose or not args.encryption_data.startswith(('kyber', 'ml-kem'))):
+                    print(f"Warning: The data encryption algorithm '{args.encryption_data}' is deprecated.")
+                    print(f"Consider using '{data_replacement}' instead for better security.")
+                    
             # Handle output file path
             if args.overwrite:
                 output_file = args.input
@@ -1500,7 +1729,10 @@ def main():
                     original_permissions = get_file_permissions(args.input)
                     # Handle PQC key operations
                     pqc_keypair = None
-                    if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid']:
+                    if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid',
+                                         'hqc-128-hybrid', 'hqc-192-hybrid', 'hqc-256-hybrid',
+                                         'ml-kem-512-hybrid', 'ml-kem-768-hybrid', 'ml-kem-1024-hybrid',
+                                         'ml-kem-512-chacha20', 'ml-kem-768-chacha20', 'ml-kem-1024-chacha20']:
                         # Check if we should generate and save a new key pair
                         if args.pqc_gen_key and args.pqc_keyfile:
                             from .pqc import PQCipher, PQCAlgorithm, check_pqc_support
@@ -1518,21 +1750,39 @@ def main():
                             kyber1024_options = [alg for alg in pqc_algorithms if
                                                  alg.lower().replace('-', '').replace('_', '') in ["kyber1024",
                                                                                                    "mlkem1024"]]
+                            hqc128_options = [alg for alg in pqc_algorithms if
+                                              alg.lower().replace('-', '').replace('_', '') in ["hqc128"]]
+                            hqc192_options = [alg for alg in pqc_algorithms if
+                                              alg.lower().replace('-', '').replace('_', '') in ["hqc192"]]
+                            hqc256_options = [alg for alg in pqc_algorithms if
+                                              alg.lower().replace('-', '').replace('_', '') in ["hqc256"]]
 
                             # Choose first available or fall back to default name
                             kyber512_algo = kyber512_options[0] if kyber512_options else "Kyber512"
                             kyber768_algo = kyber768_options[0] if kyber768_options else "Kyber768"
                             kyber1024_algo = kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                            hqc128_algo = hqc128_options[0] if hqc128_options else "HQC-128"
+                            hqc192_algo = hqc192_options[0] if hqc192_options else "HQC-192"
+                            hqc256_algo = hqc256_options[0] if hqc256_options else "HQC-256"
 
                             if not args.quiet:
                                 print(
-                                    f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}")
+                                    f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}, hqc-128-hybrid → {hqc128_algo}, hqc-192-hybrid → {hqc192_algo}, hqc-256-hybrid → {hqc256_algo}")
 
                             # Create direct string mapping instead of using enum
                             algo_map = {
                                 'kyber512-hybrid': kyber512_algo,
                                 'kyber768-hybrid': kyber768_algo,
-                                'kyber1024-hybrid': kyber1024_algo
+                                'kyber1024-hybrid': kyber1024_algo,
+                                'hqc-128-hybrid': hqc128_algo,
+                                'hqc-192-hybrid': hqc192_algo,
+                                'hqc-256-hybrid': hqc256_algo,
+                                'ml-kem-512-hybrid': kyber512_algo,
+                                'ml-kem-768-hybrid': kyber768_algo,
+                                'ml-kem-1024-hybrid': kyber1024_algo,
+                                'ml-kem-512-chacha20': kyber512_algo,
+                                'ml-kem-768-chacha20': kyber768_algo,
+                                'ml-kem-1024-chacha20': kyber1024_algo
                             }
 
                             # Generate key pair
@@ -1574,7 +1824,10 @@ def main():
                                     print(f"Loaded post-quantum key pair from {args.pqc_keyfile}")
 
                     # For PQC algorithms, we may need to generate a keypair if not specified
-                    if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid'] and not pqc_keypair:
+                    if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid',
+                                         'hqc-128-hybrid', 'hqc-192-hybrid', 'hqc-256-hybrid',
+                                         'ml-kem-512-hybrid', 'ml-kem-768-hybrid', 'ml-kem-1024-hybrid',
+                                         'ml-kem-512-chacha20', 'ml-kem-768-chacha20', 'ml-kem-1024-chacha20'] and not pqc_keypair:
                         # No keypair provided, generate an ephemeral one
                         from .pqc import PQCipher, check_pqc_support
 
@@ -1587,19 +1840,36 @@ def main():
                         kyber1024_options = [alg for alg in pqc_algorithms if
                                              alg.lower().replace('-', '').replace('_', '') in ["kyber1024",
                                                                                                "mlkem1024"]]
+                        hqc128_options = [alg for alg in pqc_algorithms if
+                                          alg.lower().replace('-', '').replace('_', '') in ["hqc128"]]
+                        hqc192_options = [alg for alg in pqc_algorithms if
+                                          alg.lower().replace('-', '').replace('_', '') in ["hqc192"]]
+                        hqc256_options = [alg for alg in pqc_algorithms if
+                                          alg.lower().replace('-', '').replace('_', '') in ["hqc256"]]
 
                         # Choose first available algorithm
                         algo_map = {
                             'kyber512-hybrid': kyber512_options[0] if kyber512_options else "Kyber512",
                             'kyber768-hybrid': kyber768_options[0] if kyber768_options else "Kyber768",
-                            'kyber1024-hybrid': kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                            'kyber1024-hybrid': kyber1024_options[0] if kyber1024_options else "Kyber1024",
+                            'hqc-128-hybrid': hqc128_options[0] if hqc128_options else "HQC-128",
+                            'hqc-192-hybrid': hqc192_options[0] if hqc192_options else "HQC-192",
+                            'hqc-256-hybrid': hqc256_options[0] if hqc256_options else "HQC-256",
+                            'ml-kem-512-hybrid': kyber512_options[0] if kyber512_options else "Kyber512",
+                            'ml-kem-768-hybrid': kyber768_options[0] if kyber768_options else "Kyber768",
+                            'ml-kem-1024-hybrid': kyber1024_options[0] if kyber1024_options else "Kyber1024",
+                            'ml-kem-512-chacha20': kyber512_options[0] if kyber512_options else "Kyber512",
+                            'ml-kem-768-chacha20': kyber768_options[0] if kyber768_options else "Kyber768",
+                            'ml-kem-1024-chacha20': kyber1024_options[0] if kyber1024_options else "Kyber1024"
                         }
 
                         if not args.quiet:
                             print(f"Generating ephemeral post-quantum key pair for {args.algorithm}")
                             if args.pqc_store_key:
-                                print("Private key will be stored in the encrypted file for self-decryption")
+                                # Only log this message with INFO level so it only appears in verbose mode
+                                logger.info("Private key will be stored in the encrypted file for self-decryption")
                             else:
+                                # Keep this as a print since it's a warning
                                 print(
                                     "WARNING: Private key will NOT be stored - you must use a key file for decryption")
 
@@ -1721,6 +1991,7 @@ def main():
                             algorithm=args.algorithm,
                             progress=args.progress,
                             verbose=args.verbose,
+                            debug=args.debug,
                             pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
                             pqc_store_private_key=args.pqc_store_key,
                             encryption_data=args.encryption_data
@@ -1757,7 +2028,10 @@ def main():
 
             # Handle PQC key operations (for non-overwriting case)
             pqc_keypair = None
-            if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid']:
+            if args.algorithm in ['kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid',
+                                 'hqc-128-hybrid', 'hqc-192-hybrid', 'hqc-256-hybrid',
+                                 'ml-kem-512-hybrid', 'ml-kem-768-hybrid', 'ml-kem-1024-hybrid',
+                                 'ml-kem-512-chacha20', 'ml-kem-768-chacha20', 'ml-kem-1024-chacha20']:
                 # Check if we should generate and save a new key pair
                 if args.pqc_gen_key and args.pqc_keyfile:
                     from .pqc import PQCipher, PQCAlgorithm, check_pqc_support
@@ -1772,21 +2046,39 @@ def main():
                                         alg.lower().replace('-', '').replace('_', '') in ["kyber768", "mlkem768"]]
                     kyber1024_options = [alg for alg in pqc_algorithms if
                                          alg.lower().replace('-', '').replace('_', '') in ["kyber1024", "mlkem1024"]]
+                    hqc128_options = [alg for alg in pqc_algorithms if
+                                      alg.lower().replace('-', '').replace('_', '') in ["hqc128"]]
+                    hqc192_options = [alg for alg in pqc_algorithms if
+                                      alg.lower().replace('-', '').replace('_', '') in ["hqc192"]]
+                    hqc256_options = [alg for alg in pqc_algorithms if
+                                      alg.lower().replace('-', '').replace('_', '') in ["hqc256"]]
 
                     # Choose first available or fall back to default name
                     kyber512_algo = kyber512_options[0] if kyber512_options else "Kyber512"
                     kyber768_algo = kyber768_options[0] if kyber768_options else "Kyber768"
                     kyber1024_algo = kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                    hqc128_algo = hqc128_options[0] if hqc128_options else "HQC-128"
+                    hqc192_algo = hqc192_options[0] if hqc192_options else "HQC-192"
+                    hqc256_algo = hqc256_options[0] if hqc256_options else "HQC-256"
 
                     if not args.quiet:
                         print(
-                            f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}")
+                            f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}, hqc-128-hybrid → {hqc128_algo}, hqc-192-hybrid → {hqc192_algo}, hqc-256-hybrid → {hqc256_algo}")
 
                     # Create direct string mapping
                     algo_map = {
                         'kyber512-hybrid': kyber512_algo,
                         'kyber768-hybrid': kyber768_algo,
-                        'kyber1024-hybrid': kyber1024_algo
+                        'kyber1024-hybrid': kyber1024_algo,
+                        'hqc-128-hybrid': hqc128_algo,
+                        'hqc-192-hybrid': hqc192_algo,
+                        'hqc-256-hybrid': hqc256_algo,
+                        'ml-kem-512-hybrid': kyber512_algo,
+                        'ml-kem-768-hybrid': kyber768_algo,
+                        'ml-kem-1024-hybrid': kyber1024_algo,
+                        'ml-kem-512-chacha20': kyber512_algo,
+                        'ml-kem-768-chacha20': kyber768_algo,
+                        'ml-kem-1024-chacha20': kyber1024_algo
                     }
 
                     # Generate key pair
@@ -1908,20 +2200,37 @@ def main():
                                         alg.lower().replace('-', '').replace('_', '') in ["kyber768", "mlkem768"]]
                     kyber1024_options = [alg for alg in pqc_algorithms if
                                          alg.lower().replace('-', '').replace('_', '') in ["kyber1024", "mlkem1024"]]
+                    hqc128_options = [alg for alg in pqc_algorithms if
+                                      alg.lower().replace('-', '').replace('_', '') in ["hqc128"]]
+                    hqc192_options = [alg for alg in pqc_algorithms if
+                                      alg.lower().replace('-', '').replace('_', '') in ["hqc192"]]
+                    hqc256_options = [alg for alg in pqc_algorithms if
+                                      alg.lower().replace('-', '').replace('_', '') in ["hqc256"]]
 
                     # Choose first available algorithm
                     algo_map = {
                         'kyber512-hybrid': kyber512_options[0] if kyber512_options else "Kyber512",
                         'kyber768-hybrid': kyber768_options[0] if kyber768_options else "Kyber768",
-                        'kyber1024-hybrid': kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                        'kyber1024-hybrid': kyber1024_options[0] if kyber1024_options else "Kyber1024",
+                        'hqc-128-hybrid': hqc128_options[0] if hqc128_options else "HQC-128",
+                        'hqc-192-hybrid': hqc192_options[0] if hqc192_options else "HQC-192",
+                        'hqc-256-hybrid': hqc256_options[0] if hqc256_options else "HQC-256",
+                        'ml-kem-512-hybrid': kyber512_options[0] if kyber512_options else "Kyber512",
+                        'ml-kem-768-hybrid': kyber768_options[0] if kyber768_options else "Kyber768",
+                        'ml-kem-1024-hybrid': kyber1024_options[0] if kyber1024_options else "Kyber1024",
+                        'ml-kem-512-chacha20': kyber512_options[0] if kyber512_options else "Kyber512",
+                        'ml-kem-768-chacha20': kyber768_options[0] if kyber768_options else "Kyber768",
+                        'ml-kem-1024-chacha20': kyber1024_options[0] if kyber1024_options else "Kyber1024"
                     }
 
                     # Generate a new ephemeral keypair
                     if not args.quiet:
                         print(f"Generating ephemeral post-quantum key pair for {args.algorithm}")
                         if args.pqc_store_key:
-                            print("Private key will be stored in the encrypted file for self-decryption")
+                            # Only log this message with INFO level so it only appears in verbose mode
+                            logger.info("Private key will be stored in the encrypted file for self-decryption")
                         else:
+                            # Keep this as a print since it's a warning
                             print("WARNING: Private key will NOT be stored - you must use a key file for decryption")
 
                     cipher = PQCipher(algo_map[args.algorithm], quiet=args.quiet)
@@ -2043,6 +2352,7 @@ def main():
                         algorithm=args.algorithm,
                         progress=args.progress,
                         verbose=args.verbose,
+                        debug=args.debug,
                         pqc_keypair=pqc_keypair if 'pqc_keypair' in locals() else None,
                         pqc_store_private_key=args.pqc_store_key,
                         encryption_data=args.encryption_data
@@ -2252,6 +2562,7 @@ def main():
                             args.quiet,
                             progress=args.progress,
                             verbose=args.verbose,
+                            debug=args.debug,
                             pqc_private_key=pqc_private_key
                         )
                     if success:
@@ -2386,6 +2697,7 @@ def main():
                         args.quiet,
                         progress=args.progress,
                         verbose=args.verbose,
+                        debug=args.debug,
                         pqc_private_key=pqc_private_key
                     )
                 if success and not args.quiet:

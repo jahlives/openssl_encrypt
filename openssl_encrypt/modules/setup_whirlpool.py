@@ -13,8 +13,7 @@ from pathlib import Path
 import subprocess
 import platform
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
+# Set up logging - let the parent module configure the level
 logger = logging.getLogger("setup_whirlpool")
 
 
@@ -67,7 +66,7 @@ def find_whirlpool_modules():
 def create_whirlpool_symlink():
     """Create a symbolic link to the appropriate Whirlpool module."""
     whirlpool_modules = find_whirlpool_modules()
-    logger.info(f"Found Whirlpool modules: {whirlpool_modules}")
+    logger.debug(f"Found Whirlpool modules: {whirlpool_modules}")
     
     if not whirlpool_modules:
         logger.warning("No Whirlpool modules found. Attempting to install...")
@@ -86,7 +85,7 @@ def create_whirlpool_symlink():
     try:
         # Try to import whirlpool directly
         import whirlpool
-        logger.info("Whirlpool module already working, no action needed")
+        logger.debug("Whirlpool module already working, no action needed")
         return True
     except ImportError:
         # Need to fix the import
@@ -105,13 +104,22 @@ def create_whirlpool_symlink():
             chosen_module = module
             break
     
-    # If no direct match, try the py311 version for Python 3.11+
+    # If no direct match, try the py311 or py313 version for Python 3.11+
     if not chosen_module and (python_version.major > 3 or 
                              (python_version.major == 3 and python_version.minor >= 11)):
-        for module in whirlpool_modules:
-            if "whirlpool-py311" in module.lower():
-                chosen_module = module
-                break
+        # First check for Python 3.13 specific module
+        if python_version.major == 3 and python_version.minor >= 13:
+            for module in whirlpool_modules:
+                if "whirlpool-py313" in module.lower() or "whirlpool_py313" in module.lower():
+                    chosen_module = module
+                    break
+        
+        # If no Python 3.13 specific module, fall back to Python 3.11 module
+        if not chosen_module:
+            for module in whirlpool_modules:
+                if "whirlpool-py311" in module.lower() or "whirlpool_py311" in module.lower():
+                    chosen_module = module
+                    break
     
     # Fall back to any whirlpool module
     if not chosen_module:
@@ -131,7 +139,7 @@ def create_whirlpool_symlink():
     else:  # Unix/Linux/Mac
         target_name = os.path.join(module_dir, f"whirlpool.{version_suffix}-{platform.machine()}-linux-gnu.so")
     
-    logger.info(f"Creating symbolic link from {chosen_module} to {target_name}")
+    logger.debug(f"Creating symbolic link from {chosen_module} to {target_name}")
     
     try:
         # Remove existing file if it exists
@@ -146,7 +154,7 @@ def create_whirlpool_symlink():
         else:
             os.symlink(chosen_module, target_name)
         
-        logger.info("Successfully created Whirlpool module link")
+        logger.debug("Successfully created Whirlpool module link")
         
         # Verify the link works
         try:
@@ -156,7 +164,7 @@ def create_whirlpool_symlink():
             
             # Try importing again
             import whirlpool
-            logger.info("Verified Whirlpool module can now be imported")
+            logger.debug("Verified Whirlpool module can now be imported")
             return True
         except ImportError as e:
             logger.error(f"Created link but import still fails: {e}")
@@ -172,10 +180,30 @@ def install_whirlpool():
     python_version = sys.version_info
     
     try:
-        # For Python 3.11+, install the compatible fork
-        if python_version.major > 3 or (python_version.major == 3 and python_version.minor >= 11):
-            logger.info("Installing whirlpool-py311 for Python 3.11+")
+        # For Python 3.13+, install the compatible fork specifically for 3.13
+        if python_version.major > 3 or (python_version.major == 3 and python_version.minor >= 13):
+            # Check if whirlpool-py313 is available in PyPI
+            try:
+                logger.debug("Checking for whirlpool-py313 package in PyPI")
+                import pip._vendor.requests as requests
+                response = requests.get("https://pypi.org/pypi/whirlpool-py313/json")
+                if response.status_code == 200:
+                    logger.info("Installing whirlpool-py313 for Python 3.13+")
+                    subprocess.check_call([sys.executable, "-m", "pip", "install", "whirlpool-py313"])
+                else:
+                    # If whirlpool-py313 doesn't exist, try py311 version which may be compatible
+                    logger.info("whirlpool-py313 not found, installing whirlpool-py311 as fallback")
+                    subprocess.check_call([sys.executable, "-m", "pip", "install", "whirlpool-py311"])
+            except Exception:
+                # If package checking fails, try the py311 version
+                logger.info("Failed to check whirlpool-py313, installing whirlpool-py311 for Python 3.13+")
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "whirlpool-py311"])
+                
+        # For Python 3.11-3.12, install the 3.11 compatible fork
+        elif python_version.major == 3 and python_version.minor >= 11:
+            logger.info("Installing whirlpool-py311 for Python 3.11-3.12")
             subprocess.check_call([sys.executable, "-m", "pip", "install", "whirlpool-py311"])
+            
         else:
             # For older Python versions, install the original package
             logger.info("Installing Whirlpool for Python 3.10 and below")
@@ -192,7 +220,7 @@ def setup_whirlpool():
     try:
         # First try to import normally
         import whirlpool
-        logger.info("Whirlpool module already working, no action needed")
+        logger.debug("Whirlpool module already working, no action needed")
         return True
     except ImportError:
         # Need to create the symlink

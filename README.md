@@ -1,6 +1,10 @@
-# Version 0.8.2: Restructured Metadata
-With the release of version **0.8.2**, openssl_encrypt now uses a new metadata structure. `format_version` 5 represents that new structure. Additionally fixed some issues with `Python` < 3.12 and added a more resiliant way to include `whirlpool` during build for for `Python` >= 3.9 
-  The change is implemented to avoid any breaking changes to prior versions. Therefore the code is able to process all supported format versions transparently. Unittests of existing (older metadata) encrypted file are passing. Tests for new structure yet to come
+# Version 0.9.1: Post-Quantum Cryptography Enhancements (May 2025)
+Version 0.9.1 introduces significant enhancements to post-quantum cryptography support, adding ML-KEM algorithms (512/768/1024-bit) and re-enabling HQC algorithms (128/192/256-bit) with comprehensive testing and
+  keystore integration. The release includes improved concurrent test execution safety, enhanced error handling for post-quantum operations, and fixes for XChaCha20-Poly1305 hybrid configurations. A major dependency
+  cleanup removed the problematic bcrypt library due to its incompatible internal salt system that prevented deterministic hashing with external salts. The update features extensive test coverage with over 400 new
+  integration tests for keystore operations and algorithm combinations. GitLab CI pipeline improvements now require manual publishing controls for enhanced release management. All enhancements maintain full backward
+  compatibility with existing encrypted files while significantly expanding quantum-resistant encryption options. The release demonstrates continued commitment to cryptographic security and system reliability through
+  comprehensive testing and improved dependency management.
 # Secure File Encryption Tool
 A powerful tool for securely encrypting, decrypting, and shredding files with military-grade cryptography and multi-layer password hashing.
 ## History
@@ -62,7 +66,7 @@ you can create issues by [sending mail](mailto:issue+world-openssl-encrypt-2-iss
 - [requirements.txt](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/requirements.txt) - Required Python packages
 - [README.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/README.md) - This documentation file
 
-all testfile files are ecrypted with password `1234` for your testing
+all testfile files are encrypted with password `1234` for your testing
 ## License
 
 [MIT License](LICENSE)
