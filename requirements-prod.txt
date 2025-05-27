@@ -8,8 +8,6 @@ argon2-cffi==23.1.0
     # via -r requirements-prod.in
 argon2-cffi-bindings==21.2.0
     # via argon2-cffi
-bcrypt==4.3.0
-    # via -r requirements-prod.in
 cffi==1.17.1
     # via
     #   argon2-cffi-bindings
