@@ -244,6 +244,7 @@ class CryptGUI:
 
         # Create the dropdown menu
         algorithms = [
+            # Standard algorithms
             ("fernet", "AES-128-CBC"),
             ("aes-gcm", "AES-GCM"),
             ("aes-gcm-siv", "AES-GCM-SIV"),
@@ -251,25 +252,78 @@ class CryptGUI:
             ("aes-siv", "AES-SIV"),
             ("chacha20-poly1305", "ChaCha20Poly1305"),
             ("xchacha20-poly1305", "XChaCha20Poly1305"),
-            ("camellia", "Camellia-128-CBC")
+            ("camellia", "Camellia-128-CBC"),
+            # Post-quantum hybrid algorithms - ML-KEM with Kyber aliases
+            ("ml-kem-512-hybrid", "ML-KEM-512 Hybrid (Kyber-512 alias)"),
+            ("ml-kem-768-hybrid", "ML-KEM-768 Hybrid (Kyber-768 alias)"),
+            ("ml-kem-1024-hybrid", "ML-KEM-1024 Hybrid (Kyber-1024 alias)"),
+            # Post-quantum hybrid algorithms - HQC
+            ("hqc-128-hybrid", "HQC-128 Hybrid"),
+            ("hqc-192-hybrid", "HQC-192 Hybrid"),
+            ("hqc-256-hybrid", "HQC-256 Hybrid")
         ]
 
+        # Define post-quantum algorithms (only ML-KEM and HQC, no separate Kyber entries)
+        self.pqc_algorithms = {
+            "ml-kem-512-hybrid", "ml-kem-768-hybrid", "ml-kem-1024-hybrid",
+            "hqc-128-hybrid", "hqc-192-hybrid", "hqc-256-hybrid"
+        }
+
+        # Create frame for algorithm dropdowns (side by side)
+        algorithm_frame = ttk.Frame(algorithm_group)
+        algorithm_frame.pack(fill="x", padx=5, pady=2)
+
+        # Primary algorithm dropdown (left side)
+        algorithm_left_frame = ttk.Frame(algorithm_frame)
+        algorithm_left_frame.pack(side="left", fill="x", expand=True, padx=(0, 5))
+
         self.encrypt_algorithm_var = tk.StringVar(value="fernet")  # default to fernet
+        
+        # Create a mapping from display names back to algorithm keys
+        self.display_to_algorithm = {display: key for key, display in algorithms}
+        self.algorithm_to_display = {key: display for key, display in algorithms}
+        
+        # Use display names in the dropdown
         algorithm_menu = ttk.OptionMenu(
-            algorithm_group,
+            algorithm_left_frame,
             self.encrypt_algorithm_var,
-            algorithms[0][0],  # default value
-            *[algo[0] for algo in algorithms],  # values
+            self.algorithm_to_display[algorithms[0][0]],  # default display value
+            *[display for key, display in algorithms],  # display values
             style="Custom.TMenubutton"
         )
-        algorithm_menu.pack(fill="x", padx=5, pady=2)
+        algorithm_menu.pack(fill="x")
+        
+        # Set the variable to show the display name initially
+        self.encrypt_algorithm_var.set(self.algorithm_to_display["fernet"])
 
-        # Add a label to show the full name
-        algorithm_label = ttk.Label(algorithm_group, text=algorithms[0][1])
-        self.encrypt_algorithm_var.trace('w', lambda *args: algorithm_label.configure(
-            text=dict(algorithms)[self.encrypt_algorithm_var.get()]
-        ))
-        algorithm_label.pack(fill="x", padx=5, pady=2)
+        # Encryption data dropdown (right side, initially hidden)
+        self.encryption_data_frame = ttk.Frame(algorithm_frame)
+        
+        # Define encryption data algorithms (excluding fernet)
+        encryption_data_algorithms = [
+            ("aes-gcm", "AES-GCM"),
+            ("aes-gcm-siv", "AES-GCM-SIV"),
+            ("aes-ocb3", "AES-OCB3"),
+            ("aes-siv", "AES-SIV"),
+            ("chacha20-poly1305", "ChaCha20-Poly1305"),
+            ("xchacha20-poly1305", "XChaCha20-Poly1305")
+        ]
+
+        self.encrypt_data_var = tk.StringVar(value="aes-gcm")  # default
+        self.encryption_data_menu = ttk.OptionMenu(
+            self.encryption_data_frame,
+            self.encrypt_data_var,
+            encryption_data_algorithms[0][0],  # default value
+            *[algo[0] for algo in encryption_data_algorithms],  # values
+            style="Custom.TMenubutton"
+        )
+        self.encryption_data_menu.pack(fill="x")
+
+        # Trace algorithm changes to show/hide encryption data dropdown
+        self.encrypt_algorithm_var.trace('w', self.on_algorithm_change)
+        
+        # Store references for updates
+        self.encryption_data_dict = dict(encryption_data_algorithms)
 
         # Options group
         options_group = ttk.LabelFrame(self.encrypt_frame, text="Options", padding=5)
@@ -664,6 +718,28 @@ class CryptGUI:
                 self.start_password_countdown(20)
         else:
             self.status_var.set("No password to copy")
+
+    def on_algorithm_change(self, *args):
+        """Handle algorithm dropdown changes to show/hide encryption data dropdown"""
+        display_name = self.encrypt_algorithm_var.get()
+        
+        # Convert display name to algorithm key
+        algorithm = self.display_to_algorithm.get(display_name, display_name)
+        
+        # Update algorithm label (already showing display name, so no change needed)
+        
+        # Show encryption data dropdown for post-quantum algorithms
+        if algorithm in self.pqc_algorithms:
+            self.encryption_data_frame.pack(side="right", fill="x", expand=True)
+        else:
+            # Hide encryption data dropdown for standard algorithms
+            self.encryption_data_frame.pack_forget()
+    
+    def get_selected_algorithm(self):
+        """Get the actual algorithm key (not display name) for the selected algorithm"""
+        display_name = self.encrypt_algorithm_var.get()
+        return self.display_to_algorithm.get(display_name, display_name)
+
     
     def generate_encrypt_password(self):
         """Generate a password for encryption"""
@@ -988,7 +1064,7 @@ class CryptGUI:
 
         # Get current hash configuration and encryption algorithm
         hash_config = self.settings_tab.get_current_config()
-        encryption_algorithm = self.encrypt_algorithm_var.get()
+        encryption_algorithm = self.get_selected_algorithm()  # Use actual algorithm key, not display name
 
         # Build the command - use full path to crypt.py
         cmd = [sys.executable, os.path.join(os.path.dirname(__file__), "crypt.py"), "encrypt", "-i", input_file]
@@ -1007,6 +1083,11 @@ class CryptGUI:
 
         # Add encryption algorithm
         cmd.extend(["--algorithm", encryption_algorithm])
+
+        # Add encryption data for post-quantum algorithms
+        if encryption_algorithm in self.pqc_algorithms:
+            encryption_data = self.encrypt_data_var.get()
+            cmd.extend(["--encryption-data", encryption_data])
 
         # Add individual hash configuration parameters
         if hash_config:
