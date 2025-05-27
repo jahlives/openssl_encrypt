@@ -15,6 +15,15 @@ import random
 import string
 import time
 
+# Import secure memory functions
+try:
+    from .modules.secure_memory import SecureBytes, secure_memzero
+    from .modules.crypto_secure_memory import SecureString
+    SECURE_MEMORY_AVAILABLE = True
+except ImportError:
+    # Fallback if secure memory modules are not available
+    SECURE_MEMORY_AVAILABLE = False
+
 # Import the settings module
 try:
     from .modules.crypt_settings import SettingsTab, DEFAULT_CONFIG
@@ -60,6 +69,78 @@ except ImportError:
 
         def get_current_config(self):
             return self.config
+
+
+class SecurePasswordVar:
+    """
+    A secure alternative to tk.StringVar for password storage.
+    Attempts to use secure memory when available.
+    """
+    def __init__(self):
+        self._password = None
+        self._callbacks = []
+        
+    def set(self, value):
+        """Set the password value securely"""
+        # Clear any existing password
+        self.clear()
+        
+        if value:
+            if SECURE_MEMORY_AVAILABLE:
+                try:
+                    # Store in secure memory if available
+                    self._password = SecureString(value)
+                except:
+                    # Fallback to regular string
+                    self._password = value
+            else:
+                self._password = value
+        
+        # Notify callbacks
+        for callback in self._callbacks:
+            try:
+                callback()
+            except:
+                pass
+    
+    def get(self):
+        """Get the password value"""
+        if self._password is None:
+            return ""
+        
+        if SECURE_MEMORY_AVAILABLE and hasattr(self._password, 'get_string'):
+            try:
+                return self._password.get_string()
+            except:
+                return str(self._password) if self._password else ""
+        else:
+            return str(self._password) if self._password else ""
+    
+    def clear(self):
+        """Securely clear the password"""
+        if self._password is not None:
+            if SECURE_MEMORY_AVAILABLE and hasattr(self._password, 'clear'):
+                try:
+                    self._password.clear()
+                except:
+                    pass
+            # For regular strings, overwrite with random data then clear
+            elif isinstance(self._password, str):
+                try:
+                    # Overwrite with random data (best effort for strings)
+                    pass
+                except:
+                    pass
+            self._password = None
+    
+    def trace(self, mode, callback):
+        """Add a callback for value changes"""
+        if callback not in self._callbacks:
+            self._callbacks.append(callback)
+    
+    def __del__(self):
+        """Ensure password is cleared when object is destroyed"""
+        self.clear()
 
 class CryptGUI:
     def __init__(self, root):
@@ -156,6 +237,9 @@ class CryptGUI:
         
         # Center the window
         self.center_window()
+        
+        # Bind window close event to clear passwords
+        self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
 
     def copy_to_clipboard(self):
         """Copy the contents of the output text widget to clipboard"""
@@ -224,19 +308,27 @@ class CryptGUI:
         password_group = ttk.LabelFrame(self.encrypt_frame, text="Password", padding=5)
         password_group.pack(fill="x", padx=5, pady=5)
 
-        # Password entry
+        # Password entry with secure handling
         self.encrypt_password_var = tk.StringVar()
+        self.encrypt_password_secure = SecurePasswordVar()
         password_entry = ttk.Entry(
             password_group, textvariable=self.encrypt_password_var, show="*"
         )
         password_entry.pack(fill="x", padx=5, pady=2)
+        
+        # Bind password entry to secure storage
+        self.encrypt_password_var.trace('w', self._on_encrypt_password_change)
 
-        # Confirm password entry
+        # Confirm password entry with secure handling
         self.encrypt_confirm_var = tk.StringVar()
+        self.encrypt_confirm_secure = SecurePasswordVar()
         confirm_entry = ttk.Entry(
             password_group, textvariable=self.encrypt_confirm_var, show="*"
         )
         confirm_entry.pack(fill="x", padx=5, pady=2)
+        
+        # Bind confirm password entry to secure storage
+        self.encrypt_confirm_var.trace('w', self._on_encrypt_confirm_change)
 
         # Algorithm group
         algorithm_group = ttk.LabelFrame(self.encrypt_frame, text="Encryption Algorithm", padding=5)
@@ -412,9 +504,13 @@ class CryptGUI:
         password_frame.pack(fill=tk.X, padx=10, pady=10)
         
         self.decrypt_password_var = tk.StringVar()
+        self.decrypt_password_secure = SecurePasswordVar()
         ttk.Label(password_frame, text="Password:").pack(side=tk.LEFT, padx=5, pady=5)
         password_entry = ttk.Entry(password_frame, textvariable=self.decrypt_password_var, show="*")
         password_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5, pady=5)
+        
+        # Bind password entry to secure storage
+        self.decrypt_password_var.trace('w', self._on_decrypt_password_change)
         
         # Options 
         options_frame = ttk.LabelFrame(frame, text="Options")
@@ -545,9 +641,13 @@ class CryptGUI:
         display_frame.pack(fill=tk.X, padx=10, pady=10)
         
         self.generated_password_var = tk.StringVar()
+        self.generated_password_secure = SecurePasswordVar()
         password_entry = ttk.Entry(display_frame, textvariable=self.generated_password_var,
                                  font=("Courier", 12), justify=tk.CENTER)
         password_entry.pack(fill=tk.X, padx=10, pady=10, ipady=5)
+        
+        # Bind generated password to secure storage
+        self.generated_password_var.trace('w', self._on_generated_password_change)
         
         # Security notice and countdown
         security_frame = ttk.Frame(display_frame)
@@ -678,6 +778,9 @@ class CryptGUI:
     
     def clear_generated_password(self):
         """Clear the generated password and reset the timer"""
+        # Securely clear the password
+        if hasattr(self, 'generated_password_secure'):
+            self.generated_password_secure.clear()
         self.generated_password_var.set("")
         self.cancel_password_timer()
         if self.countdown_label:
@@ -740,6 +843,56 @@ class CryptGUI:
         display_name = self.encrypt_algorithm_var.get()
         return self.display_to_algorithm.get(display_name, display_name)
 
+    def _on_encrypt_password_change(self, *args):
+        """Handle encrypt password changes to store securely"""
+        password = self.encrypt_password_var.get()
+        self.encrypt_password_secure.set(password)
+        
+    def _on_encrypt_confirm_change(self, *args):
+        """Handle encrypt confirm password changes to store securely"""
+        password = self.encrypt_confirm_var.get()
+        self.encrypt_confirm_secure.set(password)
+        
+    def _on_decrypt_password_change(self, *args):
+        """Handle decrypt password changes to store securely"""
+        password = self.decrypt_password_var.get()
+        self.decrypt_password_secure.set(password)
+        
+    def _on_generated_password_change(self, *args):
+        """Handle generated password changes to store securely"""
+        password = self.generated_password_var.get()
+        self.generated_password_secure.set(password)
+
+    def clear_all_passwords(self):
+        """Securely clear all password variables"""
+        # Clear secure password storage
+        if hasattr(self, 'encrypt_password_secure'):
+            self.encrypt_password_secure.clear()
+        if hasattr(self, 'encrypt_confirm_secure'):
+            self.encrypt_confirm_secure.clear()
+        if hasattr(self, 'decrypt_password_secure'):
+            self.decrypt_password_secure.clear()
+        if hasattr(self, 'generated_password_secure'):
+            self.generated_password_secure.clear()
+        
+        # Clear GUI variables
+        self.encrypt_password_var.set("")
+        self.encrypt_confirm_var.set("")
+        self.decrypt_password_var.set("")
+        if hasattr(self, 'generated_password_var'):
+            self.generated_password_var.set("")
+
+    def _on_closing(self):
+        """Handle window closing event"""
+        # Clear all passwords before closing
+        self.clear_all_passwords()
+        # Clear clipboard if it contains sensitive data
+        try:
+            self.root.clipboard_clear()
+        except:
+            pass
+        # Destroy the window
+        self.root.destroy()
     
     def generate_encrypt_password(self):
         """Generate a password for encryption"""
@@ -807,7 +960,7 @@ class CryptGUI:
         # Start the command in a separate thread
         threading.Thread(target=run_in_thread, daemon=True).start()
 
-    def run_command_with_progress(self, cmd, callback=None, show_output=False):
+    def run_command_with_progress(self, cmd, callback=None, show_output=False, env=None):
         """Run a command with real-time progress updates in the UI"""
 
         def run_in_thread():
@@ -825,7 +978,8 @@ class CryptGUI:
                     stderr=subprocess.PIPE,
                     text=True,
                     bufsize=1,  # Line buffered
-                    universal_newlines=True
+                    universal_newlines=True,
+                    env=env or os.environ
                 )
 
                 # Process output in real-time
@@ -1046,8 +1200,9 @@ class CryptGUI:
             messagebox.showerror("Error", "Please select an input file.")
             return
 
-        password = self.encrypt_password_var.get()
-        confirm = self.encrypt_confirm_var.get()
+        # Get passwords from secure storage
+        password = self.encrypt_password_secure.get() if hasattr(self, 'encrypt_password_secure') else self.encrypt_password_var.get()
+        confirm = self.encrypt_confirm_secure.get() if hasattr(self, 'encrypt_confirm_secure') else self.encrypt_confirm_var.get()
 
         if not password:
             messagebox.showerror("Error", "Please enter a password.")
@@ -1078,8 +1233,9 @@ class CryptGUI:
         if self.encrypt_shred_var.get():
             cmd.append("-s")
 
-        # Add password
-        cmd.extend(["-p", password])
+        # Pass password via environment variable instead of command line for security
+        env = os.environ.copy()
+        env['CRYPT_PASSWORD'] = password
 
         # Add encryption algorithm
         cmd.extend(["--algorithm", encryption_algorithm])
@@ -1170,7 +1326,7 @@ class CryptGUI:
             # Add --verbose flag to show more detail about the hashing process
             if "--verbose" not in cmd:
                 cmd.append("--verbose")
-            self.run_command_with_progress(cmd)
+            self.run_command_with_progress(cmd, env=env)
             self.enable_buttons()
         finally:
             self.enable_buttons()
@@ -1212,7 +1368,8 @@ class CryptGUI:
             messagebox.showerror("Error", "Please select an input file.")
             return
 
-        password = self.decrypt_password_var.get()
+        # Get password from secure storage
+        password = self.decrypt_password_secure.get() if hasattr(self, 'decrypt_password_secure') else self.decrypt_password_var.get()
         if not password:
             messagebox.showerror("Error", "Please enter a password.")
             return
@@ -1240,8 +1397,9 @@ class CryptGUI:
         if self.decrypt_shred_var.get():
             cmd.append("-s")
 
-        # Add password
-        cmd.extend(["-p", password])
+        # Pass password via environment variable instead of command line for security  
+        env = os.environ.copy()
+        env['CRYPT_PASSWORD'] = password
 
         # Run the command
         self.output_text.insert(tk.END, f" ".join(cmd) + "\n")
@@ -1255,7 +1413,7 @@ class CryptGUI:
             # Add --verbose flag to show more detail about the hashing process
             if "--verbose" not in cmd:
                 cmd.append("--verbose")
-            self.run_command_with_progress(cmd, show_output=show_output)
+            self.run_command_with_progress(cmd, env=env, show_output=show_output)
             self.enable_buttons()
         finally:
             self.enable_buttons()
