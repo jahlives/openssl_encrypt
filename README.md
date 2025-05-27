@@ -1,10 +1,14 @@
-# Version 0.9.1: Post-Quantum Cryptography Enhancements (May 2025)
-Version 0.9.1 introduces significant enhancements to post-quantum cryptography support, adding ML-KEM algorithms (512/768/1024-bit) and re-enabling HQC algorithms (128/192/256-bit) with comprehensive testing and
-  keystore integration. The release includes improved concurrent test execution safety, enhanced error handling for post-quantum operations, and fixes for XChaCha20-Poly1305 hybrid configurations. A major dependency
-  cleanup removed the problematic bcrypt library due to its incompatible internal salt system that prevented deterministic hashing with external salts. The update features extensive test coverage with over 400 new
-  integration tests for keystore operations and algorithm combinations. GitLab CI pipeline improvements now require manual publishing controls for enhanced release management. All enhancements maintain full backward
-  compatibility with existing encrypted files while significantly expanding quantum-resistant encryption options. The release demonstrates continued commitment to cryptographic security and system reliability through
-  comprehensive testing and improved dependency management.
+# Version 0.9.2 - GUI Enhancements and PQC Workflow Completion
+  Version 0.9.2 brings significant GUI improvements and completes the post-quantum cryptography workflow. The GUI now features force password checkboxes on both encrypt and decrypt tabs, allowing users to bypass password
+   validation with informed consent while maintaining security by default. Enhanced error handling replaces generic "command failed" messages with specific password validation feedback and helpful guidance including
+  character requirements and suggestions to use the password generator.
+
+  Post-quantum cryptography support is now seamless - the application automatically adds necessary key storage flags when PQC algorithms are selected, enabling complete encrypt-to-decrypt workflows for ML-KEM and HQC
+  hybrid algorithms without user intervention. The CLI gained environment variable password support (CRYPT_PASSWORD) with secure multi-pass clearing to prevent password exposure in process lists.
+
+  Subprocess handling was improved with better buffering and error capture, ensuring password validation errors and other failures are properly displayed to users. A comprehensive test suite with 11 specialized tests was
+   added to verify environment variable password handling, secure clearing functionality, and edge cases. These improvements transform the user experience from technical command-line complexity to professional-grade GUI
+  usability while maintaining the strong security foundation and expanding post-quantum cryptography readiness.
 # Secure File Encryption Tool
 A powerful tool for securely encrypting, decrypting, and shredding files with military-grade cryptography and multi-layer password hashing.
 ## History
