@@ -361,6 +361,15 @@ class CryptGUI:
         # Bind confirm password entry to secure storage
         self.encrypt_confirm_var.trace('w', self._on_encrypt_confirm_change)
 
+        # Force password checkbox
+        self.encrypt_force_password_var = tk.BooleanVar()
+        force_password_cb = ttk.Checkbutton(
+            password_group, 
+            text="Force password (bypass security validation)", 
+            variable=self.encrypt_force_password_var
+        )
+        force_password_cb.pack(anchor="w", padx=5, pady=(5, 2))
+
         # Algorithm group
         algorithm_group = ttk.LabelFrame(self.encrypt_frame, text="Encryption Algorithm", padding=5)
         algorithm_group.pack(fill="x", padx=5, pady=5)
@@ -542,6 +551,15 @@ class CryptGUI:
         
         # Bind password entry to secure storage
         self.decrypt_password_var.trace('w', self._on_decrypt_password_change)
+        
+        # Force password checkbox
+        self.decrypt_force_password_var = tk.BooleanVar()
+        force_password_cb = ttk.Checkbutton(
+            password_frame, 
+            text="Force password (bypass security validation)", 
+            variable=self.decrypt_force_password_var
+        )
+        force_password_cb.pack(anchor="w", padx=5, pady=(5, 2))
         
         # Options 
         options_frame = ttk.LabelFrame(frame, text="Options")
@@ -912,6 +930,11 @@ class CryptGUI:
         self.decrypt_password_var.set("")
         if hasattr(self, 'generated_password_var'):
             self.generated_password_var.set("")
+        # Reset force password checkboxes
+        if hasattr(self, 'encrypt_force_password_var'):
+            self.encrypt_force_password_var.set(False)
+        if hasattr(self, 'decrypt_force_password_var'):
+            self.decrypt_force_password_var.set(False)
         
         # Securely clear environment variable if we set it
         if hasattr(self, 'env_password_set') and self.env_password_set:
@@ -1013,7 +1036,7 @@ class CryptGUI:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
-                    bufsize=1,  # Line buffered
+                    bufsize=0,  # Unbuffered for immediate output
                     universal_newlines=True,
                     env=env or os.environ
                 )
@@ -1144,17 +1167,44 @@ class CryptGUI:
                         self.status_var.set(progress_text)
                         self.last_progress_text = progress_text
 
-                # Collect any stderr output
-                for line in iter(process.stderr.readline, ''):
-                    stderr_lines.append(line)
-
-                # Wait for the process to complete
-                process.wait()
+                # If the process hasn't started outputting yet, it might have failed early
+                # In this case, use communicate() to get all output
+                if not stdout_lines and process.poll() is not None:
+                    # Process finished early, likely due to an error - get all output
+                    try:
+                        stdout_remaining, stderr_remaining = process.communicate(timeout=5)
+                        if stdout_remaining:
+                            stdout_lines.append(stdout_remaining)
+                        if stderr_remaining:
+                            stderr_lines.append(stderr_remaining)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        stdout_remaining, stderr_remaining = process.communicate()
+                        if stdout_remaining:
+                            stdout_lines.append(stdout_remaining)
+                        if stderr_remaining:
+                            stderr_lines.append(stderr_remaining)
+                else:
+                    # Normal processing - collect remaining stderr
+                    for line in iter(process.stderr.readline, ''):
+                        stderr_lines.append(line)
+                    
+                    # Wait for the process to complete
+                    process.wait()
+                    
+                    # Get any final output
+                    try:
+                        remaining_stderr = process.stderr.read()
+                        if remaining_stderr:
+                            stderr_lines.append(remaining_stderr)
+                    except:
+                        pass
 
                 # Process the result
                 stdout = ''.join(stdout_lines)
                 stderr = ''.join(stderr_lines)
                 important_output = ''.join(important_output_lines)
+                
 
                 if process.returncode == 0:
                     status = "Command completed successfully"
@@ -1178,12 +1228,38 @@ class CryptGUI:
                         result = SimpleResult(process.returncode, stdout, stderr)
                         callback(result)
                 else:
-                    status = f"Error: {stderr}"
+                    # Check both stderr and stdout for error messages
+                    # Some errors (like password validation) go to stdout
+                    error_msg = ""
+                    if stderr.strip():
+                        error_msg = stderr.strip()
+                    elif stdout.strip():
+                        # If no stderr but process failed, check stdout for error messages
+                        error_msg = stdout.strip()
+                    else:
+                        error_msg = "Command failed with unknown error"
+                    
+                    status = f"Error: {error_msg}"
+                    
                     # Display error in the output text
                     self.output_text.delete(1.0, tk.END)
-                    self.output_text.insert(tk.END, f"ERROR:\n{stderr}")
-                    # Also show error dialog
-                    messagebox.showerror("Error", f"Command failed:\n{stderr}")
+                    self.output_text.insert(tk.END, f"ERROR:\n{error_msg}")
+                    
+                    # Check if this is a password validation error and provide helpful guidance
+                    if "Password strength:" in error_msg or "Password validation failed:" in error_msg:
+                        helpful_msg = (
+                            f"{error_msg}\n\n"
+                            "Password Requirements:\n"
+                            "• Use a mix of uppercase and lowercase letters\n"
+                            "• Include numbers and special characters\n"
+                            "• Make it at least 12 characters long\n"
+                            "• Avoid common passwords or patterns\n\n"
+                            "Or use the Password Generator tab to create a strong password."
+                        )
+                        messagebox.showerror("Password Validation Error", helpful_msg)
+                    else:
+                        # Show original error for other types of failures
+                        messagebox.showerror("Error", f"Command failed:\n{error_msg}")
 
                 self.status_var.set(status)
 
@@ -1288,6 +1364,10 @@ class CryptGUI:
         if encryption_algorithm in self.pqc_algorithms:
             encryption_data = self.encrypt_data_var.get()
             cmd.extend(["--encryption-data", encryption_data])
+            
+            # Add PQC key storage flags for decryption support
+            cmd.append("--pqc-store-key")
+            cmd.append("--dual-encrypt-key")
 
         # Add individual hash configuration parameters
         if hash_config:
@@ -1357,6 +1437,10 @@ class CryptGUI:
                 # Add rounds parameter if present
                 if 'rounds' in balloon_config and balloon_config['rounds'] > 1:
                     cmd.extend(["--balloon-rounds", str(balloon_config['rounds'])])
+
+        # Add force password flag if checkbox is checked
+        if self.encrypt_force_password_var.get():
+            cmd.append("--force-password")
 
         # Run the command
         self.output_text.insert(tk.END, f" ".join(cmd) + "\n")
@@ -1447,6 +1531,10 @@ class CryptGUI:
         self.env_password_set = True  # Track that we set the environment variable
         
         # Note: Don't add -p flag since we're using environment variable
+
+        # Add force password flag if checkbox is checked
+        if self.decrypt_force_password_var.get():
+            cmd.append("--force-password")
 
         # Run the command
         self.output_text.insert(tk.END, f" ".join(cmd) + "\n")
