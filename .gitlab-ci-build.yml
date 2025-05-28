@@ -81,11 +81,8 @@ docker-test:
     - job: docker-build
       artifacts: true
   before_script:
-    # Install dependencies and wait for Docker daemon
-    - apk add --no-cache curl
-    - sleep 10
-    - for i in $(seq 1 60); do docker version && break || (echo "Attempt $i failed, waiting..."; sleep 5); done
-    - docker info || (echo "Docker daemon not ready" && exit 1)
+    # Use same simple approach as docker-build
+    - until docker info; do sleep 1; done
     - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
     # Pull the built image using clean branch tag
     - docker pull $DOCKER_BRANCH_TAG
@@ -110,8 +107,8 @@ docker-test:
       - test-data/
     expire_in: 1 hour
   rules:
-    # Temporarily disabled due to Docker networking issues
-    - when: never
+    # Re-enable for testing
+    - if: $CI_COMMIT_BRANCH == "testing"
 
 # Publish Docker images to registry (for release branches/tags)
 docker-publish:
