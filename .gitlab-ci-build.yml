@@ -72,30 +72,28 @@ docker-build:
     # Log in to GitLab Container Registry
     - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
   script:
-    # Build with user-friendly primary tag (branch name) and secondary SHA tag
-    - docker build --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from $DOCKER_IMAGE_NAME:cache --cache-from $DOCKER_LATEST_TAG -f $DOCKERFILE_PATH -t $DOCKER_BRANCH_TAG -t $DOCKER_SHA_TAG $BUILD_CONTEXT
+    # Build with clean branch name as primary tag
+    - docker build --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from $DOCKER_IMAGE_NAME:cache --cache-from $DOCKER_LATEST_TAG -f $DOCKERFILE_PATH -t $DOCKER_BRANCH_TAG $BUILD_CONTEXT
     # Create additional tags for main/release branches
     - if [ "$CI_COMMIT_BRANCH" = "main" ] || [ "$CI_COMMIT_BRANCH" = "release" ]; then docker tag $DOCKER_BRANCH_TAG $DOCKER_LATEST_TAG; fi
     # Create stable and version tags for releases
     - if [ "$CI_COMMIT_TAG" ]; then docker tag $DOCKER_BRANCH_TAG $DOCKER_STABLE_TAG; docker tag $DOCKER_BRANCH_TAG $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG; fi
-    # Push primary branch tag first (most important)
-    - docker push $DOCKER_BRANCH_TAG
-    # Push secondary SHA tag
-    - docker push $DOCKER_SHA_TAG
-    # Push additional tags if they exist
+    # Push additional tags first (if they exist)
     - if [ "$CI_COMMIT_BRANCH" = "main" ] || [ "$CI_COMMIT_BRANCH" = "release" ]; then docker push $DOCKER_LATEST_TAG; fi
     - if [ "$CI_COMMIT_TAG" ]; then docker push $DOCKER_STABLE_TAG; docker push $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG; fi
-    # Update cache tag for next build
+    # Update cache tag
     - docker tag $DOCKER_BRANCH_TAG $DOCKER_IMAGE_NAME:cache
     - docker push $DOCKER_IMAGE_NAME:cache || true
+    # Push primary branch tag LAST so it shows as primary in registry
+    - docker push $DOCKER_BRANCH_TAG
+    - echo "✅ Primary image tag: $DOCKER_BRANCH_TAG"
   artifacts:
     reports:
       dotenv: docker-build.env
     expire_in: 1 hour
   after_script:
-    # Save build information for subsequent jobs (use branch tag as primary)
-    - echo "DOCKER_IMAGE_BRANCH=$DOCKER_BRANCH_TAG" >> docker-build.env
-    - echo "DOCKER_IMAGE_SHA=$DOCKER_SHA_TAG" >> docker-build.env
+    # Save build information for subsequent jobs (clean branch name only)
+    - echo "DOCKER_IMAGE_PRIMARY=$DOCKER_BRANCH_TAG" >> docker-build.env
     - echo "DOCKER_IMAGE_BUILT=true" >> docker-build.env
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
@@ -132,7 +130,7 @@ docker-test:
     - for i in $(seq 1 60); do docker version && break || (echo "Attempt $i failed, waiting..."; sleep 5); done
     - docker info || (echo "Docker daemon not ready" && exit 1)
     - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
-    # Pull the built image using branch tag (primary)
+    # Pull the built image using clean branch tag
     - docker pull $DOCKER_BRANCH_TAG
   script:
     - echo "Testing basic CLI functionality"
@@ -188,15 +186,15 @@ docker-publish:
     - if [ "$CI_COMMIT_TAG" ]; then echo "Publishing release tag $CI_COMMIT_TAG"; docker tag $DOCKER_BRANCH_TAG $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG; docker tag $DOCKER_BRANCH_TAG $DOCKER_STABLE_TAG; docker push $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG; docker push $DOCKER_STABLE_TAG; echo "Published release images"; fi
     - if [ "$CI_COMMIT_BRANCH" = "main" ]; then echo "Updating latest tag"; docker tag $DOCKER_BRANCH_TAG $DOCKER_LATEST_TAG; docker push $DOCKER_LATEST_TAG; echo "Updated latest tag"; fi
     - echo "=== Docker Image Information ==="
-    - echo "Registry $CI_REGISTRY"
-    - echo "Image $DOCKER_IMAGE_NAME"
-    - echo "Available tags"
-    - echo "- $DOCKER_BRANCH_TAG (primary - branch name)"
-    - echo "- $DOCKER_SHA_TAG (commit reference)"
-    - if [ "$CI_COMMIT_TAG" ]; then echo "- $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG (release version)"; echo "- $DOCKER_STABLE_TAG (stable release)"; fi
-    - if [ "$CI_COMMIT_BRANCH" = "main" ] || [ "$CI_COMMIT_BRANCH" = "release" ]; then echo "- $DOCKER_LATEST_TAG (latest)"; fi
+    - echo "Registry: $CI_REGISTRY"
+    - echo "Primary Image: $DOCKER_BRANCH_TAG"
+    - echo ""
+    - echo "Available tags:"
+    - echo "✅ $DOCKER_BRANCH_TAG (primary - clean branch name)"
+    - if [ "$CI_COMMIT_TAG" ]; then echo "🏷️  $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG (release version)"; echo "🔒 $DOCKER_STABLE_TAG (stable release)"; fi
+    - if [ "$CI_COMMIT_BRANCH" = "main" ] || [ "$CI_COMMIT_BRANCH" = "release" ]; then echo "⭐ $DOCKER_LATEST_TAG (latest)"; fi
+    - echo ""
     - echo "=== Usage Instructions ==="
-    - echo "# Use branch-based tag (recommended)"
     - echo "docker pull $DOCKER_BRANCH_TAG"
     - echo "docker run --rm -v \$(pwd):/data $DOCKER_BRANCH_TAG --help"
     
