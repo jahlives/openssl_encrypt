@@ -44,8 +44,8 @@ RUN ldconfig
 # Use matching version 0.12.0
 RUN pip install --no-cache-dir git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0
 
-# Copy source code for openssl_encrypt (from parent directory)
-COPY .. /build/openssl_encrypt
+# Copy source code for openssl_encrypt
+COPY . /build/openssl_encrypt
 WORKDIR /build/openssl_encrypt
 
 # Install openssl_encrypt with all dependencies

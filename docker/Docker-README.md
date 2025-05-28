@@ -13,8 +13,13 @@ This directory contains Docker configuration for running openssl_encrypt in a co
 
 ### 1. Build the Image
 
+From the project root directory:
 ```bash
-./docker-build.sh
+# Option 1: Use the build script (recommended)
+docker/docker-build.sh
+
+# Option 2: Build manually
+docker build -f docker/Dockerfile -t openssl-encrypt:latest .
 ```
 
 This script builds the Docker image with all PQC dependencies. The build process:
