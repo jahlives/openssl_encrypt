@@ -117,7 +117,7 @@ docker-test:
     - echo "Testing PQC encryption/decryption"
     - mkdir -p test-data
     - echo "Hello PQC World from GitLab CI!" > test-data/test.txt
-    - docker run --rm -v $(pwd)/test-data:/data $DOCKER_BRANCH_TAG encrypt --input test.txt --algorithm kyber768-hybrid --password "TestPassword123!" --force-password --overwrite
+    - docker run --rm -v $(pwd)/test-data:/data $DOCKER_BRANCH_TAG encrypt --input test.txt --algorithm kyber768-hybrid --password "TestPassword123!" --force-password --overwrite --dual-encrypt-key --pqc-store-key
     - test -f test-data/test.txt
     - test -s test-data/test.txt
     - echo "Docker image tests passed"
