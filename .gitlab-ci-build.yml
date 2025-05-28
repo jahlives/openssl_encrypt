@@ -43,42 +43,15 @@ docker-build:
     # Enable Docker BuildKit for better caching and multi-stage builds
     - export DOCKER_BUILDKIT=1
   script:
-    # Build the Docker image with BuildKit for optimization
-    - |
-      docker build \
-        --build-arg BUILDKIT_INLINE_CACHE=1 \
-        --cache-from $DOCKER_IMAGE_NAME:cache \
-        --cache-from $DOCKER_LATEST_TAG \
-        -f $DOCKERFILE_PATH \
-        -t $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA \
-        -t $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG \
-        $BUILD_CONTEXT
-    # Tag as latest for main/release branches
-    - |
-      if [[ "$CI_COMMIT_BRANCH" == "main" || "$CI_COMMIT_BRANCH" == "release" || "$CI_COMMIT_TAG" ]]; then
-        docker tag $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA $DOCKER_LATEST_TAG
-      fi
-    # Tag as stable for release tags
-    - |
-      if [[ "$CI_COMMIT_TAG" ]]; then
-        docker tag $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA $DOCKER_STABLE_TAG
-        docker tag $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG
-      fi
-    # Push all tags
+    - docker build --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from $DOCKER_IMAGE_NAME:cache --cache-from $DOCKER_LATEST_TAG -f $DOCKERFILE_PATH -t $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA -t $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG $BUILD_CONTEXT
+    - if [ "$CI_COMMIT_BRANCH" = "main" ] || [ "$CI_COMMIT_BRANCH" = "release" ] || [ "$CI_COMMIT_TAG" ]; then docker tag $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA $DOCKER_LATEST_TAG; fi
+    - if [ "$CI_COMMIT_TAG" ]; then docker tag $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA $DOCKER_STABLE_TAG; docker tag $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG; fi
     - docker push $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA
     - docker push $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG
-    - |
-      if [[ "$CI_COMMIT_BRANCH" == "main" || "$CI_COMMIT_BRANCH" == "release" || "$CI_COMMIT_TAG" ]]; then
-        docker push $DOCKER_LATEST_TAG
-      fi
-    - |
-      if [[ "$CI_COMMIT_TAG" ]]; then
-        docker push $DOCKER_STABLE_TAG
-        docker push $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG
-      fi
-    # Create cache layer for future builds
+    - if [ "$CI_COMMIT_BRANCH" = "main" ] || [ "$CI_COMMIT_BRANCH" = "release" ] || [ "$CI_COMMIT_TAG" ]; then docker push $DOCKER_LATEST_TAG; fi
+    - if [ "$CI_COMMIT_TAG" ]; then docker push $DOCKER_STABLE_TAG; docker push $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG; fi
     - docker tag $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA $DOCKER_IMAGE_NAME:cache
-    - docker push $DOCKER_IMAGE_NAME:cache || true  # Don't fail if cache push fails
+    - docker push $DOCKER_IMAGE_NAME:cache || true
   artifacts:
     reports:
       dotenv: docker-build.env
@@ -122,46 +95,21 @@ docker-test:
     # Pull the built image
     - docker pull $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA
   script:
-    # Test basic functionality
-    - echo "Testing basic CLI functionality..."
+    - echo "Testing basic CLI functionality"
     - docker run --rm $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA --help
-    
-    # Test PQC support
-    - echo "Testing PQC algorithm listing..."
-    - |
-      docker run --rm $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA encrypt --help | \
-      grep -E "(kyber|ml-kem|hqc)" || (echo "PQC algorithms not found in help" && exit 1)
-    
-    # Test actual encryption/decryption with PQC
-    - echo "Testing PQC encryption/decryption..."
+    - echo "Testing PQC algorithm listing"
+    - docker run --rm $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA encrypt --help | grep -E "(kyber|ml-kem|hqc)" || (echo "PQC algorithms not found in help" && exit 1)
+    - echo "Testing PQC encryption/decryption"
     - mkdir -p test-data
     - echo "Hello PQC World from GitLab CI!" > test-data/test.txt
-    - |
-      docker run --rm -v $(pwd)/test-data:/data $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA \
-      encrypt --input test.txt --algorithm kyber768-hybrid --password "TestPassword123!" --force-password --overwrite
-    
-    # Verify encrypted file was created and has content
+    - docker run --rm -v $(pwd)/test-data:/data $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA encrypt --input test.txt --algorithm kyber768-hybrid --password "TestPassword123!" --force-password --overwrite
     - test -f test-data/test.txt
     - test -s test-data/test.txt
-    - echo "✅ Docker image tests passed!"
-    
-    # Test version information
-    - echo "Testing version information..."
+    - echo "Docker image tests passed"
+    - echo "Testing version information"
     - docker run --rm $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA version || true
-    
-    # Test PQC library availability
-    - echo "Testing PQC library availability..."
-    - |
-      docker run --rm --entrypoint="" $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA \
-      python -c "
-      from openssl_encrypt.modules.pqc_liboqs import check_liboqs_support
-      available, version, algorithms = check_liboqs_support(quiet=True)
-      print(f'PQC Available: {available}')
-      print(f'Algorithms: {len(algorithms)}')
-      assert available, 'PQC support not available'
-      assert len(algorithms) > 50, f'Too few algorithms: {len(algorithms)}'
-      print('✅ PQC tests passed!')
-      "
+    - echo "Testing PQC library availability"
+    - docker run --rm --entrypoint="" $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA python -c "from openssl_encrypt.modules.pqc_liboqs import check_liboqs_support; available, version, algorithms = check_liboqs_support(quiet=True); print(f'PQC Available {available}'); print(f'Algorithms {len(algorithms)}'); assert available, 'PQC support not available'; assert len(algorithms) > 50, f'Too few algorithms {len(algorithms)}'; print('PQC tests passed')"
   artifacts:
     paths:
       - test-data/
@@ -193,56 +141,20 @@ docker-publish:
     - until docker info; do sleep 1; done
     - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
   script:
-    # Pull the tested image
     - docker pull $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA
-    
-    # Create and push release tags
-    - |
-      if [[ "$CI_COMMIT_TAG" ]]; then
-        echo "Publishing release tag: $CI_COMMIT_TAG"
-        docker tag $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG
-        docker tag $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA $DOCKER_STABLE_TAG
-        docker push $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG
-        docker push $DOCKER_STABLE_TAG
-        echo "✅ Published release images"
-      fi
-    
-    # Update latest tag for main branch
-    - |
-      if [[ "$CI_COMMIT_BRANCH" == "main" ]]; then
-        echo "Updating latest tag for main branch"
-        docker tag $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA $DOCKER_LATEST_TAG
-        docker push $DOCKER_LATEST_TAG
-        echo "✅ Updated latest tag"
-      fi
-    
-    # Generate image information
+    - if [ "$CI_COMMIT_TAG" ]; then echo "Publishing release tag $CI_COMMIT_TAG"; docker tag $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG; docker tag $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA $DOCKER_STABLE_TAG; docker push $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG; docker push $DOCKER_STABLE_TAG; echo "Published release images"; fi
+    - if [ "$CI_COMMIT_BRANCH" = "main" ]; then echo "Updating latest tag"; docker tag $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA $DOCKER_LATEST_TAG; docker push $DOCKER_LATEST_TAG; echo "Updated latest tag"; fi
     - echo "=== Docker Image Information ==="
-    - echo "Registry: $CI_REGISTRY"
-    - echo "Image: $DOCKER_IMAGE_NAME"
-    - echo "Tags available:"
-    - echo "  - $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA"
-    - echo "  - $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG"
-    - |
-      if [[ "$CI_COMMIT_TAG" ]]; then
-        echo "  - $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG"
-        echo "  - $DOCKER_STABLE_TAG"
-      fi
-    - |
-      if [[ "$CI_COMMIT_BRANCH" == "main" || "$CI_COMMIT_BRANCH" == "release" ]]; then
-        echo "  - $DOCKER_LATEST_TAG"
-      fi
-    
-    # Display usage instructions
-    - echo ""
+    - echo "Registry $CI_REGISTRY"
+    - echo "Image $DOCKER_IMAGE_NAME"
+    - echo "Tags available"
+    - echo "- $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA"
+    - echo "- $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG"
+    - if [ "$CI_COMMIT_TAG" ]; then echo "- $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG"; echo "- $DOCKER_STABLE_TAG"; fi
+    - if [ "$CI_COMMIT_BRANCH" = "main" ] || [ "$CI_COMMIT_BRANCH" = "release" ]; then echo "- $DOCKER_LATEST_TAG"; fi
     - echo "=== Usage Instructions ==="
-    - echo "Pull and run the image:"
-    - echo "  docker pull $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG"
-    - echo "  docker run --rm -v \$(pwd):/data $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG --help"
-    - echo ""
-    - echo "Encrypt a file with PQC:"
-    - echo "  docker run --rm -v \$(pwd):/data $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG \\"
-    - echo "    encrypt --input myfile.txt --algorithm kyber768-hybrid --password 'YourPassword'"
+    - echo "docker pull $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG"
+    - echo "docker run --rm -v \$(pwd):/data $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG --help"
     
   rules:
     - if: $CI_COMMIT_TAG
