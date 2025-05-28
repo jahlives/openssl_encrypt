@@ -37,6 +37,8 @@ docker-build:
     DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
     DOCKER_BUILDKIT: 0
+  # Force this job to use a dedicated runner
+  resource_group: docker-build-group
   before_script:
     # Minimal Docker setup - use localhost with host networking
     - until docker info; do sleep 1; done
@@ -77,6 +79,8 @@ docker-test:
     DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
+  # Force this job to use a different runner than docker-build
+  resource_group: docker-test-group
   needs:
     - job: docker-build
       artifacts: true
