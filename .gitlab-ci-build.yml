@@ -50,43 +50,22 @@ docker-build:
   #   - job: test
   #     optional: true
   before_script:
-    # Install dependencies and wait for Docker daemon
     - apk add --no-cache curl
-    # Wait longer for service to be ready
     - sleep 20
-    # Try multiple connection methods
     - echo "Testing Docker connectivity..."
-    - |
-      for host in "127.0.0.1" "localhost" "docker"; do
-        echo "Trying DOCKER_HOST=tcp://$host:2375"
-        export DOCKER_HOST="tcp://$host:2375"
-        if docker version 2>/dev/null; then
-          echo "✅ Success with $host"
-          break
-        else
-          echo "❌ Failed with $host"
-        fi
-      done
-    # Final verification
+    - for host in "127.0.0.1" "localhost" "docker"; do export DOCKER_HOST="tcp://$host:2375" && if docker version 2>/dev/null; then echo "Success with $host" && break; else echo "Failed with $host"; fi; done
     - docker info || (echo "Docker daemon not ready" && exit 1)
-    # Log in to GitLab Container Registry
     - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
   script:
-    # Build with clean branch name as primary tag
     - docker build --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from $DOCKER_IMAGE_NAME:cache --cache-from $DOCKER_LATEST_TAG -f $DOCKERFILE_PATH -t $DOCKER_BRANCH_TAG $BUILD_CONTEXT
-    # Create additional tags for main/release branches
     - if [ "$CI_COMMIT_BRANCH" = "main" ] || [ "$CI_COMMIT_BRANCH" = "release" ]; then docker tag $DOCKER_BRANCH_TAG $DOCKER_LATEST_TAG; fi
-    # Create stable and version tags for releases
     - if [ "$CI_COMMIT_TAG" ]; then docker tag $DOCKER_BRANCH_TAG $DOCKER_STABLE_TAG; docker tag $DOCKER_BRANCH_TAG $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG; fi
-    # Push additional tags first (if they exist)
     - if [ "$CI_COMMIT_BRANCH" = "main" ] || [ "$CI_COMMIT_BRANCH" = "release" ]; then docker push $DOCKER_LATEST_TAG; fi
     - if [ "$CI_COMMIT_TAG" ]; then docker push $DOCKER_STABLE_TAG; docker push $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG; fi
-    # Update cache tag
     - docker tag $DOCKER_BRANCH_TAG $DOCKER_IMAGE_NAME:cache
     - docker push $DOCKER_IMAGE_NAME:cache || true
-    # Push primary branch tag LAST so it shows as primary in registry
     - docker push $DOCKER_BRANCH_TAG
-    - echo "✅ Primary image tag: $DOCKER_BRANCH_TAG"
+    - echo "Primary image tag is $DOCKER_BRANCH_TAG"
   artifacts:
     reports:
       dotenv: docker-build.env
