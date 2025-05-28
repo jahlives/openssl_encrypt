@@ -25,22 +25,27 @@ variables:
 # Build the Docker image with full PQC support
 docker-build:
   stage: docker-build
-  image: docker:24-dind
+  image: docker:24-cli
   services:
     - name: docker:24-dind
-      alias: docker
+      alias: dockerdaemon
   variables:
-    # Use insecure connection for GitLab CI compatibility
-    DOCKER_HOST: tcp://docker:2375
+    # Configure Docker daemon connection
+    DOCKER_HOST: tcp://dockerdaemon:2375
     DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
+    # Disable BuildKit for compatibility
+    DOCKER_BUILDKIT: 0
   before_script:
-    # Wait for Docker daemon to be ready (with better error handling)
-    - for i in $(seq 1 30); do docker info && break || sleep 2; done
+    # Install dependencies and wait for Docker daemon
+    - apk add --no-cache curl
+    - sleep 10
+    # Test connectivity with better error handling
+    - for i in $(seq 1 60); do docker version && break || (echo "Attempt $i failed, waiting..."; sleep 5); done
+    # Verify Docker is working
+    - docker info || (echo "Docker daemon not ready" && exit 1)
     # Log in to GitLab Container Registry
     - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
-    # Enable Docker BuildKit for better caching and multi-stage builds
-    - export DOCKER_BUILDKIT=1
   script:
     - docker build --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from $DOCKER_IMAGE_NAME:cache --cache-from $DOCKER_LATEST_TAG -f $DOCKERFILE_PATH -t $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA -t $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG $BUILD_CONTEXT
     - if [ "$CI_COMMIT_BRANCH" = "main" ] || [ "$CI_COMMIT_BRANCH" = "release" ] || [ "$CI_COMMIT_TAG" ]; then docker tag $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA $DOCKER_LATEST_TAG; fi
@@ -75,20 +80,23 @@ docker-build:
 # Test the built Docker image functionality
 docker-test:
   stage: docker-test
-  image: docker:24-dind
+  image: docker:24-cli
   services:
     - name: docker:24-dind
-      alias: docker
+      alias: dockerdaemon
   variables:
-    DOCKER_HOST: tcp://docker:2375
+    DOCKER_HOST: tcp://dockerdaemon:2375
     DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
   needs:
     - job: docker-build
       artifacts: true
   before_script:
-    # Wait for Docker daemon and login
-    - for i in $(seq 1 30); do docker info && break || sleep 2; done
+    # Install dependencies and wait for Docker daemon
+    - apk add --no-cache curl
+    - sleep 10
+    - for i in $(seq 1 60); do docker version && break || (echo "Attempt $i failed, waiting..."; sleep 5); done
+    - docker info || (echo "Docker daemon not ready" && exit 1)
     - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
     # Pull the built image
     - docker pull $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA
@@ -122,12 +130,12 @@ docker-test:
 # Publish Docker images to registry (for release branches/tags)
 docker-publish:
   stage: docker-publish
-  image: docker:24-dind
+  image: docker:24-cli
   services:
     - name: docker:24-dind
-      alias: docker
+      alias: dockerdaemon
   variables:
-    DOCKER_HOST: tcp://docker:2375
+    DOCKER_HOST: tcp://dockerdaemon:2375
     DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
   needs:
@@ -135,7 +143,10 @@ docker-publish:
       artifacts: true
     - job: docker-test
   before_script:
-    - for i in $(seq 1 30); do docker info && break || sleep 2; done
+    - apk add --no-cache curl
+    - sleep 10
+    - for i in $(seq 1 60); do docker version && break || (echo "Attempt $i failed, waiting..."; sleep 5); done
+    - docker info || (echo "Docker daemon not ready" && exit 1)
     - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
   script:
     - docker pull $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA
@@ -172,16 +183,19 @@ docker-rebuild:
 # Clean up old Docker images (manual job)
 docker-cleanup:
   stage: docker-publish
-  image: docker:24-dind
+  image: docker:24-cli
   services:
     - name: docker:24-dind
-      alias: docker
+      alias: dockerdaemon
   variables:
-    DOCKER_HOST: tcp://docker:2375
+    DOCKER_HOST: tcp://dockerdaemon:2375
     DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
   before_script:
-    - for i in $(seq 1 30); do docker info && break || sleep 2; done
+    - apk add --no-cache curl
+    - sleep 10
+    - for i in $(seq 1 60); do docker version && break || (echo "Attempt $i failed, waiting..."; sleep 5); done
+    - docker info || (echo "Docker daemon not ready" && exit 1)
     - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
   script:
     # Clean up old/unused images to save space
