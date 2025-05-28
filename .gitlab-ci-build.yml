@@ -30,31 +30,16 @@ docker-build:
   stage: docker-build
   image: docker:24-cli
   services:
-    - name: docker:24-dind
-      command: ["--host=tcp://0.0.0.0:2375"]
+    - docker:24-dind
   variables:
-    # Use localhost instead of service name
-    DOCKER_HOST: tcp://127.0.0.1:2375
+    # Use host networking to avoid Docker-in-Docker networking issues
+    DOCKER_HOST: tcp://localhost:2375
     DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
-    # Disable BuildKit for compatibility
     DOCKER_BUILDKIT: 0
-    # Try to force host networking
-    FF_NETWORK_PER_BUILD: "true"
-  # Temporarily remove dependencies for testing
-  # needs:
-  #   - job: dependency-scan
-  #     optional: true
-  #   - job: code-security-scan
-  #     optional: true  
-  #   - job: test
-  #     optional: true
   before_script:
-    - apk add --no-cache curl
-    - sleep 20
-    - echo "Testing Docker connectivity..."
-    - for host in "127.0.0.1" "localhost" "docker"; do export DOCKER_HOST="tcp://$host:2375" && if docker version 2>/dev/null; then echo "Success with $host" && break; else echo "Failed with $host"; fi; done
-    - docker info || (echo "Docker daemon not ready" && exit 1)
+    # Minimal Docker setup - use localhost with host networking
+    - until docker info; do sleep 1; done
     - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
   script:
     - docker build -f $DOCKERFILE_PATH -t $DOCKER_BRANCH_TAG $BUILD_CONTEXT
@@ -73,15 +58,8 @@ docker-build:
     - echo "DOCKER_IMAGE_PRIMARY=$DOCKER_BRANCH_TAG" >> docker-build.env
     - echo "DOCKER_IMAGE_BUILT=true" >> docker-build.env
   rules:
-    # Temporarily disabled due to intermittent Docker networking issues
-    - when: never
-    # - if: $CI_COMMIT_BRANCH == "main"
-    # - if: $CI_COMMIT_BRANCH == "release"  
-    # - if: $CI_COMMIT_BRANCH == "dev"
-    # - if: $CI_COMMIT_BRANCH == "testing"
-    # - if: $CI_COMMIT_BRANCH == "nightly"
-    # - if: $CI_COMMIT_TAG
-    # - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    # Re-enable for testing with host networking approach
+    - if: $CI_COMMIT_BRANCH == "testing"
   # Retry on infrastructure failures
   retry:
     max: 2
