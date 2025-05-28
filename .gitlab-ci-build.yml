@@ -165,18 +165,14 @@ docker-publish:
     - if [ "$CI_COMMIT_TAG" ]; then echo "Publishing release tag $CI_COMMIT_TAG"; docker tag $DOCKER_BRANCH_TAG $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG; docker tag $DOCKER_BRANCH_TAG $DOCKER_STABLE_TAG; docker push $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG; docker push $DOCKER_STABLE_TAG; echo "Published release images"; fi
     - if [ "$CI_COMMIT_BRANCH" = "main" ]; then echo "Updating latest tag"; docker tag $DOCKER_BRANCH_TAG $DOCKER_LATEST_TAG; docker push $DOCKER_LATEST_TAG; echo "Updated latest tag"; fi
     - echo "=== Docker Image Information ==="
-    - echo "Registry: $CI_REGISTRY"
-    - echo "Primary Image: $DOCKER_BRANCH_TAG"
-    - echo ""
-    - echo "Available tags:"
-    - echo "✅ $DOCKER_BRANCH_TAG (primary - clean branch name)"
-    - if [ "$CI_COMMIT_TAG" ]; then echo "🏷️  $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG (release version)"; echo "🔒 $DOCKER_STABLE_TAG (stable release)"; fi
-    - if [ "$CI_COMMIT_BRANCH" = "main" ] || [ "$CI_COMMIT_BRANCH" = "release" ]; then echo "⭐ $DOCKER_LATEST_TAG (latest)"; fi
-    - echo ""
-    - echo "=== Usage Instructions ==="
-    - echo "docker pull $DOCKER_BRANCH_TAG"
-    - echo "docker run --rm -v \$(pwd):/data $DOCKER_BRANCH_TAG --help"
-    
+    - echo "Registry is $CI_REGISTRY"
+    - echo "Primary Image is $DOCKER_BRANCH_TAG"
+    - echo "Available tags"
+    - echo "Primary tag $DOCKER_BRANCH_TAG"
+    - if [ "$CI_COMMIT_TAG" ]; then echo "Release tag $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG"; echo "Stable tag $DOCKER_STABLE_TAG"; fi
+    - if [ "$CI_COMMIT_BRANCH" = "main" ] || [ "$CI_COMMIT_BRANCH" = "release" ]; then echo "Latest tag $DOCKER_LATEST_TAG"; fi
+    - echo "Usage docker pull $DOCKER_BRANCH_TAG"
+    - echo "Usage docker run --rm -v \$(pwd):/data $DOCKER_BRANCH_TAG --help"
   rules:
     - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH == "main"
