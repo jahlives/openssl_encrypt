@@ -29,24 +29,26 @@ variables:
 # It runs on a schedule (e.g., daily) to keep the image updated
 build-docker-image:
   stage: docker
-  image: docker:latest
+  image: docker:24-cli
   services:
-    - name: docker:dind
-      alias: docker
+    - name: docker:24-dind
+      alias: dockerdaemon
   variables:
-    # Try with TLS disabled first for troubleshooting
-    DOCKER_HOST: tcp://docker:2375
+    # Use the same working configuration as the main Docker jobs
+    DOCKER_HOST: tcp://dockerdaemon:2375
     DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
+    DOCKER_BUILDKIT: 0
   before_script:
-    # Create Docker context for diagnostics
-    - mkdir -p ~/.docker/cli-plugins/
-    # Explicitly set Docker host for diagnostics
-    - export DOCKER_HOST=tcp://docker:2375
-    # Diagnostics (but don't fail pipeline if they fail)
-    - docker info || true
-    - docker version || true
+    # Install dependencies and wait for Docker daemon (same as working jobs)
+    - apk add --no-cache curl
+    - sleep 10
+    # Test connectivity with better error handling
+    - for i in $(seq 1 60); do docker version && break || (echo "Attempt $i failed, waiting..."; sleep 5); done
+    # Verify Docker is working
+    - docker info || (echo "Docker daemon not ready" && exit 1)
     # Log in to GitLab registry
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
   script:
     # Test Docker connectivity before proceeding
     - docker ps
