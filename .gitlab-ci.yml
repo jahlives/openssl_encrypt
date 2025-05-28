@@ -1,5 +1,5 @@
 include:
-    - local: '.gitlab-ci-build.yml'
+  - local: '.gitlab-ci-build.yml'
 default:
   image: python:3.13-alpine
   cache:
