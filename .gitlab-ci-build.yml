@@ -1,4 +1,4 @@
-# GitLab CI Pipeline for Docker Container Building
+# GitLab CI Pipeline for Docker Container Building  
 # This file builds production-ready Docker containers with full PQC support
 
 stages:
