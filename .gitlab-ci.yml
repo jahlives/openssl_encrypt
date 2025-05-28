@@ -4,6 +4,8 @@ include:
 
 stages:
   - docker-build
+  - docker-test
+  - docker-publish
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
