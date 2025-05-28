@@ -32,8 +32,8 @@ docker-build:
   services:
     - docker:24-dind
   variables:
-    # Use host networking to avoid Docker-in-Docker networking issues
-    DOCKER_HOST: tcp://localhost:2375
+    # Use explicit Docker service hostname instead of localhost
+    DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
     DOCKER_BUILDKIT: 0
