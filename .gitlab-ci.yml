@@ -11,15 +11,14 @@ default:
     - pip install build twine PyYAML --break-system-packages
 
 stages:
-  - docker-build    # Add these three lines
+  - sync
+  - security
+  - test
+  - build
+  - docker-build    # Docker stages run after tests pass
   - docker-test     # 
   - docker-publish  #
   - docker
-  - sync
-  - security
-  - prepare
-  - test
-  - build
   - publish
 
 variables:
