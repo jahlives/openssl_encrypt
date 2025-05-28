@@ -30,11 +30,10 @@ docker-build:
   stage: docker-build
   image: docker:24-cli
   services:
-    - name: docker:24-dind
-      alias: dockerdaemon
+    - docker:24-dind
   variables:
-    # Configure Docker daemon connection
-    DOCKER_HOST: tcp://dockerdaemon:2375
+    # Configure Docker daemon connection (use default service name)
+    DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
     # Disable BuildKit for compatibility
@@ -50,8 +49,9 @@ docker-build:
   before_script:
     # Install dependencies and wait for Docker daemon
     - apk add --no-cache curl
+    # Wait for service to be fully ready
     - sleep 10
-    # Test connectivity with better error handling
+    # Test Docker connectivity with standard approach
     - for i in $(seq 1 60); do docker version && break || (echo "Attempt $i failed, waiting..."; sleep 5); done
     # Verify Docker is working
     - docker info || (echo "Docker daemon not ready" && exit 1)
@@ -103,10 +103,9 @@ docker-test:
   stage: docker-test
   image: docker:24-cli
   services:
-    - name: docker:24-dind
-      alias: dockerdaemon
+    - docker:24-dind
   variables:
-    DOCKER_HOST: tcp://dockerdaemon:2375
+    DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
   needs:
@@ -155,10 +154,9 @@ docker-publish:
   stage: docker-publish
   image: docker:24-cli
   services:
-    - name: docker:24-dind
-      alias: dockerdaemon
+    - docker:24-dind
   variables:
-    DOCKER_HOST: tcp://dockerdaemon:2375
+    DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
   needs:
@@ -210,10 +208,9 @@ docker-cleanup:
   stage: docker-publish
   image: docker:24-cli
   services:
-    - name: docker:24-dind
-      alias: dockerdaemon
+    - docker:24-dind
   variables:
-    DOCKER_HOST: tcp://dockerdaemon:2375
+    DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
   before_script:
