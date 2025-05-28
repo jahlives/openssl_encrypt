@@ -29,15 +29,14 @@ docker-build:
   services:
     - name: docker:24-dind
       alias: docker
-      command: ["--experimental"]
   variables:
-    DOCKER_HOST: tcp://docker:2376
-    DOCKER_TLS_CERTDIR: "/certs"
-    DOCKER_TLS_VERIFY: 1
-    DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+    # Use insecure connection for GitLab CI compatibility
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
   before_script:
-    # Wait for Docker daemon to be ready
-    - until docker info; do sleep 1; done
+    # Wait for Docker daemon to be ready (with better error handling)
+    - for i in $(seq 1 30); do docker info && break || sleep 2; done
     # Log in to GitLab Container Registry
     - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
     # Enable Docker BuildKit for better caching and multi-stage builds
@@ -81,16 +80,15 @@ docker-test:
     - name: docker:24-dind
       alias: docker
   variables:
-    DOCKER_HOST: tcp://docker:2376
-    DOCKER_TLS_CERTDIR: "/certs"
-    DOCKER_TLS_VERIFY: 1
-    DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
   needs:
     - job: docker-build
       artifacts: true
   before_script:
     # Wait for Docker daemon and login
-    - until docker info; do sleep 1; done
+    - for i in $(seq 1 30); do docker info && break || sleep 2; done
     - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
     # Pull the built image
     - docker pull $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA
@@ -129,16 +127,15 @@ docker-publish:
     - name: docker:24-dind
       alias: docker
   variables:
-    DOCKER_HOST: tcp://docker:2376
-    DOCKER_TLS_CERTDIR: "/certs"
-    DOCKER_TLS_VERIFY: 1
-    DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
   needs:
     - job: docker-build
       artifacts: true
     - job: docker-test
   before_script:
-    - until docker info; do sleep 1; done
+    - for i in $(seq 1 30); do docker info && break || sleep 2; done
     - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
   script:
     - docker pull $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA
@@ -180,12 +177,11 @@ docker-cleanup:
     - name: docker:24-dind
       alias: docker
   variables:
-    DOCKER_HOST: tcp://docker:2376
-    DOCKER_TLS_CERTDIR: "/certs"
-    DOCKER_TLS_VERIFY: 1
-    DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
   before_script:
-    - until docker info; do sleep 1; done
+    - for i in $(seq 1 30); do docker info && break || sleep 2; done
     - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
   script:
     # Clean up old/unused images to save space
