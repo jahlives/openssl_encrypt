@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  openssl-encrypt:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: runtime
+    image: openssl-encrypt:latest
+    container_name: openssl-encrypt
+    volumes:
+      # Mount current directory to /data for file operations
+      - .:/data
+      # Mount a persistent volume for keystore data
+      - keystore_data:/home/crypt/.openssl_encrypt
+    working_dir: /data
+    # Override entrypoint for interactive usage
+    entrypoint: ["openssl-encrypt"]
+    # Remove container after each run
+    rm: true
+    # Interactive terminal
+    stdin_open: true
+    tty: true
+
+  # Service for GUI mode (requires X11 forwarding on Linux)
+  openssl-encrypt-gui:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: runtime
+    image: openssl-encrypt:latest
+    container_name: openssl-encrypt-gui
+    volumes:
+      - .:/data
+      - keystore_data:/home/crypt/.openssl_encrypt
+      # X11 forwarding for GUI (Linux only)
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    environment:
+      - DISPLAY=${DISPLAY}
+    network_mode: host
+    working_dir: /data
+    entrypoint: ["openssl-encrypt"]
+    command: ["--gui"]
+    rm: true
+    stdin_open: true
+    tty: true
+
+volumes:
+  # Persistent volume for keystore data
+  keystore_data:
+    driver: local
