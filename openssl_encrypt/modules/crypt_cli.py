@@ -89,6 +89,147 @@ from .password_policy import (
 )
 
 
+class ReconstructedStdinStream:
+    """
+    A file-like object that replays consumed data followed by remaining stdin stream.
+    
+    This allows us to read metadata from stdin and then provide the complete
+    stream to the decryption function as if nothing was consumed.
+    """
+    
+    def __init__(self, consumed_data, separator, original_stream):
+        """
+        Initialize with consumed metadata, separator, and original stream.
+        
+        Args:
+            consumed_data (bytes): The metadata bytes that were already read
+            separator (bytes): The ':' separator byte
+            original_stream: The original stdin stream
+        """
+        self.prefix_data = consumed_data + separator  # Reconstruct: metadata + ':'
+        self.original_stream = original_stream
+        self.prefix_pos = 0
+        
+    def read(self, size=-1):
+        """Read from prefix data first, then from original stream."""
+        if self.prefix_pos < len(self.prefix_data):
+            # Still have prefix data to return
+            if size == -1:
+                # Read all remaining prefix data
+                result = self.prefix_data[self.prefix_pos:]
+                self.prefix_pos = len(self.prefix_data)
+                
+                # Also read all from original stream
+                remaining = self.original_stream.read()
+                return result + remaining
+            else:
+                # Read up to 'size' bytes from prefix
+                available = len(self.prefix_data) - self.prefix_pos
+                if size <= available:
+                    # Can satisfy entirely from prefix
+                    result = self.prefix_data[self.prefix_pos:self.prefix_pos + size]
+                    self.prefix_pos += size
+                    return result
+                else:
+                    # Need to read from both prefix and stream
+                    prefix_part = self.prefix_data[self.prefix_pos:]
+                    self.prefix_pos = len(self.prefix_data)
+                    
+                    remaining_needed = size - len(prefix_part)
+                    stream_part = self.original_stream.read(remaining_needed)
+                    return prefix_part + stream_part
+        else:
+            # Prefix exhausted, read from original stream
+            return self.original_stream.read(size)
+    
+    def __enter__(self):
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # Don't close the original stream as it might be sys.stdin
+        pass
+
+
+class StdinMetadataExtractor:
+    """
+    Extracts metadata from stdin without consuming the entire stream.
+    
+    Reads byte-by-byte until the ':' separator is found, then parses
+    only the metadata portion and creates a reconstructed stream.
+    """
+    
+    def __init__(self, stdin_stream):
+        """Initialize with stdin stream."""
+        self.stdin_stream = stdin_stream
+        
+    def extract_metadata_and_create_stream(self):
+        """
+        Extract metadata from stdin and create a reconstructed stream.
+        
+        Returns:
+            tuple: (metadata_dict, reconstructed_stream)
+                metadata_dict: Parsed metadata with algorithm info
+                reconstructed_stream: Stream that replays full encrypted data
+                
+        Raises:
+            ValueError: If metadata format is invalid
+        """
+        # Read metadata bytes until separator
+        metadata_bytes = self._read_until_separator()
+        
+        # Parse metadata
+        metadata = self._parse_metadata(metadata_bytes)
+        
+        # Create reconstructed stream
+        reconstructed_stream = ReconstructedStdinStream(
+            metadata_bytes, b':', self.stdin_stream
+        )
+        
+        return metadata, reconstructed_stream
+    
+    def _read_until_separator(self):
+        """Read stdin byte-by-byte until ':' separator is found."""
+        metadata_bytes = bytearray()
+        
+        while True:
+            byte = self.stdin_stream.read(1)
+            if not byte:  # EOF
+                raise ValueError("Invalid encrypted file format: no separator found")
+            if byte == b':':
+                break
+            metadata_bytes.extend(byte)
+        
+        return bytes(metadata_bytes)
+    
+    def _parse_metadata(self, metadata_b64):
+        """Parse base64 metadata and extract algorithm information."""
+        try:
+            # Decode base64 metadata
+            metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
+            metadata = json.loads(metadata_json)
+            
+            # Extract algorithm info based on format version
+            format_version = metadata.get("format_version", 1)
+            
+            if format_version in [4, 5]:
+                encryption = metadata.get("encryption", {})
+                algorithm = encryption.get("algorithm", "fernet")
+                encryption_data = encryption.get("encryption_data", "aes-gcm")
+            else:
+                algorithm = metadata.get("algorithm", "fernet")
+                encryption_data = "aes-gcm"  # Default for older formats
+            
+            return {
+                "format_version": format_version,
+                "algorithm": algorithm,
+                "encryption_data": encryption_data,
+                "metadata": metadata,
+            }
+            
+        except Exception as e:
+            raise ValueError(f"Invalid metadata format: {str(e)}")
+
+
 def clear_password_environment():
     """Securely clear password from environment variables with multiple overwrites"""
     try:
@@ -2679,44 +2820,106 @@ def main():
 
         elif args.action == "decrypt":
             # Extract metadata early to check for deprecated algorithms
-            try:
-                file_metadata = extract_file_metadata(args.input)
-                algorithm = file_metadata["algorithm"]
-                encryption_data = file_metadata.get("encryption_data", "aes-gcm")
+            stdin_temp_file = None
+            if args.input == "/dev/stdin":
+                # Use precise metadata extraction for stdin
+                try:
+                    extractor = StdinMetadataExtractor(sys.stdin.buffer)
+                    file_metadata, stdin_stream = extractor.extract_metadata_and_create_stream()
+                    algorithm = file_metadata["algorithm"]
+                    encryption_data = file_metadata.get("encryption_data", "aes-gcm")
 
-                # Check if main algorithm is deprecated and issue warning
-                if is_deprecated(algorithm):
-                    replacement = get_recommended_replacement(algorithm)
-                    warn_deprecated_algorithm(algorithm, "file decryption")
-                    if (
-                        not args.quiet
-                        and replacement
-                        and (args.verbose or not algorithm.startswith(("kyber", "ml-kem")))
-                    ):
-                        print(
-                            f"Warning: The algorithm '{algorithm}' used in this file is deprecated."
-                        )
-                        print(f"Consider re-encrypting with '{replacement}' for better security.")
+                    # Check and warn about deprecated algorithms for stdin
+                    if is_deprecated(algorithm):
+                        replacement = get_recommended_replacement(algorithm)
+                        warn_deprecated_algorithm(algorithm, "stdin decryption")
+                        if (
+                            not args.quiet
+                            and replacement
+                            and (args.verbose or not algorithm.startswith(("kyber", "ml-kem")))
+                        ):
+                            print(
+                                f"Warning: The algorithm '{algorithm}' used in this file is deprecated."
+                            )
+                            print(f"Consider re-encrypting with '{replacement}' for better security.")
 
-                # Check if data encryption algorithm is deprecated for PQC
-                if algorithm.endswith("-hybrid") and is_deprecated(encryption_data):
-                    data_replacement = get_recommended_replacement(encryption_data)
-                    warn_deprecated_algorithm(encryption_data, "PQC data decryption")
-                    if (
-                        not args.quiet
-                        and data_replacement
-                        and (args.verbose or not encryption_data.startswith(("kyber", "ml-kem")))
-                    ):
-                        print(
-                            f"Warning: The data encryption algorithm '{encryption_data}' used in this file is deprecated."
-                        )
-                        print(
-                            f"Consider re-encrypting with '{data_replacement}' for better security."
-                        )
-            except Exception as e:
-                # If we can't read metadata, continue with decryption (it will fail with proper error)
-                if args.verbose:
-                    print(f"Warning: Could not check file for deprecated algorithms: {e}")
+                    # Check if data encryption algorithm is deprecated for PQC
+                    if algorithm.endswith("-hybrid") and is_deprecated(encryption_data):
+                        data_replacement = get_recommended_replacement(encryption_data)
+                        warn_deprecated_algorithm(encryption_data, "PQC stdin decryption")
+                        if (
+                            not args.quiet
+                            and data_replacement
+                            and (args.verbose or not encryption_data.startswith(("kyber", "ml-kem")))
+                        ):
+                            print(
+                                f"Warning: The data encryption algorithm '{encryption_data}' used in this file is deprecated."
+                            )
+                            print(
+                                f"Consider re-encrypting with '{data_replacement}' for better security."
+                            )
+                    
+                    # Immediately convert reconstructed stream to temp file to avoid multiple reads
+                    import tempfile
+                    stdin_temp_file = tempfile.NamedTemporaryFile(delete=False)
+                    temp_files_to_cleanup.append(stdin_temp_file.name)
+                    
+                    # Copy all data from reconstructed stream to temp file
+                    while True:
+                        chunk = stdin_stream.read(8192)
+                        if not chunk:
+                            break
+                        stdin_temp_file.write(chunk)
+                    stdin_temp_file.close()
+                    
+                    # Update args.input to point to the temp file
+                    args.input = stdin_temp_file.name
+                    
+                except Exception as e:
+                    # If we can't extract metadata from stdin, continue with decryption
+                    if args.verbose:
+                        print(f"Warning: Could not check stdin for deprecated algorithms: {e}")
+                    stdin_temp_file = None
+            else:
+                # Use file-based metadata extraction for regular files
+                try:
+                    file_metadata = extract_file_metadata(args.input)
+                    algorithm = file_metadata["algorithm"]
+                    encryption_data = file_metadata.get("encryption_data", "aes-gcm")
+
+                    # Check if main algorithm is deprecated and issue warning
+                    if is_deprecated(algorithm):
+                        replacement = get_recommended_replacement(algorithm)
+                        warn_deprecated_algorithm(algorithm, "file decryption")
+                        if (
+                            not args.quiet
+                            and replacement
+                            and (args.verbose or not algorithm.startswith(("kyber", "ml-kem")))
+                        ):
+                            print(
+                                f"Warning: The algorithm '{algorithm}' used in this file is deprecated."
+                            )
+                            print(f"Consider re-encrypting with '{replacement}' for better security.")
+
+                    # Check if data encryption algorithm is deprecated for PQC
+                    if algorithm.endswith("-hybrid") and is_deprecated(encryption_data):
+                        data_replacement = get_recommended_replacement(encryption_data)
+                        warn_deprecated_algorithm(encryption_data, "PQC data decryption")
+                        if (
+                            not args.quiet
+                            and data_replacement
+                            and (args.verbose or not encryption_data.startswith(("kyber", "ml-kem")))
+                        ):
+                            print(
+                                f"Warning: The data encryption algorithm '{encryption_data}' used in this file is deprecated."
+                            )
+                            print(
+                                f"Consider re-encrypting with '{data_replacement}' for better security."
+                            )
+                except Exception as e:
+                    # If we can't read metadata, continue with decryption (it will fail with proper error)
+                    if args.verbose:
+                        print(f"Warning: Could not check file for deprecated algorithms: {e}")
 
             if args.overwrite:
                 output_file = args.input
