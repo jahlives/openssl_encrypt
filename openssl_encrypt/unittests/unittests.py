@@ -2604,13 +2604,15 @@ class TestBufferOverflowProtection(unittest.TestCase):
         encrypt_source = getsource(encrypt_file)
         decrypt_source = getsource(decrypt_file)
         
-        # Check encrypt_file includes special handling
-        self.assertIn("'/dev/stdin'", encrypt_source, "Missing special case handling for /dev/stdin in encrypt_file")
+        # Check encrypt_file includes special handling (accept both single and double quotes)
+        self.assertTrue('"/dev/stdin"' in encrypt_source or "'/dev/stdin'" in encrypt_source, 
+                       "Missing special case handling for /dev/stdin in encrypt_file")
         self.assertIn("/proc/", encrypt_source, "Missing special case handling for /proc/ files in encrypt_file")
         self.assertIn("/dev/", encrypt_source, "Missing special case handling for /dev/ files in encrypt_file")
         
-        # Check decrypt_file includes special handling 
-        self.assertIn("'/dev/stdin'", decrypt_source, "Missing special case handling for /dev/stdin in decrypt_file")
+        # Check decrypt_file includes special handling (accept both single and double quotes)
+        self.assertTrue('"/dev/stdin"' in decrypt_source or "'/dev/stdin'" in decrypt_source,
+                       "Missing special case handling for /dev/stdin in decrypt_file")
         self.assertIn("/proc/", decrypt_source, "Missing special case handling for /proc/ files in decrypt_file")
         self.assertIn("/dev/", decrypt_source, "Missing special case handling for /dev/ files in decrypt_file")
 
@@ -5807,6 +5809,282 @@ class TestSecurityEnhancements(unittest.TestCase):
         result = memory_secure_memzero(test_buffer)
         self.assertTrue(result)
         self.assertTrue(verify_memory_zeroed(test_buffer))
+
+
+class TestAlgorithmWarnings(unittest.TestCase):
+    """Tests for algorithm deprecation warning system."""
+    
+    def setUp(self):
+        """Set up test environment."""
+        # Import the warnings module
+        from modules.algorithm_warnings import (
+            AlgorithmWarningConfig, warn_deprecated_algorithm,
+            is_deprecated, get_recommended_replacement,
+            DeprecationLevel, DEPRECATED_ALGORITHMS
+        )
+        self.AlgorithmWarningConfig = AlgorithmWarningConfig
+        self.warn_deprecated_algorithm = warn_deprecated_algorithm
+        self.is_deprecated = is_deprecated
+        self.get_recommended_replacement = get_recommended_replacement
+        self.DeprecationLevel = DeprecationLevel
+        self.DEPRECATED_ALGORITHMS = DEPRECATED_ALGORITHMS
+        
+        # Reset warning config to defaults before each test
+        self.AlgorithmWarningConfig.reset()
+        
+        # Set up log capture
+        self.log_capture = LogCapture()
+        logger = logging.getLogger('openssl_encrypt.modules.algorithm_warnings')
+        logger.addHandler(self.log_capture)
+        logger.setLevel(logging.DEBUG)
+        
+        # Capture warnings
+        self.warnings_capture = []
+        self.original_warn = warnings.warn
+        warnings.warn = self._capture_warning
+        
+    def tearDown(self):
+        """Clean up after test."""
+        # Restore original warning function
+        warnings.warn = self.original_warn
+        
+        # Reset warning config
+        self.AlgorithmWarningConfig.reset()
+        
+        # Remove log handler
+        logger = logging.getLogger('openssl_encrypt.modules.algorithm_warnings')
+        logger.removeHandler(self.log_capture)
+    
+    def _capture_warning(self, message, category=None, stacklevel=1, source=None):
+        """Capture warnings for testing."""
+        self.warnings_capture.append({
+            'message': str(message),
+            'category': category,
+            'stacklevel': stacklevel
+        })
+    
+    def test_is_deprecated_function(self):
+        """Test the is_deprecated function."""
+        # Test known deprecated algorithms
+        self.assertTrue(self.is_deprecated('kyber512-hybrid'))
+        self.assertTrue(self.is_deprecated('Kyber512'))
+        self.assertTrue(self.is_deprecated('aes-ocb3'))
+        self.assertTrue(self.is_deprecated('camellia'))
+        
+        # Test non-deprecated algorithms
+        self.assertFalse(self.is_deprecated('ml-kem-512-hybrid'))
+        self.assertFalse(self.is_deprecated('aes-gcm'))
+        self.assertFalse(self.is_deprecated('fernet'))
+        
+        # Test case insensitive and normalization
+        self.assertTrue(self.is_deprecated('KYBER512-HYBRID'))
+        self.assertTrue(self.is_deprecated('kyber_512_hybrid'))
+    
+    def test_get_recommended_replacement(self):
+        """Test the get_recommended_replacement function."""
+        # Test known replacements
+        self.assertEqual(self.get_recommended_replacement('kyber512-hybrid'), 'ml-kem-512-hybrid')
+        self.assertEqual(self.get_recommended_replacement('Kyber512'), 'ML-KEM-512')
+        self.assertEqual(self.get_recommended_replacement('aes-ocb3'), 'aes-gcm or aes-gcm-siv')
+        
+        # Test non-deprecated algorithm
+        self.assertIsNone(self.get_recommended_replacement('aes-gcm'))
+        
+        # Test case normalization
+        self.assertEqual(self.get_recommended_replacement('KYBER768-HYBRID'), 'ml-kem-768-hybrid')
+    
+    def test_warning_configuration(self):
+        """Test AlgorithmWarningConfig class."""
+        # Test default configuration
+        self.assertTrue(self.AlgorithmWarningConfig._show_warnings)
+        self.assertEqual(self.AlgorithmWarningConfig._min_warning_level, self.DeprecationLevel.INFO)
+        self.assertTrue(self.AlgorithmWarningConfig._log_warnings)
+        self.assertTrue(self.AlgorithmWarningConfig._show_once)
+        
+        # Test configuration changes
+        self.AlgorithmWarningConfig.configure(
+            show_warnings=False,
+            min_level=self.DeprecationLevel.WARNING,
+            log_warnings=False,
+            show_once=False,
+            verbose_mode=True
+        )
+        
+        self.assertFalse(self.AlgorithmWarningConfig._show_warnings)
+        self.assertEqual(self.AlgorithmWarningConfig._min_warning_level, self.DeprecationLevel.WARNING)
+        self.assertFalse(self.AlgorithmWarningConfig._log_warnings)
+        self.assertFalse(self.AlgorithmWarningConfig._show_once)
+        self.assertTrue(self.AlgorithmWarningConfig._verbose_mode)
+        
+        # Test reset
+        self.AlgorithmWarningConfig.reset()
+        self.assertTrue(self.AlgorithmWarningConfig._show_warnings)
+        self.assertEqual(self.AlgorithmWarningConfig._min_warning_level, self.DeprecationLevel.INFO)
+    
+    def test_should_warn_logic(self):
+        """Test the should_warn method logic."""
+        # Test with warnings enabled
+        self.assertTrue(self.AlgorithmWarningConfig.should_warn('test-algo', self.DeprecationLevel.INFO))
+        self.assertTrue(self.AlgorithmWarningConfig.should_warn('test-algo', self.DeprecationLevel.WARNING))
+        
+        # Test with higher minimum level
+        self.AlgorithmWarningConfig.configure(min_level=self.DeprecationLevel.WARNING)
+        self.assertFalse(self.AlgorithmWarningConfig.should_warn('test-algo', self.DeprecationLevel.INFO))
+        self.assertTrue(self.AlgorithmWarningConfig.should_warn('test-algo', self.DeprecationLevel.WARNING))
+        
+        # Test show_once behavior
+        self.AlgorithmWarningConfig.reset()
+        self.assertTrue(self.AlgorithmWarningConfig.should_warn('test-algo', self.DeprecationLevel.INFO))
+        self.AlgorithmWarningConfig.mark_warned('test-algo')
+        self.assertFalse(self.AlgorithmWarningConfig.should_warn('test-algo', self.DeprecationLevel.INFO))
+        
+        # Test with warnings disabled
+        self.AlgorithmWarningConfig.configure(show_warnings=False)
+        self.assertFalse(self.AlgorithmWarningConfig.should_warn('other-algo', self.DeprecationLevel.WARNING))
+    
+    def test_warn_deprecated_algorithm_basic(self):
+        """Test basic warning functionality."""
+        # Reset warnings capture
+        self.warnings_capture = []
+        
+        # Enable verbose mode to ensure warnings are shown during tests
+        self.AlgorithmWarningConfig.configure(verbose_mode=True)
+        
+        # Test warning for deprecated algorithm
+        self.warn_deprecated_algorithm('kyber512-hybrid', 'test context')
+        
+        # Check that warning was issued
+        self.assertEqual(len(self.warnings_capture), 1)
+        warning = self.warnings_capture[0]
+        self.assertIn('kyber512-hybrid', warning['message'])
+        self.assertIn('test context', warning['message'])
+        self.assertIn('ml-kem-512-hybrid', warning['message'])
+        
+        # Test that warning is not repeated (show_once=True)
+        self.warnings_capture = []
+        self.warn_deprecated_algorithm('kyber512-hybrid', 'test context')
+        self.assertEqual(len(self.warnings_capture), 0)
+    
+    def test_warn_deprecated_algorithm_levels(self):
+        """Test warning levels and categories."""
+        self.warnings_capture = []
+        
+        # Enable verbose mode to ensure warnings are shown during tests
+        self.AlgorithmWarningConfig.configure(verbose_mode=True)
+        
+        # Test INFO level warning
+        self.warn_deprecated_algorithm('kyber512-hybrid')  # INFO level
+        self.assertEqual(len(self.warnings_capture), 1)
+        self.assertEqual(self.warnings_capture[0]['category'], UserWarning)
+        
+        # Test WARNING level
+        self.warnings_capture = []
+        self.warn_deprecated_algorithm('aes-ocb3')  # WARNING level
+        self.assertEqual(len(self.warnings_capture), 1)
+        self.assertEqual(self.warnings_capture[0]['category'], DeprecationWarning)
+        
+        # Test DEPRECATED level
+        self.warnings_capture = []
+        self.warn_deprecated_algorithm('camellia')  # DEPRECATED level
+        self.assertEqual(len(self.warnings_capture), 1)
+        self.assertEqual(self.warnings_capture[0]['category'], DeprecationWarning)
+    
+    def test_warn_deprecated_algorithm_configuration_effects(self):
+        """Test how configuration affects warning behavior."""
+        self.warnings_capture = []
+        
+        # Test with warnings disabled
+        self.AlgorithmWarningConfig.configure(show_warnings=False)
+        self.warn_deprecated_algorithm('kyber512-hybrid')
+        self.assertEqual(len(self.warnings_capture), 0)
+        
+        # Test with higher minimum level
+        self.AlgorithmWarningConfig.configure(show_warnings=True, min_level=self.DeprecationLevel.WARNING)
+        self.warn_deprecated_algorithm('kyber512-hybrid')  # INFO level, should be filtered
+        self.assertEqual(len(self.warnings_capture), 0)
+        
+        self.warn_deprecated_algorithm('aes-ocb3')  # WARNING level, should show
+        self.assertEqual(len(self.warnings_capture), 1)
+    
+    def test_non_deprecated_algorithm_warning(self):
+        """Test that non-deprecated algorithms don't trigger warnings."""
+        self.warnings_capture = []
+        
+        # Test with algorithms that are not in the deprecated list
+        self.warn_deprecated_algorithm('aes-gcm')
+        self.warn_deprecated_algorithm('ml-kem-512-hybrid')
+        self.warn_deprecated_algorithm('fernet')
+        
+        # No warnings should be issued
+        self.assertEqual(len(self.warnings_capture), 0)
+    
+    def test_cli_integration_encrypt(self):
+        """Test that warnings are properly integrated in CLI encrypt operations."""
+        # This is a basic integration test - the actual CLI warning logic
+        # is tested through the specific warning functions above
+        
+        # Test that the warning functions are properly imported in CLI
+        from modules.crypt_cli import is_deprecated, warn_deprecated_algorithm, get_recommended_replacement
+        
+        # These should be the same functions we tested above
+        self.assertTrue(is_deprecated('kyber512-hybrid'))
+        self.assertEqual(get_recommended_replacement('kyber512-hybrid'), 'ml-kem-512-hybrid')
+        
+        # Test that warning can be called (without actual CLI execution)
+        self.warnings_capture = []
+        # Enable verbose mode to ensure warnings are shown during tests
+        self.AlgorithmWarningConfig.configure(verbose_mode=True)
+        warn_deprecated_algorithm('kyber768-hybrid', 'command-line encryption')
+        self.assertEqual(len(self.warnings_capture), 1)
+        self.assertIn('command-line encryption', self.warnings_capture[0]['message'])
+    
+    def test_extract_file_metadata_integration(self):
+        """Test that extract_file_metadata works for warning system."""
+        from modules.crypt_core import extract_file_metadata, encrypt_file, EncryptionAlgorithm
+        
+        # Create a test file with a deprecated algorithm
+        test_input = "Test content for metadata extraction"
+        
+        with tempfile.NamedTemporaryFile(mode='w', delete=False) as temp_input:
+            temp_input.write(test_input)
+            temp_input_path = temp_input.name
+        
+        with tempfile.NamedTemporaryFile(delete=False) as temp_output:
+            temp_output_path = temp_output.name
+        
+        try:
+            # Encrypt with a deprecated algorithm - use Kyber512 which is deprecated
+            password = b"test_password_123"
+            hash_config = {
+                'sha512': 0, 'sha256': 0, 'sha3_256': 0, 'sha3_512': 0,
+                'blake2b': 0, 'shake256': 0, 'whirlpool': 0, 'pbkdf2_iterations': 100000,
+                'scrypt': {'enabled': False, 'n': 0, 'r': 0, 'p': 0, 'rounds': 0},
+                'argon2': {'enabled': False, 'time_cost': 0, 'memory_cost': 0, 'parallelism': 0, 'hash_len': 0, 'type': 0, 'rounds': 0},
+                'balloon': {'enabled': False, 'time_cost': 0, 'space_cost': 0, 'parallelism': 0, 'rounds': 0}
+            }
+            encrypt_file(
+                temp_input_path,
+                temp_output_path,
+                password,
+                algorithm=EncryptionAlgorithm.KYBER512_HYBRID,  # Deprecated
+                hash_config=hash_config,
+                quiet=True
+            )
+            
+            # Extract metadata
+            metadata = extract_file_metadata(temp_output_path)
+            
+            # Verify we can detect the deprecated algorithm
+            self.assertEqual(metadata['algorithm'], 'kyber512-hybrid')
+            self.assertTrue(self.is_deprecated(metadata['algorithm']))
+            self.assertEqual(self.get_recommended_replacement(metadata['algorithm']), 'ml-kem-512-hybrid')
+            
+        finally:
+            # Clean up
+            if os.path.exists(temp_input_path):
+                os.unlink(temp_input_path)
+            if os.path.exists(temp_output_path):
+                os.unlink(temp_output_path)
 
 
 class TestConstantTimeCompare(unittest.TestCase):

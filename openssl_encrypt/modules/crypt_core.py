@@ -1,4 +1,4 @@
-#\!/usr/bin/env python3
+# \!/usr/bin/env python3
 """
 Secure File Encryption Tool - Core Module
 
@@ -39,8 +39,11 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.ciphers.aead import (
-    AESGCM, ChaCha20Poly1305, AESSIV, 
-    AESGCMSIV, AESOCB3
+    AESGCM,
+    ChaCha20Poly1305,
+    AESSIV,
+    AESGCMSIV,
+    AESOCB3,
 )
 import cryptography.exceptions
 
@@ -49,87 +52,106 @@ from .crypt_errors import ValidationError, EncryptionError, DecryptionError
 from .crypt_errors import AuthenticationError, InternalError, KeyDerivationError
 from .crypt_errors import secure_encrypt_error_handler, secure_decrypt_error_handler
 from .crypt_errors import secure_key_derivation_error_handler, secure_error_handler
-from .crypt_errors import constant_time_compare  # Error handling imports are at the top of file
+from .crypt_errors import (
+    constant_time_compare,
+)  # Error handling imports are at the top of file
 
 # Import algorithm warning system
-from .algorithm_warnings import warn_deprecated_algorithm, is_deprecated, get_recommended_replacement
+from .algorithm_warnings import (
+    warn_deprecated_algorithm,
+    is_deprecated,
+    get_recommended_replacement,
+)
 
 # Define type variable for generic function
-F = TypeVar('F', bound=Callable[..., Any])
+F = TypeVar("F", bound=Callable[..., Any])
 
-def deprecated_algorithm(algorithm: str, context: Optional[str] = None) -> Callable[[F], F]:
+
+def deprecated_algorithm(
+    algorithm: str, context: Optional[str] = None
+) -> Callable[[F], F]:
     """
     Decorator to mark functions using deprecated algorithms.
-    
+
     Args:
         algorithm: The algorithm name that is deprecated
         context: Optional context information about how the algorithm is being used
-        
+
     Returns:
         Decorator function
     """
+
     def decorator(func: F) -> F:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Issue deprecation warning
-            warn_deprecated_algorithm(algorithm, context or func.__name__, show_stack=False)
+            warn_deprecated_algorithm(
+                algorithm, context or func.__name__, show_stack=False
+            )
             # Call the original function
             return func(*args, **kwargs)
+
         return cast(F, wrapper)
+
     return decorator
+
 
 class XChaCha20Poly1305:
     def __init__(self, key):
         # Validate key before use
         if key is None:
             raise ValidationError("Key cannot be None")
-        
+
         # Validate key length (should be 32 bytes for ChaCha20-Poly1305)
         try:
             key_length = len(key)
             if key_length != 32:
-                raise ValidationError(f"Invalid key length: {key_length}. XChaCha20Poly1305 requires a 32-byte key")
-                
+                raise ValidationError(
+                    f"Invalid key length: {key_length}. XChaCha20Poly1305 requires a 32-byte key"
+                )
+
             self.key = key
             self.cipher = ChaCha20Poly1305(key)
         except Exception as e:
             # Convert any other errors to validation errors
             raise ValidationError("Invalid key material", original_exception=e)
-    
+
     def _process_nonce(self, nonce):
         """
         Process and validate nonce to ensure proper length and format.
         The cryptography library's ChaCha20Poly1305 expects 12-byte nonces,
         while XChaCha20Poly1305 is designed for 24-byte nonces.
-        
+
         We use the HChaCha20 construction to derive a ChaCha20 key and nonce
         from the XChaCha20 nonce, following the XChaCha20 specification.
-        
+
         Args:
             nonce (bytes): Input nonce
-            
+
         Returns:
             bytes: Properly formatted 12-byte nonce for use with the ChaCha20Poly1305 library
-            
+
         Raises:
             ValidationError: If nonce validation fails
         """
         # Import required libraries just once at the method level
         from cryptography.hazmat.primitives.kdf.hkdf import HKDF
         from cryptography.hazmat.primitives import hashes
-        
+
         # Validate nonce
         if nonce is None:
             raise ValidationError("Nonce cannot be None")
-            
+
         # Ensure nonce is bytes
         if not isinstance(nonce, (bytes, bytearray, memoryview)):
-            raise ValidationError(f"Nonce must be bytes-like object, got {type(nonce).__name__}")
-            
+            raise ValidationError(
+                f"Nonce must be bytes-like object, got {type(nonce).__name__}"
+            )
+
         # Check if nonce is empty
         if len(nonce) == 0:
             raise ValidationError("Nonce cannot be empty")
-            
+
         # Process based on length
         if len(nonce) == 24:
             # For XChaCha20Poly1305, use a proper derivation algorithm
@@ -137,7 +159,7 @@ class XChaCha20Poly1305:
             # First, use the HChaCha20 function to mix the key with the first 16 bytes
             # Since we don't have direct access to HChaCha20, we'll use HKDF with BLAKE2b
             # to derive a secure 12-byte nonce from the original 24-byte nonce
-            
+
             # Use the first 16 bytes of the nonce as the HKDF salt (mimicking HChaCha20 input)
             # and the remaining 8 bytes as the info parameter to ensure uniqueness
             hkdf = HKDF(
@@ -145,9 +167,9 @@ class XChaCha20Poly1305:
                 length=12,  # We need 12 bytes for ChaCha20Poly1305
                 salt=nonce[:16],
                 info=nonce[16:],
-                backend=default_backend()
+                backend=default_backend(),
             )
-            
+
             # Use the original key as input key material
             truncated_nonce = hkdf.derive(self.key)
         elif len(nonce) == 12:
@@ -156,54 +178,58 @@ class XChaCha20Poly1305:
         else:
             # For any other size, use a strong deterministic process to create a 12-byte nonce
             # Use HKDF with SHA256 for better security than simple truncation
-            
+
             # Use the nonce as the info parameter to ensure uniqueness
             hkdf = HKDF(
                 algorithm=hashes.SHA256(),  # Use SHA256 which is universally available
                 length=12,  # We need 12 bytes for ChaCha20Poly1305
                 salt=None,
                 info=nonce,
-                backend=default_backend()
+                backend=default_backend(),
             )
-            
+
             # Use the original key as input key material
             truncated_nonce = hkdf.derive(self.key)
-            
+
         # Final validation of the processed nonce
         if len(truncated_nonce) != 12:
-            raise ValidationError(f"Failed to generate 12-byte nonce, got {len(truncated_nonce)} bytes")
-            
+            raise ValidationError(
+                f"Failed to generate 12-byte nonce, got {len(truncated_nonce)} bytes"
+            )
+
         return truncated_nonce
-    
+
     def _validate_data(self, data):
         """
         Validate data to be encrypted/decrypted.
-        
+
         Args:
             data: Data to be validated
-            
+
         Raises:
             ValidationError: If data validation fails
         """
         if data is None:
             raise ValidationError("Data cannot be None")
-            
+
         if not isinstance(data, (bytes, bytearray, memoryview)):
-            raise ValidationError(f"Data must be bytes-like object, got {type(data).__name__}")
-    
+            raise ValidationError(
+                f"Data must be bytes-like object, got {type(data).__name__}"
+            )
+
     @secure_encrypt_error_handler
     def encrypt(self, nonce, data, associated_data=None):
         """
         Encrypt data using XChaCha20Poly1305.
-        
+
         Args:
             nonce (bytes): Nonce for encryption (ideally 24 bytes for XChaCha20Poly1305)
             data (bytes): Data to encrypt
             associated_data (bytes, optional): Associated data for AEAD
-            
+
         Returns:
             bytes: Encrypted data
-            
+
         Raises:
             ValidationError: For invalid inputs
             EncryptionError: If encryption operation fails
@@ -211,31 +237,35 @@ class XChaCha20Poly1305:
         # Validate inputs
         self._validate_data(data)
         truncated_nonce = self._process_nonce(nonce)
-        
+
         # Process associated data
-        if associated_data is not None and not isinstance(associated_data, (bytes, bytearray, memoryview)):
-            raise ValidationError(f"Associated data must be bytes-like object, got {type(associated_data).__name__}")
-        
+        if associated_data is not None and not isinstance(
+            associated_data, (bytes, bytearray, memoryview)
+        ):
+            raise ValidationError(
+                f"Associated data must be bytes-like object, got {type(associated_data).__name__}"
+            )
+
         # Encrypt using the underlying cipher
         try:
             return self.cipher.encrypt(truncated_nonce, data, associated_data)
         except Exception as e:
             # Specific error message will be standardized by the decorator
             raise EncryptionError(original_exception=e)
-    
+
     @secure_decrypt_error_handler
     def decrypt(self, nonce, data, associated_data=None):
         """
         Decrypt data using XChaCha20Poly1305.
-        
+
         Args:
             nonce (bytes): Nonce used for encryption (ideally 24 bytes for XChaCha20Poly1305)
             data (bytes): Data to decrypt
             associated_data (bytes, optional): Associated data for AEAD
-            
+
         Returns:
             bytes: Decrypted data
-            
+
         Raises:
             ValidationError: For invalid inputs
             AuthenticationError: If integrity verification fails
@@ -244,15 +274,19 @@ class XChaCha20Poly1305:
         # Validate inputs
         self._validate_data(data)
         truncated_nonce = self._process_nonce(nonce)
-        
+
         # Process associated data
-        if associated_data is not None and not isinstance(associated_data, (bytes, bytearray, memoryview)):
-            raise ValidationError(f"Associated data must be bytes-like object, got {type(associated_data).__name__}")
-        
+        if associated_data is not None and not isinstance(
+            associated_data, (bytes, bytearray, memoryview)
+        ):
+            raise ValidationError(
+                f"Associated data must be bytes-like object, got {type(associated_data).__name__}"
+            )
+
         # Minimum ciphertext size check (AEAD tag is at least 16 bytes)
         if len(data) < 16:
             raise ValidationError("Ciphertext too short - missing authentication tag")
-            
+
         # Decrypt using the underlying cipher
         try:
             return self.cipher.decrypt(truncated_nonce, data, associated_data)
@@ -262,30 +296,34 @@ class XChaCha20Poly1305:
         except Exception as e:
             # Specific error message will be standardized by the decorator
             raise DecryptionError(original_exception=e)
+
+
 import cryptography.exceptions
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 try:
     from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
+
     SCRYPT_AVAILABLE = True
 except ImportError:
     SCRYPT_AVAILABLE = False
 
-from .secure_memory import (
-    SecureBytes,
-    secure_memzero
-)
+from .secure_memory import SecureBytes, secure_memzero
 
 # Try to import optional dependencies
 try:
     import sys
+
     python_version = sys.version_info
-    
+
     # First try to setup Whirlpool if needed (with special handling for Python 3.13+)
     try:
         from openssl_encrypt.modules.setup_whirlpool import setup_whirlpool
+
         if python_version.major == 3 and python_version.minor >= 13:
-            logger.debug(f"Setting up Whirlpool for Python {python_version.major}.{python_version.minor}")
+            logger.debug(
+                f"Setting up Whirlpool for Python {python_version.major}.{python_version.minor}"
+            )
         setup_result = setup_whirlpool()
     except ImportError:
         setup_result = False
@@ -293,11 +331,13 @@ try:
     # Try importing whirlpool directly
     try:
         import whirlpool
+
         WHIRLPOOL_AVAILABLE = True
     except ImportError:
         # Fall back to older pywhirlpool package
         try:
             import pywhirlpool
+
             WHIRLPOOL_AVAILABLE = True
         except ImportError:
             # Try Python 3.13 specific module if applicable
@@ -309,25 +349,29 @@ try:
                     from importlib.machinery import ExtensionFileLoader
                     import glob
                     import os
-                    
+
                     # Find potential modules in site packages
                     site_packages = site.getsitepackages()
                     user_site = site.getusersitepackages()
-                    site_packages.append(user_site if isinstance(user_site, str) else user_site[0])
-                    
+                    site_packages.append(
+                        user_site if isinstance(user_site, str) else user_site[0]
+                    )
+
                     for site_pkg in site_packages:
                         if not os.path.exists(site_pkg):
                             continue
-                        
+
                         # Look for py313 specific modules
                         pattern = os.path.join(site_pkg, "whirlpool*py313*.so")
                         py313_modules = glob.glob(pattern)
-                        
+
                         if py313_modules:
                             module_path = py313_modules[0]
                             # Try loading the module directly
                             loader = ExtensionFileLoader("whirlpool", module_path)
-                            spec = importlib.util.spec_from_file_location("whirlpool", module_path, loader=loader)
+                            spec = importlib.util.spec_from_file_location(
+                                "whirlpool", module_path, loader=loader
+                            )
                             whirlpool = importlib.util.module_from_spec(spec)
                             spec.loader.exec_module(whirlpool)
                             WHIRLPOOL_AVAILABLE = True
@@ -339,17 +383,19 @@ try:
 
     if not WHIRLPOOL_AVAILABLE and setup_result:
         # If setup succeeded but import failed, try one more time after clearing cache
-        if 'whirlpool' in sys.modules:
-            del sys.modules['whirlpool']
+        if "whirlpool" in sys.modules:
+            del sys.modules["whirlpool"]
         try:
             import whirlpool
+
             WHIRLPOOL_AVAILABLE = True
         except ImportError:
             WHIRLPOOL_AVAILABLE = False
-            
+
 except Exception as e:
     import logging
     import sys
+
     python_version = sys.version_info
     logging.getLogger(__name__).warning(
         f"Error importing Whirlpool module in Python {python_version.major}.{python_version.minor}: {e}"
@@ -365,32 +411,29 @@ try:
 
     # Map Argon2 type string to the actual type constant
     ARGON2_TYPE_MAP = {
-        'id': Type.ID,  # Argon2id (recommended)
-        'i': Type.I,  # Argon2i
-        'd': Type.D  # Argon2d
+        "id": Type.ID,  # Argon2id (recommended)
+        "i": Type.I,  # Argon2i
+        "d": Type.D,  # Argon2d
     }
 
     # Map for integer representation (JSON serializable)
     ARGON2_TYPE_INT_MAP = {
-        'id': 2,  # Type.ID.value
-        'i': 1,  # Type.I.value
-        'd': 0  # Type.D.value
+        "id": 2,  # Type.ID.value
+        "i": 1,  # Type.I.value
+        "d": 0,  # Type.D.value
     }
 
     # Reverse mapping from int to Type
-    ARGON2_INT_TO_TYPE_MAP = {
-        2: Type.ID,
-        1: Type.I,
-        0: Type.D
-    }
+    ARGON2_INT_TO_TYPE_MAP = {2: Type.ID, 1: Type.I, 0: Type.D}
 except ImportError:
     ARGON2_AVAILABLE = False
-    ARGON2_TYPE_MAP = {'id': None, 'i': None, 'd': None}
-    ARGON2_TYPE_INT_MAP = {'id': 2, 'i': 1, 'd': 0}  # Default integer values
+    ARGON2_TYPE_MAP = {"id": None, "i": None, "d": None}
+    ARGON2_TYPE_INT_MAP = {"id": 2, "i": 1, "d": 0}  # Default integer values
     ARGON2_INT_TO_TYPE_MAP = {}
 
 try:
     from .balloon import balloon_m
+
     BALLOON_AVAILABLE = True
 except ImportError:
     BALLOON_AVAILABLE = False
@@ -398,16 +441,18 @@ except ImportError:
 # Try to import post-quantum cryptography module
 try:
     from .pqc import PQCipher, check_pqc_support, PQCAlgorithm
+
     # Always initialize quietly during module import to prevent unwanted output
-    PQC_AVAILABLE, PQC_VERSION, PQC_ALGORITHMS = check_pqc_support(quiet=True) 
-    
+    PQC_AVAILABLE, PQC_VERSION, PQC_ALGORITHMS = check_pqc_support(quiet=True)
+
     # Try to import extended PQC adapter for additional algorithms
     try:
         from .pqc_adapter import (
             ExtendedPQCipher,
             get_available_pq_algorithms,
-            LIBOQS_AVAILABLE
+            LIBOQS_AVAILABLE,
         )
+
         # Use the extended algorithms list if available
         if LIBOQS_AVAILABLE:
             PQC_ALGORITHMS = get_available_pq_algorithms(quiet=True)
@@ -440,29 +485,29 @@ class EncryptionAlgorithm(Enum):
     KYBER512_HYBRID = "kyber512-hybrid"  # Deprecated: use ML_KEM_512_HYBRID instead
     KYBER768_HYBRID = "kyber768-hybrid"  # Deprecated: use ML_KEM_768_HYBRID instead
     KYBER1024_HYBRID = "kyber1024-hybrid"  # Deprecated: use ML_KEM_1024_HYBRID instead
-    
+
     # ML-KEM with ChaCha20-Poly1305 instead of AES-GCM
     ML_KEM_512_CHACHA20 = "ml-kem-512-chacha20"
     ML_KEM_768_CHACHA20 = "ml-kem-768-chacha20"
     ML_KEM_1024_CHACHA20 = "ml-kem-1024-chacha20"
-    
+
     # Additional post-quantum algorithms (via liboqs)
     # HQC hybrid modes (NIST selection March 2025)
     HQC_128_HYBRID = "hqc-128-hybrid"
     HQC_192_HYBRID = "hqc-192-hybrid"
     HQC_256_HYBRID = "hqc-256-hybrid"
-    
+
     @classmethod
-    def from_string(cls, algorithm_str: str) -> 'EncryptionAlgorithm':
+    def from_string(cls, algorithm_str: str) -> "EncryptionAlgorithm":
         """
         Get EncryptionAlgorithm enum from string representation.
-        
+
         Args:
             algorithm_str: String representation of the algorithm
-            
+
         Returns:
             EncryptionAlgorithm: The corresponding enum value
-            
+
         Raises:
             ValueError: If algorithm string is not recognized
         """
@@ -471,7 +516,7 @@ class EncryptionAlgorithm(Enum):
             replacement = get_recommended_replacement(algorithm_str)
             context = f"algorithm selection '{algorithm_str}'"
             warn_deprecated_algorithm(algorithm_str, context)
-        
+
         # First try exact match (case-sensitive)
         try:
             return cls(algorithm_str)
@@ -483,36 +528,38 @@ class EncryptionAlgorithm(Enum):
                         warnings.warn(
                             f"Algorithm '{algorithm_str}' was matched case-insensitively to '{alg.value}'. "
                             f"Please use the exact case for consistency.",
-                            UserWarning
+                            UserWarning,
                         )
                     return alg
-                    
+
             # Try normalized match (without hyphens or underscores)
-            normalized_input = algorithm_str.lower().replace('-', '').replace('_', '')
+            normalized_input = algorithm_str.lower().replace("-", "").replace("_", "")
             for alg in cls:
-                normalized_enum = alg.value.lower().replace('-', '').replace('_', '')
+                normalized_enum = alg.value.lower().replace("-", "").replace("_", "")
                 if normalized_enum == normalized_input:
                     warnings.warn(
                         f"Algorithm '{algorithm_str}' was matched after normalization to '{alg.value}'. "
                         f"Please use the standard format for consistency.",
-                        UserWarning
+                        UserWarning,
                     )
                     return alg
-        
+
         # If we get here, no match was found
         raise ValueError(f"Unknown encryption algorithm: {algorithm_str}")
-    
+
     @classmethod
-    def get_recommended_algorithms(cls, security_level: int = 3) -> list['EncryptionAlgorithm']:
+    def get_recommended_algorithms(
+        cls, security_level: int = 3
+    ) -> list["EncryptionAlgorithm"]:
         """
         Get a list of recommended algorithms based on security level.
-        
+
         Args:
             security_level: Desired security level (1, 3, or 5)
                             1 = AES-128 equivalent (ML-KEM-512)
                             3 = AES-192 equivalent (ML-KEM-768) - recommended minimum
                             5 = AES-256 equivalent (ML-KEM-1024) - highest security
-        
+
         Returns:
             List of recommended EncryptionAlgorithm values
         """
@@ -521,9 +568,9 @@ class EncryptionAlgorithm(Enum):
             cls.AES_GCM,
             cls.CHACHA20_POLY1305,
             cls.XCHACHA20_POLY1305,
-            cls.AES_GCM_SIV
+            cls.AES_GCM_SIV,
         ]
-        
+
         # Add PQC algorithms based on security level
         if security_level >= 5:
             recommended.append(cls.ML_KEM_1024_HYBRID)
@@ -531,13 +578,13 @@ class EncryptionAlgorithm(Enum):
             recommended.append(cls.ML_KEM_768_HYBRID)
         else:
             recommended.append(cls.ML_KEM_512_HYBRID)
-            
+
         return recommended
-    
+
     def is_deprecated(self) -> bool:
         """Check if this algorithm is deprecated."""
         return is_deprecated(self.value)
-    
+
     def get_replacement(self) -> Optional[str]:
         """Get the recommended replacement if this algorithm is deprecated."""
         if self.is_deprecated():
@@ -548,124 +595,136 @@ class EncryptionAlgorithm(Enum):
 class KeyStretch:
     key_stretch = False
     hash_stretch = False
-    kind_action = 'encrypt'
+    kind_action = "encrypt"
 
 
 class CamelliaCipher:
     def __init__(self, key):
         # Issue deprecation warning for Camellia algorithm
         warn_deprecated_algorithm("camellia", "CamelliaCipher.__init__")
-        
+
         try:
             self.key = SecureBytes(key)
             # Derive a separate HMAC key from the provided key to prevent key reuse
-            self.hmac_key = SecureBytes(hashlib.sha256(bytes(self.key) + b"hmac_key").digest())
+            self.hmac_key = SecureBytes(
+                hashlib.sha256(bytes(self.key) + b"hmac_key").digest()
+            )
             # Detect if we're in test mode
-            self.test_mode = os.environ.get('PYTEST_CURRENT_TEST') is not None
+            self.test_mode = os.environ.get("PYTEST_CURRENT_TEST") is not None
         except Exception as e:
-            raise ValidationError("Invalid key material for Camellia cipher", original_exception=e)
-    
+            raise ValidationError(
+                "Invalid key material for Camellia cipher", original_exception=e
+            )
+
     @secure_encrypt_error_handler
     def encrypt(self, nonce, data, associated_data=None):
         """
         Encrypt data using Camellia cipher with authentication.
-        
+
         Args:
             nonce (bytes): Initialization vector for CBC mode
             data (bytes): Data to encrypt
             associated_data (bytes, optional): Additional data to authenticate
-            
+
         Returns:
             bytes: Encrypted data with authentication tag
-            
+
         Raises:
             ValidationError: For invalid inputs
             EncryptionError: If encryption operation fails
         """
         if nonce is None or len(nonce) != 16:
-            raise ValidationError(f"Camellia requires a 16-byte IV/nonce, got {len(nonce) if nonce else 'None'}")
-            
+            raise ValidationError(
+                f"Camellia requires a 16-byte IV/nonce, got {len(nonce) if nonce else 'None'}"
+            )
+
         if data is None:
             raise ValidationError("Data cannot be None")
-        
+
         padded_data = None
         try:
             # Use authenticated encryption with encrypt-then-MAC pattern
             # First encrypt with CBC mode
             cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
             encryptor = cipher.encryptor()
-            
+
             # Pad data first - use standard cryptography library implementation
             padder = padding.PKCS7(algorithms.Camellia.block_size).padder()
             padded_data = padder.update(data) + padder.finalize()
-            
+
             # Encrypt the padded data
             ciphertext = encryptor.update(padded_data) + encryptor.finalize()
-            
+
             # In test mode, don't add HMAC for backward compatibility
             if self.test_mode:
                 return ciphertext
-                
+
             # Add authentication with HMAC
             # Include nonce and associated data in HMAC computation for context binding
             hmac_data = nonce + ciphertext
             if associated_data:
                 hmac_data += associated_data
-                
+
             # Compute HMAC on the ciphertext for integrity protection
             hmac_obj = hmac.new(bytes(self.hmac_key), hmac_data, hashlib.sha256)
             tag = hmac_obj.digest()
-            
+
             # Return ciphertext with authentication tag
             return ciphertext + tag
-            
+
         except Exception as e:
             raise EncryptionError("Camellia encryption failed", original_exception=e)
         finally:
             # Always clean up sensitive data
             if padded_data is not None:
                 secure_memzero(padded_data)
-    
+
     @secure_decrypt_error_handler
     def decrypt(self, nonce, data, associated_data=None):
         """
         Decrypt data using Camellia cipher with authentication verification.
-        
+
         Args:
             nonce (bytes): Initialization vector used for encryption
             data (bytes): Encrypted data with authentication tag
             associated_data (bytes, optional): Additional authenticated data
-            
+
         Returns:
             bytes: Decrypted data
-            
+
         Raises:
             ValidationError: For invalid inputs
             AuthenticationError: If integrity verification fails
             DecryptionError: If decryption fails for other reasons
         """
         if nonce is None or len(nonce) != 16:
-            raise ValidationError(f"Camellia requires a 16-byte IV/nonce, got {len(nonce) if nonce else 'None'}")
-            
+            raise ValidationError(
+                f"Camellia requires a 16-byte IV/nonce, got {len(nonce) if nonce else 'None'}"
+            )
+
         if data is None:
             raise ValidationError("Encrypted data cannot be None")
-        
+
         padded_data = None
         try:
             # Import the constant-time functions from our secure operations module
-            from .secure_ops import constant_time_compare, constant_time_pkcs7_unpad, verify_mac
-            
+            from .secure_ops import (
+                constant_time_compare,
+                constant_time_pkcs7_unpad,
+                verify_mac,
+            )
+
             # In test mode, process without HMAC for backward compatibility
             if self.test_mode:
                 cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
                 decryptor = cipher.decryptor()
                 padded_data = decryptor.update(data) + decryptor.finalize()
-                
+
                 # For test mode, use standard cryptography library for unpadding
                 # This is for backward compatibility and ensures tests pass
                 unpadder = padding.PKCS7(algorithms.Camellia.block_size).unpadder()
                 return unpadder.update(padded_data) + unpadder.finalize()
-            
+
             # Production mode with HMAC authentication
             # Split ciphertext and authentication tag
             tag_size = 32  # SHA-256 HMAC produces 32 bytes
@@ -674,54 +733,54 @@ class CamelliaCipher:
                 cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
                 decryptor = cipher.decryptor()
                 padded_data = decryptor.update(data) + decryptor.finalize()
-                
+
                 # Use constant-time unpadding
                 unpadded_data, padding_valid = constant_time_pkcs7_unpad(
                     padded_data, algorithms.Camellia.block_size
                 )
-                
+
                 if not padding_valid:
                     raise DecryptionError("Invalid padding in decrypted data")
-                    
+
                 return unpadded_data
-                
+
             # Normal case with HMAC
             ciphertext = data[:-tag_size]
             received_tag = data[-tag_size:]
-            
+
             # Verify HMAC first (encrypt-then-MAC pattern)
             hmac_data = nonce + ciphertext
             if associated_data:
                 hmac_data += associated_data
-                
+
             # Compute expected HMAC
             hmac_obj = hmac.new(bytes(self.hmac_key), hmac_data, hashlib.sha256)
             expected_tag = hmac_obj.digest()
-            
+
             # Always decrypt data regardless of tag verification outcome
             # to ensure constant-time operation
             cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
             decryptor = cipher.decryptor()
             padded_data = decryptor.update(ciphertext) + decryptor.finalize()
-            
+
             # Use constant-time unpadding
             unpadded_data, padding_valid = constant_time_pkcs7_unpad(
                 padded_data, algorithms.Camellia.block_size
             )
-            
+
             # After decryption, verify HMAC using constant-time MAC verification
             # This ensures timing sidechannels don't leak whether the tag
             # is valid or the padding is correct
             if not verify_mac(expected_tag, received_tag, associated_data):
                 # Standardized authentication error
                 raise AuthenticationError("Message authentication failed")
-                
+
             # Only after HMAC verification do we check padding validity
             if not padding_valid:
                 raise DecryptionError("Invalid padding in decrypted data")
-                
+
             return unpadded_data
-                
+
         except (ValidationError, AuthenticationError, DecryptionError):
             # Re-raise known error types
             raise
@@ -738,18 +797,18 @@ def string_entropy(password: str) -> float:
     """
     Calculate password entropy in bits using a timing-resistant approach.
     Higher entropy = more random = stronger password.
-    
+
     This function uses a constant-time approach to prevent timing attacks
     that could leak information about password composition.
     """
     # Convert to string if not already
     password = str(password)
-    
+
     # Always check all character sets regardless of content
     # This makes the function run in constant time relative to character types
     char_sets = [0, 0, 0, 0]  # Use integers instead of booleans for constant-time ops
     char_nums = [26, 26, 10, 32]  # lowercase, uppercase, digits, symbols
-    
+
     # Constant-time character type detection
     for char in password:
         # Update each set with a constant-time operation
@@ -758,32 +817,32 @@ def string_entropy(password: str) -> float:
         char_sets[1] |= int(char.isupper())
         char_sets[2] |= int(char.isdigit())
         char_sets[3] |= int(not char.isalnum() and char.isascii())
-    
+
     # Calculate character set size in a constant-time way
     char_amount = 0
     for i in range(4):
         # Multiply by 0 or 1 instead of conditional addition
         char_amount += char_nums[i] * char_sets[i]
-    
+
     # Ensure we have at least one character type
     char_amount = max(char_amount, 1)
-    
+
     # Calculate unique characters in constant time
     # by creating a fixed-size array of character counts
     char_counts = [0] * 128  # ASCII range
     for char in password:
         if ord(char) < 128:  # Handle only ASCII for simplicity
             char_counts[ord(char)] = 1
-    
+
     unique_chars = sum(char_counts)
-    
+
     # Calculate and return entropy
     return math.log2(char_amount) * unique_chars
 
 
 def add_timing_jitter(func):
     """
-    Adds cryptographically secure random timing jitter to function execution 
+    Adds cryptographically secure random timing jitter to function execution
     to help prevent timing attacks.
 
     Args:
@@ -828,22 +887,24 @@ def check_argon2_support():
         # access
         try:
             import importlib.metadata
-            version = importlib.metadata.version('argon2-cffi')
+
+            version = importlib.metadata.version("argon2-cffi")
         except (ImportError, importlib.metadata.PackageNotFoundError):
             # Fall back to old method for older Python versions or if metadata
             # not found
             import argon2
-            version = getattr(argon2, '__version__', 'unknown')
+
+            version = getattr(argon2, "__version__", "unknown")
 
         # Check which variants are supported
         supported_types = []
-        if hasattr(argon2.low_level, 'Type'):
-            if hasattr(argon2.low_level.Type, 'ID'):
-                supported_types.append('id')
-            if hasattr(argon2.low_level.Type, 'I'):
-                supported_types.append('i')
-            if hasattr(argon2.low_level.Type, 'D'):
-                supported_types.append('d')
+        if hasattr(argon2.low_level, "Type"):
+            if hasattr(argon2.low_level.Type, "ID"):
+                supported_types.append("id")
+            if hasattr(argon2.low_level.Type, "I"):
+                supported_types.append("i")
+            if hasattr(argon2.low_level.Type, "D"):
+                supported_types.append("d")
 
         return True, version, supported_types
     except Exception:
@@ -907,29 +968,31 @@ def calculate_hash(data):
 
     Returns:
         str: Hexadecimal hash string
-        
+
     Raises:
         ValidationError: If data is invalid
         InternalError: If hashing operation fails
     """
     if data is None:
         raise ValidationError("Cannot calculate hash of None")
-        
+
     if not isinstance(data, (bytes, bytearray, memoryview)):
-        raise ValidationError(f"Data must be bytes-like object, got {type(data).__name__}")
-        
+        raise ValidationError(
+            f"Data must be bytes-like object, got {type(data).__name__}"
+        )
+
     try:
         # Add a small timing jitter to prevent timing analysis
         jitter_ms = secrets.randbelow(5) + 1  # 1-5ms
         time.sleep(jitter_ms / 1000.0)
-        
+
         # Calculate the hash
         hash_result = hashlib.sha256(data).hexdigest()
-        
+
         # Add another small jitter after calculation
         jitter_ms = secrets.randbelow(5) + 1  # 1-5ms
         time.sleep(jitter_ms / 1000.0)
-        
+
         return hash_result
     except Exception as e:
         raise InternalError("Hash calculation failed", original_exception=e)
@@ -962,9 +1025,9 @@ def show_animated_progress(message, stop_event, quiet=False):
         # Create a pulsing bar to show activity
         bar_length = 30
         position = int((elapsed % 3) * 10)  # Moves every 0.1 seconds
-        bar = ' ' * position + '█████' + ' ' * (bar_length - 5 - position)
+        bar = " " * position + "█████" + " " * (bar_length - 5 - position)
 
-        print(f"\r{message}: [{bar}] {animation[idx]} {time_str}", end='', flush=True)
+        print(f"\r{message}: [{bar}] {animation[idx]} {time_str}", end="", flush=True)
         idx = (idx + 1) % len(animation)
         time.sleep(0.1)
 
@@ -990,8 +1053,7 @@ def with_progress_bar(func, message, *args, quiet=False, **kwargs):
     if not quiet:
         # Start progress thread
         progress_thread = threading.Thread(
-            target=show_animated_progress,
-            args=(message, stop_event, quiet)
+            target=show_animated_progress, args=(message, stop_event, quiet)
         )
         progress_thread.daemon = True
         progress_thread.start()
@@ -1008,7 +1070,7 @@ def with_progress_bar(func, message, *args, quiet=False, **kwargs):
             # Set a timeout to prevent hanging
             progress_thread.join(timeout=1.0)
             # Clear the current line
-            print(f"\r{' ' * 80}\r", end='', flush=True)
+            print(f"\r{' ' * 80}\r", end="", flush=True)
             print(f"{message} completed in {duration:.2f} seconds")
 
         return result
@@ -1019,24 +1081,19 @@ def with_progress_bar(func, message, *args, quiet=False, **kwargs):
             # Set a timeout to prevent hanging
             progress_thread.join(timeout=1.0)
             # Clear the current line
-            print(f"\r{' ' * 80}\r", end='', flush=True)
+            print(f"\r{' ' * 80}\r", end="", flush=True)
         raise e
 
 
 @add_timing_jitter
-def multi_hash_password(
-        password,
-        salt,
-        hash_config,
-        quiet=False,
-        progress=False):
+def multi_hash_password(password, salt, hash_config, quiet=False, progress=False):
     """
     Apply multiple rounds of different hash algorithms to a password.
 
     This function implements a layered approach to password hashing, allowing
     multiple different algorithms to be applied in sequence. This provides defense
     in depth against weaknesses in any single algorithm.
-    
+
     Supports both flat (v3) and nested (v4) hash_config formats.
 
     Supported algorithms:
@@ -1062,11 +1119,11 @@ def multi_hash_password(
     """
     # If hash_config is provided but doesn't specify type, use 'id' (Argon2id)
     # as default
-    if hash_config and 'type' in hash_config:
+    if hash_config and "type" in hash_config:
         # Strip 'argon2' prefix if present
-        hash_config['type'] = hash_config['type'].replace('argon2', '')
+        hash_config["type"] = hash_config["type"].replace("argon2", "")
     elif hash_config:
-        hash_config['type'] = 'id'  # Default to Argon2id
+        hash_config["type"] = "id"  # Default to Argon2id
 
     # Function to display progress for iterative hashing
     def show_progress(algorithm, current, total):
@@ -1084,9 +1141,13 @@ def multi_hash_password(
         percent = (current / total) * 100
         bar_length = 30
         filled_length = int(bar_length * current // total)
-        bar = '█' * filled_length + ' ' * (bar_length - filled_length)
+        bar = "█" * filled_length + " " * (bar_length - filled_length)
 
-        print(f"\r{algorithm} hashing: [{bar}] {percent:.1f}% ({current}/{total})",end='',flush=True)
+        print(
+            f"\r{algorithm} hashing: [{bar}] {percent:.1f}% ({current}/{total})",
+            end="",
+            flush=True,
+        )
 
         if current == total:
             print()  # New line after completion
@@ -1094,24 +1155,29 @@ def multi_hash_password(
     stretch_hash = False
     try:
         from .secure_memory import secure_buffer, secure_memcpy, secure_memzero
+
         # Use secure memory approach
         with secure_buffer(len(password) + len(salt), zero=False) as hashed:
             # Initialize the secure buffer with password + salt
             secure_memcpy(hashed, password + salt)
 
-                    # Extract the correct hash configuration based on format (v3 vs v4)
-            if hash_config and 'derivation_config' in hash_config and 'hash_config' in hash_config['derivation_config']:
+            # Extract the correct hash configuration based on format (v3 vs v4)
+            if (
+                hash_config
+                and "derivation_config" in hash_config
+                and "hash_config" in hash_config["derivation_config"]
+            ):
                 # Version 4 structure
-                hash_params = hash_config['derivation_config']['hash_config']
+                hash_params = hash_config["derivation_config"]["hash_config"]
             else:
                 # Original format (flat version 3)
                 hash_params = hash_config
-                
+
             # Apply each hash algorithm in sequence (only if iterations > 0)
             for algorithm, params in hash_params.items():
-                if algorithm == 'sha512' and params > 0:
+                if algorithm == "sha512" and params > 0:
                     if not quiet and not progress:
-                        print(f"Applying {params} rounds of SHA-512", end= " ")
+                        print(f"Applying {params} rounds of SHA-512", end=" ")
                     elif not quiet:
                         print(f"Applying {params} rounds of SHA-512")
 
@@ -1126,7 +1192,7 @@ def multi_hash_password(
                         if not quiet and not progress:
                             print("✅")
 
-                elif algorithm == 'sha256' and params > 0:
+                elif algorithm == "sha256" and params > 0:
                     if not quiet and not progress:
                         print(f"Applying {params} rounds of SHA-256", end=" ")
                     elif not quiet:
@@ -1143,7 +1209,7 @@ def multi_hash_password(
                         if not quiet and not progress:
                             print("✅")
 
-                elif algorithm == 'sha3_256' and params > 0:
+                elif algorithm == "sha3_256" and params > 0:
                     if not quiet and not progress:
                         print(f"Applying {params} rounds of SHA3-256", end=" ")
                     elif not quiet:
@@ -1159,7 +1225,7 @@ def multi_hash_password(
                         if not quiet and not progress:
                             print("✅")
 
-                elif algorithm == 'sha3_512' and params > 0:
+                elif algorithm == "sha3_512" and params > 0:
                     if not quiet and not progress:
                         print(f"Applying {params} rounds of SHA3-512", end=" ")
                     elif not quiet:
@@ -1174,8 +1240,8 @@ def multi_hash_password(
                             KeyStretch.hash_stretch = True
                         if not quiet and not progress:
                             print("✅")
-                
-                elif algorithm == 'blake2b' and params > 0:
+
+                elif algorithm == "blake2b" and params > 0:
                     if not quiet and not progress:
                         print(f"Applying {params} rounds of BLAKE2b", end=" ")
                     elif not quiet:
@@ -1185,17 +1251,21 @@ def multi_hash_password(
                         for i in range(params):
                             # Use salt for key to enhance security
                             # Note: key parameter is optional and limited to 64 bytes
-                            key_material = hashlib.sha256(salt + str(i).encode()).digest()
+                            key_material = hashlib.sha256(
+                                salt + str(i).encode()
+                            ).digest()
                             # Create a personalized BLAKE2b instance for each iteration
-                            result = hashlib.blake2b(hashed, key=key_material[:32], digest_size=64).digest()
+                            result = hashlib.blake2b(
+                                hashed, key=key_material[:32], digest_size=64
+                            ).digest()
                             secure_memcpy(hash_buffer, result)
                             secure_memcpy(hashed, hash_buffer)
                             show_progress("BLAKE2b", i + 1, params)
                             KeyStretch.hash_stretch = True
                         if not quiet and not progress:
                             print("✅")
-                
-                elif algorithm == 'shake256' and params > 0:
+
+                elif algorithm == "shake256" and params > 0:
                     if not quiet and not progress:
                         print(f"Applying {params} rounds of SHAKE-256", end=" ")
                     elif not quiet:
@@ -1206,16 +1276,18 @@ def multi_hash_password(
                         for i in range(params):
                             # Each round combines the current hash with a round-specific salt
                             # to prevent length extension attacks
-                            round_material = hashlib.sha256(salt + str(i).encode()).digest()
-                            
+                            round_material = hashlib.sha256(
+                                salt + str(i).encode()
+                            ).digest()
+
                             # SHAKE-256 is an extendable-output function (XOF) that can produce
                             # any desired output length, which makes it very versatile
                             shake = hashlib.shake_256()
                             shake.update(hashed + round_material)
-                            
+
                             # Get 64 bytes (512 bits) of output for strong security
                             result = shake.digest(64)
-                            
+
                             secure_memcpy(hash_buffer, result)
                             secure_memcpy(hashed, hash_buffer)
                             show_progress("SHAKE-256", i + 1, params)
@@ -1223,7 +1295,7 @@ def multi_hash_password(
                         if not quiet and not progress:
                             print("✅")
 
-                elif algorithm == 'whirlpool' and params > 0:
+                elif algorithm == "whirlpool" and params > 0:
                     if not quiet and WHIRLPOOL_AVAILABLE and not progress:
                         print(f"Applying {params} rounds of Whirlpool", end=" ")
                     elif not quiet and not WHIRLPOOL_AVAILABLE:
@@ -1235,16 +1307,20 @@ def multi_hash_password(
                             for i in range(params):
                                 try:
                                     # Check which module is available and use its interface
-                                    if 'whirlpool' in globals():
+                                    if "whirlpool" in globals():
                                         # Modern whirlpool package or our wrapper
                                         result = whirlpool.new(bytes(hashed)).digest()
-                                    elif 'pywhirlpool' in globals():
+                                    elif "pywhirlpool" in globals():
                                         # Original pywhirlpool package
-                                        result = pywhirlpool.whirlpool(bytes(hashed)).digest()
+                                        result = pywhirlpool.whirlpool(
+                                            bytes(hashed)
+                                        ).digest()
                                     else:
                                         # This shouldn't happen since WHIRLPOOL_AVAILABLE is True
-                                        raise ImportError("No whirlpool module available")
-                                        
+                                        raise ImportError(
+                                            "No whirlpool module available"
+                                        )
+
                                     secure_memcpy(hash_buffer, result)
                                     secure_memcpy(hashed, hash_buffer)
                                     show_progress("Whirlpool", i + 1, params)
@@ -1252,7 +1328,9 @@ def multi_hash_password(
                                 except Exception as e:
                                     # Log the error and fall back to SHA-512
                                     if not quiet:
-                                        print(f"Warning: Whirlpool error ({str(e)}), falling back to SHA-512")
+                                        print(
+                                            f"Warning: Whirlpool error ({str(e)}), falling back to SHA-512"
+                                        )
                                     result = hashlib.sha512(hashed).digest()
                                     secure_memcpy(hash_buffer, result)
                                     secure_memcpy(hashed, hash_buffer)
@@ -1265,7 +1343,9 @@ def multi_hash_password(
                         # available
                         if not quiet and not progress:
                             print(
-                                "Warning: Whirlpool not available, using SHA-512 instead", end=" ")
+                                "Warning: Whirlpool not available, using SHA-512 instead",
+                                end=" ",
+                            )
                         elif not quiet:
                             print(
                                 "Warning: Whirlpool not available, using SHA-512 instead"
@@ -1275,8 +1355,7 @@ def multi_hash_password(
                                 result = hashlib.sha512(hashed).digest()
                                 secure_memcpy(hash_buffer, result)
                                 secure_memcpy(hashed, hash_buffer)
-                                show_progress(
-                                    "SHA-512 (fallback)", i + 1, params)
+                                show_progress("SHA-512 (fallback)", i + 1, params)
                                 KeyStretch.hash_stretch = True
                             if not quiet and not progress:
                                 print("✅")
@@ -1288,28 +1367,36 @@ def multi_hash_password(
             print("Warning: secure_memory module not available")
         sys.exit(1)
     finally:
-        if 'hashed' in locals():
+        if "hashed" in locals():
             secure_memzero(hashed)
 
 
 # Import error handling functions at the top of the file to avoid circular imports
 from .crypt_errors import (
-    secure_key_derivation_error_handler, KeyDerivationError,
-    ValidationError, InternalError, secure_encrypt_error_handler,
-    secure_decrypt_error_handler, secure_error_handler,
-    AuthenticationError, DecryptionError, EncryptionError
+    secure_key_derivation_error_handler,
+    KeyDerivationError,
+    ValidationError,
+    InternalError,
+    secure_encrypt_error_handler,
+    secure_decrypt_error_handler,
+    secure_error_handler,
+    AuthenticationError,
+    DecryptionError,
+    EncryptionError,
 )
+
 
 @secure_key_derivation_error_handler
 def generate_key(
-        password,
-        salt,
-        hash_config,
-        pbkdf2_iterations=100000,
-        quiet=False,
-        algorithm=EncryptionAlgorithm.FERNET.value,
-        progress=False,
-        pqc_keypair=None):
+    password,
+    salt,
+    hash_config,
+    pbkdf2_iterations=100000,
+    quiet=False,
+    algorithm=EncryptionAlgorithm.FERNET.value,
+    progress=False,
+    pqc_keypair=None,
+):
     """
     Generate an encryption key from a password using PBKDF2 or Argon2.
 
@@ -1325,7 +1412,7 @@ def generate_key(
 
     Returns:
         tuple: (key, salt, hash_config)
-        
+
     Raises:
         ValidationError: If input parameters are invalid
         KeyDerivationError: If key derivation fails
@@ -1333,26 +1420,26 @@ def generate_key(
     # Validate input parameters
     if password is None:
         raise ValidationError("Password cannot be None")
-    
+
     # Ensure password is in bytes format with correct UTF-8 encoding
     if isinstance(password, str):
         # Make sure unicode strings are properly encoded as UTF-8 bytes
-        password = password.encode('utf-8')
+        password = password.encode("utf-8")
     elif isinstance(password, bytes):
         # If already bytes, ensure it's properly UTF-8 encoded for consistency
         try:
             # Test if it's valid UTF-8
-            password.decode('utf-8').encode('utf-8')
+            password.decode("utf-8").encode("utf-8")
         except UnicodeError:
             # If not, it might be using a different encoding - let's keep it as is
             pass
-        
+
     if salt is None:
         raise ValidationError("Salt cannot be None")
-        
+
     if not isinstance(hash_config, dict):
         raise ValidationError("Hash configuration must be a dictionary")
-        
+
     if not isinstance(pbkdf2_iterations, int) or pbkdf2_iterations < 0:
         raise ValidationError("PBKDF2 iterations must be a non-negative integer")
 
@@ -1371,9 +1458,13 @@ def generate_key(
         percent = (current / total) * 100
         bar_length = 30
         filled_length = int(bar_length * current // total)
-        bar = '█' * filled_length + ' ' * (bar_length - filled_length)
+        bar = "█" * filled_length + " " * (bar_length - filled_length)
 
-        print(f"\r{algorithm} hashing: [{bar}] {percent:.1f}% ({current}/{total})", end='', flush=True)
+        print(
+            f"\r{algorithm} hashing: [{bar}] {percent:.1f}% ({current}/{total})",
+            end="",
+            flush=True,
+        )
 
         if current == total:
             print()  # New line after completion
@@ -1395,34 +1486,62 @@ def generate_key(
         key_length = 32  # AES-OCB3 requires 32 bytes
     elif algorithm == EncryptionAlgorithm.CAMELLIA.value:
         key_length = 32  # Camellia requires 32 bytes
-    elif algorithm in [EncryptionAlgorithm.KYBER512_HYBRID.value, 
-                      EncryptionAlgorithm.KYBER768_HYBRID.value, 
-                      EncryptionAlgorithm.KYBER1024_HYBRID.value,
-                      EncryptionAlgorithm.ML_KEM_512_CHACHA20.value,
-                      EncryptionAlgorithm.ML_KEM_768_CHACHA20.value,
-                      EncryptionAlgorithm.ML_KEM_1024_CHACHA20.value,
-                      EncryptionAlgorithm.HQC_128_HYBRID.value,
-                      EncryptionAlgorithm.HQC_192_HYBRID.value,
-                      EncryptionAlgorithm.HQC_256_HYBRID.value]:
-        key_length = 32  # PQC hybrid modes use AES-256-GCM internally, requiring 32 bytes
+    elif algorithm in [
+        EncryptionAlgorithm.KYBER512_HYBRID.value,
+        EncryptionAlgorithm.KYBER768_HYBRID.value,
+        EncryptionAlgorithm.KYBER1024_HYBRID.value,
+        EncryptionAlgorithm.ML_KEM_512_CHACHA20.value,
+        EncryptionAlgorithm.ML_KEM_768_CHACHA20.value,
+        EncryptionAlgorithm.ML_KEM_1024_CHACHA20.value,
+        EncryptionAlgorithm.HQC_128_HYBRID.value,
+        EncryptionAlgorithm.HQC_192_HYBRID.value,
+        EncryptionAlgorithm.HQC_256_HYBRID.value,
+    ]:
+        key_length = (
+            32  # PQC hybrid modes use AES-256-GCM internally, requiring 32 bytes
+        )
     else:
         raise ValueError(f"Unsupported algorithm: {algorithm}")
 
     # Apply hash iterations if any are configured (SHA-256, SHA-512, SHA3-256,
     # etc.)
     # First, handle the new nested format (version 4)
-    if hash_config and 'derivation_config' in hash_config and 'hash_config' in hash_config['derivation_config']:
-        derived_hash_config = hash_config['derivation_config']['hash_config']
+    if (
+        hash_config
+        and "derivation_config" in hash_config
+        and "hash_config" in hash_config["derivation_config"]
+    ):
+        derived_hash_config = hash_config["derivation_config"]["hash_config"]
         has_hash_iterations = any(
-            derived_hash_config.get(algo, 0) > 0 for algo in
-            ['sha256', 'sha512', 'sha3_256', 'sha3_512', 'blake2b', 'shake256', 'whirlpool']
+            derived_hash_config.get(algo, 0) > 0
+            for algo in [
+                "sha256",
+                "sha512",
+                "sha3_256",
+                "sha3_512",
+                "blake2b",
+                "shake256",
+                "whirlpool",
+            ]
         )
     else:
         # Original format (flat version 3)
-        has_hash_iterations = hash_config and any(
-            hash_config.get(algo, 0) > 0 for algo in
-            ['sha256', 'sha512', 'sha3_256', 'sha3_512', 'blake2b', 'shake256', 'whirlpool']
-        ) or (hash_config and hash_config.get('scrypt', {}).get('n', 0) > 0)
+        has_hash_iterations = (
+            hash_config
+            and any(
+                hash_config.get(algo, 0) > 0
+                for algo in [
+                    "sha256",
+                    "sha512",
+                    "sha3_256",
+                    "sha3_512",
+                    "blake2b",
+                    "shake256",
+                    "whirlpool",
+                ]
+            )
+            or (hash_config and hash_config.get("scrypt", {}).get("n", 0) > 0)
+        )
 
     if has_hash_iterations:
         if not quiet and not progress:
@@ -1431,25 +1550,30 @@ def generate_key(
             print("Applying hash iterations")
         # Apply multiple hash algorithms in sequence
         password = multi_hash_password(
-            password, salt, hash_config, quiet, progress=progress)
+            password, salt, hash_config, quiet, progress=progress
+        )
     # Check if Argon2 is available on the system
     argon2_available = ARGON2_AVAILABLE
 
     # Determine if we should use Argon2
     # Account for both v3 and v4 hash config structures
-    if hash_config and 'derivation_config' in hash_config and 'kdf_config' in hash_config['derivation_config']:
+    if (
+        hash_config
+        and "derivation_config" in hash_config
+        and "kdf_config" in hash_config["derivation_config"]
+    ):
         # Version 4 structure
-        kdf_config = hash_config['derivation_config']['kdf_config']
-        use_argon2 = kdf_config.get('argon2', {}).get('enabled', False)
-        use_scrypt = kdf_config.get('scrypt', {}).get('enabled', False)
-        use_pbkdf2 = kdf_config.get('pbkdf2_iterations', 0) > 0
-        use_balloon = kdf_config.get('balloon', {}).get('enabled', False)
+        kdf_config = hash_config["derivation_config"]["kdf_config"]
+        use_argon2 = kdf_config.get("argon2", {}).get("enabled", False)
+        use_scrypt = kdf_config.get("scrypt", {}).get("enabled", False)
+        use_pbkdf2 = kdf_config.get("pbkdf2_iterations", 0) > 0
+        use_balloon = kdf_config.get("balloon", {}).get("enabled", False)
     else:
         # Original version 3 format
-        use_argon2 = hash_config.get('argon2', {}).get('enabled', False)
-        use_scrypt = hash_config.get('scrypt', {}).get('enabled', False)
-        use_pbkdf2 = hash_config.get('pbkdf2_iterations', 0) > 0
-        use_balloon = hash_config.get('balloon', {}).get('enabled', False)
+        use_argon2 = hash_config.get("argon2", {}).get("enabled", False)
+        use_scrypt = hash_config.get("scrypt", {}).get("enabled", False)
+        use_pbkdf2 = hash_config.get("pbkdf2_iterations", 0) > 0
+        use_balloon = hash_config.get("balloon", {}).get("enabled", False)
 
     # If hash_config has argon2 section with enabled explicitly set to False, honor that
     # if hash_config and 'argon2' in hash_config and 'enabled' in hash_config['argon2']:
@@ -1466,18 +1590,24 @@ def generate_key(
 
         # Get parameters from the argon2 section of hash_config, or use defaults
         # Account for both v3 and v4 hash config structures
-        if hash_config and 'derivation_config' in hash_config and 'kdf_config' in hash_config['derivation_config']:
+        if (
+            hash_config
+            and "derivation_config" in hash_config
+            and "kdf_config" in hash_config["derivation_config"]
+        ):
             # Version 4 structure
-            argon2_config = hash_config['derivation_config']['kdf_config'].get('argon2', {})
+            argon2_config = hash_config["derivation_config"]["kdf_config"].get(
+                "argon2", {}
+            )
         else:
             # Original version 3 format
-            argon2_config = hash_config.get('argon2', {}) if hash_config else {}
-            
-        time_cost = argon2_config.get('time_cost', 3)
-        memory_cost = argon2_config.get('memory_cost', 65536)
-        parallelism = argon2_config.get('parallelism', 4)
+            argon2_config = hash_config.get("argon2", {}) if hash_config else {}
+
+        time_cost = argon2_config.get("time_cost", 3)
+        memory_cost = argon2_config.get("memory_cost", 65536)
+        parallelism = argon2_config.get("parallelism", 4)
         hash_len = key_length
-        type_int = argon2_config.get('type', 2)  # Default to ID (2)
+        type_int = argon2_config.get("type", 2)  # Default to ID (2)
 
         # Convert type integer to Argon2 type enum
         if type_int in ARGON2_INT_TO_TYPE_MAP:
@@ -1488,7 +1618,7 @@ def generate_key(
 
         # Securely convert password to bytes using consistent approach
         try:
-            if hasattr(password, 'to_bytes'):
+            if hasattr(password, "to_bytes"):
                 # Use SecureBytes methods if available
                 password = SecureBytes(bytes(password))
             else:
@@ -1500,11 +1630,19 @@ def generate_key(
 
         try:
             # Get the number of rounds from the appropriate config structure
-            if hash_config and 'derivation_config' in hash_config and 'kdf_config' in hash_config['derivation_config']:
-                argon2_rounds = hash_config['derivation_config']['kdf_config'].get('argon2', {}).get('rounds', 1)
+            if (
+                hash_config
+                and "derivation_config" in hash_config
+                and "kdf_config" in hash_config["derivation_config"]
+            ):
+                argon2_rounds = (
+                    hash_config["derivation_config"]["kdf_config"]
+                    .get("argon2", {})
+                    .get("rounds", 1)
+                )
             else:
-                argon2_rounds = hash_config.get('argon2', {}).get('rounds', 1)
-                
+                argon2_rounds = hash_config.get("argon2", {}).get("rounds", 1)
+
             for i in range(argon2_rounds):
                 # Generate a new salt for each round to prevent salt reuse attacks
                 if i == 0:
@@ -1515,10 +1653,10 @@ def generate_key(
                     # This prevents potential weakening due to salt reuse
                     salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
                     round_salt = salt_material[:16]  # Use 16 bytes for salt
-                
+
                 # Convert password to bytes format required by argon2
                 password_bytes = bytes(password)
-                
+
                 # Apply Argon2 KDF
                 result = argon2.low_level.hash_secret_raw(
                     secret=password_bytes,  # Use the potentially hashed password
@@ -1527,31 +1665,39 @@ def generate_key(
                     memory_cost=memory_cost,
                     parallelism=parallelism,
                     hash_len=hash_len,
-                    type=argon2_type
+                    type=argon2_type,
                 )
-                
+
                 # Securely overwrite the previous password value
                 secure_memzero(password_bytes)
-                
+
                 # Store the result securely for the next round
                 password = SecureBytes(result)
                 KeyStretch.key_stretch = True
-                
+
                 # Securely clean up the round salt
                 secure_memzero(round_salt)
                 # Show progress with the correct rounds value based on config structure
-                if hash_config and 'derivation_config' in hash_config and 'kdf_config' in hash_config['derivation_config']:
-                    total_rounds = hash_config['derivation_config']['kdf_config'].get('argon2', {}).get('rounds', 1)
+                if (
+                    hash_config
+                    and "derivation_config" in hash_config
+                    and "kdf_config" in hash_config["derivation_config"]
+                ):
+                    total_rounds = (
+                        hash_config["derivation_config"]["kdf_config"]
+                        .get("argon2", {})
+                        .get("rounds", 1)
+                    )
                 else:
-                    total_rounds = hash_config.get('argon2', {}).get('rounds', 1)
-                
+                    total_rounds = hash_config.get("argon2", {}).get("rounds", 1)
+
                 show_progress("Argon2", i + 1, total_rounds)
             # Always securely clean up sensitive data, even when they're copies
             try:
                 secure_memzero(base_salt)
-                if 'round_salt' in locals():
+                if "round_salt" in locals():
                     secure_memzero(round_salt)
-                if 'salt_material' in locals():
+                if "salt_material" in locals():
                     secure_memzero(salt_material)
             except (NameError, TypeError):
                 # Ignore cleanup errors to ensure we don't interrupt the program flow
@@ -1559,19 +1705,21 @@ def generate_key(
             # Update hash_config to reflect that Argon2 was used
             if hash_config is None:
                 hash_config = {}
-            if 'argon2' not in hash_config:
-                hash_config['argon2'] = {}
-            hash_config['argon2']['enabled'] = True
-            hash_config['argon2']['time_cost'] = time_cost
-            hash_config['argon2']['memory_cost'] = memory_cost
-            hash_config['argon2']['parallelism'] = parallelism
-            hash_config['argon2']['hash_len'] = hash_len
-            hash_config['argon2']['type'] = type_int
+            if "argon2" not in hash_config:
+                hash_config["argon2"] = {}
+            hash_config["argon2"]["enabled"] = True
+            hash_config["argon2"]["time_cost"] = time_cost
+            hash_config["argon2"]["memory_cost"] = memory_cost
+            hash_config["argon2"]["parallelism"] = parallelism
+            hash_config["argon2"]["hash_len"] = hash_len
+            hash_config["argon2"]["type"] = type_int
             if not quiet and not progress:
                 print("✅")
         except Exception as e:
             if not quiet:
-                print(f"Argon2 key derivation failed: {str(e)}. Falling back to PBKDF2.")
+                print(
+                    f"Argon2 key derivation failed: {str(e)}. Falling back to PBKDF2."
+                )
             # Fall back to PBKDF2 if Argon2 fails
             use_argon2 = False
 
@@ -1583,15 +1731,14 @@ def generate_key(
             print("Using Balloon-Hashing for key derivation", end=" ")
         elif not quiet:
             print("Using Balloon-Hashing for key derivation")
-        balloon_config = hash_config.get('balloon', {}) if hash_config else {}
-        time_cost = balloon_config.get('time_cost', 3)
-        space_cost = balloon_config.get(
-            'space_cost', 65536)  # renamed from memory_cost
-        parallelism = balloon_config.get('parallelism', 4)
+        balloon_config = hash_config.get("balloon", {}) if hash_config else {}
+        time_cost = balloon_config.get("time_cost", 3)
+        space_cost = balloon_config.get("space_cost", 65536)  # renamed from memory_cost
+        parallelism = balloon_config.get("parallelism", 4)
         hash_len = key_length
 
         try:
-            for i in range(hash_config.get('balloon', {}).get('rounds', 1)):
+            for i in range(hash_config.get("balloon", {}).get("rounds", 1)):
                 # Generate a new unique salt for each round to prevent salt reuse attacks
                 if i == 0:
                     # Use the original salt for the first round
@@ -1601,46 +1748,41 @@ def generate_key(
                     # This prevents potential weakening due to salt reuse
                     salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
                     round_salt = salt_material[:16]  # Use 16 bytes for salt
-                
+
                 # Make a secure copy of the password for this operation
-                if hasattr(password, 'to_bytes'):
+                if hasattr(password, "to_bytes"):
                     password_bytes = bytes(password)
                 else:
                     password_bytes = bytes(password)
-                
+
                 # Apply Balloon KDF with the new salt
                 result = balloon_m(
                     password=password_bytes,  # Use the potentially hashed password
-                    salt=str(round_salt),     # Convert to string as required by balloon_m
+                    salt=str(round_salt),  # Convert to string as required by balloon_m
                     time_cost=time_cost,
-                    space_cost=space_cost,    # renamed from memory_cost
-                    parallel_cost=parallelism
+                    space_cost=space_cost,  # renamed from memory_cost
+                    parallel_cost=parallelism,
                 )
-                
+
                 # Securely overwrite the previous password value
                 secure_memzero(password_bytes)
-                
+
                 # Store the result securely for the next round
                 password = SecureBytes(result)
                 KeyStretch.key_stretch = True
-                
+
                 # Securely clean up the round salt
                 secure_memzero(round_salt)
                 show_progress(
-                    "Balloon",
-                    i + 1,
-                    hash_config.get(
-                        'balloon',
-                        {}).get(
-                        'rounds',
-                        1))
+                    "Balloon", i + 1, hash_config.get("balloon", {}).get("rounds", 1)
+                )
 
             # Always securely clean up sensitive data, even when they're copies
             try:
                 secure_memzero(base_salt)
-                if 'round_salt' in locals():
+                if "round_salt" in locals():
                     secure_memzero(round_salt)
-                if 'salt_material' in locals():
+                if "salt_material" in locals():
                     secure_memzero(salt_material)
             except (NameError, TypeError):
                 # Ignore cleanup errors to ensure we don't interrupt the program flow
@@ -1649,20 +1791,24 @@ def generate_key(
             # Update hash_config
             if hash_config is None:
                 hash_config = {}
-            if 'balloon' not in hash_config:
-                hash_config['balloon'] = {}
-            hash_config['balloon'].update({
-                'enabled': True,
-                'time_cost': time_cost,
-                'space_cost': space_cost,  # renamed from memory_cost
-                'parallelism': parallelism,
-                'hash_len': hash_len
-            })
+            if "balloon" not in hash_config:
+                hash_config["balloon"] = {}
+            hash_config["balloon"].update(
+                {
+                    "enabled": True,
+                    "time_cost": time_cost,
+                    "space_cost": space_cost,  # renamed from memory_cost
+                    "parallelism": parallelism,
+                    "hash_len": hash_len,
+                }
+            )
             if not quiet and not progress:
                 print("✅")
         except Exception as e:
             if not quiet:
-                print(f"Balloon key derivation failed: {str(e)}. Falling back to PBKDF2.")
+                print(
+                    f"Balloon key derivation failed: {str(e)}. Falling back to PBKDF2."
+                )
             use_balloon = False  # Consider falling back to PBKDF2
 
     if use_scrypt and SCRYPT_AVAILABLE:
@@ -1674,7 +1820,7 @@ def generate_key(
         elif not quiet:
             print("Using Scrypt for key derivation")
         try:
-            for i in range(hash_config.get('scrypt', {}).get('rounds', 1)):
+            for i in range(hash_config.get("scrypt", {}).get("rounds", 1)):
                 # Generate a new unique salt for each round to prevent salt reuse attacks
                 if i == 0:
                     # Use the original salt for the first round
@@ -1684,63 +1830,66 @@ def generate_key(
                     # This prevents potential weakening due to salt reuse
                     salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
                     round_salt = salt_material[:16]  # Use 16 bytes for salt
-                
+
                 # Create the scrypt KDF with appropriate parameters
                 scrypt_kdf = Scrypt(
                     salt=round_salt,
                     length=32,  # Fixed output length for consistency
-                    n=hash_config['scrypt']['n'],  # CPU/memory cost factor
-                    r=hash_config['scrypt']['r'],  # Block size factor
-                    p=hash_config['scrypt']['p'],  # Parallelization factor
-                    backend=default_backend()
+                    n=hash_config["scrypt"]["n"],  # CPU/memory cost factor
+                    r=hash_config["scrypt"]["r"],  # Block size factor
+                    p=hash_config["scrypt"]["p"],  # Parallelization factor
+                    backend=default_backend(),
                 )
-                
+
                 # Make a secure copy of the password for this operation
-                if hasattr(password, 'to_bytes'):
+                if hasattr(password, "to_bytes"):
                     password_bytes = bytes(password)
                 else:
                     password_bytes = bytes(password)
-                
+
                 # Apply the KDF
                 result = scrypt_kdf.derive(password_bytes)
-                
+
                 # Securely overwrite the previous password value
                 secure_memzero(password_bytes)
-                
+
                 # Store the result securely for the next round
                 password = SecureBytes(result)
                 KeyStretch.key_stretch = True
-                
+
                 # Securely clean up the round salt
                 secure_memzero(round_salt)
                 show_progress(
-                    "Scrypt",
-                    i + 1,
-                    hash_config.get(
-                        'scrypt',
-                        {}).get(
-                        'rounds',
-                        1))
- #           hashed_password = derived_key
+                    "Scrypt", i + 1, hash_config.get("scrypt", {}).get("rounds", 1)
+                )
+            #           hashed_password = derived_key
             if not quiet and not progress:
                 print("✅")
         except Exception as e:
             if not quiet:
-                print(f"Scrypt key derivation failed: {str(e)}. Falling back to PBKDF2.")
+                print(
+                    f"Scrypt key derivation failed: {str(e)}. Falling back to PBKDF2."
+                )
             use_scrypt = False  # Consider falling back to PBKDF2
 
     # Check for pbkdf2 iterations from different potential sources
     # 1. Check if pbkdf2 is defined with a nested structure (format version 4)
-    if 'pbkdf2' in hash_config and isinstance(hash_config['pbkdf2'], dict) and 'rounds' in hash_config['pbkdf2']:
-        use_pbkdf2 = hash_config['pbkdf2']['rounds']
+    if (
+        "pbkdf2" in hash_config
+        and isinstance(hash_config["pbkdf2"], dict)
+        and "rounds" in hash_config["pbkdf2"]
+    ):
+        use_pbkdf2 = hash_config["pbkdf2"]["rounds"]
     # 2. For backward compatibility, check if pbkdf2_iterations is in hash_config directly
     else:
-        pbkdf2_from_hash_config = hash_config.get('pbkdf2_iterations')
+        pbkdf2_from_hash_config = hash_config.get("pbkdf2_iterations")
         # Only inject PBKDF2 in pytest during encryption, not decryption
         # During decryption, we must strictly follow the metadata configuration
-        if (os.environ.get('PYTEST_CURRENT_TEST') is not None and 
-            pbkdf2_from_hash_config is None and
-            not hash_config.get('_is_from_decryption_metadata', False)):
+        if (
+            os.environ.get("PYTEST_CURRENT_TEST") is not None
+            and pbkdf2_from_hash_config is None
+            and not hash_config.get("_is_from_decryption_metadata", False)
+        ):
             use_pbkdf2 = 100000
         elif pbkdf2_from_hash_config is not None and pbkdf2_from_hash_config > 0:
             use_pbkdf2 = pbkdf2_from_hash_config
@@ -1752,39 +1901,51 @@ def generate_key(
             print(f"Applying {use_pbkdf2} rounds of PBKDF2", end=" ")
         elif not quiet:
             print(f"Applying {use_pbkdf2} rounds of PBKDF2")
-            
+
         for i in range(use_pbkdf2):
             # Generate a unique salt for each iteration by hashing the base salt with the iteration number
             # This ensures each iteration has a completely different salt, preventing salt reuse
-            iteration_specific_salt = hashlib.sha256(base_salt + str(i).encode('utf-8')).digest()
-            
+            iteration_specific_salt = hashlib.sha256(
+                base_salt + str(i).encode("utf-8")
+            ).digest()
+
             password = PBKDF2HMAC(
                 algorithm=hashes.SHA256(),
                 length=key_length,
                 salt=iteration_specific_salt,
                 iterations=1,
-                backend=default_backend()
-            ).derive(password)  # Use the potentially hashed password
-            
+                backend=default_backend(),
+            ).derive(
+                password
+            )  # Use the potentially hashed password
+
             # Update progress every 1000 iterations
             if not quiet and i > 0 and i % 1000 == 0 and not progress:
                 print(".", end="", flush=True)
-        
+
         if not quiet and not progress:
             print(" ✅")
             derived_salt = password[:16]
             KeyStretch.key_stretch = True
             show_progress("PBKDF2", i + 1, use_pbkdf2)
-            
+
     if not KeyStretch.key_stretch and not KeyStretch.hash_stretch:
-        if algorithm in [EncryptionAlgorithm.AES_GCM.value, EncryptionAlgorithm.CAMELLIA.value, EncryptionAlgorithm.CHACHA20_POLY1305.value]:
+        if algorithm in [
+            EncryptionAlgorithm.AES_GCM.value,
+            EncryptionAlgorithm.CAMELLIA.value,
+            EncryptionAlgorithm.CHACHA20_POLY1305.value,
+        ]:
             password = hashlib.sha256(password).digest()
         elif algorithm == EncryptionAlgorithm.AES_SIV.value:
             password = hashlib.sha512(password).digest()
         else:
             password = base64.b64encode(hashlib.sha256(password).digest())
     elif not KeyStretch.key_stretch:
-        if algorithm in [EncryptionAlgorithm.AES_GCM.value, EncryptionAlgorithm.CAMELLIA.value, EncryptionAlgorithm.CHACHA20_POLY1305.value]:
+        if algorithm in [
+            EncryptionAlgorithm.AES_GCM.value,
+            EncryptionAlgorithm.CAMELLIA.value,
+            EncryptionAlgorithm.CHACHA20_POLY1305.value,
+        ]:
             password = hashlib.sha256(password).digest()
         elif algorithm == EncryptionAlgorithm.AES_SIV.value:
             password = hashlib.sha512(password).digest()
@@ -1799,13 +1960,13 @@ def generate_key(
     finally:
         # Always securely clean up sensitive data, even if they're just copies
         try:
-            if 'base_salt' in locals():
+            if "base_salt" in locals():
                 secure_memzero(base_salt)
-            if 'round_salt' in locals():
+            if "round_salt" in locals():
                 secure_memzero(round_salt)
-            if 'iteration_specific_salt' in locals():
+            if "iteration_specific_salt" in locals():
                 secure_memzero(iteration_specific_salt)
-            if 'salt_material' in locals():
+            if "salt_material" in locals():
                 secure_memzero(salt_material)
         except (NameError, TypeError):
             # Ignore cleanup errors to ensure we don't interrupt the program flow
@@ -1816,196 +1977,227 @@ def generate_key(
 
 # Helper functions for metadata format conversion
 
+
 def convert_metadata_v3_to_v4(metadata):
     """
     Convert metadata format from version 3 to version 4.
-    
+
     Args:
         metadata (dict): Metadata in format version 3
-        
+
     Returns:
         dict: Metadata in format version 4
     """
     # Create new format structure
     new_metadata = {
-        'format_version': 4,
-        'derivation_config': {
-            'salt': metadata['salt'],
-            'hash_config': {},
-            'kdf_config': {}
+        "format_version": 4,
+        "derivation_config": {
+            "salt": metadata["salt"],
+            "hash_config": {},
+            "kdf_config": {},
         },
-        'hashes': {
-            'original_hash': metadata.get('original_hash', ''),
-            'encrypted_hash': metadata.get('encrypted_hash', '')
+        "hashes": {
+            "original_hash": metadata.get("original_hash", ""),
+            "encrypted_hash": metadata.get("encrypted_hash", ""),
         },
-        'encryption': {
-            'algorithm': metadata['algorithm']
-        }
+        "encryption": {"algorithm": metadata["algorithm"]},
     }
-    
+
     # Process hash algorithms to use nested structure
-    hash_algorithms = ['sha512', 'sha256', 'sha3_256', 'sha3_512', 'blake2b', 'shake256', 'whirlpool']
-    hash_config = metadata.get('hash_config', {})
-    
+    hash_algorithms = [
+        "sha512",
+        "sha256",
+        "sha3_256",
+        "sha3_512",
+        "blake2b",
+        "shake256",
+        "whirlpool",
+    ]
+    hash_config = metadata.get("hash_config", {})
+
     for algo in hash_algorithms:
         if algo in hash_config:
-            new_metadata['derivation_config']['hash_config'][algo] = {
-                'rounds': hash_config[algo]
+            new_metadata["derivation_config"]["hash_config"][algo] = {
+                "rounds": hash_config[algo]
             }
-    
+
     # Move pbkdf2 iterations to kdf_config with proper nesting
-    if 'pbkdf2_iterations' in metadata:
-        new_metadata['derivation_config']['kdf_config']['pbkdf2'] = {
-            'rounds': metadata['pbkdf2_iterations']
+    if "pbkdf2_iterations" in metadata:
+        new_metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {
+            "rounds": metadata["pbkdf2_iterations"]
         }
-    
+
     # Add scrypt config if present
-    if 'scrypt' in metadata:
-        new_metadata['derivation_config']['kdf_config']['scrypt'] = metadata['scrypt']
-    
+    if "scrypt" in metadata:
+        new_metadata["derivation_config"]["kdf_config"]["scrypt"] = metadata["scrypt"]
+
     # Add argon2 config if present
-    if 'argon2' in metadata:
-        new_metadata['derivation_config']['kdf_config']['argon2'] = metadata['argon2']
-    
+    if "argon2" in metadata:
+        new_metadata["derivation_config"]["kdf_config"]["argon2"] = metadata["argon2"]
+
     # Add balloon config if present
-    if 'balloon' in metadata:
-        new_metadata['derivation_config']['kdf_config']['balloon'] = metadata['balloon']
-        
+    if "balloon" in metadata:
+        new_metadata["derivation_config"]["kdf_config"]["balloon"] = metadata["balloon"]
+
     # Add dual encryption flag if present
-    if 'dual_encryption' in metadata:
-        new_metadata['derivation_config']['kdf_config']['dual_encryption'] = metadata['dual_encryption']
-        
+    if "dual_encryption" in metadata:
+        new_metadata["derivation_config"]["kdf_config"]["dual_encryption"] = metadata[
+            "dual_encryption"
+        ]
+
     # Add PQC keystore key ID if present
-    if 'pqc_keystore_key_id' in metadata:
-        new_metadata['derivation_config']['kdf_config']['pqc_keystore_key_id'] = metadata['pqc_keystore_key_id']
-    
+    if "pqc_keystore_key_id" in metadata:
+        new_metadata["derivation_config"]["kdf_config"]["pqc_keystore_key_id"] = (
+            metadata["pqc_keystore_key_id"]
+        )
+
     # Move PQC-related fields to encryption section
     pqc_fields = [
-        'pqc_public_key', 'pqc_private_key', 'pqc_key_salt', 
-        'pqc_key_encrypted', 'pqc_dual_encrypt_key'
+        "pqc_public_key",
+        "pqc_private_key",
+        "pqc_key_salt",
+        "pqc_key_encrypted",
+        "pqc_dual_encrypt_key",
     ]
-    
+
     for field in pqc_fields:
         if field in metadata:
-            new_metadata['encryption'][field] = metadata[field]
-    
+            new_metadata["encryption"][field] = metadata[field]
+
     return new_metadata
+
 
 def convert_metadata_v5_to_v4(metadata):
     """
     Convert metadata format from version 5 to version 4 (for backward compatibility).
-    
+
     Args:
         metadata (dict): Metadata in format version 5
-        
+
     Returns:
         dict: Metadata in format version 4
     """
     # Create version 4 format (mostly the same as v5, just removing encryption_data)
     v4_metadata = {
-        'format_version': 4,
-        'derivation_config': metadata['derivation_config'],
-        'hashes': metadata['hashes'],
-        'encryption': {k: v for k, v in metadata['encryption'].items() if k != 'encryption_data'}
+        "format_version": 4,
+        "derivation_config": metadata["derivation_config"],
+        "hashes": metadata["hashes"],
+        "encryption": {
+            k: v for k, v in metadata["encryption"].items() if k != "encryption_data"
+        },
     }
-    
+
     return v4_metadata
 
-def convert_metadata_v4_to_v5(metadata, encryption_data='aes-gcm'):
+
+def convert_metadata_v4_to_v5(metadata, encryption_data="aes-gcm"):
     """
     Convert metadata format from version 4 to version 5.
-    
+
     Args:
         metadata (dict): Metadata in format version 4
         encryption_data (str, optional): The symmetric encryption algorithm to use for data encryption
-        
+
     Returns:
         dict: Metadata in format version 5
     """
     # Create version 5 format (mostly the same as v4, just adding encryption_data)
     v5_metadata = {
-        'format_version': 5,
-        'derivation_config': metadata['derivation_config'],
-        'hashes': metadata['hashes'],
-        'encryption': {**metadata['encryption'], 'encryption_data': encryption_data}
+        "format_version": 5,
+        "derivation_config": metadata["derivation_config"],
+        "hashes": metadata["hashes"],
+        "encryption": {**metadata["encryption"], "encryption_data": encryption_data},
     }
-    
+
     return v5_metadata
+
 
 def convert_metadata_v4_to_v3(metadata):
     """
     Convert metadata format from version 4 to version 3 (for backward compatibility).
-    
+
     Args:
         metadata (dict): Metadata in format version 4
-        
+
     Returns:
         dict: Metadata in format version 3
     """
     # Create version 3 format
     old_metadata = {
-        'format_version': 3,
-        'salt': metadata['derivation_config']['salt'],
-        'hash_config': {},
-        'original_hash': metadata['hashes']['original_hash'],
-        'encrypted_hash': metadata['hashes']['encrypted_hash'],
-        'algorithm': metadata['encryption']['algorithm']
+        "format_version": 3,
+        "salt": metadata["derivation_config"]["salt"],
+        "hash_config": {},
+        "original_hash": metadata["hashes"]["original_hash"],
+        "encrypted_hash": metadata["hashes"]["encrypted_hash"],
+        "algorithm": metadata["encryption"]["algorithm"],
     }
-    
+
     # Convert nested hash_config to flat format for v3
-    hash_config = metadata['derivation_config'].get('hash_config', {})
+    hash_config = metadata["derivation_config"].get("hash_config", {})
     # Mark this hash_config as coming from decryption metadata
-    hash_config['_is_from_decryption_metadata'] = True
+    hash_config["_is_from_decryption_metadata"] = True
     for algo, config in hash_config.items():
-        if isinstance(config, dict) and 'rounds' in config:
-            old_metadata['hash_config'][algo] = config['rounds']
+        if isinstance(config, dict) and "rounds" in config:
+            old_metadata["hash_config"][algo] = config["rounds"]
         else:
             # Fallback for any non-nested values (shouldn't happen, but just in case)
-            old_metadata['hash_config'][algo] = config
-    
+            old_metadata["hash_config"][algo] = config
+
     # Extract pbkdf2 iterations if present
-    kdf_config = metadata['derivation_config'].get('kdf_config', {})
-    if 'pbkdf2' in kdf_config and isinstance(kdf_config['pbkdf2'], dict):
-        old_metadata['pbkdf2_iterations'] = kdf_config['pbkdf2'].get('rounds', 100000)
-    
+    kdf_config = metadata["derivation_config"].get("kdf_config", {})
+    if "pbkdf2" in kdf_config and isinstance(kdf_config["pbkdf2"], dict):
+        old_metadata["pbkdf2_iterations"] = kdf_config["pbkdf2"].get("rounds", 100000)
+
     # Extract scrypt config if present
-    if 'scrypt' in kdf_config:
-        old_metadata['scrypt'] = kdf_config['scrypt']
-    
+    if "scrypt" in kdf_config:
+        old_metadata["scrypt"] = kdf_config["scrypt"]
+
     # Extract argon2 config if present
-    if 'argon2' in kdf_config:
-        old_metadata['argon2'] = kdf_config['argon2']
-    
+    if "argon2" in kdf_config:
+        old_metadata["argon2"] = kdf_config["argon2"]
+
     # Extract balloon config if present
-    if 'balloon' in kdf_config:
-        old_metadata['balloon'] = kdf_config['balloon']
-        
+    if "balloon" in kdf_config:
+        old_metadata["balloon"] = kdf_config["balloon"]
+
     # Extract dual encryption flag if present
-    if 'dual_encryption' in kdf_config:
-        old_metadata['dual_encryption'] = kdf_config['dual_encryption']
-        
+    if "dual_encryption" in kdf_config:
+        old_metadata["dual_encryption"] = kdf_config["dual_encryption"]
+
     # Extract PQC keystore key ID if present
-    if 'pqc_keystore_key_id' in kdf_config:
-        old_metadata['pqc_keystore_key_id'] = kdf_config['pqc_keystore_key_id']
-    
+    if "pqc_keystore_key_id" in kdf_config:
+        old_metadata["pqc_keystore_key_id"] = kdf_config["pqc_keystore_key_id"]
+
     # Move PQC-related fields from encryption section
-    encryption = metadata['encryption']
+    encryption = metadata["encryption"]
     pqc_fields = [
-        'pqc_public_key', 'pqc_private_key', 'pqc_key_salt', 
-        'pqc_key_encrypted', 'pqc_dual_encrypt_key'
+        "pqc_public_key",
+        "pqc_private_key",
+        "pqc_key_salt",
+        "pqc_key_encrypted",
+        "pqc_dual_encrypt_key",
     ]
-    
+
     for field in pqc_fields:
         if field in encryption:
             old_metadata[field] = encryption[field]
-    
+
     return old_metadata
 
-def create_metadata_v5(salt, hash_config, original_hash, encrypted_hash, algorithm, 
-                       pbkdf2_iterations=0, pqc_info=None, encryption_data='aes-gcm'):
+
+def create_metadata_v5(
+    salt,
+    hash_config,
+    original_hash,
+    encrypted_hash,
+    algorithm,
+    pbkdf2_iterations=0,
+    pqc_info=None,
+    encryption_data="aes-gcm",
+):
     """
     Create metadata in format version 5.
-    
+
     Args:
         salt (bytes): Salt used for key derivation
         hash_config (dict): Hash configuration
@@ -2015,78 +2207,89 @@ def create_metadata_v5(salt, hash_config, original_hash, encrypted_hash, algorit
         pbkdf2_iterations (int): PBKDF2 iterations if used
         pqc_info (dict): Post-quantum cryptography information
         encryption_data (str): The symmetric encryption algorithm to use for data encryption
-        
+
     Returns:
         dict: Metadata in format version 5
     """
     # Encode salt to base64
-    salt_b64 = base64.b64encode(salt).decode('utf-8')
-    
+    salt_b64 = base64.b64encode(salt).decode("utf-8")
+
     # Create basic metadata
     metadata = {
-        'format_version': 5,
-        'derivation_config': {
-            'salt': salt_b64,
-            'hash_config': {},
-            'kdf_config': {}
-        },
-        'hashes': {
-            'original_hash': original_hash,
-            'encrypted_hash': encrypted_hash
-        },
-        'encryption': {
-            'algorithm': algorithm,
-            'encryption_data': encryption_data
-        }
+        "format_version": 5,
+        "derivation_config": {"salt": salt_b64, "hash_config": {}, "kdf_config": {}},
+        "hashes": {"original_hash": original_hash, "encrypted_hash": encrypted_hash},
+        "encryption": {"algorithm": algorithm, "encryption_data": encryption_data},
     }
-    
+
     # Process hash algorithms to use nested structure
-    hash_algorithms = ['sha512', 'sha256', 'sha3_256', 'sha3_512', 'blake2b', 'shake256', 'whirlpool']
+    hash_algorithms = [
+        "sha512",
+        "sha256",
+        "sha3_256",
+        "sha3_512",
+        "blake2b",
+        "shake256",
+        "whirlpool",
+    ]
     for algo in hash_algorithms:
         if algo in hash_config:
-            metadata['derivation_config']['hash_config'][algo] = {
-                'rounds': hash_config[algo]
+            metadata["derivation_config"]["hash_config"][algo] = {
+                "rounds": hash_config[algo]
             }
-    
+
     # Add PBKDF2 config if used
     if pbkdf2_iterations > 0:
-        metadata['derivation_config']['kdf_config']['pbkdf2'] = {
-            'rounds': pbkdf2_iterations
+        metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {
+            "rounds": pbkdf2_iterations
         }
-    
+
     # Move KDF configurations from hash_config if present
-    kdf_algorithms = ['scrypt', 'argon2', 'balloon']
+    kdf_algorithms = ["scrypt", "argon2", "balloon"]
     for kdf in kdf_algorithms:
         if kdf in hash_config:
-            metadata['derivation_config']['kdf_config'][kdf] = hash_config[kdf]
-    
+            metadata["derivation_config"]["kdf_config"][kdf] = hash_config[kdf]
+
     # Add PQC information if present
     if pqc_info:
-        if 'public_key' in pqc_info:
-            metadata['encryption']['pqc_public_key'] = base64.b64encode(
-                pqc_info['public_key']).decode('utf-8')
-            
-        if 'private_key' in pqc_info and pqc_info['private_key']:
-            metadata['encryption']['pqc_private_key'] = base64.b64encode(
-                pqc_info['private_key']).decode('utf-8')
-            
-        if 'key_salt' in pqc_info:
-            metadata['encryption']['pqc_key_salt'] = base64.b64encode(
-                pqc_info['key_salt']).decode('utf-8')
-            
-        if 'key_encrypted' in pqc_info:
-            metadata['encryption']['pqc_key_encrypted'] = pqc_info['key_encrypted']
-            
-        if 'dual_encrypt_key' in pqc_info:
-            metadata['encryption']['pqc_dual_encrypt_key'] = pqc_info['dual_encrypt_key']
-    
+        if "public_key" in pqc_info:
+            metadata["encryption"]["pqc_public_key"] = base64.b64encode(
+                pqc_info["public_key"]
+            ).decode("utf-8")
+
+        if "private_key" in pqc_info and pqc_info["private_key"]:
+            metadata["encryption"]["pqc_private_key"] = base64.b64encode(
+                pqc_info["private_key"]
+            ).decode("utf-8")
+
+        if "key_salt" in pqc_info:
+            metadata["encryption"]["pqc_key_salt"] = base64.b64encode(
+                pqc_info["key_salt"]
+            ).decode("utf-8")
+
+        if "key_encrypted" in pqc_info:
+            metadata["encryption"]["pqc_key_encrypted"] = pqc_info["key_encrypted"]
+
+        if "dual_encrypt_key" in pqc_info:
+            metadata["encryption"]["pqc_dual_encrypt_key"] = pqc_info[
+                "dual_encrypt_key"
+            ]
+
     return metadata
 
-def create_metadata_v4(salt, hash_config, original_hash, encrypted_hash, algorithm, 
-                      pbkdf2_iterations=0, pqc_info=None):
+
+def create_metadata_v4(
+    salt,
+    hash_config,
+    original_hash,
+    encrypted_hash,
+    algorithm,
+    pbkdf2_iterations=0,
+    pqc_info=None,
+):
     """
     Create metadata in format version 4.
-    
+
     Args:
         salt (bytes): Salt used for key derivation
         hash_config (dict): Hash configuration
@@ -2095,21 +2298,40 @@ def create_metadata_v4(salt, hash_config, original_hash, encrypted_hash, algorit
         algorithm (str): Encryption algorithm used
         pbkdf2_iterations (int): PBKDF2 iterations if used
         pqc_info (dict): Post-quantum cryptography information
-        
+
     Returns:
         dict: Metadata in format version 4
     """
     # Create metadata v5 and then downgrade to v4
-    v5_metadata = create_metadata_v5(salt, hash_config, original_hash, encrypted_hash, 
-                                     algorithm, pbkdf2_iterations, pqc_info)
+    v5_metadata = create_metadata_v5(
+        salt,
+        hash_config,
+        original_hash,
+        encrypted_hash,
+        algorithm,
+        pbkdf2_iterations,
+        pqc_info,
+    )
     return convert_metadata_v5_to_v4(v5_metadata)
 
+
 @secure_encrypt_error_handler
-def encrypt_file(input_file, output_file, password, hash_config=None,
-                 pbkdf2_iterations=100000, quiet=False,
-                 algorithm=EncryptionAlgorithm.FERNET, progress=False, verbose=False, debug=False,
-                 pqc_keypair=None, pqc_store_private_key=False, pqc_dual_encrypt_key=False,
-                 encryption_data='aes-gcm'):
+def encrypt_file(
+    input_file,
+    output_file,
+    password,
+    hash_config=None,
+    pbkdf2_iterations=100000,
+    quiet=False,
+    algorithm=EncryptionAlgorithm.FERNET,
+    progress=False,
+    verbose=False,
+    debug=False,
+    pqc_keypair=None,
+    pqc_store_private_key=False,
+    pqc_dual_encrypt_key=False,
+    encryption_data="aes-gcm",
+):
     """
     Encrypt a file with a password using the specified algorithm.
 
@@ -2132,7 +2354,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
 
     Returns:
         bool: True if encryption was successful
-        
+
     Raises:
         ValidationError: If input parameters are invalid
         EncryptionError: If the encryption operation fails
@@ -2142,55 +2364,67 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     # Input validation with standardized errors
     if not input_file or not isinstance(input_file, str):
         raise ValidationError("Input file path must be a non-empty string")
-        
+
     if not output_file or not isinstance(output_file, str):
         raise ValidationError("Output file path must be a non-empty string")
-        
+
     # Special case for stdin and other special files
-    if input_file == '/dev/stdin' or input_file.startswith('/proc/') or input_file.startswith('/dev/'):
+    if (
+        input_file == "/dev/stdin"
+        or input_file.startswith("/proc/")
+        or input_file.startswith("/dev/")
+    ):
         # Skip file existence check for special files
         pass
     elif not os.path.isfile(input_file):
         # In test mode, raise FileNotFoundError for compatibility with tests
         # This ensures TestEncryptionEdgeCases.test_nonexistent_input_file works
-        if os.environ.get('PYTEST_CURRENT_TEST') is not None:
+        if os.environ.get("PYTEST_CURRENT_TEST") is not None:
             raise FileNotFoundError(f"Input file does not exist: {input_file}")
         else:
             # In production, use our standardized validation error
             raise ValidationError(f"Input file does not exist: {input_file}")
-        
+
     if password is None:
         raise ValidationError("Password cannot be None")
-    
+
     # Ensure password is in bytes format with correct encoding
     if isinstance(password, str):
-        password = password.encode('utf-8')
-        
+        password = password.encode("utf-8")
+
     if isinstance(algorithm, str):
         algorithm = EncryptionAlgorithm(algorithm)
     # Generate a key from the password
     salt = secrets.token_bytes(16)  # Unique salt for each encryption
     if not quiet:
         print("\nGenerating encryption key...")
-    algorithm_value = algorithm.value if isinstance(
-        algorithm, EncryptionAlgorithm) else algorithm
+    algorithm_value = (
+        algorithm.value if isinstance(algorithm, EncryptionAlgorithm) else algorithm
+    )
     print_hash_config(
         hash_config,
         encryption_algo=algorithm_value,
         salt=salt,
         quiet=quiet,
         verbose=verbose,
-        debug=debug
+        debug=debug,
     )
 
     key, salt, hash_config = generate_key(
-        password, salt, hash_config, pbkdf2_iterations, quiet, algorithm_value, 
-        progress=progress, pqc_keypair=pqc_keypair)
+        password,
+        salt,
+        hash_config,
+        pbkdf2_iterations,
+        quiet,
+        algorithm_value,
+        progress=progress,
+        pqc_keypair=pqc_keypair,
+    )
     # Read the input file
     if not quiet:
         print(f"Reading file: {input_file}")
 
-    with open(input_file, 'rb') as file:
+    with open(input_file, "rb") as file:
         data = file.read()
 
     # Calculate hash of original data for integrity verification
@@ -2208,11 +2442,11 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     # Helper function to get appropriate nonce for each algorithm
     def get_algorithm_nonce(alg, test_mode=False):
         """Generate an appropriate nonce size for the given algorithm.
-        
+
         Args:
             alg: The encryption algorithm
             test_mode: Whether we're in test mode (affects some algorithms for compatibility)
-            
+
         Returns:
             tuple: (nonce, nonce_size) where nonce is the generated nonce bytes
                   and nonce_size is the size that should be used for the actual encryption
@@ -2228,7 +2462,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                 return secrets.token_bytes(12), 12
         elif alg == EncryptionAlgorithm.AES_GCM_SIV:
             # AES-GCM-SIV uses 12 bytes nonce
-            return secrets.token_bytes(12), 12 
+            return secrets.token_bytes(12), 12
         elif alg == EncryptionAlgorithm.AES_OCB3:
             # AES-OCB3 uses 12 bytes nonce
             return secrets.token_bytes(12), 12
@@ -2238,7 +2472,7 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
             return secrets.token_bytes(16), 16
         elif alg == EncryptionAlgorithm.CHACHA20_POLY1305:
             # ChaCha20-Poly1305 uses a 12-byte nonce (96 bits)
-            # In test mode, we still generate 16 bytes but use only 12 for encryption 
+            # In test mode, we still generate 16 bytes but use only 12 for encryption
             if test_mode:
                 return secrets.token_bytes(16), 12
             else:
@@ -2262,116 +2496,129 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         else:
             # Default for unknown algorithms
             return secrets.token_bytes(16), 16
-    
+
     # For large files, use progress bar for encryption
     def do_encrypt():
         if algorithm == EncryptionAlgorithm.FERNET:
             f = Fernet(key)
             return f.encrypt(data)
-        elif algorithm in [EncryptionAlgorithm.KYBER512_HYBRID, 
-                      EncryptionAlgorithm.KYBER768_HYBRID, 
-                      EncryptionAlgorithm.KYBER1024_HYBRID,
-                      EncryptionAlgorithm.ML_KEM_512_HYBRID,
-                      EncryptionAlgorithm.ML_KEM_768_HYBRID,
-                      EncryptionAlgorithm.ML_KEM_1024_HYBRID,
-                      EncryptionAlgorithm.ML_KEM_512_CHACHA20,
-                      EncryptionAlgorithm.ML_KEM_768_CHACHA20,
-                      EncryptionAlgorithm.ML_KEM_1024_CHACHA20,
-                      EncryptionAlgorithm.HQC_128_HYBRID,
-                      EncryptionAlgorithm.HQC_192_HYBRID,
-                      EncryptionAlgorithm.HQC_256_HYBRID]:
+        elif algorithm in [
+            EncryptionAlgorithm.KYBER512_HYBRID,
+            EncryptionAlgorithm.KYBER768_HYBRID,
+            EncryptionAlgorithm.KYBER1024_HYBRID,
+            EncryptionAlgorithm.ML_KEM_512_HYBRID,
+            EncryptionAlgorithm.ML_KEM_768_HYBRID,
+            EncryptionAlgorithm.ML_KEM_1024_HYBRID,
+            EncryptionAlgorithm.ML_KEM_512_CHACHA20,
+            EncryptionAlgorithm.ML_KEM_768_CHACHA20,
+            EncryptionAlgorithm.ML_KEM_1024_CHACHA20,
+            EncryptionAlgorithm.HQC_128_HYBRID,
+            EncryptionAlgorithm.HQC_192_HYBRID,
+            EncryptionAlgorithm.HQC_256_HYBRID,
+        ]:
             # PQC algorithms don't use nonces in the same way, handle separately
             if not PQC_AVAILABLE:
-                raise ImportError("Post-quantum cryptography support is not available. "
-                                "Install liboqs-python to use post-quantum algorithms.")
-            
+                raise ImportError(
+                    "Post-quantum cryptography support is not available. "
+                    "Install liboqs-python to use post-quantum algorithms."
+                )
+
             # Map algorithm to PQCAlgorithm
             pqc_algo_map = {
                 # Legacy Kyber mappings
                 EncryptionAlgorithm.KYBER512_HYBRID: PQCAlgorithm.KYBER512,
                 EncryptionAlgorithm.KYBER768_HYBRID: PQCAlgorithm.KYBER768,
                 EncryptionAlgorithm.KYBER1024_HYBRID: PQCAlgorithm.KYBER1024,
-                
                 # Standardized ML-KEM mappings
                 EncryptionAlgorithm.ML_KEM_512_HYBRID: PQCAlgorithm.ML_KEM_512,
                 EncryptionAlgorithm.ML_KEM_768_HYBRID: PQCAlgorithm.ML_KEM_768,
                 EncryptionAlgorithm.ML_KEM_1024_HYBRID: PQCAlgorithm.ML_KEM_1024,
-                
                 # ML-KEM with ChaCha20
                 EncryptionAlgorithm.ML_KEM_512_CHACHA20: PQCAlgorithm.ML_KEM_512,
                 EncryptionAlgorithm.ML_KEM_768_CHACHA20: PQCAlgorithm.ML_KEM_768,
                 EncryptionAlgorithm.ML_KEM_1024_CHACHA20: PQCAlgorithm.ML_KEM_1024,
-                
                 # HQC mappings
                 EncryptionAlgorithm.HQC_128_HYBRID: "HQC-128",
                 EncryptionAlgorithm.HQC_192_HYBRID: "HQC-192",
-                EncryptionAlgorithm.HQC_256_HYBRID: "HQC-256"
+                EncryptionAlgorithm.HQC_256_HYBRID: "HQC-256",
             }
-            
+
             # Get public key from keypair or generate new keypair
             if pqc_keypair and pqc_keypair[0]:
                 public_key = pqc_keypair[0]
             else:
                 # If no keypair provided, we need to create a new one and store it in metadata
-                cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet, verbose=verbose, debug=debug)
+                cipher = PQCipher(
+                    pqc_algo_map[algorithm], quiet=quiet, verbose=verbose, debug=debug
+                )
                 public_key, private_key = cipher.generate_keypair()
                 # We'll add these to metadata later
-            
+
             # Initialize PQC cipher and encrypt
             # Use encryption_data parameter passed to the parent function
-            cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet, encryption_data=encryption_data, verbose=verbose, debug=debug)
+            cipher = PQCipher(
+                pqc_algo_map[algorithm],
+                quiet=quiet,
+                encryption_data=encryption_data,
+                verbose=verbose,
+                debug=debug,
+            )
             return cipher.encrypt(data, public_key)
         else:
             # Check if we're in test mode - this affects nonce generation for some algorithms
-            is_test_env = os.environ.get('PYTEST_CURRENT_TEST') is not None
-            
+            is_test_env = os.environ.get("PYTEST_CURRENT_TEST") is not None
+
             # Generate appropriate nonce for the algorithm, considering test mode
             nonce, nonce_size = get_algorithm_nonce(algorithm, test_mode=is_test_env)
-            
+
             if algorithm == EncryptionAlgorithm.AES_GCM:
                 cipher = AESGCM(key)
                 # Always use 12 bytes for actual encryption, but prefix with full nonce
                 return nonce + cipher.encrypt(nonce[:nonce_size], data, None)
-                
+
             elif algorithm == EncryptionAlgorithm.AES_SIV:
                 cipher = AESSIV(key)
                 # AES-SIV is special as it doesn't use the nonce for encryption
                 return nonce + cipher.encrypt(data, None)
-                
+
             elif algorithm == EncryptionAlgorithm.CHACHA20_POLY1305:
                 cipher = ChaCha20Poly1305(key)
                 return nonce + cipher.encrypt(nonce[:nonce_size], data, None)
-            
+
             elif algorithm == EncryptionAlgorithm.XCHACHA20_POLY1305:
                 cipher = XChaCha20Poly1305(key)
                 return nonce + cipher.encrypt(nonce[:nonce_size], data, None)
-            
+
             elif algorithm == EncryptionAlgorithm.AES_GCM_SIV:
                 cipher = AESGCMSIV(key)
                 return nonce + cipher.encrypt(nonce[:nonce_size], data, None)
-            
+
             elif algorithm == EncryptionAlgorithm.AES_OCB3:
                 cipher = AESOCB3(key)
                 return nonce + cipher.encrypt(nonce[:nonce_size], data, None)
-            
+
             elif algorithm == EncryptionAlgorithm.CAMELLIA:
                 cipher = CamelliaCipher(key)
                 return nonce + cipher.encrypt(nonce[:nonce_size], data, None)
-                
-            elif algorithm in [EncryptionAlgorithm.KYBER512_HYBRID, 
-                         EncryptionAlgorithm.KYBER768_HYBRID, 
-                         EncryptionAlgorithm.KYBER1024_HYBRID]:
+
+            elif algorithm in [
+                EncryptionAlgorithm.KYBER512_HYBRID,
+                EncryptionAlgorithm.KYBER768_HYBRID,
+                EncryptionAlgorithm.KYBER1024_HYBRID,
+            ]:
                 if not PQC_AVAILABLE:
-                    raise ImportError("Post-quantum cryptography support is not available. "
-                                     "Install liboqs-python to use post-quantum algorithms.")
-                
+                    raise ImportError(
+                        "Post-quantum cryptography support is not available. "
+                        "Install liboqs-python to use post-quantum algorithms."
+                    )
+
                 # Map algorithm to PQCAlgorithm
                 pqc_algo_map = {
                     EncryptionAlgorithm.KYBER512_HYBRID: PQCAlgorithm.KYBER512,
                     EncryptionAlgorithm.KYBER768_HYBRID: PQCAlgorithm.KYBER768,
-                    EncryptionAlgorithm.KYBER1024_HYBRID: PQCAlgorithm.KYBER1024
+                    EncryptionAlgorithm.KYBER1024_HYBRID: PQCAlgorithm.KYBER1024,
                 }
-                
+
                 # Get public key from keypair or generate new keypair
                 if pqc_keypair and pqc_keypair[0]:
                     public_key = pqc_keypair[0]
@@ -2380,21 +2627,21 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
                     cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet)
                     public_key, private_key = cipher.generate_keypair()
                     # We'll add these to metadata later
-                
+
                 # Initialize PQC cipher and encrypt
                 # Use encryption_data parameter passed to the parent function
-                cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet, encryption_data=encryption_data)
+                cipher = PQCipher(
+                    pqc_algo_map[algorithm],
+                    quiet=quiet,
+                    encryption_data=encryption_data,
+                )
                 return cipher.encrypt(data, public_key)
             else:
                 raise ValueError(f"Unknown encryption algorithm: {algorithm}")
 
     # Only show progress for larger files (> 1MB)
     if len(data) > 1024 * 1024 and not quiet:
-        encrypted_data = with_progress_bar(
-            do_encrypt,
-            "Encrypting data",
-            quiet=quiet
-        )
+        encrypted_data = with_progress_bar(do_encrypt, "Encrypting data", quiet=quiet)
     else:
         encrypted_data = do_encrypt()
     if not quiet:
@@ -2410,94 +2657,118 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     # Create metadata with all necessary information using version 4 format
     # Prepare PQC information if applicable
     pqc_info = None
-    if algorithm in [EncryptionAlgorithm.KYBER512_HYBRID, 
-                    EncryptionAlgorithm.KYBER768_HYBRID, 
-                    EncryptionAlgorithm.KYBER1024_HYBRID,
-                    EncryptionAlgorithm.ML_KEM_512_HYBRID,
-                    EncryptionAlgorithm.ML_KEM_768_HYBRID,
-                    EncryptionAlgorithm.ML_KEM_1024_HYBRID,
-                    EncryptionAlgorithm.ML_KEM_512_CHACHA20,
-                    EncryptionAlgorithm.ML_KEM_768_CHACHA20,
-                    EncryptionAlgorithm.ML_KEM_1024_CHACHA20,
-                    EncryptionAlgorithm.HQC_128_HYBRID,
-                    EncryptionAlgorithm.HQC_192_HYBRID,
-                    EncryptionAlgorithm.HQC_256_HYBRID]:
+    if algorithm in [
+        EncryptionAlgorithm.KYBER512_HYBRID,
+        EncryptionAlgorithm.KYBER768_HYBRID,
+        EncryptionAlgorithm.KYBER1024_HYBRID,
+        EncryptionAlgorithm.ML_KEM_512_HYBRID,
+        EncryptionAlgorithm.ML_KEM_768_HYBRID,
+        EncryptionAlgorithm.ML_KEM_1024_HYBRID,
+        EncryptionAlgorithm.ML_KEM_512_CHACHA20,
+        EncryptionAlgorithm.ML_KEM_768_CHACHA20,
+        EncryptionAlgorithm.ML_KEM_1024_CHACHA20,
+        EncryptionAlgorithm.HQC_128_HYBRID,
+        EncryptionAlgorithm.HQC_192_HYBRID,
+        EncryptionAlgorithm.HQC_256_HYBRID,
+    ]:
         pqc_info = {}
-        
+
         if pqc_keypair:
             # Always store the public key
-            pqc_info['public_key'] = pqc_keypair[0]
-            
+            pqc_info["public_key"] = pqc_keypair[0]
+
             # Store private key only if requested (for self-decryption)
             if (pqc_store_private_key or pqc_dual_encrypt_key) and len(pqc_keypair) > 1:
                 if not quiet:
-                    print("Storing encrypted post-quantum private key in file for self-decryption")
+                    print(
+                        "Storing encrypted post-quantum private key in file for self-decryption"
+                    )
                 # Create a separate derived key that specifically depends on the provided password
-                # This way, even if the main encryption key has issues, the private key's encryption 
+                # This way, even if the main encryption key has issues, the private key's encryption
                 # will still be password dependent
-                
+
                 # Use a different salt for private key encryption
                 private_key_salt = secrets.token_bytes(16)
-                pqc_info['key_salt'] = private_key_salt
-                
+                pqc_info["key_salt"] = private_key_salt
+
                 # START DO NOT CHANGE
                 try:
                     # Use the derived private_key_key NOT the main key
                     cipher = AESGCM(hashlib.sha3_256(key).digest())
                     nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
                     # Use logger for DEBUG messages instead of print
-                    logger.debug(f"Encrypting private key (keypair): key length = {len(key)}, nonce length = {len(nonce)}, private key length = {len(pqc_keypair[1])}")
-                    encrypted_private_key = nonce + cipher.encrypt(nonce, pqc_keypair[1], None)
-                    logger.debug(f"Successfully encrypted private key, length = {len(encrypted_private_key)}")
+                    logger.debug(
+                        f"Encrypting private key (keypair): key length = {len(key)}, nonce length = {len(nonce)}, private key length = {len(pqc_keypair[1])}"
+                    )
+                    encrypted_private_key = nonce + cipher.encrypt(
+                        nonce, pqc_keypair[1], None
+                    )
+                    logger.debug(
+                        f"Successfully encrypted private key, length = {len(encrypted_private_key)}"
+                    )
                 except Exception as e:
                     logger.error(f"Error encrypting private key: {e}")
                     raise
                 # END DO NOT CHANGE
-                
-                pqc_info['private_key'] = encrypted_private_key
-                pqc_info['key_encrypted'] = True  # Mark that the key is encrypted
+
+                pqc_info["private_key"] = encrypted_private_key
+                pqc_info["key_encrypted"] = True  # Mark that the key is encrypted
                 if pqc_dual_encrypt_key:
-                    logger.debug(f"Setting pqc_dual_encrypt_key flag to True for keypair provided")
-                    pqc_info['dual_encrypt_key'] = True
+                    logger.debug(
+                        f"Setting pqc_dual_encrypt_key flag to True for keypair provided"
+                    )
+                    pqc_info["dual_encrypt_key"] = True
 
             elif not quiet:
-                print("Post-quantum private key NOT stored - you'll need the key file for decryption")
-        elif 'private_key' in locals():
+                print(
+                    "Post-quantum private key NOT stored - you'll need the key file for decryption"
+                )
+        elif "private_key" in locals():
             # If we generated a keypair internally, store both keys
-            pqc_info['public_key'] = public_key
-            
+            pqc_info["public_key"] = public_key
+
             # Store the private key if requested
             if pqc_store_private_key or pqc_dual_encrypt_key:
                 if not quiet:
-                    print("Storing encrypted post-quantum private key in file for self-decryption")
+                    print(
+                        "Storing encrypted post-quantum private key in file for self-decryption"
+                    )
                 # Create a separate derived key that specifically depends on the provided password
-                # This way, even if the main encryption key has issues, the private key's encryption 
+                # This way, even if the main encryption key has issues, the private key's encryption
                 # will still be password dependent
-                
+
                 # Use a different salt for private key encryption
                 private_key_salt = secrets.token_bytes(16)
-                pqc_info['key_salt'] = private_key_salt
-                
+                pqc_info["key_salt"] = private_key_salt
+
                 # START DO NOT CHANGE
                 try:
                     # Use AES-GCM for encryption
                     cipher = AESGCM(hashlib.sha3_256(key).digest())
                     nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
                     # Use logger for DEBUG messages instead of print
-                    logger.debug(f"Encrypting private key: key length = {len(key)}, nonce length = {len(nonce)}, private key length = {len(private_key)}")
-                    encrypted_private_key = nonce + cipher.encrypt(nonce, private_key, None)
-                    logger.debug(f"Successfully encrypted private key, length = {len(encrypted_private_key)}")
+                    logger.debug(
+                        f"Encrypting private key: key length = {len(key)}, nonce length = {len(nonce)}, private key length = {len(private_key)}"
+                    )
+                    encrypted_private_key = nonce + cipher.encrypt(
+                        nonce, private_key, None
+                    )
+                    logger.debug(
+                        f"Successfully encrypted private key, length = {len(encrypted_private_key)}"
+                    )
                 except Exception as e:
                     logger.error(f"Error encrypting private key: {e}")
                     raise
                 # END DO NOT CHANGE
-                
-                pqc_info['private_key'] = encrypted_private_key
-                pqc_info['key_encrypted'] = True  # Mark that the key is encrypted
+
+                pqc_info["private_key"] = encrypted_private_key
+                pqc_info["key_encrypted"] = True  # Mark that the key is encrypted
                 if pqc_dual_encrypt_key:
-                    logger.debug(f"Setting pqc_dual_encrypt_key flag to True for generated internal keypair")
-                    pqc_info['dual_encrypt_key'] = True
-    
+                    logger.debug(
+                        f"Setting pqc_dual_encrypt_key flag to True for generated internal keypair"
+                    )
+                    pqc_info["dual_encrypt_key"] = True
+
     # Create metadata in version 5 format using the helper function
     metadata = create_metadata_v5(
         salt=salt,
@@ -2507,11 +2778,11 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         algorithm=algorithm.value,
         pbkdf2_iterations=pbkdf2_iterations,
         pqc_info=pqc_info,
-        encryption_data=encryption_data
+        encryption_data=encryption_data,
     )
     # If scrypt is used, add rounds to hash_config
     # Serialize and encode the metadata
-    metadata_json = json.dumps(metadata).encode('utf-8')
+    metadata_json = json.dumps(metadata).encode("utf-8")
     metadata_base64 = base64.b64encode(metadata_json)
 
     # Base64 encode the encrypted data
@@ -2521,8 +2792,8 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
     if not quiet:
         print(f"Writing encrypted file: {output_file}", end=" ")
 
-    with open(output_file, 'wb') as file:
-        file.write(metadata_base64 + b':' + encrypted_data)
+    with open(output_file, "wb") as file:
+        file.write(metadata_base64 + b":" + encrypted_data)
 
     # Set secure permissions on the output file
     set_secure_permissions(output_file)
@@ -2534,33 +2805,77 @@ def encrypt_file(input_file, output_file, password, hash_config=None,
         return True
     finally:
         # Wipe sensitive data from memory in the correct order
-        if 'key' in locals() and key is not None:
+        if "key" in locals() and key is not None:
             secure_memzero(key)
             key = None
-            
-        if 'data' in locals() and data is not None:
+
+        if "data" in locals() and data is not None:
             secure_memzero(data)
             data = None
-            
-        if 'encrypted_data' in locals() and encrypted_data is not None:
+
+        if "encrypted_data" in locals() and encrypted_data is not None:
             secure_memzero(encrypted_data)
             encrypted_data = None
-            
-        if 'encrypted_hash' in locals() and encrypted_hash is not None:
+
+        if "encrypted_hash" in locals() and encrypted_hash is not None:
             secure_memzero(encrypted_hash)
             encrypted_hash = None
 
+
+def extract_file_metadata(input_file):
+    """
+    Extract basic metadata from encrypted file without decryption.
+
+    Args:
+        input_file (str): Path to the encrypted file
+
+    Returns:
+        dict: Metadata including format_version, algorithm, and encryption_data
+
+    Raises:
+        ValueError: If file format is invalid
+    """
+    try:
+        with open(input_file, "rb") as file:
+            file_content = file.read()
+
+        # Split metadata and encrypted data
+        metadata_b64, _ = file_content.split(b":", 1)
+        metadata = json.loads(base64.b64decode(metadata_b64))
+
+        format_version = metadata.get("format_version", 1)
+
+        # Extract algorithm based on format version
+        if format_version in [4, 5]:
+            encryption = metadata.get("encryption", {})
+            algorithm = encryption.get("algorithm", EncryptionAlgorithm.FERNET.value)
+            encryption_data = encryption.get("encryption_data", "aes-gcm")
+        else:
+            algorithm = metadata.get("algorithm", EncryptionAlgorithm.FERNET.value)
+            encryption_data = "aes-gcm"  # Default for older formats
+
+        return {
+            "format_version": format_version,
+            "algorithm": algorithm,
+            "encryption_data": encryption_data,
+            "metadata": metadata,
+        }
+    except Exception as e:
+        raise ValueError(f"Invalid file format: {str(e)}")
+
+
 @secure_decrypt_error_handler
 def decrypt_file(
-        input_file,
-        output_file,
-        password,
-        quiet=False,
-        progress=False,
-        verbose=False,
-        debug=False,
-        pqc_private_key=None,
-        encryption_data='aes-gcm'):
+    input_file,
+    output_file,
+    password,
+    quiet=False,
+    progress=False,
+    verbose=False,
+    debug=False,
+    pqc_private_key=None,
+    encryption_data="aes-gcm",
+):
     """
     Decrypt a file with a password.
 
@@ -2573,11 +2888,11 @@ def decrypt_file(
         verbose (bool): Whether to show verbose output
         pqc_private_key (bytes, optional): Post-quantum private key for hybrid decryption
         encryption_data (str): Encryption data algorithm to use for hybrid encryption (default: 'aes-gcm')
-    
+
     Returns:
         Union[bool, bytes]: True if decryption was successful and output_file is specified,
                            or the decrypted data if output_file is None
-                           
+
     Raises:
         ValidationError: If input parameters are invalid
         DecryptionError: If the decryption operation fails
@@ -2587,48 +2902,52 @@ def decrypt_file(
     # Input validation with standardized errors
     if not input_file or not isinstance(input_file, str):
         raise ValidationError("Input file path must be a non-empty string")
-        
+
     if output_file is not None and not isinstance(output_file, str):
         raise ValidationError("Output file path must be a string")
-        
+
     # Special case for stdin and other special files
-    if input_file == '/dev/stdin' or input_file.startswith('/proc/') or input_file.startswith('/dev/'):
+    if (
+        input_file == "/dev/stdin"
+        or input_file.startswith("/proc/")
+        or input_file.startswith("/dev/")
+    ):
         # Skip file existence check for special files
         pass
     elif not os.path.isfile(input_file):
         # In test mode, raise FileNotFoundError for compatibility with tests
         # This ensures TestEncryptionEdgeCases.test_nonexistent_input_file works
-        if os.environ.get('PYTEST_CURRENT_TEST') is not None:
+        if os.environ.get("PYTEST_CURRENT_TEST") is not None:
             raise FileNotFoundError(f"Input file does not exist: {input_file}")
         else:
             # In production, use our standardized validation error
             raise ValidationError(f"Input file does not exist: {input_file}")
-        
+
     if password is None:
         raise ValidationError("Password cannot be None")
-        
+
     # Ensure password is in bytes format with correct encoding
     if isinstance(password, str):
-        password = password.encode('utf-8')
-        
-    KeyStretch.kind_action = 'decrypt'
+        password = password.encode("utf-8")
+
+    KeyStretch.kind_action = "decrypt"
     # Read the encrypted file
     if not quiet:
         print(f"\nReading encrypted file: {input_file}")
 
-    with open(input_file, 'rb') as file:
+    with open(input_file, "rb") as file:
         file_content = file.read()
 
     # Split metadata and encrypted data
     try:
         # Revert to the original simpler parsing
-        metadata_b64, encrypted_data_b64 = file_content.split(b':', 1)
+        metadata_b64, encrypted_data_b64 = file_content.split(b":", 1)
         metadata = json.loads(base64.b64decode(metadata_b64))
         encrypted_data = base64.b64decode(encrypted_data_b64)
     except Exception as e:
         # Keep the original ValueError to maintain compatibility
         # Check if we're in a test environment and pass the exact error type needed for tests
-        if os.environ.get('PYTEST_CURRENT_TEST') is not None:
+        if os.environ.get("PYTEST_CURRENT_TEST") is not None:
             # This ensures TestEncryptionEdgeCases.test_corrupted_encrypted_file works correctly
             raise ValueError(f"Invalid file format: {str(e)}")
         else:
@@ -2636,8 +2955,8 @@ def decrypt_file(
             raise ValueError(f"Invalid file format: {str(e)}")
 
     # Extract necessary information from metadata
-    format_version = metadata.get('format_version', 1)
-    
+    format_version = metadata.get("format_version", 1)
+
     # For format_version 4 or 5, set correct hash_config for printing purposes
     # This doesn't change the actual metadata, just passes the right info to print_hash_config
     if format_version in [4, 5]:
@@ -2647,128 +2966,132 @@ def decrypt_file(
         else:
             print_hash_config_metadata = None
     else:
-        print_hash_config_metadata = metadata.get('hash_config', {})
-    
+        print_hash_config_metadata = metadata.get("hash_config", {})
+
     # Handle format version 4 or 5
     if format_version in [4, 5]:
         # Extract information from new hierarchical structure
-        derivation_config = metadata['derivation_config']
-        salt = base64.b64decode(derivation_config['salt'])
-        
+        derivation_config = metadata["derivation_config"]
+        salt = base64.b64decode(derivation_config["salt"])
+
         # Get hash configuration with nested structure handling
-        nested_hash_config = derivation_config.get('hash_config', {})
+        nested_hash_config = derivation_config.get("hash_config", {})
         # Convert nested structure to flat structure for backward compatibility
         hash_config = {}
         for algo, config in nested_hash_config.items():
-            if isinstance(config, dict) and 'rounds' in config:
-                hash_config[algo] = config['rounds']
+            if isinstance(config, dict) and "rounds" in config:
+                hash_config[algo] = config["rounds"]
             else:
                 # Fallback for any non-nested values (shouldn't happen, but just in case)
                 hash_config[algo] = config
-        
+
         # Get KDF configurations
-        kdf_config = derivation_config.get('kdf_config', {})
-        pbkdf2_config = kdf_config.get('pbkdf2', {})
-        pbkdf2_iterations = pbkdf2_config.get('rounds', 0)
-        
+        kdf_config = derivation_config.get("kdf_config", {})
+        pbkdf2_config = kdf_config.get("pbkdf2", {})
+        pbkdf2_iterations = pbkdf2_config.get("rounds", 0)
+
         # Merge KDF configurations into hash_config for compatibility with generate_key
         for kdf_name, kdf_params in kdf_config.items():
-            if kdf_name in ['scrypt', 'argon2', 'balloon']:
+            if kdf_name in ["scrypt", "argon2", "balloon"]:
                 hash_config[kdf_name] = kdf_params
-            elif kdf_name == 'pbkdf2' and isinstance(kdf_params, dict) and 'rounds' in kdf_params:
+            elif (
+                kdf_name == "pbkdf2"
+                and isinstance(kdf_params, dict)
+                and "rounds" in kdf_params
+            ):
                 # Also store pbkdf2_iterations directly in hash_config for generate_key
-                hash_config['pbkdf2'] = kdf_params
-        
+                hash_config["pbkdf2"] = kdf_params
+
         # Mark this hash_config as coming from decryption metadata
-        hash_config['_is_from_decryption_metadata'] = True
-        
+        hash_config["_is_from_decryption_metadata"] = True
+
         # Get hash information
-        hashes = metadata['hashes']
-        original_hash = hashes.get('original_hash')
-        encrypted_hash = hashes.get('encrypted_hash')
-        
+        hashes = metadata["hashes"]
+        original_hash = hashes.get("original_hash")
+        encrypted_hash = hashes.get("encrypted_hash")
+
         # Get encryption information
-        encryption = metadata['encryption']
-        algorithm = encryption.get('algorithm', EncryptionAlgorithm.FERNET.value)
-        
+        encryption = metadata["encryption"]
+        algorithm = encryption.get("algorithm", EncryptionAlgorithm.FERNET.value)
+
         # For v5 format, extract encryption_data from metadata (overrides parameter)
-        if format_version >= 5 and 'encryption_data' in encryption:
-            encryption_data = encryption['encryption_data']
-        
+        if format_version >= 5 and "encryption_data" in encryption:
+            encryption_data = encryption["encryption_data"]
+
         # Extract PQC information if present
         pqc_info = None
-        pqc_has_private_key = 'pqc_private_key' in encryption
-        pqc_key_is_encrypted = encryption.get('pqc_key_encrypted', False)
-        
-        if 'pqc_public_key' in encryption:
-            pqc_public_key = base64.b64decode(encryption['pqc_public_key'])
+        pqc_has_private_key = "pqc_private_key" in encryption
+        pqc_key_is_encrypted = encryption.get("pqc_key_encrypted", False)
+
+        if "pqc_public_key" in encryption:
+            pqc_public_key = base64.b64decode(encryption["pqc_public_key"])
             # If a private key was passed explicitly via parameter, use it
             if pqc_private_key:
                 pqc_info = {
-                    'public_key': pqc_public_key,
-                    'private_key': pqc_private_key
+                    "public_key": pqc_public_key,
+                    "private_key": pqc_private_key,
                 }
             # If the private key is embedded in the metadata and not encrypted, use it directly
             elif pqc_has_private_key and not pqc_key_is_encrypted:
-                embedded_private_key = base64.b64decode(encryption['pqc_private_key'])
+                embedded_private_key = base64.b64decode(encryption["pqc_private_key"])
                 pqc_info = {
-                    'public_key': pqc_public_key,
-                    'private_key': embedded_private_key
+                    "public_key": pqc_public_key,
+                    "private_key": embedded_private_key,
                 }
             # Otherwise just store the public key and we'll get/decrypt the private key later
             else:
                 pqc_info = {
-                    'public_key': pqc_public_key,
-                    'private_key': pqc_private_key  # This might be None, will be set later
+                    "public_key": pqc_public_key,
+                    "private_key": pqc_private_key,  # This might be None, will be set later
                 }
     # Handle older format versions (1-3)
     elif format_version in [1, 2, 3]:
-        salt = base64.b64decode(metadata['salt'])
-        hash_config = metadata.get('hash_config')
-        # Mark this hash_config as coming from decryption metadata  
+        salt = base64.b64decode(metadata["salt"])
+        hash_config = metadata.get("hash_config")
+        # Mark this hash_config as coming from decryption metadata
         if hash_config:
-            hash_config['_is_from_decryption_metadata'] = True
-        
+            hash_config["_is_from_decryption_metadata"] = True
+
         if format_version == 1:
-            pbkdf2_iterations = metadata.get('pbkdf2_iterations', 100000)
+            pbkdf2_iterations = metadata.get("pbkdf2_iterations", 100000)
         elif format_version in [2, 3]:
             pbkdf2_iterations = 0
-            
-        original_hash = metadata.get('original_hash')
-        encrypted_hash = metadata.get('encrypted_hash')
+
+        original_hash = metadata.get("original_hash")
+        encrypted_hash = metadata.get("encrypted_hash")
         # Default to Fernet for backward compatibility
-        algorithm = metadata.get('algorithm', EncryptionAlgorithm.FERNET.value)
-        
+        algorithm = metadata.get("algorithm", EncryptionAlgorithm.FERNET.value)
+
         # Extract PQC information if present (format version 3+)
         pqc_info = None
         pqc_has_private_key = False
         pqc_key_is_encrypted = False
-        
+
         if format_version >= 3:
             # Store for PQC key decryption after key derivation
-            pqc_has_private_key = 'pqc_private_key' in metadata
-            pqc_key_is_encrypted = metadata.get('pqc_key_encrypted', False)
-            
-            if 'pqc_public_key' in metadata:
-                pqc_public_key = base64.b64decode(metadata['pqc_public_key'])
+            pqc_has_private_key = "pqc_private_key" in metadata
+            pqc_key_is_encrypted = metadata.get("pqc_key_encrypted", False)
+
+            if "pqc_public_key" in metadata:
+                pqc_public_key = base64.b64decode(metadata["pqc_public_key"])
                 # If a private key was passed explicitly via parameter, use it
                 if pqc_private_key:
                     pqc_info = {
-                        'public_key': pqc_public_key,
-                        'private_key': pqc_private_key
+                        "public_key": pqc_public_key,
+                        "private_key": pqc_private_key,
                     }
                 # If the private key is embedded in the metadata and not encrypted, use it directly
                 elif pqc_has_private_key and not pqc_key_is_encrypted:
-                    embedded_private_key = base64.b64decode(metadata['pqc_private_key'])
+                    embedded_private_key = base64.b64decode(metadata["pqc_private_key"])
                     pqc_info = {
-                        'public_key': pqc_public_key,
-                        'private_key': embedded_private_key
+                        "public_key": pqc_public_key,
+                        "private_key": embedded_private_key,
                     }
                 # Otherwise just store the public key and we'll get/decrypt the private key later
                 else:
                     pqc_info = {
-                        'public_key': pqc_public_key,
-                        'private_key': pqc_private_key  # This might be None, will be set later
+                        "public_key": pqc_public_key,
+                        "private_key": pqc_private_key,  # This might be None, will be set later
                     }
     else:
         raise ValueError(f"Unsupported file format version: {format_version}")
@@ -2779,25 +3102,25 @@ def decrypt_file(
         salt=salt,  # Use the extracted salt value
         quiet=quiet,
         verbose=verbose,
-        debug=debug
+        debug=debug,
     )
 
     # Verify the hash of encrypted data
     if encrypted_hash:
         if not quiet:
             print("Verifying encrypted content integrity", end=" ")
-            
+
         # Use our constant-time comparison from crypt_errors
         from .crypt_errors import constant_time_compare
-        
+
         computed_hash = calculate_hash(encrypted_data)
         # Use constant-time comparison to prevent timing attacks
         if not constant_time_compare(computed_hash, encrypted_hash):
             if not quiet:
                 print("❌")  # Red X symbol
-                
+
             # In test mode, use a more detailed message for compatibility with tests
-            if os.environ.get('PYTEST_CURRENT_TEST') is not None:
+            if os.environ.get("PYTEST_CURRENT_TEST") is not None:
                 raise AuthenticationError("Encrypted data has been tampered with")
             else:
                 # In production mode, use a generic message to avoid leaking specifics
@@ -2809,20 +3132,28 @@ def decrypt_file(
     if not quiet:
         print("Generating decryption key ✅")  # Green check symbol)
 
-    key, _, _ = generate_key(password, salt, hash_config,
-                             pbkdf2_iterations, quiet, algorithm, progress=progress,
-                             pqc_keypair=pqc_info)
+    key, _, _ = generate_key(
+        password,
+        salt,
+        hash_config,
+        pbkdf2_iterations,
+        quiet,
+        algorithm,
+        progress=progress,
+        pqc_keypair=pqc_info,
+    )
+
     # Helper function to get expected nonce size for each algorithm
     def get_nonce_size(alg, include_legacy=True):
         """Get the appropriate nonce size(s) for the given algorithm.
-        
+
         Args:
             alg: The encryption algorithm
             include_legacy: Whether to include legacy nonce sizes for compatibility
-            
+
         Returns:
             list: List of possible nonce sizes to try, in order of preference.
-                 Each item is a tuple of (nonce_size, effective_size) where 
+                 Each item is a tuple of (nonce_size, effective_size) where
                  effective_size is the size used for actual crypto operations.
         """
         if alg == EncryptionAlgorithm.AES_GCM.value:
@@ -2857,61 +3188,71 @@ def decrypt_file(
         else:
             # Default for unknown algorithms
             return [(16, 16)]
-    
+
     # Now that we have the key, we can try to decrypt PQC private key if needed
     if pqc_has_private_key:
         try:
             # Handle different format versions
             if format_version in [4, 5]:
                 # Get encrypted private key from v4/v5 structure
-                encrypted_private_key = base64.b64decode(metadata['encryption']['pqc_private_key'])
+                encrypted_private_key = base64.b64decode(
+                    metadata["encryption"]["pqc_private_key"]
+                )
             else:  # format_version 3
-                encrypted_private_key = base64.b64decode(metadata['pqc_private_key'])
-            
+                encrypted_private_key = base64.b64decode(metadata["pqc_private_key"])
+
             # Initialize the pqc_private_key_from_metadata variable
             pqc_private_key_from_metadata = None
-            
+
             # Check if key is encrypted
             if pqc_key_is_encrypted:
                 # We need to decrypt the private key using the separately derived key
                 # Get the salt from metadata based on format version
                 if format_version in [4, 5]:
-                    if 'pqc_key_salt' not in metadata['encryption']:
+                    if "pqc_key_salt" not in metadata["encryption"]:
                         if not quiet:
-                            print("Failed to decrypt post-quantum private key - wrong format")
+                            print(
+                                "Failed to decrypt post-quantum private key - wrong format"
+                            )
                         return decrypt_algorithm_object, pqc_private_key_from_metadata
                     else:
                         # Decode the salt from v4/v5 structure
-                        private_key_salt = base64.b64decode(metadata['encryption']['pqc_key_salt'])
+                        private_key_salt = base64.b64decode(
+                            metadata["encryption"]["pqc_key_salt"]
+                        )
                 else:  # format_version 3
-                    if 'pqc_key_salt' not in metadata:
+                    if "pqc_key_salt" not in metadata:
                         if not quiet:
-                            print("Failed to decrypt post-quantum private key - wrong format")
+                            print(
+                                "Failed to decrypt post-quantum private key - wrong format"
+                            )
                         return decrypt_algorithm_object, pqc_private_key_from_metadata
                     else:
                         # Decode the salt from v3 structure
-                        private_key_salt = base64.b64decode(metadata['pqc_key_salt'])
-                
+                        private_key_salt = base64.b64decode(metadata["pqc_key_salt"])
+
                 # START DO NOT CHANGE
                 # Use the derived private_key_key NOT the main key
                 cipher = AESGCM(hashlib.sha3_256(key).digest())
                 try:
                     # Try to determine the correct nonce format based on key length
-                    # The AES-GCM spec requires a 12-byte nonce, but there's some flexibility 
+                    # The AES-GCM spec requires a 12-byte nonce, but there's some flexibility
                     # in how this is stored in the encrypted data
-                    
+
                     # Standard format: nonce (12 bytes) + encrypted_key
                     nonce = encrypted_private_key[:12]
                     encrypted_key_data = encrypted_private_key[12:]
-                    
+
                     # We used to have debug prints here that helped diagnose Kyber1024 issues
                     # Those have been removed for production use
-                    
+
                     # Decrypt the private key with the key derived from password and salt
                     try:
                         # Try with standard 12-byte nonce first
                         try:
-                            pqc_private_key_from_metadata = cipher.decrypt(nonce, encrypted_key_data, None)
+                            pqc_private_key_from_metadata = cipher.decrypt(
+                                nonce, encrypted_key_data, None
+                            )
                         except Exception as e1:
                             # Try with 16-byte nonce (some implementations use 16 bytes)
                             if len(encrypted_private_key) >= 16:
@@ -2919,23 +3260,31 @@ def decrypt_file(
                                     # Take first 16 bytes as nonce, AESGCM will use the first 12 bytes
                                     nonce16 = encrypted_private_key[:16]
                                     encrypted_key_data16 = encrypted_private_key[16:]
-                                    
+
                                     # Create a new cipher with the same key
                                     cipher16 = AESGCM(hashlib.sha3_256(key).digest())
-                                    pqc_private_key_from_metadata = cipher16.decrypt(nonce16[:12], encrypted_key_data16, None)
+                                    pqc_private_key_from_metadata = cipher16.decrypt(
+                                        nonce16[:12], encrypted_key_data16, None
+                                    )
                                 except Exception as e2:
                                     # Re-raise the exception for normal operation
                                     # NOTE: Removed special case handling for test1_kyber1024.txt to ensure proper password validation
                                     raise e2
-                        
+
                         # Private key successfully decrypted
                         if not quiet:
-                            print("Successfully decrypted post-quantum private key from metadata")
+                            print(
+                                "Successfully decrypted post-quantum private key from metadata"
+                            )
                     except Exception as e:
                         # If decryption fails, it means the wrong password was used
-                        logger.debug(f"Failed to decrypt post-quantum private key - Error: {str(e)}")
+                        logger.debug(
+                            f"Failed to decrypt post-quantum private key - Error: {str(e)}"
+                        )
                         if not quiet:
-                            print("Failed to decrypt post-quantum private key - wrong password")
+                            print(
+                                "Failed to decrypt post-quantum private key - wrong password"
+                            )
                         pqc_private_key_from_metadata = None
                 except Exception as e:
                     # Handle any other exceptions
@@ -2950,16 +3299,18 @@ def decrypt_file(
                 pqc_private_key_from_metadata = encrypted_private_key
                 if not quiet:
                     print("WARNING: Using legacy unencrypted private key from metadata")
-            
+
             # If no private key was provided explicitly, use the one from metadata
             if pqc_private_key is None:
                 pqc_private_key = pqc_private_key_from_metadata
-                
+
                 # If we needed to decrypt a private key but failed (wrong password case)
                 # We should fail the entire decryption process
                 if pqc_key_is_encrypted and pqc_private_key is None:
-                    raise ValueError("Failed to decrypt post-quantum private key - wrong password provided")
-                
+                    raise ValueError(
+                        "Failed to decrypt post-quantum private key - wrong password provided"
+                    )
+
         except Exception as e:
             if not quiet:
                 print(f"Error processing PQC private key: {str(e)}")
@@ -2972,59 +3323,71 @@ def decrypt_file(
             f = Fernet(key)
             return f.decrypt(encrypted_data)
         # Handle PQC algorithms first to ensure they're processed properly
-        elif algorithm in [EncryptionAlgorithm.KYBER512_HYBRID.value, 
-                     EncryptionAlgorithm.KYBER768_HYBRID.value, 
-                     EncryptionAlgorithm.KYBER1024_HYBRID.value,
-                     EncryptionAlgorithm.ML_KEM_512_HYBRID.value,
-                     EncryptionAlgorithm.ML_KEM_768_HYBRID.value,
-                     EncryptionAlgorithm.ML_KEM_1024_HYBRID.value,
-                     EncryptionAlgorithm.ML_KEM_512_CHACHA20.value,
-                     EncryptionAlgorithm.ML_KEM_768_CHACHA20.value,
-                     EncryptionAlgorithm.ML_KEM_1024_CHACHA20.value,
-                     EncryptionAlgorithm.HQC_128_HYBRID.value,
-                     EncryptionAlgorithm.HQC_192_HYBRID.value,
-                     EncryptionAlgorithm.HQC_256_HYBRID.value]:
+        elif algorithm in [
+            EncryptionAlgorithm.KYBER512_HYBRID.value,
+            EncryptionAlgorithm.KYBER768_HYBRID.value,
+            EncryptionAlgorithm.KYBER1024_HYBRID.value,
+            EncryptionAlgorithm.ML_KEM_512_HYBRID.value,
+            EncryptionAlgorithm.ML_KEM_768_HYBRID.value,
+            EncryptionAlgorithm.ML_KEM_1024_HYBRID.value,
+            EncryptionAlgorithm.ML_KEM_512_CHACHA20.value,
+            EncryptionAlgorithm.ML_KEM_768_CHACHA20.value,
+            EncryptionAlgorithm.ML_KEM_1024_CHACHA20.value,
+            EncryptionAlgorithm.HQC_128_HYBRID.value,
+            EncryptionAlgorithm.HQC_192_HYBRID.value,
+            EncryptionAlgorithm.HQC_256_HYBRID.value,
+        ]:
             # Map algorithm to PQCAlgorithm
             pqc_algo_map = {
                 # Legacy Kyber mappings
                 EncryptionAlgorithm.KYBER512_HYBRID.value: PQCAlgorithm.KYBER512,
                 EncryptionAlgorithm.KYBER768_HYBRID.value: PQCAlgorithm.KYBER768,
                 EncryptionAlgorithm.KYBER1024_HYBRID.value: PQCAlgorithm.KYBER1024,
-                
                 # Standardized ML-KEM mappings
                 EncryptionAlgorithm.ML_KEM_512_HYBRID.value: PQCAlgorithm.ML_KEM_512,
                 EncryptionAlgorithm.ML_KEM_768_HYBRID.value: PQCAlgorithm.ML_KEM_768,
                 EncryptionAlgorithm.ML_KEM_1024_HYBRID.value: PQCAlgorithm.ML_KEM_1024,
-                
                 # ML-KEM with ChaCha20
                 EncryptionAlgorithm.ML_KEM_512_CHACHA20.value: PQCAlgorithm.ML_KEM_512,
                 EncryptionAlgorithm.ML_KEM_768_CHACHA20.value: PQCAlgorithm.ML_KEM_768,
                 EncryptionAlgorithm.ML_KEM_1024_CHACHA20.value: PQCAlgorithm.ML_KEM_1024,
-                
                 # HQC mappings
                 EncryptionAlgorithm.HQC_128_HYBRID.value: "HQC-128",
                 EncryptionAlgorithm.HQC_192_HYBRID.value: "HQC-192",
-                EncryptionAlgorithm.HQC_256_HYBRID.value: "HQC-256"
+                EncryptionAlgorithm.HQC_256_HYBRID.value: "HQC-256",
             }
-            
+
             # Check if we have the private key
             if not pqc_private_key:
                 raise ValueError("Post-quantum private key is required for decryption")
-            
+
             # Initialize PQC cipher and decrypt
             # Use encryption_data parameter passed to the parent function
-            cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet, encryption_data=encryption_data, verbose=verbose, debug=debug)
+            cipher = PQCipher(
+                pqc_algo_map[algorithm],
+                quiet=quiet,
+                encryption_data=encryption_data,
+                verbose=verbose,
+                debug=debug,
+            )
             try:
                 # Pass the full file contents for recovery if needed
                 # This allows the PQCipher to try to recover the original content
                 # if the standard decryption approach fails
-                if 'input_file' in locals() and input_file and os.path.exists(input_file):
+                if (
+                    "input_file" in locals()
+                    and input_file
+                    and os.path.exists(input_file)
+                ):
                     # Read the original encrypted file for content recovery
-                    with open(input_file, 'rb') as f:
+                    with open(input_file, "rb") as f:
                         original_file_contents = f.read()
                         # Now decrypt with both the encrypted data and original file
-                        pqc_result = cipher.decrypt(encrypted_data, pqc_private_key, 
-                                            file_contents=original_file_contents)
+                        pqc_result = cipher.decrypt(
+                            encrypted_data,
+                            pqc_private_key,
+                            file_contents=original_file_contents,
+                        )
                         # NOTE: Removed special case handling for test environment to ensure proper password validation
                         return pqc_result
                 else:
@@ -3034,10 +3397,10 @@ def decrypt_file(
                     return pqc_result
             except Exception as e:
                 # Use generic error message to prevent oracle attacks
-                if os.environ.get('PYTEST_CURRENT_TEST') is not None:
+                if os.environ.get("PYTEST_CURRENT_TEST") is not None:
                     raise e
                 # Try to show more information if available
-                if hasattr(e, 'args') and len(e.args) > 0:
+                if hasattr(e, "args") and len(e.args) > 0:
                     err_msg = str(e.args[0])
                     if "integrity" in err_msg.lower():
                         print(f"PQC integrity verification failed: {err_msg}")
@@ -3045,9 +3408,9 @@ def decrypt_file(
         else:
             # Get possible nonce sizes for this algorithm
             possible_nonce_sizes = get_nonce_size(algorithm, include_legacy=True)
-            
+
             # Non-PQC algorithms handling
-            
+
             # For standard encryption algorithms, try each possible nonce size
             last_error = None
             for stored_size, effective_size in possible_nonce_sizes:
@@ -3066,49 +3429,63 @@ def decrypt_file(
                             cipher = AESSIV(key)
                             result = cipher.decrypt(encrypted_data[stored_size:], None)
                             return result
-                    
+
                     # Normal case for other algorithms
                     if stored_size > 0:
                         nonce = encrypted_data[:stored_size]
                         ciphertext = encrypted_data[stored_size:]
-                        
+
                         if algorithm == EncryptionAlgorithm.AES_GCM.value:
                             cipher = AESGCM(key)
                             # Use first effective_size bytes of nonce for decryption
-                            result = cipher.decrypt(nonce[:effective_size], ciphertext, None)
+                            result = cipher.decrypt(
+                                nonce[:effective_size], ciphertext, None
+                            )
                             return result
                         elif algorithm == EncryptionAlgorithm.AES_GCM_SIV.value:
                             cipher = AESGCMSIV(key)
-                            result = cipher.decrypt(nonce[:effective_size], ciphertext, None)
+                            result = cipher.decrypt(
+                                nonce[:effective_size], ciphertext, None
+                            )
                             return result
                         elif algorithm == EncryptionAlgorithm.AES_OCB3.value:
                             cipher = AESOCB3(key)
-                            result = cipher.decrypt(nonce[:effective_size], ciphertext, None)
+                            result = cipher.decrypt(
+                                nonce[:effective_size], ciphertext, None
+                            )
                             return result
                         elif algorithm == EncryptionAlgorithm.CHACHA20_POLY1305.value:
                             cipher = ChaCha20Poly1305(key)
-                            result = cipher.decrypt(nonce[:effective_size], ciphertext, None)
+                            result = cipher.decrypt(
+                                nonce[:effective_size], ciphertext, None
+                            )
                             return result
                         elif algorithm == EncryptionAlgorithm.XCHACHA20_POLY1305.value:
                             cipher = XChaCha20Poly1305(key)
                             # Show warning when using legacy size
                             if stored_size != 24 and not quiet:
-                                print("\nWARNING: Using legacy 12-byte nonce for XChaCha20-Poly1305")
-                            result = cipher.decrypt(nonce[:effective_size], ciphertext, None)
+                                print(
+                                    "\nWARNING: Using legacy 12-byte nonce for XChaCha20-Poly1305"
+                                )
+                            result = cipher.decrypt(
+                                nonce[:effective_size], ciphertext, None
+                            )
                             return result
                         elif algorithm == EncryptionAlgorithm.CAMELLIA.value:
                             cipher = CamelliaCipher(key)
-                            result = cipher.decrypt(nonce[:effective_size], ciphertext, None)
+                            result = cipher.decrypt(
+                                nonce[:effective_size], ciphertext, None
+                            )
                             return result
                 except Exception as e:
                     # Save the error and try the next nonce size
                     last_error = e
                     continue
-            
+
             # If we get here, all attempted nonce sizes failed
             if last_error:
                 # Raise the original error if tests are running, otherwise use a generic message
-                if os.environ.get('PYTEST_CURRENT_TEST') is not None:
+                if os.environ.get("PYTEST_CURRENT_TEST") is not None:
                     raise last_error
                 # Use a generic error message to prevent oracle attacks
                 raise ValueError("Decryption failed: authentication error")
@@ -3117,11 +3494,7 @@ def decrypt_file(
 
     # Only show progress for larger files (> 1MB)
     if len(encrypted_data) > 1024 * 1024 and not quiet:
-        decrypted_data = with_progress_bar(
-            do_decrypt,
-            "Decrypting data",
-            quiet=quiet
-        )
+        decrypted_data = with_progress_bar(do_decrypt, "Decrypting data", quiet=quiet)
     else:
         decrypted_data = do_decrypt()
 
@@ -3131,16 +3504,16 @@ def decrypt_file(
     if original_hash:
         if not quiet:
             print("Verifying decrypted content integrity", end=" ")
-            
+
         # Check for PQC special cases
         pqc_special_case = False
         # Special markers and test content
         pqc_markers = [
-            b"PQC_EMPTY_FILE_MARKER", 
+            b"PQC_EMPTY_FILE_MARKER",
             b"Hello World",
-            b"[PQC Test Mode - Original Content Not Recoverable]"
+            b"[PQC Test Mode - Original Content Not Recoverable]",
         ]
-        
+
         if any(marker == decrypted_data for marker in pqc_markers):
             pqc_special_case = True
             # Skip verification for special PQC test cases
@@ -3149,24 +3522,28 @@ def decrypt_file(
         else:
             # Use our constant-time comparison from crypt_errors
             from .crypt_errors import constant_time_compare
-            
+
             computed_hash = calculate_hash(decrypted_data)
             # Use constant-time comparison to prevent timing attacks
             if not constant_time_compare(computed_hash, original_hash):
                 if not quiet:
                     print("❌")  # Red X symbol
-                
+
                 # Check if this is a PQC operation (algorithm contains 'kyber')
-                if (('kyber' in encryption_algorithm.lower() or 'ml-kem' in encryption_algorithm.lower()) and 
-                    os.environ.get('PYTEST_CURRENT_TEST') is None):
+                if (
+                    "kyber" in encryption_algorithm.lower()
+                    or "ml-kem" in encryption_algorithm.lower()
+                ) and os.environ.get("PYTEST_CURRENT_TEST") is None:
                     # For PQC in development, show warning but continue
                     if not quiet:
-                        print("⚠️ Warning: Bypassing integrity check for PQC development")
+                        print(
+                            "⚠️ Warning: Bypassing integrity check for PQC development"
+                        )
                     # Return empty content as fallback for testing
                     return b""
-                    
+
                 # Regular integrity check behavior
-                if os.environ.get('PYTEST_CURRENT_TEST') is not None:
+                if os.environ.get("PYTEST_CURRENT_TEST") is not None:
                     raise AuthenticationError("Decrypted data integrity check failed")
                 else:
                     # In production mode, use a generic message to avoid leaking specifics
@@ -3182,7 +3559,7 @@ def decrypt_file(
     if not quiet:
         print(f"Writing decrypted file: {output_file}")
 
-    with open(output_file, 'wb') as file:
+    with open(output_file, "wb") as file:
         file.write(decrypted_data)
 
     # Set secure permissions on the output file
@@ -3193,110 +3570,138 @@ def decrypt_file(
         return True
     finally:
         # Wipe sensitive data from memory in the correct order
-        if 'key' in locals() and key is not None:
+        if "key" in locals() and key is not None:
             secure_memzero(key)
             key = None
-            
-        if 'decrypted_data' in locals() and decrypted_data is not None:
+
+        if "decrypted_data" in locals() and decrypted_data is not None:
             secure_memzero(decrypted_data)
             decrypted_data = None
-            
-        if 'file_content' in locals() and file_content is not None:
+
+        if "file_content" in locals() and file_content is not None:
             secure_memzero(file_content)
             file_content = None
 
+
 def get_organized_hash_config(hash_config, encryption_algo=None, salt=None):
     organized_config = {
-        'encryption': {
-            'algorithm': encryption_algo,
-            'salt': salt
-        },
-        'kdfs': {},
-        'hashes': {}
+        "encryption": {"algorithm": encryption_algo, "salt": salt},
+        "kdfs": {},
+        "hashes": {},
     }
 
     # Define which algorithms are KDFs and which are hashes
-    kdf_algorithms = ['scrypt', 'argon2', 'balloon', 'pbkdf2_iterations', 'pbkdf2']
-    hash_algorithms = ['sha3_512', 'sha3_256', 'sha512', 'sha256', 'blake2b', 'shake256', 'whirlpool']
+    kdf_algorithms = ["scrypt", "argon2", "balloon", "pbkdf2_iterations", "pbkdf2"]
+    hash_algorithms = [
+        "sha3_512",
+        "sha3_256",
+        "sha512",
+        "sha256",
+        "blake2b",
+        "shake256",
+        "whirlpool",
+    ]
 
     # Check for format_version 4 hierarchical structure
-    if isinstance(hash_config, dict) and 'format_version' in hash_config and hash_config['format_version'] == 4:
+    if (
+        isinstance(hash_config, dict)
+        and "format_version" in hash_config
+        and hash_config["format_version"] == 4
+    ):
         # Extract the nested structures
-        if 'encryption' in hash_config and 'algorithm' in hash_config['encryption']:
-            organized_config['encryption']['algorithm'] = hash_config['encryption']['algorithm']
-            
+        if "encryption" in hash_config and "algorithm" in hash_config["encryption"]:
+            organized_config["encryption"]["algorithm"] = hash_config["encryption"][
+                "algorithm"
+            ]
+
         # Process derivation_config if it exists
-        if 'derivation_config' in hash_config:
-            derivation_config = hash_config['derivation_config']
-            
+        if "derivation_config" in hash_config:
+            derivation_config = hash_config["derivation_config"]
+
             # Set salt from derivation_config
-            if 'salt' in derivation_config:
-                organized_config['encryption']['salt'] = derivation_config['salt']
-            
+            if "salt" in derivation_config:
+                organized_config["encryption"]["salt"] = derivation_config["salt"]
+
             # Process hash_config (nested structure with rounds)
-            if 'hash_config' in derivation_config:
-                nested_hash_config = derivation_config['hash_config']
+            if "hash_config" in derivation_config:
+                nested_hash_config = derivation_config["hash_config"]
                 for algo, params in nested_hash_config.items():
                     if algo in hash_algorithms:
-                        if isinstance(params, dict) and 'rounds' in params:
+                        if isinstance(params, dict) and "rounds" in params:
                             # Handle nested structure with rounds
-                            organized_config['hashes'][algo] = params['rounds']
+                            organized_config["hashes"][algo] = params["rounds"]
                         elif isinstance(params, (int, float)) and params > 0:
                             # Handle non-nested for compatibility
-                            organized_config['hashes'][algo] = params
-            
+                            organized_config["hashes"][algo] = params
+
             # Process kdf_config section
-            if 'kdf_config' in derivation_config:
-                kdf_config = derivation_config['kdf_config']
-                
+            if "kdf_config" in derivation_config:
+                kdf_config = derivation_config["kdf_config"]
+
                 # Handle scrypt, argon2, balloon
-                for kdf in ['scrypt', 'argon2', 'balloon']:
-                    if kdf in kdf_config and kdf_config[kdf].get('enabled', False):
-                        organized_config['kdfs'][kdf] = kdf_config[kdf]
-                
+                for kdf in ["scrypt", "argon2", "balloon"]:
+                    if kdf in kdf_config and kdf_config[kdf].get("enabled", False):
+                        organized_config["kdfs"][kdf] = kdf_config[kdf]
+
                 # Handle pbkdf2 which has a nested structure with rounds
-                if 'pbkdf2' in kdf_config:
-                    if isinstance(kdf_config['pbkdf2'], dict) and 'rounds' in kdf_config['pbkdf2']:
-                        pbkdf2_rounds = kdf_config['pbkdf2']['rounds']
+                if "pbkdf2" in kdf_config:
+                    if (
+                        isinstance(kdf_config["pbkdf2"], dict)
+                        and "rounds" in kdf_config["pbkdf2"]
+                    ):
+                        pbkdf2_rounds = kdf_config["pbkdf2"]["rounds"]
                         if pbkdf2_rounds > 0:
-                            organized_config['kdfs']['pbkdf2_iterations'] = pbkdf2_rounds
-                    elif isinstance(kdf_config['pbkdf2'], (int, float)) and kdf_config['pbkdf2'] > 0:
+                            organized_config["kdfs"][
+                                "pbkdf2_iterations"
+                            ] = pbkdf2_rounds
+                    elif (
+                        isinstance(kdf_config["pbkdf2"], (int, float))
+                        and kdf_config["pbkdf2"] > 0
+                    ):
                         # For backward compatibility
-                        organized_config['kdfs']['pbkdf2_iterations'] = kdf_config['pbkdf2']
+                        organized_config["kdfs"]["pbkdf2_iterations"] = kdf_config[
+                            "pbkdf2"
+                        ]
     else:
         # Legacy format (v1-3) handling
         if hash_config is None:
             return organized_config
-            
+
         for algo, params in hash_config.items():
             if algo in kdf_algorithms:
                 if isinstance(params, dict):
-                    if params.get('enabled', False):
-                        organized_config['kdfs'][algo] = params
-                elif algo == 'pbkdf2_iterations' and params > 0:
-                    organized_config['kdfs'][algo] = params
-                elif algo == 'pbkdf2' and isinstance(params, dict) and params.get('rounds', 0) > 0:
-                    organized_config['kdfs']['pbkdf2_iterations'] = params['rounds']
+                    if params.get("enabled", False):
+                        organized_config["kdfs"][algo] = params
+                elif algo == "pbkdf2_iterations" and params > 0:
+                    organized_config["kdfs"][algo] = params
+                elif (
+                    algo == "pbkdf2"
+                    and isinstance(params, dict)
+                    and params.get("rounds", 0) > 0
+                ):
+                    organized_config["kdfs"]["pbkdf2_iterations"] = params["rounds"]
             elif algo in hash_algorithms and params > 0:
-                organized_config['hashes'][algo] = params
+                organized_config["hashes"][algo] = params
 
     return organized_config
 
+
 def print_hash_config(
-        hash_config,
-        encryption_algo=None,
-        salt=None,
-        quiet=False,
-        verbose=False,
-        debug=False):
-    
+    hash_config,
+    encryption_algo=None,
+    salt=None,
+    quiet=False,
+    verbose=False,
+    debug=False,
+):
+
     if quiet:
         return
     # Only log this message with INFO level so it only appears in verbose mode
     logger.info("Secure memory handling: Enabled")
     organized = get_organized_hash_config(hash_config, encryption_algo, salt)
 
-    if KeyStretch.kind_action == 'decrypt' and verbose:
+    if KeyStretch.kind_action == "decrypt" and verbose:
         logger.info("\nDecrypting with the following configuration:")
     elif verbose:
         logger.info("\nEncrypting with the following configuration:")
@@ -3304,35 +3709,41 @@ def print_hash_config(
     if verbose:
         # Print Hashes
         logger.info("  Hash Functions:")
-        if not organized['hashes']:
+        if not organized["hashes"]:
             logger.info("    - No additional hashing algorithms used")
         else:
-            for algo, iterations in organized['hashes'].items():
+            for algo, iterations in organized["hashes"].items():
                 logger.info(f"    - {algo.upper()}: {iterations} iterations")
         # Print KDFs
         logger.info("  Key Derivation Functions:")
-        if not organized['kdfs']:
+        if not organized["kdfs"]:
             logger.info("    - No KDFs used")
         else:
-            for algo, params in organized['kdfs'].items():
-                if algo == 'scrypt':
+            for algo, params in organized["kdfs"].items():
+                if algo == "scrypt":
                     logger.info(
-                        f"    - Scrypt: n={params['n']}, r={params['r']}, p={params['p']}")
-                elif algo == 'argon2':
-                    logger.info(f"    - Argon2: time_cost={params['time_cost']}, "
-                          f"memory_cost={params['memory_cost']}KB, "
-                          f"parallelism={params['parallelism']}, "
-                          f"hash_len={params['hash_len']}")
-                elif algo == 'balloon':
-                    logger.info(f"    - Balloon: time_cost={params['time_cost']}, "
-                          f"space_cost={params['space_cost']}, "
-                          f"parallelism={params['parallelism']}, "
-                          f"rounds={params['rounds']}")
-                elif algo == 'pbkdf2_iterations':
+                        f"    - Scrypt: n={params['n']}, r={params['r']}, p={params['p']}"
+                    )
+                elif algo == "argon2":
+                    logger.info(
+                        f"    - Argon2: time_cost={params['time_cost']}, "
+                        f"memory_cost={params['memory_cost']}KB, "
+                        f"parallelism={params['parallelism']}, "
+                        f"hash_len={params['hash_len']}"
+                    )
+                elif algo == "balloon":
+                    logger.info(
+                        f"    - Balloon: time_cost={params['time_cost']}, "
+                        f"space_cost={params['space_cost']}, "
+                        f"parallelism={params['parallelism']}, "
+                        f"rounds={params['rounds']}"
+                    )
+                elif algo == "pbkdf2_iterations":
                     logger.info(f"    - PBKDF2: {params} iterations")
         logger.info("  Encryption:")
         logger.info(f"    - Algorithm: {encryption_algo or 'Not specified'}")
-        salt_str = base64.b64encode(salt).decode(
-            'utf-8') if isinstance(salt, bytes) else salt
+        salt_str = (
+            base64.b64encode(salt).decode("utf-8") if isinstance(salt, bytes) else salt
+        )
         logger.info(f"    - Salt: {salt_str or 'Not specified'}")
-        logger.info('')
+        logger.info("")
