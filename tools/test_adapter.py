@@ -5,9 +5,9 @@ Simple test script for the pqc_adapter module.
 
 # Test the pqc_adapter module directly
 from openssl_encrypt.modules.pqc_adapter import (
+    LIBOQS_AVAILABLE,
     ExtendedPQCipher,
     get_available_pq_algorithms,
-    LIBOQS_AVAILABLE
 )
 
 # Print availability information
@@ -22,11 +22,11 @@ print("\nTesting with ML-KEM-512 (native implementation):")
 try:
     cipher = ExtendedPQCipher("ML-KEM-512", quiet=False)
     public_key, private_key = cipher.generate_keypair()
-    
+
     message = b"Hello, post-quantum world!"
     encrypted = cipher.encrypt(message, public_key)
     decrypted = cipher.decrypt(encrypted, private_key)
-    
+
     print(f"  Original message: {message}")
     print(f"  Decrypted message: {decrypted}")
     print(f"  Success: {message == decrypted}")
@@ -39,11 +39,11 @@ if LIBOQS_AVAILABLE and "HQC-128" in algorithms:
     try:
         cipher = ExtendedPQCipher("HQC-128", quiet=False)
         public_key, private_key = cipher.generate_keypair()
-        
+
         message = b"Hello, post-quantum world!"
         encrypted = cipher.encrypt(message, public_key)
         decrypted = cipher.decrypt(encrypted, private_key)
-        
+
         print(f"  Original message: {message}")
         print(f"  Decrypted message: {decrypted}")
         print(f"  Success: {message == decrypted}")
