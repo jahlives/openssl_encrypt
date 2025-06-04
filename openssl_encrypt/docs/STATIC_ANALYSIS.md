@@ -60,7 +60,7 @@ bandit -r openssl_encrypt/ -c .bandit.yaml
 - **Coverage**: OWASP Top 10, CWE patterns
 
 ```bash
-# Manual run  
+# Manual run
 semgrep --config=p/security-audit openssl_encrypt/
 ```
 
@@ -100,7 +100,7 @@ isort openssl_encrypt/ --profile black
 
 #### Flake8
 - **Purpose**: Linting and style checking
-- **Plugins**: 
+- **Plugins**:
   - `flake8-bugbear`: Additional bug checks
   - `flake8-security`: Security-focused linting
   - `flake8-docstrings`: Documentation checks
@@ -236,7 +236,7 @@ All analysis results are saved as artifacts:
 
 ```bash
 make format          # Format code with black and isort
-make lint            # Run all linting tools  
+make lint            # Run all linting tools
 make security        # Run security analysis
 make type-check      # Run type checking with mypy
 make complexity      # Analyze code complexity
@@ -296,7 +296,7 @@ def complex_crypto_function():  # pylint: disable=too-many-locals
 ### VS Code
 Install extensions:
 - Python
-- Pylint  
+- Pylint
 - MyPy
 - Black Formatter
 - Bandit
