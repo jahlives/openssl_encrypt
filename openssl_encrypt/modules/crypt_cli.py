@@ -2679,44 +2679,46 @@ def main():
 
         elif args.action == "decrypt":
             # Extract metadata early to check for deprecated algorithms
-            try:
-                file_metadata = extract_file_metadata(args.input)
-                algorithm = file_metadata["algorithm"]
-                encryption_data = file_metadata.get("encryption_data", "aes-gcm")
+            # Skip metadata extraction for stdin to avoid consuming the input stream
+            if args.input != "/dev/stdin":
+                try:
+                    file_metadata = extract_file_metadata(args.input)
+                    algorithm = file_metadata["algorithm"]
+                    encryption_data = file_metadata.get("encryption_data", "aes-gcm")
 
-                # Check if main algorithm is deprecated and issue warning
-                if is_deprecated(algorithm):
-                    replacement = get_recommended_replacement(algorithm)
-                    warn_deprecated_algorithm(algorithm, "file decryption")
-                    if (
-                        not args.quiet
-                        and replacement
-                        and (args.verbose or not algorithm.startswith(("kyber", "ml-kem")))
-                    ):
-                        print(
-                            f"Warning: The algorithm '{algorithm}' used in this file is deprecated."
-                        )
-                        print(f"Consider re-encrypting with '{replacement}' for better security.")
+                    # Check if main algorithm is deprecated and issue warning
+                    if is_deprecated(algorithm):
+                        replacement = get_recommended_replacement(algorithm)
+                        warn_deprecated_algorithm(algorithm, "file decryption")
+                        if (
+                            not args.quiet
+                            and replacement
+                            and (args.verbose or not algorithm.startswith(("kyber", "ml-kem")))
+                        ):
+                            print(
+                                f"Warning: The algorithm '{algorithm}' used in this file is deprecated."
+                            )
+                            print(f"Consider re-encrypting with '{replacement}' for better security.")
 
-                # Check if data encryption algorithm is deprecated for PQC
-                if algorithm.endswith("-hybrid") and is_deprecated(encryption_data):
-                    data_replacement = get_recommended_replacement(encryption_data)
-                    warn_deprecated_algorithm(encryption_data, "PQC data decryption")
-                    if (
-                        not args.quiet
-                        and data_replacement
-                        and (args.verbose or not encryption_data.startswith(("kyber", "ml-kem")))
-                    ):
-                        print(
-                            f"Warning: The data encryption algorithm '{encryption_data}' used in this file is deprecated."
-                        )
-                        print(
-                            f"Consider re-encrypting with '{data_replacement}' for better security."
-                        )
-            except Exception as e:
-                # If we can't read metadata, continue with decryption (it will fail with proper error)
-                if args.verbose:
-                    print(f"Warning: Could not check file for deprecated algorithms: {e}")
+                    # Check if data encryption algorithm is deprecated for PQC
+                    if algorithm.endswith("-hybrid") and is_deprecated(encryption_data):
+                        data_replacement = get_recommended_replacement(encryption_data)
+                        warn_deprecated_algorithm(encryption_data, "PQC data decryption")
+                        if (
+                            not args.quiet
+                            and data_replacement
+                            and (args.verbose or not encryption_data.startswith(("kyber", "ml-kem")))
+                        ):
+                            print(
+                                f"Warning: The data encryption algorithm '{encryption_data}' used in this file is deprecated."
+                            )
+                            print(
+                                f"Consider re-encrypting with '{data_replacement}' for better security."
+                            )
+                except Exception as e:
+                    # If we can't read metadata, continue with decryption (it will fail with proper error)
+                    if args.verbose:
+                        print(f"Warning: Could not check file for deprecated algorithms: {e}")
 
             if args.overwrite:
                 output_file = args.input
