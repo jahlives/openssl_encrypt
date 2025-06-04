@@ -1,7 +1,11 @@
-# Version 0.9.2 - GUI Enhancements and PQC Workflow Completion
-  Version 0.9.2 brings significant GUI improvements and completes the post-quantum cryptography workflow. The GUI now features force password checkboxes on both encrypt and decrypt tabs, allowing users to bypass password
-   validation with informed consent while maintaining security by default. Enhanced error handling replaces generic "command failed" messages with specific password validation feedback and helpful guidance including
-  character requirements and suggestions to use the password generator.
+# Version 1.0.0-rc1 - Improvments focusing on code quality, security, and developer experience
+The **1.0.0-rc1** has recently undergone significant improvements focusing on code quality, security, and developer experience. We've implemented a **comprehensive multi-layered static code analysis system** with
+  7 new GitLab CI jobs covering security scanning (Bandit, Semgrep), code quality analysis (Pylint, MyPy), and complexity metrics, plus 18+ pre-commit hooks for immediate feedback during development. A **legacy algorithm
+   warning system** has been added to guide users away from deprecated cryptographic algorithms as we approach the 1.0.0 release. **Code formatting and consistency** improvements have been applied across the entire
+  codebase using automated tools like Black and isort. The CI pipeline has been enhanced with **Docker improvements** and better job isolation to ensure reliable builds and testing. Finally, we've cleaned up the
+  repository by **removing unnecessary development artifacts** like test files, backup configurations, and personal documentation files to maintain a clean production-ready codebase.
+
+
 
   Post-quantum cryptography support is now seamless - the application automatically adds necessary key storage flags when PQC algorithms are selected, enabling complete encrypt-to-decrypt workflows for ML-KEM and HQC
   hybrid algorithms without user intervention. The CLI gained environment variable password support (CRYPT_PASSWORD) with secure multi-pass clearing to prevent password exposure in process lists.
@@ -74,4 +78,3 @@ all testfile files are encrypted with password `1234` for your testing
 ## License
 
 [MIT License](LICENSE)
-
