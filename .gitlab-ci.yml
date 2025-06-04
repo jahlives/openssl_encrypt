@@ -136,29 +136,153 @@ dependency-scan:
     - if: $CI_COMMIT_BRANCH == "release"
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
-# Python code security scanning
+# Python code security scanning with Bandit
 code-security-scan:
   stage: security
   image: python:3.13
   before_script:
-    - pip install bandit
+    - pip install bandit[toml]
   script:
-    # Run bandit but don't fail the job if security issues are found
+    # Run bandit with comprehensive security checks
     - bandit -r openssl_encrypt/ -c .bandit.yaml -f json -o gl-sast-report.json || true
-    - bandit -r openssl_encrypt/ -c .bandit.yaml -f txt || true  # Display results in terminal but don't fail
+    - bandit -r openssl_encrypt/ -c .bandit.yaml -f txt || true  # Display results in terminal
+    - echo "=== Bandit Security Scan Results ==="
+    - cat gl-sast-report.json | python -m json.tool | head -50 || echo "No issues found"
   artifacts:
     reports:
       sast: gl-sast-report.json
     paths:
       - gl-sast-report.json
     expire_in: 1 week
-  # Always succeed even if security issues are found
+  allow_failure: true
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH == "testing"
+    - if: $CI_COMMIT_BRANCH == "main" 
+    - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_COMMIT_BRANCH == "nightly"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# Code quality analysis with Pylint
+code-quality-scan:
+  stage: security
+  image: python:3.13
+  before_script:
+    - pip install pylint pylint-json2html
+    - pip install -r requirements-prod.txt  # Install dependencies for import analysis
+  script:
+    # Run pylint with detailed analysis
+    - pylint openssl_encrypt/ --output-format=json:pylint-report.json,text:pylint-report.txt,colorized || true
+    - echo "=== Pylint Code Quality Results ==="
+    - cat pylint-report.txt | head -50 || echo "No issues found"
+    # Generate HTML report for better visualization
+    - pylint-json2html -o pylint-report.html pylint-report.json || true
+  artifacts:
+    paths:
+      - pylint-report.json
+      - pylint-report.txt  
+      - pylint-report.html
+    expire_in: 1 week
   allow_failure: true
   rules:
     - if: $CI_COMMIT_BRANCH == "dev"
     - if: $CI_COMMIT_BRANCH == "testing"
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_COMMIT_BRANCH == "nightly"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# Type checking with MyPy
+type-checking:
+  stage: security
+  image: python:3.13
+  before_script:
+    - pip install mypy types-PyYAML types-requests
+    - pip install -r requirements-prod.txt  # Install dependencies for type checking
+  script:
+    # Run mypy type checking
+    - mypy openssl_encrypt/ --config-file mypy.ini --txt-report mypy-report --html-report mypy-html || true
+    - echo "=== MyPy Type Checking Results ==="
+    - cat mypy-report/index.txt | head -30 || echo "No type issues found"
+  artifacts:
+    paths:
+      - mypy-report/
+      - mypy-html/
+    expire_in: 1 week
+  allow_failure: true
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH == "testing"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_COMMIT_BRANCH == "nightly"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# Advanced security scanning with Semgrep
+semgrep-security-scan:
+  stage: security
+  image: python:3.13
+  before_script:
+    - pip install semgrep
+  script:
+    # Run Semgrep with security-focused rulesets
+    - semgrep --config=auto --json --output=semgrep-report.json openssl_encrypt/ || true
+    - semgrep --config=p/security-audit --json --output=semgrep-security.json openssl_encrypt/ || true
+    - semgrep --config=p/python --json --output=semgrep-python.json openssl_encrypt/ || true
+    - echo "=== Semgrep Security Scan Results ==="
+    - cat semgrep-report.json | python -m json.tool | head -50 || echo "No issues found"
+  artifacts:
+    paths:
+      - semgrep-report.json
+      - semgrep-security.json
+      - semgrep-python.json
+    expire_in: 1 week
+  allow_failure: true
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH == "testing"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_COMMIT_BRANCH == "nightly"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# Code complexity and maintainability analysis
+code-complexity-scan:
+  stage: security
+  image: python:3.13
+  before_script:
+    - pip install radon xenon flake8 mccabe
+  script:
+    # Cyclomatic complexity analysis
+    - radon cc openssl_encrypt/ -j > complexity-report.json || true
+    - radon cc openssl_encrypt/ -s > complexity-report.txt || true
+    # Maintainability index
+    - radon mi openssl_encrypt/ -j > maintainability-report.json || true
+    - radon mi openssl_encrypt/ -s > maintainability-report.txt || true
+    # Halstead complexity metrics
+    - radon hal openssl_encrypt/ -j > halstead-report.json || true
+    # Raw metrics (lines of code, etc.)
+    - radon raw openssl_encrypt/ -j > raw-metrics.json || true
+    - echo "=== Code Complexity Analysis Results ==="
+    - cat complexity-report.txt | head -30 || echo "No complexity issues found"
+    - echo "=== Maintainability Index Results ==="
+    - cat maintainability-report.txt | head -20 || echo "No maintainability issues found"
+  artifacts:
+    paths:
+      - complexity-report.json
+      - complexity-report.txt
+      - maintainability-report.json
+      - maintainability-report.txt
+      - halstead-report.json
+      - raw-metrics.json
+    expire_in: 1 week
+  allow_failure: true
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH == "testing"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_COMMIT_BRANCH == "nightly"
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     
 # Software Bill of Materials generation
