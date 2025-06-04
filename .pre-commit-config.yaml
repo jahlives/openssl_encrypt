@@ -49,7 +49,6 @@ repos:
           flake8-bugbear,      # Additional bug checks
           flake8-docstrings,   # Docstring checks
           flake8-import-order, # Import order checks
-          flake8-security,     # Security-focused checks
           flake8-bandit,       # Bandit integration
         ]
 

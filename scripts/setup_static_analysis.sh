@@ -41,19 +41,22 @@ pip install \
     flake8-bugbear \
     flake8-docstrings \
     flake8-import-order \
-    flake8-security \
     flake8-bandit \
     bandit[toml] \
     pylint \
-    pylint-json2html \
     mypy \
     types-PyYAML \
     types-requests \
-    semgrep \
     radon \
-    xenon \
     mccabe \
     pip-audit
+
+# Install additional tools that might not be in main repositories
+echo "🔧 Installing additional analysis tools..."
+pip install --upgrade --ignore-installed click  # Fix click version conflict
+pip install semgrep || echo "⚠️  Semgrep installation failed, skipping (it will be available in CI)"
+pip install xenon || echo "⚠️  Xenon installation failed, skipping"
+pip install pylint-json2html || echo "⚠️  Pylint-json2html installation failed, skipping"
 
 # Setup pre-commit hooks
 echo "🪝 Setting up pre-commit hooks..."

@@ -158,3 +158,45 @@ fabric.properties
 .idea/**/azureSettings.xml
 
 # End of https://www.toptal.com/developers/gitignore/api/pycharm
+
+# Static analysis reports
+pylint-report.*
+mypy-report/
+mypy-html/
+semgrep-report.json
+semgrep-security.json
+semgrep-python.json
+complexity-report.*
+maintainability-report.*
+halstead-report.json
+raw-metrics.json
+pip-audit-local.json
+.bandit.baseline
+
+# Static analysis reports
+pylint-report.*
+mypy-report/
+mypy-html/
+semgrep-report.json
+semgrep-security.json
+semgrep-python.json
+complexity-report.*
+maintainability-report.*
+halstead-report.json
+raw-metrics.json
+pip-audit-local.json
+.bandit.baseline
+
+# Static analysis reports
+pylint-report.*
+mypy-report/
+mypy-html/
+semgrep-report.json
+semgrep-security.json
+semgrep-python.json
+complexity-report.*
+maintainability-report.*
+halstead-report.json
+raw-metrics.json
+pip-audit-local.json
+.bandit.baseline

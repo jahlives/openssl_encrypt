@@ -7,11 +7,11 @@ warnings. It includes configuration options, warning levels, and utilities for
 issuing appropriate deprecation warnings to users.
 """
 
-import warnings
-import logging
 import datetime
+import logging
+import warnings
 from enum import Enum
-from typing import Dict, Optional, Union, Tuple, List, Set
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -22,12 +22,8 @@ class DeprecationLevel(Enum):
 
     INFO = 0  # Algorithm will be deprecated in the future, but is still safe to use now
     WARNING = 1  # Algorithm should be migrated soon, with minor security concerns
-    DEPRECATED = (
-        2  # Algorithm is officially deprecated, migration should be prioritized
-    )
-    UNSAFE = (
-        3  # Algorithm has known security vulnerabilities, immediate migration required
-    )
+    DEPRECATED = 2  # Algorithm is officially deprecated, migration should be prioritized
+    UNSAFE = 3  # Algorithm has known security vulnerabilities, immediate migration required
 
 
 class AlgorithmWarningConfig:
@@ -239,7 +235,9 @@ def warn_deprecated_algorithm(
     if removal_date:
         days_remaining = (removal_date - today).days
         if days_remaining > 0:
-            date_info = f" and will be removed in {days_remaining} days (on {removal_date.isoformat()})"
+            date_info = (
+                f" and will be removed in {days_remaining} days (on {removal_date.isoformat()})"
+            )
         else:
             date_info = f" and was scheduled for removal on {removal_date.isoformat()}"
 
@@ -268,9 +266,7 @@ def warn_deprecated_algorithm(
         # If it's an INFO level warning and we're not in verbose mode, use DEBUG instead
         log_level = {
             DeprecationLevel.INFO: (
-                logging.DEBUG
-                if not AlgorithmWarningConfig._verbose_mode
-                else logging.INFO
+                logging.DEBUG if not AlgorithmWarningConfig._verbose_mode else logging.INFO
             ),
             DeprecationLevel.WARNING: logging.WARNING,
             DeprecationLevel.DEPRECATED: logging.WARNING,
@@ -347,8 +343,4 @@ def get_algorithms_by_level(level: DeprecationLevel) -> List[str]:
     Returns:
         List of algorithm names
     """
-    return [
-        alg
-        for alg, info in DEPRECATED_ALGORITHMS.items()
-        if info[0].value >= level.value
-    ]
+    return [alg for alg, info in DEPRECATED_ALGORITHMS.items() if info[0].value >= level.value]

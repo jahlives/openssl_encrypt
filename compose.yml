@@ -1,0 +1,137 @@
+services:
+  ollama:
+    image: ollama/ollama
+    restart: "unless-stopped"
+    security_opt:
+      - no-new-privileges # Prevents privilege escalation
+        # this security setting prevents processes within the container from gaining additional privileges after startup, which is a important security measure to prevent potential exploits.
+      # cap_drop/add
+      # This minimizes the attack surface while maintaining necessary functionality
+    cap_drop:
+      - ALL # Drops all Linux capabilities (principle of least privilege)
+    cap_add:
+      - SYS_NICE # Adds back only the SYS_NICE capability,
+                   # which allows the container to adjust process priorities
+    ports:
+      - "11434:11434"
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 16G
+    read_only: true # Makes the container filesystem read-only
+    memswap_limit: 16G
+    volumes:
+      - ./shares/ollama:/root/.ollama
+    networks:
+      - my-ai-network
+
+  flowise:
+    image: flowiseai/flowise
+    restart: "unless-stopped"
+    environment:
+      - PORT=${PORT}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - IFRAME_ORIGINS=${IFRAME_ORIGINS}
+      - FLOWISE_USERNAME=${FLOWISE_USERNAME}
+      - FLOWISE_PASSWORD=${FLOWISE_PASSWORD}
+      - FLOWISE_FILE_SIZE_LIMIT=${FLOWISE_FILE_SIZE_LIMIT}
+      - DEBUG=${DEBUG}
+      - DATABASE_PATH=${DATABASE_PATH}
+      - DATABASE_TYPE=${DATABASE_TYPE}
+      - DATABASE_PORT=${DATABASE_PORT}
+      - DATABASE_HOST=${DATABASE_HOST}
+      - DATABASE_NAME=${DATABASE_NAME}
+      - DATABASE_USER=${DATABASE_USER}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD}
+      - DATABASE_SSL=${DATABASE_SSL}
+      - DATABASE_SSL_KEY_BASE64=${DATABASE_SSL_KEY_BASE64}
+      - APIKEY_STORAGE_TYPE=${APIKEY_STORAGE_TYPE}
+      - APIKEY_PATH=${APIKEY_PATH}
+      - SECRETKEY_PATH=${SECRETKEY_PATH}
+      - FLOWISE_SECRETKEY_OVERWRITE=${FLOWISE_SECRETKEY_OVERWRITE}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - LOG_PATH=${LOG_PATH}
+      - BLOB_STORAGE_PATH=${BLOB_STORAGE_PATH}
+      - DISABLE_FLOWISE_TELEMETRY=${DISABLE_FLOWISE_TELEMETRY}
+      - MODEL_LIST_CONFIG_JSON=${MODEL_LIST_CONFIG_JSON}
+      - GLOBAL_AGENT_HTTP_PROXY=${GLOBAL_AGENT_HTTP_PROXY}
+      - GLOBAL_AGENT_HTTPS_PROXY=${GLOBAL_AGENT_HTTPS_PROXY}
+      - GLOBAL_AGENT_NO_PROXY=${GLOBAL_AGENT_NO_PROXY}
+      - DISABLED_NODES=${DISABLED_NODES}
+      - MODE=${MODE}
+      - WORKER_CONCURRENCY=${WORKER_CONCURRENCY}
+      - QUEUE_NAME=${QUEUE_NAME}
+      - QUEUE_REDIS_EVENT_STREAM_MAX_LEN=${QUEUE_REDIS_EVENT_STREAM_MAX_LEN}
+      - REDIS_URL=${REDIS_URL}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_USERNAME=${REDIS_USERNAME}
+      - REDIS_TLS=${REDIS_TLS}
+      - REDIS_CERT=${REDIS_CERT}
+      - REDIS_KEY=${REDIS_KEY}
+      - REDIS_CA=${REDIS_CA}
+    ports:
+      - '${PORT}:${PORT}'
+    volumes:
+      - ./shares/flowise_data:/root/.flowise
+      - ./shares/flowise_share:/share
+    entrypoint: /bin/sh -c "sleep 3; flowise start"
+    networks:
+      - my-ai-network
+
+  redisdb:
+    image: redis:latest
+    volumes:
+      - "./shares/redis_data:/data"
+      - type: bind
+        source: /etc/localtime
+        target: /etc/localtime
+        read_only: true
+    # redis with persistent storage
+    command: redis-server --save 60 1 --loglevel warning
+    networks:
+      - my-ai-network
+
+  redis_stack:
+    image: redis/redis-stack:latest
+    volumes:
+      - "./shars/redis_stack_data:/data"
+      - type: bind
+        source: /etc/localtime
+        target: /etc/localtime
+        read_only: true
+    ports:
+      - '6379:6379'
+    networks:
+      - my-ai-network
+
+  pgvector:
+    #image: postgres
+    image: pgvector/pgvector:pg17  # postgres with vector support
+
+    restart: "unless-stopped"
+    # set shared memory limit when using docker-compose
+    shm_size: 128mb
+    # or set shared memory limit when deploy via swarm stack
+    #volumes:
+    #  - type: tmpfs
+    #    target: /dev/shm
+    #    tmpfs:
+    #      size: 134217728 # 128*2^20 bytes = 128Mb
+    environment:
+      POSTGRES_PASSWORD: 7oF5wP0w87Y8rSnzzdr6oWpM
+      POSTGRES_USER: admin
+      POSTGRES_DB: flowise
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - "./shares/pgvector_data:/var/lib/postgresql/data"
+    networks:
+      - my-ai-network
+    ports:
+      - '5434:5432'
+
+networks:
+  my-ai-network:
+    external: true

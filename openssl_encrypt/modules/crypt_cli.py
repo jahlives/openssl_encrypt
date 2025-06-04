@@ -7,60 +7,61 @@ handling user input, parsing arguments, and calling the appropriate
 functionality from the core and utils modules.
 """
 
-import os
-import sys
 import argparse
-import getpass
-import uuid
 import atexit
-import signal
-import tempfile
-import time
 import base64
+import getpass
 import hashlib
 import logging
+import os
+import signal
+import sys
+import tempfile
+import time
+import uuid
 
 # Set up module-level logger
 logger = logging.getLogger(__name__)
+import json
 import secrets
 from enum import Enum
-from typing import Dict, Any, Optional
-import json
+from typing import Any, Dict, Optional
+
 import yaml
+
+from .algorithm_warnings import (
+    AlgorithmWarningConfig,
+    get_recommended_replacement,
+    is_deprecated,
+    warn_deprecated_algorithm,
+)
 
 # Import from local modules
 from .crypt_core import (
-    encrypt_file,
-    decrypt_file,
-    extract_file_metadata,
-    EncryptionAlgorithm,
-    check_argon2_support,
-    get_file_permissions,
-    WHIRLPOOL_AVAILABLE,
     ARGON2_AVAILABLE,
     ARGON2_TYPE_INT_MAP,
-    EncryptionAlgorithm,
     PQC_AVAILABLE,
+    WHIRLPOOL_AVAILABLE,
+    EncryptionAlgorithm,
+    check_argon2_support,
+    decrypt_file,
+    encrypt_file,
+    extract_file_metadata,
+    get_file_permissions,
     string_entropy,
 )
 from .crypt_utils import (
-    secure_shred_file,
+    display_password_with_timeout,
     expand_glob_patterns,
     generate_strong_password,
-    display_password_with_timeout,
-    show_security_recommendations,
     request_confirmation,
-)
-from .algorithm_warnings import (
-    warn_deprecated_algorithm,
-    is_deprecated,
-    get_recommended_replacement,
-    AlgorithmWarningConfig,
+    secure_shred_file,
+    show_security_recommendations,
 )
 
 # Try to import the CLI helper module
 try:
-    from .crypt_cli_helper import enhance_cli_args, add_extended_algorithm_help
+    from .crypt_cli_helper import add_extended_algorithm_help, enhance_cli_args
 except ImportError:
     # Dummy implementations if the helper is not available
     def enhance_cli_args(args):
@@ -70,21 +71,21 @@ except ImportError:
         pass
 
 
-from .password_policy import (
-    PasswordPolicy,
-    validate_password,
-    validate_password_or_raise,
-    get_password_strength,
-)
 from . import crypt_errors
-
-# Import keystore-related modules
-from .keystore_wrapper import encrypt_file_with_keystore, decrypt_file_with_keystore
 from .keystore_utils import (
+    auto_generate_pqc_key,
     extract_key_id_from_metadata,
     get_keystore_password,
     get_pqc_key_for_decryption,
-    auto_generate_pqc_key,
+)
+
+# Import keystore-related modules
+from .keystore_wrapper import decrypt_file_with_keystore, encrypt_file_with_keystore
+from .password_policy import (
+    PasswordPolicy,
+    get_password_strength,
+    validate_password,
+    validate_password_or_raise,
 )
 
 
@@ -101,9 +102,7 @@ def clear_password_environment():
             for _ in range(3):
                 # Overwrite with random bytes of same length
                 random_data = "".join(
-                    secrets.choice(
-                        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-                    )
+                    secrets.choice("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
                     for _ in range(original_length)
                 )
                 os.environ["CRYPT_PASSWORD"] = random_data
@@ -130,12 +129,8 @@ def debug_hash_config(args, hash_config, message="Hash configuration"):
     print(
         f"SHA3-256: args={args.sha3_256_rounds}, hash_config={hash_config.get('sha3_256', 'Not set')}"
     )
-    print(
-        f"SHA-512: args={args.sha512_rounds}, hash_config={hash_config.get('sha512', 'Not set')}"
-    )
-    print(
-        f"SHA-256: args={args.sha256_rounds}, hash_config={hash_config.get('sha256', 'Not set')}"
-    )
+    print(f"SHA-512: args={args.sha512_rounds}, hash_config={hash_config.get('sha512', 'Not set')}")
+    print(f"SHA-256: args={args.sha256_rounds}, hash_config={hash_config.get('sha256', 'Not set')}")
     print(
         f"BLAKE2b: args={args.blake2b_rounds}, hash_config={hash_config.get('blake2b', 'Not set')}"
     )
@@ -161,14 +156,14 @@ class SecurityTemplate(Enum):
 
 def show_version_info():
     """Display version information including git commit hash, Python version and dependencies."""
-    import sys
-    import platform
-    from importlib.metadata import version as pkg_version
     import os
+    import platform
+    import sys
+    from importlib.metadata import version as pkg_version
 
     # Import version information from version.py
     try:
-        from openssl_encrypt.version import __version__, __git_commit__
+        from openssl_encrypt.version import __git_commit__, __version__
 
         version_module_path = sys.modules["openssl_encrypt.version"].__file__
     except ImportError:
@@ -407,9 +402,7 @@ def main():
 
     parser.add_argument("--verbose", action="store_true", help="Show hash/kdf details")
 
-    parser.add_argument(
-        "--debug", action="store_true", help="Show detailed debug information"
-    )
+    parser.add_argument("--debug", action="store_true", help="Show detailed debug information")
 
     # Add template argument
     parser.add_argument(
@@ -472,9 +465,7 @@ def main():
         elif algo == EncryptionAlgorithm.CHACHA20_POLY1305.value:
             description = "modern AEAD cipher with 12-byte nonce"
         elif algo == EncryptionAlgorithm.XCHACHA20_POLY1305.value:
-            description = (
-                "ChaCha20-Poly1305 with 24-byte nonce, safer for high-volume encryption"
-            )
+            description = "ChaCha20-Poly1305 with 24-byte nonce, safer for high-volume encryption"
         elif algo == EncryptionAlgorithm.CAMELLIA.value:
             description = "Camellia in CBC mode (DEPRECATED)"
         elif algo == EncryptionAlgorithm.ML_KEM_512_HYBRID.value:
@@ -515,7 +506,9 @@ def main():
         "chacha20-poly1305",
         "xchacha20-poly1305",
     ]
-    data_algo_help = "Symmetric encryption algorithm to use for data encryption when using Kyber/ML-KEM:\n"
+    data_algo_help = (
+        "Symmetric encryption algorithm to use for data encryption when using Kyber/ML-KEM:\n"
+    )
 
     for algo in data_algorithms:
         if algo == "aes-gcm":
@@ -529,9 +522,7 @@ def main():
         elif algo == "chacha20-poly1305":
             description = "modern AEAD cipher with 12-byte nonce"
         elif algo == "xchacha20-poly1305":
-            description = (
-                "ChaCha20-Poly1305 with 24-byte nonce, safer for high-volume encryption"
-            )
+            description = "ChaCha20-Poly1305 with 24-byte nonce, safer for high-volume encryption"
         else:
             description = "encryption algorithm"
 
@@ -751,9 +742,7 @@ def main():
 
     # Add Post-Quantum Cryptography options
     pqc_group = parser.add_argument_group("Post-Quantum Cryptography Options")
-    pqc_group.add_argument(
-        "--pqc-keyfile", help="Path to store or load post-quantum key pair"
-    )
+    pqc_group.add_argument("--pqc-keyfile", help="Path to store or load post-quantum key pair")
     pqc_group.add_argument(
         "--pqc-store-key",
         action="store_true",
@@ -885,9 +874,7 @@ def main():
     hash_group.add_argument(
         "--shake256", type=int, nargs="?", const=1, default=0, help=argparse.SUPPRESS
     )
-    hash_group.add_argument(
-        "--pbkdf2", type=int, default=100000, help=argparse.SUPPRESS
-    )
+    hash_group.add_argument("--pbkdf2", type=int, default=100000, help=argparse.SUPPRESS)
 
     # Password generation options
     password_group = parser.add_argument_group("Password Generation Options")
@@ -990,7 +977,7 @@ def main():
 
     if args.action == "show-version-file":
         try:
-            from openssl_encrypt.version import print_version_info, get_version_info
+            from openssl_encrypt.version import get_version_info, print_version_info
 
             # Call print_version_info function to show detailed version information
             print_version_info()
@@ -1007,9 +994,7 @@ def main():
 
             return 0
         except ImportError:
-            print(
-                "Version module not found. Run 'pip install -e .' to generate the version file."
-            )
+            print("Version module not found. Run 'pip install -e .' to generate the version file.")
             return 1
 
     # Handle scrypt_cost conversion to scrypt_n
@@ -1046,9 +1031,7 @@ def main():
                 if len(test_hash) == 16:
                     print("✓ Argon2 functionality test: PASSED")
                 else:
-                    print(
-                        "✗ Argon2 functionality test: FAILED (unexpected hash length)"
-                    )
+                    print("✗ Argon2 functionality test: FAILED (unexpected hash length)")
             except Exception as e:
                 print(f"✗ Argon2 functionality test: FAILED with error: {e}")
         else:
@@ -1058,19 +1041,15 @@ def main():
         sys.exit(0)
 
     elif args.action == "check-pqc":
-        from .pqc import check_pqc_support, PQCAlgorithm
+        from .pqc import PQCAlgorithm, check_pqc_support
 
-        pqc_available, version, supported_algorithms = check_pqc_support(
-            quiet=args.quiet
-        )
+        pqc_available, version, supported_algorithms = check_pqc_support(quiet=args.quiet)
         if not args.quiet:
             print("\nPOST-QUANTUM CRYPTOGRAPHY SUPPORT CHECK")
             print("======================================")
         if pqc_available:
             if not args.quiet:
-                print(
-                    f"✓ Post-quantum cryptography is AVAILABLE (liboqs version {version})"
-                )
+                print(f"✓ Post-quantum cryptography is AVAILABLE (liboqs version {version})")
                 print("✓ Supported algorithms:")
 
                 # Organize algorithms by type
@@ -1104,9 +1083,7 @@ def main():
                         "\n✗ Post-quantum encryption functionality test: FAILED (decryption mismatch)"
                     )
             except Exception as e:
-                print(
-                    f"\n✗ Post-quantum encryption functionality test: FAILED with error: {e}"
-                )
+                print(f"\n✗ Post-quantum encryption functionality test: FAILED with error: {e}")
         else:
             print("✗ Post-quantum cryptography is NOT AVAILABLE")
             print(
@@ -1116,9 +1093,7 @@ def main():
 
         print("\nUsage examples:")
         print("  Encrypt with Kyber-768 (NIST Level 3):")
-        print(
-            "    python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm kyber768-hybrid"
-        )
+        print("    python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm kyber768-hybrid")
         print("\n  Generate and save a key pair:")
         print(
             "    python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm kyber768-hybrid --pqc-gen-key --pqc-keyfile key.pqc"
@@ -1132,12 +1107,7 @@ def main():
 
     elif args.action == "generate-password":
         # If no character sets are explicitly selected, use all by default
-        if not (
-            args.use_lowercase
-            or args.use_uppercase
-            or args.use_digits
-            or args.use_special
-        ):
+        if not (args.use_lowercase or args.use_uppercase or args.use_digits or args.use_special):
             args.use_lowercase = True
             args.use_uppercase = True
             args.use_digits = True
@@ -1192,9 +1162,7 @@ def main():
             if not valid:
                 # This is rare but could happen with specific combinations of constraints
                 print("Warning: Generated password does not meet policy requirements.")
-                print(
-                    "Consider adjusting character requirements or using a longer length."
-                )
+                print("Consider adjusting character requirements or using a longer length.")
 
         # Display the password
         display_password_with_timeout(password)
@@ -1211,25 +1179,17 @@ def main():
         generated_password = None
 
         try:
-            from .secure_memory import secure_string, secure_input, SecureBytes
+            from .secure_memory import SecureBytes, secure_input, secure_string
 
             # Initialize a secure string to hold the password
             with secure_string() as password_secure:
                 # Handle random password generation for encryption
                 if args.action == "encrypt" and args.random and not args.password:
                     # Determine character sets based on args or defaults
-                    use_lowercase = (
-                        args.use_lowercase if args.use_lowercase is not None else True
-                    )
-                    use_uppercase = (
-                        args.use_uppercase if args.use_uppercase is not None else True
-                    )
-                    use_digits = (
-                        args.use_digits if args.use_digits is not None else True
-                    )
-                    use_special = (
-                        args.use_special if args.use_special is not None else True
-                    )
+                    use_lowercase = args.use_lowercase if args.use_lowercase is not None else True
+                    use_uppercase = args.use_uppercase if args.use_uppercase is not None else True
+                    use_digits = args.use_digits if args.use_digits is not None else True
+                    use_special = args.use_special if args.use_special is not None else True
 
                     # Ensure length meets policy requirements
                     if args.password_policy != "none" and not args.force_password:
@@ -1238,9 +1198,7 @@ def main():
                         if args.min_password_length is not None:
                             policy_params["min_length"] = args.min_password_length
 
-                        policy = PasswordPolicy(
-                            policy_level=args.password_policy, **policy_params
-                        )
+                        policy = PasswordPolicy(policy_level=args.password_policy, **policy_params)
 
                         # Ensure random password length meets policy requirements
                         if args.random < policy.min_length:
@@ -1270,19 +1228,13 @@ def main():
                             policy_params["check_common_passwords"] = False
 
                         if args.custom_password_list:
-                            policy_params["common_passwords_path"] = (
-                                args.custom_password_list
-                            )
+                            policy_params["common_passwords_path"] = args.custom_password_list
 
                         # Create policy
-                        policy = PasswordPolicy(
-                            policy_level=args.password_policy, **policy_params
-                        )
+                        policy = PasswordPolicy(policy_level=args.password_policy, **policy_params)
 
                         # Check if generated password meets policy (it should, but verify)
-                        valid, msgs = policy.validate_password(
-                            generated_password, quiet=args.quiet
-                        )
+                        valid, msgs = policy.validate_password(generated_password, quiet=args.quiet)
 
                         # Print strength information
                         if not args.quiet:
@@ -1329,9 +1281,7 @@ def main():
                                 policy_params["check_common_passwords"] = False
 
                             if args.custom_password_list:
-                                policy_params["common_passwords_path"] = (
-                                    args.custom_password_list
-                                )
+                                policy_params["common_passwords_path"] = args.custom_password_list
 
                             # Create policy
                             policy = PasswordPolicy(
@@ -1339,9 +1289,7 @@ def main():
                             )
 
                             # Validate the password (will raise ValidationError if invalid)
-                            policy.validate_password_or_raise(
-                                env_password, quiet=args.quiet
-                            )
+                            policy.validate_password_or_raise(env_password, quiet=args.quiet)
 
                         except crypt_errors.ValidationError as e:
                             # Always display password strength information before validation failure
@@ -1352,9 +1300,7 @@ def main():
                                     f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)"
                                 )
                                 print(f"Password validation failed: {str(e)}")
-                                print(
-                                    "Use --force-password to bypass validation (not recommended)"
-                                )
+                                print("Use --force-password to bypass validation (not recommended)")
                             sys.exit(1)
 
                     password_secure.extend(env_password.encode())
@@ -1385,9 +1331,7 @@ def main():
                                 policy_params["check_common_passwords"] = False
 
                             if args.custom_password_list:
-                                policy_params["common_passwords_path"] = (
-                                    args.custom_password_list
-                                )
+                                policy_params["common_passwords_path"] = args.custom_password_list
 
                             # Create policy
                             policy = PasswordPolicy(
@@ -1395,9 +1339,7 @@ def main():
                             )
 
                             # Validate the password (will raise ValidationError if invalid)
-                            policy.validate_password_or_raise(
-                                args.password, quiet=args.quiet
-                            )
+                            policy.validate_password_or_raise(args.password, quiet=args.quiet)
 
                         except crypt_errors.ValidationError as e:
                             # Always display password strength information before validation failure
@@ -1408,9 +1350,7 @@ def main():
                                     f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)"
                                 )
                                 print(f"Password validation failed: {str(e)}")
-                                print(
-                                    "Use --force-password to bypass validation (not recommended)"
-                                )
+                                print("Use --force-password to bypass validation (not recommended)")
                             sys.exit(1)
 
                     password_secure.extend(args.password.encode())
@@ -1428,9 +1368,7 @@ def main():
                             if pwd1 == pwd2:
                                 # Validate password if policy is enabled, not forced, and not in test mode
                                 valid_password = True
-                                in_test_mode = (
-                                    os.environ.get("PYTEST_CURRENT_TEST") is not None
-                                )
+                                in_test_mode = os.environ.get("PYTEST_CURRENT_TEST") is not None
 
                                 if (
                                     args.password_policy != "none"
@@ -1443,24 +1381,18 @@ def main():
 
                                         # Override policy settings with custom parameters if provided
                                         if args.min_password_length is not None:
-                                            policy_params["min_length"] = (
-                                                args.min_password_length
-                                            )
+                                            policy_params["min_length"] = args.min_password_length
 
                                         if args.min_password_entropy is not None:
-                                            policy_params["min_entropy"] = (
-                                                args.min_password_entropy
-                                            )
+                                            policy_params["min_entropy"] = args.min_password_entropy
 
                                         if args.disable_common_password_check:
-                                            policy_params["check_common_passwords"] = (
-                                                False
-                                            )
+                                            policy_params["check_common_passwords"] = False
 
                                         if args.custom_password_list:
-                                            policy_params["common_passwords_path"] = (
-                                                args.custom_password_list
-                                            )
+                                            policy_params[
+                                                "common_passwords_path"
+                                            ] = args.custom_password_list
 
                                         # Create policy and validate password
                                         policy = PasswordPolicy(
@@ -1561,9 +1493,7 @@ def main():
             parser.error("--password and --random cannot be used together")
         if args.random < 12:
             if not args.quiet:
-                print(
-                    f"Warning: Random password length increased to 12 (minimum secure length)"
-                )
+                print(f"Warning: Random password length increased to 12 (minimum secure length)")
             args.random = 12
 
     # Set default iterations if SHA algorithms are requested but no iterations
@@ -1616,9 +1546,7 @@ def main():
     elif args.enable_scrypt and args.scrypt_rounds <= 0:
         if not args.quiet:
             rounds_src = (
-                f"--kdf-rounds={default_rounds}"
-                if args.kdf_rounds > 0
-                else "default of 10"
+                f"--kdf-rounds={default_rounds}" if args.kdf_rounds > 0 else "default of 10"
             )
             logger.debug(
                 f"Setting --scrypt-rounds={default_rounds} ({rounds_src}) since --enable-scrypt was provided without rounds"
@@ -1635,9 +1563,7 @@ def main():
     elif args.enable_argon2 and args.argon2_rounds <= 0:
         if not args.quiet and ARGON2_AVAILABLE:
             rounds_src = (
-                f"--kdf-rounds={default_rounds}"
-                if args.kdf_rounds > 0
-                else "default of 10"
+                f"--kdf-rounds={default_rounds}" if args.kdf_rounds > 0 else "default of 10"
             )
             logger.debug(
                 f"Setting --argon2-rounds={default_rounds} ({rounds_src}) since --enable-argon2 was provided without rounds"
@@ -1654,9 +1580,7 @@ def main():
     elif args.enable_balloon and args.balloon_rounds <= 0:
         if not args.quiet:
             rounds_src = (
-                f"--kdf-rounds={default_rounds}"
-                if args.kdf_rounds > 0
-                else "default of 10"
+                f"--kdf-rounds={default_rounds}" if args.kdf_rounds > 0 else "default of 10"
             )
             logger.debug(
                 f"Setting --balloon-rounds={default_rounds} ({rounds_src}) since --enable-balloon was provided without rounds"
@@ -1792,36 +1716,24 @@ def main():
                 if (
                     not args.quiet
                     and replacement
-                    and (
-                        args.verbose
-                        or not args.algorithm.startswith(("kyber", "ml-kem"))
-                    )
+                    and (args.verbose or not args.algorithm.startswith(("kyber", "ml-kem")))
                 ):
                     print(f"Warning: The algorithm '{args.algorithm}' is deprecated.")
-                    print(
-                        f"Consider using '{replacement}' instead for better security."
-                    )
+                    print(f"Consider using '{replacement}' instead for better security.")
 
             # Check if data encryption algorithm is deprecated for PQC
-            if args.algorithm.endswith("-hybrid") and is_deprecated(
-                args.encryption_data
-            ):
+            if args.algorithm.endswith("-hybrid") and is_deprecated(args.encryption_data):
                 data_replacement = get_recommended_replacement(args.encryption_data)
                 warn_deprecated_algorithm(args.encryption_data, "PQC data encryption")
                 if (
                     not args.quiet
                     and data_replacement
-                    and (
-                        args.verbose
-                        or not args.encryption_data.startswith(("kyber", "ml-kem"))
-                    )
+                    and (args.verbose or not args.encryption_data.startswith(("kyber", "ml-kem")))
                 ):
                     print(
                         f"Warning: The data encryption algorithm '{args.encryption_data}' is deprecated."
                     )
-                    print(
-                        f"Consider using '{data_replacement}' instead for better security."
-                    )
+                    print(f"Consider using '{data_replacement}' instead for better security.")
 
             # Handle output file path
             if args.overwrite:
@@ -1858,7 +1770,7 @@ def main():
                     ]:
                         # Check if we should generate and save a new key pair
                         if args.pqc_gen_key and args.pqc_keyfile:
-                            from .pqc import PQCipher, PQCAlgorithm, check_pqc_support
+                            from .pqc import PQCAlgorithm, PQCipher, check_pqc_support
 
                             # Map algorithm name to PQCAlgorithm with fallbacks
                             pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
@@ -1885,43 +1797,28 @@ def main():
                             hqc128_options = [
                                 alg
                                 for alg in pqc_algorithms
-                                if alg.lower().replace("-", "").replace("_", "")
-                                in ["hqc128"]
+                                if alg.lower().replace("-", "").replace("_", "") in ["hqc128"]
                             ]
                             hqc192_options = [
                                 alg
                                 for alg in pqc_algorithms
-                                if alg.lower().replace("-", "").replace("_", "")
-                                in ["hqc192"]
+                                if alg.lower().replace("-", "").replace("_", "") in ["hqc192"]
                             ]
                             hqc256_options = [
                                 alg
                                 for alg in pqc_algorithms
-                                if alg.lower().replace("-", "").replace("_", "")
-                                in ["hqc256"]
+                                if alg.lower().replace("-", "").replace("_", "") in ["hqc256"]
                             ]
 
                             # Choose first available or fall back to default name
-                            kyber512_algo = (
-                                kyber512_options[0] if kyber512_options else "Kyber512"
-                            )
-                            kyber768_algo = (
-                                kyber768_options[0] if kyber768_options else "Kyber768"
-                            )
+                            kyber512_algo = kyber512_options[0] if kyber512_options else "Kyber512"
+                            kyber768_algo = kyber768_options[0] if kyber768_options else "Kyber768"
                             kyber1024_algo = (
-                                kyber1024_options[0]
-                                if kyber1024_options
-                                else "Kyber1024"
+                                kyber1024_options[0] if kyber1024_options else "Kyber1024"
                             )
-                            hqc128_algo = (
-                                hqc128_options[0] if hqc128_options else "HQC-128"
-                            )
-                            hqc192_algo = (
-                                hqc192_options[0] if hqc192_options else "HQC-192"
-                            )
-                            hqc256_algo = (
-                                hqc256_options[0] if hqc256_options else "HQC-256"
-                            )
+                            hqc128_algo = hqc128_options[0] if hqc128_options else "HQC-128"
+                            hqc192_algo = hqc192_options[0] if hqc192_options else "HQC-192"
+                            hqc256_algo = hqc256_options[0] if hqc256_options else "HQC-256"
 
                             if not args.quiet:
                                 print(
@@ -1945,39 +1842,31 @@ def main():
                             }
 
                             # Generate key pair
-                            cipher = PQCipher(
-                                algo_map[args.algorithm], quiet=args.quiet
-                            )
+                            cipher = PQCipher(algo_map[args.algorithm], quiet=args.quiet)
                             public_key, private_key = cipher.generate_keypair()
 
                             # Save key pair to file
-                            import json
                             import base64
+                            import json
 
                             key_data = {
                                 "algorithm": args.algorithm,
-                                "public_key": base64.b64encode(public_key).decode(
-                                    "utf-8"
-                                ),
-                                "private_key": base64.b64encode(private_key).decode(
-                                    "utf-8"
-                                ),
+                                "public_key": base64.b64encode(public_key).decode("utf-8"),
+                                "private_key": base64.b64encode(private_key).decode("utf-8"),
                             }
 
                             with open(args.pqc_keyfile, "w") as f:
                                 json.dump(key_data, f)
 
                             if not args.quiet:
-                                print(
-                                    f"Post-quantum key pair saved to {args.pqc_keyfile}"
-                                )
+                                print(f"Post-quantum key pair saved to {args.pqc_keyfile}")
 
                             pqc_keypair = (public_key, private_key)
 
                         # Check if we should load an existing key pair
                         elif args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
-                            import json
                             import base64
+                            import json
 
                             with open(args.pqc_keyfile, "r") as f:
                                 key_data = json.load(f)
@@ -1988,9 +1877,7 @@ def main():
                                 pqc_keypair = (public_key, private_key)
 
                                 if not args.quiet:
-                                    print(
-                                        f"Loaded post-quantum key pair from {args.pqc_keyfile}"
-                                    )
+                                    print(f"Loaded post-quantum key pair from {args.pqc_keyfile}")
 
                     # For PQC algorithms, we may need to generate a keypair if not specified
                     if (
@@ -2037,20 +1924,17 @@ def main():
                         hqc128_options = [
                             alg
                             for alg in pqc_algorithms
-                            if alg.lower().replace("-", "").replace("_", "")
-                            in ["hqc128"]
+                            if alg.lower().replace("-", "").replace("_", "") in ["hqc128"]
                         ]
                         hqc192_options = [
                             alg
                             for alg in pqc_algorithms
-                            if alg.lower().replace("-", "").replace("_", "")
-                            in ["hqc192"]
+                            if alg.lower().replace("-", "").replace("_", "") in ["hqc192"]
                         ]
                         hqc256_options = [
                             alg
                             for alg in pqc_algorithms
-                            if alg.lower().replace("-", "").replace("_", "")
-                            in ["hqc256"]
+                            if alg.lower().replace("-", "").replace("_", "") in ["hqc256"]
                         ]
 
                         # Choose first available algorithm
@@ -2062,19 +1946,11 @@ def main():
                                 kyber768_options[0] if kyber768_options else "Kyber768"
                             ),
                             "kyber1024-hybrid": (
-                                kyber1024_options[0]
-                                if kyber1024_options
-                                else "Kyber1024"
+                                kyber1024_options[0] if kyber1024_options else "Kyber1024"
                             ),
-                            "hqc-128-hybrid": (
-                                hqc128_options[0] if hqc128_options else "HQC-128"
-                            ),
-                            "hqc-192-hybrid": (
-                                hqc192_options[0] if hqc192_options else "HQC-192"
-                            ),
-                            "hqc-256-hybrid": (
-                                hqc256_options[0] if hqc256_options else "HQC-256"
-                            ),
+                            "hqc-128-hybrid": (hqc128_options[0] if hqc128_options else "HQC-128"),
+                            "hqc-192-hybrid": (hqc192_options[0] if hqc192_options else "HQC-192"),
+                            "hqc-256-hybrid": (hqc256_options[0] if hqc256_options else "HQC-256"),
                             "ml-kem-512-hybrid": (
                                 kyber512_options[0] if kyber512_options else "Kyber512"
                             ),
@@ -2082,9 +1958,7 @@ def main():
                                 kyber768_options[0] if kyber768_options else "Kyber768"
                             ),
                             "ml-kem-1024-hybrid": (
-                                kyber1024_options[0]
-                                if kyber1024_options
-                                else "Kyber1024"
+                                kyber1024_options[0] if kyber1024_options else "Kyber1024"
                             ),
                             "ml-kem-512-chacha20": (
                                 kyber512_options[0] if kyber512_options else "Kyber512"
@@ -2093,9 +1967,7 @@ def main():
                                 kyber768_options[0] if kyber768_options else "Kyber768"
                             ),
                             "ml-kem-1024-chacha20": (
-                                kyber1024_options[0]
-                                if kyber1024_options
-                                else "Kyber1024"
+                                kyber1024_options[0] if kyber1024_options else "Kyber1024"
                             ),
                         }
 
@@ -2139,9 +2011,7 @@ def main():
                                         "Use --auto-create-keystore option to automatically create keystore"
                                     )
                                     create_prompt = (
-                                        input(
-                                            "Would you like to create a new keystore? (y/n): "
-                                        )
+                                        input("Would you like to create a new keystore? (y/n): ")
                                         .lower()
                                         .strip()
                                     )
@@ -2149,26 +2019,18 @@ def main():
 
                             if create_new:
                                 # Create a new keystore
-                                from .keystore_cli import (
-                                    PQCKeystore,
-                                    KeystoreSecurityLevel,
-                                )
+                                from .keystore_cli import KeystoreSecurityLevel, PQCKeystore
 
                                 # Get keystore password
                                 keystore_password = None
-                                if (
-                                    hasattr(args, "keystore_password")
-                                    and args.keystore_password
-                                ):
+                                if hasattr(args, "keystore_password") and args.keystore_password:
                                     keystore_password = args.keystore_password
                                 elif (
                                     hasattr(args, "keystore_password_file")
                                     and args.keystore_password_file
                                 ):
                                     try:
-                                        with open(
-                                            args.keystore_password_file, "r"
-                                        ) as f:
+                                        with open(args.keystore_password_file, "r") as f:
                                             keystore_password = f.read().strip()
                                     except Exception as e:
                                         if not args.quiet:
@@ -2182,15 +2044,11 @@ def main():
                                     keystore_password = getpass.getpass(
                                         "Enter new keystore password: "
                                     )
-                                    confirm = getpass.getpass(
-                                        "Confirm new keystore password: "
-                                    )
+                                    confirm = getpass.getpass("Confirm new keystore password: ")
                                     if keystore_password != confirm:
                                         if not args.quiet:
                                             print("Passwords do not match")
-                                        raise ValueError(
-                                            "Keystore passwords do not match"
-                                        )
+                                        raise ValueError("Keystore passwords do not match")
 
                                 # Create the keystore
                                 keystore = PQCKeystore(args.keystore)
@@ -2209,14 +2067,10 @@ def main():
 
                         # Get keystore password if needed
                         keystore_password = None
-                        if (
-                            hasattr(args, "keystore_password")
-                            and args.keystore_password
-                        ):
+                        if hasattr(args, "keystore_password") and args.keystore_password:
                             keystore_password = args.keystore_password
                         elif (
-                            hasattr(args, "keystore_password_file")
-                            and args.keystore_password_file
+                            hasattr(args, "keystore_password_file") and args.keystore_password_file
                         ):
                             try:
                                 with open(args.keystore_password_file, "r") as f:
@@ -2226,26 +2080,19 @@ def main():
                                     print(
                                         f"Warning: Failed to read keystore password from file: {e}"
                                     )
-                                    keystore_password = getpass.getpass(
-                                        "Enter keystore password: "
-                                    )
+                                    keystore_password = getpass.getpass("Enter keystore password: ")
                         else:
-                            keystore_password = getpass.getpass(
-                                "Enter keystore password: "
-                            )
+                            keystore_password = getpass.getpass("Enter keystore password: ")
 
                         # Check if we should auto-generate a key
                         key_id = getattr(args, "key_id", None)
                         # Always auto-generate a key if we're using a keystore with PQC algorithm
                         # and no key_id is provided, or explicitly requested with --auto-generate-key
-                        if (
-                            key_id is None and args.algorithm.startswith("kyber")
-                        ) or getattr(args, "auto_generate_key", False):
+                        if (key_id is None and args.algorithm.startswith("kyber")) or getattr(
+                            args, "auto_generate_key", False
+                        ):
                             # Set the auto_generate_key flag for the auto_generate_pqc_key function
-                            if (
-                                not hasattr(args, "auto_generate_key")
-                                or not args.auto_generate_key
-                            ):
+                            if not hasattr(args, "auto_generate_key") or not args.auto_generate_key:
                                 if not args.quiet:
                                     print("Auto-generating key for keystore")
                                 setattr(args, "auto_generate_key", True)
@@ -2262,9 +2109,7 @@ def main():
                             pbkdf2_iterations=args.pbkdf2_iterations,
                             quiet=args.quiet,
                             algorithm=args.algorithm,
-                            pqc_keypair=(
-                                pqc_keypair if "pqc_keypair" in locals() else None
-                            ),
+                            pqc_keypair=(pqc_keypair if "pqc_keypair" in locals() else None),
                             keystore_file=args.keystore,
                             keystore_password=keystore_password,
                             key_id=key_id,
@@ -2272,9 +2117,7 @@ def main():
                             progress=args.progress,
                             verbose=args.verbose,
                             pqc_store_private_key=args.pqc_store_key,
-                            pqc_dual_encryption=getattr(
-                                args, "pqc_dual_encrypt_key", False
-                            ),
+                            pqc_dual_encryption=getattr(args, "pqc_dual_encrypt_key", False),
                         )
                     else:
                         # Use standard encryption
@@ -2289,9 +2132,7 @@ def main():
                             progress=args.progress,
                             verbose=args.verbose,
                             debug=args.debug,
-                            pqc_keypair=(
-                                pqc_keypair if "pqc_keypair" in locals() else None
-                            ),
+                            pqc_keypair=(pqc_keypair if "pqc_keypair" in locals() else None),
                             pqc_store_private_key=args.pqc_store_key,
                             encryption_data=args.encryption_data,
                         )
@@ -2343,7 +2184,7 @@ def main():
             ]:
                 # Check if we should generate and save a new key pair
                 if args.pqc_gen_key and args.pqc_keyfile:
-                    from .pqc import PQCipher, PQCAlgorithm, check_pqc_support
+                    from .pqc import PQCAlgorithm, PQCipher, check_pqc_support
 
                     # Map algorithm name to PQCAlgorithm with fallbacks
                     pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
@@ -2352,14 +2193,12 @@ def main():
                     kyber512_options = [
                         alg
                         for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "")
-                        in ["kyber512", "mlkem512"]
+                        if alg.lower().replace("-", "").replace("_", "") in ["kyber512", "mlkem512"]
                     ]
                     kyber768_options = [
                         alg
                         for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "")
-                        in ["kyber768", "mlkem768"]
+                        if alg.lower().replace("-", "").replace("_", "") in ["kyber768", "mlkem768"]
                     ]
                     kyber1024_options = [
                         alg
@@ -2384,15 +2223,9 @@ def main():
                     ]
 
                     # Choose first available or fall back to default name
-                    kyber512_algo = (
-                        kyber512_options[0] if kyber512_options else "Kyber512"
-                    )
-                    kyber768_algo = (
-                        kyber768_options[0] if kyber768_options else "Kyber768"
-                    )
-                    kyber1024_algo = (
-                        kyber1024_options[0] if kyber1024_options else "Kyber1024"
-                    )
+                    kyber512_algo = kyber512_options[0] if kyber512_options else "Kyber512"
+                    kyber768_algo = kyber768_options[0] if kyber768_options else "Kyber768"
+                    kyber1024_algo = kyber1024_options[0] if kyber1024_options else "Kyber1024"
                     hqc128_algo = hqc128_options[0] if hqc128_options else "HQC-128"
                     hqc192_algo = hqc192_options[0] if hqc192_options else "HQC-192"
                     hqc256_algo = hqc256_options[0] if hqc256_options else "HQC-256"
@@ -2423,8 +2256,8 @@ def main():
                     public_key, private_key = cipher.generate_keypair()
 
                     # Save key pair to file
-                    import json
                     import base64
+                    import json
 
                     # Get password for encrypting the private key in the keyfile
                     keyfile_password = None
@@ -2450,16 +2283,12 @@ def main():
 
                     cipher = AESGCM(encryption_key)
                     nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
-                    encrypted_private_key = nonce + cipher.encrypt(
-                        nonce, private_key, None
-                    )
+                    encrypted_private_key = nonce + cipher.encrypt(nonce, private_key, None)
 
                     key_data = {
                         "algorithm": args.algorithm,
                         "public_key": base64.b64encode(public_key).decode("utf-8"),
-                        "private_key": base64.b64encode(encrypted_private_key).decode(
-                            "utf-8"
-                        ),
+                        "private_key": base64.b64encode(encrypted_private_key).decode("utf-8"),
                         "key_salt": base64.b64encode(key_salt).decode("utf-8"),
                         "key_encrypted": True,  # Mark that the key is encrypted
                     }
@@ -2474,17 +2303,15 @@ def main():
 
                 # Check if we should load an existing key pair
                 elif args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
-                    import json
                     import base64
+                    import json
 
                     with open(args.pqc_keyfile, "r") as f:
                         key_data = json.load(f)
 
                     if "public_key" in key_data and "private_key" in key_data:
                         public_key = base64.b64decode(key_data["public_key"])
-                        encrypted_private_key = base64.b64decode(
-                            key_data["private_key"]
-                        )
+                        encrypted_private_key = base64.b64decode(key_data["private_key"])
 
                         # Check if key is encrypted (will be for keys created after our fix)
                         if key_data.get("key_encrypted", False):
@@ -2503,9 +2330,7 @@ def main():
                                 ).encode()
 
                             # Import what we need to decrypt
-                            from cryptography.hazmat.primitives.ciphers.aead import (
-                                AESGCM,
-                            )
+                            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
                             # Key derivation using the same method as when encrypting
                             key_salt = base64.b64decode(key_data["key_salt"])
@@ -2521,56 +2346,43 @@ def main():
 
                                 # Decrypt the private key with the password-derived key
                                 cipher = AESGCM(encryption_key)
-                                private_key = cipher.decrypt(
-                                    nonce, encrypted_key_data, None
-                                )
+                                private_key = cipher.decrypt(nonce, encrypted_key_data, None)
 
                                 if not args.quiet:
-                                    print(
-                                        "Successfully decrypted private key from keyfile"
-                                    )
+                                    print("Successfully decrypted private key from keyfile")
                             except Exception as e:
-                                print(
-                                    f"Error decrypting private key: {e}. Wrong password?"
-                                )
+                                print(f"Error decrypting private key: {e}. Wrong password?")
                                 print("Will proceed with only the public key.")
                                 private_key = None
                         else:
                             # Legacy support for non-encrypted keys (created before our fix)
                             private_key = encrypted_private_key
                             if not args.quiet:
-                                print(
-                                    "WARNING: Using legacy unencrypted private key from keyfile"
-                                )
+                                print("WARNING: Using legacy unencrypted private key from keyfile")
 
                         pqc_keypair = (
-                            (public_key, private_key)
-                            if private_key
-                            else (public_key, None)
+                            (public_key, private_key) if private_key else (public_key, None)
                         )
 
                         if not args.quiet:
-                            print(
-                                f"Loaded post-quantum key pair from {args.pqc_keyfile}"
-                            )
+                            print(f"Loaded post-quantum key pair from {args.pqc_keyfile}")
                 else:
                     # No keyfile specified - generate an ephemeral keypair for this encryption
-                    from .pqc import PQCipher, check_pqc_support
                     import random
+
+                    from .pqc import PQCipher, check_pqc_support
 
                     # Map algorithm name to available algorithms
                     pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
                     kyber512_options = [
                         alg
                         for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "")
-                        in ["kyber512", "mlkem512"]
+                        if alg.lower().replace("-", "").replace("_", "") in ["kyber512", "mlkem512"]
                     ]
                     kyber768_options = [
                         alg
                         for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "")
-                        in ["kyber768", "mlkem768"]
+                        if alg.lower().replace("-", "").replace("_", "") in ["kyber768", "mlkem768"]
                     ]
                     kyber1024_options = [
                         alg
@@ -2605,15 +2417,9 @@ def main():
                         "kyber1024-hybrid": (
                             kyber1024_options[0] if kyber1024_options else "Kyber1024"
                         ),
-                        "hqc-128-hybrid": (
-                            hqc128_options[0] if hqc128_options else "HQC-128"
-                        ),
-                        "hqc-192-hybrid": (
-                            hqc192_options[0] if hqc192_options else "HQC-192"
-                        ),
-                        "hqc-256-hybrid": (
-                            hqc256_options[0] if hqc256_options else "HQC-256"
-                        ),
+                        "hqc-128-hybrid": (hqc128_options[0] if hqc128_options else "HQC-128"),
+                        "hqc-192-hybrid": (hqc192_options[0] if hqc192_options else "HQC-192"),
+                        "hqc-256-hybrid": (hqc256_options[0] if hqc256_options else "HQC-256"),
                         "ml-kem-512-hybrid": (
                             kyber512_options[0] if kyber512_options else "Kyber512"
                         ),
@@ -2636,9 +2442,7 @@ def main():
 
                     # Generate a new ephemeral keypair
                     if not args.quiet:
-                        print(
-                            f"Generating ephemeral post-quantum key pair for {args.algorithm}"
-                        )
+                        print(f"Generating ephemeral post-quantum key pair for {args.algorithm}")
                         if args.pqc_store_key:
                             # Only log this message with INFO level so it only appears in verbose mode
                             logger.info(
@@ -2665,9 +2469,7 @@ def main():
                         if getattr(args, "auto_create_keystore", False):
                             # Auto-create keystore is enabled
                             if not args.quiet:
-                                print(
-                                    f"Keystore not found at {args.keystore}, creating a new one"
-                                )
+                                print(f"Keystore not found at {args.keystore}, creating a new one")
                             create_new = True
                         else:
                             # Prompt the user if they want to create a new keystore or abort
@@ -2677,9 +2479,7 @@ def main():
                                     "Use --auto-create-keystore option to automatically create keystore"
                                 )
                                 create_prompt = (
-                                    input(
-                                        "Would you like to create a new keystore? (y/n): "
-                                    )
+                                    input("Would you like to create a new keystore? (y/n): ")
                                     .lower()
                                     .strip()
                                 )
@@ -2687,14 +2487,11 @@ def main():
 
                         if create_new:
                             # Create a new keystore
-                            from .keystore_cli import PQCKeystore, KeystoreSecurityLevel
+                            from .keystore_cli import KeystoreSecurityLevel, PQCKeystore
 
                             # Get keystore password
                             keystore_password = None
-                            if (
-                                hasattr(args, "keystore_password")
-                                and args.keystore_password
-                            ):
+                            if hasattr(args, "keystore_password") and args.keystore_password:
                                 keystore_password = args.keystore_password
                             elif (
                                 hasattr(args, "keystore_password_file")
@@ -2712,12 +2509,8 @@ def main():
                                             "Enter keystore password: "
                                         )
                             else:
-                                keystore_password = getpass.getpass(
-                                    "Enter new keystore password: "
-                                )
-                                confirm = getpass.getpass(
-                                    "Confirm new keystore password: "
-                                )
+                                keystore_password = getpass.getpass("Enter new keystore password: ")
+                                confirm = getpass.getpass("Confirm new keystore password: ")
                                 if keystore_password != confirm:
                                     if not args.quiet:
                                         print("Passwords do not match")
@@ -2733,30 +2526,21 @@ def main():
                         else:
                             # Abort
                             if not args.quiet:
-                                print(
-                                    f"Encryption aborted: Keystore not found at {args.keystore}"
-                                )
+                                print(f"Encryption aborted: Keystore not found at {args.keystore}")
                             return 1
 
                     # Get keystore password if needed
                     keystore_password = None
                     if hasattr(args, "keystore_password") and args.keystore_password:
                         keystore_password = args.keystore_password
-                    elif (
-                        hasattr(args, "keystore_password_file")
-                        and args.keystore_password_file
-                    ):
+                    elif hasattr(args, "keystore_password_file") and args.keystore_password_file:
                         try:
                             with open(args.keystore_password_file, "r") as f:
                                 keystore_password = f.read().strip()
                         except Exception as e:
                             if not args.quiet:
-                                print(
-                                    f"Warning: Failed to read keystore password from file: {e}"
-                                )
-                                keystore_password = getpass.getpass(
-                                    "Enter keystore password: "
-                                )
+                                print(f"Warning: Failed to read keystore password from file: {e}")
+                                keystore_password = getpass.getpass("Enter keystore password: ")
                     else:
                         keystore_password = getpass.getpass("Enter keystore password: ")
 
@@ -2764,14 +2548,11 @@ def main():
                     key_id = getattr(args, "key_id", None)
                     # Always auto-generate a key if we're using a keystore with PQC algorithm
                     # and no key_id is provided, or explicitly requested with --auto-generate-key
-                    if (
-                        key_id is None and args.algorithm.startswith("kyber")
-                    ) or getattr(args, "auto_generate_key", False):
+                    if (key_id is None and args.algorithm.startswith("kyber")) or getattr(
+                        args, "auto_generate_key", False
+                    ):
                         # Set the auto_generate_key flag for the auto_generate_pqc_key function
-                        if (
-                            not hasattr(args, "auto_generate_key")
-                            or not args.auto_generate_key
-                        ):
+                        if not hasattr(args, "auto_generate_key") or not args.auto_generate_key:
                             if not args.quiet:
                                 print("Auto-generating key for keystore")
                             setattr(args, "auto_generate_key", True)
@@ -2846,9 +2627,7 @@ def main():
                             print(
                                 "\nWARNING: This is the ONLY time this password will be displayed."
                             )
-                            print(
-                                "         If you lose it, your data CANNOT be recovered."
-                            )
+                            print("         If you lose it, your data CANNOT be recovered.")
                             print(
                                 "         Please write it down or save it in a password manager now."
                             )
@@ -2877,9 +2656,7 @@ def main():
 
                             # Give an indication that we're clearing the screen
                             if interrupted:
-                                print(
-                                    "\n\nClearing password from screen (interrupted by user)..."
-                                )
+                                print("\n\nClearing password from screen (interrupted by user)...")
                             else:
                                 print("\n\nClearing password from screen...")
 
@@ -2914,17 +2691,12 @@ def main():
                     if (
                         not args.quiet
                         and replacement
-                        and (
-                            args.verbose
-                            or not algorithm.startswith(("kyber", "ml-kem"))
-                        )
+                        and (args.verbose or not algorithm.startswith(("kyber", "ml-kem")))
                     ):
                         print(
                             f"Warning: The algorithm '{algorithm}' used in this file is deprecated."
                         )
-                        print(
-                            f"Consider re-encrypting with '{replacement}' for better security."
-                        )
+                        print(f"Consider re-encrypting with '{replacement}' for better security.")
 
                 # Check if data encryption algorithm is deprecated for PQC
                 if algorithm.endswith("-hybrid") and is_deprecated(encryption_data):
@@ -2933,10 +2705,7 @@ def main():
                     if (
                         not args.quiet
                         and data_replacement
-                        and (
-                            args.verbose
-                            or not encryption_data.startswith(("kyber", "ml-kem"))
-                        )
+                        and (args.verbose or not encryption_data.startswith(("kyber", "ml-kem")))
                     ):
                         print(
                             f"Warning: The data encryption algorithm '{encryption_data}' used in this file is deprecated."
@@ -2947,9 +2716,7 @@ def main():
             except Exception as e:
                 # If we can't read metadata, continue with decryption (it will fail with proper error)
                 if args.verbose:
-                    print(
-                        f"Warning: Could not check file for deprecated algorithms: {e}"
-                    )
+                    print(f"Warning: Could not check file for deprecated algorithms: {e}")
 
             if args.overwrite:
                 output_file = args.input
@@ -2970,17 +2737,15 @@ def main():
                     # Handle PQC key operations for decryption
                     pqc_private_key = None
                     if args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
-                        import json
                         import base64
+                        import json
 
                         try:
                             with open(args.pqc_keyfile, "r") as f:
                                 key_data = json.load(f)
 
                             if "private_key" in key_data:
-                                encrypted_private_key = base64.b64decode(
-                                    key_data["private_key"]
-                                )
+                                encrypted_private_key = base64.b64decode(key_data["private_key"])
 
                                 # Check if key is encrypted (will be for keys created after our fix)
                                 if key_data.get("key_encrypted", False):
@@ -2999,18 +2764,14 @@ def main():
                                         ).encode()
 
                                     # Import what we need to decrypt
-                                    from cryptography.hazmat.primitives.ciphers.aead import (
-                                        AESGCM,
-                                    )
+                                    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
                                     # Key derivation using the same method as when encrypting
                                     key_salt = base64.b64decode(key_data["key_salt"])
                                     key_derivation = hashlib.pbkdf2_hmac(
                                         "sha256", keyfile_password, key_salt, 100000
                                     )
-                                    encryption_key = hashlib.sha256(
-                                        key_derivation
-                                    ).digest()
+                                    encryption_key = hashlib.sha256(key_derivation).digest()
 
                                     try:
                                         # Format: nonce (12 bytes) + encrypted_key
@@ -3024,16 +2785,10 @@ def main():
                                         )
 
                                         if not args.quiet:
-                                            print(
-                                                "Successfully decrypted private key from keyfile"
-                                            )
+                                            print("Successfully decrypted private key from keyfile")
                                     except Exception as e:
-                                        print(
-                                            f"Error decrypting private key: {e}. Wrong password?"
-                                        )
-                                        print(
-                                            "Decryption may fail without a valid private key."
-                                        )
+                                        print(f"Error decrypting private key: {e}. Wrong password?")
+                                        print("Decryption may fail without a valid private key.")
                                         pqc_private_key = None
                                 else:
                                     # Legacy support for non-encrypted keys (created before our fix)
@@ -3055,14 +2810,10 @@ def main():
                     if hasattr(args, "keystore") and args.keystore:
                         # Get keystore password if needed
                         keystore_password = None
-                        if (
-                            hasattr(args, "keystore_password")
-                            and args.keystore_password
-                        ):
+                        if hasattr(args, "keystore_password") and args.keystore_password:
                             keystore_password = args.keystore_password
                         elif (
-                            hasattr(args, "keystore_password_file")
-                            and args.keystore_password_file
+                            hasattr(args, "keystore_password_file") and args.keystore_password_file
                         ):
                             try:
                                 with open(args.keystore_password_file, "r") as f:
@@ -3072,13 +2823,9 @@ def main():
                                     print(
                                         f"Warning: Failed to read keystore password from file: {e}"
                                     )
-                                    keystore_password = getpass.getpass(
-                                        "Enter keystore password: "
-                                    )
+                                    keystore_password = getpass.getpass("Enter keystore password: ")
                         else:
-                            keystore_password = getpass.getpass(
-                                "Enter keystore password: "
-                            )
+                            keystore_password = getpass.getpass("Enter keystore password: ")
 
                         # Determine key ID if not provided
                         key_id = getattr(args, "key_id", None)
@@ -3145,17 +2892,15 @@ def main():
                 # Handle PQC key operations for decryption
                 pqc_private_key = None
                 if args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
-                    import json
                     import base64
+                    import json
 
                     try:
                         with open(args.pqc_keyfile, "r") as f:
                             key_data = json.load(f)
 
                         if "private_key" in key_data:
-                            encrypted_private_key = base64.b64decode(
-                                key_data["private_key"]
-                            )
+                            encrypted_private_key = base64.b64decode(key_data["private_key"])
 
                             # Check if key is encrypted (will be for keys created after our fix)
                             if key_data.get("key_encrypted", False):
@@ -3174,9 +2919,7 @@ def main():
                                     ).encode()
 
                                 # Import what we need to decrypt
-                                from cryptography.hazmat.primitives.ciphers.aead import (
-                                    AESGCM,
-                                )
+                                from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
                                 # Key derivation using the same method as when encrypting
                                 key_salt = base64.b64decode(key_data["key_salt"])
@@ -3197,16 +2940,10 @@ def main():
                                     )
 
                                     if not args.quiet:
-                                        print(
-                                            "Successfully decrypted private key from keyfile"
-                                        )
+                                        print("Successfully decrypted private key from keyfile")
                                 except Exception as e:
-                                    print(
-                                        f"Error decrypting private key: {e}. Wrong password?"
-                                    )
-                                    print(
-                                        "Decryption may fail without a valid private key."
-                                    )
+                                    print(f"Error decrypting private key: {e}. Wrong password?")
+                                    print("Decryption may fail without a valid private key.")
                                     pqc_private_key = None
                             else:
                                 # Legacy support for non-encrypted keys (created before our fix)
@@ -3217,9 +2954,7 @@ def main():
                                     )
 
                             if not args.quiet and pqc_private_key:
-                                print(
-                                    f"Loaded post-quantum private key from {args.pqc_keyfile}"
-                                )
+                                print(f"Loaded post-quantum private key from {args.pqc_keyfile}")
                     except Exception as e:
                         if not args.quiet:
                             print(f"Warning: Failed to load PQC key file: {e}")
@@ -3230,21 +2965,14 @@ def main():
                     keystore_password = None
                     if hasattr(args, "keystore_password") and args.keystore_password:
                         keystore_password = args.keystore_password
-                    elif (
-                        hasattr(args, "keystore_password_file")
-                        and args.keystore_password_file
-                    ):
+                    elif hasattr(args, "keystore_password_file") and args.keystore_password_file:
                         try:
                             with open(args.keystore_password_file, "r") as f:
                                 keystore_password = f.read().strip()
                         except Exception as e:
                             if not args.quiet:
-                                print(
-                                    f"Warning: Failed to read keystore password from file: {e}"
-                                )
-                                keystore_password = getpass.getpass(
-                                    "Enter keystore password: "
-                                )
+                                print(f"Warning: Failed to read keystore password from file: {e}")
+                                keystore_password = getpass.getpass("Enter keystore password: ")
                     else:
                         keystore_password = getpass.getpass("Enter keystore password: ")
 
@@ -3292,17 +3020,15 @@ def main():
                 # Handle PQC key operations for decryption to screen
                 pqc_private_key = None
                 if args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
-                    import json
                     import base64
+                    import json
 
                     try:
                         with open(args.pqc_keyfile, "r") as f:
                             key_data = json.load(f)
 
                         if "private_key" in key_data:
-                            encrypted_private_key = base64.b64decode(
-                                key_data["private_key"]
-                            )
+                            encrypted_private_key = base64.b64decode(key_data["private_key"])
 
                             # Check if key is encrypted (will be for keys created after our fix)
                             if key_data.get("key_encrypted", False):
@@ -3321,9 +3047,7 @@ def main():
                                     ).encode()
 
                                 # Import what we need to decrypt
-                                from cryptography.hazmat.primitives.ciphers.aead import (
-                                    AESGCM,
-                                )
+                                from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
                                 # Key derivation using the same method as when encrypting
                                 key_salt = base64.b64decode(key_data["key_salt"])
@@ -3344,16 +3068,10 @@ def main():
                                     )
 
                                     if not args.quiet:
-                                        print(
-                                            "Successfully decrypted private key from keyfile"
-                                        )
+                                        print("Successfully decrypted private key from keyfile")
                                 except Exception as e:
-                                    print(
-                                        f"Error decrypting private key: {e}. Wrong password?"
-                                    )
-                                    print(
-                                        "Decryption may fail without a valid private key."
-                                    )
+                                    print(f"Error decrypting private key: {e}. Wrong password?")
+                                    print("Decryption may fail without a valid private key.")
                                     pqc_private_key = None
                             else:
                                 # Legacy support for non-encrypted keys (created before our fix)
@@ -3364,9 +3082,7 @@ def main():
                                     )
 
                             if not args.quiet and pqc_private_key:
-                                print(
-                                    f"Loaded post-quantum private key from {args.pqc_keyfile}"
-                                )
+                                print(f"Loaded post-quantum private key from {args.pqc_keyfile}")
                     except Exception as e:
                         if not args.quiet:
                             print(f"Warning: Failed to load PQC key file: {e}")
@@ -3380,21 +3096,14 @@ def main():
                     keystore_password = None
                     if hasattr(args, "keystore_password") and args.keystore_password:
                         keystore_password = args.keystore_password
-                    elif (
-                        hasattr(args, "keystore_password_file")
-                        and args.keystore_password_file
-                    ):
+                    elif hasattr(args, "keystore_password_file") and args.keystore_password_file:
                         try:
                             with open(args.keystore_password_file, "r") as f:
                                 keystore_password = f.read().strip()
                         except Exception as e:
                             if not args.quiet:
-                                print(
-                                    f"Warning: Failed to read keystore password from file: {e}"
-                                )
-                                keystore_password = getpass.getpass(
-                                    "Enter keystore password: "
-                                )
+                                print(f"Warning: Failed to read keystore password from file: {e}")
+                                keystore_password = getpass.getpass("Enter keystore password: ")
                     else:
                         keystore_password = getpass.getpass("Enter keystore password: ")
 
@@ -3454,9 +3163,7 @@ def main():
             else:
                 # If there are multiple files/dirs to shred, inform the user
                 if len(matched_paths) > 1 and not args.quiet:
-                    print(
-                        f"Found {len(matched_paths)} files/directories matching the pattern."
-                    )
+                    print(f"Found {len(matched_paths)} files/directories matching the pattern.")
 
                 overall_success = True
 
@@ -3483,9 +3190,7 @@ def main():
                                 f"Only empty directories will be removed. Continue?"
                             )
                             if request_confirmation(confirm_message):
-                                success = secure_shred_file(
-                                    path, args.shred_passes, args.quiet
-                                )
+                                success = secure_shred_file(path, args.shred_passes, args.quiet)
                                 if not success:
                                     overall_success = False
                             else:

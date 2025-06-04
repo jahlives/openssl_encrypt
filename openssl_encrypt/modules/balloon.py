@@ -61,12 +61,12 @@ def expand(buf: list[bytes], cnt: int, space_cost: int) -> int:
         raise ValueError("Space cost must be a positive integer")
     if len(buf) < 1:
         raise ValueError("Buffer must contain at least one element")
-    
+
     # Ensure space_cost doesn't exceed reasonable limits to prevent memory issues
     max_space_cost = 1_000_000  # Set a reasonable upper limit
     if space_cost > max_space_cost:
         raise ValueError(f"Space cost exceeds maximum allowed value ({max_space_cost})")
-    
+
     for s in range(1, space_cost):
         # Ensure we're only accessing valid indices
         if s - 1 >= 0 and s - 1 < len(buf):
@@ -74,17 +74,13 @@ def expand(buf: list[bytes], cnt: int, space_cost: int) -> int:
             cnt += 1
         else:
             raise IndexError(f"Buffer access out of bounds at index {s - 1}")
-    
+
     return cnt
 
 
 def mix(
-        buf: list[bytes],
-        cnt: int,
-        delta: int,
-        salt: bytes,
-        space_cost: int,
-        time_cost: int) -> None:
+    buf: list[bytes], cnt: int, delta: int, salt: bytes, space_cost: int, time_cost: int
+) -> None:
     """Second step of the algorithm. Mix `time_cost` number
        of times the pseudorandom bytes in the buffer. At each
        step in the for loop, update the nth block to be
@@ -116,11 +112,11 @@ def mix(
         raise ValueError("Space cost must be a positive integer")
     if not isinstance(time_cost, int) or time_cost < 1:
         raise ValueError("Time cost must be a positive integer")
-    
+
     # Check buffer size matches space_cost parameter
     if len(buf) != space_cost:
         raise ValueError(f"Buffer length ({len(buf)}) must match space_cost ({space_cost})")
-    
+
     # Set reasonable limits to prevent excessive resource usage
     max_delta = 100
     max_time_cost = 100000
@@ -128,17 +124,17 @@ def mix(
         raise ValueError(f"Delta exceeds maximum allowed value ({max_delta})")
     if time_cost > max_time_cost:
         raise ValueError(f"Time cost exceeds maximum allowed value ({max_time_cost})")
-    
+
     for t in range(time_cost):
         for s in range(space_cost):
             # Validate indices before access
             if s >= 0 and s < len(buf) and (s - 1) % len(buf) < len(buf):
                 buf[s] = hash_func(cnt, buf[(s - 1) % len(buf)], buf[s])
                 cnt += 1
-                
+
                 for i in range(delta):
                     idx_block = hash_func(t, s, i)
-                    
+
                     # Securely calculate other index with bounds checking
                     try:
                         hash_bytes = hash_func(cnt, salt, idx_block)
@@ -146,20 +142,24 @@ def mix(
                         if len(hash_bytes) >= 4:
                             # Use only first 4 bytes for conversion to int
                             other = int.from_bytes(hash_bytes[:4], "little") % space_cost
-                            
+
                             # Validate other index is in bounds
                             if 0 <= other < len(buf):
                                 cnt += 1
                                 buf[s] = hash_func(cnt, buf[s], buf[other])
                                 cnt += 1
                             else:
-                                raise IndexError(f"Generated index {other} out of bounds for buffer size {len(buf)}")
+                                raise IndexError(
+                                    f"Generated index {other} out of bounds for buffer size {len(buf)}"
+                                )
                         else:
                             raise ValueError("Hash function returned insufficient bytes")
                     except Exception as e:
                         raise ValueError(f"Error processing random index in mix function: {str(e)}")
             else:
-                raise IndexError(f"Buffer index {s} or {s-1} out of bounds (buffer size: {len(buf)})")
+                raise IndexError(
+                    f"Buffer index {s} or {s-1} out of bounds (buffer size: {len(buf)})"
+                )
 
 
 def extract(buf: list[bytes]) -> bytes:
@@ -176,7 +176,7 @@ def extract(buf: list[bytes]) -> bytes:
         raise TypeError("Buffer must be a list")
     if len(buf) == 0:
         raise ValueError("Cannot extract from empty buffer")
-    
+
     # Access last element safely
     last_index = len(buf) - 1
     if last_index >= 0:
@@ -185,9 +185,7 @@ def extract(buf: list[bytes]) -> bytes:
         raise IndexError(f"Buffer index {last_index} out of bounds")
 
 
-def balloon(
-    password: str, salt: str, space_cost: int, time_cost: int, delta: int = 3
-) -> bytes:
+def balloon(password: str, salt: str, space_cost: int, time_cost: int, delta: int = 3) -> bytes:
     """Main function that collects all the substeps. As
        previously mentioned, first expand, then mix, and
        finally extract. Note the result is returned as bytes,
@@ -205,17 +203,10 @@ def balloon(
         bytes: A series of bytes, the hash.
     """
     # Encode salt as bytes to be passed to _balloon()
-    return _balloon(
-        password,
-        salt.encode("utf-8"),
-        space_cost,
-        time_cost,
-        delta)
+    return _balloon(password, salt.encode("utf-8"), space_cost, time_cost, delta)
 
 
-def _balloon(
-    password: str, salt: bytes, space_cost: int, time_cost: int, delta: int = 3
-) -> bytes:
+def _balloon(password: str, salt: bytes, space_cost: int, time_cost: int, delta: int = 3) -> bytes:
     """For internal use. Implements steps outlined in `balloon`.
 
     Args:
@@ -290,8 +281,7 @@ def balloon_m(
         futures = []
 
         for p in range(parallel_cost):
-            parallel_salt = b"" + \
-                salt.encode("utf-8") + (p + 1).to_bytes(8, "little")
+            parallel_salt = b"" + salt.encode("utf-8") + (p + 1).to_bytes(8, "little")
             futures.append(
                 executor.submit(
                     _balloon,
@@ -305,8 +295,7 @@ def balloon_m(
         completed_futures = concurrent.futures.as_completed(futures)
         output = next(completed_futures).result()
         for future in completed_futures:
-            output = bytes(
-                [_a ^ _b for _a, _b in zip(output, future.result())])
+            output = bytes([_a ^ _b for _a, _b in zip(output, future.result())])
 
     return hash_func(password, salt, output)
 
@@ -327,18 +316,12 @@ def balloon_m_hash(password: str, salt: str) -> str:
     time_cost = 20
     space_cost = 16
     parallel_cost = 4
-    return balloon_m(
-        password, salt, space_cost, time_cost, parallel_cost, delta=delta
-    ).hex()
+    return balloon_m(password, salt, space_cost, time_cost, parallel_cost, delta=delta).hex()
 
 
 def verify(
-        hash: str,
-        password: str,
-        salt: str,
-        space_cost: int,
-        time_cost: int,
-        delta: int = 3) -> bool:
+    hash: str, password: str, salt: str, space_cost: int, time_cost: int, delta: int = 3
+) -> bool:
     """Verify that hash matches password when hashed with salt, space_cost,
        time_cost, and delta.
 
@@ -354,13 +337,13 @@ def verify(
         bool: True if password matches hash, otherwise False.
     """
     from .secure_ops import verify_mac
-    
+
     # Compute the hash for the provided password
-    computed_hash = balloon(password, salt, space_cost, time_cost, delta).hex().encode('utf-8')
-    
+    computed_hash = balloon(password, salt, space_cost, time_cost, delta).hex().encode("utf-8")
+
     # Convert hash to bytes if it's a string
-    expected_hash = hash.encode('utf-8') if isinstance(hash, str) else hash
-    
+    expected_hash = hash.encode("utf-8") if isinstance(hash, str) else hash
+
     # Use verify_mac which provides better timing attack protection
     return verify_mac(expected_hash, computed_hash)
 
@@ -391,18 +374,14 @@ def verify_m(
         bool: True if password matches hash, otherwise False.
     """
     from .secure_ops import verify_mac
-    
+
     # Compute the hash for the provided password
-    computed_hash = balloon_m(
-        password,
-        salt,
-        space_cost,
-        time_cost,
-        parallel_cost,
-        delta).hex().encode('utf-8')
-    
+    computed_hash = (
+        balloon_m(password, salt, space_cost, time_cost, parallel_cost, delta).hex().encode("utf-8")
+    )
+
     # Convert hash to bytes if it's a string
-    expected_hash = hash.encode('utf-8') if isinstance(hash, str) else hash
-    
+    expected_hash = hash.encode("utf-8") if isinstance(hash, str) else hash
+
     # Use verify_mac which provides better timing attack protection
     return verify_mac(expected_hash, computed_hash)

@@ -5,9 +5,10 @@ Simple PQC Keystore Demo Script
 
 import os
 import sys
-from openssl_encrypt.modules.keystore_cli import PQCKeystore, KeystoreSecurityLevel
+
+from openssl_encrypt.modules.crypt_core import decrypt_file, encrypt_file
+from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
 from openssl_encrypt.modules.pqc import PQCipher
-from openssl_encrypt.modules.crypt_core import encrypt_file, decrypt_file
 
 # Configuration
 KEYSTORE_PATH = "demo_keystore.pqc"
@@ -45,7 +46,7 @@ key_id = keystore.add_key(
     private_key=private_key,
     description="Demo PQC key",
     tags=["demo"],
-    use_master_password=True
+    use_master_password=True,
 )
 keystore.save_keystore()
 print(f"Added key with ID: {key_id}")
@@ -69,13 +70,7 @@ hash_config = {
     "blake2b": 0,
     "shake256": 0,
     "pbkdf2_iterations": 100000,
-    "scrypt": {
-        "enabled": False,
-        "n": 128,
-        "r": 8,
-        "p": 1,
-        "rounds": 1
-    },
+    "scrypt": {"enabled": False, "n": 128, "r": 8, "p": 1, "rounds": 1},
     "argon2": {
         "enabled": False,
         "time_cost": 3,
@@ -83,9 +78,9 @@ hash_config = {
         "parallelism": 4,
         "hash_len": 32,
         "type": 2,
-        "rounds": 1
+        "rounds": 1,
     },
-    "pqc_keystore_key_id": key_id  # Store key ID in metadata
+    "pqc_keystore_key_id": key_id,  # Store key ID in metadata
 }
 
 # Step 6: Encrypt file
@@ -95,13 +90,13 @@ success = encrypt_file(
     ENCRYPTED_FILE,
     FILE_PASSWORD.encode(),
     hash_config,
-    0,  # pbkdf2 iterations 
+    0,  # pbkdf2 iterations
     False,  # quiet
     "kyber768-hybrid",  # algorithm
     True,  # progress
     False,  # verbose
     pqc_keypair=(public_key, private_key),
-    pqc_store_private_key=False  # Don't store private key in metadata
+    pqc_store_private_key=False,  # Don't store private key in metadata
 )
 
 if success:
@@ -126,9 +121,9 @@ success = decrypt_file(
     DECRYPTED_FILE,
     FILE_PASSWORD.encode(),
     False,  # quiet
-    True,   # progress
+    True,  # progress
     False,  # verbose
-    pqc_private_key=retrieved_private_key
+    pqc_private_key=retrieved_private_key,
 )
 
 if success:
@@ -141,10 +136,10 @@ else:
 print("\nVerifying decrypted content:")
 with open(INPUT_FILE, "r") as f:
     original_content = f.read()
-    
+
 with open(DECRYPTED_FILE, "r") as f:
     decrypted_content = f.read()
-    
+
 if original_content == decrypted_content:
     print("✅ Original and decrypted content match!")
     print(f"Content: {decrypted_content.strip()}")
@@ -157,7 +152,7 @@ else:
 print("\nDemo completed successfully!")
 print("Clean up demo files? (y/n)")
 response = input().lower()
-if response.startswith('y'):
+if response.startswith("y"):
     for f in [INPUT_FILE, ENCRYPTED_FILE, DECRYPTED_FILE, KEYSTORE_PATH]:
         if os.path.exists(f):
             os.remove(f)

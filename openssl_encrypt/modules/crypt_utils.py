@@ -6,15 +6,15 @@ This module provides utility functions for the encryption tool, including
 secure file deletion, password generation, and other helper functions.
 """
 
-import os
-import sys
-import time
-import signal
-import secrets
-import string
 import glob
 import json
+import os
+import secrets
+import signal
 import stat
+import string
+import sys
+import time
 
 
 def expand_glob_patterns(pattern):
@@ -31,11 +31,8 @@ def expand_glob_patterns(pattern):
 
 
 def generate_strong_password(
-        length,
-        use_lowercase=True,
-        use_uppercase=True,
-        use_digits=True,
-        use_special=True):
+    length, use_lowercase=True, use_uppercase=True, use_digits=True, use_special=True
+):
     """
     Generate a cryptographically strong random password with customizable character sets.
 
@@ -78,7 +75,7 @@ def generate_strong_password(
         required_chars = [
             secrets.choice(string.ascii_lowercase),
             secrets.choice(string.ascii_uppercase),
-            secrets.choice(string.digits)
+            secrets.choice(string.digits),
         ]
 
     # Ensure we have room for all required characters
@@ -107,7 +104,7 @@ def generate_strong_password(
             password_chars[i], password_chars[j] = password_chars[j], password_chars[i]
 
         # Convert to string
-        password = ''.join(chr(c) for c in password_chars)
+        password = "".join(chr(c) for c in password_chars)
 
         # Clean up the secure byte array
         secure_memzero(password_chars)
@@ -118,6 +115,7 @@ def generate_strong_password(
         # Fall back to standard approach if secure_memory is not available
         print("Secure memory module not found, cannot generate strong password.")
         return False
+
 
 def display_password_with_timeout(password, timeout_seconds=10):
     """
@@ -148,8 +146,11 @@ def display_password_with_timeout(password, timeout_seconds=10):
         print(" GENERATED PASSWORD ".center(60, "="))
         print("=" * 60)
         print(f"\nPassword: {password}")
-        print("\nThis password will be cleared from the screen in {0} seconds.".format(
-            timeout_seconds))
+        print(
+            "\nThis password will be cleared from the screen in {0} seconds.".format(
+                timeout_seconds
+            )
+        )
         print("Press Ctrl+C to clear immediately.")
         print("=" * 60)
 
@@ -157,10 +158,7 @@ def display_password_with_timeout(password, timeout_seconds=10):
         for remaining in range(timeout_seconds, 0, -1):
             if interrupted:
                 break
-            print(
-                f"\rTime remaining: {remaining} seconds...",
-                end="",
-                flush=True)
+            print(f"\rTime remaining: {remaining} seconds...", end="", flush=True)
             # Sleep in small increments to check for interruption more
             # frequently
             for _ in range(10):
@@ -180,10 +178,10 @@ def display_password_with_timeout(password, timeout_seconds=10):
 
         # Use system command to clear the screen - this is the most reliable
         # method
-        if sys.platform == 'win32':
-            os.system('cls')  # Windows
+        if sys.platform == "win32":
+            os.system("cls")  # Windows
         else:
-            os.system('clear')  # Unix/Linux/MacOS
+            os.system("clear")  # Unix/Linux/MacOS
 
         print("Password has been cleared from screen.")
         print("For additional security, consider clearing your terminal history.")
@@ -292,26 +290,24 @@ def secure_shred_file(file_path, passes=3, quiet=False):
                     if pattern_type == 0:
                         # First pattern: Random data
                         while bytes_written < file_size:
-                            chunk_size = min(
-                                buffer_size, file_size - bytes_written)
+                            chunk_size = min(buffer_size, file_size - bytes_written)
                             random_bytes = bytearray(
-                                random.getrandbits(8) for _ in range(chunk_size))
+                                random.getrandbits(8) for _ in range(chunk_size)
+                            )
                             f.write(random_bytes)
                             bytes_written += chunk_size
 
                     elif pattern_type == 1:
                         # Second pattern: All ones (0xFF)
                         while bytes_written < file_size:
-                            chunk_size = min(
-                                buffer_size, file_size - bytes_written)
+                            chunk_size = min(buffer_size, file_size - bytes_written)
                             f.write(b"\xFF" * chunk_size)
                             bytes_written += chunk_size
 
                     else:
                         # Third pattern: All zeros (0x00)
                         while bytes_written < file_size:
-                            chunk_size = min(
-                                buffer_size, file_size - bytes_written)
+                            chunk_size = min(buffer_size, file_size - bytes_written)
                             f.write(b"\x00" * chunk_size)
                             bytes_written += chunk_size
 
@@ -374,10 +370,13 @@ def show_security_recommendations():
     print("Combining Hash Algorithms:")
     print("-------------------------")
     print("You can combine multiple algorithms for defense in depth:")
-    print("Example: --enable-argon2 --argon2-time 3 --sha3-256-rounds 10000 --pbkdf2-iterations 100000\n")
+    print(
+        "Example: --enable-argon2 --argon2-time 3 --sha3-256-rounds 10000 --pbkdf2-iterations 100000\n"
+    )
 
     # Check Argon2 availability and show appropriate message
     from .crypt_core import check_argon2_support
+
     argon2_available, version, supported_types = check_argon2_support()
     if argon2_available:
         print(f"Argon2 Status: AVAILABLE (version {version})")
@@ -399,16 +398,16 @@ def request_confirmation(message):
         bool: True if the user confirmed (y/yes), False otherwise
     """
     response = input(f"{message} (y/N): ").strip().lower()
-    return response == 'y' or response == 'yes'
+    return response == "y" or response == "yes"
 
 
 def parse_metadata(encrypted_data):
     """
     Parse metadata from encrypted file content.
-    
+
     Args:
         encrypted_data (bytes): The encrypted file content
-        
+
     Returns:
         dict: Metadata dictionary if found, empty dict otherwise
     """
@@ -416,18 +415,18 @@ def parse_metadata(encrypted_data):
         # Look for the METADATA marker
         metadata_marker = b"METADATA:"
         metadata_start = encrypted_data.find(metadata_marker)
-        
+
         if metadata_start < 0:
             return {}
-            
+
         # Extract the JSON metadata
         metadata_start += len(metadata_marker)
         metadata_end = encrypted_data.find(b":", metadata_start)
-        
+
         if metadata_end < 0:
             return {}
-            
-        metadata_json = encrypted_data[metadata_start:metadata_end].decode('utf-8')
+
+        metadata_json = encrypted_data[metadata_start:metadata_end].decode("utf-8")
         metadata = json.loads(metadata_json)
         return metadata
     except Exception as e:

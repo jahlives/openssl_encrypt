@@ -23,23 +23,24 @@ skips:
 # Tests to include - focus on crypto-specific security issues
 tests:
   - B102  # exec_used
-  - B103  # set_bad_file_permissions  
+  - B103  # set_bad_file_permissions
   - B104  # hardcoded_bind_all_interfaces
   - B105  # hardcoded_password_string
   - B107  # hardcoded_password_default
   - B108  # hardcoded_tmp_directory
   - B110  # try_except_pass
   - B112  # try_except_continue
+  - B113  # request_without_timeout
   - B201  # flask_debug_true
+  - B202  # tarfile_unsafe_members
   - B301  # pickle
   - B302  # marshal
   - B303  # md5
-  - B304  # des
-  - B305  # cipher
+  - B304  # ciphers
+  - B305  # cipher_modes
   - B306  # mktemp_q
   - B307  # eval
   - B308  # mark_safe
-  - B309  # httpsconnection
   - B310  # urllib_urlopen
   - B311  # random
   - B312  # telnetlib
@@ -52,10 +53,8 @@ tests:
   - B319  # xml_bad_pulldom
   - B320  # xml_bad_etree
   - B321  # ftplib
-  - B322  # input
   - B323  # unverified_context
-  - B324  # hashlib_new_insecure_functions
-  - B325  # tempnam
+  - B324  # hashlib_insecure_functions
   - B401  # import_telnetlib
   - B402  # import_ftplib
   - B403  # import_pickle
@@ -97,7 +96,7 @@ severity:
   - medium
   - low
 
-# Confidence levels  
+# Confidence levels
 confidence:
   - high
   - medium
