@@ -1628,6 +1628,61 @@ class TestCLIInterface(unittest.TestCase):
         finally:
             sys.stdout = original_stdout
 
+    def test_stdin_decryption_cli(self):
+        """Test decryption from stdin via CLI subprocess to prevent regression."""
+        import subprocess
+        
+        # Use an existing test file that we know works
+        test_encrypted_file = os.path.join("openssl_encrypt", "unittests", "testfiles", "v5", "test1_fernet.txt")
+        
+        # Skip test if test file doesn't exist
+        if not os.path.exists(test_encrypted_file):
+            self.skipTest(f"Test file {test_encrypted_file} not found")
+        
+        # Read the encrypted content
+        with open(test_encrypted_file, "rb") as f:
+            encrypted_content = f.read()
+        
+        # Test CLI decryption from stdin
+        try:
+            # Run decrypt command with stdin input
+            process = subprocess.Popen(
+                [
+                    "python", "-m", "openssl_encrypt.crypt", 
+                    "decrypt", 
+                    "--input", "/dev/stdin",
+                    "--password", "1234",
+                    "--force-password",
+                    "--quiet"
+                ],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=os.getcwd()
+            )
+            
+            # Send encrypted content via stdin
+            stdout, stderr = process.communicate(input=encrypted_content, timeout=30)
+            
+            # Check that the process succeeded
+            self.assertEqual(process.returncode, 0, 
+                           f"Stdin decryption failed. stderr: {stderr.decode()}")
+            
+            # Verify we got some decrypted output
+            self.assertGreater(len(stdout), 0, "No decrypted output received from stdin")
+            
+            # The output should contain recognizable content (test files contain "Hello, World!")
+            decrypted_text = stdout.decode('utf-8', errors='ignore')
+            self.assertIn("Hello", decrypted_text, "Decrypted content doesn't match expected")
+            
+        except subprocess.TimeoutExpired:
+            process.kill()
+            self.fail("Stdin decryption process timed out")
+        except FileNotFoundError:
+            self.skipTest("Python module not accessible for subprocess test")
+        except Exception as e:
+            self.fail(f"Stdin decryption test failed with exception: {e}")
+
 
 class TestFileOperations(unittest.TestCase):
     """Test file operations and edge cases."""
