@@ -125,7 +125,7 @@ setup(
     keywords="encryption, decryption, random-password, secure shredding, security",
     url="https://gitlab.rm-rf.ch/world/openssl_encrypt",
     classifiers=[
-        "Development Status :: 4 - Beta",
+        "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Developers",
         "Intended Audience :: End Users/Desktop",
         "Intended Audience :: Information Technology",
