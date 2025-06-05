@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 
 # Import from the modules package directly since we're within the openssl_encrypt package
-from .modules.crypt_core import (
+from openssl_encrypt.modules.crypt_core import (
     EncryptionAlgorithm,
     decrypt_file,
     encrypt_file,
@@ -300,7 +300,7 @@ def test_password_entropy():
         print(f"{password:<40} {len(password):<10} {entropy:.2f}")
 
     print("\n✅ Password entropy evaluation test completed")
-    return True
+    assert True  # Test passes if we reach here without exceptions
 
 
 def main():
