@@ -92,15 +92,15 @@ from .password_policy import (
 class ReconstructedStdinStream:
     """
     A file-like object that replays consumed data followed by remaining stdin stream.
-    
+
     This allows us to read metadata from stdin and then provide the complete
     stream to the decryption function as if nothing was consumed.
     """
-    
+
     def __init__(self, consumed_data, separator, original_stream):
         """
         Initialize with consumed metadata, separator, and original stream.
-        
+
         Args:
             consumed_data (bytes): The metadata bytes that were already read
             separator (bytes): The ':' separator byte
@@ -109,16 +109,16 @@ class ReconstructedStdinStream:
         self.prefix_data = consumed_data + separator  # Reconstruct: metadata + ':'
         self.original_stream = original_stream
         self.prefix_pos = 0
-        
+
     def read(self, size=-1):
         """Read from prefix data first, then from original stream."""
         if self.prefix_pos < len(self.prefix_data):
             # Still have prefix data to return
             if size == -1:
                 # Read all remaining prefix data
-                result = self.prefix_data[self.prefix_pos:]
+                result = self.prefix_data[self.prefix_pos :]
                 self.prefix_pos = len(self.prefix_data)
-                
+
                 # Also read all from original stream
                 remaining = self.original_stream.read()
                 return result + remaining
@@ -127,24 +127,24 @@ class ReconstructedStdinStream:
                 available = len(self.prefix_data) - self.prefix_pos
                 if size <= available:
                     # Can satisfy entirely from prefix
-                    result = self.prefix_data[self.prefix_pos:self.prefix_pos + size]
+                    result = self.prefix_data[self.prefix_pos : self.prefix_pos + size]
                     self.prefix_pos += size
                     return result
                 else:
                     # Need to read from both prefix and stream
-                    prefix_part = self.prefix_data[self.prefix_pos:]
+                    prefix_part = self.prefix_data[self.prefix_pos :]
                     self.prefix_pos = len(self.prefix_data)
-                    
+
                     remaining_needed = size - len(prefix_part)
                     stream_part = self.original_stream.read(remaining_needed)
                     return prefix_part + stream_part
         else:
             # Prefix exhausted, read from original stream
             return self.original_stream.read(size)
-    
+
     def __enter__(self):
         return self
-        
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         # Don't close the original stream as it might be sys.stdin
         pass
@@ -153,64 +153,62 @@ class ReconstructedStdinStream:
 class StdinMetadataExtractor:
     """
     Extracts metadata from stdin without consuming the entire stream.
-    
+
     Reads byte-by-byte until the ':' separator is found, then parses
     only the metadata portion and creates a reconstructed stream.
     """
-    
+
     def __init__(self, stdin_stream):
         """Initialize with stdin stream."""
         self.stdin_stream = stdin_stream
-        
+
     def extract_metadata_and_create_stream(self):
         """
         Extract metadata from stdin and create a reconstructed stream.
-        
+
         Returns:
             tuple: (metadata_dict, reconstructed_stream)
                 metadata_dict: Parsed metadata with algorithm info
                 reconstructed_stream: Stream that replays full encrypted data
-                
+
         Raises:
             ValueError: If metadata format is invalid
         """
         # Read metadata bytes until separator
         metadata_bytes = self._read_until_separator()
-        
+
         # Parse metadata
         metadata = self._parse_metadata(metadata_bytes)
-        
+
         # Create reconstructed stream
-        reconstructed_stream = ReconstructedStdinStream(
-            metadata_bytes, b':', self.stdin_stream
-        )
-        
+        reconstructed_stream = ReconstructedStdinStream(metadata_bytes, b":", self.stdin_stream)
+
         return metadata, reconstructed_stream
-    
+
     def _read_until_separator(self):
         """Read stdin byte-by-byte until ':' separator is found."""
         metadata_bytes = bytearray()
-        
+
         while True:
             byte = self.stdin_stream.read(1)
             if not byte:  # EOF
                 raise ValueError("Invalid encrypted file format: no separator found")
-            if byte == b':':
+            if byte == b":":
                 break
             metadata_bytes.extend(byte)
-        
+
         return bytes(metadata_bytes)
-    
+
     def _parse_metadata(self, metadata_b64):
         """Parse base64 metadata and extract algorithm information."""
         try:
             # Decode base64 metadata
-            metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
+            metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
             metadata = json.loads(metadata_json)
-            
+
             # Extract algorithm info based on format version
             format_version = metadata.get("format_version", 1)
-            
+
             if format_version in [4, 5]:
                 encryption = metadata.get("encryption", {})
                 algorithm = encryption.get("algorithm", "fernet")
@@ -218,14 +216,14 @@ class StdinMetadataExtractor:
             else:
                 algorithm = metadata.get("algorithm", "fernet")
                 encryption_data = "aes-gcm"  # Default for older formats
-            
+
             return {
                 "format_version": format_version,
                 "algorithm": algorithm,
                 "encryption_data": encryption_data,
                 "metadata": metadata,
             }
-            
+
         except Exception as e:
             raise ValueError(f"Invalid metadata format: {str(e)}")
 
@@ -1356,7 +1354,6 @@ def main():
                         use_uppercase=use_uppercase,
                         use_digits=use_digits,
                         use_special=use_special,
-                        use_secure_mem=True,
                     )
 
                     # Validate the generated password against policy
@@ -1563,12 +1560,12 @@ def main():
                                     match = True
 
                                 # Securely clear the temporary buffers
-                                pwd1 = b"\x00" * len(pwd1)
-                                pwd2 = b"\x00" * len(pwd2)
+                                pwd1 = "\x00" * len(pwd1)
+                                pwd2 = "\x00" * len(pwd2)
                             else:
                                 # Securely clear the temporary buffers
-                                pwd1 = b"\x00" * len(pwd1)
-                                pwd2 = b"\x00" * len(pwd2)
+                                pwd1 = "\x00" * len(pwd1)
+                                pwd2 = "\x00" * len(pwd2)
                                 print("Passwords do not match. Please try again.")
                     # For decryption or quiet mode, just ask once
                     else:
@@ -1583,7 +1580,7 @@ def main():
 
                         password_secure.extend(pwd.encode("utf-8"))
                         # Securely clear the temporary buffer
-                        pwd = b"\x00" * len(pwd)
+                        pwd = "\x00" * len(pwd)
 
                 # Convert to bytes for the rest of the code
                 password = bytes(password_secure)
@@ -2422,9 +2419,9 @@ def main():
                     # Use AES-GCM to encrypt the private key
                     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-                    cipher = AESGCM(encryption_key)
+                    aes_cipher = AESGCM(encryption_key)
                     nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
-                    encrypted_private_key = nonce + cipher.encrypt(nonce, private_key, None)
+                    encrypted_private_key = nonce + aes_cipher.encrypt(nonce, private_key, None)
 
                     key_data = {
                         "algorithm": args.algorithm,
@@ -2486,8 +2483,8 @@ def main():
                                 encrypted_key_data = encrypted_private_key[12:]
 
                                 # Decrypt the private key with the password-derived key
-                                cipher = AESGCM(encryption_key)
-                                private_key = cipher.decrypt(nonce, encrypted_key_data, None)
+                                aes_cipher = AESGCM(encryption_key)
+                                private_key = aes_cipher.decrypt(nonce, encrypted_key_data, None)
 
                                 if not args.quiet:
                                     print("Successfully decrypted private key from keyfile")
@@ -2841,7 +2838,9 @@ def main():
                             print(
                                 f"Warning: The algorithm '{algorithm}' used in this file is deprecated."
                             )
-                            print(f"Consider re-encrypting with '{replacement}' for better security.")
+                            print(
+                                f"Consider re-encrypting with '{replacement}' for better security."
+                            )
 
                     # Check if data encryption algorithm is deprecated for PQC
                     if algorithm.endswith("-hybrid") and is_deprecated(encryption_data):
@@ -2850,7 +2849,9 @@ def main():
                         if (
                             not args.quiet
                             and data_replacement
-                            and (args.verbose or not encryption_data.startswith(("kyber", "ml-kem")))
+                            and (
+                                args.verbose or not encryption_data.startswith(("kyber", "ml-kem"))
+                            )
                         ):
                             print(
                                 f"Warning: The data encryption algorithm '{encryption_data}' used in this file is deprecated."
@@ -2858,12 +2859,13 @@ def main():
                             print(
                                 f"Consider re-encrypting with '{data_replacement}' for better security."
                             )
-                    
+
                     # Immediately convert reconstructed stream to temp file to avoid multiple reads
                     import tempfile
+
                     stdin_temp_file = tempfile.NamedTemporaryFile(delete=False)
                     temp_files_to_cleanup.append(stdin_temp_file.name)
-                    
+
                     # Copy all data from reconstructed stream to temp file
                     while True:
                         chunk = stdin_stream.read(8192)
@@ -2871,10 +2873,10 @@ def main():
                             break
                         stdin_temp_file.write(chunk)
                     stdin_temp_file.close()
-                    
+
                     # Update args.input to point to the temp file
                     args.input = stdin_temp_file.name
-                    
+
                 except Exception as e:
                     # If we can't extract metadata from stdin, continue with decryption
                     if args.verbose:
@@ -2899,7 +2901,9 @@ def main():
                             print(
                                 f"Warning: The algorithm '{algorithm}' used in this file is deprecated."
                             )
-                            print(f"Consider re-encrypting with '{replacement}' for better security.")
+                            print(
+                                f"Consider re-encrypting with '{replacement}' for better security."
+                            )
 
                     # Check if data encryption algorithm is deprecated for PQC
                     if algorithm.endswith("-hybrid") and is_deprecated(encryption_data):
@@ -2908,7 +2912,9 @@ def main():
                         if (
                             not args.quiet
                             and data_replacement
-                            and (args.verbose or not encryption_data.startswith(("kyber", "ml-kem")))
+                            and (
+                                args.verbose or not encryption_data.startswith(("kyber", "ml-kem"))
+                            )
                         ):
                             print(
                                 f"Warning: The data encryption algorithm '{encryption_data}' used in this file is deprecated."
@@ -2982,8 +2988,8 @@ def main():
                                         encrypted_key_data = encrypted_private_key[12:]
 
                                         # Decrypt the private key with the password-derived key
-                                        cipher = AESGCM(encryption_key)
-                                        pqc_private_key = cipher.decrypt(
+                                        aes_cipher = AESGCM(encryption_key)
+                                        pqc_private_key = aes_cipher.decrypt(
                                             nonce, encrypted_key_data, None
                                         )
 
@@ -3137,8 +3143,8 @@ def main():
                                     encrypted_key_data = encrypted_private_key[12:]
 
                                     # Decrypt the private key with the password-derived key
-                                    cipher = AESGCM(encryption_key)
-                                    pqc_private_key = cipher.decrypt(
+                                    aes_cipher = AESGCM(encryption_key)
+                                    pqc_private_key = aes_cipher.decrypt(
                                         nonce, encrypted_key_data, None
                                     )
 
