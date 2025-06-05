@@ -61,6 +61,6 @@ def print_version_info():
     print("\nVersion History:")
     for version, description in VERSION_HISTORY.items():
         print(f"  {version}: {description}")
-        
+
 if __name__ == "__main__":
     print_version_info()
