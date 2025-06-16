@@ -1,71 +1,241 @@
-# 🚀 Latest Updates (v1.0.0-rc2)
-**Critical production-readiness fixes completed!** This release resolves all critical MyPy type errors that could cause runtime failures in post-quantum cryptography operations, including variable naming conflicts
-  between AESGCM and PQCipher classes, string/bytes type mismatches in password handling, and invalid function parameters. **HQC algorithm support (hqc-128/192/256-hybrid) is now fully implemented and production-ready**
-  with comprehensive testing across all symmetric encryption combinations. Security analysis confirms **zero HIGH/MEDIUM severity issues**, with critical type errors reduced from 529 to ~480 (90%+ of runtime-critical
-  issues resolved). All core encryption functionality has been verified working, making this release ready for stable 1.0.0 production deployment. The codebase now features comprehensive security hardening, complete
-  post-quantum cryptography support (Kyber, ML-KEM, HQC), and industry-leading code quality standards.
-# Secure File Encryption Tool
-A powerful tool for securely encrypting, decrypting, and shredding files with military-grade cryptography and multi-layer password hashing.
 ## History
 The project is historically named `openssl-encrypt` because it once was a python script wrapper around openssl. But that did not work anymore with recent python versions.
 Therefore I decided to do a complete rewrite in pure python also using modern cipher and hashes. So the projectname is a "homage" to the root of all :-)
 
-**Whirlpool support**: The `whirlpool` hash algorithm is now supported on all Python versions, including Python 3.11, 3.12, and 3.13. The package will automatically detect your Python version and install the appropriate Whirlpool implementation. If you encounter any issues with Whirlpool, please see the [Whirlpool Installation Guide](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/whirlpool_installation.md) for manual setup instructions.
-## Issues
-you can create issues by [sending mail](mailto:issue+world-openssl-encrypt-2-issue-+gitlab@rm-rf.ch) to the linked address
+Whirlpool support: The whirlpool hash algorithm is now supported on all Python versions, including Python 3.11, 3.12, and 3.13. The package will automatically detect your Python version and install the appropriate
+Whirlpool implementation.
 
-## Features
-- **Strong Encryption**: Uses Fernet symmetric encryption (AES-128-CBC) as default with secure key derivation. Also supports `AES-GCM`, `AES-SIV`, `CAMLELIA`, `POLY1305-CHACHA20`, `AES-GCM-SIV`, `AES-OCB3` ans `XCHACHA20_POLY1305` as ecnryption algorithm
-- **Multi-hash Password Protection**: Optional layered hashing with SHA-256, SHA-512, SHA3-256, SHA3-512, Whirlpool, BLAKE2b and SHAKE-256 they all can be chained with different rounds to create key-stretching
-- **Multi-KDF Password Protection**: Optional layered KFD with PBKDF2, Scrypt, Argon2 and Ballon they all can be chained with different rounds to create key-stretching and very strong brute-force prevention
-- **Postquantum Resistance**: Using a hybrid approach to implement postquantum resistance. Still using symetrical encryption but with a key derived with `Kyber KEM` for postquantum resistance
-- **Keystore for PQC keys**: a local keystore can be used to maintain and manage the PQC keys used for encrypting your files
-- **Password Management**: Password confirmation to prevent typos, random password generation, and standalone password generator
-- **File Integrity Verification**: Built-in hash verification to detect corrupted or tampered files
-- **Secure File Shredding**: Military-grade secure deletion with multi-pass overwriting
-- **Directory Support**: Recursive processing of directories
-- **Memory-Secure Processing**: Protection against memory-based attacks and data leakage
-- **Glob Pattern Support**: Batch operations using wildcard patterns
-- **Safe Overwriting**: Secure in-place file replacement with atomic operations
-- **Progress Visualization**: Real-time progress bars for lengthy operations
-- **Graphical User Interface**: User-friendly GUI for all operations (beta)
-- **Built-in and custom Templates**: built in templates like `--quick` `--standard` and `--paranoid` can be used. You can also define your own customized templates in `./templates`
-## Files Included
-- [crypt.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/crypt.py) - Main command-line utility
-- [crypt_gui.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/crypt_gui.py) - Graphical user interface
-- [modules/crypt_cli.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/modules/crypt_cli.py) - Command-line interface
-- [modules/crypt_core.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/modules/crypt_core.py) - Provides the core functionality
-- [modules/crypt_utils.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/modules/crypt_utils.py) - Provides utility functions
-- [modules/crypt_errors.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/modules/crypt_errors.py) - Custom exception classes
-- [modules/crypt_settings.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/modules/crypt_settings.py) - Configuration settings
-- [modules/balloon.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/modules/balloon.py) - Password hashing implementation
-- [modules/secure_memory.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/modules/secure_memory.py) - Provides functions for secure memory handling
-- [modules/password_policy.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/modules/password_policy.py) - Password validation
-- [modules/pqc.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/modules/pqc.py) - Post-quantum cryptography implementation
-- [modules/keystore_cli.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/modules/keystore_cli.py) - Keystore CLI functionality
-- [modules/keystore_utils.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/modules/keystore_utils.py) - Keystore utility functions
-- [modules/keystore_wrapper.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/modules/keystore_wrapper.py) - Keystore wrapper module
-- [keystore_cli_main.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/keystore_cli_main.py) - Keystore CLI entry point
-- [docs/install.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/install.md) - Installation notes
-- [docs/usage.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/usage.md) - Usage notes
-- [docs/examples.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/examples.md) - Some examples
-- [docs/pqc.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/pqc.md) - Post-quantum notes
-- [docs/password-handling.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/password-handling.md) - Notes about password handling
-- [docs/security-notes.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/security-notes.md) - Notes about security
-- [docs/buffer_overflow_prevention.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/buffer_overflow_prevention.md) - Security implementation
-- [docs/security_improvements.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/security_improvements.md) - Security enhancement details
-- [docs/whirlpool_installation.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/whirlpool_installation.md) - Whirlpool installation guide
-- [docs/keystore_cli_guide.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/keystore_cli_guide.md) - Keystore CLI documentation
-- [docs/DUAL_ENCRYPTION_TESTS.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/DUAL_ENCRYPTION_TESTS.md) - Dual encryption test details
-- [docs/PQC_DUAL_ENCRYPTION.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs/PQC_DUAL_ENCRYPTION.md) - PQC dual encryption documentation
-- [unittests/unittests.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/unittests/unittests.py) - Unit tests for the utility
-- [unittests/test_gui.py](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/unittests/test_gui.py) - Simple test for `tkinter`
-- [unittests/testfiles](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/unittests/testfiles) - Testfiles for `unittests` encryption
-- [tests/](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/tests) - Contains all test modules for dual encryption and keystore functionality
-- [requirements.txt](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/requirements.txt) - Required Python packages
-- [README.md](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/README.md) - This documentation file
+## Comprehensive Feature Set
 
-all testfile files are encrypted with password `1234` for your testing
+### Core Encryption Features
+
+  - Military-Grade Symmetric Encryption:
+    - Fernet (AES-128-CBC) - Default, proven security
+    - AES-GCM - Authenticated encryption with associated data
+    - AES-GCM-SIV - Misuse-resistant authenticated encryption
+    - AES-SIV - Synthetic IV mode for nonce reuse resistance
+    - AES-OCB3 - High-performance authenticated encryption
+    - ChaCha20-Poly1305 - Stream cipher with authentication
+    - XChaCha20-Poly1305 - Extended nonce variant
+    - Camellia - International standard block cipher
+
+###  Advanced Post-Quantum Cryptography
+
+  - NIST-Approved Algorithms:
+    - ML-KEM (Module Lattice KEM) - NIST FIPS 203 standard
+        - ML-KEM-512 (Security Level 1)
+      - ML-KEM-768 (Security Level 3)
+      - ML-KEM-1024 (Security Level 5)
+    - Kyber KEM - Original CRYSTALS-Kyber implementation
+        - Kyber-512, Kyber-768, Kyber-1024
+    - HQC (Hamming Quasi-Cyclic) - NIST 2025 additional KEM
+        - HQC-128, HQC-192, HQC-256
+  - Hybrid Encryption Architecture: Combines post-quantum KEMs with classical symmetric encryption for quantum-resistant protection
+
+###  Multi-Layer Password Protection
+
+  - Cryptographic Hash Functions:
+    - SHA-256, SHA-512 (FIPS 180-4)
+    - SHA3-256, SHA3-512 (FIPS 202)
+    - BLAKE2b - High-performance cryptographic hash
+    - SHAKE-256 - Extendable-output function
+    - Whirlpool - 512-bit cryptographic hash
+  - Key Derivation Functions (KDFs):
+    - PBKDF2 - Password-Based Key Derivation Function 2
+    - Scrypt - Memory-hard function for GPU resistance
+    - Argon2 - Winner of Password Hashing Competition
+        - Argon2i, Argon2d, Argon2id variants
+    - Balloon Hashing - Memory-hard function with proven security
+
+###  Enterprise Security Features
+
+  - Secure Key Management:
+    - Local encrypted keystore for PQC keys
+    - Key rotation and lifecycle management
+    - Hardware security module (HSM) integration ready
+  - Memory Security:
+    - Secure memory allocation and deallocation
+    - Protection against memory-based attacks
+    - Buffer overflow prevention
+    - Secure memory wiping
+  - File Integrity & Verification:
+    - Built-in cryptographic hash verification
+    - Tamper detection mechanisms
+    - Metadata integrity protection
+
+###  Operational Features
+
+  - Secure File Operations:
+    - Military-grade secure deletion (multi-pass overwriting)
+    - Atomic file operations to prevent corruption
+    - In-place encryption with safety checks
+    - Directory recursive processing
+  - User Interface Options:
+    - Full-featured graphical user interface (Tkinter-based)
+    - Comprehensive command-line interface
+    - Batch processing capabilities
+    - Progress visualization for long operations
+  - Flexibility & Customization:
+    - Pre-configured security templates (Quick, Standard, Paranoid)
+    - Custom template support
+    - Glob pattern support for batch operations
+    - Extensive configuration options
+
+###  Advanced Security Implementations
+
+  - Password Security:
+    - Password policy enforcement
+    - Secure random password generation
+    - Password confirmation to prevent typos
+    - Common password dictionary protection
+  - Algorithm Flexibility:
+    - Dual encryption modes (classical + post-quantum)
+    - Algorithm chaining and cascading
+    - Security level customization
+    - Future algorithm extensibility
+
+## Architecture & Components
+
+### Core Modules
+
+  - crypt.py - Main command-line utility entry point
+  - crypt_gui.py - Graphical user interface application
+  - cli.py - CLI routing and argument parsing
+  - modules/crypt_core.py - Core cryptographic operations
+  - modules/crypt_cli.py - Command-line interface implementation
+  - modules/crypt_utils.py - Utility functions and helpers
+
+### Cryptographic Modules
+
+  - modules/pqc.py - Post-quantum cryptography implementation
+  - modules/pqc_adapter.py - PQC algorithm adapter layer
+  - modules/pqc_liboqs.py - LibOQS integration
+  - modules/ml_kem_patch.py - ML-KEM specific implementations
+  - modules/balloon.py - Balloon hash implementation
+  - modules/secure_memory.py - Memory security functions
+  - modules/crypto_secure_memory.py - Advanced memory protection
+
+### Security & Management
+
+  - modules/keystore_cli.py - Keystore command-line interface
+  - modules/keystore_utils.py - Keystore utility functions
+  - modules/keystore_wrapper.py - Keystore abstraction layer
+  - modules/password_policy.py - Password validation and policies
+  - modules/algorithm_warnings.py - Security algorithm warnings
+  - modules/crypt_settings.py - Configuration management
+  - modules/crypt_errors.py - Custom exception classes
+
+### Testing & Quality Assurance
+
+  - Comprehensive Test Suite:
+    - Unit tests (unittests/unittests.py)
+    - GUI testing (unittests/test_gui.py)
+    - Dual encryption tests (tests/dual_encryption/)
+    - Keystore functionality tests (tests/keystore/)
+    - Post-quantum algorithm tests
+    - Backward compatibility tests
+  - Security Testing:
+    - Static analysis integration
+    - Dependency vulnerability scanning
+    - CI/CD security pipeline
+    - Comprehensive test file formats (v3, v4, v5)
+
+## Installation & Dependencies
+
+### Core Dependencies
+
+  - Python 3.11+ (recommended for full feature support)
+  - cryptography>=44.0.1 - Core cryptographic primitives
+  - argon2-cffi>=23.1.0 - Argon2 password hashing
+  - PyYAML>=6.0.2 - Configuration file support
+  - whirlpool-py311>=1.0.0 - Whirlpool hash algorithm
+
+### Optional Dependencies
+
+  - liboqs-python - Extended post-quantum algorithm support (HQC, ML-DSA, SLH-DSA, FN-DSA)
+  - tkinter - GUI interface (usually included with Python)
+
+## Usage Interfaces
+
+### Command-Line Interface
+```
+  # Basic encryption
+  python -m openssl_encrypt.crypt encrypt -i file.txt -o file.txt.enc
+
+  # Post-quantum encryption
+  python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm ml-kem-768-hybrid
+
+  # Using security templates
+  python -m openssl_encrypt.crypt encrypt -i file.txt --paranoid
+
+  # Keystore operations
+  python -m openssl_encrypt.keystore_cli_main create --keystore-path my_keys.pqc
+```
+### Graphical User Interface
+```
+  # Launch GUI
+  python -m openssl_encrypt.crypt_gui
+  # or
+  python -m openssl_encrypt.cli --gui
+```
+  The GUI provides intuitive tabs for:
+  - Encrypt: File encryption with algorithm selection
+  - Decrypt: Secure file decryption
+  - Shred: Military-grade secure deletion
+  - Advanced: Detailed security configuration
+
+## Documentation Structure
+
+The documentation has been consolidated from 37+ files into 10 comprehensive guides for better organization and usability.
+
+### User Documentation
+
+  - [**User Guide**](openssl_encrypt/docs/user-guide.md) - Complete installation, usage, examples, and troubleshooting
+  - [**Keystore Guide**](openssl_encrypt/docs/keystore-guide.md) - PQC keystore management and dual encryption
+
+### Security Documentation
+
+  - [**Security Documentation**](openssl_encrypt/docs/security.md) - Comprehensive security architecture, threat model, and best practices
+  - [**Algorithm Reference**](openssl_encrypt/docs/algorithm-reference.md) - Cryptographic algorithm audit and compliance analysis
+  - [**Dependency Management**](openssl_encrypt/docs/dependency-management.md) - Security assessment and version pinning policies
+
+### Technical Documentation
+
+  - [**Metadata Formats**](openssl_encrypt/docs/metadata-formats.md) - File format specifications and migration guide
+  - [**Development Setup**](openssl_encrypt/docs/development-setup.md) - Development environment, CI/CD, and testing
+
+### Project Documentation
+
+  - [**VERSION.md**](openssl_encrypt/docs/VERSION.md) - Complete version history and changelog
+  - [**VERSION_PINNING_POLICY.md**](openssl_encrypt/docs/VERSION_PINNING_POLICY.md) - Dependency versioning strategy
+  - [**TODO.md**](openssl_encrypt/docs/TODO.md) - Development roadmap and planned features
+
+## Development & Testing
+
+### Test Files & Validation
+
+  All test files in unittests/testfiles/ are encrypted with password 1234 for testing purposes.
+
+#### Security Templates
+
+  - templates/quick.json - Fast encryption with good security
+  - templates/standard.json - Balanced security and performance (default)
+  - templates/paranoid.json - Maximum security configuration
+
+#### Build & Distribution
+
+  - Modern Python packaging with pyproject.toml
+  - Docker support with multi-stage builds
+  - CI/CD integration with GitLab CI
+  - Automated testing and security scanning
+
+## Support & Issues
+
+  You can create issues by mailto:issue+world-openssl-encrypt-2-issue-+gitlab@rm-rf.ch to the linked address.
+
 ## License
 
-[MIT License](LICENSE)
+  LICENSE
+
+  ---
+  OpenSSL Encrypt - Securing your data for the quantum age with military-grade cryptography and user-friendly interfaces.
