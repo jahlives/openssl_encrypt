@@ -27,7 +27,7 @@ This release achieves **production-ready HQC algorithm support**, completing our
 
 **Complete Test Matrix:**
 - HQC-128: 5 test files (AES-GCM, AES-GCM-SIV, AES-OCB3, ChaCha20-Poly1305, XChaCha20-Poly1305)
-- HQC-192: 5 test files (AES-GCM, AES-GCM-SIV, AES-OCB3, ChaCha20-Poly1305, XChaCha20-Poly1305)  
+- HQC-192: 5 test files (AES-GCM, AES-GCM-SIV, AES-OCB3, ChaCha20-Poly1305, XChaCha20-Poly1305)
 - HQC-256: 5 test files (AES-GCM, AES-GCM-SIV, AES-OCB3, ChaCha20-Poly1305, XChaCha20-Poly1305)
 
 The combination of Kyber, ML-KEM, and HQC algorithms provides complete quantum-resistant encryption capabilities with mathematical diversity (lattice-based and code-based approaches) and hybrid encryption architecture, ensuring both current security and future quantum-resistance.
