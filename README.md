@@ -5,9 +5,9 @@ Therefore I decided to do a complete rewrite in pure python also using modern ci
 Whirlpool support: The whirlpool hash algorithm is now supported on all Python versions, including Python 3.11, 3.12, and 3.13. The package will automatically detect your Python version and install the appropriate
 Whirlpool implementation.
 
-  🔐 Comprehensive Feature Set
+## Comprehensive Feature Set
 
-  Core Encryption Features
+### Core Encryption Features
 
   - Military-Grade Symmetric Encryption:
     - Fernet (AES-128-CBC) - Default, proven security
@@ -19,7 +19,7 @@ Whirlpool implementation.
     - XChaCha20-Poly1305 - Extended nonce variant
     - Camellia - International standard block cipher
 
-  Advanced Post-Quantum Cryptography
+###  Advanced Post-Quantum Cryptography
 
   - NIST-Approved Algorithms:
     - ML-KEM (Module Lattice KEM) - NIST FIPS 203 standard
@@ -32,7 +32,7 @@ Whirlpool implementation.
         - HQC-128, HQC-192, HQC-256
   - Hybrid Encryption Architecture: Combines post-quantum KEMs with classical symmetric encryption for quantum-resistant protection
 
-  Multi-Layer Password Protection
+###  Multi-Layer Password Protection
 
   - Cryptographic Hash Functions:
     - SHA-256, SHA-512 (FIPS 180-4)
@@ -47,7 +47,7 @@ Whirlpool implementation.
         - Argon2i, Argon2d, Argon2id variants
     - Balloon Hashing - Memory-hard function with proven security
 
-  Enterprise Security Features
+###  Enterprise Security Features
 
   - Secure Key Management:
     - Local encrypted keystore for PQC keys
@@ -63,7 +63,7 @@ Whirlpool implementation.
     - Tamper detection mechanisms
     - Metadata integrity protection
 
-  Operational Features
+###  Operational Features
 
   - Secure File Operations:
     - Military-grade secure deletion (multi-pass overwriting)
@@ -81,7 +81,7 @@ Whirlpool implementation.
     - Glob pattern support for batch operations
     - Extensive configuration options
 
-  Advanced Security Implementations
+###  Advanced Security Implementations
 
   - Password Security:
     - Password policy enforcement
@@ -94,9 +94,9 @@ Whirlpool implementation.
     - Security level customization
     - Future algorithm extensibility
 
-  🏗 Architecture & Components
+## Architecture & Components
 
-  Core Modules
+### Core Modules
 
   - crypt.py - Main command-line utility entry point
   - crypt_gui.py - Graphical user interface application
@@ -105,7 +105,7 @@ Whirlpool implementation.
   - modules/crypt_cli.py - Command-line interface implementation
   - modules/crypt_utils.py - Utility functions and helpers
 
-  Cryptographic Modules
+### Cryptographic Modules
 
   - modules/pqc.py - Post-quantum cryptography implementation
   - modules/pqc_adapter.py - PQC algorithm adapter layer
@@ -115,7 +115,7 @@ Whirlpool implementation.
   - modules/secure_memory.py - Memory security functions
   - modules/crypto_secure_memory.py - Advanced memory protection
 
-  Security & Management
+### Security & Management
 
   - modules/keystore_cli.py - Keystore command-line interface
   - modules/keystore_utils.py - Keystore utility functions
@@ -125,7 +125,7 @@ Whirlpool implementation.
   - modules/crypt_settings.py - Configuration management
   - modules/crypt_errors.py - Custom exception classes
 
-  Testing & Quality Assurance
+### Testing & Quality Assurance
 
   - Comprehensive Test Suite:
     - Unit tests (unittests/unittests.py)
@@ -140,9 +140,9 @@ Whirlpool implementation.
     - CI/CD security pipeline
     - Comprehensive test file formats (v3, v4, v5)
 
-  🛠 Installation & Dependencies
+## Installation & Dependencies
 
-  Core Dependencies
+### Core Dependencies
 
   - Python 3.11+ (recommended for full feature support)
   - cryptography>=44.0.1 - Core cryptographic primitives
@@ -150,14 +150,14 @@ Whirlpool implementation.
   - PyYAML>=6.0.2 - Configuration file support
   - whirlpool-py311>=1.0.0 - Whirlpool hash algorithm
 
-  Optional Dependencies
+### Optional Dependencies
 
   - liboqs-python - Extended post-quantum algorithm support (HQC, ML-DSA, SLH-DSA, FN-DSA)
   - tkinter - GUI interface (usually included with Python)
 
-  🎮 Usage Interfaces
+## Usage Interfaces
 
-  Command-Line Interface
+### Command-Line Interface
 
   # Basic encryption
   python -m openssl_encrypt.crypt encrypt -i file.txt -o file.txt.enc
@@ -171,7 +171,7 @@ Whirlpool implementation.
   # Keystore operations
   python -m openssl_encrypt.keystore_cli_main create --keystore-path my_keys.pqc
 
-  Graphical User Interface
+### Graphical User Interface
 
   # Launch GUI
   python -m openssl_encrypt.crypt_gui
@@ -184,16 +184,16 @@ Whirlpool implementation.
   - Shred: Military-grade secure deletion
   - Advanced: Detailed security configuration
 
-  📚 Documentation Structure
+## Documentation Structure
 
-  User Guides
+### User Guides
 
   - openssl_encrypt/docs/install.md - Installation instructions
   - openssl_encrypt/docs/usage.md - Comprehensive usage guide
   - openssl_encrypt/docs/examples.md - Practical examples
   - openssl_encrypt/docs/keystore_cli_guide.md - Keystore management
 
-  Technical Documentation
+### Technical Documentation
 
   - openssl_encrypt/docs/pqc.md - Post-quantum cryptography guide
   - openssl_encrypt/docs/EXTENDED_PQ_ALGORITHMS.md - Advanced PQC algorithms
@@ -201,7 +201,7 @@ Whirlpool implementation.
   - openssl_encrypt/docs/password-handling.md - Password security
   - openssl_encrypt/docs/security-notes.md - Security considerations
 
-  Security & Compliance
+### Security & Compliance
 
   - openssl_encrypt/docs/SECURITY.md - Security policy
   - openssl_encrypt/docs/buffer_overflow_prevention.md - Memory safety
@@ -209,30 +209,30 @@ Whirlpool implementation.
   - openssl_encrypt/docs/ALGORITHM_AUDIT.md - Cryptographic algorithm analysis
   - openssl_encrypt/docs/DEPENDENCY_SECURITY_PLAN.md - Dependency management
 
-  🔧 Development & Testing
+## Development & Testing
 
-  Test Files & Validation
+### Test Files & Validation
 
   All test files in unittests/testfiles/ are encrypted with password 1234 for testing purposes.
 
-  Security Templates
+#### Security Templates
 
   - templates/quick.json - Fast encryption with good security
   - templates/standard.json - Balanced security and performance (default)
   - templates/paranoid.json - Maximum security configuration
 
-  Build & Distribution
+#### Build & Distribution
 
   - Modern Python packaging with pyproject.toml
   - Docker support with multi-stage builds
   - CI/CD integration with GitLab CI
   - Automated testing and security scanning
 
-  🤝 Support & Issues
+## Support & Issues
 
   You can create issues by mailto:issue+world-openssl-encrypt-2-issue-+gitlab@rm-rf.ch to the linked address.
 
-  📄 License
+## License
 
   LICENSE
 
