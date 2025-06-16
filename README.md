@@ -158,7 +158,7 @@ Whirlpool implementation.
 ## Usage Interfaces
 
 ### Command-Line Interface
-
+```
   # Basic encryption
   python -m openssl_encrypt.crypt encrypt -i file.txt -o file.txt.enc
 
@@ -170,14 +170,14 @@ Whirlpool implementation.
 
   # Keystore operations
   python -m openssl_encrypt.keystore_cli_main create --keystore-path my_keys.pqc
-
+```
 ### Graphical User Interface
-
+```
   # Launch GUI
   python -m openssl_encrypt.crypt_gui
   # or
   python -m openssl_encrypt.cli --gui
-
+```
   The GUI provides intuitive tabs for:
   - Encrypt: File encryption with algorithm selection
   - Decrypt: Secure file decryption
