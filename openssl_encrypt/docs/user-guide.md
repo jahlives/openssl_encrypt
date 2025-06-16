@@ -88,8 +88,47 @@ brew install python-tk
 #### Post-Quantum Cryptography
 For extended post-quantum algorithm support:
 
+**Standard Installation:**
 ```bash
 pip install liboqs-python
+```
+
+**Manual Installation (if PyPI package unavailable):**
+
+If the PyPI package is not available, you can manually install the required C libraries and Python bindings:
+
+*Step 1: Install system dependencies and build C libraries:*
+```bash
+# On Fedora/CentOS/RHEL
+sudo dnf install git gcc cmake ninja-build make golang python3-devel openssl-devel
+
+# On Debian/Ubuntu (use apt instead)
+sudo apt-get install git gcc cmake ninja-build make golang python3-dev libssl-dev
+
+# Clone and build liboqs
+git clone --recurse-submodules https://github.com/open-quantum-safe/liboqs.git
+cd liboqs
+mkdir build && cd build
+cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local ..
+ninja
+sudo ninja install
+```
+
+*Step 2: Install Python bindings:*
+```bash
+pip install --user git+https://github.com/open-quantum-safe/liboqs-python.git
+sudo ldconfig
+```
+
+*Step 3: Configure library path (if needed):*
+```bash
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
+```
+
+*Step 4: Verify installation:*
+```python
+import oqs
+print(oqs.get_enabled_kem_mechanisms())
 ```
 
 #### Whirlpool Hash Algorithm
