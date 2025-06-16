@@ -407,6 +407,14 @@ publish:
     - if: $CI_COMMIT_BRANCH == "release"
       when: manual
       allow_failure: true
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_BRANCH == "dev"
+      when: manual
+      allow_failure: true
+
+
 
 publish-pypi-test:
   stage: publish
