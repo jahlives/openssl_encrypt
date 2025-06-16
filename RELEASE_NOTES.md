@@ -1,3 +1,9 @@
+# Release Notes - June 2025
+
+## Major Documentation Consolidation and Restructuring
+
+We've completed a comprehensive documentation overhaul, consolidating 37+ scattered documentation files into 10 well-organized, comprehensive guides. This represents a 73% reduction in file count while preserving all important information and dramatically improving usability. The new structure includes: **User Documentation** with a complete User Guide covering installation, usage, examples, and troubleshooting, plus a dedicated Keystore Guide for PQC key management; **Security Documentation** featuring comprehensive Security Documentation covering threat models and cryptographic architecture, an Algorithm Reference with complete cryptographic algorithm audit, and Dependency Management documentation for security assessment and version policies; **Technical Documentation** including Metadata Formats specifications and Development Setup guides; and **Project Documentation** with complete version history, dependency versioning strategy, and development roadmap. Each consolidated file features comprehensive table of contents, improved cross-referencing, and consistent formatting. The README.md has been updated with clickable links to all documentation sections for easy navigation. This restructuring eliminates content duplication, improves searchability, and provides a much better user experience for both new users and developers.
+
 # Release Notes - May 2025
 
 ## Security Updates
