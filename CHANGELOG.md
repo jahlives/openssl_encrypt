@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Consolidated user documentation into user-guide.md and keystore-guide.md
 - Consolidated security documentation into security.md, algorithm-reference.md, and dependency-management.md
 - Consolidated technical documentation into metadata-formats.md and development-setup.md
+- Integrated ML-KEM CLI support documentation into algorithm-reference.md
+- Integrated HQC algorithm completion status from NEXT.md into TODO.md
 
 ### Security
 
@@ -49,6 +51,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - HQC algorithm support fully implemented (hqc-128/192/256-hybrid) with comprehensive testing
+- **HQC Production Readiness**: Complete HQC algorithm implementation with 15 test files covering all symmetric encryption combinations
+- **HQC Security Validation**: Comprehensive error handling tests for invalid keys, corrupted data, wrong passwords, and algorithm mismatches
+- **HQC Integration**: Full keystore integration, dual-encryption support, and file format v5 compatibility
 - Complete post-quantum cryptography support (Kyber, ML-KEM, HQC)
 - Industry-leading code quality standards
 - Production-grade stability and reliability
@@ -56,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Security analysis confirmed 0 HIGH/MEDIUM severity issues
 - All core encryption functionality verified working
+- HQC algorithms pass all security validation tests and attack vector analysis
 
 ## [1.0.0-rc1] - 2025-05-16
 
