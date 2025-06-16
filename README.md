@@ -186,28 +186,29 @@ Whirlpool implementation.
 
 ## Documentation Structure
 
-### User Guides
+The documentation has been consolidated from 37+ files into 10 comprehensive guides for better organization and usability.
 
-  - openssl_encrypt/docs/install.md - Installation instructions
-  - openssl_encrypt/docs/usage.md - Comprehensive usage guide
-  - openssl_encrypt/docs/examples.md - Practical examples
-  - openssl_encrypt/docs/keystore_cli_guide.md - Keystore management
+### User Documentation
+
+  - [**User Guide**](openssl_encrypt/docs/user-guide.md) - Complete installation, usage, examples, and troubleshooting
+  - [**Keystore Guide**](openssl_encrypt/docs/keystore-guide.md) - PQC keystore management and dual encryption
+
+### Security Documentation
+
+  - [**Security Documentation**](openssl_encrypt/docs/security.md) - Comprehensive security architecture, threat model, and best practices
+  - [**Algorithm Reference**](openssl_encrypt/docs/algorithm-reference.md) - Cryptographic algorithm audit and compliance analysis
+  - [**Dependency Management**](openssl_encrypt/docs/dependency-management.md) - Security assessment and version pinning policies
 
 ### Technical Documentation
 
-  - openssl_encrypt/docs/pqc.md - Post-quantum cryptography guide
-  - openssl_encrypt/docs/EXTENDED_PQ_ALGORITHMS.md - Advanced PQC algorithms
-  - openssl_encrypt/docs/PQC_DUAL_ENCRYPTION.md - Dual encryption architecture
-  - openssl_encrypt/docs/password-handling.md - Password security
-  - openssl_encrypt/docs/security-notes.md - Security considerations
+  - [**Metadata Formats**](openssl_encrypt/docs/metadata-formats.md) - File format specifications and migration guide
+  - [**Development Setup**](openssl_encrypt/docs/development-setup.md) - Development environment, CI/CD, and testing
 
-### Security & Compliance
+### Project Documentation
 
-  - openssl_encrypt/docs/SECURITY.md - Security policy
-  - openssl_encrypt/docs/buffer_overflow_prevention.md - Memory safety
-  - openssl_encrypt/docs/security_improvements.md - Security enhancements
-  - openssl_encrypt/docs/ALGORITHM_AUDIT.md - Cryptographic algorithm analysis
-  - openssl_encrypt/docs/DEPENDENCY_SECURITY_PLAN.md - Dependency management
+  - [**VERSION.md**](openssl_encrypt/docs/VERSION.md) - Complete version history and changelog
+  - [**VERSION_PINNING_POLICY.md**](openssl_encrypt/docs/VERSION_PINNING_POLICY.md) - Dependency versioning strategy
+  - [**TODO.md**](openssl_encrypt/docs/TODO.md) - Development roadmap and planned features
 
 ## Development & Testing
 
