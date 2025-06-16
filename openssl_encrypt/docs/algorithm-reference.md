@@ -5,6 +5,7 @@
 1. [Overview](#overview)
 2. [Cryptographic Algorithm Audit](#cryptographic-algorithm-audit)
 3. [Post-Quantum Algorithms](#post-quantum-algorithms)
+   - [ML-KEM CLI Implementation](#ml-kem-cli-implementation)
 4. [Extended PQC Algorithm Support](#extended-pqc-algorithm-support)
 5. [Algorithm Selection Guidelines](#algorithm-selection-guidelines)
 6. [Implementation Details](#implementation-details)
@@ -81,6 +82,41 @@ All post-quantum algorithms are implemented in hybrid mode, combining PQ KEMs wi
 - `hqc-128-chacha20`: HQC-128 + ChaCha20-Poly1305
 - `hqc-192-chacha20`: HQC-192 + ChaCha20-Poly1305
 - `hqc-256-chacha20`: HQC-256 + ChaCha20-Poly1305
+
+### ML-KEM CLI Implementation
+
+The library includes transparent ML-KEM naming support in the command-line interface through an automatic conversion patch. This allows users to use standardized ML-KEM algorithm names while maintaining compatibility with the existing validation logic.
+
+#### Algorithm Name Mapping
+
+The CLI automatically converts ML-KEM names to their internal Kyber equivalents:
+
+| ML-KEM Name | Internal Name | NIST Standard |
+|-------------|---------------|---------------|
+| `ml-kem-512-hybrid` | `kyber512-hybrid` | FIPS 203 Level 1 |
+| `ml-kem-768-hybrid` | `kyber768-hybrid` | FIPS 203 Level 3 |
+| `ml-kem-1024-hybrid` | `kyber1024-hybrid` | FIPS 203 Level 5 |
+
+#### Usage Examples
+
+```bash
+# Encryption with standardized ML-KEM names
+python -m openssl_encrypt.crypt encrypt -i input.txt -o output.enc \
+  --algorithm ml-kem-1024-hybrid --password test1234
+
+# Decryption with ML-KEM names
+python -m openssl_encrypt.crypt decrypt -i output.enc -o decrypted.txt \
+  --algorithm ml-kem-1024-hybrid --password test1234
+```
+
+#### Implementation Details
+
+- **Transparent Conversion**: ML-KEM names are automatically converted before validation
+- **Non-Invasive**: No changes to core validation or encryption logic
+- **Compatibility**: Both ML-KEM and legacy Kyber names work in CLI
+- **Future-Proof**: Enables migration to standardized naming convention
+
+This implementation is provided by the `ml_kem_patch.py` module and applied automatically in the CLI interface.
 
 ### Security Analysis
 

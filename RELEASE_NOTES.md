@@ -2,7 +2,7 @@
 
 ## Current Release: Version 1.0.0-rc2 (June 2025)
 
-**Status:** Production Ready Release Candidate  
+**Status:** Production Ready Release Candidate
 **Development Status:** Production/Stable Ready
 
 ### Production Readiness Achieved
