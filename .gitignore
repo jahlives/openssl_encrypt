@@ -200,3 +200,13 @@ halstead-report.json
 raw-metrics.json
 pip-audit-local.json
 .bandit.baseline
+
+# Flatpak build artifacts
+flatpak/build-dir/
+flatpak/.flatpak-builder/
+flatpak/repo/
+flatpak/*.flatpak
+flatpak/*.log
+
+# CI/CD artifacts
+.gitlab-ci-local/

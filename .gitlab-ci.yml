@@ -19,11 +19,15 @@ stages:
   - docker-test     #
   - docker-publish  #
   - docker
+  - flatpak-build   # Flatpak stages
+  - flatpak-package #
+  - flatpak-deploy  #
   - publish
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
   DOCKER_IMAGE: $CI_REGISTRY_IMAGE/python-liboqs:3.13-alpine
+  FLATPAK_ID: "com.opensslencrypt.OpenSSLEncrypt"
 
 # This job builds a custom Docker image with liboqs pre-installed
 # It runs on a schedule (e.g., daily) to keep the image updated
@@ -449,3 +453,81 @@ publish-pypi-prod:
     - if: $CI_COMMIT_BRANCH == "release"
       when: manual
       allow_failure: true
+
+# =============================================================================
+# Flatpak Build Pipeline
+# =============================================================================
+
+build-flatpak:
+  stage: flatpak-build
+  image: fedora:latest
+  before_script:
+    - dnf install -y flatpak flatpak-builder git
+    - flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+    - flatpak install -y flathub org.freedesktop.Platform//23.08 org.freedesktop.Sdk//23.08
+  script:
+    - cd flatpak
+    - flatpak-builder --force-clean --repo=repo build-dir ${FLATPAK_ID}.json
+    - flatpak build-bundle repo ${FLATPAK_ID}.flatpak ${FLATPAK_ID}
+    - echo "Flatpak package built successfully"
+    - ls -la *.flatpak
+  artifacts:
+    paths:
+      - flatpak/${FLATPAK_ID}.flatpak
+    expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_COMMIT_BRANCH == "dev"
+      when: manual
+      allow_failure: true
+
+upload-flatpak-to-registry:
+  stage: flatpak-package
+  image: curlimages/curl:latest
+  script:
+    - cd flatpak
+    - 'VERSION=${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}'
+    - 'curl --header "JOB-TOKEN: $CI_JOB_TOKEN" --upload-file ${FLATPAK_ID}.flatpak "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/openssl-encrypt-flatpak/${VERSION}/${FLATPAK_ID}.flatpak"'
+    - echo "Flatpak package uploaded to GitLab Package Registry"
+    - echo "Download URL ${CI_PROJECT_URL}/-/packages"
+  dependencies:
+    - build-flatpak
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "release"
+
+# Create installation instructions since we can't store the large repo
+create-flatpak-instructions:
+  stage: flatpak-deploy
+  image: alpine:latest
+  script:
+    - mkdir -p flatpak/public
+    - |
+      cat > flatpak/public/README.txt << EOF
+      OpenSSL Encrypt Flatpak Installation
+
+      Option 1: Download and install directly
+      1. Download the .flatpak file from the GitLab Package Registry
+      2. Install with: flatpak install --user downloaded-file.flatpak
+
+      Option 2: Install from GitLab Package Registry
+      VERSION=\${CI_COMMIT_TAG:-\$CI_COMMIT_SHORT_SHA}
+      curl -O "${CI_PROJECT_URL}/-/packages/generic/openssl-encrypt-flatpak/\$VERSION/${FLATPAK_ID}.flatpak"
+      flatpak install --user ${FLATPAK_ID}.flatpak
+
+      Option 3: Use our installation script
+      curl -s "${CI_PROJECT_URL}/-/raw/main/flatpak/install-from-registry.sh" | bash
+      EOF
+    - echo "Installation instructions created"
+    - cat flatpak/public/README.txt
+  artifacts:
+    paths:
+      - flatpak/public/README.txt
+    expire_in: never
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "release"
