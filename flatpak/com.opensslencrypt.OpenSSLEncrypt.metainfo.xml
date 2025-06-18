@@ -24,6 +24,9 @@
       Perfect for individuals and organizations requiring the highest levels of data protection,
       including protection against future quantum computer attacks.
     </p>
+    <p>
+      To report bugs or request features, send email to: issue+world-openssl-encrypt-2-issue-+gitlab@rm-rf.ch
+    </p>
   </description>
   <launchable type="desktop-id">com.opensslencrypt.OpenSSLEncrypt.desktop</launchable>
   <provides>
@@ -49,8 +52,8 @@
     </release>
   </releases>
   <developer_name>OpenSSL Encrypt Project</developer_name>
-  <url type="homepage">https://github.com/your-username/openssl_encrypt</url>
-  <url type="bugtracker">https://github.com/your-username/openssl_encrypt/issues</url>
+  <url type="homepage">https://gitlab.rm-rf.ch/world/openssl_encrypt</url>
+  <url type="bugtracker">https://gitlab.rm-rf.ch/world/openssl_encrypt/-/issues</url>
   <categories>
     <category>Security</category>
     <category>Utility</category>
