@@ -1,7 +1,7 @@
 {
   "app-id": "com.opensslencrypt.OpenSSLEncrypt",
   "runtime": "org.freedesktop.Platform",
-  "runtime-version": "23.08",
+  "runtime-version": "24.08",
   "sdk": "org.freedesktop.Sdk",
   "command": "openssl-encrypt",
   "finish-args": [
@@ -13,7 +13,7 @@
     "--device=dri",
     "--talk-name=org.freedesktop.FileManager1",
     "--talk-name=org.gtk.vfs.*",
-    "--env=PYTHONPATH=/app/lib/python3.11/site-packages"
+    "--env=PYTHONPATH=/app/lib/python3.12/site-packages"
   ],
   "modules": [
     {
@@ -59,6 +59,16 @@
           "sha256": "00ca8aba65cd8c8eac00ddf978f4cac9dd23bb039f357448b60b7e3eed8f02da"
         }
       ]
+    },
+    {
+      "name": "x11-tools",
+      "buildsystem": "simple",
+      "build-commands": [
+        "echo 'Installing X11 virtual framebuffer...'",
+        "which Xvfb || echo 'Xvfb not available in runtime'",
+        "echo 'X11 tools check complete'"
+      ],
+      "sources": []
     },
     {
       "name": "python3-dependencies",

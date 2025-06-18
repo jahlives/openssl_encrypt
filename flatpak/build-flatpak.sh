@@ -25,22 +25,26 @@ flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flat
 
 # Install required runtime and SDK
 echo "📥 Installing required runtime and SDK..."
-flatpak install -y flathub org.freedesktop.Platform//23.08 org.freedesktop.Sdk//23.08
+flatpak install -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
 
-# Clean up any previous builds
-echo "🧹 Cleaning up previous builds..."
-rm -rf build-dir .flatpak-builder repo
+# Clean up build directory but preserve cache
+echo "🧹 Cleaning up build directory (preserving cache)..."
+rm -rf build-dir repo
 
-# Build the Flatpak
+# Build the Flatpak (without --force-clean to preserve cache)
 echo "🔨 Building Flatpak package..."
-flatpak-builder --force-clean --repo=repo build-dir com.opensslencrypt.OpenSSLEncrypt.json
+echo "ℹ️  Using build cache from .flatpak-builder/ (if exists)"
+flatpak-builder --repo=repo build-dir com.opensslencrypt.OpenSSLEncrypt.json
 
 # Update the repository summary (required for remote access)
 echo "📋 Updating repository summary..."
 flatpak build-update-repo repo
 
-# Clean up any existing remote with the same name
-echo "🧹 Removing any existing remote..."
+# Clean up any existing installation and remote
+echo "🧹 Removing existing installation and remote..."
+# First uninstall the specific app
+flatpak --user uninstall -y com.opensslencrypt.OpenSSLEncrypt 2>/dev/null || true
+# Then remove the remote
 flatpak --user remote-delete openssl-encrypt-repo 2>/dev/null || true
 
 # Add local repository
