@@ -83,9 +83,10 @@
         "pip3 install --verbose --exists-action=i --no-index --find-links=\"file://${PWD}\" --prefix=${FLATPAK_DEST} . --no-build-isolation"
       ],
       "post-install": [
-        "install -Dm644 com.opensslencrypt.OpenSSLEncrypt.desktop /app/share/applications/com.opensslencrypt.OpenSSLEncrypt.desktop",
-        "install -Dm644 com.opensslencrypt.OpenSSLEncrypt.svg /app/share/icons/hicolor/scalable/apps/com.opensslencrypt.OpenSSLEncrypt.svg",
-        "install -Dm644 com.opensslencrypt.OpenSSLEncrypt.metainfo.xml /app/share/metainfo/com.opensslencrypt.OpenSSLEncrypt.metainfo.xml"
+        "install -Dm644 flatpak/com.opensslencrypt.OpenSSLEncrypt.desktop /app/share/applications/com.opensslencrypt.OpenSSLEncrypt.desktop",
+        "install -Dm644 flatpak/com.opensslencrypt.OpenSSLEncrypt.svg /app/share/icons/hicolor/scalable/apps/com.opensslencrypt.OpenSSLEncrypt.svg",
+        "install -Dm644 flatpak/com.opensslencrypt.OpenSSLEncrypt.metainfo.xml /app/share/metainfo/com.opensslencrypt.OpenSSLEncrypt.metainfo.xml",
+        "install -Dm755 flatpak/openssl-encrypt /app/bin/openssl-encrypt"
       ],
       "sources": [
         {
