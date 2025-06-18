@@ -35,9 +35,19 @@ rm -rf build-dir .flatpak-builder repo
 echo "🔨 Building Flatpak package..."
 flatpak-builder --force-clean --repo=repo build-dir com.opensslencrypt.OpenSSLEncrypt.json
 
+# Update the repository summary (required for remote access)
+echo "📋 Updating repository summary..."
+flatpak build-update-repo repo
+
+# Clean up any existing remote with the same name
+echo "🧹 Removing any existing remote..."
+flatpak --user remote-delete openssl-encrypt-repo 2>/dev/null || true
+
 # Add local repository
 echo "📁 Adding local repository..."
-flatpak --user remote-add --if-not-exists --no-gpg-verify openssl-encrypt-repo repo
+REPO_PATH="$(pwd)/repo"
+echo "Repository path: $REPO_PATH"
+flatpak --user remote-add --no-gpg-verify openssl-encrypt-repo "$REPO_PATH"
 
 # Install the built package
 echo "💾 Installing the package..."
