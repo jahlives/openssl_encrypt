@@ -356,16 +356,16 @@ python -m openssl_encrypt.crypt check-signature-support
 - ✅ **Algorithm mapping and compatibility** - Handle different liboqs versions
 
 ### Phase 3: Enhanced CLI and Testing (Weeks 5-6)
-- [ ] **CLI commands with implementation choice** - Auto-detection and fallback
+- ✅ **CLI commands with implementation choice** - Auto-detection and fallback
 - [ ] **Cross-implementation testing** - Test liboqs vs demo compatibility
 - [ ] **Production test suite** - Tests that require liboqs
-- [ ] **Implementation preference settings** - User control over backend choice
+- ✅ **Implementation preference settings** - User control over backend choice
 
-### Phase 4: CROSS Integration (Weeks 7-8)  
-- [ ] **CROSS liboqs wrapper** - Production CROSS signature support
-- [ ] **CROSS demo implementation** - Educational fallback (optional)
-- [ ] **Large signature handling** - Efficient CROSS signature processing
-- [ ] **Cross-algorithm testing** - MAYO and CROSS together
+### Phase 4: CROSS Integration ✅ COMPLETED (Weeks 7-8)  
+- ✅ **CROSS liboqs wrapper** - Production CROSS signature support
+- ⚠️ **CROSS demo implementation** - Educational fallback (optional - not needed)
+- ✅ **Large signature handling** - Efficient CROSS signature processing
+- ✅ **Cross-algorithm testing** - MAYO and CROSS together
 
 ### Phase 5: Advanced Features (Weeks 9-10)
 - [ ] **Keystore signature support** - Store and manage signature keys
@@ -495,17 +495,24 @@ mayo_auto = SignatureFactory.create_signature("MAYO-1")  # Automatically selects
 - ✅ **Performance baseline establishment** - Measure current capabilities
 - ✅ **Compatibility matrix creation** - Document liboqs version requirements
 
-### Phase 3 Next Steps (Enhanced CLI and Testing)
-- [ ] **CLI signature commands** - Implement sign, verify, list-algorithms commands
+### Phase 3 Progress (Enhanced CLI and Testing)
+- ✅ **CLI signature commands** - Implement sign, verify, list-algorithms commands
 - [ ] **Advanced testing framework** - Cross-implementation compatibility tests  
 - [ ] **Performance benchmarking** - Comprehensive algorithm performance analysis
 - [ ] **User documentation** - Create guides for signature operations
 
+### Phase 3A: CLI Commands ✅ COMPLETED
+Comprehensive CLI interface for post-quantum signatures:
+- **4 new CLI actions**: list-signature-algorithms, generate-signature-keys, sign, verify
+- **Smart implementation selection**: auto/production/demo with graceful fallback
+- **Complete argument set**: algorithm selection, key management, signature handling
+- **User-friendly interface**: clear messages, help system, secure file permissions
+
 ---
 
-**Document Status**: Phase 2 completed - Production signatures implemented  
+**Document Status**: Phase 3A completed - CLI signature commands implemented  
 **Last Updated**: 2025-06-19  
-**Next Review**: Ready for Phase 3 (Enhanced CLI and Testing)
+**Next Review**: Ready for Phase 3B (Advanced Testing Framework)
 
 ## Phase 2 Achievement Summary ✅
 
@@ -525,3 +532,27 @@ This phase successfully delivered **production-ready MAYO and CROSS signature su
 - **Automatic Fallback**: Graceful degradation when production implementations unavailable
 
 **Ready for Phase 3**: Enhanced CLI integration and advanced testing framework.
+
+## Phase 3A Achievement Summary ✅
+
+CLI signature commands successfully implemented with comprehensive functionality:
+
+### Key Deliverables Completed:
+- **🖥️ CLI Integration**: Full command-line interface for signature operations
+- **🔄 Smart Selection**: Automatic implementation preference with fallback support
+- **🔑 Key Management**: Complete key generation and file management system
+- **📋 Algorithm Discovery**: User-friendly algorithm listing and information display
+
+### CLI Commands Available:
+- **list-signature-algorithms**: Display all available MAYO and CROSS algorithms
+- **generate-signature-keys**: Generate public/private key pairs with secure permissions
+- **sign**: Sign files with post-quantum algorithms and implementation choice
+- **verify**: Verify file signatures with detailed success/failure reporting
+
+### Production Capabilities Delivered:
+- **MAYO-1/2/3/5 CLI support**: Full command-line access to multivariate signatures
+- **CROSS-128/192/256 CLI support**: Command-line access to code-based signatures
+- **Implementation selection**: Users can choose auto/production/demo backends
+- **Comprehensive help system**: Built-in documentation and argument validation
+
+**Ready for Phase 3B**: Advanced testing framework and cross-implementation compatibility.

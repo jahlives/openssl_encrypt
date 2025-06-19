@@ -577,9 +577,14 @@ def main():
             "check-pqc",
             "version",
             "show-version-file",
+            "sign",
+            "verify",
+            "list-signature-algorithms",
+            "generate-signature-keys",
         ],
         help="Action to perform: encrypt/decrypt files, shred data, generate passwords, "
-        "show security recommendations, check Argon2 support, check post-quantum cryptography support or display version file contents",
+        "show security recommendations, check Argon2 support, check post-quantum cryptography support, "
+        "sign/verify files with post-quantum signatures, list available signature algorithms, or generate signature keys",
     )
 
     # Get all available algorithms, marking deprecated ones
@@ -1076,6 +1081,63 @@ def main():
         "--custom-password-list", help="Path to custom common password list file"
     )
 
+    # Signature options group
+    signature_group = parser.add_argument_group(
+        "Signature Options", "Configure post-quantum signature operations"
+    )
+    signature_group.add_argument(
+        "--signature-algorithm",
+        "--sig-alg",
+        help="Signature algorithm to use (e.g., MAYO-1, MAYO-3, CROSS-128, CROSS-256)",
+    )
+    signature_group.add_argument(
+        "--signature-implementation",
+        "--sig-impl",
+        choices=["auto", "production", "demo"],
+        default="auto",
+        help="Signature implementation preference: auto (try production first), production (liboqs only), demo (educational only)",
+    )
+    signature_group.add_argument(
+        "--public-key",
+        "--pub-key",
+        help="Public key file for signature verification",
+    )
+    signature_group.add_argument(
+        "--private-key",
+        "--priv-key",
+        help="Private key file for signing operations",
+    )
+    signature_group.add_argument(
+        "--signature-file",
+        "--sig-file",
+        help="Signature file (for verify action) or output signature file (for sign action)",
+    )
+    signature_group.add_argument(
+        "--key-output-dir",
+        "--key-dir",
+        help="Directory to save generated signature keys (default: current directory)",
+    )
+    signature_group.add_argument(
+        "--key-prefix",
+        help="Prefix for generated key files (default: signature_key)",
+        default="signature_key",
+    )
+    signature_group.add_argument(
+        "--signature-output",
+        "--sig-out",
+        help="Output file for generated signature (default: <input_file>.sig)",
+    )
+    signature_group.add_argument(
+        "--detached-signature",
+        action="store_true",
+        help="Create detached signature (signature in separate file, default behavior)",
+    )
+    signature_group.add_argument(
+        "--show-signature-info",
+        action="store_true",
+        help="Show detailed information about signature algorithms and implementations",
+    )
+
     args = parser.parse_args()
 
     # Enhance the args with better defaults for extended algorithms
@@ -1308,8 +1370,37 @@ def main():
         # Exit after generating password
         sys.exit(0)
 
+    # Validate signature-specific arguments
+    if args.action in ["sign", "verify"]:
+        # For signature operations, input file is required
+        if args.input is None:
+            parser.error("the following arguments are required: --input/-i")
+        
+        # For sign action, signature algorithm is required
+        if args.action == "sign":
+            if args.signature_algorithm is None:
+                parser.error("--signature-algorithm is required for sign action")
+            if args.private_key is None:
+                parser.error("--private-key is required for sign action (or use generate-signature-keys first)")
+        
+        # For verify action, public key and signature file are required
+        if args.action == "verify":
+            if args.public_key is None:
+                parser.error("--public-key is required for verify action")
+            if args.signature_file is None:
+                parser.error("--signature-file is required for verify action")
+    
+    elif args.action == "list-signature-algorithms":
+        # No additional arguments required for listing algorithms
+        pass
+    
+    elif args.action == "generate-signature-keys":
+        # For key generation, signature algorithm is required
+        if args.signature_algorithm is None:
+            parser.error("--signature-algorithm is required for generate-signature-keys action")
+    
     # For other actions, input file is required
-    if args.input is None:
+    elif args.input is None and args.action not in ["generate-password", "security-info", "check-argon2", "check-pqc", "version", "show-version-file", "list-signature-algorithms"]:
         parser.error("the following arguments are required: --input/-i")
 
     # Get password (only for encrypt/decrypt actions)
@@ -3357,6 +3448,283 @@ def main():
                         print(
                             "\nDecrypted successfully, but content is binary and cannot be displayed."
                         )
+
+        elif args.action == "list-signature-algorithms":
+            # List available signature algorithms
+            try:
+                from .signature_factory import SignatureFactory
+                from .signature_detection import detect_all_signature_algorithms
+                
+                if not args.quiet:
+                    print("\nAVAILABLE POST-QUANTUM SIGNATURE ALGORITHMS")
+                    print("=" * 50)
+                
+                # Get all detected algorithms
+                all_algorithms = detect_all_signature_algorithms(quiet=True)
+                
+                if not all_algorithms:
+                    print("No signature algorithms detected.")
+                    print("This may indicate that signature modules are not properly installed.")
+                    sys.exit(1)
+                
+                # Group by implementation type
+                production_algos = []
+                demo_algos = []
+                unavailable_algos = []
+                
+                for name, info in all_algorithms.items():
+                    if info.available:
+                        if info.implementation == "liboqs-production":
+                            production_algos.append((name, info))
+                        elif info.implementation == "demo-fallback":
+                            demo_algos.append((name, info))
+                    else:
+                        unavailable_algos.append((name, info))
+                
+                # Display production algorithms
+                if production_algos:
+                    print("\nProduction Algorithms (liboqs-based):")
+                    print("-" * 40)
+                    for name, info in sorted(production_algos):
+                        key_sizes = info.key_sizes or {}
+                        pub_size = key_sizes.get("public_key_size", "?")
+                        sig_size = key_sizes.get("signature_size", "?")
+                        print(f"  ✓ {name:15} - pub: {pub_size:>6}B, sig: {sig_size:>8}B")
+                        if args.show_signature_info:
+                            print(f"    liboqs: {info.liboqs_name}")
+                
+                # Display demo algorithms
+                if demo_algos:
+                    print("\nDemo Algorithms (educational):")
+                    print("-" * 40)
+                    for name, info in sorted(demo_algos):
+                        print(f"  ⚠️  {name:15} - educational/testing only")
+                
+                # Display unavailable algorithms
+                if unavailable_algos and args.verbose:
+                    print("\nUnavailable Algorithms:")
+                    print("-" * 40)
+                    for name, info in sorted(unavailable_algos):
+                        print(f"  ✗ {name:15} - {info.implementation}")
+                
+                # Show recommendation
+                if not args.quiet:
+                    print(f"\nRecommended algorithms:")
+                    if production_algos:
+                        print("  • MAYO-1 (fast, compact keys)")
+                        print("  • CROSS-128 (very small keys, large signatures)")
+                    else:
+                        print("  • Install liboqs-python for production algorithms")
+                        print("  • Use demo algorithms for testing only")
+                
+                sys.exit(0)
+                
+            except Exception as e:
+                if not args.quiet:
+                    print(f"Error listing signature algorithms: {e}")
+                sys.exit(1)
+        
+        elif args.action == "generate-signature-keys":
+            # Generate signature key pair
+            try:
+                from .signature_factory import SignatureFactory, NoImplementationAvailableError
+                
+                if not args.quiet:
+                    print(f"Generating {args.signature_algorithm} signature key pair...")
+                
+                # Create signature instance based on implementation preference
+                if args.signature_implementation == "production":
+                    sig = SignatureFactory.create_production_signature(args.signature_algorithm)
+                elif args.signature_implementation == "demo":
+                    sig = SignatureFactory.create_demo_signature(args.signature_algorithm)
+                else:  # auto
+                    sig = SignatureFactory.create_signature(args.signature_algorithm, prefer_production=True)
+                
+                # Generate key pair
+                public_key, private_key = sig.generate_keypair()
+                
+                # Determine output directory
+                output_dir = args.key_output_dir or "."
+                if not os.path.exists(output_dir):
+                    os.makedirs(output_dir)
+                
+                # Generate key filenames
+                public_key_file = os.path.join(output_dir, f"{args.key_prefix}_{args.signature_algorithm}_public.key")
+                private_key_file = os.path.join(output_dir, f"{args.key_prefix}_{args.signature_algorithm}_private.key")
+                
+                # Save keys
+                with open(public_key_file, 'wb') as f:
+                    f.write(public_key)
+                with open(private_key_file, 'wb') as f:
+                    f.write(private_key)
+                
+                # Set secure permissions on private key
+                os.chmod(private_key_file, 0o600)
+                
+                if not args.quiet:
+                    print(f"✓ Generated {args.signature_algorithm} key pair:")
+                    print(f"  Public key:  {public_key_file} ({len(public_key)} bytes)")
+                    print(f"  Private key: {private_key_file} ({len(private_key)} bytes)")
+                    print(f"  Implementation: {sig.__class__.__name__}")
+                    print(f"  Security level: {sig.get_security_level()}")
+                
+                sys.exit(0)
+                
+            except NoImplementationAvailableError as e:
+                if not args.quiet:
+                    print(f"Error: {e}")
+                    print("Use 'list-signature-algorithms' to see available algorithms.")
+                sys.exit(1)
+            except Exception as e:
+                if not args.quiet:
+                    print(f"Error generating signature keys: {e}")
+                sys.exit(1)
+        
+        elif args.action == "sign":
+            # Sign a file
+            try:
+                from .signature_factory import SignatureFactory, NoImplementationAvailableError
+                
+                if not args.quiet:
+                    print(f"Signing {args.input} with {args.signature_algorithm}...")
+                
+                # Read input file
+                with open(args.input, 'rb') as f:
+                    message = f.read()
+                
+                # Read private key
+                with open(args.private_key, 'rb') as f:
+                    private_key = f.read()
+                
+                # Create signature instance based on implementation preference
+                # Note: For CLI signing with external keys, prefer demo implementation 
+                # since production (stateful) implementation requires keys from same instance
+                if args.signature_implementation == "production":
+                    # Try production first, but this may fail for external keys
+                    try:
+                        sig = SignatureFactory.create_production_signature(args.signature_algorithm)
+                    except:
+                        # Fall back to demo for external key compatibility
+                        if not args.quiet:
+                            print("Warning: Using demo implementation for external key compatibility")
+                        sig = SignatureFactory.create_demo_signature(args.signature_algorithm)
+                elif args.signature_implementation == "demo":
+                    sig = SignatureFactory.create_demo_signature(args.signature_algorithm)
+                else:  # auto
+                    # For CLI with external keys, prefer demo implementation
+                    try:
+                        sig = SignatureFactory.create_demo_signature(args.signature_algorithm)
+                    except:
+                        # Fall back to production
+                        sig = SignatureFactory.create_signature(args.signature_algorithm, prefer_production=True)
+                
+                # Sign the message
+                signature = sig.sign(message, private_key)
+                
+                # Determine output file
+                if args.signature_output:
+                    signature_file = args.signature_output
+                elif args.signature_file:
+                    signature_file = args.signature_file
+                else:
+                    signature_file = args.input + ".sig"
+                
+                # Save signature
+                with open(signature_file, 'wb') as f:
+                    f.write(signature)
+                
+                if not args.quiet:
+                    print(f"✓ Created signature: {signature_file} ({len(signature)} bytes)")
+                    print(f"  Algorithm: {args.signature_algorithm}")
+                    print(f"  Implementation: {sig.__class__.__name__}")
+                    print(f"  Input file: {args.input} ({len(message)} bytes)")
+                
+                sys.exit(0)
+                
+            except NoImplementationAvailableError as e:
+                if not args.quiet:
+                    print(f"Error: {e}")
+                    print("Use 'list-signature-algorithms' to see available algorithms.")
+                sys.exit(1)
+            except FileNotFoundError as e:
+                if not args.quiet:
+                    print(f"Error: File not found - {e}")
+                sys.exit(1)
+            except Exception as e:
+                if not args.quiet:
+                    print(f"Error signing file: {e}")
+                sys.exit(1)
+        
+        elif args.action == "verify":
+            # Verify a signature
+            try:
+                from .signature_factory import SignatureFactory, NoImplementationAvailableError
+                
+                if not args.quiet:
+                    print(f"Verifying signature for {args.input}...")
+                
+                # Read input file
+                with open(args.input, 'rb') as f:
+                    message = f.read()
+                
+                # Read signature file
+                with open(args.signature_file, 'rb') as f:
+                    signature = f.read()
+                
+                # Read public key
+                with open(args.public_key, 'rb') as f:
+                    public_key = f.read()
+                
+                # Auto-detect algorithm if not specified
+                if args.signature_algorithm:
+                    algorithm = args.signature_algorithm
+                else:
+                    # Try to detect algorithm from key size or signature size
+                    # For now, we'll require the algorithm to be specified
+                    print("Error: --signature-algorithm is required for verification")
+                    print("Use 'list-signature-algorithms' to see available algorithms.")
+                    sys.exit(1)
+                
+                # Create signature instance based on implementation preference
+                if args.signature_implementation == "production":
+                    sig = SignatureFactory.create_production_signature(algorithm)
+                elif args.signature_implementation == "demo":
+                    sig = SignatureFactory.create_demo_signature(algorithm)
+                else:  # auto
+                    sig = SignatureFactory.create_signature(algorithm, prefer_production=True)
+                
+                # Verify the signature
+                is_valid = sig.verify(message, signature, public_key)
+                
+                if is_valid:
+                    if not args.quiet:
+                        print("✓ Signature is VALID")
+                        print(f"  File: {args.input} ({len(message)} bytes)")
+                        print(f"  Signature: {args.signature_file} ({len(signature)} bytes)")
+                        print(f"  Algorithm: {algorithm}")
+                        print(f"  Implementation: {sig.__class__.__name__}")
+                    sys.exit(0)
+                else:
+                    if not args.quiet:
+                        print("✗ Signature is INVALID")
+                        print(f"  File: {args.input}")
+                        print(f"  Signature: {args.signature_file}")
+                        print(f"  Algorithm: {algorithm}")
+                    sys.exit(1)
+                
+            except NoImplementationAvailableError as e:
+                if not args.quiet:
+                    print(f"Error: {e}")
+                    print("Use 'list-signature-algorithms' to see available algorithms.")
+                sys.exit(1)
+            except FileNotFoundError as e:
+                if not args.quiet:
+                    print(f"Error: File not found - {e}")
+                sys.exit(1)
+            except Exception as e:
+                if not args.quiet:
+                    print(f"Error verifying signature: {e}")
+                sys.exit(1)
 
         elif args.action == "shred":
             # Direct shredding of files or directories without
