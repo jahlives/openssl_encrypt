@@ -113,6 +113,17 @@ class PQCAlgorithm(Enum):
     SLH_DSA_SHA2_128F = "SLH-DSA-SHA2-128F"  # NIST FIPS 205 (formerly SPHINCS+-SHA2-128f)
     SLH_DSA_SHA2_256F = "SLH-DSA-SHA2-256F"  # NIST FIPS 205 (formerly SPHINCS+-SHA2-256f)
 
+    # NIST Round 2 Additional Signature Algorithms
+    # MAYO (Oil-and-Vinegar multivariate signature scheme)
+    MAYO_1 = "MAYO-1"           # Level 1 (128-bit security)
+    MAYO_3 = "MAYO-3"           # Level 3 (192-bit security)
+    MAYO_5 = "MAYO-5"           # Level 5 (256-bit security)
+    
+    # CROSS (Codes and Restricted Objects Signature Scheme)
+    CROSS_128 = "CROSS-128"     # Level 1 (128-bit security)
+    CROSS_192 = "CROSS-192"     # Level 3 (192-bit security)
+    CROSS_256 = "CROSS-256"     # Level 5 (256-bit security)
+
     # Legacy signature algorithm names (deprecated, will be removed in future)
     DILITHIUM2 = "Dilithium2"  # Deprecated: use ML_DSA_44 instead
     DILITHIUM3 = "Dilithium3"  # Deprecated: use ML_DSA_65 instead
