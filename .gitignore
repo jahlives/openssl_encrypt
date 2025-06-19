@@ -210,3 +210,8 @@ flatpak/*.log
 
 # CI/CD artifacts
 .gitlab-ci-local/
+
+# Additional Flatpak build artifacts and scripts
+flatpak/build-remote.sh
+flatpak/create-repo.sh
+flatpak/openssl-encrypt
