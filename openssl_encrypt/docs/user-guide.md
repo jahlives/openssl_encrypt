@@ -60,6 +60,8 @@ pip install -r requirements-prod.txt
 ```bash
 pip install -e .
 ```
+#### From Flatpak
+See [here](https://flatpak.rm-rf.ch/)
 
 ### Core Dependencies
 
