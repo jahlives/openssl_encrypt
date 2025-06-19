@@ -488,6 +488,16 @@ class EncryptionAlgorithm(Enum):
     HQC_192_HYBRID = "hqc-192-hybrid"
     HQC_256_HYBRID = "hqc-256-hybrid"
 
+    # MAYO hybrid modes (NIST Round 2 candidates)
+    MAYO_1_HYBRID = "mayo-1-hybrid"
+    MAYO_3_HYBRID = "mayo-3-hybrid"
+    MAYO_5_HYBRID = "mayo-5-hybrid"
+
+    # CROSS hybrid modes (NIST Round 2 candidates)
+    CROSS_128_HYBRID = "cross-128-hybrid"
+    CROSS_192_HYBRID = "cross-192-hybrid"
+    CROSS_256_HYBRID = "cross-256-hybrid"
+
     @classmethod
     def from_string(cls, algorithm_str: str) -> "EncryptionAlgorithm":
         """
@@ -1465,6 +1475,12 @@ def generate_key(
         EncryptionAlgorithm.HQC_128_HYBRID.value,
         EncryptionAlgorithm.HQC_192_HYBRID.value,
         EncryptionAlgorithm.HQC_256_HYBRID.value,
+        EncryptionAlgorithm.MAYO_1_HYBRID.value,
+        EncryptionAlgorithm.MAYO_3_HYBRID.value,
+        EncryptionAlgorithm.MAYO_5_HYBRID.value,
+        EncryptionAlgorithm.CROSS_128_HYBRID.value,
+        EncryptionAlgorithm.CROSS_192_HYBRID.value,
+        EncryptionAlgorithm.CROSS_256_HYBRID.value,
     ]:
         key_length = 32  # PQC hybrid modes use AES-256-GCM internally, requiring 32 bytes
     else:
@@ -2335,6 +2351,38 @@ def encrypt_file(
 
     if isinstance(algorithm, str):
         algorithm = EncryptionAlgorithm(algorithm)
+    
+    # Handle signature algorithms (MAYO/CROSS) - generate keypair if not provided
+    is_signature_algorithm = algorithm in [
+        EncryptionAlgorithm.MAYO_1_HYBRID,
+        EncryptionAlgorithm.MAYO_3_HYBRID,
+        EncryptionAlgorithm.MAYO_5_HYBRID,
+        EncryptionAlgorithm.CROSS_128_HYBRID,
+        EncryptionAlgorithm.CROSS_192_HYBRID,
+        EncryptionAlgorithm.CROSS_256_HYBRID,
+    ]
+    
+    if is_signature_algorithm and not pqc_keypair:
+        # Generate signature keypair for MAYO/CROSS algorithms
+        from .pqc_adapter import ExtendedPQCipher, HYBRID_ALGORITHM_MAP
+        
+        # Map algorithm to signature algorithm name
+        sig_algorithm = HYBRID_ALGORITHM_MAP[algorithm.value]
+        
+        if not quiet:
+            print(f"Generating {sig_algorithm} signature keypair...")
+        
+        try:
+            sig_cipher = ExtendedPQCipher(sig_algorithm, quiet=quiet, verbose=verbose)
+            public_key, private_key = sig_cipher.generate_keypair()
+            pqc_keypair = (public_key, private_key)
+            if not quiet:
+                print(f"✅ Generated {sig_algorithm} keypair: pub={len(public_key)}B, priv={len(private_key)}B")
+        except Exception as e:
+            if not quiet:
+                print(f"❌ Failed to generate {sig_algorithm} keypair: {e}")
+            raise ValidationError(f"Failed to generate signature keypair: {e}")
+    
     # Generate a key from the password
     salt = secrets.token_bytes(16)  # Unique salt for each encryption
     if not quiet:
@@ -2454,6 +2502,12 @@ def encrypt_file(
             EncryptionAlgorithm.HQC_128_HYBRID,
             EncryptionAlgorithm.HQC_192_HYBRID,
             EncryptionAlgorithm.HQC_256_HYBRID,
+            EncryptionAlgorithm.MAYO_1_HYBRID,
+            EncryptionAlgorithm.MAYO_3_HYBRID,
+            EncryptionAlgorithm.MAYO_5_HYBRID,
+            EncryptionAlgorithm.CROSS_128_HYBRID,
+            EncryptionAlgorithm.CROSS_192_HYBRID,
+            EncryptionAlgorithm.CROSS_256_HYBRID,
         ]:
             # PQC algorithms don't use nonces in the same way, handle separately
             if not PQC_AVAILABLE:
@@ -2480,29 +2534,76 @@ def encrypt_file(
                 EncryptionAlgorithm.HQC_128_HYBRID: "HQC-128",
                 EncryptionAlgorithm.HQC_192_HYBRID: "HQC-192",
                 EncryptionAlgorithm.HQC_256_HYBRID: "HQC-256",
+                # MAYO mappings
+                EncryptionAlgorithm.MAYO_1_HYBRID: "MAYO-1",
+                EncryptionAlgorithm.MAYO_3_HYBRID: "MAYO-3",
+                EncryptionAlgorithm.MAYO_5_HYBRID: "MAYO-5",
+                # CROSS mappings
+                EncryptionAlgorithm.CROSS_128_HYBRID: "CROSS-128",
+                EncryptionAlgorithm.CROSS_192_HYBRID: "CROSS-192",
+                EncryptionAlgorithm.CROSS_256_HYBRID: "CROSS-256",
             }
 
-            # Get public key from keypair or generate new keypair
-            if pqc_keypair and pqc_keypair[0]:
-                public_key = pqc_keypair[0]
+            # Check if this is a signature algorithm (MAYO/CROSS) which needs special handling
+            is_signature_algorithm = algorithm in [
+                EncryptionAlgorithm.MAYO_1_HYBRID,
+                EncryptionAlgorithm.MAYO_3_HYBRID,
+                EncryptionAlgorithm.MAYO_5_HYBRID,
+                EncryptionAlgorithm.CROSS_128_HYBRID,
+                EncryptionAlgorithm.CROSS_192_HYBRID,
+                EncryptionAlgorithm.CROSS_256_HYBRID,
+            ]
+            
+            if is_signature_algorithm:
+                # For signature algorithms, use the private key directly for encryption
+                if not pqc_keypair or len(pqc_keypair) < 2:
+                    raise ValueError("Signature algorithm requires both public and private keys")
+                
+                private_key = pqc_keypair[1]
+                
+                # Derive symmetric encryption key from signature private key
+                from cryptography.hazmat.primitives import hashes
+                from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+                
+                # Derive 32-byte key for AES-GCM from signature private key
+                salt = b"OpenSSL-Encrypt-PQ-Signature-Hybrid"
+                info = f"encryption-key-{algorithm.value}".encode()
+                
+                derived_key = HKDF(
+                    algorithm=hashes.SHA256(),
+                    length=32,  # AES-256 key size
+                    salt=salt,
+                    info=info,
+                ).derive(private_key)
+                
+                # Encrypt using AES-GCM with derived key
+                nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
+                aes_cipher = AESGCM(derived_key)
+                encrypted_data = nonce + aes_cipher.encrypt(nonce, data, None)
+                return encrypted_data
             else:
-                # If no keypair provided, we need to create a new one and store it in metadata
-                cipher = PQCipher(
-                    pqc_algo_map[algorithm], quiet=quiet, verbose=verbose, debug=debug
-                )
-                public_key, private_key = cipher.generate_keypair()
-                # We'll add these to metadata later
+                # Original KEM algorithm handling
+                # Get public key from keypair or generate new keypair
+                if pqc_keypair and pqc_keypair[0]:
+                    public_key = pqc_keypair[0]
+                else:
+                    # If no keypair provided, we need to create a new one and store it in metadata
+                    cipher = PQCipher(
+                        pqc_algo_map[algorithm], quiet=quiet, verbose=verbose, debug=debug
+                    )
+                    public_key, private_key = cipher.generate_keypair()
+                    # We'll add these to metadata later
 
-            # Initialize PQC cipher and encrypt
-            # Use encryption_data parameter passed to the parent function
-            cipher = PQCipher(
-                pqc_algo_map[algorithm],
-                quiet=quiet,
-                encryption_data=encryption_data,
-                verbose=verbose,
-                debug=debug,
-            )
-            return cipher.encrypt(data, public_key)
+                # Initialize PQC cipher and encrypt
+                # Use encryption_data parameter passed to the parent function
+                cipher = PQCipher(
+                    pqc_algo_map[algorithm],
+                    quiet=quiet,
+                    encryption_data=encryption_data,
+                    verbose=verbose,
+                    debug=debug,
+                )
+                return cipher.encrypt(data, public_key)
         else:
             # Check if we're in test mode - this affects nonce generation for some algorithms
             is_test_env = os.environ.get("PYTEST_CURRENT_TEST") is not None
@@ -2609,6 +2710,12 @@ def encrypt_file(
         EncryptionAlgorithm.HQC_128_HYBRID,
         EncryptionAlgorithm.HQC_192_HYBRID,
         EncryptionAlgorithm.HQC_256_HYBRID,
+        EncryptionAlgorithm.MAYO_1_HYBRID,
+        EncryptionAlgorithm.MAYO_3_HYBRID,
+        EncryptionAlgorithm.MAYO_5_HYBRID,
+        EncryptionAlgorithm.CROSS_128_HYBRID,
+        EncryptionAlgorithm.CROSS_192_HYBRID,
+        EncryptionAlgorithm.CROSS_256_HYBRID,
     ]:
         pqc_info = {}
 
@@ -3249,6 +3356,12 @@ def decrypt_file(
             EncryptionAlgorithm.HQC_128_HYBRID.value,
             EncryptionAlgorithm.HQC_192_HYBRID.value,
             EncryptionAlgorithm.HQC_256_HYBRID.value,
+            EncryptionAlgorithm.MAYO_1_HYBRID.value,
+            EncryptionAlgorithm.MAYO_3_HYBRID.value,
+            EncryptionAlgorithm.MAYO_5_HYBRID.value,
+            EncryptionAlgorithm.CROSS_128_HYBRID.value,
+            EncryptionAlgorithm.CROSS_192_HYBRID.value,
+            EncryptionAlgorithm.CROSS_256_HYBRID.value,
         ]:
             # Map algorithm to PQCAlgorithm
             pqc_algo_map = {
@@ -3268,52 +3381,93 @@ def decrypt_file(
                 EncryptionAlgorithm.HQC_128_HYBRID.value: "HQC-128",
                 EncryptionAlgorithm.HQC_192_HYBRID.value: "HQC-192",
                 EncryptionAlgorithm.HQC_256_HYBRID.value: "HQC-256",
+                # MAYO mappings
+                EncryptionAlgorithm.MAYO_1_HYBRID.value: "MAYO-1",
+                EncryptionAlgorithm.MAYO_3_HYBRID.value: "MAYO-3",
+                EncryptionAlgorithm.MAYO_5_HYBRID.value: "MAYO-5",
+                # CROSS mappings
+                EncryptionAlgorithm.CROSS_128_HYBRID.value: "CROSS-128",
+                EncryptionAlgorithm.CROSS_192_HYBRID.value: "CROSS-192",
+                EncryptionAlgorithm.CROSS_256_HYBRID.value: "CROSS-256",
             }
 
             # Check if we have the private key
             if not pqc_private_key:
                 raise ValueError("Post-quantum private key is required for decryption")
 
-            # Initialize PQC cipher and decrypt
-            # Use encryption_data parameter passed to the parent function
-            cipher = PQCipher(
-                pqc_algo_map[algorithm],
-                quiet=quiet,
-                encryption_data=encryption_data,
-                verbose=verbose,
-                debug=debug,
-            )
-            try:
-                # Pass the full file contents for recovery if needed
-                # This allows the PQCipher to try to recover the original content
-                # if the standard decryption approach fails
-                if "input_file" in locals() and input_file and os.path.exists(input_file):
-                    # Read the original encrypted file for content recovery
-                    with open(input_file, "rb") as f:
-                        original_file_contents = f.read()
-                        # Now decrypt with both the encrypted data and original file
-                        pqc_result = cipher.decrypt(
-                            encrypted_data,
-                            pqc_private_key,
-                            file_contents=original_file_contents,
-                        )
+            # Check if this is a signature algorithm (MAYO/CROSS) which needs special handling
+            is_signature_algorithm = algorithm in [
+                EncryptionAlgorithm.MAYO_1_HYBRID.value,
+                EncryptionAlgorithm.MAYO_3_HYBRID.value,
+                EncryptionAlgorithm.MAYO_5_HYBRID.value,
+                EncryptionAlgorithm.CROSS_128_HYBRID.value,
+                EncryptionAlgorithm.CROSS_192_HYBRID.value,
+                EncryptionAlgorithm.CROSS_256_HYBRID.value,
+            ]
+            
+            if is_signature_algorithm:
+                # For signature algorithms, derive the same key from private key
+                from cryptography.hazmat.primitives import hashes
+                from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+                
+                # Derive 32-byte key for AES-GCM from signature private key
+                salt = b"OpenSSL-Encrypt-PQ-Signature-Hybrid"
+                info = f"encryption-key-{algorithm}".encode()
+                
+                derived_key = HKDF(
+                    algorithm=hashes.SHA256(),
+                    length=32,  # AES-256 key size
+                    salt=salt,
+                    info=info,
+                ).derive(pqc_private_key)
+                
+                # Decrypt using AES-GCM with derived key
+                nonce = encrypted_data[:12]  # First 12 bytes are nonce
+                ciphertext = encrypted_data[12:]  # Rest is ciphertext
+                aes_cipher = AESGCM(derived_key)
+                return aes_cipher.decrypt(nonce, ciphertext, None)
+            else:
+                # Original KEM algorithm handling
+                # Initialize PQC cipher and decrypt
+                # Use encryption_data parameter passed to the parent function
+                cipher = PQCipher(
+                    pqc_algo_map[algorithm],
+                    quiet=quiet,
+                    encryption_data=encryption_data,
+                    verbose=verbose,
+                    debug=debug,
+                )
+                try:
+                    # Pass the full file contents for recovery if needed
+                    # This allows the PQCipher to try to recover the original content
+                    # if the standard decryption approach fails
+                    if "input_file" in locals() and input_file and os.path.exists(input_file):
+                        # Read the original encrypted file for content recovery
+                        with open(input_file, "rb") as f:
+                            original_file_contents = f.read()
+                            # Now decrypt with both the encrypted data and original file
+                            pqc_result = cipher.decrypt(
+                                encrypted_data,
+                                pqc_private_key,
+                                file_contents=original_file_contents,
+                            )
+                            # NOTE: Removed special case handling for test environment to ensure proper password validation
+                            return pqc_result
+                    else:
+                        # Standard approach without file contents
+                        pqc_result = cipher.decrypt(encrypted_data, pqc_private_key)
                         # NOTE: Removed special case handling for test environment to ensure proper password validation
                         return pqc_result
-                else:
-                    # Standard approach without file contents
-                    pqc_result = cipher.decrypt(encrypted_data, pqc_private_key)
-                    # NOTE: Removed special case handling for test environment to ensure proper password validation
-                    return pqc_result
-            except Exception as e:
-                # Use generic error message to prevent oracle attacks
-                if os.environ.get("PYTEST_CURRENT_TEST") is not None:
-                    raise e
-                # Try to show more information if available
-                if hasattr(e, "args") and len(e.args) > 0:
-                    err_msg = str(e.args[0])
-                    if "integrity" in err_msg.lower():
-                        print(f"PQC integrity verification failed: {err_msg}")
-                raise ValueError("Decryption failed: post-quantum decryption error")
+                except Exception as e:
+                    # Use generic error message to prevent oracle attacks
+                    if os.environ.get("PYTEST_CURRENT_TEST") is not None:
+                        raise e
+                    # Try to show more information if available
+                    if hasattr(e, "args") and len(e.args) > 0:
+                        err_msg = str(e.args[0])
+                        if "integrity" in err_msg.lower():
+                            print(f"PQC integrity verification failed: {err_msg}")
+                    raise ValueError("Decryption failed: post-quantum decryption error")
         else:
             # Get possible nonce sizes for this algorithm
             possible_nonce_sizes = get_nonce_size(algorithm, include_legacy=True)

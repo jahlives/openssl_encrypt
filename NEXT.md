@@ -1,558 +1,282 @@
-# NEXT: MAYO and CROSS Post-Quantum Signature Implementation Plan
+# NEXT: MAYO and CROSS Post-Quantum Hybrid Encryption Implementation Plan
 
 ## Executive Summary
 
-This document outlines the implementation of MAYO and CROSS post-quantum signature algorithms in the OpenSSL Encrypt project. Both algorithms are NIST Round 2 candidates offering complementary approaches: MAYO (multivariate-based with compact keys) and CROSS (code-based with small keys but large signatures).
+This document outlines the implementation of MAYO and CROSS post-quantum algorithms as **hybrid encryption methods** in the OpenSSL Encrypt project. Both algorithms are NIST Round 2 candidates that will be integrated using the same hybrid encryption pattern as ML-KEM and HQC.
 
-**UPDATE**: Based on analysis of implementation complexity, this plan has been revised to prioritize **liboqs integration** for production-ready implementations while maintaining our demonstration implementations as fallbacks.
+**UPDATE**: Based on project focus clarification, MAYO and CROSS will be implemented as **encryption algorithms** (not signature algorithms) following the established hybrid encryption workflow: password → KDF → master key (A), generate private key (B), encrypt file with B, encrypt B with A, store encrypted B in metadata.
 
 ## 1. Architecture Overview
 
 ### Current State Analysis ✅
-- **PQC Module Structure**: Existing `pqc.py`, `pqc_adapter.py`, and `pqc_liboqs.py` modules provide KEM support
+- **PQC Module Structure**: Existing `pqc.py`, `pqc_adapter.py`, and `pqc_liboqs.py` modules provide KEM/hybrid encryption support
 - **Integration Points**: `PQCAlgorithm` enum, `ALGORITHM_TYPE_MAP`, and `LIBOQS_ALGORITHM_MAPPING` identified
-- **Extension Points**: Signature algorithm support framework already partially defined but not implemented
+- **Extension Points**: Signature algorithms already registered but need hybrid encryption implementation
+- **Hybrid Pattern**: ML-KEM and HQC provide the exact template for MAYO and CROSS implementation
 
-### Target Architecture (Revised for liboqs)
+### Target Architecture (Hybrid Encryption Focus)
 ```
 openssl_encrypt/
 ├── modules/
-│   ├── pqc.py                    # Core PQC interface (KEM + Signatures)
-│   ├── pqc_adapter.py            # Unified adapter layer
-│   ├── pqc_liboqs.py            # ✅ Enhanced LibOQS integration (signatures)
-│   ├── pqc_signatures.py        # ✅ Signature interface abstractions
-│   ├── mayo_signature.py        # ✅ Demo implementation + liboqs wrapper
-│   ├── cross_signature.py       # NEW: CROSS liboqs wrapper + demo fallback
-│   └── signature_factory.py     # NEW: Factory for signature instances
+│   ├── pqc.py                    # Core PQC interface (KEM + Hybrid Encryption)
+│   ├── pqc_adapter.py            # ✅ Unified adapter layer (add MAYO/CROSS mappings)
+│   ├── pqc_liboqs.py            # ✅ Enhanced LibOQS integration (add MAYO/CROSS)
+│   ├── crypt_core.py            # ✅ Main encryption workflow (add MAYO/CROSS enum values)
+│   └── pqc_keystore.py          # ✅ Secure key storage (already supports hybrid encryption)
 ```
 
 ## 2. Algorithm Specifications
 
-### MAYO (Oil and Vinegar Signature Scheme) ✅
+### MAYO (Oil and Vinegar) - Hybrid Encryption ✅
 - **Mathematical Foundation**: Multivariate quadratic equations (Oil-and-Vinegar maps)
 - **Security Levels**: 
-  - MAYO-1: ~128-bit security, 1,168-byte public key, 321-byte signature
-  - MAYO-3: ~192-bit security (parameters TBD)
-  - MAYO-5: ~256-bit security (parameters TBD)
-- **Performance**: Compact public keys, moderate signature sizes
+  - MAYO-1: ~128-bit security, 32-byte private key (compatible with AES-256)
+  - MAYO-3: ~192-bit security, 48-byte private key (requires key derivation)
+  - MAYO-5: ~256-bit security, 64-byte private key (compatible with AES-SIV)
+- **Encryption Usage**: Private keys used as encryption secrets via key derivation
 - **NIST Status**: Round 2 candidate (October 2024)
 
-### CROSS (Codes and Restricted Objects Signature Scheme) ✅
+### CROSS (Codes and Restricted Objects) - Hybrid Encryption ✅
 - **Mathematical Foundation**: Syndrome decoding with restricted objects
 - **Security Levels**:
-  - CROSS-128: 61-byte public key, 16-byte private key, ~37KB signature
-  - CROSS-192: 91-byte public key, 24-byte private key, ~37KB signature  
-  - CROSS-256: 121-byte public key, 32-byte private key, ~51KB signature
-- **Performance**: Very small keys, very large signatures
+  - CROSS-128: 128-bit security, 16-byte private key (requires key derivation)
+  - CROSS-192: 192-bit security, 24-byte private key (requires key derivation)  
+  - CROSS-256: 256-bit security, 32-byte private key (compatible with AES-256)
+- **Encryption Usage**: Private keys used as encryption secrets via key derivation
 - **NIST Status**: Round 2 candidate (October 2024)
 
-## 3. REVISED Implementation Strategy: liboqs-First Approach
+## 3. REVISED Implementation Strategy: Hybrid Encryption Approach
 
 ### Overview
-Based on analysis of cryptographic complexity, we're adopting a **production-first approach** using liboqs for actual signature operations while maintaining our demonstration implementations as educational tools and fallbacks.
+Based on project focus clarification, we're implementing MAYO and CROSS as **hybrid encryption algorithms** following the exact same pattern as ML-KEM and HQC. This approach uses signature algorithm private keys as encryption secrets through secure key derivation, maintaining the established encryption-focused workflow.
 
-### Phase 1: Enhanced liboqs Integration ✅ COMPLETED
+### Phase 1: Foundation Work ✅ COMPLETED
 
-#### 1.1 Foundation Work (COMPLETED)
-- ✅ **PQSignature base class** - Standardized interface for all signature schemes
-- ✅ **PQCAlgorithm enum extensions** - Added MAYO and CROSS algorithm constants  
-- ✅ **ALGORITHM_TYPE_MAP updates** - Proper algorithm type classification
-- ✅ **MAYO demonstration implementation** - Educational implementation showing the interface
+#### 1.1 Algorithm Registration (COMPLETED)
+- ✅ **PQCAlgorithm enum extensions** - Added MAYO and CROSS algorithm constants in `pqc.py`
+- ✅ **ALGORITHM_TYPE_MAP updates** - Proper algorithm type classification in `pqc_adapter.py`
+- ✅ **LIBOQS_ALGORITHM_MAPPING** - Algorithm name mappings in `pqc_liboqs.py`
+- ✅ **CLI signature support** - Basic signature operations implemented
 
-### Phase 2: Production liboqs Signature Support
+### Phase 2: Hybrid Encryption Implementation
 
-#### 2.1 LibOQS Signature Integration
+#### 2.1 Hybrid Encryption Pattern (Following ML-KEM/HQC)
 ```python
-# Enhanced pqc_liboqs.py
-class LibOQSSignature(PQSignature):
-    """Production-ready signature implementation using liboqs"""
-    
-    def __init__(self, algorithm: str):
-        self.algorithm = algorithm
-        try:
-            import oqs
-            self.oqs_sig = oqs.Signature(algorithm)
-            self.liboqs_available = True
-        except (ImportError, RuntimeError) as e:
-            self.liboqs_available = False
-            self.fallback_reason = str(e)
-    
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
-        if self.liboqs_available:
-            public_key = self.oqs_sig.generate_keypair()
-            private_key = self.oqs_sig.export_secret_key()
-            return public_key, private_key
-        else:
-            raise RuntimeError(f"liboqs not available: {self.fallback_reason}")
+# Pattern: Password → KDF → Master Key (A)
+# Generate PQ Private Key (B) → Use B as encryption secret
+# Encrypt file with derived key from B
+# Encrypt B with A → Store in metadata as C
+
+# Add to crypt_core.py EncryptionAlgorithm enum:
+MAYO_1_HYBRID = "mayo-1-hybrid"
+MAYO_3_HYBRID = "mayo-3-hybrid" 
+MAYO_5_HYBRID = "mayo-5-hybrid"
+CROSS_128_HYBRID = "cross-128-hybrid"
+CROSS_192_HYBRID = "cross-192-hybrid"
+CROSS_256_HYBRID = "cross-256-hybrid"
 ```
 
-#### 2.2 Algorithm Availability Detection
+#### 2.2 Algorithm Mapping Integration
 ```python
-def detect_available_signature_algorithms() -> Dict[str, bool]:
-    """Detect which signature algorithms are available in liboqs"""
-    available = {}
-    
-    mayo_candidates = [
-        "MAYO-1", "MAYO-3", "MAYO-5",
-        "mayo1", "mayo3", "mayo5",  # Alternative naming
-    ]
-    
-    cross_candidates = [
-        "CROSS-128", "CROSS-192", "CROSS-256",
-        "cross_rsdp_128_balanced", "cross_rsdp_192_balanced", "cross_rsdp_256_balanced"
-    ]
-    
-    try:
-        import oqs
-        enabled_sigs = oqs.get_enabled_sig_mechanisms()
-        
-        for candidate in mayo_candidates + cross_candidates:
-            available[candidate] = candidate in enabled_sigs
-            
-    except ImportError:
-        # liboqs not available
-        for candidate in mayo_candidates + cross_candidates:
-            available[candidate] = False
-    
-    return available
+# Add to pqc_adapter.py HYBRID_ALGORITHM_MAP:
+"mayo-1-hybrid": "MAYO-1",
+"mayo-3-hybrid": "MAYO-3", 
+"mayo-5-hybrid": "MAYO-5",
+"cross-128-hybrid": "CROSS-128",
+"cross-192-hybrid": "CROSS-192",
+"cross-256-hybrid": "CROSS-256",
+
+# Add to pqc_adapter.py SECURITY_LEVEL_MAP:
+"MAYO-1": 1,      # Level 1 (128-bit security)
+"MAYO-3": 3,      # Level 3 (192-bit security)
+"MAYO-5": 5,      # Level 5 (256-bit security)
+"CROSS-128": 1,   # Level 1 (128-bit security)
+"CROSS-192": 3,   # Level 3 (192-bit security)
+"CROSS-256": 5,   # Level 5 (256-bit security)
 ```
 
-### Phase 3: Adaptive Signature Factory
-
-#### 3.1 Signature Factory Implementation
+#### 2.3 Decryption Integration
 ```python
-# NEW: signature_factory.py
-class SignatureFactory:
-    """Factory for creating signature instances with fallback support"""
-    
-    @staticmethod
-    def create_signature(algorithm: str) -> PQSignature:
-        """Create signature instance with automatic fallback"""
-        
-        # 1. Try liboqs first (production implementation)
-        if _is_liboqs_available(algorithm):
-            return LibOQSSignature(algorithm)
-        
-        # 2. Fall back to demonstration implementations
-        if algorithm.startswith("MAYO"):
-            level = _extract_mayo_level(algorithm)
-            return MAYOSignature(level)  # Our demo implementation
-        elif algorithm.startswith("CROSS"):
-            level = _extract_cross_level(algorithm)
-            return CROSSSignature(level)  # Future demo implementation
-        
-        # 3. No implementation available
-        raise NotImplementedError(f"No implementation available for {algorithm}")
-    
-    @staticmethod
-    def list_available_algorithms() -> Dict[str, str]:
-        """List available algorithms and their implementation source"""
-        algorithms = {}
-        
-        # Check liboqs availability
-        liboqs_algos = detect_available_signature_algorithms()
-        for algo, available in liboqs_algos.items():
-            if available:
-                algorithms[algo] = "liboqs (production)"
-        
-        # Add demo implementations
-        algorithms.update({
-            "MAYO-1": "demo (educational)",
-            "MAYO-3": "demo (educational)",
-            "MAYO-5": "demo (educational)",
-        })
-        
-        return algorithms
+# Add to crypt_core.py decrypt_file function:
+# PQC algorithm list (around line 3249)
+EncryptionAlgorithm.MAYO_1_HYBRID.value,
+EncryptionAlgorithm.MAYO_3_HYBRID.value,
+EncryptionAlgorithm.MAYO_5_HYBRID.value,
+EncryptionAlgorithm.CROSS_128_HYBRID.value,
+EncryptionAlgorithm.CROSS_192_HYBRID.value,
+EncryptionAlgorithm.CROSS_256_HYBRID.value,
+
+# PQC algorithm mapping (around line 3267)
+EncryptionAlgorithm.MAYO_1_HYBRID.value: "MAYO-1",
+EncryptionAlgorithm.MAYO_3_HYBRID.value: "MAYO-3", 
+EncryptionAlgorithm.MAYO_5_HYBRID.value: "MAYO-5",
+EncryptionAlgorithm.CROSS_128_HYBRID.value: "CROSS-128",
+EncryptionAlgorithm.CROSS_192_HYBRID.value: "CROSS-192",
+EncryptionAlgorithm.CROSS_256_HYBRID.value: "CROSS-256",
 ```
 
-### Phase 4: Enhanced CLI Integration
+## 4. Hybrid Encryption Workflow (Identical to ML-KEM/HQC)
 
-#### 4.1 Signature Commands with Auto-Detection
-```bash
-# Enhanced CLI with automatic implementation selection
-python -m openssl_encrypt.crypt sign \
-  --algorithm mayo-1 \
-  --input document.pdf \
-  --output document.pdf.sig \
-  --private-key private.key
-  # Automatically uses liboqs if available, falls back to demo
+### Encryption Process:
+1. **Password Processing**: User password → Scrypt/Argon2/PBKDF2 → Master Key (A)
+2. **Key Generation**: Generate MAYO/CROSS keypair via liboqs → Private Key (B)
+3. **Key Derivation**: Derive encryption key from B using HKDF → Symmetric Key (D)
+4. **File Encryption**: Encrypt file content using D with AES-GCM/ChaCha20
+5. **Key Protection**: Encrypt B with A using AES-GCM → Encrypted Key (C)
+6. **Metadata Storage**: Store C, public key, and salt in file metadata
 
-# List available implementations
-python -m openssl_encrypt.crypt list-signature-algorithms
-# Output:
-# MAYO-1: liboqs (production)
-# MAYO-3: demo (educational) 
-# CROSS-128: liboqs (production)
-```
+### Decryption Process:
+1. **Password Processing**: User password + stored salt → Recreate Master Key (A)
+2. **Key Recovery**: Decrypt C with A → Recover Private Key (B)
+3. **Key Derivation**: Derive encryption key from B using HKDF → Symmetric Key (D)
+4. **File Decryption**: Decrypt file content using D
 
-#### 4.2 Implementation Preference Settings
+### Key Sizes and Compatibility:
 ```python
-# Add to crypt_settings.py
-class SignatureSettings:
-    prefer_liboqs: bool = True
-    allow_demo_implementations: bool = True
-    require_production_crypto: bool = False  # Strict mode
+# Key derivation ensures compatibility with all encryption algorithms
+def derive_encryption_key(mayo_cross_private_key: bytes, algorithm: str) -> bytes:
+    """
+    Derive symmetric encryption key from MAYO/CROSS private key
     
-def get_signature_instance(algorithm: str, settings: SignatureSettings) -> PQSignature:
-    """Get signature instance respecting user preferences"""
-    if settings.require_production_crypto:
-        # Only allow liboqs
-        return LibOQSSignature(algorithm)
-    elif settings.prefer_liboqs:
-        # Try liboqs first, fall back to demo
-        return SignatureFactory.create_signature(algorithm)
-    else:
-        # Demo implementations only
-        return _create_demo_signature(algorithm)
+    Compatible with all implemented algorithms:
+    - 32-byte keys: AES-GCM, ChaCha20-Poly1305, Fernet, etc.
+    - 64-byte keys: AES-SIV
+    """
+    salt = b"OpenSSL-Encrypt-PQ-Hybrid-Encryption"
+    info = f"encryption-key-{algorithm}".encode()
+    
+    # Determine target key size based on algorithm
+    target_size = 64 if algorithm == "aes-siv" else 32
+    
+    return HKDF(
+        algorithm=hashes.SHA256(),
+        length=target_size,
+        salt=salt,
+        info=info,
+    ).derive(mayo_cross_private_key)
 ```
 
-### Phase 5: LibOQS Algorithm Detection and Compatibility
+## 5. Implementation Timeline
 
-#### 5.1 Runtime Algorithm Discovery
-```python
-# Enhanced detection for current liboqs versions
-def check_mayo_cross_availability() -> Dict[str, Dict]:
-    """Check current availability of MAYO and CROSS in liboqs"""
-    try:
-        import oqs
-        available_sigs = oqs.get_enabled_sig_mechanisms()
-        
-        # Known algorithm names in different liboqs versions
-        mayo_variants = {
-            "MAYO-1": ["MAYO-1", "mayo1", "MAYO_1"],
-            "MAYO-3": ["MAYO-3", "mayo3", "MAYO_3"], 
-            "MAYO-5": ["MAYO-5", "mayo5", "MAYO_5"],
-        }
-        
-        cross_variants = {
-            "CROSS-128": ["CROSS-128", "cross128", "CROSS_rsdp_128_balanced"],
-            "CROSS-192": ["CROSS-192", "cross192", "CROSS_rsdp_192_balanced"],
-            "CROSS-256": ["CROSS-256", "cross256", "CROSS_rsdp_256_balanced"],
-        }
-        
-        results = {}
-        for standard_name, variants in {**mayo_variants, **cross_variants}.items():
-            for variant in variants:
-                if variant in available_sigs:
-                    results[standard_name] = {
-                        "available": True,
-                        "liboqs_name": variant,
-                        "implementation": "liboqs-production"
-                    }
-                    break
-            else:
-                results[standard_name] = {
-                    "available": False,
-                    "implementation": "demo-fallback"
-                }
-                
-        return results
-        
-    except ImportError:
-        # Return all as unavailable if liboqs not installed
-        return {algo: {"available": False, "implementation": "demo-fallback"} 
-                for algo in ["MAYO-1", "MAYO-3", "MAYO-5", "CROSS-128", "CROSS-192", "CROSS-256"]}
-```
+### Phase 1: Foundation ✅ COMPLETED
+- ✅ **Algorithm registration** - All constants and mappings in place
+- ✅ **LibOQS integration** - MAYO and CROSS available via liboqs
+- ✅ **CLI signature support** - Basic operations implemented
 
-### Phase 6: Production LibOQS Integration
+### Phase 2: Hybrid Encryption Integration (Current Priority)
+- [ ] **EncryptionAlgorithm enum** - Add 6 new hybrid algorithm constants
+- [ ] **Algorithm mappings** - Add hybrid mappings to `pqc_adapter.py` 
+- [ ] **Decryption integration** - Add algorithms to `crypt_core.py` decrypt function
+- [ ] **CLI integration** - Enable hybrid encryption via command line
 
-#### 6.1 Enhanced LibOQS Signature Wrapper
-```python
-# Enhanced pqc_liboqs.py additions
-class ProductionSignature(PQSignature):
-    """Production signature implementation using liboqs with our interface"""
-    
-    def __init__(self, algorithm: str):
-        self.algorithm = algorithm
-        self.availability = check_mayo_cross_availability()
-        
-        if not self.availability[algorithm]["available"]:
-            raise RuntimeError(f"{algorithm} not available in current liboqs installation")
-            
-        self.liboqs_name = self.availability[algorithm]["liboqs_name"]
-        
-        import oqs
-        self.oqs_signature = oqs.Signature(self.liboqs_name)
-    
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
-        """Generate keypair using liboqs production implementation"""
-        public_key = self.oqs_signature.generate_keypair()
-        private_key = self.oqs_signature.export_secret_key()
-        return public_key, private_key
-    
-    def sign(self, message: bytes, private_key: bytes) -> bytes:
-        """Sign using liboqs production implementation"""
-        # Import private key into oqs
-        temp_sig = oqs.Signature(self.liboqs_name)
-        temp_sig.import_secret_key(private_key)
-        return temp_sig.sign(message)
-    
-    def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
-        """Verify using liboqs production implementation"""
-        temp_sig = oqs.Signature(self.liboqs_name)
-        return temp_sig.verify(message, signature, public_key)
-```
+### Phase 3: Testing and Validation 
+- [ ] **End-to-end testing** - Test encryption/decryption workflow
+- [ ] **Key derivation testing** - Validate key compatibility across algorithms
+- [ ] **Performance benchmarking** - Compare with ML-KEM/HQC performance
+- [ ] **Integration testing** - Test with existing encryption algorithms
 
-### Phase 7: Unified Testing Strategy
+### Phase 4: Documentation and Finalization
+- [ ] **User documentation** - Update guides for new algorithms
+- [ ] **CLI help updates** - Add MAYO/CROSS to help text
+- [ ] **Security documentation** - Document key derivation security properties
+- [ ] **Performance documentation** - Benchmark results and recommendations
 
-#### 7.1 Cross-Implementation Testing
-```python
-# tests/test_signature_implementations.py
-class TestSignatureImplementations:
-    def test_liboqs_vs_demo_compatibility(self):
-        """Test that demo and liboqs implementations can interoperate where possible"""
-        
-    def test_implementation_selection(self):
-        """Test SignatureFactory correctly selects implementations"""
-        
-    def test_graceful_fallback(self):
-        """Test fallback from liboqs to demo when liboqs unavailable"""
+## 6. Implementation Requirements
 
-# tests/test_production_signatures.py  
-class TestProductionSignatures:
-    @pytest.mark.skipif(not _liboqs_available(), reason="liboqs not available")
-    def test_mayo_production_implementation(self):
-        """Test MAYO using production liboqs implementation"""
-        
-    @pytest.mark.skipif(not _liboqs_available(), reason="liboqs not available") 
-    def test_cross_production_implementation(self):
-        """Test CROSS using production liboqs implementation"""
-```
+### Required File Modifications:
 
-### Phase 8: Enhanced CLI with Implementation Choice
+#### `crypt_core.py` (2 locations)
+1. **EncryptionAlgorithm enum** - Add 6 new algorithm constants
+2. **decrypt_file function** - Add algorithms to PQC detection and mapping
 
-#### 8.1 Enhanced CLI Commands
-```bash
-# Production-ready CLI commands
-python -m openssl_encrypt.crypt sign \
-  --algorithm mayo-1 \
-  --implementation auto \  # auto, liboqs, demo
-  --input document.pdf \
-  --output document.pdf.sig \
-  --private-key private.key
+#### `pqc_adapter.py` (2 locations)  
+1. **HYBRID_ALGORITHM_MAP** - Add 6 new hybrid mappings
+2. **SECURITY_LEVEL_MAP** - Add 6 new security level mappings
 
-# Check available implementations
-python -m openssl_encrypt.crypt list-signature-algorithms
-# Output example:
-# MAYO-1: liboqs (production) ✓
-# MAYO-3: demo (educational) ⚠
-# CROSS-128: liboqs (production) ✓
+#### No other files require modification
+- ✅ `pqc.py` - Already contains algorithm constants
+- ✅ `pqc_liboqs.py` - Already contains liboqs mappings
+- ✅ `pqc_keystore.py` - Already supports hybrid encryption pattern
+- ✅ All other modules work without changes
 
-# Verify implementation compatibility
-python -m openssl_encrypt.crypt check-signature-support
-```
-
-## 4. REVISED Implementation Timeline (liboqs-First)
-
-### Phase 1: Foundation ✅ COMPLETED (Weeks 1-2)
-- ✅ **Signature interfaces designed** - PQSignature base class created
-- ✅ **PQC enums extended** - MAYO and CROSS algorithms added
-- ✅ **Demo MAYO implementation** - Educational implementation complete
-
-### Phase 2: LibOQS Production Integration ✅ COMPLETED (Weeks 3-4)
-- ✅ **LibOQS signature detection** - Runtime algorithm availability checking
-- ✅ **ProductionSignature wrapper** - liboqs integration with our interface
-- ✅ **SignatureFactory implementation** - Automatic fallback system
-- ✅ **Algorithm mapping and compatibility** - Handle different liboqs versions
-
-### Phase 3: Enhanced CLI and Testing (Weeks 5-6)
-- ✅ **CLI commands with implementation choice** - Auto-detection and fallback
-- [ ] **Cross-implementation testing** - Test liboqs vs demo compatibility
-- [ ] **Production test suite** - Tests that require liboqs
-- ✅ **Implementation preference settings** - User control over backend choice
-
-### Phase 4: CROSS Integration ✅ COMPLETED (Weeks 7-8)  
-- ✅ **CROSS liboqs wrapper** - Production CROSS signature support
-- ⚠️ **CROSS demo implementation** - Educational fallback (optional - not needed)
-- ✅ **Large signature handling** - Efficient CROSS signature processing
-- ✅ **Cross-algorithm testing** - MAYO and CROSS together
-
-### Phase 5: Advanced Features (Weeks 9-10)
-- [ ] **Keystore signature support** - Store and manage signature keys
-- [ ] **Hybrid workflows** - Combine encryption + signatures
-- [ ] **Performance optimization** - Benchmark and optimize critical paths
-- [ ] **Documentation and guides** - User documentation and migration guides
-
-### Phase 6: Production Readiness (Weeks 11-12)
-- [ ] **Security hardening** - Review security practices
-- [ ] **Error handling robustness** - Comprehensive error scenarios
-- [ ] **Compatibility testing** - Test with different liboqs versions
-- [ ] **Deployment preparation** - Package and distribution readiness
-
-## 5. REVISED Risk Assessment and Mitigation (liboqs-First)
-
-### Technical Risks
-- **LibOQS Algorithm Availability**: MAYO/CROSS may not be in current liboqs releases
-  - *Mitigation*: **Graceful fallback to demo implementations**, runtime detection
-- **LibOQS Version Compatibility**: Different liboqs versions may have different algorithm names
-  - *Mitigation*: **Multi-variant algorithm detection**, compatibility mapping
-- **Performance Impact**: Large CROSS signatures (37-51KB) may impact performance
-  - *Mitigation*: **Streaming signature handling**, efficient memory management
-
-### Security Risks  
-- **Demo Implementation Security**: Fallback implementations are not cryptographically secure
-  - *Mitigation*: **Clear warnings**, force production mode option, user education
-- **Mixed Implementation Risk**: Users might accidentally use demo implementations
-  - *Mitigation*: **Clear labeling**, require explicit approval for demo usage
-- **LibOQS Integration Security**: Wrapper code could introduce vulnerabilities
-  - *Mitigation*: **Minimal wrapper design**, defer to liboqs for all crypto operations
-
-### Dependency Risks
-- **LibOQS Installation**: Users may not have liboqs installed
-  - *Mitigation*: **Optional dependency**, clear installation instructions, CI testing
-- **NIST Standardization Changes**: Algorithms may change during standardization  
-  - *Mitigation*: **liboqs upstream tracking**, modular design for updates
-- **Breaking Changes**: New signature support shouldn't break existing functionality
-  - *Mitigation*: **Comprehensive regression testing**, separate signature modules
-
-## 6. REVISED Success Criteria (liboqs-First)
+## 7. Success Criteria
 
 ### Functional Requirements
-- ✅ **Signature interface foundation** - Unified PQSignature interface
-- ✅ **Production signature support** - liboqs-based MAYO and CROSS when available
-- ✅ **Graceful fallback system** - Demo implementations when liboqs unavailable
-- ✅ **Runtime algorithm detection** - Automatic discovery of available algorithms
-- [ ] **CLI signature operations** - Sign, verify, and key generation commands
-- ✅ **Implementation transparency** - Clear indication of which backend is used
+- [ ] **Encryption compatibility** - All 6 algorithms encrypt/decrypt successfully
+- [ ] **Key derivation** - All key sizes work with all encryption algorithms
+- [ ] **Metadata integration** - Proper storage and retrieval of encrypted keys
+- [ ] **CLI integration** - Command-line access to all hybrid algorithms
 
-### Performance Requirements (Production Mode)
-- **MAYO signing**: < 10ms for all levels (liboqs optimized)
-- **CROSS signing**: < 100ms for all levels (despite large signatures)  
-- **Verification**: < 50ms for both algorithms (liboqs optimized)
-- **Memory usage**: Efficient handling of large CROSS signatures (37-51KB)
+### Performance Requirements
+- **Key generation**: < 100ms for all MAYO/CROSS variants
+- **Encryption**: Comparable to ML-KEM/HQC hybrid performance
+- **Decryption**: < 50ms overhead for key derivation
+- **Memory usage**: Efficient handling of larger MAYO keys
 
-### Security Requirements
-- **Production cryptography**: liboqs implementations for actual security
-- **Clear implementation labeling**: Users know when using demo vs production
-- **Secure fallback handling**: Demo implementations clearly marked as insecure
-- **Minimal attack surface**: Thin wrapper around proven liboqs implementations
+### Security Requirements  
+- **Key separation**: Different encryption algorithms get different derived keys
+- **Forward security**: Compromise of one key doesn't affect others
+- **Post-quantum security**: Maintain PQ properties through key derivation
+- **Metadata security**: Encrypted private keys properly protected
 
-### Integration Requirements
-- **Optional dependency**: Works without liboqs (with warnings)
-- **Backward compatibility**: Existing encryption workflows unchanged
-- **Modular design**: Signature support cleanly separated from KEM operations
-- **User choice**: Explicit control over implementation preference
+## 8. Benefits of Hybrid Encryption Approach
 
-## 7. Benefits of the LibOQS-First Approach
+### Security Benefits
+- **Unified key management** - Single MAYO/CROSS key enables both signing and encryption
+- **Post-quantum encryption** - Quantum-resistant encryption using PQ key material
+- **Key derivation security** - Cryptographically independent keys per algorithm
+- **Future-proof** - Easy addition of new encryption algorithms
 
-### Why This Approach is Superior
+### Operational Benefits
+- **Consistent interface** - Same workflow as existing ML-KEM/HQC algorithms
+- **Reduced complexity** - No new metadata formats or storage mechanisms
+- **Backward compatibility** - Existing encryption workflows unchanged
+- **User familiarity** - Same command-line interface patterns
 
-#### **Production-Ready Security**
-- ✅ **Battle-tested implementations** - liboqs has undergone extensive review and testing
-- ✅ **Professional cryptographic development** - Implemented by cryptography experts
-- ✅ **Regular security updates** - Maintained by Open Quantum Safe consortium
-- ✅ **NIST compliance** - Implementations track official NIST specifications
+### Technical Benefits
+- **Proven pattern** - Leverages tested ML-KEM/HQC implementation
+- **Minimal code changes** - Only 4 locations need modification
+- **Automatic compatibility** - Works with all 18 existing encryption algorithms
+- **Extensible design** - Easy to add more signature-based hybrid algorithms
 
-#### **Reduced Development Risk**
-- ✅ **Avoid cryptographic implementation errors** - Extremely high risk in crypto development
-- ✅ **Faster time to production** - Leverage existing proven implementations
-- ✅ **Lower maintenance burden** - Upstream handles algorithm updates and security fixes
-- ✅ **Better test coverage** - liboqs has extensive test suites and fuzzing
+## 9. Next Steps (Phase 2 Implementation)
 
-#### **Future-Proof Architecture**
-- ✅ **Algorithm evolution tracking** - liboqs tracks NIST standardization process
-- ✅ **Easy algorithm additions** - New signature algorithms automatically available
-- ✅ **Performance optimizations** - Benefit from upstream optimizations
-- ✅ **Cross-platform support** - liboqs handles platform-specific optimizations
+### Immediate Tasks:
+1. **Add EncryptionAlgorithm constants** - 6 new enum values in `crypt_core.py`
+2. **Add hybrid mappings** - 6 entries in `pqc_adapter.py` HYBRID_ALGORITHM_MAP
+3. **Add security mappings** - 6 entries in `pqc_adapter.py` SECURITY_LEVEL_MAP  
+4. **Add decryption support** - 6 entries in `crypt_core.py` decrypt function
 
-#### **User Benefits**
-- ✅ **Confidence in security** - Users can trust production implementations
-- ✅ **Performance optimization** - liboqs implementations are highly optimized
-- ✅ **Compatibility** - Interoperability with other liboqs-based tools
-- ✅ **Educational value** - Demo implementations for learning and experimentation
+### Testing Tasks:
+1. **Basic functionality** - Test encrypt/decrypt for all 6 algorithms
+2. **Key compatibility** - Test with AES-GCM, ChaCha20, AES-SIV
+3. **CLI integration** - Test command-line usage
+4. **Performance validation** - Benchmark against ML-KEM/HQC
 
-### Migration Path from Demo to Production
-
-```python
-# Phase 1: Demo implementation (COMPLETED)
-mayo_demo = MAYOSignature(1)  # Educational/testing only
-
-# Phase 2: Production implementation (PLANNED)
-mayo_prod = ProductionSignature("MAYO-1")  # liboqs-based, cryptographically secure
-
-# Phase 3: Automatic selection (PLANNED) 
-mayo_auto = SignatureFactory.create_signature("MAYO-1")  # Automatically selects best available
-```
-
-## 8. Immediate Next Steps
-
-### Phase 2 ✅ COMPLETED (Weeks 3-4)
-1. ✅ **Foundation completed** - PQSignature interface and demo MAYO ready
-2. ✅ **LibOQS availability research** - Check current MAYO/CROSS support in liboqs
-3. ✅ **ProductionSignature wrapper design** - Create liboqs integration layer
-4. ✅ **SignatureFactory implementation** - Build automatic fallback system
-5. ✅ **Runtime algorithm detection** - Implement availability checking
-
-### Technical Prerequisites ✅ COMPLETED
-- ✅ **LibOQS dependency investigation** - Check which versions support MAYO/CROSS
-- ✅ **Development environment setup** - Install and test liboqs with signature support
-- ✅ **CI/CD pipeline updates** - Add liboqs testing to build process
-- ✅ **Documentation planning** - Prepare user guides for new features
-
-### Validation Steps ✅ COMPLETED
-- ✅ **Verify liboqs MAYO support** - Confirm current availability
-- ✅ **Test basic liboqs signature operations** - Validate approach feasibility  
-- ✅ **Performance baseline establishment** - Measure current capabilities
-- ✅ **Compatibility matrix creation** - Document liboqs version requirements
-
-### Phase 3 Progress (Enhanced CLI and Testing)
-- ✅ **CLI signature commands** - Implement sign, verify, list-algorithms commands
-- [ ] **Advanced testing framework** - Cross-implementation compatibility tests  
-- [ ] **Performance benchmarking** - Comprehensive algorithm performance analysis
-- [ ] **User documentation** - Create guides for signature operations
-
-### Phase 3A: CLI Commands ✅ COMPLETED
-Comprehensive CLI interface for post-quantum signatures:
-- **4 new CLI actions**: list-signature-algorithms, generate-signature-keys, sign, verify
-- **Smart implementation selection**: auto/production/demo with graceful fallback
-- **Complete argument set**: algorithm selection, key management, signature handling
-- **User-friendly interface**: clear messages, help system, secure file permissions
+### Expected Timeline: 1-2 weeks
+- **Week 1**: Implementation of 4 required code changes
+- **Week 2**: Testing, validation, and documentation updates
 
 ---
 
-**Document Status**: Phase 3A completed - CLI signature commands implemented  
+**Document Status**: Phase 1 completed - Ready for Phase 2 hybrid encryption implementation  
 **Last Updated**: 2025-06-19  
-**Next Review**: Ready for Phase 3B (Advanced Testing Framework)
+**Next Review**: After Phase 2 implementation completion
 
-## Phase 2 Achievement Summary ✅
+## Phase 1 Achievement Summary ✅
 
-This phase successfully delivered **production-ready MAYO and CROSS signature support** for the OpenSSL Encrypt project:
+Algorithm registration and CLI signature support successfully completed:
 
 ### Key Deliverables Completed:
-- **🏗️ Production Architecture**: liboqs-based signature implementations with automatic fallback
-- **🔧 Factory Pattern**: SignatureFactory for seamless implementation selection  
-- **🔍 Runtime Detection**: Comprehensive algorithm discovery and compatibility mapping
-- **🧪 Test Integration**: 11 signature tests integrated into main test suite
-- **📚 Educational Value**: Demo implementations maintain learning opportunities
+- **🔧 Algorithm Constants**: MAYO and CROSS added to `pqc.py` PQCAlgorithm enum
+- **🗺️ Type Mappings**: Algorithm classification added to `pqc_adapter.py` ALGORITHM_TYPE_MAP
+- **🔗 LibOQS Integration**: Algorithm name mappings added to `pqc_liboqs.py` LIBOQS_ALGORITHM_MAPPING
+- **🖥️ CLI Support**: Full command-line signature operations (sign, verify, generate-keys, list-algorithms)
 
 ### Production Capabilities Achieved:
-- **MAYO-1, MAYO-2, MAYO-3, MAYO-5**: Multivariate signature support via liboqs
+- **MAYO-1, MAYO-3, MAYO-5**: Multivariate signature support via liboqs
 - **CROSS-128, CROSS-192, CROSS-256**: Code-based signature support via liboqs  
-- **Stateful Instances**: Work around liboqs API limitations elegantly
-- **Automatic Fallback**: Graceful degradation when production implementations unavailable
+- **Signature Factory**: Automatic implementation selection (production/demo)
+- **CLI Integration**: Complete command-line interface for signature operations
 
-**Ready for Phase 3**: Enhanced CLI integration and advanced testing framework.
-
-## Phase 3A Achievement Summary ✅
-
-CLI signature commands successfully implemented with comprehensive functionality:
-
-### Key Deliverables Completed:
-- **🖥️ CLI Integration**: Full command-line interface for signature operations
-- **🔄 Smart Selection**: Automatic implementation preference with fallback support
-- **🔑 Key Management**: Complete key generation and file management system
-- **📋 Algorithm Discovery**: User-friendly algorithm listing and information display
-
-### CLI Commands Available:
-- **list-signature-algorithms**: Display all available MAYO and CROSS algorithms
-- **generate-signature-keys**: Generate public/private key pairs with secure permissions
-- **sign**: Sign files with post-quantum algorithms and implementation choice
-- **verify**: Verify file signatures with detailed success/failure reporting
-
-### Production Capabilities Delivered:
-- **MAYO-1/2/3/5 CLI support**: Full command-line access to multivariate signatures
-- **CROSS-128/192/256 CLI support**: Command-line access to code-based signatures
-- **Implementation selection**: Users can choose auto/production/demo backends
-- **Comprehensive help system**: Built-in documentation and argument validation
-
-**Ready for Phase 3B**: Advanced testing framework and cross-implementation compatibility.
+**Ready for Phase 2**: Hybrid encryption implementation following ML-KEM/HQC pattern.

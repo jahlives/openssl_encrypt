@@ -77,6 +77,14 @@ HYBRID_ALGORITHM_MAP = {
     "hqc-128-hybrid": "HQC-128",
     "hqc-192-hybrid": "HQC-192",
     "hqc-256-hybrid": "HQC-256",
+    # MAYO hybrid algorithms
+    "mayo-1-hybrid": "MAYO-1",
+    "mayo-3-hybrid": "MAYO-3",
+    "mayo-5-hybrid": "MAYO-5",
+    # CROSS hybrid algorithms
+    "cross-128-hybrid": "CROSS-128",
+    "cross-192-hybrid": "CROSS-192",
+    "cross-256-hybrid": "CROSS-256",
     # ML-KEM with ChaCha20 (just for naming, actual cipher determined by user's choice)
     "ml-kem-512-chacha20": "ML-KEM-512",
     "ml-kem-768-chacha20": "ML-KEM-768",
