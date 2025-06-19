@@ -7920,5 +7920,400 @@ except Exception as e:
     print(f"⚠️  Error importing keystore integration tests: {e}")
 
 
+# =============================================================================
+# MAYO and CROSS Post-Quantum Signature Algorithm Tests
+# =============================================================================
+
+class TestSignatureFactory(unittest.TestCase):
+    """Test SignatureFactory functionality."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        # Import signature modules here to avoid circular imports
+        try:
+            from modules.signature_factory import (
+                SignatureFactory,
+                SignatureCreationError,
+                NoImplementationAvailableError,
+                create_signature,
+                create_best_signature,
+            )
+            self.SignatureFactory = SignatureFactory
+            self.SignatureCreationError = SignatureCreationError
+            self.NoImplementationAvailableError = NoImplementationAvailableError
+            self.create_signature = create_signature
+            self.create_best_signature = create_best_signature
+            self.signature_modules_available = True
+        except ImportError as e:
+            print(f"⚠️  Signature modules not available: {e}")
+            self.signature_modules_available = False
+    
+    def test_list_available_algorithms(self):
+        """Test listing available algorithms."""
+        if not self.signature_modules_available:
+            self.skipTest("Signature modules not available")
+            
+        algorithms = self.SignatureFactory.list_available_algorithms()
+        self.assertIsInstance(algorithms, dict)
+        
+        # Should have at least MAYO algorithms if demo implementations work
+        mayo_algos = [name for name in algorithms.keys() if name.startswith("MAYO")]
+        
+        # Check that implementation types are reasonable
+        for name, impl_type in algorithms.items():
+            self.assertIsInstance(impl_type, str)
+            self.assertIn(impl_type, ["production (liboqs)", "demo (educational)"])
+    
+    def test_list_production_algorithms(self):
+        """Test listing production algorithms."""
+        if not self.signature_modules_available:
+            self.skipTest("Signature modules not available")
+            
+        production_algos = self.SignatureFactory.list_production_algorithms()
+        self.assertIsInstance(production_algos, list)
+        
+        # Should have production algorithms if liboqs is available
+        if production_algos:
+            for algo in production_algos:
+                self.assertIsInstance(algo, str)
+                self.assertTrue(self.SignatureFactory.is_production_available(algo))
+    
+    def test_is_production_available(self):
+        """Test checking production availability."""
+        if not self.signature_modules_available:
+            self.skipTest("Signature modules not available")
+            
+        # Test known algorithm
+        result = self.SignatureFactory.is_production_available("MAYO-1")
+        self.assertIsInstance(result, bool)
+        
+        # Test unknown algorithm
+        result = self.SignatureFactory.is_production_available("UNKNOWN-ALGO")
+        self.assertFalse(result)
+    
+    def test_is_demo_available(self):
+        """Test checking demo availability."""
+        if not self.signature_modules_available:
+            self.skipTest("Signature modules not available")
+            
+        # MAYO should have demo available
+        result = self.SignatureFactory.is_demo_available("MAYO-1")
+        self.assertIsInstance(result, bool)
+        
+        # CROSS should not have demo available yet
+        result = self.SignatureFactory.is_demo_available("CROSS-128")
+        self.assertFalse(result)
+        
+        # Unknown algorithm
+        result = self.SignatureFactory.is_demo_available("UNKNOWN-ALGO")
+        self.assertFalse(result)
+    
+    def test_create_signature_success(self):
+        """Test successful signature creation."""
+        if not self.signature_modules_available:
+            self.skipTest("Signature modules not available")
+            
+        try:
+            # Try to create MAYO-1 signature
+            sig = self.SignatureFactory.create_signature("MAYO-1")
+            
+            from modules.pqc_signatures import PQSignature
+            self.assertIsInstance(sig, PQSignature)
+            self.assertEqual(sig.get_algorithm_name(), "MAYO-1")
+            self.assertGreaterEqual(sig.get_security_level(), 1)
+            
+            # Test basic functionality
+            public_key, private_key = sig.generate_keypair()
+            self.assertIsInstance(public_key, bytes)
+            self.assertIsInstance(private_key, bytes)
+            self.assertGreater(len(public_key), 0)
+            self.assertGreater(len(private_key), 0)
+            
+            # Test signing and verification
+            message = b"test message"
+            signature = sig.sign(message, private_key)
+            self.assertIsInstance(signature, bytes)
+            self.assertGreater(len(signature), 0)
+            
+            is_valid = sig.verify(message, signature, public_key)
+            self.assertTrue(is_valid)
+            
+        except self.NoImplementationAvailableError:
+            self.skipTest("MAYO-1 not available in test environment")
+    
+    def test_create_signature_unknown_algorithm(self):
+        """Test creating signature with unknown algorithm."""
+        if not self.signature_modules_available:
+            self.skipTest("Signature modules not available")
+            
+        with self.assertRaises(self.NoImplementationAvailableError):
+            self.SignatureFactory.create_signature("UNKNOWN-ALGO")
+    
+    def test_create_best_signature_success(self):
+        """Test create_best_signature with available algorithm."""
+        if not self.signature_modules_available:
+            self.skipTest("Signature modules not available")
+            
+        try:
+            algorithms = ["MAYO-1", "MAYO-3", "UNKNOWN-ALGO"]
+            sig = self.create_best_signature(algorithms)
+            
+            from modules.pqc_signatures import PQSignature
+            self.assertIsInstance(sig, PQSignature)
+            self.assertIn(sig.get_algorithm_name(), algorithms)
+        except self.NoImplementationAvailableError:
+            self.skipTest("No test algorithms available")
+    
+    def test_create_best_signature_none_available(self):
+        """Test create_best_signature with no available algorithms."""
+        if not self.signature_modules_available:
+            self.skipTest("Signature modules not available")
+            
+        algorithms = ["UNKNOWN-ALGO-1", "UNKNOWN-ALGO-2"]
+        with self.assertRaises(self.NoImplementationAvailableError):
+            self.create_best_signature(algorithms)
+
+
+class TestMAYOSignature(unittest.TestCase):
+    """Test MAYO signature implementation."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        try:
+            from modules.mayo_signature import MAYOSignature, create_mayo_signature
+            self.MAYOSignature = MAYOSignature
+            self.create_mayo_signature = create_mayo_signature
+            self.mayo_available = True
+        except ImportError as e:
+            print(f"⚠️  MAYO signature module not available: {e}")
+            self.mayo_available = False
+    
+    def test_mayo_initialization(self):
+        """Test MAYO signature initialization."""
+        if not self.mayo_available:
+            self.skipTest("MAYO signature module not available")
+            
+        # Test valid security levels
+        for level in [1, 3, 5]:
+            sig = self.MAYOSignature(level)
+            self.assertEqual(sig.get_security_level(), level)
+            self.assertEqual(sig.get_algorithm_name(), f"MAYO-{level}")
+            self.assertGreater(sig.get_public_key_size(), 0)
+            self.assertGreater(sig.get_private_key_size(), 0)
+            self.assertGreater(sig.get_signature_size(), 0)
+    
+    def test_mayo_invalid_security_level(self):
+        """Test MAYO with invalid security level."""
+        if not self.mayo_available:
+            self.skipTest("MAYO signature module not available")
+            
+        with self.assertRaises(ValueError):
+            self.MAYOSignature(2)  # Invalid security level
+        
+        with self.assertRaises(ValueError):
+            self.MAYOSignature(7)  # Invalid security level
+    
+    def test_mayo_keypair_generation(self):
+        """Test MAYO key pair generation."""
+        if not self.mayo_available:
+            self.skipTest("MAYO signature module not available")
+            
+        sig = self.MAYOSignature(1)
+        
+        # Generate keypair
+        public_key, private_key = sig.generate_keypair()
+        
+        # Verify types and sizes
+        self.assertIsInstance(public_key, bytes)
+        self.assertIsInstance(private_key, bytes)
+        self.assertEqual(len(public_key), sig.get_public_key_size())
+        self.assertEqual(len(private_key), sig.get_private_key_size())
+        
+        # Generate another keypair and verify they're different
+        public_key2, private_key2 = sig.generate_keypair()
+        self.assertNotEqual(public_key, public_key2)
+        self.assertNotEqual(private_key, private_key2)
+    
+    def test_mayo_signing_and_verification(self):
+        """Test MAYO signing and verification."""
+        if not self.mayo_available:
+            self.skipTest("MAYO signature module not available")
+            
+        sig = self.MAYOSignature(1)
+        public_key, private_key = sig.generate_keypair()
+        
+        # Test message
+        message = b"Test message for MAYO signature"
+        
+        # Sign message
+        signature = sig.sign(message, private_key)
+        self.assertIsInstance(signature, bytes)
+        self.assertEqual(len(signature), sig.get_signature_size())
+        
+        # Verify signature
+        is_valid = sig.verify(message, signature, public_key)
+        self.assertTrue(is_valid)
+        
+        # Test with wrong message
+        wrong_message = message + b" (modified)"
+        is_valid_wrong = sig.verify(wrong_message, signature, public_key)
+        self.assertFalse(is_valid_wrong)
+    
+    def test_mayo_input_validation(self):
+        """Test MAYO input validation."""
+        if not self.mayo_available:
+            self.skipTest("MAYO signature module not available")
+            
+        sig = self.MAYOSignature(1)
+        public_key, private_key = sig.generate_keypair()
+        message = b"test message"
+        
+        # Test wrong private key size
+        wrong_private_key = b"wrong size key"
+        from modules.pqc_signatures import InvalidKeyError
+        with self.assertRaises(InvalidKeyError):
+            sig.sign(message, wrong_private_key)
+        
+        # Test wrong signature size
+        wrong_signature = b"wrong size signature"
+        is_valid = sig.verify(message, wrong_signature, public_key)
+        self.assertFalse(is_valid)
+        
+        # Test wrong public key size
+        wrong_public_key = b"wrong size public key"
+        signature = sig.sign(message, private_key)
+        is_valid = sig.verify(message, signature, wrong_public_key)
+        self.assertFalse(is_valid)
+    
+    def test_mayo_factory_function(self):
+        """Test MAYO factory function."""
+        if not self.mayo_available:
+            self.skipTest("MAYO signature module not available")
+            
+        sig = self.create_mayo_signature(1)
+        self.assertIsInstance(sig, self.MAYOSignature)
+        self.assertEqual(sig.get_security_level(), 1)
+    
+    def test_mayo_multiple_signatures(self):
+        """Test creating multiple signatures with same key."""
+        if not self.mayo_available:
+            self.skipTest("MAYO signature module not available")
+            
+        sig = self.MAYOSignature(1)
+        public_key, private_key = sig.generate_keypair()
+        
+        messages = [
+            b"First test message",
+            b"Second test message", 
+            b"Third test message with different content",
+        ]
+        
+        signatures = []
+        for message in messages:
+            signature = sig.sign(message, private_key)
+            signatures.append(signature)
+            
+            # Verify each signature
+            is_valid = sig.verify(message, signature, public_key)
+            self.assertTrue(is_valid)
+        
+        # Verify all signatures are different (MAYO includes randomness)
+        for i in range(len(signatures)):
+            for j in range(i + 1, len(signatures)):
+                self.assertNotEqual(signatures[i], signatures[j])
+
+
+class TestSignatureIntegration(unittest.TestCase):
+    """Integration tests for signature algorithms."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        try:
+            from modules.signature_factory import SignatureFactory
+            from modules.signature_detection import detect_all_signature_algorithms
+            self.SignatureFactory = SignatureFactory
+            self.detect_all_signature_algorithms = detect_all_signature_algorithms
+            self.integration_available = True
+        except ImportError as e:
+            print(f"⚠️  Signature integration modules not available: {e}")
+            self.integration_available = False
+    
+    def test_end_to_end_mayo_workflow(self):
+        """Test complete MAYO workflow through factory."""
+        if not self.integration_available:
+            self.skipTest("Signature integration modules not available")
+            
+        try:
+            # Create signature instance
+            sig = self.SignatureFactory.create_signature("MAYO-1")
+            
+            # Generate keypair
+            public_key, private_key = sig.generate_keypair()
+            
+            # Sign message
+            message = b"Integration test message for MAYO signature"
+            signature = sig.sign(message, private_key)
+            
+            # Verify signature
+            is_valid = sig.verify(message, signature, public_key)
+            self.assertTrue(is_valid)
+            
+            # Verify with wrong message fails
+            wrong_message = message + b" (modified)"
+            is_valid_wrong = sig.verify(wrong_message, signature, public_key)
+            self.assertFalse(is_valid_wrong)
+            
+        except Exception as e:
+            if "not available" in str(e):
+                self.skipTest("MAYO-1 not available for integration test")
+            else:
+                raise
+    
+    def test_algorithm_detection(self):
+        """Test signature algorithm detection system."""
+        if not self.integration_available:
+            self.skipTest("Signature integration modules not available")
+            
+        algorithms = self.detect_all_signature_algorithms(quiet=True)
+        self.assertIsInstance(algorithms, dict)
+        
+        # Should detect at least some algorithms
+        if algorithms:
+            for name, info in algorithms.items():
+                self.assertIsInstance(name, str)
+                self.assertTrue(hasattr(info, 'algorithm'))
+                self.assertTrue(hasattr(info, 'available'))
+                self.assertTrue(hasattr(info, 'implementation'))
+    
+    def test_cross_algorithm_compatibility(self):
+        """Test that different algorithms don't interfere."""
+        if not self.integration_available:
+            self.skipTest("Signature integration modules not available")
+            
+        available_algos = self.SignatureFactory.list_available_algorithms()
+        
+        # Test multiple algorithms if available
+        test_algos = [name for name in available_algos.keys() if name.startswith(("MAYO", "CROSS"))][:2]
+        
+        if len(test_algos) >= 2:
+            signatures = {}
+            message = b"Cross-algorithm test message"
+            
+            # Create signatures with different algorithms
+            for algo in test_algos:
+                try:
+                    sig = self.SignatureFactory.create_signature(algo)
+                    public_key, private_key = sig.generate_keypair()
+                    signature = sig.sign(message, private_key)
+                    signatures[algo] = (sig, public_key, signature)
+                except Exception:
+                    continue
+            
+            # Verify each signature with its own algorithm
+            for algo, (sig, public_key, signature) in signatures.items():
+                is_valid = sig.verify(message, signature, public_key)
+                self.assertTrue(is_valid, f"Signature verification failed for {algo}")
+
+
 if __name__ == "__main__":
     unittest.main()
