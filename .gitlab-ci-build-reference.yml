@@ -1,0 +1,206 @@
+# Reference copy of original Docker build pipeline for GitLab CI
+# This file preserved for future reference - contains full Docker build stages
+# Saved from release branch before Docker stages were removed due to complexity
+# 
+# This file builds production-ready Docker containers with full PQC support
+# To restore Docker functionality, include this file in main .gitlab-ci.yml
+
+stages:
+  - docker-build
+  - docker-test
+  - docker-publish
+
+variables:
+  # Docker registry configuration
+  DOCKER_REGISTRY: $CI_REGISTRY
+  DOCKER_IMAGE_NAME: $CI_REGISTRY_IMAGE/openssl-encrypt
+  DOCKER_IMAGE_TAG: $CI_COMMIT_REF_SLUG
+  DOCKER_LATEST_TAG: $CI_REGISTRY_IMAGE/openssl-encrypt:latest
+  DOCKER_STABLE_TAG: $CI_REGISTRY_IMAGE/openssl-encrypt:stable
+  # User-friendly tags (primary)
+  DOCKER_BRANCH_TAG: $CI_REGISTRY_IMAGE/openssl-encrypt:$CI_COMMIT_REF_SLUG
+  DOCKER_SHA_TAG: $CI_REGISTRY_IMAGE/openssl-encrypt:sha-$CI_COMMIT_SHORT_SHA
+  
+  # Docker build optimization
+  DOCKER_BUILDKIT: 1
+  BUILDX_NO_DEFAULT_ATTESTATIONS: 1
+  
+  # Build context
+  DOCKERFILE_PATH: docker/Dockerfile
+  BUILD_CONTEXT: .
+
+# Build the Docker image with full PQC support
+docker-build:
+  stage: docker-build
+  image: docker:24-cli
+  services:
+    - docker:24-dind
+  variables:
+    # Use explicit Docker service hostname instead of localhost
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
+    DOCKER_BUILDKIT: 0
+  # Force this job to use a dedicated runner
+  resource_group: docker-build-group
+  before_script:
+    # Minimal Docker setup - use localhost with host networking
+    - until docker info; do sleep 1; done
+    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+  script:
+    - docker build -f $DOCKERFILE_PATH -t $DOCKER_BRANCH_TAG $BUILD_CONTEXT
+    - if [ "$CI_COMMIT_BRANCH" = "main" ] || [ "$CI_COMMIT_BRANCH" = "release" ]; then docker tag $DOCKER_BRANCH_TAG $DOCKER_LATEST_TAG; fi
+    - if [ "$CI_COMMIT_TAG" ]; then docker tag $DOCKER_BRANCH_TAG $DOCKER_STABLE_TAG; docker tag $DOCKER_BRANCH_TAG $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG; fi
+    - if [ "$CI_COMMIT_BRANCH" = "main" ] || [ "$CI_COMMIT_BRANCH" = "release" ]; then docker push $DOCKER_LATEST_TAG; fi
+    - if [ "$CI_COMMIT_TAG" ]; then docker push $DOCKER_STABLE_TAG; docker push $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG; fi
+    - docker push $DOCKER_BRANCH_TAG
+    - echo "Primary image tag is $DOCKER_BRANCH_TAG"
+  artifacts:
+    reports:
+      dotenv: docker-build.env
+    expire_in: 1 hour
+  after_script:
+    # Save build information for subsequent jobs (clean branch name only)
+    - echo "DOCKER_IMAGE_PRIMARY=$DOCKER_BRANCH_TAG" >> docker-build.env
+    - echo "DOCKER_IMAGE_BUILT=true" >> docker-build.env
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "release"  
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH == "testing"
+    - if: $CI_COMMIT_BRANCH == "nightly"
+    - if: $CI_COMMIT_TAG
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  # Retry on infrastructure failures
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+
+# Test the built Docker image functionality
+docker-test:
+  stage: docker-test
+  image: docker:24-cli
+  services:
+    - docker:24-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
+  # Force this job to use a different runner than docker-build
+  resource_group: docker-test-group
+  needs:
+    - job: docker-build
+      artifacts: true
+  before_script:
+    # Use same simple approach as docker-build
+    - until docker info; do sleep 1; done
+    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+    # Pull the built image using clean branch tag
+    - docker pull $DOCKER_BRANCH_TAG
+  script:
+    - echo "Testing basic CLI functionality"
+    - docker run --rm $DOCKER_BRANCH_TAG --help
+    - echo "Testing PQC algorithm listing"
+    - docker run --rm $DOCKER_BRANCH_TAG encrypt --help | grep -E "(kyber|ml-kem|hqc)" || (echo "PQC algorithms not found in help" && exit 1)
+    - echo "Testing PQC encryption/decryption"
+    - mkdir -p test-data
+    - echo "Hello PQC World from GitLab CI!" > test-data/test.txt
+    - docker run --rm --user root -v $(pwd)/test-data:/data $DOCKER_BRANCH_TAG encrypt --input test.txt --algorithm kyber768-hybrid --password "TestPassword123!" --force-password --overwrite --dual-encrypt-key --pqc-store-key
+    - test -f test-data/test.txt
+    - test -s test-data/test.txt
+    - echo "Docker image tests passed"
+    - echo "Testing version information"
+    - docker run --rm $DOCKER_BRANCH_TAG version || true
+    - echo "Testing PQC library availability"
+    - docker run --rm --entrypoint="" $DOCKER_BRANCH_TAG python -c "from openssl_encrypt.modules.pqc_liboqs import check_liboqs_support; available, version, algorithms = check_liboqs_support(quiet=True); print(f'PQC Available {available}'); print(f'Algorithms {len(algorithms)}'); assert available, 'PQC support not available'; assert len(algorithms) > 50, f'Too few algorithms {len(algorithms)}'; print('PQC tests passed')"
+  artifacts:
+    paths:
+      - test-data/
+    expire_in: 1 hour
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH == "testing"
+    - if: $CI_COMMIT_BRANCH == "nightly"
+    - if: $CI_COMMIT_TAG
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# Publish Docker images to registry (for release branches/tags)
+docker-publish:
+  stage: docker-publish
+  image: docker:24-cli
+  services:
+    - docker:24-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
+  needs:
+    - job: docker-build
+      artifacts: true
+    - job: docker-test
+  before_script:
+    - apk add --no-cache curl
+    - sleep 10
+    - for i in $(seq 1 60); do docker version && break || (echo "Attempt $i failed, waiting..."; sleep 5); done
+    - docker info || (echo "Docker daemon not ready" && exit 1)
+    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+  script:
+    - docker pull $DOCKER_BRANCH_TAG
+    - if [ "$CI_COMMIT_TAG" ]; then echo "Publishing release tag $CI_COMMIT_TAG"; docker tag $DOCKER_BRANCH_TAG $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG; docker tag $DOCKER_BRANCH_TAG $DOCKER_STABLE_TAG; docker push $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG; docker push $DOCKER_STABLE_TAG; echo "Published release images"; fi
+    - if [ "$CI_COMMIT_BRANCH" = "main" ]; then echo "Updating latest tag"; docker tag $DOCKER_BRANCH_TAG $DOCKER_LATEST_TAG; docker push $DOCKER_LATEST_TAG; echo "Updated latest tag"; fi
+    - echo "=== Docker Image Information ==="
+    - echo "Registry is $CI_REGISTRY"
+    - echo "Primary Image is $DOCKER_BRANCH_TAG"
+    - echo "Available tags"
+    - echo "Primary tag $DOCKER_BRANCH_TAG"
+    - if [ "$CI_COMMIT_TAG" ]; then echo "Release tag $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG"; echo "Stable tag $DOCKER_STABLE_TAG"; fi
+    - if [ "$CI_COMMIT_BRANCH" = "main" ] || [ "$CI_COMMIT_BRANCH" = "release" ]; then echo "Latest tag $DOCKER_LATEST_TAG"; fi
+    - echo "Usage docker pull $DOCKER_BRANCH_TAG"
+    - echo "Usage docker run --rm -v \$(pwd):/data $DOCKER_BRANCH_TAG --help"
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "release"
+      when: manual
+      allow_failure: false
+
+# Manual job to rebuild Docker image (for dev/testing)
+docker-rebuild:
+  extends: docker-build
+  when: manual
+  allow_failure: true
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH == "testing"
+    - if: $CI_COMMIT_BRANCH == "nightly"
+
+# Clean up old Docker images (manual job)
+docker-cleanup:
+  stage: docker-publish
+  image: docker:24-cli
+  services:
+    - docker:24-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
+  before_script:
+    - apk add --no-cache curl
+    - sleep 10
+    - for i in $(seq 1 60); do docker version && break || (echo "Attempt $i failed, waiting..."; sleep 5); done
+    - docker info || (echo "Docker daemon not ready" && exit 1)
+    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+  script:
+    # Clean up old/unused images to save space
+    - docker system prune -af || true
+    - echo "✅ Docker cleanup completed"
+  when: manual
+  allow_failure: true
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH == "testing"
+    - if: $CI_COMMIT_BRANCH == "nightly"
