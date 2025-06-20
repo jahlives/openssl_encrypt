@@ -4484,13 +4484,14 @@ def test_file_decryption_wrong_pw_v5(filename):
         pass
 
 
-def get_kyber_test_files_v5():
-    """Get a list of Kyber test files for v5 format."""
+def get_pqc_test_files_v5():
+    """Get a list of PQC test files for v5 format (Kyber, HQC, MAYO, CROSS, ML-KEM)."""
     try:
         files = os.listdir("./openssl_encrypt/unittests/testfiles/v5")
-        return [f for f in files if f.startswith("test1_kyber")]
+        pqc_prefixes = ["test1_kyber", "test1_hqc", "test1_mayo-", "test1_cross-", "test1_ml-kem-"]
+        return [f for f in files if any(f.startswith(prefix) for prefix in pqc_prefixes)]
     except Exception as e:
-        print(f"Error getting Kyber test files: {str(e)}")
+        print(f"Error getting PQC test files: {str(e)}")
         return []
 
 
@@ -4575,14 +4576,15 @@ def test_file_decryption_wrong_algorithm_v5(filename):
 
 @pytest.mark.parametrize(
     "filename",
-    get_kyber_test_files_v5(),
+    get_pqc_test_files_v5(),
     ids=lambda name: f"wrong_encryption_data_{name.replace('test1_', '').replace('.txt', '')}",
 )
 def test_file_decryption_wrong_encryption_data_v5(filename):
-    """Test decryption of v5 Kyber files with wrong encryption_data.
+    """Test decryption of v5 PQC files with wrong encryption_data.
 
-    This test verifies that trying to decrypt a v5 format Kyber file with the correct password
-    but wrong encryption_data setting properly fails and raises an exception rather than succeeding.
+    This test verifies that trying to decrypt a v5 format PQC file (Kyber, HQC, MAYO, CROSS, ML-KEM) 
+    with the correct password but wrong encryption_data setting properly fails and raises an exception 
+    rather than succeeding.
     """
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 

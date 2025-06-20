@@ -71,6 +71,18 @@ class PQAlgorithm(Enum):
     FN_DSA_512 = "FN-DSA-512"  # Level 1
     FN_DSA_1024 = "FN-DSA-1024"  # Level 5 (no middle level defined)
 
+    # Additional signature algorithms (NIST Round 2 candidates)
+    # MAYO (Multivariate Oil-and-Vinegar signature scheme)
+    MAYO_1 = "MAYO-1"  # Level 1
+    MAYO_2 = "MAYO-2"  # Level 1 (different parameters)
+    MAYO_3 = "MAYO-3"  # Level 3
+    MAYO_5 = "MAYO-5"  # Level 5
+
+    # CROSS (Codes and Restricted Objects Signature Scheme)
+    CROSS_128 = "CROSS-128"  # Level 1
+    CROSS_192 = "CROSS-192"  # Level 3
+    CROSS_256 = "CROSS-256"  # Level 5
+
 
 # Mapping from our enum values to liboqs algorithm names
 LIBOQS_ALGORITHM_MAPPING: Dict[str, str] = {
@@ -93,6 +105,14 @@ LIBOQS_ALGORITHM_MAPPING: Dict[str, str] = {
     "SLH-DSA-SHA2-256F": "SLH-DSA-SHA2-256F",
     "FN-DSA-512": "Falcon-512",
     "FN-DSA-1024": "Falcon-1024",
+    # MAYO and CROSS signature algorithms
+    "MAYO-1": "MAYO-1",
+    "MAYO-2": "MAYO-2", 
+    "MAYO-3": "MAYO-3",
+    "MAYO-5": "MAYO-5",
+    "CROSS-128": "cross-rsdp-128-balanced",
+    "CROSS-192": "cross-rsdp-192-balanced", 
+    "CROSS-256": "cross-rsdp-256-balanced",
 }
 
 
