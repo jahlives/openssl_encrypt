@@ -310,11 +310,10 @@ sbom-generation:
 
 test:
   stage: test
-  image:
-    name: $DOCKER_IMAGE
-    platform: linux/amd64
+  image: $DOCKER_IMAGE
   variables:
     PQC_QUIET: "true"  # Suppress PQC module initialization messages
+    DOCKER_DEFAULT_PLATFORM: linux/amd64
   before_script:
     - pip install -r requirements.txt --break-system-packages
     - pip install setuptools --break-system-packages  # Provides pkg_resources
