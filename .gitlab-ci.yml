@@ -75,8 +75,9 @@ build-docker-image:
       # Install other common dependencies
       RUN pip install --no-cache-dir pytest pytest-order
       EOF
-    - docker build -t $DOCKER_IMAGE .
-    - docker push $DOCKER_IMAGE
+    # Build multi-platform image to support both AMD64 and ARM64 runners
+    - docker buildx create --use --name multiplatform || docker buildx use multiplatform
+    - docker buildx build --platform linux/amd64,linux/arm64 -t $DOCKER_IMAGE --push .
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
     - if: $CI_COMMIT_BRANCH == "dev" && $BUILD_DOCKER_IMAGE == "true"
@@ -309,7 +310,9 @@ sbom-generation:
 
 test:
   stage: test
-  image: $DOCKER_IMAGE
+  image:
+    name: $DOCKER_IMAGE
+    platform: linux/amd64
   variables:
     PQC_QUIET: "true"  # Suppress PQC module initialization messages
   before_script:
