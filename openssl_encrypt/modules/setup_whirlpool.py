@@ -33,6 +33,12 @@ def find_whirlpool_modules():
     elif isinstance(user_site, list):
         site_packages.update(user_site)
 
+    # In Flatpak, also check the app-specific site-packages
+    if is_flatpak_environment():
+        site_packages.add("/app/lib/python3.11/site-packages")
+        site_packages.add("/app/lib/python3.12/site-packages")
+        site_packages.add("/app/lib/python3.13/site-packages")
+
     # Check for modules in all site-packages
     for site_pkg in site_packages:
         if not os.path.exists(site_pkg):
@@ -65,6 +71,11 @@ def find_whirlpool_modules():
 
 def create_whirlpool_symlink():
     """Create a symbolic link to the appropriate Whirlpool module."""
+    # In Flatpak or read-only environments, skip symlink creation
+    if is_flatpak_environment():
+        logger.debug("Flatpak environment detected, skipping symlink creation")
+        return False
+
     whirlpool_modules = find_whirlpool_modules()
     logger.debug(f"Found Whirlpool modules: {whirlpool_modules}")
 
@@ -89,7 +100,6 @@ def create_whirlpool_symlink():
         logger.debug("Whirlpool module already working, no action needed")
         return True
     except ImportError:
-        # Need to fix the import
         pass
 
     # Choose the most appropriate module based on version
@@ -181,8 +191,24 @@ def create_whirlpool_symlink():
         return False
 
 
+def is_flatpak_environment():
+    """Check if we're running in a Flatpak environment."""
+    # Check for Flatpak environment variables
+    return (
+        os.environ.get("FLATPAK_ID") is not None
+        or os.environ.get("FLATPAK_DEST") is not None
+        or "/app/" in sys.executable
+        or "/var/lib/flatpak/" in sys.executable
+    )
+
+
 def install_whirlpool():
     """Attempt to install the appropriate Whirlpool package."""
+    # Don't attempt installation in Flatpak environment
+    if is_flatpak_environment():
+        logger.debug("Running in Flatpak environment, skipping auto-installation")
+        return False
+
     python_version = sys.version_info
 
     try:
@@ -235,6 +261,17 @@ def setup_whirlpool():
         import whirlpool
 
         logger.debug("Whirlpool module already working, no action needed")
+        return True
+    except ImportError:
+        pass
+
+    # Try to import whirlpool_py311 directly (common in Flatpak/pre-installed)
+    try:
+        import whirlpool_py311 as whirlpool
+
+        # Add it to sys.modules so future imports work
+        sys.modules["whirlpool"] = whirlpool
+        logger.debug("whirlpool_py311 module found and aliased as whirlpool")
         return True
     except ImportError:
         # Need to create the symlink
