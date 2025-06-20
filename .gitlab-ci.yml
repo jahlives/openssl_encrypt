@@ -1,5 +1,3 @@
-include:
-  - local: '.gitlab-ci-build.yml'
 default:
   image: python:3.13-alpine
   cache:
@@ -15,75 +13,11 @@ stages:
   - security
   - test
   - build
-  - docker-build    # Docker stages run after tests pass
-  - docker-test     #
-  - docker-publish  #
-  - docker
   - publish
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
   DOCKER_IMAGE: $CI_REGISTRY_IMAGE/python-liboqs:3.13-alpine
-
-# This job builds a custom Docker image with liboqs pre-installed
-# It runs on a schedule (e.g., daily) to keep the image updated
-build-docker-image:
-  stage: docker
-  image: docker:24-cli
-  services:
-    - name: docker:24-dind
-      command: ["--host", "tcp://0.0.0.0:2375", "--host", "unix:///var/run/docker.sock"]
-  variables:
-    # Use non-TLS Docker configuration with host networking
-    DOCKER_HOST: tcp://docker:2375
-    DOCKER_TLS_CERTDIR: ""
-    DOCKER_DRIVER: overlay2
-  tags:
-    - docker
-  before_script:
-    # Install dependencies and wait for Docker daemon (same as working jobs)
-    - apk add --no-cache curl
-    - sleep 10
-    # Test connectivity with better error handling
-    - for i in $(seq 1 60); do docker version && break || (echo "Attempt $i failed, waiting..."; sleep 5); done
-    # Verify Docker is working
-    - docker info || (echo "Docker daemon not ready" && exit 1)
-    # Log in to GitLab registry
-    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
-  script:
-    # Test Docker connectivity before proceeding
-    - docker ps
-    - |
-      cat > Dockerfile <<EOF
-      FROM python:3.13-alpine
-
-      # Install dependencies
-      RUN apk add --no-cache git gcc g++ cmake ninja make go python3-dev openssl-dev musl-dev
-
-      # Clone and build liboqs
-      RUN git clone --recurse-submodules https://github.com/open-quantum-safe/liboqs.git && \
-          cd liboqs && \
-          mkdir build && cd build && \
-          cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local .. && \
-          ninja && \
-          ninja install && \
-          cd / && \
-          rm -rf liboqs
-
-      # Install liboqs Python bindings
-      RUN pip install --no-cache-dir git+https://github.com/open-quantum-safe/liboqs-python.git
-
-      # Install other common dependencies
-      RUN pip install --no-cache-dir pytest pytest-order
-      EOF
-    # Build multi-platform image to support both AMD64 and ARM64 runners
-    - docker buildx create --use --name multiplatform || docker buildx use multiplatform
-    - docker buildx build --platform linux/amd64,linux/arm64 -t $DOCKER_IMAGE --push .
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule"
-    - if: $CI_COMMIT_BRANCH == "dev" && $BUILD_DOCKER_IMAGE == "true"
-      when: manual
-      allow_failure: true
 
 
 sync-wiki:
