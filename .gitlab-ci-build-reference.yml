@@ -1,5 +1,9 @@
-# GitLab CI Pipeline for Docker Container Building  
+# Reference copy of original Docker build pipeline for GitLab CI
+# This file preserved for future reference - contains full Docker build stages
+# Saved from release branch before Docker stages were removed due to complexity
+# 
 # This file builds production-ready Docker containers with full PQC support
+# To restore Docker functionality, include this file in main .gitlab-ci.yml
 
 stages:
   - docker-build
@@ -30,16 +34,13 @@ docker-build:
   stage: docker-build
   image: docker:24-cli
   services:
-    - name: docker:24-dind
-      command: ["--host", "tcp://0.0.0.0:2375", "--host", "unix:///var/run/docker.sock"]
+    - docker:24-dind
   variables:
-    # Use explicit Docker service hostname with host networking
+    # Use explicit Docker service hostname instead of localhost
     DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
     DOCKER_BUILDKIT: 0
-  tags:
-    - docker
   # Force this job to use a dedicated runner
   resource_group: docker-build-group
   before_script:
@@ -82,14 +83,11 @@ docker-test:
   stage: docker-test
   image: docker:24-cli
   services:
-    - name: docker:24-dind
-      command: ["--host", "tcp://0.0.0.0:2375", "--host", "unix:///var/run/docker.sock"]
+    - docker:24-dind
   variables:
     DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
-  tags:
-    - docker
   # Force this job to use a different runner than docker-build
   resource_group: docker-test-group
   needs:
@@ -135,14 +133,11 @@ docker-publish:
   stage: docker-publish
   image: docker:24-cli
   services:
-    - name: docker:24-dind
-      command: ["--host", "tcp://0.0.0.0:2375", "--host", "unix:///var/run/docker.sock"]
+    - docker:24-dind
   variables:
     DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
-  tags:
-    - docker
   needs:
     - job: docker-build
       artifacts: true
@@ -188,14 +183,11 @@ docker-cleanup:
   stage: docker-publish
   image: docker:24-cli
   services:
-    - name: docker:24-dind
-      command: ["--host", "tcp://0.0.0.0:2375", "--host", "unix:///var/run/docker.sock"]
+    - docker:24-dind
   variables:
     DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
-  tags:
-    - docker
   before_script:
     - apk add --no-cache curl
     - sleep 10

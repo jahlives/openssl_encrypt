@@ -1,3 +1,12 @@
+# Reference copy of original GitLab CI configuration with Docker support
+# This file preserved for future reference - contains full Docker build pipeline
+# Saved from release branch before Docker stages were removed due to complexity
+# 
+# To restore Docker functionality, copy relevant sections back to .gitlab-ci.yml
+# Note: This includes both main CI jobs and separate Docker build pipeline
+
+include:
+  - local: '.gitlab-ci-build.yml'
 default:
   image: python:3.13-alpine
   cache:
@@ -13,11 +22,73 @@ stages:
   - security
   - test
   - build
+  - docker-build    # Docker stages run after tests pass
+  - docker-test     #
+  - docker-publish  #
+  - docker
   - publish
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
   DOCKER_IMAGE: $CI_REGISTRY_IMAGE/python-liboqs:3.13-alpine
+
+# This job builds a custom Docker image with liboqs pre-installed
+# It runs on a schedule (e.g., daily) to keep the image updated
+build-docker-image:
+  stage: docker
+  image: docker:24-cli
+  services:
+    - name: docker:24-dind
+      alias: dockerdaemon
+  variables:
+    # Use the same working configuration as the main Docker jobs
+    DOCKER_HOST: tcp://dockerdaemon:2375
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
+    DOCKER_BUILDKIT: 0
+  before_script:
+    # Install dependencies and wait for Docker daemon (same as working jobs)
+    - apk add --no-cache curl
+    - sleep 10
+    # Test connectivity with better error handling
+    - for i in $(seq 1 60); do docker version && break || (echo "Attempt $i failed, waiting..."; sleep 5); done
+    # Verify Docker is working
+    - docker info || (echo "Docker daemon not ready" && exit 1)
+    # Log in to GitLab registry
+    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+  script:
+    # Test Docker connectivity before proceeding
+    - docker ps
+    - |
+      cat > Dockerfile <<EOF
+      FROM python:3.13-alpine
+
+      # Install dependencies
+      RUN apk add --no-cache git gcc g++ cmake ninja make go python3-dev openssl-dev musl-dev
+
+      # Clone and build liboqs
+      RUN git clone --recurse-submodules https://github.com/open-quantum-safe/liboqs.git && \
+          cd liboqs && \
+          mkdir build && cd build && \
+          cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local .. && \
+          ninja && \
+          ninja install && \
+          cd / && \
+          rm -rf liboqs
+
+      # Install liboqs Python bindings
+      RUN pip install --no-cache-dir git+https://github.com/open-quantum-safe/liboqs-python.git
+
+      # Install other common dependencies
+      RUN pip install --no-cache-dir pytest pytest-order
+      EOF
+    - docker build -t $DOCKER_IMAGE .
+    - docker push $DOCKER_IMAGE
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_COMMIT_BRANCH == "dev" && $BUILD_DOCKER_IMAGE == "true"
+      when: manual
+      allow_failure: true
 
 
 sync-wiki:
@@ -248,7 +319,6 @@ test:
   image: $DOCKER_IMAGE
   variables:
     PQC_QUIET: "true"  # Suppress PQC module initialization messages
-    DOCKER_DEFAULT_PLATFORM: linux/amd64
   before_script:
     - pip install -r requirements.txt --break-system-packages
     - pip install setuptools --break-system-packages  # Provides pkg_resources
