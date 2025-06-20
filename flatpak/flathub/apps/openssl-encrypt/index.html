@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+  <html>
+  <head>
+      <title>OpenSSLEncrypt</title>
+      <link rel="stylesheet" href="../assets/css/styles.css">
+      <script src="../assets/js/scripts.js"></script>
+  </head>
+  <body>
+      <div class="container">
+          <nav><a href="../../">&larr; Back to Repository</a></nav>
+
+          <h1>OpenSSLEncrypt</h1>
+
+          <div class="stats">
+              <h3>&#128196; Application Info</h3>
+              <p><strong>Version:</strong> 1.0.0-rc3 | <strong>Size:</strong> 36.8 MB | <strong>License:</strong> MIT | <strong>Platform:</strong> Linux Flatpak</p>
+          </div>
+
+          <div class="app-header">
+              <!-- <img src="icon.png" alt="OpenSSLEncrypt Icon"> -->
+              <div class="install-section">
+                  <pre>flatpak install custom-repo com.opensslencrypt.OpenSSLEncrypt</pre>
+              </div>
+          </div>
+
+          <section id="description">
+              <h2>&#128214; Description</h2>
+              <p>OpenSSL Encrypt is a comprehensive encryption tool that provides military-grade security with cutting-edge post-quantum cryptography. Protect your files against both current and future quantum computing threats.</p>
+              <p>Perfect for individuals and organizations requiring the highest levels of data protection, including protection against future quantum computer attacks.</p>
+          </section>
+
+          <section id="features">
+              <h2>&#9733; Features</h2>
+              <div class="feature-grid">
+                  <div class="feature-category">
+                      <h3>&#128272; Encryption Algorithms</h3>
+                      <ul>
+                          <li>AES-GCM (128/256-bit)</li>
+                          <li>ChaCha20-Poly1305</li>
+                          <li>XChaCha20-Poly1305</li>
+                          <li>Fernet (AES-128-CBC)</li>
+                          <li>AES-GCM-SIV</li>
+                      </ul>
+                  </div>
+
+                  <div class="feature-category">
+                      <h3>&#9883; Post-Quantum Cryptography</h3>
+                      <ul>
+                          <li>ML-KEM (512/768/1024-bit)</li>
+                          <li>HQC (128/192/256-bit)</li>
+                          <li>Kyber hybrid encryption</li>
+                          <li>Quantum-resistant key exchange</li>
+                          <li>Future-proof security</li>
+                      </ul>
+                  </div>
+
+                  <div class="feature-category">
+                      <h3>&#128273; Key Derivation Functions</h3>
+                      <ul>
+                          <li>Argon2 (recommended)</li>
+                          <li>PBKDF2</li>
+                          <li>Scrypt</li>
+                          <li>Configurable iterations</li>
+                          <li>Salt generation</li>
+                      </ul>
+                  </div>
+
+                  <div class="feature-category">
+                      <h3>&#128221; Hash Algorithms</h3>
+                      <ul>
+                          <li>SHA-3 (256/512-bit)</li>
+                          <li>BLAKE2b</li>
+                          <li>SHAKE-256</li>
+                          <li>Whirlpool</li>
+                          <li>SHA-256/512</li>
+                      </ul>
+                  </div>
+
+                  <div class="feature-category">
+                      <h3>&#128187; User Interface</h3>
+                      <ul>
+                          <li>Modern GUI with dark/light themes</li>
+                          <li>Command-line interface</li>
+                          <li>Drag & drop file support</li>
+                          <li>Progress indicators</li>
+                          <li>Batch processing</li>
+                      </ul>
+                  </div>
+
+                  <div class="feature-category">
+                      <h3>&#128274; Security Features</h3>
+                      <ul>
+                          <li>Secure memory handling</li>
+                          <li>Military-grade secure deletion</li>
+                          <li>Constant-time operations</li>
+                          <li>Password strength validation</li>
+                          <li>Environment variable support</li>
+                      </ul>
+                  </div>
+              </div>
+          </section>
+
+          <section id="changelog">
+              <h2>&#128203; Recent Updates</h2>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      1.0.0-rc3
+                      <span class="release-type rc">RELEASE CANDIDATE</span>
+                  </div>
+                  <div class="description">
+                      Major documentation consolidation and enhancement release: Consolidated 37+ scattered documentation files into 10 comprehensive guides (73% reduction) improving organization, searchability, and user experience.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      1.0.0-rc2
+                      <span class="release-type rc">RELEASE CANDIDATE</span>
+                      <span class="release-type security">CRITICAL FIXES</span>
+                  </div>
+                  <div class="description">
+                      Critical production-readiness fixes: Resolved critical MyPy type errors that could cause runtime failures in PQC cipher operations, fixed variable naming conflicts between AESGCM and PQCipher classes.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      1.0.0-rc1
+                      <span class="release-type rc">RELEASE CANDIDATE</span>
+                      <span class="release-type major">MAJOR</span>
+                  </div>
+                  <div class="description">
+                      Major quality and security improvements: Implemented comprehensive multi-layered static code analysis system with 7 GitLab CI jobs, added 18+ pre-commit hooks for immediate feedback.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      0.9.2
+                      <span class="release-type security">SECURITY</span>
+                  </div>
+                  <div class="description">
+                      Enhanced security for password handling: Added CRYPT_PASSWORD environment variable support for CLI with secure multi-pass clearing, implemented comprehensive GUI password security.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      0.9.1
+                      <span class="release-type minor">MINOR</span>
+                  </div>
+                  <div class="description">
+                      Extended post-quantum cryptography support: Added ML-KEM algorithms (512/768/1024), re-enabled HQC algorithms with comprehensive testing.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      0.9.0
+                      <span class="release-type major">MAJOR</span>
+                      <span class="release-type security">SECURITY</span>
+                  </div>
+                  <div class="description">
+                      Major non-breaking security update: Implemented constant-time cryptographic operations, secure memory allocator, standardized error handling, Python 3.13 compatibility.
+                  </div>
+              </div>
+
+              <p><a href="changelog.html">View complete changelog &rarr;</a></p>
+          </section>
+
+          <section id="support">
+              <h2>&#128236; Support</h2>
+              <p>To report bugs or request features, send email to: <a href="mailto:issue+world-openssl-encrypt-2-issue-+gitlab@rm-rf.ch">issue+world-openssl-encrypt-2-issue-+gitlab@rm-rf.ch</a></p>
+              <p>Source code: <a href="https://gitlab.rm-rf.ch/world/openssl_encrypt">GitLab Repository</a></p>
+          </section>
+      </div>
+  </body>
+  </html>
