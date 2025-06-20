@@ -13,13 +13,15 @@
 
           <div class="stats">
               <h3>&#128202; Release Statistics</h3>
-              <p><strong>Total Releases:</strong> 17 versions | <strong>Development Period:</strong> v0.1.0 &rarr; v1.0.0-rc3 | <strong>Latest:</strong> 1.0.0-rc3</p>
-              <p><strong>Major Milestones:</strong> Initial Release (0.1.0), Post-Quantum Support (0.5.2), Feature Complete (0.6.0), Production Ready (1.0.0-rc3)</p>
+              <p><strong>Total Releases:</strong> 19 versions | <strong>Development Period:</strong> v0.1.0 &rarr; v1.1.0 | <strong>Latest:</strong> 1.1.0</p>
+              <p><strong>Major Milestones:</strong> Initial Release (0.1.0), Post-Quantum Support (0.5.2), Feature Complete (0.6.0), Stable Release (1.0.0), Extended PQC (1.1.0)</p>
           </div>
 
           <div class="toc">
               <h3>&#128203; Table of Contents</h3>
               <ul>
+                  <li><a href="#v1-1-0">1.1.0 - Extended PQC Support</a></li>
+                  <li><a href="#v1-0-0">1.0.0 - Stable Release</a></li>
                   <li><a href="#v1-0-0-rc3">1.0.0-rc3 - Documentation Enhancement</a></li>
                   <li><a href="#v1-0-0-rc2">1.0.0-rc2 - Production Readiness</a></li>
                   <li><a href="#v1-0-0-rc1">1.0.0-rc1 - Quality & Security</a></li>
@@ -42,6 +44,31 @@
                   <li><a href="#v0-2-0">0.2.0 - Modern Encryption</a></li>
                   <li><a href="#v0-1-0">0.1.0 - Initial Release</a></li>
               </ul>
+          </div>
+
+          <!-- Stable Release Series -->
+          <h2>&#128640; Stable Release Series (1.x)</h2>
+
+          <div class="changelog-item" id="v1-1-0">
+              <div class="version">
+                  1.1.0
+                  <span class="release-type stable">STABLE RELEASE</span>
+                  <span class="release-type minor">MINOR</span>
+              </div>
+              <div class="description">
+                  <strong>Extended post-quantum hybrid encryption support:</strong> Added MAYO-1/3/5 (multivariate) and CROSS-128/192/256 (code-based) hybrid encryption algorithms following the same battle-tested pattern as ML-KEM and HQC. Enhanced test coverage for comprehensive PQC error handling across all algorithms. Achieved complete NIST Round 2 post-quantum encryption coverage with 5 algorithm families: ML-KEM, HQC, Kyber, MAYO, and CROSS providing diverse quantum-resistant encryption options.
+              </div>
+          </div>
+
+          <div class="changelog-item" id="v1-0-0">
+              <div class="version">
+                  1.0.0
+                  <span class="release-type stable">STABLE RELEASE</span>
+                  <span class="release-type major">MAJOR</span>
+              </div>
+              <div class="description">
+                  <strong>STABLE RELEASE: Production-ready secure file encryption with comprehensive post-quantum cryptography support.</strong> Features ML-KEM (512/768/1024), HQC (128/192/256), and Kyber hybrid encryption algorithms alongside 18 classical encryption methods. Complete security suite with 7 hash functions, 3 key derivation methods, secure memory handling, and constant-time operations. Industry-leading code quality with comprehensive static analysis, 18+ pre-commit hooks, and extensive test coverage. Enhanced documentation with consolidated guides and comprehensive API reference. Ready for production deployment in security-critical environments.
+              </div>
           </div>
 
           <!-- Release Candidate Series -->
