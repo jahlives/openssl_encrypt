@@ -72,14 +72,14 @@ repos:
         additional_dependencies: [types-PyYAML, types-requests]
         exclude: '^(tests/|tools/|openssl_encrypt/unittests/)'
 
-  # Security and vulnerability scanning
-  - repo: https://github.com/gitguardian/ggshield
-    rev: v1.25.0
-    hooks:
-      - id: ggshield
-        name: GitGuardian scan
-        stages: [commit]
-        args: ['secret', 'scan', 'pre-commit']
+  # Security and vulnerability scanning (disabled - uncomment and configure API key to enable)
+  # - repo: https://github.com/gitguardian/ggshield
+  #   rev: v1.25.0
+  #   hooks:
+  #     - id: ggshield
+  #       name: GitGuardian scan
+  #       stages: [commit]
+  #       args: ['secret', 'scan', 'pre-commit']
 
   # Python docstring formatting
   - repo: https://github.com/pycqa/pydocstyle

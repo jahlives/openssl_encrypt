@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+  <html>
+  <head>
+      <title>Tobi's Flatpak Repository</title>
+      <link rel="stylesheet" href="apps/assets/css/styles.css">
+      <script src="apps/assets/js/scripts.js"></script>
+  </head>
+  <body>
+      <div class="container">
+          <h1>&#128247; Tobi's Flatpak Repository</h1>
+
+          <div class="setup-section">
+              <h2>&#9881; Setup Instructions</h2>
+              <p>Add this repository to your system:</p>
+              <pre>flatpak remote-add --if-not-exists custom-repo https://flatpak.rm-rf.ch/custom-repo.flatpakrepo</pre>
+          </div>
+
+          <section>
+              <h2>&#128230; Available Applications</h2>
+
+              <div class="app">
+                  <h3>&#128272; OpenSSLEncrypt</h3>
+                  <div class="app-description">
+                      <p>OpenSSL Encrypt is a comprehensive encryption tool that provides military-grade security with cutting-edge post-quantum cryptography. Protect your files against both current and future quantum computing threats.</p>
+
+                      <p>Perfect for individuals and organizations requiring the highest levels of data protection, including protection against future quantum computer attacks.</p>
+                  </div>
+
+                  <div class="contact-info">
+                      <p>&#128236; To report bugs or request features, send email to: <a href="mailto:issue+world-openssl-encrypt-2-issue-+gitlab@rm-rf.ch">issue+world-openssl-encrypt-2-issue-+gitlab@rm-rf.ch</a></p>
+                  </div>
+
+                  <div style="margin: 20px 0;">
+                      <a href="apps/openssl-encrypt/" class="details-btn">&#128214; View Details</a>
+                      <button onclick="installFlatpak('com.opensslencrypt.OpenSSLEncrypt')" class="install-btn">&#128229; Quick Install</button>
+                  </div>
+
+                  <div>
+                      <strong>&#128187; Manual install:</strong>
+                      <pre>flatpak install custom-repo com.opensslencrypt.OpenSSLEncrypt</pre>
+                  </div>
+              </div>
+          </section>
+
+          <div class="repo-files">
+              <h2>&#128193; Repository Files</h2>
+              <ul>
+                  <li><a href="repo.gpg">&#128273; GPG Public Key</a></li>
+                  <li><a href="custom-repo.flatpakrepo">&#9881; Repository Configuration</a></li>
+              </ul>
+          </div>
+      </div>
+  </body>
+  </html>
