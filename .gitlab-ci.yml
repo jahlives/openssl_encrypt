@@ -31,14 +31,12 @@ build-docker-image:
   stage: docker
   image: docker:24-cli
   services:
-    - name: docker:24-dind
-      alias: dockerdaemon
+    - docker:24-dind
   variables:
-    # Use the same working configuration as the main Docker jobs
-    DOCKER_HOST: tcp://dockerdaemon:2375
+    # Use non-TLS Docker configuration (works with your setup)
+    DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
-    DOCKER_BUILDKIT: 0
   before_script:
     # Install dependencies and wait for Docker daemon (same as working jobs)
     - apk add --no-cache curl
