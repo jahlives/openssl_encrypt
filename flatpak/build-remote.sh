@@ -80,8 +80,15 @@ ssh "root@$SERVER" '
       chown -R '"$SERVER_USER"':'"$SERVER_USER"' '"$SERVER_REPO"'
       echo "Server repository updated successfully!"
   '
-
+# Sync webstuff for flatpak repo
+echo "🔧 Updating webfiles for Flatpak Repo"
+rsync -avz ./flathub/ root@$SERVER:$SERVER_REPO/
+if [ $? -ne 0 ]; then
+      echo "❌ Error: Failed to upload to server"
+      exit 1
+fi
 echo "🎉 Deployment complete!"
 echo ""
 echo "Clients can now install with:"
 echo "flatpak install your-repo com.opensslencrypt.OpenSSLEncrypt"
+
