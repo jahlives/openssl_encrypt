@@ -32,9 +32,9 @@ usage() {
     echo "Examples:"
     echo "  $0                                    # Build with default settings"
     echo "  $0 --clean                           # Clean build"
-    echo "  $0 --default-branch 1.0.0            # Build with branch 1.0.0 and version 1.0.0"
-    echo "  $0 --version 1.1.0                   # Build with version 1.1.0 (uses default branch)"
-    echo "  $0 --default-branch master --version 1.2.0  # Build master branch but with version 1.2.0"
+    echo "  $0 --default-branch 1.0.0            # Build with branch 1.0.0"
+    echo "  $0 --default-branch stable-1.1.0     # Build stable branch with version in name"
+    echo "  $0 --default-branch master-1.2.0     # Build master branch with version in name"
     echo "  $0 --default-branch stable --clean   # Clean build with stable branch"
 }
 
@@ -76,6 +76,18 @@ if [ -n "$VERSION" ]; then
     MANIFEST_VERSION="$VERSION"
 elif [ -n "$DEFAULT_BRANCH" ] && [ "$DEFAULT_BRANCH" != "master" ]; then
     MANIFEST_VERSION="$DEFAULT_BRANCH"
+fi
+
+# Auto-adjust branch name if both branch and version are specified
+if [ -n "$DEFAULT_BRANCH" ] && [ -n "$VERSION" ] && [ "$DEFAULT_BRANCH" != "$VERSION" ]; then
+    if [ "$DEFAULT_BRANCH" = "master" ] || [ "$DEFAULT_BRANCH" = "stable" ]; then
+        # For semantic branches, append version to make it clear
+        SUGGESTED_BRANCH="${DEFAULT_BRANCH}-${VERSION}"
+        echo "💡 Suggestion: Consider using branch name '$SUGGESTED_BRANCH' to show version in branch list"
+        echo "   Users will see: Branch: $SUGGESTED_BRANCH (instead of just $DEFAULT_BRANCH)"
+        echo "   Command: $0 --default-branch $SUGGESTED_BRANCH"
+        echo ""
+    fi
 fi
 
 if [ ! -f "$MANIFEST" ]; then
@@ -154,6 +166,11 @@ BUILDER_ARGS=(
 # Add default branch if specified
 if [ -n "$DEFAULT_BRANCH" ]; then
     BUILDER_ARGS+=(--default-branch="$DEFAULT_BRANCH")
+fi
+
+# Add version as subject if specified
+if [ -n "$MANIFEST_VERSION" ]; then
+    BUILDER_ARGS+=(--subject="Export com.opensslencrypt.OpenSSLEncrypt version $MANIFEST_VERSION")
 fi
 
 # Add force-clean if clean build requested
