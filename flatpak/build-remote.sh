@@ -13,6 +13,7 @@ GPG_KEY_ID="Tobi's Flatpak Repository (Flatpak Signing Key) <jahlives@gmx.ch>"
 
 # Default values
 DEFAULT_BRANCH=""
+VERSION=""
 CLEAN_BUILD=false
 
 # Function to display usage
@@ -21,6 +22,7 @@ usage() {
     echo ""
     echo "Options:"
     echo "  --default-branch BRANCH    Set the default branch for flatpak-builder"
+    echo "  --version VERSION          Set the version tag in manifest (overrides default-branch for version)"
     echo "  --clean                    Clean build directory before building"
     echo "  -h, --help                 Show this help message"
     echo ""
@@ -28,10 +30,12 @@ usage() {
     echo "  FLATPAK_DEFAULT_BRANCH     Default branch (can be overridden by --default-branch)"
     echo ""
     echo "Examples:"
-    echo "  $0                         # Build with default settings"
-    echo "  $0 --clean                 # Clean build"
-    echo "  $0 --default-branch 1.0.0  # Build with specific branch"
-    echo "  $0 --default-branch stable --clean  # Clean build with stable branch"
+    echo "  $0                                    # Build with default settings"
+    echo "  $0 --clean                           # Clean build"
+    echo "  $0 --default-branch 1.0.0            # Build with branch 1.0.0 and version 1.0.0"
+    echo "  $0 --version 1.1.0                   # Build with version 1.1.0 (uses default branch)"
+    echo "  $0 --default-branch master --version 1.2.0  # Build master branch but with version 1.2.0"
+    echo "  $0 --default-branch stable --clean   # Clean build with stable branch"
 }
 
 # Parse command line arguments
@@ -39,6 +43,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --default-branch)
             DEFAULT_BRANCH="$2"
+            shift 2
+            ;;
+        --version)
+            VERSION="$2"
             shift 2
             ;;
         --clean|clean)
@@ -62,6 +70,14 @@ if [ -z "$DEFAULT_BRANCH" ] && [ -n "$FLATPAK_DEFAULT_BRANCH" ]; then
     DEFAULT_BRANCH="$FLATPAK_DEFAULT_BRANCH"
 fi
 
+# Determine version to use: explicit --version takes priority, then --default-branch, then nothing
+MANIFEST_VERSION=""
+if [ -n "$VERSION" ]; then
+    MANIFEST_VERSION="$VERSION"
+elif [ -n "$DEFAULT_BRANCH" ] && [ "$DEFAULT_BRANCH" != "master" ]; then
+    MANIFEST_VERSION="$DEFAULT_BRANCH"
+fi
+
 if [ ! -f "$MANIFEST" ]; then
       echo "❌ Error: Manifest file '$MANIFEST' not found!"
       exit 1
@@ -70,6 +86,41 @@ fi
 echo "🏗️  Building Flatpak application locally..."
 if [ -n "$DEFAULT_BRANCH" ]; then
     echo "📋 Using default branch: $DEFAULT_BRANCH"
+fi
+if [ -n "$MANIFEST_VERSION" ]; then
+    echo "📋 Using version tag: $MANIFEST_VERSION"
+fi
+
+# Update manifest version if specified
+ORIGINAL_MANIFEST="$MANIFEST"
+TEMP_MANIFEST="${MANIFEST}.tmp"
+
+if [ -n "$MANIFEST_VERSION" ]; then
+    echo "📝 Updating manifest version to: $MANIFEST_VERSION"
+    
+    # Check if jq is available
+    if command -v jq >/dev/null 2>&1; then
+        # Use jq to update version field
+        jq --arg version "$MANIFEST_VERSION" '.version = $version' "$MANIFEST" > "$TEMP_MANIFEST"
+        if [ $? -eq 0 ]; then
+            mv "$TEMP_MANIFEST" "$MANIFEST"
+            echo "✅ Manifest version updated to: $MANIFEST_VERSION"
+        else
+            echo "❌ Failed to update manifest with jq"
+            rm -f "$TEMP_MANIFEST"
+        fi
+    else
+        # Fallback: use sed for simple version update
+        echo "⚠️  jq not available, using sed fallback"
+        if grep -q '"version":' "$MANIFEST"; then
+            sed -i.bak 's/"version": *"[^"]*"/"version": "'"$MANIFEST_VERSION"'"/' "$MANIFEST"
+            echo "✅ Manifest version updated to: $MANIFEST_VERSION (using sed)"
+        else
+            # Add version field if it doesn't exist
+            sed -i.bak 's/"app-id":/"version": "'"$MANIFEST_VERSION"'",\n  "app-id":/' "$MANIFEST"
+            echo "✅ Manifest version field added: $MANIFEST_VERSION"
+        fi
+    fi
 fi
 
 find "$BUILD_DIR" -mindepth 1 -maxdepth 1 ! -name '.flatpak-builder' -exec rm -rf {} +
@@ -157,8 +208,20 @@ if [ $? -ne 0 ]; then
       echo "❌ Error: Failed to upload to server"
       exit 1
 fi
+# Restore original manifest if we modified it
+if [ -n "$MANIFEST_VERSION" ]; then
+    if [ -f "$MANIFEST.bak" ]; then
+        echo "🔄 Restoring original manifest..."
+        mv "$MANIFEST.bak" "$MANIFEST"
+    fi
+fi
+
 echo "🎉 Deployment complete!"
 echo ""
 echo "Clients can now install with:"
-echo "flatpak install your-repo com.opensslencrypt.OpenSSLEncrypt"
+if [ -n "$DEFAULT_BRANCH" ]; then
+    echo "flatpak install custom-repo com.opensslencrypt.OpenSSLEncrypt//$DEFAULT_BRANCH"
+else
+    echo "flatpak install custom-repo com.opensslencrypt.OpenSSLEncrypt"
+fi
 
