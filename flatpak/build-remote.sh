@@ -32,9 +32,10 @@ usage() {
     echo "Examples:"
     echo "  $0                                    # Build with default settings"
     echo "  $0 --clean                           # Clean build"
-    echo "  $0 --default-branch 1.0.0            # Build with branch 1.0.0 and version 1.0.0"
-    echo "  $0 --version 1.1.0                   # Build with version 1.1.0 (uses default branch)"
-    echo "  $0 --default-branch master --version 1.2.0  # Build master branch but with version 1.2.0"
+    echo "  $0 --default-branch 1.0.0            # Build with branch 1.0.0"
+    echo "  $0 --default-branch stable --version 1.1.0  # Auto-creates branch 'stable-1.1.0'"
+    echo "  $0 --default-branch master --version 1.2.0  # Auto-creates branch 'master-1.2.0'"
+    echo "  $0 --default-branch nightly --version 1.3.0 # Auto-creates branch 'nightly-1.3.0'"
     echo "  $0 --default-branch stable --clean   # Clean build with stable branch"
 }
 
@@ -70,12 +71,17 @@ if [ -z "$DEFAULT_BRANCH" ] && [ -n "$FLATPAK_DEFAULT_BRANCH" ]; then
     DEFAULT_BRANCH="$FLATPAK_DEFAULT_BRANCH"
 fi
 
-# Determine version to use: explicit --version takes priority, then --default-branch, then nothing
-MANIFEST_VERSION=""
-if [ -n "$VERSION" ]; then
-    MANIFEST_VERSION="$VERSION"
-elif [ -n "$DEFAULT_BRANCH" ] && [ "$DEFAULT_BRANCH" != "master" ]; then
-    MANIFEST_VERSION="$DEFAULT_BRANCH"
+
+# Auto-adjust branch name if both branch and version are specified
+if [ -n "$DEFAULT_BRANCH" ] && [ -n "$VERSION" ] && [ "$DEFAULT_BRANCH" != "$VERSION" ]; then
+    if [ "$DEFAULT_BRANCH" = "master" ] || [ "$DEFAULT_BRANCH" = "stable" ] || [ "$DEFAULT_BRANCH" = "beta" ] || [ "$DEFAULT_BRANCH" = "nightly" ]; then
+        # For semantic branches, automatically append version to make it clear
+        ORIGINAL_BRANCH="$DEFAULT_BRANCH"
+        DEFAULT_BRANCH="${DEFAULT_BRANCH}-${VERSION}"
+        echo "🔄 Auto-created descriptive branch name: $ORIGINAL_BRANCH → $DEFAULT_BRANCH"
+        echo "   Users will see: Branch: $DEFAULT_BRANCH (shows both purpose and version)"
+        echo ""
+    fi
 fi
 
 if [ ! -f "$MANIFEST" ]; then
@@ -85,20 +91,10 @@ fi
 
 echo "🏗️  Building Flatpak application locally..."
 if [ -n "$DEFAULT_BRANCH" ]; then
-    echo "📋 Using default branch: $DEFAULT_BRANCH"
-fi
-if [ -n "$MANIFEST_VERSION" ]; then
-    echo "📋 Using version tag: $MANIFEST_VERSION"
+    echo "📋 Using branch: $DEFAULT_BRANCH"
 fi
 
-# Update manifest version if specified
-ORIGINAL_MANIFEST="$MANIFEST"
-TEMP_MANIFEST="${MANIFEST}.tmp"
 
-if [ -n "$MANIFEST_VERSION" ]; then
-    echo "📝 Version will be set via ostree metadata: $MANIFEST_VERSION"
-    echo "ℹ️  This will appear in the 'Version' column of 'flatpak remote-ls'"
-fi
 
 find "$BUILD_DIR" -mindepth 1 -maxdepth 1 ! -name '.flatpak-builder' -exec rm -rf {} +
 
@@ -128,6 +124,7 @@ if [ -n "$DEFAULT_BRANCH" ]; then
     BUILDER_ARGS+=(--default-branch="$DEFAULT_BRANCH")
 fi
 
+
 # Add force-clean if clean build requested
 if [ "$CLEAN_BUILD" = true ]; then
     BUILDER_ARGS+=(--force-clean)
@@ -141,41 +138,6 @@ flatpak-builder "${BUILDER_ARGS[@]}"
 
 echo "✅ Build complete!"
 
-# Set version metadata using ostree if version is specified
-if [ -n "$MANIFEST_VERSION" ]; then
-    echo "📝 Setting version metadata using ostree: $MANIFEST_VERSION"
-    
-    # Get the app ID from manifest
-    APP_ID="com.opensslencrypt.OpenSSLEncrypt"
-    BRANCH_NAME="${DEFAULT_BRANCH:-master}"
-    REF="app/$APP_ID/x86_64/$BRANCH_NAME"
-    
-    # Get the current commit hash
-    COMMIT_HASH=$(ostree --repo="$LOCAL_REPO" rev-parse "$REF" 2>/dev/null || echo "")
-    
-    if [ -n "$COMMIT_HASH" ]; then
-        echo "📋 Found commit: $COMMIT_HASH for ref: $REF"
-        echo "📝 Adding version metadata: $MANIFEST_VERSION"
-        
-        # Create a new commit with version metadata
-        ostree --repo="$LOCAL_REPO" commit \
-            --parent="$COMMIT_HASH" \
-            --branch="$REF" \
-            --add-metadata-string="xa.version=$MANIFEST_VERSION" \
-            --gpg-sign="$GPG_KEY_ID" \
-            --tree=ref="$COMMIT_HASH" \
-            --no-bindings
-            
-        if [ $? -eq 0 ]; then
-            echo "✅ Version metadata added successfully: $MANIFEST_VERSION"
-        else
-            echo "⚠️  Failed to add version metadata, but build completed successfully"
-        fi
-    else
-        echo "⚠️  Could not find commit for ref: $REF"
-        echo "    Version metadata not set, but build completed successfully"
-    fi
-fi
 
 echo "✅ Local build complete!"
 
@@ -222,10 +184,6 @@ rsync -avz ./flathub/ root@$SERVER:$SERVER_REPO/
 if [ $? -ne 0 ]; then
       echo "❌ Error: Failed to upload to server"
       exit 1
-fi
-# Clean up any temporary files (no file modifications needed with ostree approach)
-if [ -n "$MANIFEST_VERSION" ]; then
-    echo "✅ Build completed with version: $MANIFEST_VERSION"
 fi
 
 echo "🎉 Deployment complete!"
