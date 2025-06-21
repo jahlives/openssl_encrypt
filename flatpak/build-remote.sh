@@ -96,7 +96,7 @@ ORIGINAL_MANIFEST="$MANIFEST"
 TEMP_MANIFEST="${MANIFEST}.tmp"
 
 if [ -n "$MANIFEST_VERSION" ]; then
-    echo "📝 Version will be set via --app-version parameter: $MANIFEST_VERSION"
+    echo "📝 Version will be set via ostree metadata: $MANIFEST_VERSION"
     echo "ℹ️  This will appear in the 'Version' column of 'flatpak remote-ls'"
 fi
 
@@ -117,7 +117,7 @@ if [ "$CLEAN_BUILD" = true ]; then
     rm -rf "$BUILD_DIR"
 fi
 
-# Build the application with repository export
+# Build the application with optional default branch
 BUILDER_ARGS=(
     --repo="$LOCAL_REPO"
     --gpg-sign="$GPG_KEY_ID"
@@ -223,7 +223,7 @@ if [ $? -ne 0 ]; then
       echo "❌ Error: Failed to upload to server"
       exit 1
 fi
-# Clean up any temporary files (no file modifications needed with --app-version)
+# Clean up any temporary files (no file modifications needed with ostree approach)
 if [ -n "$MANIFEST_VERSION" ]; then
     echo "✅ Build completed with version: $MANIFEST_VERSION"
 fi
