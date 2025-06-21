@@ -154,7 +154,6 @@ if [ -n "$MANIFEST_VERSION" ]; then
     
     # Create a temporary commit with the version metadata
     flatpak build-commit-from \
-        --repo="$LOCAL_REPO" \
         --gpg-sign="$GPG_KEY_ID" \
         --subject="Export $APP_ID with version $MANIFEST_VERSION" \
         --body="Version: $MANIFEST_VERSION" \
