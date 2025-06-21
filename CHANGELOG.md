@@ -5,6 +5,48 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2025-06-21
+
+### Added
+- MAYO post-quantum signature algorithm support for enhanced authentication
+- CROSS post-quantum signature algorithm integration
+- Extended post-quantum cryptography portfolio with signature algorithms
+- Advanced keystore management for MAYO and CROSS keys
+- Enhanced CLI interface with MAYO and CROSS signature options
+- Comprehensive testing suite for new signature algorithms
+
+### Changed
+- Upgraded core cryptographic libraries to support signature algorithms
+- Enhanced keystore format to accommodate signature keys
+- Improved documentation with MAYO and CROSS usage examples
+- Extended algorithm selection interface for signature operations
+
+### Security
+- Additional post-quantum signature algorithms for future-proof authentication
+- Enhanced protection with quantum-resistant signature verification
+- Comprehensive security validation for MAYO and CROSS implementations
+- Updated cryptographic architecture to support hybrid signature schemes
+
+## [1.0.0] - 2025-06-21
+
+### Added
+- Official production release milestone
+- Enterprise-grade quantum-resistant cryptographic capabilities
+- Complete post-quantum cryptography support (Kyber, ML-KEM, HQC algorithms)
+- Production-grade type safety and runtime stability
+- Enterprise-ready keystore management for PQC keys
+- Industry-leading code quality standards with comprehensive static analysis
+
+### Changed
+- Status updated to Production Release / Stable
+- Full backward compatibility maintained with all previous file formats
+- Production deployment readiness achieved
+
+### Security
+- Comprehensive security hardening with constant-time operations
+- Final security audit completion with zero HIGH/MEDIUM severity issues
+- Production-ready security posture established
+
 ## [1.0.0-rc3] - 2025-06-16
 
 ### Documentation
