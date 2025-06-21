@@ -5,6 +5,26 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2025-06-21
+
+### Added
+- Official production release milestone
+- Enterprise-grade quantum-resistant cryptographic capabilities
+- Complete post-quantum cryptography support (Kyber, ML-KEM, HQC algorithms)
+- Production-grade type safety and runtime stability
+- Enterprise-ready keystore management for PQC keys
+- Industry-leading code quality standards with comprehensive static analysis
+
+### Changed
+- Status updated to Production Release / Stable
+- Full backward compatibility maintained with all previous file formats
+- Production deployment readiness achieved
+
+### Security
+- Comprehensive security hardening with constant-time operations
+- Final security audit completion with zero HIGH/MEDIUM severity issues
+- Production-ready security posture established
+
 ## [1.0.0-rc3] - 2025-06-16
 
 ### Documentation
