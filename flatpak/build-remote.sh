@@ -16,7 +16,7 @@ if [ ! -f "$MANIFEST" ]; then
       exit 1
 fi
 
-echo "🏗️  Building Flatpak application locally..."
+echo "🏗  Building Flatpak application locally..."
 find "$BUILD_DIR" -mindepth 1 -maxdepth 1 ! -name '.flatpak-builder' -exec rm -rf {} +
 
 # Ensure directories exist
@@ -80,7 +80,13 @@ ssh "root@$SERVER" '
       chown -R '"$SERVER_USER"':'"$SERVER_USER"' '"$SERVER_REPO"'
       echo "Server repository updated successfully!"
   '
-
+# Sync webstuff for flatpak repo
+echo "🔧 Updating webfiles for Flatpak Repo"
+rsync -avz ./flathub/ root@$SERVER:$SERVER_REPO/
+if [ $? -ne 0 ]; then
+      echo "❌ Error: Failed to upload to server"
+      exit 1
+fi
 echo "🎉 Deployment complete!"
 echo ""
 echo "Clients can now install with:"
