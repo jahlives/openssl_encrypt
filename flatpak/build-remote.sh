@@ -141,47 +141,50 @@ flatpak-builder "${BUILDER_ARGS[@]}"
 
 echo "✅ Build complete!"
 
-# Set version using flatpak build-commit-from if version is specified
+# Try to set version using available flatpak tools
 if [ -n "$MANIFEST_VERSION" ]; then
-    echo "📝 Setting version using flatpak build-commit-from: $MANIFEST_VERSION"
+    echo "📝 Attempting to set version metadata: $MANIFEST_VERSION"
     
     # Get the app ID from manifest
     APP_ID="com.opensslencrypt.OpenSSLEncrypt"
     BRANCH_NAME="${DEFAULT_BRANCH:-master}"
     
-    # Use flatpak build-commit-from to set version metadata properly
-    echo "📋 Updating flatpak metadata with version: $MANIFEST_VERSION"
-    
-    # Create a temporary commit with the version metadata
-    flatpak build-commit-from \
-        --gpg-sign="$GPG_KEY_ID" \
-        --subject="Export $APP_ID with version $MANIFEST_VERSION" \
-        --body="Version: $MANIFEST_VERSION" \
-        --app-version="$MANIFEST_VERSION" \
-        "$LOCAL_REPO" \
-        "app/$APP_ID/x86_64/$BRANCH_NAME"
+    # Method 1: Try using flatpak build-export if the build wasn't exported yet
+    if [ -d "$BUILD_DIR/export" ] && [ ! -z "$(ls -A $BUILD_DIR/export 2>/dev/null)" ]; then
+        echo "📋 Found export directory, trying flatpak build-export with version metadata"
         
-    if [ $? -eq 0 ]; then
-        echo "✅ Version metadata added successfully: $MANIFEST_VERSION"
-    else
-        echo "⚠️  Failed to add version metadata using flatpak build-commit-from"
-        echo "    Trying alternative approach..."
+        # Try to re-export with version metadata using ostree
+        echo "📝 Adding version metadata directly to OSTree commit"
+        REF="app/$APP_ID/x86_64/$BRANCH_NAME"
         
-        # Fallback: Use ostree to add app metadata
-        ostree --repo="$LOCAL_REPO" commit \
-            --branch="app/$APP_ID/x86_64/$BRANCH_NAME" \
-            --add-metadata-string="xa.version=$MANIFEST_VERSION" \
-            --add-metadata-string="xa.metadata.version=$MANIFEST_VERSION" \
-            --gpg-sign="$GPG_KEY_ID" \
-            --tree=ref="app/$APP_ID/x86_64/$BRANCH_NAME" \
-            --no-bindings \
-            --subject="Add version metadata: $MANIFEST_VERSION"
+        # Get current commit and add version metadata
+        if ostree --repo="$LOCAL_REPO" rev-parse "$REF" >/dev/null 2>&1; then
+            CURRENT_COMMIT=$(ostree --repo="$LOCAL_REPO" rev-parse "$REF")
+            echo "📋 Current commit: $CURRENT_COMMIT"
             
-        if [ $? -eq 0 ]; then
-            echo "✅ Version metadata added via ostree: $MANIFEST_VERSION"
+            # Create new commit with version metadata
+            ostree --repo="$LOCAL_REPO" commit \
+                --parent="$CURRENT_COMMIT" \
+                --branch="$REF" \
+                --add-metadata-string="version=$MANIFEST_VERSION" \
+                --add-metadata-string="xa.version=$MANIFEST_VERSION" \
+                --add-metadata-string="xa.metadata[version]=$MANIFEST_VERSION" \
+                --gpg-sign="$GPG_KEY_ID" \
+                --tree=ref="$CURRENT_COMMIT" \
+                --subject="Add version metadata: $MANIFEST_VERSION" \
+                --body="Version: $MANIFEST_VERSION"
+                
+            if [ $? -eq 0 ]; then
+                echo "✅ Version metadata added successfully: $MANIFEST_VERSION"
+            else
+                echo "⚠️  Failed to add version metadata, but build completed successfully"
+            fi
         else
-            echo "⚠️  Failed to add version metadata, but build completed successfully"
+            echo "⚠️  Could not find existing commit for $REF"
         fi
+    else
+        echo "⚠️  No export directory found, version metadata not added"
+        echo "    Build completed successfully without version metadata"
     fi
 fi
 
