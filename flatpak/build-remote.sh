@@ -96,8 +96,36 @@ ORIGINAL_MANIFEST="$MANIFEST"
 TEMP_MANIFEST="${MANIFEST}.tmp"
 
 if [ -n "$MANIFEST_VERSION" ]; then
-    echo "📝 Version will be set via flatpak build-commit-from: $MANIFEST_VERSION"
+    echo "📝 Version will be set by modifying manifest: $MANIFEST_VERSION"
     echo "ℹ️  This will appear in the 'Version' column of 'flatpak remote-ls'"
+    
+    # Create backup of manifest before modifying
+    cp "$MANIFEST" "$MANIFEST.bak"
+    
+    # Modify the manifest to add version-setting commands to the post-install
+    if command -v jq >/dev/null 2>&1; then
+        # Use jq to add version-setting commands to the openssl-encrypt module
+        jq --arg version "$MANIFEST_VERSION" '
+        .modules[-1]["post-install"] += [
+            "mkdir -p /app/share/app-info/xmls",
+            "echo \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\" > /app/share/app-info/xmls/com.opensslencrypt.OpenSSLEncrypt.xml",
+            "echo \"<application>\" >> /app/share/app-info/xmls/com.opensslencrypt.OpenSSLEncrypt.xml", 
+            "echo \"  <id>com.opensslencrypt.OpenSSLEncrypt</id>\" >> /app/share/app-info/xmls/com.opensslencrypt.OpenSSLEncrypt.xml",
+            "echo \"  <name>OpenSSL Encrypt</name>\" >> /app/share/app-info/xmls/com.opensslencrypt.OpenSSLEncrypt.xml",
+            ("echo \"  <version>" + $version + "</version>\" >> /app/share/app-info/xmls/com.opensslencrypt.OpenSSLEncrypt.xml"),
+            "echo \"</application>\" >> /app/share/app-info/xmls/com.opensslencrypt.OpenSSLEncrypt.xml"
+        ]' "$MANIFEST" > "$TEMP_MANIFEST"
+        
+        if [ $? -eq 0 ]; then
+            mv "$TEMP_MANIFEST" "$MANIFEST"
+            echo "✅ Manifest updated with version metadata commands: $MANIFEST_VERSION"
+        else
+            echo "❌ Failed to update manifest with jq"
+            rm -f "$TEMP_MANIFEST"
+        fi
+    else
+        echo "⚠️  jq not available, version metadata not added to manifest"
+    fi
 fi
 
 find "$BUILD_DIR" -mindepth 1 -maxdepth 1 ! -name '.flatpak-builder' -exec rm -rf {} +
@@ -141,51 +169,9 @@ flatpak-builder "${BUILDER_ARGS[@]}"
 
 echo "✅ Build complete!"
 
-# Try to set version using available flatpak tools
+# Version metadata is now embedded in the app via manifest modification
 if [ -n "$MANIFEST_VERSION" ]; then
-    echo "📝 Attempting to set version metadata: $MANIFEST_VERSION"
-    
-    # Get the app ID from manifest
-    APP_ID="com.opensslencrypt.OpenSSLEncrypt"
-    BRANCH_NAME="${DEFAULT_BRANCH:-master}"
-    
-    # Method 1: Try using flatpak build-export if the build wasn't exported yet
-    if [ -d "$BUILD_DIR/export" ] && [ ! -z "$(ls -A $BUILD_DIR/export 2>/dev/null)" ]; then
-        echo "📋 Found export directory, trying flatpak build-export with version metadata"
-        
-        # Try to re-export with version metadata using ostree
-        echo "📝 Adding version metadata directly to OSTree commit"
-        REF="app/$APP_ID/x86_64/$BRANCH_NAME"
-        
-        # Get current commit and add version metadata
-        if ostree --repo="$LOCAL_REPO" rev-parse "$REF" >/dev/null 2>&1; then
-            CURRENT_COMMIT=$(ostree --repo="$LOCAL_REPO" rev-parse "$REF")
-            echo "📋 Current commit: $CURRENT_COMMIT"
-            
-            # Create new commit with version metadata
-            ostree --repo="$LOCAL_REPO" commit \
-                --parent="$CURRENT_COMMIT" \
-                --branch="$REF" \
-                --add-metadata-string="version=$MANIFEST_VERSION" \
-                --add-metadata-string="xa.version=$MANIFEST_VERSION" \
-                --add-metadata-string="xa.metadata[version]=$MANIFEST_VERSION" \
-                --gpg-sign="$GPG_KEY_ID" \
-                --tree=ref="$CURRENT_COMMIT" \
-                --subject="Add version metadata: $MANIFEST_VERSION" \
-                --body="Version: $MANIFEST_VERSION"
-                
-            if [ $? -eq 0 ]; then
-                echo "✅ Version metadata added successfully: $MANIFEST_VERSION"
-            else
-                echo "⚠️  Failed to add version metadata, but build completed successfully"
-            fi
-        else
-            echo "⚠️  Could not find existing commit for $REF"
-        fi
-    else
-        echo "⚠️  No export directory found, version metadata not added"
-        echo "    Build completed successfully without version metadata"
-    fi
+    echo "📝 Version metadata embedded in app during build: $MANIFEST_VERSION"
 fi
 
 echo "✅ Local build complete!"
@@ -234,9 +220,16 @@ if [ $? -ne 0 ]; then
       echo "❌ Error: Failed to upload to server"
       exit 1
 fi
-# Clean up any temporary files (no file modifications needed with ostree approach)
+# Restore original manifest if we modified it
+if [ -n "$MANIFEST_VERSION" ] && [ -f "$MANIFEST.bak" ]; then
+    echo "🔄 Restoring original manifest..."
+    mv "$MANIFEST.bak" "$MANIFEST"
+fi
+
+# Clean up any temporary files
 if [ -n "$MANIFEST_VERSION" ]; then
     echo "✅ Build completed with version: $MANIFEST_VERSION"
+    rm -f "$TEMP_MANIFEST"
 fi
 
 echo "🎉 Deployment complete!"
