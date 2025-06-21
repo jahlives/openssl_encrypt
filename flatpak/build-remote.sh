@@ -71,13 +71,6 @@ if [ -z "$DEFAULT_BRANCH" ] && [ -n "$FLATPAK_DEFAULT_BRANCH" ]; then
     DEFAULT_BRANCH="$FLATPAK_DEFAULT_BRANCH"
 fi
 
-# Determine version to use: explicit --version takes priority, then --default-branch, then nothing
-MANIFEST_VERSION=""
-if [ -n "$VERSION" ]; then
-    MANIFEST_VERSION="$VERSION"
-elif [ -n "$DEFAULT_BRANCH" ] && [ "$DEFAULT_BRANCH" != "master" ]; then
-    MANIFEST_VERSION="$DEFAULT_BRANCH"
-fi
 
 # Auto-adjust branch name if both branch and version are specified
 if [ -n "$DEFAULT_BRANCH" ] && [ -n "$VERSION" ] && [ "$DEFAULT_BRANCH" != "$VERSION" ]; then
@@ -98,48 +91,10 @@ fi
 
 echo "🏗️  Building Flatpak application locally..."
 if [ -n "$DEFAULT_BRANCH" ]; then
-    echo "📋 Using default branch: $DEFAULT_BRANCH"
-fi
-if [ -n "$MANIFEST_VERSION" ]; then
-    echo "📋 Using version tag: $MANIFEST_VERSION"
+    echo "📋 Using branch: $DEFAULT_BRANCH"
 fi
 
-# Update manifest version if specified
-ORIGINAL_MANIFEST="$MANIFEST"
-TEMP_MANIFEST="${MANIFEST}.tmp"
 
-if [ -n "$MANIFEST_VERSION" ]; then
-    echo "📝 Version will be set by modifying manifest: $MANIFEST_VERSION"
-    echo "ℹ️  This will appear in the 'Version' column of 'flatpak remote-ls'"
-    
-    # Create backup of manifest before modifying
-    cp "$MANIFEST" "$MANIFEST.bak"
-    
-    # Modify the manifest to add version-setting commands to the post-install
-    if command -v jq >/dev/null 2>&1; then
-        # Use jq to add version-setting commands to the openssl-encrypt module
-        jq --arg version "$MANIFEST_VERSION" '
-        .modules[-1]["post-install"] += [
-            "mkdir -p /app/share/app-info/xmls",
-            "echo \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\" > /app/share/app-info/xmls/com.opensslencrypt.OpenSSLEncrypt.xml",
-            "echo \"<application>\" >> /app/share/app-info/xmls/com.opensslencrypt.OpenSSLEncrypt.xml", 
-            "echo \"  <id>com.opensslencrypt.OpenSSLEncrypt</id>\" >> /app/share/app-info/xmls/com.opensslencrypt.OpenSSLEncrypt.xml",
-            "echo \"  <name>OpenSSL Encrypt</name>\" >> /app/share/app-info/xmls/com.opensslencrypt.OpenSSLEncrypt.xml",
-            ("echo \"  <version>" + $version + "</version>\" >> /app/share/app-info/xmls/com.opensslencrypt.OpenSSLEncrypt.xml"),
-            "echo \"</application>\" >> /app/share/app-info/xmls/com.opensslencrypt.OpenSSLEncrypt.xml"
-        ]' "$MANIFEST" > "$TEMP_MANIFEST"
-        
-        if [ $? -eq 0 ]; then
-            mv "$TEMP_MANIFEST" "$MANIFEST"
-            echo "✅ Manifest updated with version metadata commands: $MANIFEST_VERSION"
-        else
-            echo "❌ Failed to update manifest with jq"
-            rm -f "$TEMP_MANIFEST"
-        fi
-    else
-        echo "⚠️  jq not available, version metadata not added to manifest"
-    fi
-fi
 
 find "$BUILD_DIR" -mindepth 1 -maxdepth 1 ! -name '.flatpak-builder' -exec rm -rf {} +
 
@@ -169,10 +124,6 @@ if [ -n "$DEFAULT_BRANCH" ]; then
     BUILDER_ARGS+=(--default-branch="$DEFAULT_BRANCH")
 fi
 
-# Add version as subject if specified
-if [ -n "$MANIFEST_VERSION" ]; then
-    BUILDER_ARGS+=(--subject="Export com.opensslencrypt.OpenSSLEncrypt version $MANIFEST_VERSION")
-fi
 
 # Add force-clean if clean build requested
 if [ "$CLEAN_BUILD" = true ]; then
@@ -187,10 +138,6 @@ flatpak-builder "${BUILDER_ARGS[@]}"
 
 echo "✅ Build complete!"
 
-# Version metadata is now embedded in the app via manifest modification
-if [ -n "$MANIFEST_VERSION" ]; then
-    echo "📝 Version metadata embedded in app during build: $MANIFEST_VERSION"
-fi
 
 echo "✅ Local build complete!"
 
@@ -237,17 +184,6 @@ rsync -avz ./flathub/ root@$SERVER:$SERVER_REPO/
 if [ $? -ne 0 ]; then
       echo "❌ Error: Failed to upload to server"
       exit 1
-fi
-# Restore original manifest if we modified it
-if [ -n "$MANIFEST_VERSION" ] && [ -f "$MANIFEST.bak" ]; then
-    echo "🔄 Restoring original manifest..."
-    mv "$MANIFEST.bak" "$MANIFEST"
-fi
-
-# Clean up any temporary files
-if [ -n "$MANIFEST_VERSION" ]; then
-    echo "✅ Build completed with version: $MANIFEST_VERSION"
-    rm -f "$TEMP_MANIFEST"
 fi
 
 echo "🎉 Deployment complete!"
