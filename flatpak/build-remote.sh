@@ -33,8 +33,9 @@ usage() {
     echo "  $0                                    # Build with default settings"
     echo "  $0 --clean                           # Clean build"
     echo "  $0 --default-branch 1.0.0            # Build with branch 1.0.0"
-    echo "  $0 --default-branch stable-1.1.0     # Build stable branch with version in name"
-    echo "  $0 --default-branch master-1.2.0     # Build master branch with version in name"
+    echo "  $0 --default-branch stable --version 1.1.0  # Auto-creates branch 'stable-1.1.0'"
+    echo "  $0 --default-branch master --version 1.2.0  # Auto-creates branch 'master-1.2.0'"
+    echo "  $0 --default-branch nightly --version 1.3.0 # Auto-creates branch 'nightly-1.3.0'"
     echo "  $0 --default-branch stable --clean   # Clean build with stable branch"
 }
 
@@ -80,12 +81,12 @@ fi
 
 # Auto-adjust branch name if both branch and version are specified
 if [ -n "$DEFAULT_BRANCH" ] && [ -n "$VERSION" ] && [ "$DEFAULT_BRANCH" != "$VERSION" ]; then
-    if [ "$DEFAULT_BRANCH" = "master" ] || [ "$DEFAULT_BRANCH" = "stable" ]; then
-        # For semantic branches, append version to make it clear
-        SUGGESTED_BRANCH="${DEFAULT_BRANCH}-${VERSION}"
-        echo "💡 Suggestion: Consider using branch name '$SUGGESTED_BRANCH' to show version in branch list"
-        echo "   Users will see: Branch: $SUGGESTED_BRANCH (instead of just $DEFAULT_BRANCH)"
-        echo "   Command: $0 --default-branch $SUGGESTED_BRANCH"
+    if [ "$DEFAULT_BRANCH" = "master" ] || [ "$DEFAULT_BRANCH" = "stable" ] || [ "$DEFAULT_BRANCH" = "beta" ] || [ "$DEFAULT_BRANCH" = "nightly" ]; then
+        # For semantic branches, automatically append version to make it clear
+        ORIGINAL_BRANCH="$DEFAULT_BRANCH"
+        DEFAULT_BRANCH="${DEFAULT_BRANCH}-${VERSION}"
+        echo "🔄 Auto-created descriptive branch name: $ORIGINAL_BRANCH → $DEFAULT_BRANCH"
+        echo "   Users will see: Branch: $DEFAULT_BRANCH (shows both purpose and version)"
         echo ""
     fi
 fi
