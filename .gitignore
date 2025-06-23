@@ -210,6 +210,12 @@ flatpak/*.log
 
 # CI/CD artifacts
 .gitlab-ci-local/
+.gitlab-ci-build-reference.yml
+.gitlab-ci-build.yml
+.gitlab-ci-test.yml
+
+# Development/patch scripts
+direct_replacement.py
 
 # Additional Flatpak build artifacts and scripts
 flatpak/create-repo.sh
