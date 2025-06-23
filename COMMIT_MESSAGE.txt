@@ -1,6 +1,6 @@
 [WIP] Add configurable data encryption algorithms for Kyber (v5 metadata)
 
-This initial implementation adds support for selecting different symmetric 
+This initial implementation adds support for selecting different symmetric
 encryption algorithms when using Kyber. This is an EXPERIMENTAL FEATURE
 currently in early testing phase and NOT YET READY for production use.
 
@@ -27,7 +27,7 @@ When using Kyber, users can now select one of the following for data encryption:
 ## Current Status
 
 IMPORTANT: This is an early testing feature that passes its specific unit tests
-but breaks compatibility with some existing functionality. DO NOT use in 
+but breaks compatibility with some existing functionality. DO NOT use in
 production environments.
 
 * The core encryption_data feature works correctly

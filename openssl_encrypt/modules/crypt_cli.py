@@ -1076,7 +1076,6 @@ def main():
         "--custom-password-list", help="Path to custom common password list file"
     )
 
-
     args = parser.parse_args()
 
     # Enhance the args with better defaults for extended algorithms
@@ -1310,7 +1309,14 @@ def main():
         sys.exit(0)
 
     # For other actions, input file is required
-    if args.input is None and args.action not in ["generate-password", "security-info", "check-argon2", "check-pqc", "version", "show-version-file"]:
+    if args.input is None and args.action not in [
+        "generate-password",
+        "security-info",
+        "check-argon2",
+        "check-pqc",
+        "version",
+        "show-version-file",
+    ]:
         parser.error("the following arguments are required: --input/-i")
 
     # Get password (only for encrypt/decrypt actions)

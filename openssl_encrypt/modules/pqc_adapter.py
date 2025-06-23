@@ -57,7 +57,7 @@ ALGORITHM_TYPE_MAP = {
     "FN-DSA-1024": "sig",
     # NIST Round 2 Additional Signature Algorithms
     "MAYO-1": "sig",
-    "MAYO-3": "sig", 
+    "MAYO-3": "sig",
     "MAYO-5": "sig",
     "CROSS-128": "sig",
     "CROSS-192": "sig",
@@ -136,12 +136,12 @@ SECURITY_LEVEL_MAP = {
     "SLH-DSA-SHA2-256F": 5,
     "FN-DSA-1024": 5,
     # NIST Round 2 Additional Signature Algorithms Security Levels
-    "MAYO-1": 1,      # Level 1 (128-bit security)
-    "MAYO-3": 3,      # Level 3 (192-bit security)
-    "MAYO-5": 5,      # Level 5 (256-bit security)
-    "CROSS-128": 1,   # Level 1 (128-bit security)
-    "CROSS-192": 3,   # Level 3 (192-bit security)
-    "CROSS-256": 5,   # Level 5 (256-bit security)
+    "MAYO-1": 1,  # Level 1 (128-bit security)
+    "MAYO-3": 3,  # Level 3 (192-bit security)
+    "MAYO-5": 5,  # Level 5 (256-bit security)
+    "CROSS-128": 1,  # Level 1 (128-bit security)
+    "CROSS-192": 3,  # Level 3 (192-bit security)
+    "CROSS-256": 5,  # Level 5 (256-bit security)
 }
 
 

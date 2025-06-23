@@ -29,7 +29,7 @@ openssl_encrypt/
 
 ### MAYO (Oil and Vinegar) - Hybrid Encryption ✅
 - **Mathematical Foundation**: Multivariate quadratic equations (Oil-and-Vinegar maps)
-- **Security Levels**: 
+- **Security Levels**:
   - MAYO-1: ~128-bit security, 32-byte private key (compatible with AES-256)
   - MAYO-3: ~192-bit security, 48-byte private key (requires key derivation)
   - MAYO-5: ~256-bit security, 64-byte private key (compatible with AES-SIV)
@@ -40,7 +40,7 @@ openssl_encrypt/
 - **Mathematical Foundation**: Syndrome decoding with restricted objects
 - **Security Levels**:
   - CROSS-128: 128-bit security, 16-byte private key (requires key derivation)
-  - CROSS-192: 192-bit security, 24-byte private key (requires key derivation)  
+  - CROSS-192: 192-bit security, 24-byte private key (requires key derivation)
   - CROSS-256: 256-bit security, 32-byte private key (compatible with AES-256)
 - **Encryption Usage**: Private keys used as encryption secrets via key derivation
 - **NIST Status**: Round 2 candidate (October 2024)
@@ -69,7 +69,7 @@ Based on project focus clarification, we're implementing MAYO and CROSS as **hyb
 
 # Add to crypt_core.py EncryptionAlgorithm enum:
 MAYO_1_HYBRID = "mayo-1-hybrid"
-MAYO_3_HYBRID = "mayo-3-hybrid" 
+MAYO_3_HYBRID = "mayo-3-hybrid"
 MAYO_5_HYBRID = "mayo-5-hybrid"
 CROSS_128_HYBRID = "cross-128-hybrid"
 CROSS_192_HYBRID = "cross-192-hybrid"
@@ -80,7 +80,7 @@ CROSS_256_HYBRID = "cross-256-hybrid"
 ```python
 # Add to pqc_adapter.py HYBRID_ALGORITHM_MAP:
 "mayo-1-hybrid": "MAYO-1",
-"mayo-3-hybrid": "MAYO-3", 
+"mayo-3-hybrid": "MAYO-3",
 "mayo-5-hybrid": "MAYO-5",
 "cross-128-hybrid": "CROSS-128",
 "cross-192-hybrid": "CROSS-192",
@@ -108,7 +108,7 @@ EncryptionAlgorithm.CROSS_256_HYBRID.value,
 
 # PQC algorithm mapping (around line 3267)
 EncryptionAlgorithm.MAYO_1_HYBRID.value: "MAYO-1",
-EncryptionAlgorithm.MAYO_3_HYBRID.value: "MAYO-3", 
+EncryptionAlgorithm.MAYO_3_HYBRID.value: "MAYO-3",
 EncryptionAlgorithm.MAYO_5_HYBRID.value: "MAYO-5",
 EncryptionAlgorithm.CROSS_128_HYBRID.value: "CROSS-128",
 EncryptionAlgorithm.CROSS_192_HYBRID.value: "CROSS-192",
@@ -137,17 +137,17 @@ EncryptionAlgorithm.CROSS_256_HYBRID.value: "CROSS-256",
 def derive_encryption_key(mayo_cross_private_key: bytes, algorithm: str) -> bytes:
     """
     Derive symmetric encryption key from MAYO/CROSS private key
-    
+
     Compatible with all implemented algorithms:
     - 32-byte keys: AES-GCM, ChaCha20-Poly1305, Fernet, etc.
     - 64-byte keys: AES-SIV
     """
     salt = b"OpenSSL-Encrypt-PQ-Hybrid-Encryption"
     info = f"encryption-key-{algorithm}".encode()
-    
+
     # Determine target key size based on algorithm
     target_size = 64 if algorithm == "aes-siv" else 32
-    
+
     return HKDF(
         algorithm=hashes.SHA256(),
         length=target_size,
@@ -165,11 +165,11 @@ def derive_encryption_key(mayo_cross_private_key: bytes, algorithm: str) -> byte
 
 ### Phase 2: Hybrid Encryption Integration (Current Priority)
 - [ ] **EncryptionAlgorithm enum** - Add 6 new hybrid algorithm constants
-- [ ] **Algorithm mappings** - Add hybrid mappings to `pqc_adapter.py` 
+- [ ] **Algorithm mappings** - Add hybrid mappings to `pqc_adapter.py`
 - [ ] **Decryption integration** - Add algorithms to `crypt_core.py` decrypt function
 - [ ] **CLI integration** - Enable hybrid encryption via command line
 
-### Phase 3: Testing and Validation 
+### Phase 3: Testing and Validation
 - [ ] **End-to-end testing** - Test encryption/decryption workflow
 - [ ] **Key derivation testing** - Validate key compatibility across algorithms
 - [ ] **Performance benchmarking** - Compare with ML-KEM/HQC performance
@@ -189,7 +189,7 @@ def derive_encryption_key(mayo_cross_private_key: bytes, algorithm: str) -> byte
 1. **EncryptionAlgorithm enum** - Add 6 new algorithm constants
 2. **decrypt_file function** - Add algorithms to PQC detection and mapping
 
-#### `pqc_adapter.py` (2 locations)  
+#### `pqc_adapter.py` (2 locations)
 1. **HYBRID_ALGORITHM_MAP** - Add 6 new hybrid mappings
 2. **SECURITY_LEVEL_MAP** - Add 6 new security level mappings
 
@@ -213,7 +213,7 @@ def derive_encryption_key(mayo_cross_private_key: bytes, algorithm: str) -> byte
 - **Decryption**: < 50ms overhead for key derivation
 - **Memory usage**: Efficient handling of larger MAYO keys
 
-### Security Requirements  
+### Security Requirements
 - **Key separation**: Different encryption algorithms get different derived keys
 - **Forward security**: Compromise of one key doesn't affect others
 - **Post-quantum security**: Maintain PQ properties through key derivation
@@ -244,7 +244,7 @@ def derive_encryption_key(mayo_cross_private_key: bytes, algorithm: str) -> byte
 ### Immediate Tasks:
 1. **Add EncryptionAlgorithm constants** - 6 new enum values in `crypt_core.py`
 2. **Add hybrid mappings** - 6 entries in `pqc_adapter.py` HYBRID_ALGORITHM_MAP
-3. **Add security mappings** - 6 entries in `pqc_adapter.py` SECURITY_LEVEL_MAP  
+3. **Add security mappings** - 6 entries in `pqc_adapter.py` SECURITY_LEVEL_MAP
 4. **Add decryption support** - 6 entries in `crypt_core.py` decrypt function
 
 ### Testing Tasks:
@@ -259,8 +259,8 @@ def derive_encryption_key(mayo_cross_private_key: bytes, algorithm: str) -> byte
 
 ---
 
-**Document Status**: Phase 1 completed - Ready for Phase 2 hybrid encryption implementation  
-**Last Updated**: 2025-06-19  
+**Document Status**: Phase 1 completed - Ready for Phase 2 hybrid encryption implementation
+**Last Updated**: 2025-06-19
 **Next Review**: After Phase 2 implementation completion
 
 ## Phase 1 Achievement Summary ✅
@@ -275,7 +275,7 @@ Algorithm registration and CLI signature support successfully completed:
 
 ### Production Capabilities Achieved:
 - **MAYO-1, MAYO-3, MAYO-5**: Multivariate signature support via liboqs
-- **CROSS-128, CROSS-192, CROSS-256**: Code-based signature support via liboqs  
+- **CROSS-128, CROSS-192, CROSS-256**: Code-based signature support via liboqs
 - **Signature Factory**: Automatic implementation selection (production/demo)
 - **CLI Integration**: Complete command-line interface for signature operations
 

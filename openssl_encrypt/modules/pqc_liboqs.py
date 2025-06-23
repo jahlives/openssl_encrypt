@@ -107,11 +107,11 @@ LIBOQS_ALGORITHM_MAPPING: Dict[str, str] = {
     "FN-DSA-1024": "Falcon-1024",
     # MAYO and CROSS signature algorithms
     "MAYO-1": "MAYO-1",
-    "MAYO-2": "MAYO-2", 
+    "MAYO-2": "MAYO-2",
     "MAYO-3": "MAYO-3",
     "MAYO-5": "MAYO-5",
     "CROSS-128": "cross-rsdp-128-balanced",
-    "CROSS-192": "cross-rsdp-192-balanced", 
+    "CROSS-192": "cross-rsdp-192-balanced",
     "CROSS-256": "cross-rsdp-256-balanced",
 }
 

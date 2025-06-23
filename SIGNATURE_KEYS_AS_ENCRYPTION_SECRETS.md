@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This analysis evaluates the feasibility of using MAYO and CROSS post-quantum signature private keys as encryption secrets for all implemented encryption algorithms in the OpenSSL Encrypt project. 
+This analysis evaluates the feasibility of using MAYO and CROSS post-quantum signature private keys as encryption secrets for all implemented encryption algorithms in the OpenSSL Encrypt project.
 
 **Key Finding**: ✅ **All MAYO and CROSS private keys are compatible with ALL 18 implemented encryption algorithms**, either through direct use or secure key derivation.
 
@@ -10,7 +10,7 @@ This analysis evaluates the feasibility of using MAYO and CROSS post-quantum sig
 
 ### MAYO (Multivariate Oil-and-Vinegar)
 - **MAYO-1**: 32 bytes (256 bits) private key
-- **MAYO-3**: 48 bytes (384 bits) private key  
+- **MAYO-3**: 48 bytes (384 bits) private key
 - **MAYO-5**: 64 bytes (512 bits) private key
 
 ### CROSS (Code-based Restricted Objects)
@@ -91,24 +91,24 @@ This analysis evaluates the feasibility of using MAYO and CROSS post-quantum sig
 
 ### Key Derivation Strategy
 ```python
-def derive_encryption_key(signature_private_key: bytes, 
+def derive_encryption_key(signature_private_key: bytes,
                          target_algorithm: str,
                          target_key_size: int) -> bytes:
     """
     Derive encryption key from signature private key
-    
+
     Args:
         signature_private_key: MAYO/CROSS private key bytes
         target_algorithm: Target encryption algorithm name
         target_key_size: Required key size (32 or 64 bytes)
-    
+
     Returns:
         Derived encryption key of specified size
     """
     # Use HKDF for secure key derivation
     salt = b"OpenSSL-Encrypt-PQ-Signature-Key-Derivation"
     info = f"encryption-key-{target_algorithm}".encode()
-    
+
     return HKDF(
         algorithm=hashes.SHA256(),
         length=target_key_size,
@@ -158,7 +158,7 @@ python -m openssl_encrypt.crypt encrypt \
 
 This capability would enable:
 - Unified post-quantum key management
-- Simplified hybrid sign+encrypt workflows  
+- Simplified hybrid sign+encrypt workflows
 - Reduced key proliferation and management overhead
 - Enhanced security through consolidated key material
 
@@ -166,6 +166,6 @@ The implementation is cryptographically sound, technically feasible, and operati
 
 ---
 
-**Analysis Date**: 2025-06-19  
-**Algorithms Analyzed**: 6 signature algorithms × 18 encryption algorithms = 108 combinations  
+**Analysis Date**: 2025-06-19
+**Algorithms Analyzed**: 6 signature algorithms × 18 encryption algorithms = 108 combinations
 **Compatibility**: 100% (all combinations supported via direct use or secure key derivation)

@@ -164,17 +164,17 @@ The codebase already implements secure key derivation that can be used with sign
 ### 6.2 Recommended Key Derivation Approach
 
 ```python
-def derive_encryption_key_from_signature_key(signature_private_key: bytes, 
+def derive_encryption_key_from_signature_key(signature_private_key: bytes,
                                            target_algorithm: str,
                                            salt: bytes = None) -> bytes:
     """
     Derive encryption key from signature private key.
-    
+
     Args:
         signature_private_key: MAYO or CROSS private key bytes
         target_algorithm: Target encryption algorithm
         salt: Optional salt for key derivation
-        
+
     Returns:
         Properly sized key for target algorithm
     """
@@ -182,18 +182,18 @@ def derive_encryption_key_from_signature_key(signature_private_key: bytes,
         required_length = 64
     else:
         required_length = 32
-    
+
     # Use HKDF for cryptographically secure derivation
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-    
+
     kdf = HKDF(
         algorithm=hashes.SHA256(),
         length=required_length,
         salt=salt or b'',
         info=target_algorithm.encode('utf-8'),
     )
-    
+
     return kdf.derive(signature_private_key)
 ```
 
@@ -298,6 +298,6 @@ Test all combinations of:
 
 ---
 
-**Document Version**: 1.0  
-**Analysis Date**: 2025-06-19  
+**Document Version**: 1.0
+**Analysis Date**: 2025-06-19
 **Next Review**: Ready for implementation

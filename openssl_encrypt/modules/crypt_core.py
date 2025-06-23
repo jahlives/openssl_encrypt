@@ -2351,7 +2351,7 @@ def encrypt_file(
 
     if isinstance(algorithm, str):
         algorithm = EncryptionAlgorithm(algorithm)
-    
+
     # Handle signature algorithms (MAYO/CROSS) - generate keypair if not provided
     is_signature_algorithm = algorithm in [
         EncryptionAlgorithm.MAYO_1_HYBRID,
@@ -2361,28 +2361,30 @@ def encrypt_file(
         EncryptionAlgorithm.CROSS_192_HYBRID,
         EncryptionAlgorithm.CROSS_256_HYBRID,
     ]
-    
+
     if is_signature_algorithm and not pqc_keypair:
         # Generate signature keypair for MAYO/CROSS algorithms
-        from .pqc_adapter import ExtendedPQCipher, HYBRID_ALGORITHM_MAP
-        
+        from .pqc_adapter import HYBRID_ALGORITHM_MAP, ExtendedPQCipher
+
         # Map algorithm to signature algorithm name
         sig_algorithm = HYBRID_ALGORITHM_MAP[algorithm.value]
-        
+
         if not quiet:
             print(f"Generating {sig_algorithm} signature keypair...")
-        
+
         try:
             sig_cipher = ExtendedPQCipher(sig_algorithm, quiet=quiet, verbose=verbose)
             public_key, private_key = sig_cipher.generate_keypair()
             pqc_keypair = (public_key, private_key)
             if not quiet:
-                print(f"✅ Generated {sig_algorithm} keypair: pub={len(public_key)}B, priv={len(private_key)}B")
+                print(
+                    f"✅ Generated {sig_algorithm} keypair: pub={len(public_key)}B, priv={len(private_key)}B"
+                )
         except Exception as e:
             if not quiet:
                 print(f"❌ Failed to generate {sig_algorithm} keypair: {e}")
             raise ValidationError(f"Failed to generate signature keypair: {e}")
-    
+
     # Generate a key from the password
     salt = secrets.token_bytes(16)  # Unique salt for each encryption
     if not quiet:
@@ -2553,29 +2555,29 @@ def encrypt_file(
                 EncryptionAlgorithm.CROSS_192_HYBRID,
                 EncryptionAlgorithm.CROSS_256_HYBRID,
             ]
-            
+
             if is_signature_algorithm:
                 # For signature algorithms, use the private key directly for encryption
                 if not pqc_keypair or len(pqc_keypair) < 2:
                     raise ValueError("Signature algorithm requires both public and private keys")
-                
+
                 private_key = pqc_keypair[1]
-                
+
                 # Derive symmetric encryption key from signature private key
                 from cryptography.hazmat.primitives import hashes
                 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-                
+
                 # Derive 32-byte key for AES-GCM from signature private key
                 salt = b"OpenSSL-Encrypt-PQ-Signature-Hybrid"
                 info = f"encryption-key-{algorithm.value}".encode()
-                
+
                 derived_key = HKDF(
                     algorithm=hashes.SHA256(),
                     length=32,  # AES-256 key size
                     salt=salt,
                     info=info,
                 ).derive(private_key)
-                
+
                 # Encrypt using AES-GCM with derived key
                 nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
                 aes_cipher = AESGCM(derived_key)
@@ -3404,23 +3406,23 @@ def decrypt_file(
                 EncryptionAlgorithm.CROSS_192_HYBRID.value,
                 EncryptionAlgorithm.CROSS_256_HYBRID.value,
             ]
-            
+
             if is_signature_algorithm:
                 # For signature algorithms, derive the same key from private key
                 from cryptography.hazmat.primitives import hashes
                 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-                
+
                 # Derive 32-byte key for AES-GCM from signature private key
                 salt = b"OpenSSL-Encrypt-PQ-Signature-Hybrid"
                 info = f"encryption-key-{algorithm}".encode()
-                
+
                 derived_key = HKDF(
                     algorithm=hashes.SHA256(),
                     length=32,  # AES-256 key size
                     salt=salt,
                     info=info,
                 ).derive(pqc_private_key)
-                
+
                 # Decrypt using AES-GCM with derived key
                 nonce = encrypted_data[:12]  # First 12 bytes are nonce
                 ciphertext = encrypted_data[12:]  # Rest is ciphertext
