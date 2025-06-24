@@ -30,6 +30,15 @@ Whirlpool implementation.
         - Kyber-512, Kyber-768, Kyber-1024
     - HQC (Hamming Quasi-Cyclic) - NIST 2025 additional KEM
         - HQC-128, HQC-192, HQC-256
+    - MAYO - Multivariate quadratic signature scheme
+        - MAYO-1 (Security Level 1)
+        - MAYO-2 (Security Level 1)
+        - MAYO-3 (Security Level 3)
+        - MAYO-5 (Security Level 5)
+    - CROSS - Code-based signature scheme
+        - CROSS-R-SDPG-1 (Security Level 1)
+        - CROSS-R-SDPG-3 (Security Level 3)
+        - CROSS-R-SDPG-5 (Security Level 5)
   - Hybrid Encryption Architecture: Combines post-quantum KEMs with classical symmetric encryption for quantum-resistant protection
 
 ###  Multi-Layer Password Protection
