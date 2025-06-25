@@ -89,7 +89,7 @@ fi
 
 # Update metainfo.xml with version if provided
 if [ -n "$VERSION" ]; then
-    METAINFO_FILE="flatpak/com.opensslencrypt.OpenSSLEncrypt.metainfo.xml"
+    METAINFO_FILE="com.opensslencrypt.OpenSSLEncrypt.metainfo.xml"
     if [ -f "$METAINFO_FILE" ]; then
         echo "📝 Updating metainfo.xml with version $VERSION"
         # Create a backup
