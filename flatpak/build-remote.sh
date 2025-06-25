@@ -101,17 +101,25 @@ if [ -n "$VERSION" ]; then
         # Replace entire releases section with only the current version
         echo "   Replacing releases section with version $VERSION only"
 
-        # Create the new releases section
-        NEW_RELEASES="    <releases>
-    <release version=\"$VERSION\" date=\"$CURRENT_DATE\" type=\"stable\">
+        # Create a temporary file with the new releases section
+        TEMP_RELEASES=$(mktemp)
+        cat > "$TEMP_RELEASES" << EOF
+    <releases>
+    <release version="$VERSION" date="$CURRENT_DATE" type="stable">
       <description>
         <p>Version $VERSION build</p>
       </description>
     </release>
-  </releases>"
+  </releases>
+EOF
 
-        # Replace the entire releases section
-        sed -i '/<releases>/,/<\/releases>/c\'"$NEW_RELEASES" "$METAINFO_FILE"
+        # Delete old releases section and insert new one
+        sed -i '/<releases>/,/<\/releases>/d' "$METAINFO_FILE"
+        sed -i '/<content_rating type="oars-1.1"\/>/i\
+'"$(cat "$TEMP_RELEASES")" "$METAINFO_FILE"
+
+        # Clean up temp file
+        rm "$TEMP_RELEASES"
         echo "   Replaced releases section with version $VERSION"
 
         # Show what was added for verification
