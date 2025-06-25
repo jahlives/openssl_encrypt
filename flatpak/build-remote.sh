@@ -141,7 +141,6 @@ EOF
         if git commit -m "Update metainfo.xml with version $VERSION for flatpak build"; then
             echo "   ✅ Successfully committed metainfo.xml changes"
             echo "   ⏱️  Waiting 3 seconds for git changes to propagate..."
-            sleep 3
         else
             echo "   ⚠️  Git commit failed or no changes to commit"
         fi
@@ -236,7 +235,6 @@ ssh "root@$SERVER" '
       cd '"$SERVER_REPO"'
       echo "Waiting for filesystem sync..."
       sync
-      sleep 2
       echo "Updating ostree summary..."
       ostree summary -u --repo='"$SERVER_REPO"' --gpg-sign='"\"$GPG_KEY_ID\""'
       echo "Rebuilding flatpak repository and appstream metadata..."
