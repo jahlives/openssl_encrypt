@@ -74,19 +74,41 @@ fi
 
 # Auto-adjust branch name if both branch and version are specified
 if [ -n "$DEFAULT_BRANCH" ] && [ -n "$VERSION" ] && [ "$DEFAULT_BRANCH" != "$VERSION" ]; then
-    if [ "$DEFAULT_BRANCH" = "master" ] || [ "$DEFAULT_BRANCH" = "stable" ] || [ "$DEFAULT_BRANCH" = "beta" ] || [ "$DEFAULT_BRANCH" = "nightly" ]; then
-        # For semantic branches, automatically append version to make it clear
-        ORIGINAL_BRANCH="$DEFAULT_BRANCH"
-        DEFAULT_BRANCH="${DEFAULT_BRANCH}-${VERSION}"
-        echo "🔄 Auto-created descriptive branch name: $ORIGINAL_BRANCH → $DEFAULT_BRANCH"
-        echo "   Users will see: Branch: $DEFAULT_BRANCH (shows both purpose and version)"
-        echo ""
-    fi
+    # Always use VERSION-BRANCH format when both parameters are provided
+    ORIGINAL_BRANCH="$DEFAULT_BRANCH"
+    DEFAULT_BRANCH="${VERSION}-${DEFAULT_BRANCH}"
+    echo "🔄 Auto-created descriptive branch name: $ORIGINAL_BRANCH → $DEFAULT_BRANCH"
+    echo "   Users will see: Branch: $DEFAULT_BRANCH (version-branch format)"
+    echo ""
 fi
 
 if [ ! -f "$MANIFEST" ]; then
       echo "❌ Error: Manifest file '$MANIFEST' not found!"
       exit 1
+fi
+
+# Update metainfo.xml with version if provided
+if [ -n "$VERSION" ]; then
+    METAINFO_FILE="flatpak/com.opensslencrypt.OpenSSLEncrypt.metainfo.xml"
+    if [ -f "$METAINFO_FILE" ]; then
+        echo "📝 Updating metainfo.xml with version $VERSION"
+        # Create a backup
+        cp "$METAINFO_FILE" "${METAINFO_FILE}.backup"
+
+        # Get current date in YYYY-MM-DD format
+        CURRENT_DATE=$(date +%Y-%m-%d)
+
+        # Check if version already exists in releases
+        if grep -q "version=\"$VERSION\"" "$METAINFO_FILE"; then
+            echo "   Version $VERSION already exists in metainfo.xml"
+        else
+            # Add new release entry after the opening <releases> tag
+            sed -i "/<releases>/a\\    <release version=\"$VERSION\" date=\"$CURRENT_DATE\">\\n      <description>\\n        <p>Version $VERSION build</p>\\n      </description>\\n    </release>" "$METAINFO_FILE"
+            echo "   Added version $VERSION to metainfo.xml"
+        fi
+    else
+        echo "⚠️  Warning: Metainfo file not found at $METAINFO_FILE"
+    fi
 fi
 
 echo "🏗️  Building Flatpak application locally..."
@@ -194,4 +216,3 @@ if [ -n "$DEFAULT_BRANCH" ]; then
 else
     echo "flatpak install custom-repo com.opensslencrypt.OpenSSLEncrypt"
 fi
-
