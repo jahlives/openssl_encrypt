@@ -37,45 +37,14 @@
       <caption>Main encryption interface</caption>
     </screenshot>
   </screenshots>
-  <content_rating type="oars-1.1"/>
   <releases>
     <release version="1.0.0" date="2025-06-25" type="stable">
       <description>
         <p>Version 1.0.0 build</p>
       </description>
     </release>
-    <release version="1.2.6" date="2025-06-25" type="stable">
-      <description>
-        <p>Version 1.2.6 build</p>
-      </description>
-    </release>
-    <release version="1.2.5" date="2025-06-25" type="stable">
-      <description>
-        <p>Version 1.2.5 build</p>
-      </description>
-    </release>
-    <release version="1.2.4" date="2025-06-25">
-      <description>
-        <p>Version 1.2.4 build</p>
-      </description>
-    </release>
-    <release version="1.2.3" date="2025-06-25">
-      <description>
-        <p>Version 1.2.3 build</p>
-      </description>
-    </release>
-    <release version="1.0.0-rc3" date="2024-06-18">
-      <description>
-        <p>Release candidate 3 with comprehensive post-quantum cryptography support</p>
-        <ul>
-          <li>Added HQC (Hamming Quasi-Cyclic) post-quantum algorithm support</li>
-          <li>Enhanced ML-KEM integration with full NIST compliance</li>
-          <li>Improved keystore management for PQC keys</li>
-          <li>Comprehensive security documentation and algorithm audit</li>
-        </ul>
-      </description>
-    </release>
   </releases>
+  <content_rating type="oars-1.1"/>
   <developer_name>OpenSSL Encrypt Project</developer_name>
   <url type="homepage">https://gitlab.rm-rf.ch/world/openssl_encrypt</url>
   <url type="bugtracker">https://gitlab.rm-rf.ch/world/openssl_encrypt/-/issues</url>
