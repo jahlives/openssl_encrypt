@@ -105,6 +105,11 @@ if [ -n "$VERSION" ]; then
             # Add new release entry after the opening <releases> tag
             sed -i "/<releases>/a\\    <release version=\"$VERSION\" date=\"$CURRENT_DATE\">\\n      <description>\\n        <p>Version $VERSION build</p>\\n      </description>\\n    </release>" "$METAINFO_FILE"
             echo "   Added version $VERSION to metainfo.xml"
+
+            # Commit the metainfo.xml changes so flatpak-builder can use them
+            echo "   Committing metainfo.xml changes to git..."
+            git add "$METAINFO_FILE"
+            git commit -m "Update metainfo.xml with version $VERSION for flatpak build"
         fi
     else
         echo "⚠️  Warning: Metainfo file not found at $METAINFO_FILE"
