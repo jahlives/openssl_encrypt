@@ -101,25 +101,34 @@ if [ -n "$VERSION" ]; then
         # Replace entire releases section with only the current version
         echo "   Replacing releases section with version $VERSION only"
 
-        # Create a temporary file with the new releases section
-        TEMP_RELEASES=$(mktemp)
-        cat > "$TEMP_RELEASES" << EOF
-    <releases>
+        # Use Python to safely handle XML manipulation
+        python3 << EOF
+import re
+
+# Read the metainfo file
+with open('$METAINFO_FILE', 'r') as f:
+    content = f.read()
+
+# Create new releases section
+new_releases = '''  <releases>
     <release version="$VERSION" date="$CURRENT_DATE" type="stable">
       <description>
         <p>Version $VERSION build</p>
       </description>
     </release>
-  </releases>
+  </releases>'''
+
+# Remove existing releases section and add new one
+content = re.sub(r'  <releases>.*?</releases>', new_releases, content, flags=re.DOTALL)
+
+# If no releases section existed, add it before content_rating
+if '<releases>' not in content:
+    content = re.sub(r'  <content_rating', new_releases + '\n  <content_rating', content)
+
+# Write back to file
+with open('$METAINFO_FILE', 'w') as f:
+    f.write(content)
 EOF
-
-        # Delete old releases section and insert new one
-        sed -i '/<releases>/,/<\/releases>/d' "$METAINFO_FILE"
-        sed -i '/<content_rating type="oars-1.1"\/>/i\
-'"$(cat "$TEMP_RELEASES")" "$METAINFO_FILE"
-
-        # Clean up temp file
-        rm "$TEMP_RELEASES"
         echo "   Replaced releases section with version $VERSION"
 
         # Show what was added for verification
