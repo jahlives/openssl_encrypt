@@ -98,28 +98,35 @@ if [ -n "$VERSION" ]; then
         # Get current date in YYYY-MM-DD format
         CURRENT_DATE=$(date +%Y-%m-%d)
 
-        # Check if version already exists in releases
-        if grep -q "version=\"$VERSION\"" "$METAINFO_FILE"; then
-            echo "   Version $VERSION already exists in metainfo.xml"
+        # Replace entire releases section with only the current version
+        echo "   Replacing releases section with version $VERSION only"
+
+        # Create the new releases section
+        NEW_RELEASES="    <releases>
+    <release version=\"$VERSION\" date=\"$CURRENT_DATE\" type=\"stable\">
+      <description>
+        <p>Version $VERSION build</p>
+      </description>
+    </release>
+  </releases>"
+
+        # Replace the entire releases section
+        sed -i '/<releases>/,/<\/releases>/c\'"$NEW_RELEASES" "$METAINFO_FILE"
+        echo "   Replaced releases section with version $VERSION"
+
+        # Show what was added for verification
+        echo "   New release entry:"
+        grep -A 6 "<releases>" "$METAINFO_FILE"
+
+        # Commit the metainfo.xml changes so flatpak-builder can use them
+        echo "   Committing metainfo.xml changes to git..."
+        git add "$METAINFO_FILE"
+        if git commit -m "Update metainfo.xml with version $VERSION for flatpak build"; then
+            echo "   ✅ Successfully committed metainfo.xml changes"
+            echo "   ⏱️  Waiting 3 seconds for git changes to propagate..."
+            sleep 3
         else
-            # Add new release entry as the first release (most recent) with type attribute
-            sed -i "/<releases>/a\\    <release version=\"$VERSION\" date=\"$CURRENT_DATE\" type=\"stable\">\\n      <description>\\n        <p>Version $VERSION build</p>\\n      </description>\\n    </release>" "$METAINFO_FILE"
-            echo "   Added version $VERSION to metainfo.xml"
-
-            # Show what was added for verification
-            echo "   New release entry:"
-            grep -A 4 "version=\"$VERSION\"" "$METAINFO_FILE"
-
-            # Commit the metainfo.xml changes so flatpak-builder can use them
-            echo "   Committing metainfo.xml changes to git..."
-            git add "$METAINFO_FILE"
-            if git commit -m "Update metainfo.xml with version $VERSION for flatpak build"; then
-                echo "   ✅ Successfully committed metainfo.xml changes"
-                echo "   ⏱️  Waiting 3 seconds for git changes to propagate..."
-                sleep 3
-            else
-                echo "   ⚠️  Git commit failed or no changes to commit"
-            fi
+            echo "   ⚠️  Git commit failed or no changes to commit"
         fi
     else
         echo "⚠️  Warning: Metainfo file not found at $METAINFO_FILE"
