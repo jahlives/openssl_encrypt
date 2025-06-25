@@ -102,8 +102,8 @@ if [ -n "$VERSION" ]; then
         if grep -q "version=\"$VERSION\"" "$METAINFO_FILE"; then
             echo "   Version $VERSION already exists in metainfo.xml"
         else
-            # Add new release entry as the first release (most recent)
-            sed -i "/<releases>/a\\    <release version=\"$VERSION\" date=\"$CURRENT_DATE\">\\n      <description>\\n        <p>Version $VERSION build</p>\\n      </description>\\n    </release>" "$METAINFO_FILE"
+            # Add new release entry as the first release (most recent) with type attribute
+            sed -i "/<releases>/a\\    <release version=\"$VERSION\" date=\"$CURRENT_DATE\" type=\"stable\">\\n      <description>\\n        <p>Version $VERSION build</p>\\n      </description>\\n    </release>" "$METAINFO_FILE"
             echo "   Added version $VERSION to metainfo.xml"
 
             # Show what was added for verification
