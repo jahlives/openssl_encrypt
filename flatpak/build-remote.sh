@@ -115,6 +115,8 @@ if [ -n "$VERSION" ]; then
             git add "$METAINFO_FILE"
             if git commit -m "Update metainfo.xml with version $VERSION for flatpak build"; then
                 echo "   ✅ Successfully committed metainfo.xml changes"
+                echo "   ⏱️  Waiting 3 seconds for git changes to propagate..."
+                sleep 3
             else
                 echo "   ⚠️  Git commit failed or no changes to commit"
             fi
