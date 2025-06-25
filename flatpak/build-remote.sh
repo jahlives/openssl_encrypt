@@ -210,8 +210,14 @@ fi
 echo "🔧 Updating server repository..."
 ssh "root@$SERVER" '
       cd '"$SERVER_REPO"'
+      echo "Waiting for filesystem sync..."
+      sync
+      sleep 2
+      echo "Updating ostree summary..."
       ostree summary -u --repo='"$SERVER_REPO"' --gpg-sign='"\"$GPG_KEY_ID\""'
+      echo "Rebuilding flatpak repository and appstream metadata..."
       flatpak build-update-repo --gpg-sign='"\"$GPG_KEY_ID\""' '"$SERVER_REPO"'
+      echo "Setting ownership..."
       chown -R '"$SERVER_USER"':'"$SERVER_USER"' '"$SERVER_REPO"'
       echo "Server repository updated successfully!"
   '
