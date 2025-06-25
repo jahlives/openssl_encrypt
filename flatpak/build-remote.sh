@@ -74,19 +74,79 @@ fi
 
 # Auto-adjust branch name if both branch and version are specified
 if [ -n "$DEFAULT_BRANCH" ] && [ -n "$VERSION" ] && [ "$DEFAULT_BRANCH" != "$VERSION" ]; then
-    if [ "$DEFAULT_BRANCH" = "master" ] || [ "$DEFAULT_BRANCH" = "stable" ] || [ "$DEFAULT_BRANCH" = "beta" ] || [ "$DEFAULT_BRANCH" = "nightly" ]; then
-        # For semantic branches, automatically append version to make it clear
-        ORIGINAL_BRANCH="$DEFAULT_BRANCH"
-        DEFAULT_BRANCH="${DEFAULT_BRANCH}-${VERSION}"
-        echo "🔄 Auto-created descriptive branch name: $ORIGINAL_BRANCH → $DEFAULT_BRANCH"
-        echo "   Users will see: Branch: $DEFAULT_BRANCH (shows both purpose and version)"
-        echo ""
-    fi
+    # Always use VERSION-BRANCH format when both parameters are provided
+    ORIGINAL_BRANCH="$DEFAULT_BRANCH"
+    DEFAULT_BRANCH="${VERSION}-${DEFAULT_BRANCH}"
+    echo "🔄 Auto-created descriptive branch name: $ORIGINAL_BRANCH → $DEFAULT_BRANCH"
+    echo "   Users will see: Branch: $DEFAULT_BRANCH (version-branch format)"
+    echo ""
 fi
 
 if [ ! -f "$MANIFEST" ]; then
       echo "❌ Error: Manifest file '$MANIFEST' not found!"
       exit 1
+fi
+
+# Update metainfo.xml with version if provided
+if [ -n "$VERSION" ]; then
+    METAINFO_FILE="com.opensslencrypt.OpenSSLEncrypt.metainfo.xml"
+    if [ -f "$METAINFO_FILE" ]; then
+        echo "📝 Updating metainfo.xml with version $VERSION"
+        # Create a backup
+        cp "$METAINFO_FILE" "${METAINFO_FILE}.backup"
+
+        # Get current date in YYYY-MM-DD format
+        CURRENT_DATE=$(date +%Y-%m-%d)
+
+        # Replace entire releases section with only the current version
+        echo "   Replacing releases section with version $VERSION only"
+
+        # Use Python to safely handle XML manipulation
+        python3 << EOF
+import re
+
+# Read the metainfo file
+with open('$METAINFO_FILE', 'r') as f:
+    content = f.read()
+
+# Create new releases section
+new_releases = '''  <releases>
+    <release version="$VERSION" date="$CURRENT_DATE" type="stable">
+      <description>
+        <p>Version $VERSION build</p>
+      </description>
+    </release>
+  </releases>'''
+
+# Remove existing releases section and add new one
+content = re.sub(r'  <releases>.*?</releases>', new_releases, content, flags=re.DOTALL)
+
+# If no releases section existed, add it before content_rating
+if '<releases>' not in content:
+    content = re.sub(r'  <content_rating', new_releases + '\n  <content_rating', content)
+
+# Write back to file
+with open('$METAINFO_FILE', 'w') as f:
+    f.write(content)
+EOF
+        echo "   Replaced releases section with version $VERSION"
+
+        # Show what was added for verification
+        echo "   New release entry:"
+        grep -A 6 "<releases>" "$METAINFO_FILE"
+
+        # Commit the metainfo.xml changes so flatpak-builder can use them
+        echo "   Committing metainfo.xml changes to git..."
+        git add "$METAINFO_FILE"
+        if git commit -m "Update metainfo.xml with version $VERSION for flatpak build"; then
+            echo "   ✅ Successfully committed metainfo.xml changes"
+            echo "   ⏱️  Waiting 3 seconds for git changes to propagate..."
+        else
+            echo "   ⚠️  Git commit failed or no changes to commit"
+        fi
+    else
+        echo "⚠️  Warning: Metainfo file not found at $METAINFO_FILE"
+    fi
 fi
 
 echo "🏗️  Building Flatpak application locally..."
@@ -173,8 +233,13 @@ fi
 echo "🔧 Updating server repository..."
 ssh "root@$SERVER" '
       cd '"$SERVER_REPO"'
+      echo "Waiting for filesystem sync..."
+      sync
+      echo "Updating ostree summary..."
       ostree summary -u --repo='"$SERVER_REPO"' --gpg-sign='"\"$GPG_KEY_ID\""'
+      echo "Rebuilding flatpak repository and appstream metadata..."
       flatpak build-update-repo --gpg-sign='"\"$GPG_KEY_ID\""' '"$SERVER_REPO"'
+      echo "Setting ownership..."
       chown -R '"$SERVER_USER"':'"$SERVER_USER"' '"$SERVER_REPO"'
       echo "Server repository updated successfully!"
   '
@@ -194,4 +259,3 @@ if [ -n "$DEFAULT_BRANCH" ]; then
 else
     echo "flatpak install custom-repo com.opensslencrypt.OpenSSLEncrypt"
 fi
-
