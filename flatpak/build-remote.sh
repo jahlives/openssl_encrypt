@@ -253,6 +253,7 @@ fi
 
 echo "🎉 Deployment complete!"
 echo ""
+flatpak update --appstream custom-repo
 echo "Clients can now install with:"
 if [ -n "$DEFAULT_BRANCH" ]; then
     echo "flatpak install custom-repo com.opensslencrypt.OpenSSLEncrypt//$DEFAULT_BRANCH"
