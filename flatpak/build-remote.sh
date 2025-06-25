@@ -252,6 +252,7 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "🎉 Deployment complete!"
+flatpak update --appstream custom-repo
 echo ""
 echo "Clients can now install with:"
 if [ -n "$DEFAULT_BRANCH" ]; then
