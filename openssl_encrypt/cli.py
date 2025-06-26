@@ -48,6 +48,7 @@ def main():
             print("  check-argon2         Verify Argon2 implementation")
             print("  check-pqc           Check post-quantum cryptography support")
             print("  version             Show version information")
+            print("  show-version-file   Show detailed version file information")
             print("")
             print("Global options:")
             print("  --gui               Launch graphical user interface")
