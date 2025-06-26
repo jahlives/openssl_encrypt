@@ -493,6 +493,32 @@ def main():
     """
     Main function that handles the command-line interface.
     """
+    # Check if we should use subparser-based help
+    import sys
+
+    if (
+        len(sys.argv) > 1
+        and sys.argv[1]
+        in [
+            "encrypt",
+            "decrypt",
+            "shred",
+            "generate-password",
+            "security-info",
+            "check-argon2",
+            "check-pqc",
+            "version",
+            "show-version-file",
+        ]
+        and ("--help" in sys.argv or "-h" in sys.argv)
+    ):
+        # Use subparser for command-specific help
+        from .crypt_cli_subparser import create_subparser_main
+
+        parser, args = create_subparser_main()
+        return
+
+    # Original main function continues below...
     # Global variable to track temporary files that need cleanup
     temp_files_to_cleanup = []
 
@@ -1076,7 +1102,6 @@ def main():
         "--custom-password-list", help="Path to custom common password list file"
     )
 
-
     args = parser.parse_args()
 
     # Enhance the args with better defaults for extended algorithms
@@ -1310,7 +1335,14 @@ def main():
         sys.exit(0)
 
     # For other actions, input file is required
-    if args.input is None and args.action not in ["generate-password", "security-info", "check-argon2", "check-pqc", "version", "show-version-file"]:
+    if args.input is None and args.action not in [
+        "generate-password",
+        "security-info",
+        "check-argon2",
+        "check-pqc",
+        "version",
+        "show-version-file",
+    ]:
         parser.error("the following arguments are required: --input/-i")
 
     # Get password (only for encrypt/decrypt actions)
