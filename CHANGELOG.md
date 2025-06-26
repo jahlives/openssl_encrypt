@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CLI Interface**: Enhanced subparser help consistency with main CLI for all hash and KDF options
 - **Documentation Updates**: Updated README.md with comprehensive hash families and new CLI examples
 
+### Fixed
+- **Unit Test Coverage**: Comprehensive CLI argument testing ensuring all 93+ CLI parameters are validated to prevent regressions
+- **Test Infrastructure**: Enhanced unit test system to check both main CLI and subparser implementations for complete coverage
+- **Code Quality**: Removed legacy pqc-allow-mixed-operations parameter and cleaned up 63 development artifacts from repository
+- **Repository Maintenance**: Systematic cleanup of test/debug/fix scripts while preserving production code and proper unit tests
+
 ### Security
 - **Modern Algorithm Promotion**: Clear separation of modern (HKDF, Argon2, Scrypt, Balloon) vs. legacy (PBKDF2) KDFs
 - **Enhanced Hash Portfolio**: Industry-leading cryptographic hash coverage including latest BLAKE3 and complete SHA-3 family
