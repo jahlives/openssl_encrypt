@@ -221,3 +221,8 @@ direct_replacement.py
 # Additional Flatpak build artifacts and scripts
 flatpak/create-repo.sh
 flatpak/openssl-encrypt
+
+# Backup files
+*.backup
+*.bak
+*.tmp

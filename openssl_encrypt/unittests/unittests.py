@@ -158,6 +158,7 @@ REQUIRED_ARGUMENT_GROUPS = {
         "help",  # Help flag
         "progress",  # Show progress bar
         "verbose",  # Show hash/kdf details
+        "debug",  # Show detailed debug information
         "template",  # Template name
         "quick",  # Quick configuration
         "standard",  # Standard configuration
@@ -173,17 +174,32 @@ REQUIRED_ARGUMENT_GROUPS = {
         "shred",  # Securely delete original
         "shred-passes",  # Number of passes for secure deletion
         "recursive",  # Process directories recursively
+        "disable-secure-memory",  # Disable secure memory (main CLI only)
     ],
     "Hash Options": [
         "kdf-rounds",  # Global KDF rounds setting
         "sha512-rounds",  # SHA hash rounds
+        "sha384-rounds",  # SHA-384 hash rounds (1.1.0)
         "sha256-rounds",
-        "sha3-256-rounds",
+        "sha224-rounds",  # SHA-224 hash rounds (1.1.0)
         "sha3-512-rounds",
+        "sha3-384-rounds",  # SHA3-384 hash rounds (1.1.0)
+        "sha3-256-rounds",
+        "sha3-224-rounds",  # SHA3-224 hash rounds (1.1.0)
         "blake2b-rounds",
+        "blake3-rounds",  # BLAKE3 hash rounds (1.1.0)
         "shake256-rounds",
+        "shake128-rounds",  # SHAKE-128 hash rounds (1.1.0)
         "whirlpool-rounds",
         "pbkdf2-iterations",  # PBKDF2 options
+        # Hash function flags (main CLI boolean enablers)
+        "sha256",  # Enable SHA-256 hashing
+        "sha512",  # Enable SHA-512 hashing
+        "sha3-256",  # Enable SHA3-256 hashing
+        "sha3-512",  # Enable SHA3-512 hashing
+        "shake256",  # Enable SHAKE-256 hashing
+        "blake2b",  # Enable BLAKE2b hashing
+        "pbkdf2",  # Enable PBKDF2
     ],
     "Scrypt Options": [
         "enable-scrypt",  # Scrypt options
@@ -191,15 +207,24 @@ REQUIRED_ARGUMENT_GROUPS = {
         "scrypt-n",
         "scrypt-r",
         "scrypt-p",
+        "scrypt-cost",  # Scrypt cost parameter (main CLI only)
+    ],
+    "HKDF Options": [
+        "enable-hkdf",  # HKDF key derivation (1.1.0)
+        "hkdf-rounds",
+        "hkdf-algorithm",
+        "hkdf-info",
     ],
     "Keystore Options": [
         "keystore",  # Keystore options
+        "keystore-path",  # Keystore path (1.1.0 subparser)
         "keystore-password",
         "keystore-password-file",
         "key-id",
         "dual-encrypt-key",
         "auto-generate-key",
         "auto-create-keystore",
+        "encryption-data",  # Additional encryption data (1.1.0)
     ],
     "Post-Quantum Cryptography": [
         "pqc-keyfile",  # PQC options
@@ -215,6 +240,7 @@ REQUIRED_ARGUMENT_GROUPS = {
         "argon2-hash-len",
         "argon2-type",
         "argon2-preset",
+        "use-argon2",  # Use Argon2 flag (main CLI only)
     ],
     "Balloon Hashing": [
         "enable-balloon",  # Balloon hashing options
@@ -223,6 +249,7 @@ REQUIRED_ARGUMENT_GROUPS = {
         "balloon-parallelism",
         "balloon-rounds",
         "balloon-hash-len",
+        "use-balloon",  # Use Balloon hashing flag (main CLI only)
     ],
     "Password Generation": [
         "length",  # Password generation options
@@ -254,12 +281,21 @@ class TestCryptCliArguments(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up the test class by reading the source code once."""
-        # Get the source code of the CLI module
+        # Get the source code of both CLI modules
         cli_module_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "modules", "crypt_cli.py")
         )
+        subparser_module_path = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "modules", "crypt_cli_subparser.py")
+        )
+
+        # Read both files and combine the source code
         with open(cli_module_path, "r") as f:
-            cls.source_code = f.read()
+            main_cli_code = f.read()
+        with open(subparser_module_path, "r") as f:
+            subparser_code = f.read()
+
+        cls.source_code = main_cli_code + "\n" + subparser_code
 
     def _argument_exists(self, arg):
         """Check if an argument exists in the source code."""

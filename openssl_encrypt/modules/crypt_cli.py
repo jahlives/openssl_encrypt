@@ -779,12 +779,28 @@ def main():
         help="Number of SHA-512 iterations (default: 1,000,000 if flag provided without value)",
     )
     hash_group.add_argument(
+        "--sha384-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA-384 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
         "--sha256-rounds",
         type=int,
         nargs="?",
         const=1,
         default=0,
         help="Number of SHA-256 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--sha224-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA-224 iterations (default: 1,000,000 if flag provided without value)",
     )
     hash_group.add_argument(
         "--sha3-256-rounds",
@@ -803,6 +819,22 @@ def main():
         help="Number of SHA3-512 iterations (default: 1,000,000 if flag provided without value)",
     )
     hash_group.add_argument(
+        "--sha3-384-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA3-384 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--sha3-224-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA3-224 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
         "--blake2b-rounds",
         type=int,
         nargs="?",
@@ -811,12 +843,28 @@ def main():
         help="Number of BLAKE2b iterations (default: 1,000,000 if flag provided without value)",
     )
     hash_group.add_argument(
+        "--blake3-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of BLAKE3 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
         "--shake256-rounds",
         type=int,
         nargs="?",
         const=1,
         default=0,
         help="Number of SHAKE-256 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--shake128-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHAKE-128 iterations (default: 1,000,000 if flag provided without value)",
     )
     hash_group.add_argument(
         "--whirlpool-rounds",
@@ -874,6 +922,35 @@ def main():
         type=int,
         default=0,
         help=argparse.SUPPRESS,  # Hidden legacy option
+    )
+
+    # HKDF options
+    hkdf_group = parser.add_argument_group(
+        "HKDF Options", "Configure HMAC-based Key Derivation Function"
+    )
+    hkdf_group.add_argument(
+        "--enable-hkdf",
+        action="store_true",
+        help="Enable HKDF key derivation",
+        default=False,
+    )
+    hkdf_group.add_argument(
+        "--hkdf-rounds",
+        type=int,
+        default=1,
+        help="Number of HKDF chained rounds (default: 1)",
+    )
+    hkdf_group.add_argument(
+        "--hkdf-algorithm",
+        choices=["sha224", "sha256", "sha384", "sha512"],
+        default="sha256",
+        help="Hash algorithm for HKDF (default: sha256)",
+    )
+    hkdf_group.add_argument(
+        "--hkdf-info",
+        type=str,
+        default="openssl_encrypt_hkdf",
+        help="HKDF info string for context (default: openssl_encrypt_hkdf)",
     )
 
     # Add Keystore options
@@ -1673,35 +1750,65 @@ def main():
 
     # If user specified to use SHA-256, SHA-512, or SHA3 but didn't provide
     # iterations
-    if args.sha256_rounds == 1:  # When flag is provided without value
-        args.sha256_rounds = MIN_SHA_ITERATIONS
-        if not args.quiet:
-            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-256")
-
     if args.sha512_rounds == 1:  # When flag is provided without value
         args.sha512_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
             print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-512")
 
-    if args.sha3_256_rounds == 1:  # When flag is provided without value
-        args.sha3_256_rounds = MIN_SHA_ITERATIONS
+    if args.sha384_rounds == 1:  # When flag is provided without value
+        args.sha384_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
-            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-256")
+            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-384")
+
+    if args.sha256_rounds == 1:  # When flag is provided without value
+        args.sha256_rounds = MIN_SHA_ITERATIONS
+        if not args.quiet:
+            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-256")
+
+    if args.sha224_rounds == 1:  # When flag is provided without value
+        args.sha224_rounds = MIN_SHA_ITERATIONS
+        if not args.quiet:
+            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-224")
 
     if args.sha3_512_rounds == 1:  # When flag is provided without value
         args.sha3_512_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
             print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-512")
 
+    if args.sha3_384_rounds == 1:  # When flag is provided without value
+        args.sha3_384_rounds = MIN_SHA_ITERATIONS
+        if not args.quiet:
+            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-384")
+
+    if args.sha3_256_rounds == 1:  # When flag is provided without value
+        args.sha3_256_rounds = MIN_SHA_ITERATIONS
+        if not args.quiet:
+            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-256")
+
+    if args.sha3_224_rounds == 1:  # When flag is provided without value
+        args.sha3_224_rounds = MIN_SHA_ITERATIONS
+        if not args.quiet:
+            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-224")
+
     if args.blake2b_rounds == 1:  # When flag is provided without value
         args.blake2b_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
             print(f"Using default of {MIN_SHA_ITERATIONS} iterations for BLAKE2b")
 
+    if args.blake3_rounds == 1:  # When flag is provided without value
+        args.blake3_rounds = MIN_SHA_ITERATIONS
+        if not args.quiet:
+            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for BLAKE3")
+
     if args.shake256_rounds == 1:  # When flag is provided without value
         args.shake256_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
             print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHAKE-256")
+
+    if args.shake128_rounds == 1:  # When flag is provided without value
+        args.shake128_rounds = MIN_SHA_ITERATIONS
+        if not args.quiet:
+            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHAKE-128")
 
     # Determine default rounds value to use - either from --kdf-rounds or default of 10
     default_rounds = args.kdf_rounds if args.kdf_rounds > 0 else 10
@@ -1841,11 +1948,17 @@ def main():
     else:
         hash_config = {
             "sha512": args.sha512_rounds,
+            "sha384": args.sha384_rounds,
             "sha256": args.sha256_rounds,
-            "sha3_256": args.sha3_256_rounds,
+            "sha224": args.sha224_rounds,
             "sha3_512": args.sha3_512_rounds,
+            "sha3_384": args.sha3_384_rounds,
+            "sha3_256": args.sha3_256_rounds,
+            "sha3_224": args.sha3_224_rounds,
             "blake2b": args.blake2b_rounds,
+            "blake3": args.blake3_rounds,
             "shake256": args.shake256_rounds,
+            "shake128": args.shake128_rounds,
             "whirlpool": args.whirlpool_rounds,
             "scrypt": {
                 "enabled": args.enable_scrypt,
@@ -1870,6 +1983,12 @@ def main():
                 "space_cost": args.balloon_space_cost,
                 "parallelism": args.balloon_parallelism,
                 "rounds": args.balloon_rounds,
+            },
+            "hkdf": {
+                "enabled": args.enable_hkdf,
+                "rounds": args.hkdf_rounds,
+                "algorithm": args.hkdf_algorithm,
+                "info": args.hkdf_info,
             },
             "pbkdf2_iterations": args.pbkdf2_iterations,
         }
