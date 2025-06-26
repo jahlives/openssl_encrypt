@@ -312,6 +312,13 @@ try:
 except ImportError:
     SCRYPT_AVAILABLE = False
 
+try:
+    import blake3
+
+    BLAKE3_AVAILABLE = True
+except ImportError:
+    BLAKE3_AVAILABLE = False
+
 from .secure_memory import SecureBytes, secure_memzero
 
 # Try to import optional dependencies
@@ -1259,6 +1266,49 @@ def multi_hash_password(password, salt, hash_config, quiet=False, progress=False
                         if not quiet and not progress:
                             print("✅")
 
+                elif algorithm == "blake3" and params > 0:
+                    if not quiet and not progress:
+                        print(f"Applying {params} rounds of BLAKE3", end=" ")
+                    elif not quiet:
+                        print(f"Applying {params} rounds of BLAKE3")
+                    
+                    if BLAKE3_AVAILABLE:
+                        # BLAKE3 produces 64 bytes for consistency with other algorithms
+                        with secure_buffer(64, zero=False) as hash_buffer:
+                            for i in range(params):
+                                # Use salt for key to enhance security and prevent length extension attacks
+                                # BLAKE3 supports keyed hashing which is more secure than plain hashing
+                                key_material = hashlib.sha256(salt + str(i).encode()).digest()
+                                
+                                # Create a keyed BLAKE3 instance for each iteration
+                                # BLAKE3 keyed mode provides additional security over plain hashing
+                                hasher = blake3.blake3(key=key_material[:32])
+                                hasher.update(hashed)
+                                result = hasher.digest(64)  # Get 64 bytes for consistency
+                                
+                                secure_memcpy(hash_buffer, result)
+                                secure_memcpy(hashed, hash_buffer)
+                                show_progress("BLAKE3", i + 1, params)
+                                KeyStretch.hash_stretch = True
+                            if not quiet and not progress:
+                                print("✅")
+                    else:
+                        if not quiet:
+                            print("❌ BLAKE3 not available, falling back to BLAKE2b")
+                        # Fallback to BLAKE2b if BLAKE3 is not available
+                        with secure_buffer(64, zero=False) as hash_buffer:
+                            for i in range(params):
+                                key_material = hashlib.sha256(salt + str(i).encode()).digest()
+                                result = hashlib.blake2b(
+                                    hashed, key=key_material[:32], digest_size=64
+                                ).digest()
+                                secure_memcpy(hash_buffer, result)
+                                secure_memcpy(hashed, hash_buffer)
+                                show_progress("BLAKE2b (fallback)", i + 1, params)
+                                KeyStretch.hash_stretch = True
+                            if not quiet and not progress:
+                                print("✅")
+
                 elif algorithm == "shake256" and params > 0:
                     if not quiet and not progress:
                         print(f"Applying {params} rounds of SHAKE-256", end=" ")
@@ -2062,6 +2112,7 @@ def convert_metadata_v3_to_v4(metadata):
         "sha3_256",
         "sha3_224",
         "blake2b",
+        "blake3",
         "shake256",
         "shake128",
         "whirlpool",
@@ -2282,6 +2333,7 @@ def create_metadata_v5(
         "sha3_256",
         "sha3_224",
         "blake2b",
+        "blake3",
         "shake256",
         "shake128",
         "whirlpool",
@@ -3744,6 +3796,7 @@ def get_organized_hash_config(hash_config, encryption_algo=None, salt=None):
         "sha256",
         "sha224",
         "blake2b",
+        "blake3",
         "shake256",
         "shake128",
         "whirlpool",

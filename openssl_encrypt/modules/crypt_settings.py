@@ -29,6 +29,7 @@ DEFAULT_CONFIG = {
     "sha3_256": 10000,  # Enable SHA3-256 by default with 10000 iterations
     "sha3_224": 0,  # SHA3-224 hash function with default of 0 iterations
     "blake2b": 0,  # BLAKE2b hash function with default of 0 iterations
+    "blake3": 0,  # BLAKE3 hash function with default of 0 iterations (high performance)
     "shake256": 0,  # SHAKE-256 hash function with default of 0 iterations
     "shake128": 0,  # SHAKE-128 hash function with default of 0 iterations
     "whirlpool": 0,

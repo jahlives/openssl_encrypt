@@ -9,6 +9,7 @@
                 "sha3_256": 0,
                 "sha3_224": 0,
                 "blake2b": 200000,
+                "blake3": 150000,
                 "shake256": 200000,
                 "shake128": 0,
                 "whirlpool": 0,
