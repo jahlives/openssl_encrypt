@@ -1,6 +1,23 @@
 # OpenSSL Encrypt - Complete Release Notes
 
-## Current Release: Version 1.0.0 (June 2025)
+## Current Release: Version 1.0.1 (June 2025)
+
+**Status:** Production Release
+**Development Status:** Stable
+
+### UI/UX Enhancement Release
+
+Version 1.0.1 enhances the user experience with a segregated CLI help system while maintaining full compatibility with 1.0.0. This release focuses on improving usability without changing any core cryptographic functionality.
+
+### Key Enhancements in 1.0.1
+- **Segregated CLI Help System**: Two-tier help (global overview + command-specific options)
+- **Improved User Experience**: Context-aware help reduces cognitive load
+- **Better Discoverability**: Clear command overview with focused option display
+- **Maintained Compatibility**: All existing functionality and file formats unchanged
+
+---
+
+## Previous Release: Version 1.0.0 (June 2025)
 
 **Status:** Production Release
 **Development Status:** Stable

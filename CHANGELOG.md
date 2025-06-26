@@ -5,6 +5,27 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2025-06-26
+
+### Added
+- Segregated CLI help system with two-tier structure (global + command-specific)
+- Context-aware help display showing only relevant options per command
+- Improved command discovery with comprehensive overview in global help
+- Command-specific argument parsing for better user experience
+
+### Changed
+- Enhanced CLI help output for better usability and reduced cognitive load
+- Global help now provides clear command overview and navigation guidance
+- Encrypt command help shows only encryption-relevant options and algorithms
+- Decrypt command help shows only decryption-relevant options (no algorithm selection)
+- Generate-password, shred, and utility commands show focused option sets
+
+### Technical
+- Added crypt_cli_subparser.py module for command-specific argument handling
+- Implemented version-aware algorithm filtering (excludes 1.1.0-only MAYO/CROSS algorithms)
+- Maintained full backward compatibility with all existing CLI usage patterns
+- No changes to core cryptographic functionality or file formats
+
 ## [1.0.0] - 2025-06-21
 
 ### Added
