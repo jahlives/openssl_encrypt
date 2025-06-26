@@ -68,7 +68,7 @@ DEFAULT_CONFIG = {
         "info": "openssl_encrypt_hkdf",  # Application-specific context info
     },
     # PBKDF2 parameters
-    "pbkdf2_iterations": 100000,
+    "pbkdf2_iterations": 0,
 }
 
 CONFIG_FILE = "crypt_settings.json"
@@ -115,75 +115,105 @@ class SettingsTab:
         ).pack(pady=(10, 5), padx=10, anchor=tk.W)
         ttk.Separator(scrollable_frame, orient="horizontal").pack(fill=tk.X, padx=10, pady=5)
 
-        # Iterative hash settings
-        hash_frame = ttk.LabelFrame(scrollable_frame, text="Iterative Hash Algorithms")
-        hash_frame.pack(fill=tk.X, expand=True, padx=10, pady=5)
-
         # Create variables for iterative hashes
         self.hash_vars = {}
 
+        # SHA-2 Family
+        sha2_frame = ttk.LabelFrame(scrollable_frame, text="SHA-2 Family")
+        sha2_frame.pack(fill=tk.X, expand=True, padx=10, pady=5)
+
         # SHA-512
         row = 0
-        ttk.Label(hash_frame, text="SHA-512 rounds:").grid(
+        ttk.Label(sha2_frame, text="SHA-512 rounds:").grid(
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
         self.hash_vars["sha512"] = tk.IntVar(value=self.config["sha512"])
-        ttk.Entry(hash_frame, textvariable=self.hash_vars["sha512"], width=10).grid(
+        ttk.Entry(sha2_frame, textvariable=self.hash_vars["sha512"], width=10).grid(
             row=row, column=1, sticky=tk.W, padx=5, pady=5
         )
-        ttk.Label(hash_frame, text="(0 to disable)").grid(
+        ttk.Label(sha2_frame, text="(0 to disable)").grid(
             row=row, column=2, sticky=tk.W, padx=5, pady=5
         )
 
         # SHA-384
         row += 1
-        ttk.Label(hash_frame, text="SHA-384 rounds:").grid(
+        ttk.Label(sha2_frame, text="SHA-384 rounds:").grid(
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
         self.hash_vars["sha384"] = tk.IntVar(value=self.config["sha384"])
-        ttk.Entry(hash_frame, textvariable=self.hash_vars["sha384"], width=10).grid(
+        ttk.Entry(sha2_frame, textvariable=self.hash_vars["sha384"], width=10).grid(
             row=row, column=1, sticky=tk.W, padx=5, pady=5
         )
-        ttk.Label(hash_frame, text="(0 to disable)").grid(
+        ttk.Label(sha2_frame, text="(0 to disable)").grid(
             row=row, column=2, sticky=tk.W, padx=5, pady=5
         )
 
         # SHA-256
         row += 1
-        ttk.Label(hash_frame, text="SHA-256 rounds:").grid(
+        ttk.Label(sha2_frame, text="SHA-256 rounds:").grid(
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
         self.hash_vars["sha256"] = tk.IntVar(value=self.config["sha256"])
-        ttk.Entry(hash_frame, textvariable=self.hash_vars["sha256"], width=10).grid(
+        ttk.Entry(sha2_frame, textvariable=self.hash_vars["sha256"], width=10).grid(
             row=row, column=1, sticky=tk.W, padx=5, pady=5
         )
-        ttk.Label(hash_frame, text="(0 to disable)").grid(
+        ttk.Label(sha2_frame, text="(0 to disable)").grid(
             row=row, column=2, sticky=tk.W, padx=5, pady=5
         )
 
         # SHA-224
         row += 1
-        ttk.Label(hash_frame, text="SHA-224 rounds:").grid(
+        ttk.Label(sha2_frame, text="SHA-224 rounds:").grid(
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
         self.hash_vars["sha224"] = tk.IntVar(value=self.config["sha224"])
-        ttk.Entry(hash_frame, textvariable=self.hash_vars["sha224"], width=10).grid(
+        ttk.Entry(sha2_frame, textvariable=self.hash_vars["sha224"], width=10).grid(
             row=row, column=1, sticky=tk.W, padx=5, pady=5
         )
-        ttk.Label(hash_frame, text="(0 to disable)").grid(
+        ttk.Label(sha2_frame, text="(0 to disable)").grid(
+            row=row, column=2, sticky=tk.W, padx=5, pady=5
+        )
+
+        # SHA-3 Family
+        sha3_frame = ttk.LabelFrame(scrollable_frame, text="SHA-3 Family")
+        sha3_frame.pack(fill=tk.X, expand=True, padx=10, pady=5)
+
+        # SHA3-512
+        row = 0
+        ttk.Label(sha3_frame, text="SHA3-512 rounds:").grid(
+            row=row, column=0, sticky=tk.W, padx=5, pady=5
+        )
+        self.hash_vars["sha3_512"] = tk.IntVar(value=self.config["sha3_512"])
+        ttk.Entry(sha3_frame, textvariable=self.hash_vars["sha3_512"], width=10).grid(
+            row=row, column=1, sticky=tk.W, padx=5, pady=5
+        )
+        ttk.Label(sha3_frame, text="(0 to disable)").grid(
+            row=row, column=2, sticky=tk.W, padx=5, pady=5
+        )
+
+        # SHA3-384
+        row += 1
+        ttk.Label(sha3_frame, text="SHA3-384 rounds:").grid(
+            row=row, column=0, sticky=tk.W, padx=5, pady=5
+        )
+        self.hash_vars["sha3_384"] = tk.IntVar(value=self.config["sha3_384"])
+        ttk.Entry(sha3_frame, textvariable=self.hash_vars["sha3_384"], width=10).grid(
+            row=row, column=1, sticky=tk.W, padx=5, pady=5
+        )
+        ttk.Label(sha3_frame, text="(0 to disable)").grid(
             row=row, column=2, sticky=tk.W, padx=5, pady=5
         )
 
         # SHA3-256 - Enhanced with tooltip/help text
         row += 1
-        ttk.Label(hash_frame, text="SHA3-256 rounds:").grid(
+        ttk.Label(sha3_frame, text="SHA3-256 rounds:").grid(
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
         self.hash_vars["sha3_256"] = tk.IntVar(value=self.config["sha3_256"])
-        ttk.Entry(hash_frame, textvariable=self.hash_vars["sha3_256"], width=10).grid(
+        ttk.Entry(sha3_frame, textvariable=self.hash_vars["sha3_256"], width=10).grid(
             row=row, column=1, sticky=tk.W, padx=5, pady=5
         )
-        sha3_256_help = ttk.Label(hash_frame, text="(Recommended: 10000+)", foreground="blue")
+        sha3_256_help = ttk.Label(sha3_frame, text="(Recommended: 10000+)", foreground="blue")
         sha3_256_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
 
         # Add tooltip functionality for SHA3-256
@@ -194,56 +224,34 @@ class SettingsTab:
             "for new implementations.",
         )
 
-        # SHA3-512
-        row += 1
-        ttk.Label(hash_frame, text="SHA3-512 rounds:").grid(
-            row=row, column=0, sticky=tk.W, padx=5, pady=5
-        )
-        self.hash_vars["sha3_512"] = tk.IntVar(value=self.config["sha3_512"])
-        ttk.Entry(hash_frame, textvariable=self.hash_vars["sha3_512"], width=10).grid(
-            row=row, column=1, sticky=tk.W, padx=5, pady=5
-        )
-        ttk.Label(hash_frame, text="(0 to disable)").grid(
-            row=row, column=2, sticky=tk.W, padx=5, pady=5
-        )
-
-        # SHA3-384
-        row += 1
-        ttk.Label(hash_frame, text="SHA3-384 rounds:").grid(
-            row=row, column=0, sticky=tk.W, padx=5, pady=5
-        )
-        self.hash_vars["sha3_384"] = tk.IntVar(value=self.config["sha3_384"])
-        ttk.Entry(hash_frame, textvariable=self.hash_vars["sha3_384"], width=10).grid(
-            row=row, column=1, sticky=tk.W, padx=5, pady=5
-        )
-        ttk.Label(hash_frame, text="(0 to disable)").grid(
-            row=row, column=2, sticky=tk.W, padx=5, pady=5
-        )
-
         # SHA3-224
         row += 1
-        ttk.Label(hash_frame, text="SHA3-224 rounds:").grid(
+        ttk.Label(sha3_frame, text="SHA3-224 rounds:").grid(
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
         self.hash_vars["sha3_224"] = tk.IntVar(value=self.config["sha3_224"])
-        ttk.Entry(hash_frame, textvariable=self.hash_vars["sha3_224"], width=10).grid(
+        ttk.Entry(sha3_frame, textvariable=self.hash_vars["sha3_224"], width=10).grid(
             row=row, column=1, sticky=tk.W, padx=5, pady=5
         )
-        ttk.Label(hash_frame, text="(0 to disable)").grid(
+        ttk.Label(sha3_frame, text="(0 to disable)").grid(
             row=row, column=2, sticky=tk.W, padx=5, pady=5
         )
 
+        # BLAKE Family
+        blake_frame = ttk.LabelFrame(scrollable_frame, text="BLAKE Family")
+        blake_frame.pack(fill=tk.X, expand=True, padx=10, pady=5)
+
         # BLAKE2b - Modern cryptographic hash function
-        row += 1
-        ttk.Label(hash_frame, text="BLAKE2b rounds:").grid(
+        row = 0
+        ttk.Label(blake_frame, text="BLAKE2b rounds:").grid(
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
         self.hash_vars["blake2b"] = tk.IntVar(value=self.config["blake2b"])
-        ttk.Entry(hash_frame, textvariable=self.hash_vars["blake2b"], width=10).grid(
+        ttk.Entry(blake_frame, textvariable=self.hash_vars["blake2b"], width=10).grid(
             row=row, column=1, sticky=tk.W, padx=5, pady=5
         )
         blake2b_help = ttk.Label(
-            hash_frame, text="(Modern, high-performance hash)", foreground="blue"
+            blake_frame, text="(Modern, high-performance hash)", foreground="blue"
         )
         blake2b_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
 
@@ -257,14 +265,14 @@ class SettingsTab:
 
         # BLAKE3 - High-performance tree-based hash function
         row += 1
-        ttk.Label(hash_frame, text="BLAKE3 rounds:").grid(
+        ttk.Label(blake_frame, text="BLAKE3 rounds:").grid(
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
         self.hash_vars["blake3"] = tk.IntVar(value=self.config["blake3"])
-        ttk.Entry(hash_frame, textvariable=self.hash_vars["blake3"], width=10).grid(
+        ttk.Entry(blake_frame, textvariable=self.hash_vars["blake3"], width=10).grid(
             row=row, column=1, sticky=tk.W, padx=5, pady=5
         )
-        blake3_help = ttk.Label(hash_frame, text="(Ultra-fast tree-based hash)", foreground="blue")
+        blake3_help = ttk.Label(blake_frame, text="(Ultra-fast tree-based hash)", foreground="blue")
         blake3_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
 
         # Add tooltip for BLAKE3
@@ -275,17 +283,21 @@ class SettingsTab:
             "designed to be faster than BLAKE2 while maintaining security.",
         )
 
+        # SHAKE Functions
+        shake_frame = ttk.LabelFrame(scrollable_frame, text="SHAKE Functions")
+        shake_frame.pack(fill=tk.X, expand=True, padx=10, pady=5)
+
         # SHAKE-256 - Extendable-output function (XOF)
-        row += 1
-        ttk.Label(hash_frame, text="SHAKE-256 rounds:").grid(
+        row = 0
+        ttk.Label(shake_frame, text="SHAKE-256 rounds:").grid(
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
         self.hash_vars["shake256"] = tk.IntVar(value=self.config["shake256"])
-        ttk.Entry(hash_frame, textvariable=self.hash_vars["shake256"], width=10).grid(
+        ttk.Entry(shake_frame, textvariable=self.hash_vars["shake256"], width=10).grid(
             row=row, column=1, sticky=tk.W, padx=5, pady=5
         )
         shake256_help = ttk.Label(
-            hash_frame, text="(SHA-3 family extendable-output function)", foreground="blue"
+            shake_frame, text="(SHA-3 family extendable-output function)", foreground="blue"
         )
         shake256_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
 
@@ -300,15 +312,15 @@ class SettingsTab:
 
         # SHAKE-128 - Extendable-output function (XOF)
         row += 1
-        ttk.Label(hash_frame, text="SHAKE-128 rounds:").grid(
+        ttk.Label(shake_frame, text="SHAKE-128 rounds:").grid(
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
         self.hash_vars["shake128"] = tk.IntVar(value=self.config["shake128"])
-        ttk.Entry(hash_frame, textvariable=self.hash_vars["shake128"], width=10).grid(
+        ttk.Entry(shake_frame, textvariable=self.hash_vars["shake128"], width=10).grid(
             row=row, column=1, sticky=tk.W, padx=5, pady=5
         )
         shake128_help = ttk.Label(
-            hash_frame, text="(SHA-3 family extendable-output function)", foreground="blue"
+            shake_frame, text="(SHA-3 family extendable-output function)", foreground="blue"
         )
         shake128_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
 
@@ -320,31 +332,28 @@ class SettingsTab:
             "Like SHAKE-256, it can generate outputs of any desired length.",
         )
 
+        # Legacy Hashes
+        legacy_frame = ttk.LabelFrame(scrollable_frame, text="Legacy Hashes")
+        legacy_frame.pack(fill=tk.X, expand=True, padx=10, pady=5)
+
         # Whirlpool
-        row += 1
-        ttk.Label(hash_frame, text="Whirlpool rounds:").grid(
+        row = 0
+        ttk.Label(legacy_frame, text="Whirlpool rounds:").grid(
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
         self.hash_vars["whirlpool"] = tk.IntVar(value=self.config["whirlpool"])
-        ttk.Entry(hash_frame, textvariable=self.hash_vars["whirlpool"], width=10).grid(
+        ttk.Entry(legacy_frame, textvariable=self.hash_vars["whirlpool"], width=10).grid(
             row=row, column=1, sticky=tk.W, padx=5, pady=5
         )
-        ttk.Label(hash_frame, text="(0 to disable)").grid(
+        ttk.Label(legacy_frame, text="(0 to disable)").grid(
             row=row, column=2, sticky=tk.W, padx=5, pady=5
         )
 
-        # PBKDF2 settings
-        row += 1
-        ttk.Label(hash_frame, text="PBKDF2 iterations:").grid(
-            row=row, column=0, sticky=tk.W, padx=5, pady=5
-        )
-        self.hash_vars["pbkdf2_iterations"] = tk.IntVar(value=self.config["pbkdf2_iterations"])
-        ttk.Entry(hash_frame, textvariable=self.hash_vars["pbkdf2_iterations"], width=10).grid(
-            row=row, column=1, sticky=tk.W, padx=5, pady=5
-        )
-        ttk.Label(hash_frame, text="(min 10000 recommended)").grid(
-            row=row, column=2, sticky=tk.W, padx=5, pady=5
-        )
+        # KDF Algorithm Settings header
+        ttk.Label(
+            scrollable_frame, text="KDF Algorithm Settings", font=("TkDefaultFont", 12, "bold")
+        ).pack(pady=(20, 5), padx=10, anchor=tk.W)
+        ttk.Separator(scrollable_frame, orient="horizontal").pack(fill=tk.X, padx=10, pady=5)
 
         # Scrypt settings
         scrypt_frame = ttk.LabelFrame(
@@ -747,6 +756,23 @@ class SettingsTab:
             "Specifies how many times to chain the HKDF function. Each round uses the output "
             "of the previous round as input, increasing security. HKDF is efficient and "
             "doesn't require large amounts of memory like other KDFs.",
+        )
+
+        # Legacy KDF
+        legacy_kdf_frame = ttk.LabelFrame(scrollable_frame, text="Legacy KDF")
+        legacy_kdf_frame.pack(fill=tk.X, expand=True, padx=10, pady=5)
+
+        # PBKDF2
+        row = 0
+        ttk.Label(legacy_kdf_frame, text="PBKDF2 iterations:").grid(
+            row=row, column=0, sticky=tk.W, padx=5, pady=5
+        )
+        self.hash_vars["pbkdf2_iterations"] = tk.IntVar(value=self.config["pbkdf2_iterations"])
+        ttk.Entry(
+            legacy_kdf_frame, textvariable=self.hash_vars["pbkdf2_iterations"], width=10
+        ).grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(legacy_kdf_frame, text="(0 to disable)").grid(
+            row=row, column=2, sticky=tk.W, padx=5, pady=5
         )
 
         # Presets section
