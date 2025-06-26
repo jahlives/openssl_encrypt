@@ -21,11 +21,16 @@ CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".crypt_settings.json")
 DEFAULT_CONFIG = {
     # Hash iterations
     "sha512": 10000,
+    "sha384": 0,  # SHA-384 hash function with default of 0 iterations
     "sha256": 0,
-    "sha3_256": 10000,  # Enable SHA3-256 by default with 10000 iterations
+    "sha224": 0,  # SHA-224 hash function with default of 0 iterations
     "sha3_512": 0,
+    "sha3_384": 0,  # SHA3-384 hash function with default of 0 iterations
+    "sha3_256": 10000,  # Enable SHA3-256 by default with 10000 iterations
+    "sha3_224": 0,  # SHA3-224 hash function with default of 0 iterations
     "blake2b": 0,  # BLAKE2b hash function with default of 0 iterations
     "shake256": 0,  # SHAKE-256 hash function with default of 0 iterations
+    "shake128": 0,  # SHAKE-128 hash function with default of 0 iterations
     "whirlpool": 0,
     # Scrypt parameters
     "scrypt": {
@@ -53,6 +58,13 @@ DEFAULT_CONFIG = {
         "time_cost": 20,  # Number of internal rounds
         "delta": 4,  # Number of random blocks
         "parallel_cost": 4,  # Number of concurrent instances for balloon_m
+    },
+    # HKDF parameters
+    "hkdf": {
+        "enabled": False,
+        "rounds": 1,  # Number of chained KDF rounds
+        "algorithm": "sha256",  # Hash algorithm: sha224, sha256, sha384, sha512
+        "info": "openssl_encrypt_hkdf",  # Application-specific context info
     },
     # PBKDF2 parameters
     "pbkdf2_iterations": 100000,

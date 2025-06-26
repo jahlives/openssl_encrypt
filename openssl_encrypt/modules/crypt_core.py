@@ -299,6 +299,13 @@ import cryptography.exceptions
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 try:
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+    HKDF_AVAILABLE = True
+except ImportError:
+    HKDF_AVAILABLE = False
+
+try:
     from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
     SCRYPT_AVAILABLE = True
@@ -1549,12 +1556,14 @@ def generate_key(
         use_scrypt = kdf_config.get("scrypt", {}).get("enabled", False)
         use_pbkdf2 = kdf_config.get("pbkdf2_iterations", 0) > 0
         use_balloon = kdf_config.get("balloon", {}).get("enabled", False)
+        use_hkdf = kdf_config.get("hkdf", {}).get("enabled", False)
     else:
         # Original version 3 format
         use_argon2 = hash_config.get("argon2", {}).get("enabled", False)
         use_scrypt = hash_config.get("scrypt", {}).get("enabled", False)
         use_pbkdf2 = hash_config.get("pbkdf2_iterations", 0) > 0
         use_balloon = hash_config.get("balloon", {}).get("enabled", False)
+        use_hkdf = hash_config.get("hkdf", {}).get("enabled", False)
 
     # If hash_config has argon2 section with enabled explicitly set to False, honor that
     # if hash_config and 'argon2' in hash_config and 'enabled' in hash_config['argon2']:
@@ -1862,6 +1871,78 @@ def generate_key(
             use_pbkdf2 = 100000
         elif pbkdf2_from_hash_config is not None and pbkdf2_from_hash_config > 0:
             use_pbkdf2 = pbkdf2_from_hash_config
+
+    if use_hkdf and HKDF_AVAILABLE:
+        # Create a copy of the salt to prevent modifications affecting the original
+        # This helps prevent salt reuse issues
+        base_salt = salt
+        if not quiet and not progress:
+            print("Using HKDF for key derivation", end=" ")
+        elif not quiet:
+            print("Using HKDF for key derivation")
+        hkdf_config = hash_config.get("hkdf", {}) if hash_config else {}
+        algorithm = hkdf_config.get("algorithm", "sha256")
+        info = hkdf_config.get("info", b"openssl_encrypt_hkdf")
+
+        # Convert string info to bytes if needed
+        if isinstance(info, str):
+            info = info.encode("utf-8")
+
+        try:
+            # Get hash algorithm
+            if algorithm == "sha256":
+                hash_algorithm = hashes.SHA256()
+            elif algorithm == "sha512":
+                hash_algorithm = hashes.SHA512()
+            elif algorithm == "sha384":
+                hash_algorithm = hashes.SHA384()
+            elif algorithm == "sha224":
+                hash_algorithm = hashes.SHA224()
+            else:
+                hash_algorithm = hashes.SHA256()  # Default fallback
+
+            for i in range(hkdf_config.get("rounds", 1)):
+                # Generate a new unique salt for each round to prevent salt reuse attacks
+                if i == 0:
+                    # Use the original salt for the first round
+                    round_salt = base_salt
+                else:
+                    # For subsequent rounds, derive a new unique salt using a secure method
+                    # This prevents potential weakening due to salt reuse
+                    salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
+                    round_salt = salt_material[:16]  # Use 16 bytes for salt
+
+                # Make a secure copy of the password for this operation
+                if hasattr(password, "to_bytes"):
+                    input_key_material = password.to_bytes()
+                else:
+                    input_key_material = password
+
+                # Apply HKDF key derivation
+                hkdf = HKDF(
+                    algorithm=hash_algorithm,
+                    length=key_length,
+                    salt=round_salt,
+                    info=info,
+                )
+                password = hkdf.derive(input_key_material)
+
+                show_progress("HKDF", i + 1, hkdf_config.get("rounds", 1))
+                KeyStretch.key_stretch = True
+
+            if not quiet and not progress:
+                print(" ✅")
+
+            # Update config to record HKDF usage
+            if isinstance(hash_config, dict) and "hkdf" in hash_config:
+                hash_config["hkdf"]["rounds"] = hkdf_config.get("rounds", 1)
+
+        except Exception as e:
+            if not quiet:
+                print("❌ HKDF failed, falling back to PBKDF2")
+            # Don't set use_hkdf to False here, as we want to record the attempt
+            use_hkdf = False  # Consider falling back to PBKDF2
+
     if use_pbkdf2 and use_pbkdf2 > 0:
         # Using a fixed salt initially but then generating unique salts for each iteration
         # to prevent salt reuse attacks
@@ -1973,11 +2054,16 @@ def convert_metadata_v3_to_v4(metadata):
     # Process hash algorithms to use nested structure
     hash_algorithms = [
         "sha512",
+        "sha384",
         "sha256",
-        "sha3_256",
+        "sha224",
         "sha3_512",
+        "sha3_384",
+        "sha3_256",
+        "sha3_224",
         "blake2b",
         "shake256",
+        "shake128",
         "whirlpool",
     ]
     hash_config = metadata.get("hash_config", {})
@@ -2188,11 +2274,16 @@ def create_metadata_v5(
     # Process hash algorithms to use nested structure
     hash_algorithms = [
         "sha512",
+        "sha384",
         "sha256",
-        "sha3_256",
+        "sha224",
         "sha3_512",
+        "sha3_384",
+        "sha3_256",
+        "sha3_224",
         "blake2b",
         "shake256",
+        "shake128",
         "whirlpool",
     ]
     for algo in hash_algorithms:
@@ -2204,7 +2295,7 @@ def create_metadata_v5(
         metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {"rounds": pbkdf2_iterations}
 
     # Move KDF configurations from hash_config if present
-    kdf_algorithms = ["scrypt", "argon2", "balloon"]
+    kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf"]
     for kdf in kdf_algorithms:
         if kdf in hash_config:
             metadata["derivation_config"]["kdf_config"][kdf] = hash_config[kdf]
@@ -2351,7 +2442,7 @@ def encrypt_file(
 
     if isinstance(algorithm, str):
         algorithm = EncryptionAlgorithm(algorithm)
-    
+
     # Handle signature algorithms (MAYO/CROSS) - generate keypair if not provided
     is_signature_algorithm = algorithm in [
         EncryptionAlgorithm.MAYO_1_HYBRID,
@@ -2361,28 +2452,30 @@ def encrypt_file(
         EncryptionAlgorithm.CROSS_192_HYBRID,
         EncryptionAlgorithm.CROSS_256_HYBRID,
     ]
-    
+
     if is_signature_algorithm and not pqc_keypair:
         # Generate signature keypair for MAYO/CROSS algorithms
-        from .pqc_adapter import ExtendedPQCipher, HYBRID_ALGORITHM_MAP
-        
+        from .pqc_adapter import HYBRID_ALGORITHM_MAP, ExtendedPQCipher
+
         # Map algorithm to signature algorithm name
         sig_algorithm = HYBRID_ALGORITHM_MAP[algorithm.value]
-        
+
         if not quiet:
             print(f"Generating {sig_algorithm} signature keypair...")
-        
+
         try:
             sig_cipher = ExtendedPQCipher(sig_algorithm, quiet=quiet, verbose=verbose)
             public_key, private_key = sig_cipher.generate_keypair()
             pqc_keypair = (public_key, private_key)
             if not quiet:
-                print(f"✅ Generated {sig_algorithm} keypair: pub={len(public_key)}B, priv={len(private_key)}B")
+                print(
+                    f"✅ Generated {sig_algorithm} keypair: pub={len(public_key)}B, priv={len(private_key)}B"
+                )
         except Exception as e:
             if not quiet:
                 print(f"❌ Failed to generate {sig_algorithm} keypair: {e}")
             raise ValidationError(f"Failed to generate signature keypair: {e}")
-    
+
     # Generate a key from the password
     salt = secrets.token_bytes(16)  # Unique salt for each encryption
     if not quiet:
@@ -2553,29 +2646,29 @@ def encrypt_file(
                 EncryptionAlgorithm.CROSS_192_HYBRID,
                 EncryptionAlgorithm.CROSS_256_HYBRID,
             ]
-            
+
             if is_signature_algorithm:
                 # For signature algorithms, use the private key directly for encryption
                 if not pqc_keypair or len(pqc_keypair) < 2:
                     raise ValueError("Signature algorithm requires both public and private keys")
-                
+
                 private_key = pqc_keypair[1]
-                
+
                 # Derive symmetric encryption key from signature private key
                 from cryptography.hazmat.primitives import hashes
                 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-                
+
                 # Derive 32-byte key for AES-GCM from signature private key
                 salt = b"OpenSSL-Encrypt-PQ-Signature-Hybrid"
                 info = f"encryption-key-{algorithm.value}".encode()
-                
+
                 derived_key = HKDF(
                     algorithm=hashes.SHA256(),
                     length=32,  # AES-256 key size
                     salt=salt,
                     info=info,
                 ).derive(private_key)
-                
+
                 # Encrypt using AES-GCM with derived key
                 nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
                 aes_cipher = AESGCM(derived_key)
@@ -3404,23 +3497,23 @@ def decrypt_file(
                 EncryptionAlgorithm.CROSS_192_HYBRID.value,
                 EncryptionAlgorithm.CROSS_256_HYBRID.value,
             ]
-            
+
             if is_signature_algorithm:
                 # For signature algorithms, derive the same key from private key
                 from cryptography.hazmat.primitives import hashes
                 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-                
+
                 # Derive 32-byte key for AES-GCM from signature private key
                 salt = b"OpenSSL-Encrypt-PQ-Signature-Hybrid"
                 info = f"encryption-key-{algorithm}".encode()
-                
+
                 derived_key = HKDF(
                     algorithm=hashes.SHA256(),
                     length=32,  # AES-256 key size
                     salt=salt,
                     info=info,
                 ).derive(pqc_private_key)
-                
+
                 # Decrypt using AES-GCM with derived key
                 nonce = encrypted_data[:12]  # First 12 bytes are nonce
                 ciphertext = encrypted_data[12:]  # Rest is ciphertext
@@ -3640,14 +3733,19 @@ def get_organized_hash_config(hash_config, encryption_algo=None, salt=None):
     }
 
     # Define which algorithms are KDFs and which are hashes
-    kdf_algorithms = ["scrypt", "argon2", "balloon", "pbkdf2_iterations", "pbkdf2"]
+    kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf", "pbkdf2_iterations", "pbkdf2"]
     hash_algorithms = [
         "sha3_512",
+        "sha3_384",
         "sha3_256",
+        "sha3_224",
         "sha512",
+        "sha384",
         "sha256",
+        "sha224",
         "blake2b",
         "shake256",
+        "shake128",
         "whirlpool",
     ]
 

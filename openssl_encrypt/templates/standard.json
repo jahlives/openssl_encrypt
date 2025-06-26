@@ -1,11 +1,16 @@
 {
   "hash_config": {
                 "sha512": 0,
+                "sha384": 0,
                 "sha256": 0,
-                "sha3_256": 0,
+                "sha224": 0,
                 "sha3_512": 600000,
+                "sha3_384": 0,
+                "sha3_256": 0,
+                "sha3_224": 0,
                 "blake2b": 200000,
                 "shake256": 200000,
+                "shake128": 0,
                 "whirlpool": 0,
                 "scrypt": {
                     "enabled": true,
@@ -22,6 +27,12 @@
                     "hash_len": 32,
                     "type": 2,
                     "rounds": 100
+                },
+                "hkdf": {
+                    "enabled": false,
+                    "rounds": 1,
+                    "algorithm": "sha256",
+                    "info": "openssl_encrypt_standard"
                 },
                 "pbkdf2_iterations": 0,
                 "type": "id",
