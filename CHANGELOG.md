@@ -5,27 +5,28 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.0] - 2025-06-21
+## [1.1.0] - 2025-06-26
 
 ### Added
-- MAYO post-quantum signature algorithm support for enhanced authentication
-- CROSS post-quantum signature algorithm integration
-- Extended post-quantum cryptography portfolio with signature algorithms
-- Advanced keystore management for MAYO and CROSS keys
-- Enhanced CLI interface with MAYO and CROSS signature options
-- Comprehensive testing suite for new signature algorithms
+- **Extended Cryptographic Hash Support**: Complete SHA-2 family (SHA-224, SHA-384), SHA-3 family (SHA3-224, SHA3-384), BLAKE3 ultra-fast hash, SHAKE-128 extendable-output function
+- **HKDF Key Derivation**: RFC 5869 HMAC-based Key Derivation Function with configurable rounds and hash algorithms
+- **MAYO Post-Quantum Signatures**: MAYO-1/3/5 multivariate signature algorithms for quantum-resistant authentication
+- **CROSS Post-Quantum Signatures**: CROSS-128/192/256 code-based signature algorithms
+- **Reorganized GUI Settings**: Professional hash family groupings (SHA-2, SHA-3, BLAKE, SHAKE, Legacy) and KDF Algorithm Settings section
+- **Complete CLI Coverage**: All new hash algorithms and HKDF available via command-line interface with comprehensive help documentation
+- **PBKDF2 Categorization**: Moved PBKDF2 to Legacy KDF section with default disabled (0 iterations)
 
 ### Changed
-- Upgraded core cryptographic libraries to support signature algorithms
-- Enhanced keystore format to accommodate signature keys
-- Improved documentation with MAYO and CROSS usage examples
-- Extended algorithm selection interface for signature operations
+- **GUI Organization**: Restructured settings tab with logical algorithm families and modern vs. legacy categorization
+- **Algorithm Defaults**: PBKDF2 iterations default changed from 100,000 to 0 (disabled by default)
+- **CLI Interface**: Enhanced subparser help consistency with main CLI for all hash and KDF options
+- **Documentation Updates**: Updated README.md with comprehensive hash families and new CLI examples
 
 ### Security
-- Additional post-quantum signature algorithms for future-proof authentication
-- Enhanced protection with quantum-resistant signature verification
-- Comprehensive security validation for MAYO and CROSS implementations
-- Updated cryptographic architecture to support hybrid signature schemes
+- **Modern Algorithm Promotion**: Clear separation of modern (HKDF, Argon2, Scrypt, Balloon) vs. legacy (PBKDF2) KDFs
+- **Enhanced Hash Portfolio**: Industry-leading cryptographic hash coverage including latest BLAKE3 and complete SHA-3 family
+- **Future-Proof Signatures**: Additional post-quantum signature algorithms (MAYO, CROSS) for comprehensive quantum resistance
+- **Secure Defaults**: Disabled legacy PBKDF2 by default while maintaining backward compatibility
 
 ## [1.0.0] - 2025-06-21
 

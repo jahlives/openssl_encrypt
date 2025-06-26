@@ -5,20 +5,40 @@
 **Status:** Production Release
 **Development Status:** Stable
 
-### Post-Quantum Signature Algorithm Integration
+### Comprehensive Cryptographic Enhancement Release
 
-Version 1.1.0 extends OpenSSL Encrypt's quantum-resistant capabilities with the integration of MAYO and CROSS post-quantum signature algorithms. This release adds comprehensive authentication and digital signature functionality to complement our existing post-quantum encryption portfolio, providing complete quantum-resistant cryptographic operations.
+Version 1.1.0 represents a major advancement in OpenSSL Encrypt's cryptographic capabilities, delivering extensive hash algorithm support, modern key derivation functions, post-quantum signature algorithms, and a completely reorganized user interface. This release significantly expands our cryptographic portfolio while maintaining the highest standards of security and usability.
 
-### Key Signature Algorithm Features
-- **MAYO Algorithm Support**: Complete implementation of MAYO post-quantum signature algorithm for enhanced authentication
-- **CROSS Algorithm Integration**: Full CROSS post-quantum signature algorithm support with comprehensive validation
-- **Extended Keystore Management**: Advanced keystore functionality for MAYO and CROSS signature keys
+### Extended Cryptographic Hash Support
+- **Complete SHA-2 Family**: Added SHA-224 and SHA-384 to complement existing SHA-256 and SHA-512
+- **Complete SHA-3 Family**: Added SHA3-224 and SHA3-384 to complement existing SHA3-256 and SHA3-512
+- **BLAKE3 Ultra-Fast Hash**: Latest evolution of BLAKE family with tree-based parallelism for maximum performance
+- **SHAKE-128 Function**: Additional extendable-output function complementing SHAKE-256
+- **Professional Organization**: All hash algorithms now organized by cryptographic families in both GUI and CLI
+
+### Modern Key Derivation Functions
+- **HKDF Implementation**: RFC 5869 HMAC-based Key Derivation Function with configurable hash algorithms (SHA-224/256/384/512)
+- **Flexible Configuration**: Support for chained KDF rounds and application-specific context information
+- **Legacy Categorization**: PBKDF2 properly categorized as legacy with secure defaults (disabled by default)
+- **Modern KDF Promotion**: Clear distinction between modern (HKDF, Argon2, Scrypt, Balloon) and legacy options
+
+### Post-Quantum Signature Integration
+- **MAYO Algorithm Support**: MAYO-1/3/5 multivariate signature algorithms for quantum-resistant authentication
+- **CROSS Algorithm Integration**: CROSS-128/192/256 code-based signature algorithms with comprehensive validation
 - **Hybrid Signature Architecture**: Support for combining classical and post-quantum signature schemes
-- **Enhanced CLI Interface**: New command-line options for signature operations with MAYO and CROSS algorithms
-- **Comprehensive Testing**: Complete test coverage for all signature algorithm implementations
+- **Complete Portfolio**: Authentication algorithms complement existing encryption portfolio (Kyber, ML-KEM, HQC)
 
-### Quantum-Resistant Authentication Portfolio
-The combination of encryption algorithms (Kyber, ML-KEM, HQC) with signature algorithms (MAYO, CROSS) provides complete quantum-resistant cryptographic capabilities, ensuring both data confidentiality and authentication integrity against future quantum computing threats.
+### Professional GUI Reorganization
+- **Hash Algorithm Settings**: Organized by families (SHA-2, SHA-3, BLAKE, SHAKE, Legacy Hashes)
+- **KDF Algorithm Settings**: Dedicated section for modern KDFs with Legacy KDF subsection
+- **Intuitive Interface**: Clear separation of modern vs. legacy algorithms for better security guidance
+- **Comprehensive Tooltips**: Educational hover information for all cryptographic functions
+
+### Complete CLI Coverage
+- **All Hash Algorithms**: Every hash function available via command-line with consistent syntax
+- **HKDF Support**: Full HKDF configuration including algorithm selection, rounds, and context info
+- **Help Consistency**: Subparser and main CLI provide identical help documentation
+- **Default Handling**: Intelligent defaults for flag-without-value scenarios (1M iterations for hash functions)
 
 ---
 
