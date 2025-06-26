@@ -1245,6 +1245,7 @@ class SettingsTab:
             "Scrypt: {scrypt_enabled} (N={scrypt_n}, r={scrypt_r}, p={scrypt_p}, rounds={scrypt_rounds})\n"
             "Argon2: {argon2_enabled} (t={argon2_t}, m={argon2_m}KB, p={argon2_p}, rounds={argon2_rounds})\n"
             "Balloon: {balloon_enabled} (s={balloon_s}, t={balloon_t}, d={balloon_d}, p={balloon_p}, rounds={balloon_rounds})\n"
+            "HKDF: {hkdf_enabled} (algorithm={hkdf_algorithm}, rounds={hkdf_rounds})\n"
             "PBKDF2: {pbkdf2} iterations\n\n"
         ).format(
             sha512=self.config["sha512"],
@@ -1266,22 +1267,33 @@ class SettingsTab:
                 "★ (variable-length output)" if self.config["shake256"] > 0 else ""
             ),
             whirlpool=self.config["whirlpool"],
-            scrypt_enabled="Enabled" if self.config["scrypt"]["enabled"] else "Disabled",
-            scrypt_n=self.config["scrypt"]["n"],
-            scrypt_r=self.config["scrypt"]["r"],
-            scrypt_p=self.config["scrypt"]["p"],
-            scrypt_rounds=self.config["scrypt"]["rounds"],
-            argon2_enabled="Enabled" if self.config["argon2"]["enabled"] else "Disabled",
-            argon2_t=self.config["argon2"]["time_cost"],
-            argon2_m=self.config["argon2"]["memory_cost"],
-            argon2_p=self.config["argon2"]["parallelism"],
-            argon2_rounds=self.config["argon2"]["rounds"],
-            balloon_enabled="Enabled" if self.config["balloon"]["enabled"] else "Disabled",
-            balloon_s=self.config["balloon"]["space_cost"],
-            balloon_t=self.config["balloon"]["time_cost"],
-            balloon_d=self.config["balloon"]["delta"],
-            balloon_p=self.config["balloon"]["parallel_cost"],
-            balloon_rounds=self.config["balloon"]["rounds"],
+            scrypt_enabled="Enabled"
+            if self.config.get("scrypt", {}).get("enabled", False)
+            else "Disabled",
+            scrypt_n=self.config.get("scrypt", {}).get("n", 16384),
+            scrypt_r=self.config.get("scrypt", {}).get("r", 8),
+            scrypt_p=self.config.get("scrypt", {}).get("p", 1),
+            scrypt_rounds=self.config.get("scrypt", {}).get("rounds", 100),
+            argon2_enabled="Enabled"
+            if self.config.get("argon2", {}).get("enabled", False)
+            else "Disabled",
+            argon2_t=self.config.get("argon2", {}).get("time_cost", 3),
+            argon2_m=self.config.get("argon2", {}).get("memory_cost", 65536),
+            argon2_p=self.config.get("argon2", {}).get("parallelism", 4),
+            argon2_rounds=self.config.get("argon2", {}).get("rounds", 100),
+            balloon_enabled="Enabled"
+            if self.config.get("balloon", {}).get("enabled", False)
+            else "Disabled",
+            balloon_s=self.config.get("balloon", {}).get("space_cost", 16),
+            balloon_t=self.config.get("balloon", {}).get("time_cost", 20),
+            balloon_d=self.config.get("balloon", {}).get("delta", 4),
+            balloon_p=self.config.get("balloon", {}).get("parallel_cost", 4),
+            balloon_rounds=self.config.get("balloon", {}).get("rounds", 1),
+            hkdf_enabled="Enabled"
+            if self.config.get("hkdf", {}).get("enabled", False)
+            else "Disabled",
+            hkdf_algorithm=self.config.get("hkdf", {}).get("algorithm", "sha256"),
+            hkdf_rounds=self.config.get("hkdf", {}).get("rounds", 1),
             pbkdf2=self.config["pbkdf2_iterations"],
         )
 

@@ -7,21 +7,15 @@
   "finish-args": [
     "--share=ipc",
     "--socket=x11",
-    "--socket=fallback-x11",
     "--socket=wayland",
-    "--filesystem=host",
-    "--filesystem=host-os",
-    "--filesystem=/tmp",
-    "--filesystem=/var/tmp",
-    "--filesystem=/run/media",
-    "--filesystem=/media",
-    "--filesystem=/mnt",
     "--device=dri",
+    "--filesystem=host",
+    "--filesystem=xdg-run/at-spi",
     "--talk-name=org.freedesktop.FileManager1",
     "--talk-name=org.gtk.vfs.*",
+    "--talk-name=org.a11y.*",
     "--env=PYTHONPATH=/app/lib/python3.12/site-packages",
-    "--env=GDK_BACKEND=x11,wayland",
-    "--env=QT_QPA_PLATFORM=wayland;xcb"
+    "--env=GDK_BACKEND=wayland,x11"
   ],
   "modules": [
     {

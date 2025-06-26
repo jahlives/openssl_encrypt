@@ -54,52 +54,35 @@ def main():
             wayland_display = os.environ.get("WAYLAND_DISPLAY")
             x11_display = os.environ.get("DISPLAY")
 
-            if wayland_display and not x11_display:
-                # Pure Wayland environment - tkinter should work through XWayland
+            if wayland_display:
+                # Wayland environment - remove X11 auth that's causing issues
                 print(f"Detected Wayland environment: {wayland_display}")
-                # Don't force X11 settings, let tkinter use XWayland
+                os.environ["GDK_BACKEND"] = "wayland,x11"
+                # Remove XAUTHORITY to avoid auth issues in Flatpak
+                if "XAUTHORITY" in os.environ:
+                    del os.environ["XAUTHORITY"]
+                print("Using Wayland with X11 fallback (no X11 auth)")
             elif x11_display:
                 print(f"Using X11 display: {x11_display}")
+                os.environ["GDK_BACKEND"] = "x11"
             else:
-                # Fallback to X11
-                os.environ["DISPLAY"] = ":0"
-                print("Fallback: Force setting DISPLAY to :0")
-
-            # Only set XAUTHORITY if we're using X11
-            if os.environ.get("DISPLAY") and not os.environ.get("XAUTHORITY"):
-                os.environ["XAUTHORITY"] = "/run/user/1000/xauth_PaSUjl"
-                print("Setting XAUTHORITY for X11")
+                # No display detected - try automatic detection
+                print("WARNING: No display server detected")
+                print("Using automatic display detection...")
+                os.environ["GDK_BACKEND"] = "wayland,x11"
 
             print(f"Final DISPLAY: {os.environ.get('DISPLAY')}")
             print(f"Final XAUTHORITY: {os.environ.get('XAUTHORITY')}")
 
-            # Test if we can create a simple tkinter window
-            try:
-                test_root = tkinter.Tk()
-                test_root.withdraw()
-                test_root.destroy()
-                print("✓ tkinter display connection successful")
-            except Exception as e:
-                print(f"✗ tkinter display connection failed: {e}")
-                print("This indicates an issue with display server access in the Flatpak sandbox")
-
-                # Try to provide helpful debugging info
-                if wayland_display and not x11_display:
-                    print("Wayland detected - tkinter needs XWayland for compatibility")
-                    print("Make sure XWayland is installed and running")
-                elif x11_display:
-                    print(f"X11 detected but connection to {x11_display} failed")
-                    print("Check X11 permissions and that display server is running")
-                else:
-                    print("No display server detected")
-
-                raise Exception(f"Cannot connect to display server: {e}")
+            # Skip display test - let the GUI handle display connection directly
+            print("Skipping display test - letting GUI handle connection directly")
 
             # Then try to import the GUI module
             from openssl_encrypt.crypt_gui import main as gui_main
 
             print("✓ GUI module imported successfully")
 
+            # Font configuration will be handled by the GUI itself
             gui_main()
         except ImportError as e:
             print(f"Error: GUI components not available - {e}", file=sys.stderr)
