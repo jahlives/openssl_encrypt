@@ -158,6 +158,7 @@ REQUIRED_ARGUMENT_GROUPS = {
         "help",  # Help flag
         "progress",  # Show progress bar
         "verbose",  # Show hash/kdf details
+        "debug",  # Show detailed debug information
         "template",  # Template name
         "quick",  # Quick configuration
         "standard",  # Standard configuration
@@ -173,17 +174,32 @@ REQUIRED_ARGUMENT_GROUPS = {
         "shred",  # Securely delete original
         "shred-passes",  # Number of passes for secure deletion
         "recursive",  # Process directories recursively
+        "disable-secure-memory",  # Disable secure memory (main CLI only)
     ],
     "Hash Options": [
         "kdf-rounds",  # Global KDF rounds setting
         "sha512-rounds",  # SHA hash rounds
+        "sha384-rounds",  # SHA-384 hash rounds (1.1.0)
         "sha256-rounds",
-        "sha3-256-rounds",
+        "sha224-rounds",  # SHA-224 hash rounds (1.1.0)
         "sha3-512-rounds",
+        "sha3-384-rounds",  # SHA3-384 hash rounds (1.1.0)
+        "sha3-256-rounds",
+        "sha3-224-rounds",  # SHA3-224 hash rounds (1.1.0)
         "blake2b-rounds",
+        "blake3-rounds",  # BLAKE3 hash rounds (1.1.0)
         "shake256-rounds",
+        "shake128-rounds",  # SHAKE-128 hash rounds (1.1.0)
         "whirlpool-rounds",
         "pbkdf2-iterations",  # PBKDF2 options
+        # Hash function flags (main CLI boolean enablers)
+        "sha256",  # Enable SHA-256 hashing
+        "sha512",  # Enable SHA-512 hashing
+        "sha3-256",  # Enable SHA3-256 hashing
+        "sha3-512",  # Enable SHA3-512 hashing
+        "shake256",  # Enable SHAKE-256 hashing
+        "blake2b",  # Enable BLAKE2b hashing
+        "pbkdf2",  # Enable PBKDF2
     ],
     "Scrypt Options": [
         "enable-scrypt",  # Scrypt options
@@ -191,15 +207,24 @@ REQUIRED_ARGUMENT_GROUPS = {
         "scrypt-n",
         "scrypt-r",
         "scrypt-p",
+        "scrypt-cost",  # Scrypt cost parameter (main CLI only)
+    ],
+    "HKDF Options": [
+        "enable-hkdf",  # HKDF key derivation (1.1.0)
+        "hkdf-rounds",
+        "hkdf-algorithm",
+        "hkdf-info",
     ],
     "Keystore Options": [
         "keystore",  # Keystore options
+        "keystore-path",  # Keystore path (1.1.0 subparser)
         "keystore-password",
         "keystore-password-file",
         "key-id",
         "dual-encrypt-key",
         "auto-generate-key",
         "auto-create-keystore",
+        "encryption-data",  # Additional encryption data (1.1.0)
     ],
     "Post-Quantum Cryptography": [
         "pqc-keyfile",  # PQC options
@@ -215,6 +240,7 @@ REQUIRED_ARGUMENT_GROUPS = {
         "argon2-hash-len",
         "argon2-type",
         "argon2-preset",
+        "use-argon2",  # Use Argon2 flag (main CLI only)
     ],
     "Balloon Hashing": [
         "enable-balloon",  # Balloon hashing options
@@ -223,6 +249,7 @@ REQUIRED_ARGUMENT_GROUPS = {
         "balloon-parallelism",
         "balloon-rounds",
         "balloon-hash-len",
+        "use-balloon",  # Use Balloon hashing flag (main CLI only)
     ],
     "Password Generation": [
         "length",  # Password generation options
@@ -254,12 +281,21 @@ class TestCryptCliArguments(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up the test class by reading the source code once."""
-        # Get the source code of the CLI module
+        # Get the source code of both CLI modules
         cli_module_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "modules", "crypt_cli.py")
         )
+        subparser_module_path = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "modules", "crypt_cli_subparser.py")
+        )
+
+        # Read both files and combine the source code
         with open(cli_module_path, "r") as f:
-            cls.source_code = f.read()
+            main_cli_code = f.read()
+        with open(subparser_module_path, "r") as f:
+            subparser_code = f.read()
+
+        cls.source_code = main_cli_code + "\n" + subparser_code
 
     def _argument_exists(self, arg):
         """Check if an argument exists in the source code."""
@@ -1631,50 +1667,57 @@ class TestCLIInterface(unittest.TestCase):
     def test_stdin_decryption_cli(self):
         """Test decryption from stdin via CLI subprocess to prevent regression."""
         import subprocess
-        
+
         # Use an existing test file that we know works
-        test_encrypted_file = os.path.join("openssl_encrypt", "unittests", "testfiles", "v5", "test1_fernet.txt")
-        
+        test_encrypted_file = os.path.join(
+            "openssl_encrypt", "unittests", "testfiles", "v5", "test1_fernet.txt"
+        )
+
         # Skip test if test file doesn't exist
         if not os.path.exists(test_encrypted_file):
             self.skipTest(f"Test file {test_encrypted_file} not found")
-        
+
         # Read the encrypted content
         with open(test_encrypted_file, "rb") as f:
             encrypted_content = f.read()
-        
+
         # Test CLI decryption from stdin
         try:
             # Run decrypt command with stdin input
             process = subprocess.Popen(
                 [
-                    "python", "-m", "openssl_encrypt.crypt", 
-                    "decrypt", 
-                    "--input", "/dev/stdin",
-                    "--password", "1234",
+                    "python",
+                    "-m",
+                    "openssl_encrypt.crypt",
+                    "decrypt",
+                    "--input",
+                    "/dev/stdin",
+                    "--password",
+                    "1234",
                     "--force-password",
-                    "--quiet"
+                    "--quiet",
                 ],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                cwd=os.getcwd()
+                cwd=os.getcwd(),
             )
-            
+
             # Send encrypted content via stdin
             stdout, stderr = process.communicate(input=encrypted_content, timeout=30)
-            
+
             # Check that the process succeeded
-            self.assertEqual(process.returncode, 0, 
-                           f"Stdin decryption failed. stderr: {stderr.decode()}")
-            
+            self.assertEqual(
+                process.returncode, 0, f"Stdin decryption failed. stderr: {stderr.decode()}"
+            )
+
             # Verify we got some decrypted output
             self.assertGreater(len(stdout), 0, "No decrypted output received from stdin")
-            
+
             # The output should contain recognizable content (test files contain "Hello, World!")
-            decrypted_text = stdout.decode('utf-8', errors='ignore')
+            decrypted_text = stdout.decode("utf-8", errors="ignore")
             self.assertIn("Hello", decrypted_text, "Decrypted content doesn't match expected")
-            
+
         except subprocess.TimeoutExpired:
             process.kill()
             self.fail("Stdin decryption process timed out")
@@ -1686,54 +1729,65 @@ class TestCLIInterface(unittest.TestCase):
     def test_stdin_decryption_with_warnings(self):
         """Test that deprecation warnings work correctly for stdin decryption."""
         import subprocess
-        
+
         # Use an existing test file that we know works
-        test_encrypted_file = os.path.join("openssl_encrypt", "unittests", "testfiles", "v5", "test1_fernet.txt")
-        
+        test_encrypted_file = os.path.join(
+            "openssl_encrypt", "unittests", "testfiles", "v5", "test1_fernet.txt"
+        )
+
         # Skip test if test file doesn't exist
         if not os.path.exists(test_encrypted_file):
             self.skipTest(f"Test file {test_encrypted_file} not found")
-        
+
         # Read the encrypted content
         with open(test_encrypted_file, "rb") as f:
             encrypted_content = f.read()
-        
+
         # Test CLI decryption from stdin with verbose output to see warnings
         try:
             # Run decrypt command with stdin input and verbose flag
             process = subprocess.Popen(
                 [
-                    "python", "-m", "openssl_encrypt.crypt", 
-                    "decrypt", 
-                    "--input", "/dev/stdin",
-                    "--password", "1234",
+                    "python",
+                    "-m",
+                    "openssl_encrypt.crypt",
+                    "decrypt",
+                    "--input",
+                    "/dev/stdin",
+                    "--password",
+                    "1234",
                     "--force-password",
-                    "--verbose"  # Enable verbose to see warnings
+                    "--verbose",  # Enable verbose to see warnings
                 ],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                cwd=os.getcwd()
+                cwd=os.getcwd(),
             )
-            
+
             # Send encrypted content via stdin
             stdout, stderr = process.communicate(input=encrypted_content, timeout=30)
-            
+
             # Check that the process succeeded
-            self.assertEqual(process.returncode, 0, 
-                           f"Stdin decryption with warnings failed. stderr: {stderr.decode()}")
-            
+            self.assertEqual(
+                process.returncode,
+                0,
+                f"Stdin decryption with warnings failed. stderr: {stderr.decode()}",
+            )
+
             # Verify we got some decrypted output
             self.assertGreater(len(stdout), 0, "No decrypted output received from stdin")
-            
+
             # Verify that metadata extraction worked (this test proves our new implementation works)
-            combined_output = stdout.decode('utf-8', errors='ignore') + stderr.decode('utf-8', errors='ignore')
-            
-            # The fact that this succeeds without "Security validation check failed" 
+            combined_output = stdout.decode("utf-8", errors="ignore") + stderr.decode(
+                "utf-8", errors="ignore"
+            )
+
+            # The fact that this succeeds without "Security validation check failed"
             # proves our metadata extraction is working correctly
-            decrypted_text = stdout.decode('utf-8', errors='ignore')
+            decrypted_text = stdout.decode("utf-8", errors="ignore")
             self.assertIn("Hello", decrypted_text, "Decrypted content doesn't match expected")
-            
+
         except subprocess.TimeoutExpired:
             process.kill()
             self.fail("Stdin decryption with warnings process timed out")
@@ -4582,8 +4636,8 @@ def test_file_decryption_wrong_algorithm_v5(filename):
 def test_file_decryption_wrong_encryption_data_v5(filename):
     """Test decryption of v5 PQC files with wrong encryption_data.
 
-    This test verifies that trying to decrypt a v5 format PQC file (Kyber, HQC, MAYO, CROSS, ML-KEM) 
-    with the correct password but wrong encryption_data setting properly fails and raises an exception 
+    This test verifies that trying to decrypt a v5 format PQC file (Kyber, HQC, MAYO, CROSS, ML-KEM)
+    with the correct password but wrong encryption_data setting properly fails and raises an exception
     rather than succeeding.
     """
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")

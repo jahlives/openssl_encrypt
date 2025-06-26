@@ -46,6 +46,18 @@ def setup_encrypt_parser(subparser):
             description = "post-quantum key exchange with AES-256-GCM, NIST level 3 (DEPRECATED - use ml-kem-768-hybrid)"
         elif algo == EncryptionAlgorithm.KYBER1024_HYBRID.value:
             description = "post-quantum key exchange with AES-256-GCM, NIST level 5 (DEPRECATED - use ml-kem-1024-hybrid)"
+        elif algo == "mayo-1-hybrid":
+            description = "MAYO-1 multivariate hybrid mode (post-quantum signature)"
+        elif algo == "mayo-3-hybrid":
+            description = "MAYO-3 multivariate hybrid mode (post-quantum signature)"
+        elif algo == "mayo-5-hybrid":
+            description = "MAYO-5 multivariate hybrid mode (post-quantum signature)"
+        elif algo == "cross-128-hybrid":
+            description = "CROSS-128 code-based hybrid mode (post-quantum signature)"
+        elif algo == "cross-192-hybrid":
+            description = "CROSS-192 code-based hybrid mode (post-quantum signature)"
+        elif algo == "cross-256-hybrid":
+            description = "CROSS-256 code-based hybrid mode (post-quantum signature)"
         else:
             description = "encryption algorithm"
         algorithm_help_text += f"  {algo}: {description}\n"
@@ -124,21 +136,262 @@ def setup_encrypt_parser(subparser):
 
     # Advanced encryption options
     hash_group = subparser.add_argument_group("Hash options")
-    hash_group.add_argument("--sha512-rounds", type=int, help="Number of SHA-512 iterations")
-    hash_group.add_argument("--sha256-rounds", type=int, help="Number of SHA-256 iterations")
-    hash_group.add_argument("--pbkdf2-iterations", type=int, help="Number of PBKDF2 iterations")
+
+    # Add global KDF rounds parameter
+    hash_group.add_argument(
+        "--kdf-rounds",
+        type=int,
+        default=0,
+        help="Default number of rounds for all KDFs when enabled without specific rounds (overrides the default of 10)",
+    )
+
+    # SHA family arguments - updated to match the main CLI
+    hash_group.add_argument(
+        "--sha512-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA-512 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--sha384-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA-384 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--sha256-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA-256 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--sha224-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA-224 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--sha3-256-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA3-256 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--sha3-512-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA3-512 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--sha3-384-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA3-384 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--sha3-224-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA3-224 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--blake2b-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of BLAKE2b iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--blake3-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of BLAKE3 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--shake256-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHAKE-256 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--shake128-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHAKE-128 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--whirlpool-rounds",
+        type=int,
+        default=0,
+        help="Number of Whirlpool iterations (default: 0, not used)",
+    )
+
+    # PBKDF2 option - renamed for consistency
+    hash_group.add_argument(
+        "--pbkdf2-iterations",
+        type=int,
+        default=0,
+        help="Number of PBKDF2 iterations (default: 100000)",
+    )
 
     # Scrypt options for encryption
     scrypt_group = subparser.add_argument_group("Scrypt options")
     scrypt_group.add_argument(
-        "--enable-scrypt", action="store_true", help="Use Scrypt password hashing"
+        "--enable-scrypt",
+        action="store_true",
+        help="Use Scrypt password hashing (requires scrypt package)",
+        default=False,
     )
-    scrypt_group.add_argument("--scrypt-n", type=int, help="Scrypt N parameter (CPU/memory cost)")
     scrypt_group.add_argument(
-        "--scrypt-r", type=int, default=8, help="Scrypt r parameter (block size)"
+        "--scrypt-rounds",
+        type=int,
+        default=0,
+        help="Use scrypt rounds for iterating (default when enabled: 10)",
     )
     scrypt_group.add_argument(
-        "--scrypt-p", type=int, default=1, help="Scrypt p parameter (parallelization factor)"
+        "--scrypt-n",
+        type=int,
+        default=128,
+        help="Scrypt CPU/memory cost factor N (default: 0, not used. Use power of 2 like 16384)",
+    )
+    scrypt_group.add_argument(
+        "--scrypt-r", type=int, default=8, help="Scrypt block size parameter r (default: 8)"
+    )
+    scrypt_group.add_argument(
+        "--scrypt-p", type=int, default=1, help="Scrypt parallelization parameter p (default: 1)"
+    )
+
+    # Argon2 options for encryption
+    argon2_group = subparser.add_argument_group("Argon2 options")
+    argon2_group.add_argument(
+        "--enable-argon2",
+        action="store_true",
+        help="Use Argon2 password hashing (requires argon2-cffi package)",
+        default=False,
+    )
+    argon2_group.add_argument(
+        "--argon2-rounds",
+        type=int,
+        default=0,
+        help="Argon2 time cost parameter (default when enabled: 10)",
+    )
+    argon2_group.add_argument(
+        "--argon2-time",
+        type=int,
+        default=3,
+        help="Argon2 time cost parameter (default: 3)",
+    )
+    argon2_group.add_argument(
+        "--argon2-memory",
+        type=int,
+        default=65536,
+        help="Argon2 memory cost in KB (default: 65536 - 64MB)",
+    )
+    argon2_group.add_argument(
+        "--argon2-parallelism",
+        type=int,
+        default=4,
+        help="Argon2 parallelism factor (default: 4)",
+    )
+    argon2_group.add_argument(
+        "--argon2-hash-len",
+        type=int,
+        default=32,
+        help="Argon2 hash length in bytes (default: 32)",
+    )
+    argon2_group.add_argument(
+        "--argon2-type",
+        type=int,
+        default=2,
+        help="Argon2 algorithm type: 0=Argon2d, 1=Argon2i, 2=Argon2id (default: 2)",
+    )
+
+    # Balloon hashing options for encryption
+    balloon_group = subparser.add_argument_group("Balloon Hashing options")
+    balloon_group.add_argument(
+        "--enable-balloon",
+        action="store_true",
+        help="Enable Balloon Hashing KDF",
+    )
+    balloon_group.add_argument(
+        "--balloon-time-cost",
+        type=int,
+        default=3,
+        help="Time cost parameter for Balloon hashing - controls computational complexity. Higher values increase security but also processing time.",
+    )
+    balloon_group.add_argument(
+        "--balloon-space-cost",
+        type=int,
+        default=65536,
+        help="Space cost parameter for Balloon hashing in bytes - controls memory usage. Higher values increase security but require more memory.",
+    )
+    balloon_group.add_argument(
+        "--balloon-parallelism",
+        type=int,
+        default=4,
+        help="Parallelism parameter for Balloon hashing - controls number of parallel threads. Higher values can improve performance on multi-core systems.",
+    )
+    balloon_group.add_argument(
+        "--balloon-rounds",
+        type=int,
+        default=0,
+        help="Number of rounds for Balloon hashing (default when enabled: 10). More rounds increase security but also processing time.",
+    )
+    balloon_group.add_argument(
+        "--balloon-hash-len",
+        type=int,
+        default=32,
+        help="Length of the final hash output in bytes for Balloon hashing.",
+    )
+
+    # HKDF options for encryption
+    hkdf_group = subparser.add_argument_group("HKDF options")
+    hkdf_group.add_argument(
+        "--enable-hkdf",
+        action="store_true",
+        help="Enable HKDF key derivation",
+        default=False,
+    )
+    hkdf_group.add_argument(
+        "--hkdf-rounds",
+        type=int,
+        default=1,
+        help="Number of HKDF chained rounds (default: 1)",
+    )
+    hkdf_group.add_argument(
+        "--hkdf-algorithm",
+        choices=["sha224", "sha256", "sha384", "sha512"],
+        default="sha256",
+        help="Hash algorithm for HKDF (default: sha256)",
+    )
+    hkdf_group.add_argument(
+        "--hkdf-info",
+        type=str,
+        default="openssl_encrypt_hkdf",
+        help="HKDF info string for context (default: openssl_encrypt_hkdf)",
     )
 
     # PQC options for encryption
@@ -148,6 +401,25 @@ def setup_encrypt_parser(subparser):
         "--pqc-store-key",
         action="store_true",
         help="Store the PQC private key in the encrypted file",
+    )
+
+    # Keystore options
+    keystore_group = subparser.add_argument_group("Keystore options")
+    keystore_group.add_argument(
+        "--keystore-path",
+        help="Path to the keystore file for PQC keys",
+    )
+    keystore_group.add_argument(
+        "--keystore-password",
+        help="Password for the keystore (will prompt if not provided)",
+    )
+    keystore_group.add_argument(
+        "--dual-encrypt-key",
+        help="PQC key identifier for dual encryption",
+    )
+    keystore_group.add_argument(
+        "--encryption-data",
+        help="Additional data to be encrypted alongside the file",
     )
 
 
@@ -190,10 +462,16 @@ def setup_decrypt_parser(subparser):
     # PQC options for decryption
     pqc_group = subparser.add_argument_group("Post-Quantum Cryptography options")
     pqc_group.add_argument("--pqc-keyfile", help="Path to load the PQC key file for decryption")
-    pqc_group.add_argument(
-        "--pqc-allow-mixed-operations",
-        action="store_true",
-        help="Allow files encrypted with classic algorithms to be decrypted using PQC settings",
+
+    # Keystore options for decryption
+    keystore_group = subparser.add_argument_group("Keystore options")
+    keystore_group.add_argument(
+        "--keystore-path",
+        help="Path to the keystore file for PQC keys",
+    )
+    keystore_group.add_argument(
+        "--keystore-password",
+        help="Password for the keystore (will prompt if not provided)",
     )
 
 
