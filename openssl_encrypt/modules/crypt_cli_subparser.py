@@ -46,6 +46,18 @@ def setup_encrypt_parser(subparser):
             description = "post-quantum key exchange with AES-256-GCM, NIST level 3 (DEPRECATED - use ml-kem-768-hybrid)"
         elif algo == EncryptionAlgorithm.KYBER1024_HYBRID.value:
             description = "post-quantum key exchange with AES-256-GCM, NIST level 5 (DEPRECATED - use ml-kem-1024-hybrid)"
+        elif algo == "mayo-1-hybrid":
+            description = "MAYO-1 multivariate hybrid mode (post-quantum signature)"
+        elif algo == "mayo-3-hybrid":
+            description = "MAYO-3 multivariate hybrid mode (post-quantum signature)"
+        elif algo == "mayo-5-hybrid":
+            description = "MAYO-5 multivariate hybrid mode (post-quantum signature)"
+        elif algo == "cross-128-hybrid":
+            description = "CROSS-128 code-based hybrid mode (post-quantum signature)"
+        elif algo == "cross-192-hybrid":
+            description = "CROSS-192 code-based hybrid mode (post-quantum signature)"
+        elif algo == "cross-256-hybrid":
+            description = "CROSS-256 code-based hybrid mode (post-quantum signature)"
         else:
             description = "encryption algorithm"
         algorithm_help_text += f"  {algo}: {description}\n"
@@ -390,6 +402,25 @@ def setup_encrypt_parser(subparser):
         action="store_true",
         help="Store the PQC private key in the encrypted file",
     )
+    
+    # Keystore options
+    keystore_group = subparser.add_argument_group("Keystore options")
+    keystore_group.add_argument(
+        "--keystore-path",
+        help="Path to the keystore file for PQC keys",
+    )
+    keystore_group.add_argument(
+        "--keystore-password",
+        help="Password for the keystore (will prompt if not provided)",
+    )
+    keystore_group.add_argument(
+        "--dual-encrypt-key", 
+        help="PQC key identifier for dual encryption",
+    )
+    keystore_group.add_argument(
+        "--encryption-data",
+        help="Additional data to be encrypted alongside the file",
+    )
 
 
 def setup_decrypt_parser(subparser):
@@ -435,6 +466,17 @@ def setup_decrypt_parser(subparser):
         "--pqc-allow-mixed-operations",
         action="store_true",
         help="Allow files encrypted with classic algorithms to be decrypted using PQC settings",
+    )
+    
+    # Keystore options for decryption
+    keystore_group = subparser.add_argument_group("Keystore options")
+    keystore_group.add_argument(
+        "--keystore-path",
+        help="Path to the keystore file for PQC keys",
+    )
+    keystore_group.add_argument(
+        "--keystore-password",
+        help="Password for the keystore (will prompt if not provided)",
     )
 
 
