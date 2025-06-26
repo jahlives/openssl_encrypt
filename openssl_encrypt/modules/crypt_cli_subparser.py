@@ -462,11 +462,6 @@ def setup_decrypt_parser(subparser):
     # PQC options for decryption
     pqc_group = subparser.add_argument_group("Post-Quantum Cryptography options")
     pqc_group.add_argument("--pqc-keyfile", help="Path to load the PQC key file for decryption")
-    pqc_group.add_argument(
-        "--pqc-allow-mixed-operations",
-        action="store_true",
-        help="Allow files encrypted with classic algorithms to be decrypted using PQC settings",
-    )
 
     # Keystore options for decryption
     keystore_group = subparser.add_argument_group("Keystore options")
