@@ -402,7 +402,7 @@ def setup_encrypt_parser(subparser):
         action="store_true",
         help="Store the PQC private key in the encrypted file",
     )
-    
+
     # Keystore options
     keystore_group = subparser.add_argument_group("Keystore options")
     keystore_group.add_argument(
@@ -414,7 +414,7 @@ def setup_encrypt_parser(subparser):
         help="Password for the keystore (will prompt if not provided)",
     )
     keystore_group.add_argument(
-        "--dual-encrypt-key", 
+        "--dual-encrypt-key",
         help="PQC key identifier for dual encryption",
     )
     keystore_group.add_argument(
@@ -467,7 +467,7 @@ def setup_decrypt_parser(subparser):
         action="store_true",
         help="Allow files encrypted with classic algorithms to be decrypted using PQC settings",
     )
-    
+
     # Keystore options for decryption
     keystore_group = subparser.add_argument_group("Keystore options")
     keystore_group.add_argument(
