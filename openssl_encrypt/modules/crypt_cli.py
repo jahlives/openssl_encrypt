@@ -357,6 +357,24 @@ def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
     Returns:
         Template configuration dict or None if template not found
     """
+    # Security: Validate template name to prevent path traversal attacks
+    if not template_name or not isinstance(template_name, str):
+        print("Error: Invalid template name provided")
+        sys.exit(1)
+    
+    # Remove any path separators and parent directory references
+    safe_template_name = os.path.basename(template_name)
+    
+    # Additional check for path traversal attempts
+    if ".." in template_name or os.sep in template_name or "/" in template_name or "\\" in template_name:
+        print(f"Error: Invalid template name '{template_name}'. Template names cannot contain path separators or parent directory references.")
+        sys.exit(1)
+    
+    # Ensure the cleaned name is not empty
+    if not safe_template_name:
+        print("Error: Empty template name after security validation")
+        sys.exit(1)
+    
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
     # Move up one level from the modules directory to the project root
@@ -367,7 +385,16 @@ def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
 
     # Try different extensions
     for ext in [".json", ".yaml", ".yml"]:
-        template_path = os.path.join(template_dir, template_name + ext)
+        template_path = os.path.join(template_dir, safe_template_name + ext)
+        
+        # Additional security check: ensure the resolved path is still within template_dir
+        resolved_template_path = os.path.abspath(template_path)
+        resolved_template_dir = os.path.abspath(template_dir)
+        
+        if not resolved_template_path.startswith(resolved_template_dir + os.sep):
+            print(f"Error: Security violation - template path '{template_path}' is outside allowed directory")
+            sys.exit(1)
+        
         if os.path.exists(template_path):
             try:
                 with open(template_path, "r") as f:
@@ -379,7 +406,7 @@ def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
                 print(f"Error loading template {template_path}: {e}")
                 sys.exit(1)
 
-    print(f"Template {template_name} not found in {template_dir}")
+    print(f"Template {safe_template_name} not found in {template_dir}")
     sys.exit(1)
 
 
