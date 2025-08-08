@@ -1031,6 +1031,11 @@ class SettingsTab:
             if key in self.config["balloon"]:
                 self.balloon_vars[key].set(self.config["balloon"][key])
 
+        # Update HKDF variables
+        for key in self.hkdf_vars:
+            if key in self.config["hkdf"]:
+                self.hkdf_vars[key].set(self.config["hkdf"][key])
+
     def update_config_from_ui(self):
         """Update configuration from UI variables"""
         # Update hash settings
@@ -1052,6 +1057,11 @@ class SettingsTab:
         for key in self.balloon_vars:
             if key in self.config["balloon"]:
                 self.config["balloon"][key] = self.balloon_vars[key].get()
+
+        # Update HKDF settings
+        for key in self.hkdf_vars:
+            if key in self.config["hkdf"]:
+                self.config["hkdf"][key] = self.hkdf_vars[key].get()
 
     def validate_settings(self):
         """Validate user settings for sanity"""
