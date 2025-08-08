@@ -3173,7 +3173,7 @@ def decrypt_file(
 
         # Merge KDF configurations into hash_config for compatibility with generate_key
         for kdf_name, kdf_params in kdf_config.items():
-            if kdf_name in ["scrypt", "argon2", "balloon"]:
+            if kdf_name in ["scrypt", "argon2", "balloon", "hkdf"]:
                 hash_config[kdf_name] = kdf_params
             elif kdf_name == "pbkdf2" and isinstance(kdf_params, dict) and "rounds" in kdf_params:
                 # Also store pbkdf2_iterations directly in hash_config for generate_key
