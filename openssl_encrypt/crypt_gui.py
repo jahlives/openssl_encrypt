@@ -1535,6 +1535,22 @@ class CryptGUI:
                 if "rounds" in balloon_config and balloon_config["rounds"] > 1:
                     cmd.extend(["--balloon-rounds", str(balloon_config["rounds"])])
 
+            # HKDF parameters (if present)
+            if "hkdf" in hash_config and hash_config["hkdf"].get("enabled", False):
+                cmd.append("--enable-hkdf")
+
+                hkdf_config = hash_config["hkdf"]
+
+                if "algorithm" in hkdf_config:
+                    cmd.extend(["--hkdf-algorithm", str(hkdf_config["algorithm"])])
+
+                if "info" in hkdf_config:
+                    cmd.extend(["--hkdf-info", str(hkdf_config["info"])])
+
+                # Add rounds parameter if present
+                if "rounds" in hkdf_config and hkdf_config["rounds"] > 1:
+                    cmd.extend(["--hkdf-rounds", str(hkdf_config["rounds"])])
+
         # Add force password flag if checkbox is checked
         if self.encrypt_force_password_var.get():
             cmd.append("--force-password")
