@@ -226,3 +226,7 @@ flatpak/openssl-encrypt
 *.backup
 *.bak
 *.tmp
+
+# Mobile app development (moved to separate repository)
+mobile_app/
+mobile.md
