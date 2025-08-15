@@ -2488,10 +2488,61 @@ def main():
                     raise e
             elif not args.output:
                 # Default output file name if not specified
-                output_file = args.input + ".encrypted"
+                if args.input == "/dev/stdin":
+                    # When input is stdin and no output specified, we'll output to stdout
+                    # This will be handled in a separate code path below
+                    output_file = None
+                else:
+                    # For regular files, append .encrypted extension
+                    output_file = args.input + ".encrypted"
             else:
                 print(f"FLOW-DEBUG: Using normal output path: {args.output}")
                 output_file = args.output
+
+            # Handle stdout output for stdin input
+            if output_file is None:
+                # Encrypt stdin to stdout - create temporary output file first
+                import tempfile
+                with tempfile.NamedTemporaryFile(mode='w+b', delete=False, suffix='.encrypted') as temp_file:
+                    temp_output_file = temp_file.name
+                
+                # Use standard encryption to temporary file
+                success = encrypt_file(
+                    args.input,
+                    temp_output_file,
+                    password,
+                    hash_config,
+                    args.pbkdf2_iterations,
+                    quiet=True,  # Suppress normal output for stdout
+                    algorithm=args.algorithm,
+                    progress=False,  # No progress bar for stdout
+                    verbose=False,  # No verbose output for stdout
+                    debug=args.debug,
+                    encryption_data=args.encryption_data,
+                )
+                
+                if success:
+                    # Output the encrypted content to stdout
+                    try:
+                        with open(temp_output_file, 'rb') as f:
+                            sys.stdout.buffer.write(f.read())
+                        sys.stdout.buffer.flush()
+                    except Exception as e:
+                        if not args.quiet:
+                            print(f"Error writing to stdout: {e}", file=sys.stderr)
+                        success = False
+                    finally:
+                        # Clean up temporary file
+                        try:
+                            os.unlink(temp_output_file)
+                        except:
+                            pass
+                
+                # Skip the normal encryption logic
+                if success:
+                    return
+                else:
+                    sys.exit(1)
 
             # Handle PQC key operations (for non-overwriting case)
             pqc_keypair = None
