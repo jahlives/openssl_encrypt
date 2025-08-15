@@ -38,6 +38,9 @@ dependencies:
   path: ^1.9.0
   path_provider: ^2.1.1
   
+  # Settings and preferences
+  shared_preferences: ^2.3.2
+  
   # Progress indicators and UI enhancements
   percent_indicator: ^4.2.3
   

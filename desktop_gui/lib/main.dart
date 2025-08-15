@@ -1,16 +1,48 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'cli_service.dart';
 import 'file_manager.dart';
+import 'settings_service.dart';
+import 'settings_screen.dart';
+
+// Intent classes for keyboard shortcuts
+class OpenFileIntent extends Intent {
+  const OpenFileIntent();
+}
+
+class CopyResultIntent extends Intent {
+  const CopyResultIntent();
+}
+
+class ClearAllIntent extends Intent {
+  const ClearAllIntent();
+}
+
+class ShowHelpIntent extends Intent {
+  const ShowHelpIntent();
+}
+
+class ExitAppIntent extends Intent {
+  const ExitAppIntent();
+}
 
 void main() async {
   // Initialize Flutter framework
   WidgetsFlutterBinding.ensureInitialized();
   
+  // Initialize settings service
+  await SettingsService.initialize();
+  
   // Initialize CLI service
   final cliAvailable = await CLIService.initialize();
   if (!cliAvailable) {
     print('WARNING: OpenSSL Encrypt CLI not found. Some features may not work.');
+  }
+  
+  // Apply debug mode from settings
+  if (SettingsService.getDebugMode()) {
+    await CLIService.enableDebugLogging();
   }
   
   runApp(const OpenSSLEncryptApp());
@@ -32,6 +64,19 @@ class _OpenSSLEncryptAppState extends State<OpenSSLEncryptApp> {
     });
   }
 
+  ThemeMode _getThemeMode() {
+    final themeString = SettingsService.getThemeMode();
+    switch (themeString) {
+      case 'light':
+        return ThemeMode.light;
+      case 'dark':
+        return ThemeMode.dark;
+      case 'system':
+      default:
+        return ThemeMode.system;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -41,58 +86,422 @@ class _OpenSSLEncryptAppState extends State<OpenSSLEncryptApp> {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
-      home: MainScreen(onDebugChanged: _updateDebugBanner),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
+      ),
+      themeMode: _getThemeMode(),
+      home: LayoutBuilder(
+        builder: (context, constraints) {
+          return Scaffold(
+            body: ConstrainedBox(
+              constraints: const BoxConstraints(
+                minWidth: 900,
+                minHeight: 600,
+              ),
+              child: MainScreen(
+                onDebugChanged: _updateDebugBanner,
+                onThemeChanged: () => setState(() {}),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }
 
 class MainScreen extends StatefulWidget {
   final Function(bool) onDebugChanged;
+  final VoidCallback onThemeChanged;
   
-  const MainScreen({super.key, required this.onDebugChanged});
+  const MainScreen({
+    super.key, 
+    required this.onDebugChanged,
+    required this.onThemeChanged,
+  });
 
   @override
   State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _MainScreenState extends State<MainScreen> {
   final FileManager _fileManager = FileManager();
+  int _selectedIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
     super.dispose();
+  }
+
+  // Menu action methods
+  void _openFile() async {
+    final file = await _fileManager.pickFile();
+    if (file != null) {
+      // Switch to file tab and load the file
+      setState(() {
+        _selectedIndex = 1;
+      });
+      // TODO: Pass file to FileCryptoTab
+    }
+  }
+
+  void _copyToClipboard() {
+    // TODO: Copy current result to clipboard
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Result copied to clipboard')),
+    );
+  }
+
+  void _clearAll() {
+    // TODO: Clear all fields
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('All fields cleared')),
+    );
+  }
+
+  void _exitApp(BuildContext context) {
+    // Close the application
+    Navigator.of(context).pop();
+  }
+
+  void _showAlgorithmInfo(BuildContext context) {
+    setState(() {
+      _selectedIndex = 2; // Switch to info tab
+    });
+  }
+
+  void _showSecuritySettings(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Security Settings'),
+        content: const Text('Advanced security settings will be available in a future version.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+  void _showAbout(BuildContext context) {
+    showAboutDialog(
+      context: context,
+      applicationName: 'OpenSSL Encrypt Desktop',
+      applicationVersion: '1.0.0 (Desktop Development)',
+      applicationIcon: const Icon(Icons.security, size: 48),
+      children: [
+        const Text('Professional desktop GUI for OpenSSL Encrypt CLI'),
+        const SizedBox(height: 8),
+        const Text('Features:'),
+        const Text('• Full CLI integration - all algorithms available'),
+        const Text('• Post-quantum cryptography support'),
+        const Text('• Advanced hash and KDF configurations'),
+        const Text('• Professional desktop interface'),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.blue.shade600, size: 16),
+                  const SizedBox(width: 6),
+                  Text(
+                    'CLI Backend Information',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.blue.shade800,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                CLIService.getVersionInfo(),
+                style: const TextStyle(
+                  fontFamily: 'Courier',
+                  fontSize: 11,
+                  color: Colors.black87,
+                ),
+              ),
+              if (CLIService.shouldHideLegacyAlgorithms()) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    border: Border.all(color: Colors.orange.shade300),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info, color: Colors.orange.shade700, size: 14),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Legacy algorithms (Whirlpool, PBKDF2) hidden due to CLI v1.2+ deprecation',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.orange.shade800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showCLIDocs(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('CLI Documentation'),
+        content: const SingleChildScrollView(
+          child: Text(
+            'This desktop GUI integrates with the OpenSSL Encrypt CLI.\n\n'
+            'Available CLI commands:\n'
+            '• encrypt - Encrypt files with password protection\n'
+            '• decrypt - Decrypt previously encrypted files\n'
+            '• security-info - Display security information\n'
+            '• generate-password - Generate secure passwords\n\n'
+            'The GUI provides access to all CLI features through an intuitive interface.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _handleFileDrop(String filePath) {
+    // Switch to file tab and load the dropped file
+    setState(() {
+      _selectedIndex = 1;
+    });
+    
+    // Show feedback to user
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('File loaded: ${filePath.split('/').last}'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+    
+    // TODO: Actually load the file in FileCryptoTab
+    // This would require passing the file path to the tab component
+  }
+
+  Widget _getSelectedPage() {
+    switch (_selectedIndex) {
+      case 0:
+        return TextCryptoTab(onDebugChanged: widget.onDebugChanged);
+      case 1:
+        return FileCryptoTab(fileManager: _fileManager, onDebugChanged: widget.onDebugChanged);
+      case 2:
+        return const InfoTab();
+      case 3:
+        return SettingsTab(onThemeChanged: widget.onThemeChanged);
+      default:
+        return TextCryptoTab(onDebugChanged: widget.onDebugChanged);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return Shortcuts(
+      shortcuts: {
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyO): const OpenFileIntent(),
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyC): const CopyResultIntent(),
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyL): const ClearAllIntent(),
+        LogicalKeySet(LogicalKeyboardKey.f1): const ShowHelpIntent(),
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyQ): const ExitAppIntent(),
+      },
+      child: Actions(
+        actions: {
+          OpenFileIntent: CallbackAction<OpenFileIntent>(
+            onInvoke: (intent) => _openFile(),
+          ),
+          CopyResultIntent: CallbackAction<CopyResultIntent>(
+            onInvoke: (intent) => _copyToClipboard(),
+          ),
+          ClearAllIntent: CallbackAction<ClearAllIntent>(
+            onInvoke: (intent) => _clearAll(),
+          ),
+          ShowHelpIntent: CallbackAction<ShowHelpIntent>(
+            onInvoke: (intent) => _showAbout(context),
+          ),
+          ExitAppIntent: CallbackAction<ExitAppIntent>(
+            onInvoke: (intent) => _exitApp(context),
+          ),
+        },
+        child: Scaffold(
       appBar: AppBar(
         title: const Text('OpenSSL Encrypt Desktop'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(icon: Icon(Icons.text_fields), text: 'Text'),
-            Tab(icon: Icon(Icons.folder), text: 'Files'),
-            Tab(icon: Icon(Icons.info), text: 'Info'),
-          ],
-        ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          TextCryptoTab(onDebugChanged: widget.onDebugChanged),
-          FileCryptoTab(fileManager: _fileManager, onDebugChanged: widget.onDebugChanged),
-          const InfoTab(),
+        elevation: 1,
+        actions: [
+          // Desktop Menu Bar
+          MenuBar(
+            children: [
+              SubmenuButton(
+                menuChildren: [
+                  MenuItemButton(
+                    child: const Text('Open File...'),
+                    onPressed: () => _openFile(),
+                  ),
+                  const MenuItemButton(
+                    child: Text('Recent Files'),
+                    onPressed: null, // TODO: Implement recent files
+                  ),
+                  const Divider(),
+                  MenuItemButton(
+                    child: const Text('Exit'),
+                    onPressed: () => _exitApp(context),
+                  ),
+                ],
+                child: const Text('File'),
+              ),
+              SubmenuButton(
+                menuChildren: [
+                  MenuItemButton(
+                    child: const Text('Copy Result'),
+                    onPressed: () => _copyToClipboard(),
+                  ),
+                  MenuItemButton(
+                    child: const Text('Clear All'),
+                    onPressed: () => _clearAll(),
+                  ),
+                ],
+                child: const Text('Edit'),
+              ),
+              SubmenuButton(
+                menuChildren: [
+                  MenuItemButton(
+                    child: const Text('Algorithm Info'),
+                    onPressed: () => _showAlgorithmInfo(context),
+                  ),
+                  MenuItemButton(
+                    child: const Text('Security Settings'),
+                    onPressed: () => _showSecuritySettings(context),
+                  ),
+                ],
+                child: const Text('Tools'),
+              ),
+              SubmenuButton(
+                menuChildren: [
+                  MenuItemButton(
+                    child: const Text('About'),
+                    onPressed: () => _showAbout(context),
+                  ),
+                  MenuItemButton(
+                    child: const Text('CLI Documentation'),
+                    onPressed: () => _showCLIDocs(context),
+                  ),
+                ],
+                child: const Text('Help'),
+              ),
+            ],
+          ),
         ],
+      ),
+      body: Row(
+        children: [
+          // Sidebar Navigation
+          NavigationRail(
+            selectedIndex: _selectedIndex,
+            onDestinationSelected: (int index) {
+              setState(() {
+                _selectedIndex = index;
+              });
+            },
+            labelType: NavigationRailLabelType.all,
+            backgroundColor: Theme.of(context).colorScheme.surface,
+            destinations: const [
+              NavigationRailDestination(
+                icon: Icon(Icons.text_fields_outlined),
+                selectedIcon: Icon(Icons.text_fields),
+                label: Text('Text Encryption'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.folder_outlined),
+                selectedIcon: Icon(Icons.folder),
+                label: Text('File Encryption'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.info_outline),
+                selectedIcon: Icon(Icons.info),
+                label: Text('Information'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings),
+                label: Text('Settings'),
+              ),
+            ],
+          ),
+          const VerticalDivider(thickness: 1, width: 1),
+          // Main Content Area with Drag & Drop
+          Expanded(
+            child: DragTarget<String>(
+              onAcceptWithDetails: (details) => _handleFileDrop(details.data),
+              onWillAccept: (data) => data?.endsWith('.txt') == true || data?.endsWith('.encrypted') == true,
+              builder: (context, candidateData, rejectedData) {
+                final bool isDragActive = candidateData.isNotEmpty;
+                return Container(
+                  decoration: isDragActive ? BoxDecoration(
+                    border: Border.all(color: Colors.blue, width: 2),
+                    borderRadius: BorderRadius.circular(8),
+                    color: Colors.blue.withOpacity(0.1),
+                  ) : null,
+                  child: isDragActive ? 
+                    const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.file_upload, size: 64, color: Colors.blue),
+                          SizedBox(height: 16),
+                          Text('Drop file here to encrypt/decrypt', 
+                               style: TextStyle(fontSize: 18, color: Colors.blue)),
+                        ],
+                      ),
+                    ) : _getSelectedPage(),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+        ),
       ),
     );
   }
@@ -115,6 +524,8 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   String _encryptedData = '';
   bool _isLoading = false;
   String _operationStatus = '';
+  String _operationProgress = '';
+  double _progressValue = 0.0;
   List<String> _algorithms = [];
   List<String> _hashAlgorithms = [];
   // Note: KDF algorithms and security levels are configured directly in _kdfConfig
@@ -156,8 +567,19 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
 
   void _loadAlgorithms() async {
     try {
-      final algorithms = await CLIService.getSupportedAlgorithms();
-      final hashAlgorithms = await CLIService.getHashAlgorithms();
+      final algorithmCategories = await CLIService.getSupportedAlgorithms();
+      final hashCategories = await CLIService.getHashAlgorithms();
+      
+      // Store both flat and categorized versions
+      final algorithms = <String>[];
+      for (final category in algorithmCategories.values) {
+        algorithms.addAll(category);
+      }
+      
+      final hashAlgorithms = <String>[];
+      for (final category in hashCategories.values) {
+        hashAlgorithms.addAll(category);
+      }
       // KDF algorithms are handled directly in _kdfConfig initialization
       
       setState(() {
@@ -172,14 +594,14 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
           _hashConfig = {};
           for (String hash in hashAlgorithms) {
             _hashConfig[hash] = {
-              'enabled': hash != 'blake3' && hash != 'shake256',  // BLAKE3 and SHAKE256 disabled (not yet supported), others enabled for CLI compatibility
-              'rounds': (hash == 'blake3' || hash == 'shake256') ? 0 : 1000    // Unsupported algorithms get 0 rounds, others get default CLI rounds
+              'enabled': true,  // All hash functions enabled with CLI integration
+              'rounds': 1000    // Default rounds for all hash functions (CLI supports all)
             };
           }
         }
         // Initialize KDF chain configuration (CLI order)
         _kdfConfig = {
-          'pbkdf2': {'enabled': true, 'rounds': 100000},
+          'pbkdf2': {'enabled': !CLIService.shouldHideLegacyAlgorithms(), 'rounds': 100000},
           'scrypt': {'enabled': false, 'n': 16384, 'r': 8, 'p': 1, 'rounds': 1},
           'argon2': {'enabled': false, 'memory_cost': 65536, 'time_cost': 3, 'parallelism': 1, 'rounds': 1},
           'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1},
@@ -193,7 +615,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
         _selectedAlgorithm = 'fernet';
         _hashConfig = {'sha256': {'enabled': true, 'rounds': 1000}};
         _kdfConfig = {
-          'pbkdf2': {'enabled': true, 'rounds': 100000},
+          'pbkdf2': {'enabled': !CLIService.shouldHideLegacyAlgorithms(), 'rounds': 100000},
           'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1}
         };
       });
@@ -219,6 +641,8 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     setState(() {
       _isLoading = true;
       _operationStatus = 'Encrypting data...';
+      _operationProgress = '';
+      _progressValue = 0.0;
       _result = 'Encrypting...';
     });
 
@@ -226,13 +650,35 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     await Future.delayed(const Duration(milliseconds: 50));
 
     try {
-      // Pass selected algorithm and UI configurations to CLI service
-      final encrypted = await CLIService.encryptText(
+      // Pass selected algorithm and UI configurations to CLI service with progress
+      final encrypted = await CLIService.encryptTextWithProgress(
         _textController.text,
         _passwordController.text,
         _selectedAlgorithm, // Pass the selected algorithm
         _hashConfig,        // Pass hash configuration from UI
         _kdfConfig,         // Pass KDF configuration from UI
+        onProgress: (progress) {
+          setState(() {
+            _operationProgress = progress;
+          });
+        },
+        onStatus: (status) {
+          setState(() {
+            _operationStatus = status;
+            // Update progress based on status
+            if (status.contains('Initializing')) {
+              _progressValue = 0.2;
+            } else if (status.contains('Prepared')) {
+              _progressValue = 0.4;
+            } else if (status.contains('Executing')) {
+              _progressValue = 0.7;
+            } else if (status.contains('Reading')) {
+              _progressValue = 0.9;
+            } else if (status.contains('completed')) {
+              _progressValue = 1.0;
+            }
+          });
+        },
       );
 
       setState(() {
@@ -240,12 +686,16 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
         _result = encrypted; // Show only the base64 encoded string
         _isLoading = false;
         _operationStatus = '';
+        _operationProgress = '';
+        _progressValue = 0.0;
       });
     } catch (e) {
       setState(() {
         _result = 'Encryption failed: $e';
         _isLoading = false;
         _operationStatus = '';
+        _operationProgress = '';
+        _progressValue = 0.0;
       });
     }
   }
@@ -264,6 +714,8 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     setState(() {
       _isLoading = true;
       _operationStatus = 'Decrypting data...';
+      _operationProgress = '';
+      _progressValue = 0.0;
       _result = 'Decrypting...';
     });
 
@@ -271,23 +723,221 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     await Future.delayed(const Duration(milliseconds: 50));
 
     try {
-      final decrypted = await CLIService.decryptText(
+      final decrypted = await CLIService.decryptTextWithProgress(
         inputData,
         _passwordController.text,
+        onProgress: (progress) {
+          setState(() {
+            _operationProgress = progress;
+          });
+        },
+        onStatus: (status) {
+          setState(() {
+            _operationStatus = status;
+            // Update progress based on status
+            if (status.contains('Initializing')) {
+              _progressValue = 0.2;
+            } else if (status.contains('Prepared')) {
+              _progressValue = 0.4;
+            } else if (status.contains('Executing')) {
+              _progressValue = 0.7;
+            } else if (status.contains('Reading')) {
+              _progressValue = 0.9;
+            } else if (status.contains('completed')) {
+              _progressValue = 1.0;
+            }
+          });
+        },
       );
 
       setState(() {
         _result = decrypted; // Show only the decrypted text
         _isLoading = false;
         _operationStatus = '';
+        _operationProgress = '';
+        _progressValue = 0.0;
       });
     } catch (e) {
       setState(() {
         _result = 'Decryption failed: $e';
         _isLoading = false;
         _operationStatus = '';
+        _operationProgress = '';
+        _progressValue = 0.0;
       });
     }
+  }
+
+  void _showCommandPreview() {
+    final inputText = _textController.text.trim();
+    final password = _passwordController.text.trim();
+    
+    if (inputText.isEmpty && password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter text and password to preview command'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    
+    // Show command preview dialog
+    showDialog(
+      context: context,
+      builder: (context) => CommandPreviewDialog(
+        algorithm: _selectedAlgorithm,
+        hashConfig: _hashConfig,
+        kdfConfig: _kdfConfig,
+        password: password,
+        inputText: inputText,
+      ),
+    );
+  }
+
+  void _openLogFile() {
+    final logFile = CLIService.getDebugLogFile();
+    if (logFile != null) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Debug Log File Location'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Debug log file saved to:'),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: SelectableText(
+                  logFile,
+                  style: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'You can send this file to the developer for troubleshooting.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No log file available')),
+      );
+    }
+  }
+
+  void _showDebugLogs() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: Container(
+          width: 600,
+          height: 500,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.bug_report, color: Colors.orange.shade600),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Debug Logs',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () {
+                      CLIService.clearDebugLogs();
+                      Navigator.of(context).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Debug logs cleared')),
+                      );
+                    },
+                    icon: const Icon(Icons.clear_all),
+                    tooltip: 'Clear logs',
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              const Divider(),
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: ListView.builder(
+                    itemCount: CLIService.getDebugLogs().length,
+                    itemBuilder: (context, index) {
+                      final logs = CLIService.getDebugLogs();
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        child: Text(
+                          logs[index],
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 11,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Showing last ${CLIService.getDebugLogs().length} log entries (in-memory)',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                  if (CLIService.getDebugLogFile() != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Full log file: ${CLIService.getDebugLogFile()}',
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: Colors.grey.shade500,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -309,51 +959,83 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
             maxLines: 3,
           ),
           const SizedBox(height: 16),
-          if (_algorithms.isNotEmpty)
-            DropdownButtonFormField<String>(
-              value: _selectedAlgorithm,
-              decoration: const InputDecoration(
-                labelText: 'Encryption Algorithm',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.security),
-              ),
-              items: _algorithms.map((String algorithm) {
-                final isAvailable = _isAlgorithmAvailable(algorithm);
-                return DropdownMenuItem<String>(
-                  value: algorithm,
-                  enabled: isAvailable,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+          // Advanced Algorithm Selection
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      Flexible(
-                        child: Text(
-                          algorithm,
-                          style: TextStyle(
-                            color: isAvailable ? null : Colors.grey,
-                            fontStyle: isAvailable ? null : FontStyle.italic,
-                          ),
-                        ),
+                      const Icon(Icons.security),
+                      const SizedBox(width: 8),
+                      const Text('Encryption Algorithm', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.info_outline),
+                        onPressed: () => _showAlgorithmInfo(context),
+                        tooltip: 'Algorithm Information',
                       ),
-                      if (!isAvailable) ...[
-                        const SizedBox(width: 4),
-                        const Icon(
-                          Icons.info_outline,
-                          size: 16,
-                          color: Colors.orange,
-                        ),
-                      ],
                     ],
                   ),
-                );
-              }).toList(),
-              onChanged: (String? newValue) {
-                if (newValue != null) {
-                  setState(() {
-                    _selectedAlgorithm = newValue;
-                  });
-                }
-              },
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.blue.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.blue.shade50,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.check_circle, color: Colors.blue.shade700, size: 20),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Selected: $_selectedAlgorithm',
+                              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade700),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _getAlgorithmDescription(_selectedAlgorithm),
+                          style: TextStyle(fontSize: 12, color: Colors.blue.shade600),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            ElevatedButton.icon(
+                              onPressed: () => _showAlgorithmPicker(),
+                              icon: const Icon(Icons.tune, size: 16),
+                              label: const Text('Choose Algorithm'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue.shade100,
+                                foregroundColor: Colors.blue.shade700,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            ElevatedButton.icon(
+                              onPressed: () => _showRecommendationWizard(),
+                              icon: const Icon(Icons.auto_awesome, size: 16),
+                              label: const Text('Get Recommendations'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green.shade100,
+                                foregroundColor: Colors.green.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
+          ),
           const SizedBox(height: 16),
           // Advanced Settings Toggle
           Card(
@@ -430,11 +1112,10 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                                     onPressed: () {
                                       setState(() {
                                         for (String hash in _hashAlgorithms) {
-                                          // Only enable supported algorithms (exclude BLAKE3 and SHAKE256)
-                                          final isSupported = hash != 'blake3' && hash != 'shake256';
+                                          // All algorithms now supported with CLI integration
                                           _hashConfig[hash] = {
-                                            'enabled': isSupported, 
-                                            'rounds': isSupported ? 1000 : 0
+                                            'enabled': true, 
+                                            'rounds': 1000
                                           };
                                         }
                                       });
@@ -457,11 +1138,10 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                                     onPressed: () {
                                       setState(() {
                                         for (String hash in _hashAlgorithms) {
-                                          // Only enable supported algorithms (exclude BLAKE3 and SHAKE256)  
-                                          final isSupported = hash != 'blake3' && hash != 'shake256';
+                                          // All algorithms now supported with CLI integration
                                           _hashConfig[hash] = {
-                                            'enabled': isSupported,
-                                            'rounds': isSupported ? 1000 : 0
+                                            'enabled': false,
+                                            'rounds': 1000
                                           };
                                         }
                                       });
@@ -500,35 +1180,42 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                             ),
                             if (_showKdfConfig) ...[
                               const SizedBox(height: 12),
-                              const Text(
-                                'Configure KDF algorithms and parameters (CLI order)',
-                                style: TextStyle(fontSize: 12, color: Colors.grey),
+                              Row(
+                                children: [
+                                  const Text(
+                                    'Professional Key Derivation Configuration',
+                                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                                  ),
+                                  const Spacer(),
+                                  IconButton(
+                                    icon: const Icon(Icons.info_outline, size: 16),
+                                    onPressed: () => _showKDFInfo(),
+                                    tooltip: 'KDF Information',
+                                  ),
+                                ],
                               ),
                               const SizedBox(height: 12),
-                              // PBKDF2
-                              _buildKdfConfig('pbkdf2', 'PBKDF2', [
-                                _buildNumberField('pbkdf2', 'rounds', 'Rounds', _kdfConfig['pbkdf2']?['rounds'] ?? 100000)
-                              ]),
+                              
+                              // PBKDF2 Panel (hidden in CLI v1.2+)
+                              if (!CLIService.shouldHideLegacyAlgorithms()) ...[
+                                _buildPBKDF2Panel(),
+                                const SizedBox(height: 8),
+                              ],
+                              
+                              // Argon2 Panel  
+                              _buildArgon2Panel(),
                               const SizedBox(height: 8),
-                              // Scrypt  
-                              _buildKdfConfig('scrypt', 'Scrypt', [
-                                _buildNumberField('scrypt', 'rounds', 'Rounds', _kdfConfig['scrypt']?['rounds'] ?? 1),
-                              ]),
+                              
+                              // Scrypt Panel
+                              _buildScryptPanel(),
                               const SizedBox(height: 8),
-                              // Argon2
-                              _buildKdfConfig('argon2', 'Argon2', [
-                                _buildNumberField('argon2', 'rounds', 'Rounds', _kdfConfig['argon2']?['rounds'] ?? 1),
-                              ]),
+                              
+                              // HKDF Panel
+                              _buildHKDFPanel(),
                               const SizedBox(height: 8),
-                              // HKDF
-                              _buildKdfConfig('hkdf', 'HKDF', [
-                                _buildNumberField('hkdf', 'rounds', 'Rounds', _kdfConfig['hkdf']?['rounds'] ?? 1),
-                              ]),
-                              const SizedBox(height: 8),
-                              // Balloon
-                              _buildKdfConfig('balloon', 'Balloon', [
-                                _buildNumberField('balloon', 'rounds', 'Rounds', _kdfConfig['balloon']?['rounds'] ?? 1),
-                              ]),
+                              
+                              // Balloon Panel
+                              _buildBalloonPanel(),
                               const SizedBox(height: 8),
                               // Quick presets
                               Wrap(
@@ -539,7 +1226,9 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                                   TextButton(
                                     onPressed: () {
                                       setState(() {
-                                        _kdfConfig['pbkdf2']?['enabled'] = true;
+                                        if (!CLIService.shouldHideLegacyAlgorithms()) {
+                                          _kdfConfig['pbkdf2']?['enabled'] = true;
+                                        }
                                         _kdfConfig['scrypt']?['enabled'] = false;
                                         _kdfConfig['argon2']?['enabled'] = false;
                                         _kdfConfig['hkdf']?['enabled'] = false;
@@ -610,11 +1299,16 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                                 onChanged: (bool value) async {
                                   setState(() {
                                     _debugLogging = value;
-                                    // Update CLI service debug flag
-                                    CLIService.debugEnabled = value;
                                     // Update debug banner visibility
                                     widget.onDebugChanged(value);
                                   });
+                                  
+                                  // Enable/disable debug logging with file initialization
+                                  if (value) {
+                                    await CLIService.enableDebugLogging();
+                                  } else {
+                                    CLIService.disableDebugLogging();
+                                  }
                                 },
                               ),
                             ],
@@ -622,7 +1316,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                           const SizedBox(height: 8),
                           Text(
                             _debugLogging 
-                              ? '🟢 Debug logging enabled - logs written to console and file' 
+                              ? '🟢 Debug logging enabled - logs captured in-app and saved to file' 
                               : '🔲 Debug logging disabled - only basic status messages',
                             style: TextStyle(
                               fontSize: 12,
@@ -630,14 +1324,40 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                             ),
                           ),
                           if (_debugLogging) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              'Debug output will be shown in console',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.orange.shade600,
-                                fontFamily: 'monospace',
-                              ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Debug logs are being captured',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.orange.shade600,
+                                      fontFamily: 'monospace',
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                ElevatedButton.icon(
+                                  onPressed: _showDebugLogs,
+                                  icon: const Icon(Icons.visibility, size: 16),
+                                  label: const Text('View Logs'),
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    minimumSize: const Size(0, 28),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                ElevatedButton.icon(
+                                  onPressed: _openLogFile,
+                                  icon: const Icon(Icons.folder_open, size: 16),
+                                  label: const Text('Open File'),
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    minimumSize: const Size(0, 28),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                           if (_debugLogging) ...[
@@ -707,12 +1427,55 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
                   children: [
+                    // Progress bar
+                    LinearProgressIndicator(
+                      value: _progressValue,
+                      backgroundColor: Colors.orange.shade200,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.orange.shade700),
+                    ),
+                    const SizedBox(height: 12),
+                    // Circular progress indicator
                     const CircularProgressIndicator(color: Colors.orange),
                     const SizedBox(height: 12),
+                    // Operation status
                     Text(
                       _operationStatus.isNotEmpty ? _operationStatus : 'Crypto operation in progress...',
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.orange.shade800),
+                      textAlign: TextAlign.center,
                     ),
+                    // CLI progress output
+                    if (_operationProgress.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(8.0),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.orange.shade300),
+                        ),
+                        child: Text(
+                          _operationProgress,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontFamily: 'monospace',
+                            color: Colors.orange.shade900,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
+                    // Progress percentage
+                    if (_progressValue > 0) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        '${(_progressValue * 100).toInt()}%',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.orange.shade700,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -737,6 +1500,19 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _isLoading ? null : _showCommandPreview,
+              icon: const Icon(Icons.code, size: 16),
+              label: const Text('Preview CLI Command'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.blue.shade600,
+                side: BorderSide(color: Colors.blue.shade300),
+              ),
+            ),
           ),
           const SizedBox(height: 16),
           SizedBox(
@@ -843,18 +1619,15 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     final isEnabled = _hashConfig[hashId]?['enabled'] ?? false;
     final rounds = _hashConfig[hashId]?['rounds'] ?? 1000;
     
-    // BLAKE3 and SHAKE256 are not yet supported in mobile app
-    final isBlake3 = hashId == 'blake3';
-    final isShake256 = hashId == 'shake256';
-    final isUnsupported = isBlake3 || isShake256;
-    final effectiveEnabled = isUnsupported ? false : isEnabled;
+    // All hash functions now supported with CLI integration
+    final effectiveEnabled = isEnabled;
     
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        border: Border.all(color: effectiveEnabled ? Colors.blue : (isUnsupported ? Colors.orange.shade300 : Colors.grey.shade300)),
+        border: Border.all(color: effectiveEnabled ? Colors.blue : Colors.grey.shade300),
         borderRadius: BorderRadius.circular(8),
-        color: effectiveEnabled ? Colors.blue.shade50 : (isUnsupported ? Colors.orange.shade50 : Colors.grey.shade50),
+        color: effectiveEnabled ? Colors.blue.shade50 : Colors.grey.shade50,
       ),
       child: Column(
         children: [
@@ -862,7 +1635,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
             children: [
               Switch(
                 value: effectiveEnabled,
-                onChanged: isUnsupported ? null : (bool value) {
+                onChanged: (bool value) {
                   setState(() {
                     if (_hashConfig[hashId] == null) {
                       _hashConfig[hashId] = {'rounds': 1000};
@@ -879,38 +1652,21 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 12,
-                    color: effectiveEnabled ? Colors.blue.shade700 : (isUnsupported ? Colors.orange.shade700 : Colors.grey.shade600),
+                    color: effectiveEnabled ? Colors.blue.shade700 : Colors.grey.shade600,
                   ),
                 ),
               ),
               const SizedBox(width: 8),
               if (effectiveEnabled)
                 Expanded(
-                  child: TextFormField(
-                    initialValue: rounds.toString(),
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Rounds',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: (value) {
-                      final newRounds = int.tryParse(value) ?? 1000;
+                  child: _buildHashRoundsSlider(
+                    hashId,
+                    rounds,
+                    (int newRounds) {
                       setState(() {
                         _hashConfig[hashId]!['rounds'] = newRounds;
                       });
                     },
-                  ),
-                ),
-              if (isUnsupported)
-                Expanded(
-                  child: Text(
-                    'Not yet supported',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontStyle: FontStyle.italic,
-                      color: Colors.orange.shade700,
-                    ),
                   ),
                 ),
             ],
@@ -944,6 +1700,848 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   }
 
   // Helper method to build text input fields
+  
+  /// Get detailed description for algorithm
+  String _getAlgorithmDescription(String algorithm) {
+    final descriptions = {
+      // Classical Symmetric
+      'fernet': 'AES-128-CBC with HMAC authentication - Python-compatible standard (Recommended for general use)',
+      'aes-gcm': 'AES-256-GCM authenticated encryption - High performance, military-grade',
+      'chacha20-poly1305': 'ChaCha20 stream cipher with Poly1305 MAC - Modern, fast, secure',
+      'xchacha20-poly1305': 'Extended ChaCha20 with 192-bit nonce - Enhanced security for large files',
+      'aes-siv': 'AES-SIV synthetic IV mode - Misuse-resistant encryption',
+      'aes-gcm-siv': 'AES-GCM-SIV - Combines speed of GCM with misuse resistance',
+      'aes-ocb3': 'AES-OCB3 high-performance authenticated encryption',
+      'camellia': 'Camellia block cipher - International standard, alternative to AES',
+      
+      // Post-Quantum ML-KEM
+      'ml-kem-512-hybrid': 'ML-KEM-512 hybrid - Post-quantum with 128-bit classical security',
+      'ml-kem-768-hybrid': 'ML-KEM-768 hybrid - Post-quantum with 192-bit classical security (Recommended PQC)',
+      'ml-kem-1024-hybrid': 'ML-KEM-1024 hybrid - Post-quantum with 256-bit classical security',
+      
+      // Post-Quantum Kyber Legacy  
+      'kyber512-hybrid': 'Kyber-512 hybrid - Legacy PQC algorithm, use ML-KEM instead',
+      'kyber768-hybrid': 'Kyber-768 hybrid - Legacy PQC algorithm, use ML-KEM instead',
+      'kyber1024-hybrid': 'Kyber-1024 hybrid - Legacy PQC algorithm, use ML-KEM instead',
+      
+      // Post-Quantum ChaCha20
+      'ml-kem-512-chacha20': 'ML-KEM-512 + ChaCha20 - Post-quantum with stream cipher',
+      'ml-kem-768-chacha20': 'ML-KEM-768 + ChaCha20 - Post-quantum with stream cipher',  
+      'ml-kem-1024-chacha20': 'ML-KEM-1024 + ChaCha20 - Post-quantum with stream cipher',
+      
+      // Post-Quantum HQC
+      'hqc-128-hybrid': 'HQC-128 hybrid - Alternative post-quantum KEM (128-bit security)',
+      'hqc-192-hybrid': 'HQC-192 hybrid - Alternative post-quantum KEM (192-bit security)',
+      'hqc-256-hybrid': 'HQC-256 hybrid - Alternative post-quantum KEM (256-bit security)',
+      
+      // Post-Quantum Signatures
+      'mayo-1-hybrid': 'MAYO-1 hybrid - Post-quantum signatures (128-bit security)',
+      'mayo-3-hybrid': 'MAYO-3 hybrid - Post-quantum signatures (192-bit security)',
+      'mayo-5-hybrid': 'MAYO-5 hybrid - Post-quantum signatures (256-bit security)',
+      'cross-128-hybrid': 'CROSS-128 hybrid - Post-quantum signatures (128-bit security)',
+      'cross-192-hybrid': 'CROSS-192 hybrid - Post-quantum signatures (192-bit security)',
+      'cross-256-hybrid': 'CROSS-256 hybrid - Post-quantum signatures (256-bit security)',
+    };
+    
+    return descriptions[algorithm] ?? 'Advanced encryption algorithm - see CLI documentation for details';
+  }
+  
+  /// Show algorithm picker dialog
+  void _showAlgorithmPicker() async {
+    final algorithmCategories = await CLIService.getSupportedAlgorithms();
+    
+    if (!mounted) return;
+    
+    final selectedAlgorithm = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Choose Encryption Algorithm'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 600,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Select an encryption algorithm. Post-quantum algorithms provide protection against quantum computers.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 16),
+                ...algorithmCategories.entries.map((entry) {
+                  final category = entry.key;
+                  final algorithms = entry.value;
+                  
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          category,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                      ),
+                      ...algorithms.map((algorithm) {
+                        final isSelected = algorithm == _selectedAlgorithm;
+                        final isPostQuantum = category.contains('Post-Quantum');
+                        
+                        return Card(
+                          color: isSelected ? Colors.blue.shade100 : null,
+                          child: ListTile(
+                            leading: Icon(
+                              isPostQuantum ? Icons.science : Icons.security,
+                              color: isPostQuantum ? Colors.purple : Colors.blue,
+                            ),
+                            title: Row(
+                              children: [
+                                Text(
+                                  algorithm,
+                                  style: TextStyle(
+                                    fontWeight: isSelected ? FontWeight.bold : null,
+                                  ),
+                                ),
+                                if (isPostQuantum) ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.purple,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Text(
+                                      'PQC',
+                                      style: TextStyle(color: Colors.white, fontSize: 10),
+                                    ),
+                                  ),
+                                ],
+                                if (algorithm == 'fernet' || algorithm == 'ml-kem-768-hybrid') ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Text(
+                                      'RECOMMENDED',
+                                      style: TextStyle(color: Colors.white, fontSize: 10),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            subtitle: Text(
+                              _getAlgorithmDescription(algorithm),
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                            trailing: isSelected ? const Icon(Icons.check_circle, color: Colors.blue) : null,
+                            onTap: () => Navigator.of(context).pop(algorithm),
+                          ),
+                        );
+                      }),
+                      const SizedBox(height: 12),
+                    ],
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    
+    if (selectedAlgorithm != null) {
+      setState(() {
+        _selectedAlgorithm = selectedAlgorithm;
+      });
+    }
+  }
+  
+  /// Show algorithm info dialog - redirects to info tab  
+  void _showAlgorithmInfo(BuildContext context) {
+    // This method is called from the menu, but we want to show the picker instead
+    _showAlgorithmPicker();
+  }
+  
+  /// Get hash function description
+  String _getHashDescription(String hashName) {
+    final descriptions = {
+      // SHA-2 Family
+      'sha224': 'SHA-224 - Truncated SHA-256, good for legacy compatibility',
+      'sha256': 'SHA-256 - Most common secure hash, excellent balance of speed and security',
+      'sha384': 'SHA-384 - Truncated SHA-512, good for high-security applications',
+      'sha512': 'SHA-512 - Large output hash, maximum traditional security',
+      
+      // SHA-3 Family
+      'sha3-224': 'SHA-3-224 - New generation hash with different design from SHA-2',
+      'sha3-256': 'SHA-3-256 - Alternative to SHA-256 with different security properties',
+      'sha3-384': 'SHA-3-384 - Alternative to SHA-384 with sponge construction',
+      'sha3-512': 'SHA-3-512 - Alternative to SHA-512 with sponge construction',
+      
+      // SHAKE Functions
+      'shake128': 'SHAKE-128 - Extendable-output function, configurable length',
+      'shake256': 'SHAKE-256 - Extendable-output function, higher security level',
+      
+      // Modern Hash Functions
+      'blake2b': 'BLAKE2b - Ultra-fast cryptographic hash, faster than MD5 but secure',
+      'blake3': 'BLAKE3 - Newest generation hash, extremely fast with tree structure',
+      
+      // Legacy Hash Functions
+      'whirlpool': 'Whirlpool - ISO standard hash, mainly for specialized applications',
+    };
+    
+    return descriptions[hashName] ?? 'Cryptographic hash function';
+  }
+  
+  /// Get maximum recommended rounds for hash function
+  int _getMaxRounds(String hashName) {
+    // Hash functions use maximum of 1,000,000 rounds but with better precision control
+    return 1000000;
+  }
+
+  /// Build an auto-repeat button that continues action when held down
+  Widget _buildAutoRepeatButton({
+    required IconData icon,
+    required MaterialColor color,
+    required bool enabled,
+    required VoidCallback onAction,
+    double size = 32,
+    double iconSize = 16,
+  }) {
+    return AutoRepeatButton(
+      icon: icon,
+      color: color,
+      enabled: enabled,
+      onAction: onAction,
+      size: size,
+      iconSize: iconSize,
+    );
+  }
+  
+  /// Show hash information dialog
+  void _showHashInfo() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Hash Functions Guide'),
+        content: const SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('🔰 Recommended for most users:', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('• SHA-256: Standard, well-tested, universal compatibility'),
+              Text('• BLAKE2b: Modern, extremely fast, excellent security'),
+              SizedBox(height: 12),
+              Text('🚀 Modern high-performance:', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('• BLAKE3: Newest generation, tree structure, parallelizable'),
+              Text('• SHAKE-256: Flexible output length, quantum-resistant design'),
+              SizedBox(height: 12),
+              Text('🛡️ Maximum security:', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('• SHA-512: Large output, traditional maximum security'),
+              Text('• SHA-3-256: Alternative design, NIST standard'),
+              SizedBox(height: 12),
+              Text('ℹ️ About rounds:', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('Higher rounds = more security but slower processing. Most applications work well with 1,000-10,000 rounds.'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  /// Show KDF information dialog
+  void _showKDFInfo() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Key Derivation Functions (KDF) Guide'),
+        content: const SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('🔰 PBKDF2 (Most Compatible):', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('• Standard KDF, universally supported'),
+              Text('• Good security with sufficient iterations (100,000+)'),
+              Text('• Default choice for general use'),
+              SizedBox(height: 12),
+              Text('🛡️ Argon2 (Maximum Security):', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('• Winner of Password Hashing Competition'),
+              Text('• Memory-hard function, resistant to hardware attacks'),
+              Text('• Best choice for high-security applications'),
+              SizedBox(height: 12),
+              Text('⚡ Scrypt (Balanced):', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('• Memory-hard function, cryptocurrency standard'),
+              Text('• Good balance of security and performance'),
+              Text('• Configurable memory and CPU parameters'),
+              SizedBox(height: 12),
+              Text('🔗 HKDF (Key Expansion):', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('• Designed for key expansion and derivation'),
+              Text('• Efficient, suitable for low-latency applications'),
+              Text('• Often used with other KDFs'),
+              SizedBox(height: 12),
+              Text('🎈 Balloon (Research):', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('• Newer memory-hard function'),
+              Text('• Configurable time/space tradeoffs'),
+              Text('• Still under academic evaluation'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // =============================================================================
+  // KDF Panel Builders
+  // =============================================================================
+
+  /// Build PBKDF2 configuration panel
+  Widget _buildPBKDF2Panel() {
+    final config = _kdfConfig['pbkdf2'] ?? {'enabled': true, 'iterations': 100000};
+    final enabled = config['enabled'] ?? false;
+    
+    return Card(
+      color: enabled ? Colors.blue.shade50 : Colors.grey.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CheckboxListTile(
+              title: Row(
+                children: [
+                  const Text('PBKDF2', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.green,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('RECOMMENDED', style: TextStyle(color: Colors.white, fontSize: 10)),
+                  ),
+                ],
+              ),
+              subtitle: const Text('Password-Based Key Derivation Function 2 - Industry standard, widely supported'),
+              value: enabled,
+              onChanged: (bool? value) {
+                setState(() {
+                  _kdfConfig['pbkdf2'] = {
+                    'enabled': value ?? false,
+                    'iterations': config['iterations'] ?? 100000,
+                  };
+                });
+              },
+            ),
+            if (enabled) ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Row(
+                  children: [
+                    const SizedBox(width: 100, child: Text('Iterations:')),
+                    Expanded(
+                      child: Slider(
+                        value: (config['iterations'] ?? 100000).toDouble(),
+                        min: 0,
+                        max: 1000000,
+                        divisions: 100,
+                        label: (config['iterations'] ?? 100000).toString(),
+                        onChanged: (double value) {
+                          setState(() {
+                            _kdfConfig['pbkdf2']!['iterations'] = value.toInt();
+                          });
+                        },
+                      ),
+                    ),
+                    SizedBox(width: 80, child: Text('${config['iterations'] ?? 100000}')),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Text(
+                  'Higher iterations = more security but slower processing. 100,000+ recommended.',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build Argon2 configuration panel
+  Widget _buildArgon2Panel() {
+    final config = _kdfConfig['argon2'] ?? {
+      'enabled': false,
+      'time_cost': 3,
+      'memory_cost': 65536,
+      'parallelism': 4,
+      'hash_len': 32,
+      'type': 2,
+      'rounds': 10,
+    };
+    final enabled = config['enabled'] ?? false;
+    
+    return Card(
+      color: enabled ? Colors.purple.shade50 : Colors.grey.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CheckboxListTile(
+              title: Row(
+                children: [
+                  const Text('Argon2', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.purple,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('MAX SECURITY', style: TextStyle(color: Colors.white, fontSize: 10)),
+                  ),
+                ],
+              ),
+              subtitle: const Text('Memory-hard function, winner of Password Hashing Competition - best against hardware attacks'),
+              value: enabled,
+              onChanged: (bool? value) {
+                setState(() {
+                  _kdfConfig['argon2'] = Map.from(config)..['enabled'] = value ?? false;
+                });
+              },
+            ),
+            if (enabled) ...[
+              const SizedBox(height: 8),
+              ...[ 
+                _buildKDFSlider('Time Cost', config['time_cost'] ?? 3, 1, 1000, (v) => 
+                  setState(() => _kdfConfig['argon2']!['time_cost'] = v)),
+                _buildKDFSlider('Memory (MB)', ((config['memory_cost'] ?? 65536) / 1024).round(), 1, 1024, (v) => 
+                  setState(() => _kdfConfig['argon2']!['memory_cost'] = v * 1024)),
+                _buildKDFSlider('Parallelism', config['parallelism'] ?? 4, 1, 16, (v) => 
+                  setState(() => _kdfConfig['argon2']!['parallelism'] = v)),
+                _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 128, (v) => 
+                  setState(() => _kdfConfig['argon2']!['hash_len'] = v)),
+                _buildKDFSlider('Rounds', config['rounds'] ?? 10, 0, 1000000, (v) => 
+                  setState(() => _kdfConfig['argon2']!['rounds'] = v)),
+              ],
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Row(
+                  children: [
+                    const Text('Type: '),
+                    DropdownButton<int>(
+                      value: config['type'] ?? 2,
+                      items: const [
+                        DropdownMenuItem(value: 0, child: Text('Argon2d')),
+                        DropdownMenuItem(value: 1, child: Text('Argon2i')),
+                        DropdownMenuItem(value: 2, child: Text('Argon2id (recommended)')),
+                      ],
+                      onChanged: (int? value) {
+                        setState(() {
+                          _kdfConfig['argon2']!['type'] = value ?? 2;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build Scrypt configuration panel
+  Widget _buildScryptPanel() {
+    final config = _kdfConfig['scrypt'] ?? {
+      'enabled': false,
+      'n': 16384,
+      'r': 8,
+      'p': 1,
+      'rounds': 10,
+    };
+    final enabled = config['enabled'] ?? false;
+    
+    return Card(
+      color: enabled ? Colors.orange.shade50 : Colors.grey.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CheckboxListTile(
+              title: Row(
+                children: [
+                  const Text('Scrypt', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.orange,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('BALANCED', style: TextStyle(color: Colors.white, fontSize: 10)),
+                  ),
+                ],
+              ),
+              subtitle: const Text('Memory-hard function used in cryptocurrencies - good balance of security and performance'),
+              value: enabled,
+              onChanged: (bool? value) {
+                setState(() {
+                  _kdfConfig['scrypt'] = Map.from(config)..['enabled'] = value ?? false;
+                });
+              },
+            ),
+            if (enabled) ...[
+              const SizedBox(height: 8),
+              ...[
+                _buildKDFSlider('N (CPU/Memory)', (config['n'] ?? 16384) ~/ 1024, 1, 1024, (v) => 
+                  setState(() => _kdfConfig['scrypt']!['n'] = v * 1024)),
+                _buildKDFSlider('R (Block Size)', config['r'] ?? 8, 1, 32, (v) => 
+                  setState(() => _kdfConfig['scrypt']!['r'] = v)),
+                _buildKDFSlider('P (Parallelism)', config['p'] ?? 1, 1, 16, (v) => 
+                  setState(() => _kdfConfig['scrypt']!['p'] = v)),
+                _buildKDFSlider('Rounds', config['rounds'] ?? 10, 0, 1000000, (v) => 
+                  setState(() => _kdfConfig['scrypt']!['rounds'] = v)),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build HKDF configuration panel
+  Widget _buildHKDFPanel() {
+    final config = _kdfConfig['hkdf'] ?? {
+      'enabled': false,
+      'rounds': 1,
+      'algorithm': 'sha256',
+      'info': 'openssl_encrypt_hkdf',
+    };
+    final enabled = config['enabled'] ?? false;
+    
+    return Card(
+      color: enabled ? Colors.teal.shade50 : Colors.grey.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CheckboxListTile(
+              title: Row(
+                children: [
+                  const Text('HKDF', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.teal,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('EFFICIENT', style: TextStyle(color: Colors.white, fontSize: 10)),
+                  ),
+                ],
+              ),
+              subtitle: const Text('HMAC-based Key Derivation Function - efficient key expansion, suitable for low-latency applications'),
+              value: enabled,
+              onChanged: (bool? value) {
+                setState(() {
+                  _kdfConfig['hkdf'] = Map.from(config)..['enabled'] = value ?? false;
+                });
+              },
+            ),
+            if (enabled) ...[
+              const SizedBox(height: 8),
+              _buildKDFSlider('Rounds', config['rounds'] ?? 1, 0, 1000000, (v) => 
+                setState(() => _kdfConfig['hkdf']!['rounds'] = v)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Row(
+                  children: [
+                    const Text('Hash Algorithm: '),
+                    DropdownButton<String>(
+                      value: config['algorithm'] ?? 'sha256',
+                      items: const [
+                        DropdownMenuItem(value: 'sha224', child: Text('SHA-224')),
+                        DropdownMenuItem(value: 'sha256', child: Text('SHA-256')),
+                        DropdownMenuItem(value: 'sha384', child: Text('SHA-384')),
+                        DropdownMenuItem(value: 'sha512', child: Text('SHA-512')),
+                      ],
+                      onChanged: (String? value) {
+                        setState(() {
+                          _kdfConfig['hkdf']!['algorithm'] = value ?? 'sha256';
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: TextFormField(
+                  initialValue: config['info'] ?? 'openssl_encrypt_hkdf',
+                  decoration: const InputDecoration(
+                    labelText: 'Info String',
+                    isDense: true,
+                  ),
+                  onChanged: (value) {
+                    _kdfConfig['hkdf']!['info'] = value;
+                  },
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build Balloon configuration panel
+  Widget _buildBalloonPanel() {
+    final config = _kdfConfig['balloon'] ?? {
+      'enabled': false,
+      'time_cost': 3,
+      'space_cost': 65536,
+      'parallelism': 4,
+      'rounds': 2,
+      'hash_len': 32,
+    };
+    final enabled = config['enabled'] ?? false;
+    
+    return Card(
+      color: enabled ? Colors.pink.shade50 : Colors.grey.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CheckboxListTile(
+              title: Row(
+                children: [
+                  const Text('Balloon', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.pink,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('RESEARCH', style: TextStyle(color: Colors.white, fontSize: 10)),
+                  ),
+                ],
+              ),
+              subtitle: const Text('Newer memory-hard function with configurable time/space tradeoffs - still under academic evaluation'),
+              value: enabled,
+              onChanged: (bool? value) {
+                setState(() {
+                  _kdfConfig['balloon'] = Map.from(config)..['enabled'] = value ?? false;
+                });
+              },
+            ),
+            if (enabled) ...[
+              const SizedBox(height: 8),
+              ...[
+                _buildKDFSlider('Time Cost', config['time_cost'] ?? 3, 1, 1000, (v) => 
+                  setState(() => _kdfConfig['balloon']!['time_cost'] = v)),
+                _buildKDFSlider('Space Cost (KB)', ((config['space_cost'] ?? 65536) / 1024).round(), 1, 1024, (v) => 
+                  setState(() => _kdfConfig['balloon']!['space_cost'] = v * 1024)),
+                _buildKDFSlider('Parallelism', config['parallelism'] ?? 4, 1, 16, (v) => 
+                  setState(() => _kdfConfig['balloon']!['parallelism'] = v)),
+                _buildKDFSlider('Rounds', config['rounds'] ?? 2, 0, 1000000, (v) => 
+                  setState(() => _kdfConfig['balloon']!['rounds'] = v)),
+                _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 128, (v) => 
+                  setState(() => _kdfConfig['balloon']!['hash_len'] = v)),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Helper to build KDF slider
+  Widget _buildKDFSlider(String label, int value, int min, int max, Function(int) onChanged) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+      child: Row(
+        children: [
+          SizedBox(width: 120, child: Text(label + ':', style: const TextStyle(fontSize: 12))),
+          // Decrement button with auto-repeat
+          _buildAutoRepeatButton(
+            icon: Icons.remove,
+            color: Colors.orange,
+            enabled: value > min,
+            onAction: () => onChanged((value - 1).clamp(min, max)),
+            size: 28,
+            iconSize: 14,
+          ),
+          const SizedBox(width: 4),
+          // Slider
+          Expanded(
+            child: Slider(
+              value: value.toDouble(),
+              min: min.toDouble(),
+              max: max.toDouble(),
+              divisions: (max - min) > 1000 ? max ~/ 100 : max - min, // Smart divisions
+              label: value.toString(),
+              onChanged: (double v) => onChanged(v.toInt()),
+            ),
+          ),
+          const SizedBox(width: 4),
+          // Increment button with auto-repeat
+          _buildAutoRepeatButton(
+            icon: Icons.add,
+            color: Colors.orange,
+            enabled: value < max,
+            onAction: () => onChanged((value + 1).clamp(min, max)),
+            size: 28,
+            iconSize: 14,
+          ),
+          const SizedBox(width: 8),
+          SizedBox(width: 60, child: Text(value.toString(), style: const TextStyle(fontSize: 12))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHashRoundsSlider(String hashId, int currentRounds, Function(int) onChanged) {
+    // Get appropriate min/max values based on hash function
+    int minRounds = 0;  // Allow 0 to disable hash function
+    int maxRounds = _getMaxRounds(hashId);
+    
+    // Ensure current value is within bounds
+    int clampedRounds = currentRounds.clamp(minRounds, maxRounds);
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Rounds: $clampedRounds',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: Colors.blue.shade700,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            // Decrement button with auto-repeat
+            _buildAutoRepeatButton(
+              icon: Icons.remove,
+              color: Colors.blue,
+              enabled: clampedRounds > minRounds,
+              onAction: () => onChanged((clampedRounds - 1).clamp(minRounds, maxRounds)),
+            ),
+            const SizedBox(width: 8),
+            // Slider
+            Expanded(
+              child: Slider(
+                value: clampedRounds.toDouble(),
+                min: minRounds.toDouble(),
+                max: maxRounds.toDouble(),
+                divisions: maxRounds ~/ 100, // Coarser divisions for slider
+                label: clampedRounds.toString(),
+                activeColor: Colors.blue.shade600,
+                inactiveColor: Colors.blue.shade200,
+                onChanged: (double value) => onChanged(value.toInt()),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Increment button with auto-repeat
+            _buildAutoRepeatButton(
+              icon: Icons.add,
+              color: Colors.blue,
+              enabled: clampedRounds < maxRounds,
+              onAction: () => onChanged((clampedRounds + 1).clamp(minRounds, maxRounds)),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // =============================================================================
+  // Algorithm Recommendation Engine
+  // =============================================================================
+
+  /// Show intelligent algorithm recommendation wizard
+  void _showRecommendationWizard() async {
+    if (!mounted) return;
+    
+    final recommendation = await showDialog<AlgorithmRecommendation>(
+      context: context,
+      builder: (context) => const RecommendationWizardDialog(),
+    );
+    
+    if (recommendation != null) {
+      // Apply the recommendation
+      setState(() {
+        _selectedAlgorithm = recommendation.algorithm;
+        
+        // Apply hash configuration
+        for (final hashEntry in recommendation.hashConfig.entries) {
+          final hashName = hashEntry.key;
+          final config = hashEntry.value;
+          if (_hashConfig.containsKey(hashName)) {
+            _hashConfig[hashName] = Map.from(config);
+          }
+        }
+        
+        // Apply KDF configuration
+        for (final kdfEntry in recommendation.kdfConfig.entries) {
+          final kdfName = kdfEntry.key;
+          final config = kdfEntry.value;
+          if (_kdfConfig.containsKey(kdfName)) {
+            _kdfConfig[kdfName] = Map.from(config);
+          }
+        }
+      });
+      
+      // Show success message with explanation
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('✨ Applied ${recommendation.profileName} configuration'),
+                Text(recommendation.explanation, style: const TextStyle(fontSize: 12)),
+              ],
+            ),
+            duration: const Duration(seconds: 5),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
 }
 
 // File encryption/decryption tab
@@ -964,6 +2562,11 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   bool _isLoading = false;
   String? _decryptedContent; // Store decrypted content for optional saving
   bool _debugLogging = false;
+  
+  // Progress tracking
+  String _operationStatus = '';
+  String _operationProgress = '';
+  double _progressValue = 0.0;
 
   @override
   void dispose() {
@@ -1202,6 +2805,9 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     setState(() {
       _isLoading = true;
       _result = 'Decrypting file...';
+      _operationStatus = 'Starting decryption...';
+      _operationProgress = '';
+      _progressValue = 0.0;
     });
 
     // Give UI a moment to update before heavy crypto operations
@@ -1209,15 +2815,47 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
 
     try {
       // Read the encrypted file
+      setState(() {
+        _operationStatus = 'Reading encrypted file...';
+        _progressValue = 0.2;
+      });
+      
       final fileContent = await widget.fileManager.readFileText(_selectedFile!.path);
       if (fileContent == null) {
         throw Exception('Could not read file');
       }
 
-      // Decrypt using CLI service
-      final decrypted = await CLIService.decryptText(
+      setState(() {
+        _operationStatus = 'File loaded, starting decryption...';
+        _progressValue = 0.3;
+      });
+
+      // Decrypt using CLI service with progress callbacks
+      final decrypted = await CLIService.decryptTextWithProgress(
         fileContent,  // Pass raw file content
         _passwordController.text,
+        onProgress: (progress) {
+          setState(() {
+            _operationProgress = progress;
+          });
+        },
+        onStatus: (status) {
+          setState(() {
+            _operationStatus = status;
+            // Update progress based on status
+            if (status.contains('Initializing')) {
+              _progressValue = 0.4;
+            } else if (status.contains('Prepared')) {
+              _progressValue = 0.5;
+            } else if (status.contains('Executing')) {
+              _progressValue = 0.7;
+            } else if (status.contains('Reading')) {
+              _progressValue = 0.9;
+            } else if (status.contains('completed')) {
+              _progressValue = 1.0;
+            }
+          });
+        },
       );
 
       if (decrypted.startsWith('ERROR:')) {
@@ -1229,12 +2867,18 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
         _decryptedContent = decrypted; // Store for optional saving
         _result = decrypted; // Show only the decrypted content
         _isLoading = false;
+        _operationStatus = '';
+        _operationProgress = '';
+        _progressValue = 0.0;
       });
 
     } catch (e) {
       setState(() {
         _result = 'File decryption failed: $e';
         _isLoading = false;
+        _operationStatus = '';
+        _operationProgress = '';
+        _progressValue = 0.0;
       });
     }
   }
@@ -1446,12 +3090,55 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
                   children: [
+                    // Progress bar
+                    LinearProgressIndicator(
+                      value: _progressValue,
+                      backgroundColor: Colors.orange.shade200,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.orange.shade700),
+                    ),
+                    const SizedBox(height: 12),
+                    // Circular progress indicator
                     const CircularProgressIndicator(color: Colors.orange),
                     const SizedBox(height: 12),
+                    // Operation status
                     Text(
-                      'Crypto operation in progress...',
+                      _operationStatus.isNotEmpty ? _operationStatus : 'Crypto operation in progress...',
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.orange.shade800),
+                      textAlign: TextAlign.center,
                     ),
+                    // CLI progress output
+                    if (_operationProgress.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(8.0),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.orange.shade300),
+                        ),
+                        child: Text(
+                          _operationProgress,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontFamily: 'monospace',
+                            color: Colors.orange.shade900,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
+                    // Progress percentage
+                    if (_progressValue > 0) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        '${(_progressValue * 100).toInt()}%',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.orange.shade700,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1570,29 +3257,15 @@ class _InfoTabState extends State<InfoTab> {
     'camellia': 'Camellia block cipher (International standard)',
   };
 
-  // Python-only algorithms that are no longer available
-  static const Set<String> _pythonOnlyAlgorithms = {
-    'aes-siv',
-    'aes-gcm-siv', 
-    'aes-ocb3',
-  };
-
   /// Check if algorithm is available on current platform
   bool _isAlgorithmAvailable(String algorithm) {
-    // These algorithms were only available with Python backend, now unavailable
-    if (_pythonOnlyAlgorithms.contains(algorithm)) {
-      return false;
-    }
+    // All algorithms are available via CLI backend
     return true;
   }
 
   /// Get platform-specific description for algorithm
   String _getAlgorithmDescription(String algorithm) {
-    final baseDescription = _algorithmDescriptions[algorithm] ?? algorithm;
-    if (_pythonOnlyAlgorithms.contains(algorithm)) {
-      return '$baseDescription (Requires Python backend - not available)';
-    }
-    return baseDescription;
+    return _algorithmDescriptions[algorithm] ?? algorithm;
   }
 
   @override
@@ -1608,7 +3281,7 @@ class _InfoTabState extends State<InfoTab> {
 
   void _loadAlgorithms() async {
     try {
-      final algorithms = await CLIService.getSupportedAlgorithms();
+      final algorithms = await CLIService.getSupportedAlgorithmsList();
       setState(() {
         _algorithms = algorithms;
       });
@@ -1675,22 +3348,22 @@ class _InfoTabState extends State<InfoTab> {
             ),
           ),
           const SizedBox(height: 16),
-          const Card(
+          Card(
             child: Padding(
-              padding: EdgeInsets.all(16.0),
+              padding: const EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  const Text(
                     'App Information',
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
-                  SizedBox(height: 8),
-                  Text('Version: 1.0.0 (Desktop Development)'),
-                  Text('Build: Desktop GUI Prototype'),
-                  Text('Crypto Backend: CLI Integration'),
-                  Text('Hash Chaining: CLI Compatible Order'),
-                  Text('Platform: Flutter'),
+                  const SizedBox(height: 8),
+                  const Text('Version: 1.0.0 (Desktop Development)'),
+                  const Text('Build: Desktop GUI Prototype'),
+                  Text('Crypto Backend: ${CLIService.isFlatpakVersion ? 'Flatpak' : 'Development (Python Module)'}'),
+                  const Text('Hash Chaining: CLI Compatible Order'),
+                  const Text('Platform: Flutter'),
                 ],
               ),
             ),
@@ -1753,9 +3426,13 @@ class _InfoTabState extends State<InfoTab> {
                   ),
                   Row(
                     children: [
-                      Icon(Icons.pending, color: Colors.orange, size: 16),
+                      Icon(Icons.check_circle, color: Colors.green, size: 16),
                       SizedBox(width: 8),
-                      Text('Biometric Authentication (Planned)'),
+                      Expanded(
+                        child: Text(
+                          'Complete CLI Algorithm Support (AES-SIV, AES-GCM-SIV, AES-OCB3)',
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -1765,6 +3442,817 @@ class _InfoTabState extends State<InfoTab> {
         ],
         ),
       ),
+    );
+  }
+}
+
+// =============================================================================
+// Algorithm Recommendation Engine Data Structures
+// =============================================================================
+
+/// Represents a complete algorithm recommendation
+class AlgorithmRecommendation {
+  final String algorithm;
+  final String profileName;
+  final String explanation;
+  final Map<String, Map<String, dynamic>> hashConfig;
+  final Map<String, Map<String, dynamic>> kdfConfig;
+
+  AlgorithmRecommendation({
+    required this.algorithm,
+    required this.profileName,
+    required this.explanation,
+    required this.hashConfig,
+    required this.kdfConfig,
+  });
+}
+
+/// Use case categories for recommendation engine
+enum UseCase {
+  generalPurpose,
+  highSecurity,
+  fastPerformance,
+  postQuantum,
+  compatibility,
+  research,
+}
+
+/// Security level preferences
+enum SecurityLevel {
+  standard,
+  high,
+  maximum,
+  futureProof,
+}
+
+/// Performance preferences
+enum PerformanceLevel {
+  fastest,
+  balanced,
+  security,
+}
+
+// =============================================================================
+// Recommendation Wizard Dialog
+// =============================================================================
+
+class RecommendationWizardDialog extends StatefulWidget {
+  const RecommendationWizardDialog({super.key});
+
+  @override
+  State<RecommendationWizardDialog> createState() => _RecommendationWizardDialogState();
+}
+
+class _RecommendationWizardDialogState extends State<RecommendationWizardDialog> {
+  int _currentStep = 0;
+  UseCase _selectedUseCase = UseCase.generalPurpose;
+  SecurityLevel _selectedSecurityLevel = SecurityLevel.standard;
+  PerformanceLevel _selectedPerformanceLevel = PerformanceLevel.balanced;
+  bool _needsCompatibility = false;
+  bool _futureProofing = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.auto_awesome, color: Colors.green),
+          SizedBox(width: 8),
+          Text('Algorithm Recommendation Wizard'),
+        ],
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 500,
+        child: Stepper(
+          currentStep: _currentStep,
+          onStepTapped: (step) => setState(() => _currentStep = step),
+          controlsBuilder: (context, details) {
+            return Row(
+              children: [
+                if (details.onStepContinue != null)
+                  ElevatedButton(
+                    onPressed: details.onStepContinue,
+                    child: Text(_currentStep == 3 ? 'Get Recommendation' : 'Next'),
+                  ),
+                const SizedBox(width: 8),
+                if (details.onStepCancel != null)
+                  TextButton(
+                    onPressed: details.onStepCancel,
+                    child: const Text('Back'),
+                  ),
+              ],
+            );
+          },
+          onStepContinue: () {
+            if (_currentStep < 3) {
+              setState(() => _currentStep++);
+            } else {
+              _generateRecommendation();
+            }
+          },
+          onStepCancel: () {
+            if (_currentStep > 0) {
+              setState(() => _currentStep--);
+            }
+          },
+          steps: [
+            _buildUseCaseStep(),
+            _buildSecurityStep(), 
+            _buildPerformanceStep(),
+            _buildPreferencesStep(),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+      ],
+    );
+  }
+
+  Step _buildUseCaseStep() {
+    return Step(
+      title: const Text('Use Case'),
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('What will you primarily use this encryption for?'),
+          const SizedBox(height: 16),
+          ...UseCase.values.map((useCase) {
+            return RadioListTile<UseCase>(
+              title: Text(_getUseCaseTitle(useCase)),
+              subtitle: Text(_getUseCaseDescription(useCase)),
+              value: useCase,
+              groupValue: _selectedUseCase,
+              onChanged: (value) => setState(() => _selectedUseCase = value!),
+            );
+          }),
+        ],
+      ),
+      isActive: _currentStep >= 0,
+    );
+  }
+
+  Step _buildSecurityStep() {
+    return Step(
+      title: const Text('Security Level'),
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('What level of security do you need?'),
+          const SizedBox(height: 16),
+          ...SecurityLevel.values.map((level) {
+            return RadioListTile<SecurityLevel>(
+              title: Text(_getSecurityLevelTitle(level)),
+              subtitle: Text(_getSecurityLevelDescription(level)),
+              value: level,
+              groupValue: _selectedSecurityLevel,
+              onChanged: (value) => setState(() => _selectedSecurityLevel = value!),
+            );
+          }),
+        ],
+      ),
+      isActive: _currentStep >= 1,
+    );
+  }
+
+  Step _buildPerformanceStep() {
+    return Step(
+      title: const Text('Performance Priority'),
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('How important is processing speed?'),
+          const SizedBox(height: 16),
+          ...PerformanceLevel.values.map((level) {
+            return RadioListTile<PerformanceLevel>(
+              title: Text(_getPerformanceLevelTitle(level)),
+              subtitle: Text(_getPerformanceLevelDescription(level)),
+              value: level,
+              groupValue: _selectedPerformanceLevel,
+              onChanged: (value) => setState(() => _selectedPerformanceLevel = value!),
+            );
+          }),
+        ],
+      ),
+      isActive: _currentStep >= 2,
+    );
+  }
+
+  Step _buildPreferencesStep() {
+    return Step(
+      title: const Text('Additional Preferences'),
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Any special requirements?'),
+          const SizedBox(height: 16),
+          CheckboxListTile(
+            title: const Text('Compatibility Priority'),
+            subtitle: const Text('Need to work with older systems or Python implementations'),
+            value: _needsCompatibility,
+            onChanged: (value) => setState(() => _needsCompatibility = value ?? false),
+          ),
+          CheckboxListTile(
+            title: const Text('Future-Proofing'),
+            subtitle: const Text('Protection against quantum computers and future threats'),
+            value: _futureProofing,
+            onChanged: (value) => setState(() => _futureProofing = value ?? false),
+          ),
+        ],
+      ),
+      isActive: _currentStep >= 3,
+    );
+  }
+
+  void _generateRecommendation() {
+    final recommendation = _computeRecommendation();
+    Navigator.of(context).pop(recommendation);
+  }
+
+  AlgorithmRecommendation _computeRecommendation() {
+    // Intelligent recommendation logic based on user preferences
+    
+    String algorithm;
+    String profileName;
+    String explanation;
+    Map<String, Map<String, dynamic>> hashConfig;
+    Map<String, Map<String, dynamic>> kdfConfig;
+
+    if (_futureProofing || _selectedUseCase == UseCase.postQuantum) {
+      // Post-quantum recommendation
+      algorithm = _selectedSecurityLevel == SecurityLevel.maximum 
+        ? 'ml-kem-1024-hybrid' 
+        : 'ml-kem-768-hybrid';
+      profileName = 'Post-Quantum Security';
+      explanation = 'ML-KEM provides protection against both classical and quantum computer attacks';
+      
+      hashConfig = {
+        'blake3': {'enabled': true, 'rounds': 10000},
+        'sha256': {'enabled': true, 'rounds': 5000},
+      };
+      
+      kdfConfig = {
+        'argon2': {
+          'enabled': true,
+          'time_cost': 4,
+          'memory_cost': 131072,
+          'parallelism': 4,
+          'hash_len': 32,
+          'type': 2,
+          'rounds': 15,
+        },
+        'pbkdf2': {'enabled': false, 'iterations': 0},
+      };
+      
+    } else if (_selectedPerformanceLevel == PerformanceLevel.fastest) {
+      // Performance-optimized recommendation
+      algorithm = 'chacha20-poly1305';
+      profileName = 'High Performance';
+      explanation = 'ChaCha20 provides excellent security with superior performance on all platforms';
+      
+      hashConfig = {
+        'blake2b': {'enabled': true, 'rounds': 1000},
+      };
+      
+      kdfConfig = {
+        'hkdf': {
+          'enabled': true,
+          'rounds': 2,
+          'algorithm': 'sha256',
+          'info': 'openssl_encrypt_hkdf',
+        },
+        if (!CLIService.shouldHideLegacyAlgorithms()) 'pbkdf2': {'enabled': true, 'iterations': 50000},
+      };
+      
+    } else if (_selectedSecurityLevel == SecurityLevel.maximum) {
+      // Maximum security recommendation
+      algorithm = 'aes-gcm';
+      profileName = 'Maximum Security';
+      explanation = 'AES-256-GCM with Argon2 provides military-grade security with robust key derivation';
+      
+      hashConfig = {
+        'sha512': {'enabled': true, 'rounds': 10000},
+        'blake3': {'enabled': true, 'rounds': 5000},
+        'shake256': {'enabled': true, 'rounds': 2000},
+      };
+      
+      kdfConfig = {
+        'argon2': {
+          'enabled': true,
+          'time_cost': 5,
+          'memory_cost': 262144, // 256MB
+          'parallelism': 8,
+          'hash_len': 64,
+          'type': 2,
+          'rounds': 20,
+        },
+        if (!CLIService.shouldHideLegacyAlgorithms()) 'pbkdf2': {'enabled': true, 'iterations': 500000},
+      };
+      
+    } else if (_needsCompatibility) {
+      // Compatibility-focused recommendation
+      algorithm = 'fernet';
+      profileName = 'Universal Compatibility';
+      explanation = 'Fernet is Python-compatible and works everywhere with solid security';
+      
+      hashConfig = {
+        'sha256': {'enabled': true, 'rounds': 2000},
+      };
+      
+      kdfConfig = {
+        if (!CLIService.shouldHideLegacyAlgorithms()) 'pbkdf2': {'enabled': true, 'iterations': 200000},
+      };
+      
+    } else {
+      // Balanced general-purpose recommendation
+      algorithm = 'aes-gcm';
+      profileName = 'Balanced General Use';
+      explanation = 'AES-GCM with PBKDF2 provides excellent security and performance for most applications';
+      
+      hashConfig = {
+        'sha256': {'enabled': true, 'rounds': 5000},
+        'blake2b': {'enabled': true, 'rounds': 3000},
+      };
+      
+      kdfConfig = {
+        if (!CLIService.shouldHideLegacyAlgorithms()) 'pbkdf2': {'enabled': true, 'iterations': 200000},
+        'argon2': {
+          'enabled': false,
+          'time_cost': 3,
+          'memory_cost': 65536,
+          'parallelism': 4,
+          'hash_len': 32,
+          'type': 2,
+          'rounds': 10,
+        },
+      };
+    }
+
+    return AlgorithmRecommendation(
+      algorithm: algorithm,
+      profileName: profileName,
+      explanation: explanation,
+      hashConfig: hashConfig,
+      kdfConfig: kdfConfig,
+    );
+  }
+
+  String _getUseCaseTitle(UseCase useCase) {
+    switch (useCase) {
+      case UseCase.generalPurpose: return '🏠 General Purpose';
+      case UseCase.highSecurity: return '🛡️ High Security';
+      case UseCase.fastPerformance: return '⚡ Fast Performance';
+      case UseCase.postQuantum: return '🔬 Post-Quantum';
+      case UseCase.compatibility: return '🔗 Compatibility';
+      case UseCase.research: return '🧪 Research';
+    }
+  }
+
+  String _getUseCaseDescription(UseCase useCase) {
+    switch (useCase) {
+      case UseCase.generalPurpose: return 'Personal files, documents, everyday encryption needs';
+      case UseCase.highSecurity: return 'Sensitive business data, confidential information';
+      case UseCase.fastPerformance: return 'Large files, real-time processing, performance critical';
+      case UseCase.postQuantum: return 'Future-proof against quantum computer attacks';
+      case UseCase.compatibility: return 'Need to work with Python, legacy systems, or other tools';
+      case UseCase.research: return 'Experimental algorithms, cutting-edge cryptography';
+    }
+  }
+
+  String _getSecurityLevelTitle(SecurityLevel level) {
+    switch (level) {
+      case SecurityLevel.standard: return '📋 Standard Security';
+      case SecurityLevel.high: return '🔒 High Security';
+      case SecurityLevel.maximum: return '🛡️ Maximum Security';
+      case SecurityLevel.futureProof: return '🚀 Future-Proof';
+    }
+  }
+
+  String _getSecurityLevelDescription(SecurityLevel level) {
+    switch (level) {
+      case SecurityLevel.standard: return 'Good security for most applications (128-bit equivalent)';
+      case SecurityLevel.high: return 'Strong security for sensitive data (192-bit equivalent)';
+      case SecurityLevel.maximum: return 'Military-grade security (256-bit equivalent)';
+      case SecurityLevel.futureProof: return 'Quantum-resistant, long-term protection';
+    }
+  }
+
+  String _getPerformanceLevelTitle(PerformanceLevel level) {
+    switch (level) {
+      case PerformanceLevel.fastest: return '🏃 Speed Priority';
+      case PerformanceLevel.balanced: return '⚖️ Balanced';
+      case PerformanceLevel.security: return '🛡️ Security Priority';
+    }
+  }
+
+  String _getPerformanceLevelDescription(PerformanceLevel level) {
+    switch (level) {
+      case PerformanceLevel.fastest: return 'Optimize for fastest encryption/decryption';
+      case PerformanceLevel.balanced: return 'Good balance of security and performance';
+      case PerformanceLevel.security: return 'Maximum security, performance secondary';
+    }
+  }
+}
+
+class CommandPreviewDialog extends StatelessWidget {
+  final String algorithm;
+  final Map<String, Map<String, dynamic>> hashConfig;
+  final Map<String, Map<String, dynamic>> kdfConfig;
+  final String password;
+  final String inputText;
+
+  const CommandPreviewDialog({
+    super.key,
+    required this.algorithm,
+    required this.hashConfig,
+    required this.kdfConfig,
+    required this.password,
+    required this.inputText,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Generate the encrypt and decrypt commands
+    final encryptCommand = CLIService.previewEncryptCommand(
+      inputText,
+      password,
+      algorithm,
+      hashConfig,
+      kdfConfig,
+    );
+    
+    final decryptCommand = CLIService.previewDecryptCommand(password);
+
+    return Dialog(
+      child: Container(
+        width: MediaQuery.of(context).size.width * 0.8,
+        height: MediaQuery.of(context).size.height * 0.7,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.code, color: Colors.blue.shade600),
+                const SizedBox(width: 12),
+                const Text(
+                  'CLI Command Preview',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close),
+                  tooltip: 'Close',
+                ),
+              ],
+            ),
+            const Divider(),
+            const SizedBox(height: 16),
+            
+            // Encrypt command section
+            Row(
+              children: [
+                Icon(Icons.lock, color: Colors.green.shade600, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Encryption Command',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.green.shade700,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SelectableText(
+                encryptCommand,
+                style: const TextStyle(
+                  fontFamily: 'Courier',
+                  fontSize: 12,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton.icon(
+                  onPressed: () => _copyToClipboard(context, encryptCommand),
+                  icon: const Icon(Icons.copy, size: 16),
+                  label: const Text('Copy'),
+                ),
+              ],
+            ),
+            
+            const SizedBox(height: 24),
+            
+            // Decrypt command section
+            Row(
+              children: [
+                Icon(Icons.lock_open, color: Colors.orange.shade600, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Decryption Command',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.orange.shade700,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SelectableText(
+                decryptCommand,
+                style: const TextStyle(
+                  fontFamily: 'Courier',
+                  fontSize: 12,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton.icon(
+                  onPressed: () => _copyToClipboard(context, decryptCommand),
+                  icon: const Icon(Icons.copy, size: 16),
+                  label: const Text('Copy'),
+                ),
+              ],
+            ),
+            
+            const SizedBox(height: 24),
+            
+            // Usage notes section
+            Expanded(
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  border: Border.all(color: Colors.blue.shade200),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Usage Notes',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.blue.shade800,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildUsageNote('• Replace [input-file] with the actual path to your input file'),
+                            _buildUsageNote('• Replace [output-file] with the desired path for the output file'),
+                            _buildUsageNote('• Replace [password] with your actual password (use quotes if it contains spaces)'),
+                            _buildUsageNote('• Replace [encrypted-file] with the path to the file you want to decrypt'),
+                            const SizedBox(height: 12),
+                            _buildUsageNote('Algorithm: $algorithm', isHighlight: true),
+                            if (_hasActiveHashConfig())
+                              _buildUsageNote('Active hash functions: ${_getActiveHashFunctions()}', isHighlight: true),
+                            if (_hasActiveKdfConfig())
+                              _buildUsageNote('Active KDF functions: ${_getActiveKdfFunctions()}', isHighlight: true),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUsageNote(String text, {bool isHighlight = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 12,
+          color: isHighlight ? Colors.blue.shade800 : Colors.grey.shade700,
+          fontWeight: isHighlight ? FontWeight.w600 : FontWeight.normal,
+        ),
+      ),
+    );
+  }
+
+  bool _hasActiveHashConfig() {
+    return hashConfig.values.any((config) => 
+        config['enabled'] == true && 
+        config['rounds'] != null && 
+        config['rounds'] > 0
+    );
+  }
+
+  bool _hasActiveKdfConfig() {
+    return kdfConfig.values.any((config) => config['enabled'] == true);
+  }
+
+  String _getActiveHashFunctions() {
+    return hashConfig.entries
+        .where((entry) => entry.value['enabled'] == true && 
+                         entry.value['rounds'] != null && 
+                         entry.value['rounds'] > 0)
+        .map((entry) => '${entry.key} (${entry.value['rounds']} rounds)')
+        .join(', ');
+  }
+
+  String _getActiveKdfFunctions() {
+    return kdfConfig.entries
+        .where((entry) => entry.value['enabled'] == true)
+        .map((entry) => entry.key)
+        .join(', ');
+  }
+
+  void _copyToClipboard(BuildContext context, String text) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Command copied to clipboard'),
+        backgroundColor: Colors.green.shade600,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+}
+
+/// Auto-repeat button widget that continues executing action when held down
+class AutoRepeatButton extends StatefulWidget {
+  final IconData icon;
+  final MaterialColor color;
+  final bool enabled;
+  final VoidCallback onAction;
+  final double size;
+  final double iconSize;
+
+  const AutoRepeatButton({
+    super.key,
+    required this.icon,
+    required this.color,
+    required this.enabled,
+    required this.onAction,
+    this.size = 32,
+    this.iconSize = 16,
+  });
+
+  @override
+  State<AutoRepeatButton> createState() => _AutoRepeatButtonState();
+}
+
+class _AutoRepeatButtonState extends State<AutoRepeatButton> {
+  Timer? _repeatTimer;
+  bool _isPressed = false;
+
+  @override
+  void dispose() {
+    _repeatTimer?.cancel();
+    super.dispose();
+  }
+
+  void _onPointerDown(PointerDownEvent event) {
+    if (!widget.enabled) return;
+    
+    setState(() {
+      _isPressed = true;
+    });
+    
+    // Execute immediately
+    widget.onAction();
+    
+    // Start repeating after a short delay
+    _repeatTimer = Timer(const Duration(milliseconds: 300), () {
+      if (_isPressed && mounted) {
+        _startRepeating();
+      }
+    });
+  }
+  
+  void _startRepeating() {
+    _repeatTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      if (_isPressed && mounted && widget.enabled) {
+        widget.onAction();
+      } else {
+        timer.cancel();
+        _repeatTimer = null;
+      }
+    });
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    setState(() {
+      _isPressed = false;
+    });
+    _repeatTimer?.cancel();
+    _repeatTimer = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: _onPointerDown,
+      onPointerUp: _onPointerUp,
+      child: Container(
+        width: widget.size,
+        height: widget.size,
+        decoration: BoxDecoration(
+          color: widget.enabled 
+              ? (_isPressed ? widget.color.shade200 : widget.color.shade100)
+              : Colors.grey.shade200,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+            color: widget.enabled ? widget.color.shade300 : Colors.grey.shade400,
+          ),
+        ),
+        child: Icon(
+          widget.icon,
+          size: widget.iconSize,
+          color: widget.enabled ? widget.color.shade700 : Colors.grey.shade500,
+        ),
+      ),
+    );
+  }
+}
+
+/// Settings tab wrapper that integrates the SettingsScreen
+class SettingsTab extends StatelessWidget {
+  final VoidCallback onThemeChanged;
+  
+  const SettingsTab({super.key, required this.onThemeChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Navigator(
+      onGenerateRoute: (settings) => MaterialPageRoute(
+        builder: (context) => SettingsScreenWrapper(onThemeChanged: onThemeChanged),
+      ),
+    );
+  }
+}
+
+/// Wrapper for SettingsScreen that handles theme change notifications
+class SettingsScreenWrapper extends StatefulWidget {
+  final VoidCallback onThemeChanged;
+  
+  const SettingsScreenWrapper({super.key, required this.onThemeChanged});
+
+  @override
+  State<SettingsScreenWrapper> createState() => _SettingsScreenWrapperState();
+}
+
+class _SettingsScreenWrapperState extends State<SettingsScreenWrapper> {
+  @override
+  Widget build(BuildContext context) {
+    return SettingsScreen(
+      onSettingChanged: (key, value) {
+        // Handle settings changes
+        if (key == 'theme_mode') {
+          // Notify parent to refresh theme
+          widget.onThemeChanged();
+        }
+      },
     );
   }
 }

@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-import os
-
-# Force set environment variables at the very start
-os.environ["DISPLAY"] = ":0"
-os.environ["XAUTHORITY"] = "/run/user/1000/xauth_PaSUjl"
 """
 Launcher script for OpenSSL Encrypt Flatpak package.
 Handles both CLI and GUI modes based on command line arguments.
@@ -12,6 +7,10 @@ Handles both CLI and GUI modes based on command line arguments.
 import os
 import sys
 
+# Force set environment variables at the very start
+os.environ["DISPLAY"] = ":0"
+os.environ["XAUTHORITY"] = "/run/user/1000/xauth_PaSUjl"
+
 # Add the application directory to Python path
 app_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, app_dir)
@@ -19,15 +18,47 @@ sys.path.insert(0, app_dir)
 
 def main():
     """Main launcher function."""
-    # Check if GUI mode is requested
-    if len(sys.argv) > 1 and "--gui" in sys.argv:
-        # Remove --gui from arguments to avoid conflicts
-        sys.argv = [arg for arg in sys.argv if arg != "--gui"]
-
-        # Launch GUI
+    # Check for specific GUI mode requests
+    gui_mode = None
+    force_tkinter = False
+    
+    if len(sys.argv) > 1:
+        if "--gui-tk" in sys.argv:
+            gui_mode = "tkinter"
+            force_tkinter = True
+            # Remove --gui-tk from arguments to avoid conflicts
+            sys.argv = [arg for arg in sys.argv if arg != "--gui-tk"]
+        elif "--gui" in sys.argv:
+            gui_mode = "auto"
+            # Remove --gui from arguments to avoid conflicts
+            sys.argv = [arg for arg in sys.argv if arg != "--gui"]
+    
+    if gui_mode:
+        # Determine which GUI to use
+        flutter_gui_path = "/app/bin/openssl-encrypt-gui/openssl_encrypt_mobile"
+        use_flutter_gui = not force_tkinter and os.path.exists(flutter_gui_path)
+        
+        if use_flutter_gui:
+            # Launch Flutter GUI
+            print("🚀 Launching Flutter desktop GUI...")
+            try:
+                import subprocess
+                # Run the Flutter executable directly
+                result = subprocess.run([flutter_gui_path], 
+                                      env=os.environ.copy())
+                sys.exit(result.returncode)
+            except Exception as e:
+                print(f"❌ Flutter GUI launch failed: {e}", file=sys.stderr)
+                print("🔄 Falling back to tkinter GUI...", file=sys.stderr)
+                # Fall through to tkinter GUI
+        
+        # Launch tkinter GUI (explicit request, fallback, or when Flutter not available)
+        if force_tkinter:
+            print("🎯 Launching tkinter GUI (explicitly requested)...")
+        elif not use_flutter_gui and gui_mode == "auto":
+            print("🔄 Launching tkinter GUI (Flutter not available)...")
         try:
             # Check display environment
-            import os
 
             print(f"DISPLAY environment: {os.environ.get('DISPLAY', 'NOT SET')}")
             print(f"WAYLAND_DISPLAY environment: {os.environ.get('WAYLAND_DISPLAY', 'NOT SET')}")
@@ -85,19 +116,40 @@ def main():
             # Font configuration will be handled by the GUI itself
             gui_main()
         except ImportError as e:
-            print(f"Error: GUI components not available - {e}", file=sys.stderr)
+            print(f"❌ Error: GUI components not available - {e}", file=sys.stderr)
             print("Python path:", sys.path, file=sys.stderr)
 
             # Try to give more specific error information
             try:
                 import tkinter
-
-                print(
-                    "✓ tkinter is available, issue is with openssl_encrypt module", file=sys.stderr
-                )
+                print("✓ tkinter is available, issue is with openssl_encrypt module", file=sys.stderr)
             except ImportError:
                 print("✗ tkinter is not available", file=sys.stderr)
 
+            # If --gui-tk was explicitly requested and failed, try Flutter fallback
+            if force_tkinter and os.path.exists(flutter_gui_path):
+                print("🔄 tkinter GUI failed, attempting Flutter GUI fallback...", file=sys.stderr)
+                try:
+                    import subprocess
+                    result = subprocess.run([flutter_gui_path], env=os.environ.copy())
+                    sys.exit(result.returncode)
+                except Exception as flutter_error:
+                    print(f"❌ Flutter GUI fallback also failed: {flutter_error}", file=sys.stderr)
+            
+            sys.exit(1)
+        except Exception as e:
+            print(f"❌ Error launching tkinter GUI: {e}", file=sys.stderr)
+            
+            # If --gui-tk was explicitly requested and failed, try Flutter fallback
+            if force_tkinter and os.path.exists(flutter_gui_path):
+                print("🔄 tkinter GUI failed, attempting Flutter GUI fallback...", file=sys.stderr)
+                try:
+                    import subprocess
+                    result = subprocess.run([flutter_gui_path], env=os.environ.copy())
+                    sys.exit(result.returncode)
+                except Exception as flutter_error:
+                    print(f"❌ Flutter GUI fallback also failed: {flutter_error}", file=sys.stderr)
+            
             sys.exit(1)
     else:
         # Launch CLI
