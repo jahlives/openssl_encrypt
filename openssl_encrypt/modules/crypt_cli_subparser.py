@@ -242,20 +242,7 @@ def setup_encrypt_parser(subparser):
         default=0,
         help="Number of SHAKE-128 iterations (default: 1,000,000 if flag provided without value)",
     )
-    hash_group.add_argument(
-        "--whirlpool-rounds",
-        type=int,
-        default=0,
-        help="Number of Whirlpool iterations (default: 0, not used)",
-    )
 
-    # PBKDF2 option - renamed for consistency
-    hash_group.add_argument(
-        "--pbkdf2-iterations",
-        type=int,
-        default=0,
-        help="Number of PBKDF2 iterations (default: 100000)",
-    )
 
     # Scrypt options for encryption
     scrypt_group = subparser.add_argument_group("Scrypt options")

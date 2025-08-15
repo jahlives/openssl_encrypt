@@ -985,6 +985,7 @@ def main():
         "Keystore Options", "Configure keystore integration for key management"
     )
     keystore_group.add_argument("--keystore", help="Path to the keystore file")
+    keystore_group.add_argument("--keystore-path", dest="keystore", help="Path to the keystore file (alias for --keystore)")
     keystore_group.add_argument(
         "--keystore-password",
         help="Password for the keystore (will prompt if not provided)",
@@ -1994,7 +1995,7 @@ def main():
             "blake3": args.blake3_rounds,
             "shake256": args.shake256_rounds,
             "shake128": args.shake128_rounds,
-            "whirlpool": args.whirlpool_rounds,
+            "whirlpool": getattr(args, 'whirlpool_rounds', 0),
             "scrypt": {
                 "enabled": args.enable_scrypt,
                 "n": args.scrypt_n,
@@ -2025,7 +2026,7 @@ def main():
                 "algorithm": args.hkdf_algorithm,
                 "info": args.hkdf_info,
             },
-            "pbkdf2_iterations": args.pbkdf2_iterations,
+            "pbkdf2_iterations": getattr(args, 'pbkdf2_iterations', 0),
         }
 
     # Debug the hash configuration if debug mode is enabled
@@ -2035,6 +2036,34 @@ def main():
     exit_code = 0
     try:
         if args.action == "encrypt":
+            # DEPRECATED: Whirlpool is no longer supported for new encryptions
+            if hasattr(args, 'whirlpool_rounds') and getattr(args, 'whirlpool_rounds', 0) > 0:
+                print("ERROR: Whirlpool is deprecated for new encryptions.")
+                print("Please use BLAKE2b, BLAKE3, or SHA-3 instead.")
+                print("Existing files encrypted with Whirlpool can still be decrypted.")
+                sys.exit(1)
+
+            # DEPRECATED: PBKDF2 is no longer supported for new encryptions
+            if hasattr(args, 'pbkdf2_iterations') and getattr(args, 'pbkdf2_iterations', 0) > 0:
+                print("ERROR: PBKDF2 is deprecated for new encryptions.")
+                print("Please use Argon2, Scrypt, or Balloon hashing instead.")
+                print("Existing files encrypted with PBKDF2 can still be decrypted.")
+                sys.exit(1)
+
+            # DEPRECATED: Kyber algorithms are no longer supported for new encryptions
+            kyber_algorithms = ["kyber512-hybrid", "kyber768-hybrid", "kyber1024-hybrid"]
+            if hasattr(args, 'algorithm') and args.algorithm in kyber_algorithms:
+                ml_kem_mapping = {
+                    "kyber512-hybrid": "ml-kem-512-hybrid",
+                    "kyber768-hybrid": "ml-kem-768-hybrid", 
+                    "kyber1024-hybrid": "ml-kem-1024-hybrid"
+                }
+                recommended = ml_kem_mapping[args.algorithm]
+                print(f"ERROR: {args.algorithm} is deprecated for new encryptions.")
+                print(f"Please use {recommended} instead (NIST standardized equivalent).")
+                print(f"Existing files encrypted with {args.algorithm} can still be decrypted.")
+                sys.exit(1)
+
             # Check if main algorithm is deprecated and issue warning
             if is_deprecated(args.algorithm):
                 replacement = get_recommended_replacement(args.algorithm)
@@ -2432,7 +2461,7 @@ def main():
                             temp_output,
                             password,
                             hash_config=hash_config,
-                            pbkdf2_iterations=args.pbkdf2_iterations,
+                            pbkdf2_iterations=getattr(args, 'pbkdf2_iterations', 0),
                             quiet=args.quiet,
                             algorithm=args.algorithm,
                             pqc_keypair=(pqc_keypair if "pqc_keypair" in locals() else None),
