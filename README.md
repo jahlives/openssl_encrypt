@@ -30,22 +30,33 @@ Whirlpool implementation.
         - Kyber-512, Kyber-768, Kyber-1024
     - HQC (Hamming Quasi-Cyclic) - NIST 2025 additional KEM
         - HQC-128, HQC-192, HQC-256
+    - MAYO - Multivariate quadratic signature scheme
+        - MAYO-1 (Security Level 1)
+        - MAYO-2 (Security Level 1)
+        - MAYO-3 (Security Level 3)
+        - MAYO-5 (Security Level 5)
+    - CROSS - Code-based signature scheme
+        - CROSS-R-SDPG-1 (Security Level 1)
+        - CROSS-R-SDPG-3 (Security Level 3)
+        - CROSS-R-SDPG-5 (Security Level 5)
   - Hybrid Encryption Architecture: Combines post-quantum KEMs with classical symmetric encryption for quantum-resistant protection
 
 ###  Multi-Layer Password Protection
 
   - Cryptographic Hash Functions:
-    - SHA-256, SHA-512 (FIPS 180-4)
-    - SHA3-256, SHA3-512 (FIPS 202)
-    - BLAKE2b - High-performance cryptographic hash
-    - SHAKE-256 - Extendable-output function
-    - Whirlpool - 512-bit cryptographic hash
+    - SHA-2 Family (FIPS 180-4): SHA-512, SHA-384, SHA-256, SHA-224
+    - SHA-3 Family (FIPS 202): SHA3-512, SHA3-384, SHA3-256, SHA3-224
+    - BLAKE Family: BLAKE2b (high-performance), BLAKE3 (ultra-fast tree-based)
+    - SHAKE Functions: SHAKE-256, SHAKE-128 (extendable-output functions)
+    - Legacy: Whirlpool (512-bit cryptographic hash)
   - Key Derivation Functions (KDFs):
-    - PBKDF2 - Password-Based Key Derivation Function 2
-    - Scrypt - Memory-hard function for GPU resistance
-    - Argon2 - Winner of Password Hashing Competition
-        - Argon2i, Argon2d, Argon2id variants
-    - Balloon Hashing - Memory-hard function with proven security
+    - Modern KDFs:
+        - HKDF - HMAC-based Key Derivation Function (RFC 5869)
+        - Scrypt - Memory-hard function for GPU resistance
+        - Argon2 - Winner of Password Hashing Competition (Argon2i, Argon2d, Argon2id variants)
+        - Balloon Hashing - Memory-hard function with proven security
+    - Legacy KDF:
+        - PBKDF2 - Password-Based Key Derivation Function 2
 
 ###  Enterprise Security Features
 
@@ -149,6 +160,7 @@ Whirlpool implementation.
   - argon2-cffi>=23.1.0 - Argon2 password hashing
   - PyYAML>=6.0.2 - Configuration file support
   - whirlpool-py311>=1.0.0 - Whirlpool hash algorithm
+  - blake3>=1.0.0 - BLAKE3 high-performance hash algorithm
 
 ### Optional Dependencies
 
@@ -162,8 +174,14 @@ Whirlpool implementation.
   # Basic encryption
   python -m openssl_encrypt.crypt encrypt -i file.txt -o file.txt.enc
 
-  # Post-quantum encryption
-  python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm ml-kem-768-hybrid
+  # Post-quantum encryption with MAYO signatures
+  python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm mayo-3-hybrid
+
+  # Modern hash algorithms
+  python -m openssl_encrypt.crypt encrypt -i file.txt --blake3-rounds 150000 --enable-hkdf
+
+  # SHA-3 family encryption
+  python -m openssl_encrypt.crypt encrypt -i file.txt --sha3-384-rounds 50000
 
   # Using security templates
   python -m openssl_encrypt.crypt encrypt -i file.txt --paranoid
@@ -179,10 +197,10 @@ Whirlpool implementation.
   python -m openssl_encrypt.cli --gui
 ```
   The GUI provides intuitive tabs for:
-  - Encrypt: File encryption with algorithm selection
+  - Encrypt: File encryption with algorithm selection (including MAYO/CROSS post-quantum)
   - Decrypt: Secure file decryption
   - Shred: Military-grade secure deletion
-  - Advanced: Detailed security configuration
+  - Settings: Organized hash families (SHA-2, SHA-3, BLAKE, SHAKE) and modern KDF configuration
 
 ## Documentation Structure
 

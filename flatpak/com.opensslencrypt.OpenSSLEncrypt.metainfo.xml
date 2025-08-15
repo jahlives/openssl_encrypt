@@ -38,9 +38,9 @@
     </screenshot>
   </screenshots>
   <releases>
-    <release version="1.0.0" date="2025-06-25" type="stable">
+    <release version="1.0.1" date="2025-06-26" type="stable">
       <description>
-        <p>Version 1.0.0 build</p>
+        <p>Version 1.0.1 build</p>
       </description>
     </release>
   </releases>
