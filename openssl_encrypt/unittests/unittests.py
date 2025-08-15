@@ -1796,6 +1796,110 @@ class TestCLIInterface(unittest.TestCase):
         except Exception as e:
             self.fail(f"Stdin decryption with warnings test failed with exception: {e}")
 
+    @mock.patch("getpass.getpass")
+    def test_debug_flag_output(self, mock_getpass):
+        """Test that the --debug flag produces debug output."""
+        # Set up mock password input
+        mock_getpass.return_value = "TestPassword123!"
+        
+        # Output files
+        encrypted_file = os.path.join(self.test_dir, "debug_test_encrypted.bin")
+        decrypted_file = os.path.join(self.test_dir, "debug_test_decrypted.txt")
+
+        try:
+            # Clear any existing log records
+            self.log_capture.records.clear()
+            
+            # Test encryption with debug flag
+            sys.argv = [
+                "crypt_cli.py",
+                "encrypt",
+                "--input", self.test_file,
+                "--output", encrypted_file,
+                "--debug",  # Enable debug output
+                "--algorithm", "fernet",
+                "--force-password"  # Skip password validation
+            ]
+
+            # Import and run main function
+            from openssl_encrypt.modules import crypt_cli
+            
+            # Capture any exceptions and allow the test to complete
+            try:
+                crypt_cli.main()
+            except SystemExit:
+                # main() may call sys.exit(), which is normal
+                pass
+
+            # Check that debug output was produced
+            debug_records = [record for record in self.log_capture.records if record.levelno == logging.DEBUG]
+            
+            # Verify we got some debug output
+            self.assertGreater(
+                len(debug_records), 0, 
+                "No debug output produced when --debug flag was used during encryption"
+            )
+            
+            # Look for specific debug messages that should be present
+            debug_messages = [record.getMessage() for record in debug_records]
+            debug_text = " ".join(debug_messages)
+            
+            # Check for key debug message patterns
+            debug_patterns = [
+                "KEY-DEBUG:", "ENCRYPT:", "HASH-DEBUG:", "Hash configuration after setup"
+            ]
+            
+            found_patterns = [pattern for pattern in debug_patterns if pattern in debug_text]
+            self.assertGreater(
+                len(found_patterns), 0,
+                f"Expected debug patterns not found in output. Found: {debug_text}"
+            )
+
+            # Clear log records for decryption test
+            self.log_capture.records.clear()
+
+            # Test decryption with debug flag
+            sys.argv = [
+                "crypt_cli.py", 
+                "decrypt",
+                "--input", encrypted_file,
+                "--output", decrypted_file,
+                "--debug",  # Enable debug output
+                "--force-password"  # Skip password validation
+            ]
+
+            # Run decryption
+            try:
+                crypt_cli.main()
+            except SystemExit:
+                # main() may call sys.exit(), which is normal
+                pass
+
+            # Check that debug output was produced during decryption
+            debug_records = [record for record in self.log_capture.records if record.levelno == logging.DEBUG]
+            
+            # Verify we got debug output during decryption too
+            self.assertGreater(
+                len(debug_records), 0,
+                "No debug output produced when --debug flag was used during decryption"
+            )
+
+            # Check for decryption-specific debug patterns
+            debug_messages = [record.getMessage() for record in debug_records]
+            debug_text = " ".join(debug_messages)
+            
+            decrypt_patterns = ["DECRYPT:", "HASH-DEBUG:"]
+            found_decrypt_patterns = [pattern for pattern in decrypt_patterns if pattern in debug_text]
+            self.assertGreater(
+                len(found_decrypt_patterns), 0,
+                f"Expected decryption debug patterns not found. Found: {debug_text}"
+            )
+
+        except FileNotFoundError:
+            self.skipTest("Python module not accessible for debug test")
+        except Exception as e:
+            self.fail(f"Debug flag test failed with exception: {e}")
+
 
 class TestFileOperations(unittest.TestCase):
     """Test file operations and edge cases."""

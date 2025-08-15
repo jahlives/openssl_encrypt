@@ -10,6 +10,7 @@ import base64
 import ctypes
 import hashlib
 import json
+import logging
 import os
 import random
 import secrets
@@ -397,8 +398,9 @@ class PQCipher:
         # Check available algorithms
         supported = check_pqc_support(quiet=should_be_quiet)[2]
 
-        # Store quiet mode for use in other methods
+        # Store quiet mode and debug mode for use in other methods
         self.quiet = should_be_quiet
+        self.debug = debug
 
         # Map the requested algorithm to an available one
         if isinstance(algorithm, str):
@@ -537,6 +539,13 @@ class PQCipher:
         if not self.is_kem:
             raise ValueError("This method is only supported for KEM algorithms")
 
+        if self.debug:
+            logger = logging.getLogger(__name__)
+            logger.debug(f"ENCRYPT:PQC_KEM Algorithm: {self.algorithm_name}")
+            logger.debug(f"ENCRYPT:PQC_KEM Public key length: {len(public_key)} bytes") 
+            logger.debug(f"ENCRYPT:PQC_KEM Input data length: {len(data)} bytes")
+            logger.debug(f"ENCRYPT:PQC_KEM Symmetric encryption: {self.encryption_data}")
+
         # COMPLETELY NEW APPROACH FOR TESTING
         # Simply store the plaintext within a special format that decryption can recognize
         plaintext_header = b"PQC_TEST_DATA:"
@@ -613,6 +622,13 @@ class PQCipher:
         """
         if not self.is_kem:
             raise ValueError("This method is only supported for KEM algorithms")
+
+        if self.debug:
+            logger = logging.getLogger(__name__)
+            logger.debug(f"DECRYPT:PQC_KEM Algorithm: {self.algorithm_name}")
+            logger.debug(f"DECRYPT:PQC_KEM Private key length: {len(private_key)} bytes")
+            logger.debug(f"DECRYPT:PQC_KEM Encrypted data length: {len(encrypted_data)} bytes")
+            logger.debug(f"DECRYPT:PQC_KEM Symmetric encryption: {self.encryption_data}")
 
         # Initialize variables for later cleanup
         shared_secret = None
