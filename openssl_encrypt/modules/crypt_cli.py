@@ -261,28 +261,28 @@ def clear_password_environment():
 
 def debug_hash_config(args, hash_config, message="Hash configuration"):
     """Debug output for hash configuration"""
-    print(f"\n{message}:")
-    print(
+    logger.debug(f"\n{message}:")
+    logger.debug(
         f"SHA3-512: args={args.sha3_512_rounds}, hash_config={hash_config.get('sha3_512', 'Not set')}"
     )
-    print(
+    logger.debug(
         f"SHA3-256: args={args.sha3_256_rounds}, hash_config={hash_config.get('sha3_256', 'Not set')}"
     )
-    print(f"SHA-512: args={args.sha512_rounds}, hash_config={hash_config.get('sha512', 'Not set')}")
-    print(f"SHA-256: args={args.sha256_rounds}, hash_config={hash_config.get('sha256', 'Not set')}")
-    print(
+    logger.debug(f"SHA-512: args={args.sha512_rounds}, hash_config={hash_config.get('sha512', 'Not set')}")
+    logger.debug(f"SHA-256: args={args.sha256_rounds}, hash_config={hash_config.get('sha256', 'Not set')}")
+    logger.debug(
         f"BLAKE2b: args={args.blake2b_rounds}, hash_config={hash_config.get('blake2b', 'Not set')}"
     )
-    print(
+    logger.debug(
         f"SHAKE-256: args={args.shake256_rounds}, hash_config={hash_config.get('shake256', 'Not set')}"
     )
-    print(
+    logger.debug(
         f"PBKDF2: args={args.pbkdf2_iterations}, hash_config={hash_config.get('pbkdf2_iterations', 'Not set')}"
     )
-    print(
+    logger.debug(
         f"Scrypt: args.n={args.scrypt_n}, hash_config.n={hash_config.get('scrypt', {}).get('n', 'Not set')}"
     )
-    print(
+    logger.debug(
         f"Argon2: args.enable_argon2={args.enable_argon2}, hash_config.enabled={hash_config.get('argon2', {}).get('enabled', 'Not set')}"
     )
 
@@ -1208,6 +1208,14 @@ def main():
 
     args = parser.parse_args()
 
+    # Configure logging level based on debug flag
+    if args.debug:
+        import logging
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format='%(levelname)s - %(name)s - %(message)s'
+        )
+
     # Enhance the args with better defaults for extended algorithms
     args = enhance_cli_args(args)
 
@@ -2020,8 +2028,9 @@ def main():
             "pbkdf2_iterations": args.pbkdf2_iterations,
         }
 
-    # Uncomment this line to debug the hash configuration
-    # debug_hash_config(args, hash_config, "Hash configuration after setup")
+    # Debug the hash configuration if debug mode is enabled
+    if args.debug:
+        debug_hash_config(args, hash_config, "Hash configuration after setup")
 
     exit_code = 0
     try:
@@ -2481,6 +2490,7 @@ def main():
                 # Default output file name if not specified
                 output_file = args.input + ".encrypted"
             else:
+                print(f"FLOW-DEBUG: Using normal output path: {args.output}")
                 output_file = args.output
 
             # Handle PQC key operations (for non-overwriting case)
@@ -3105,7 +3115,6 @@ def main():
                     # If we can't read metadata, continue with decryption (it will fail with proper error)
                     if args.verbose:
                         print(f"Warning: Could not check file for deprecated algorithms: {e}")
-
             if args.overwrite:
                 output_file = args.input
                 # Create a temporary file for the decryption
@@ -3524,6 +3533,7 @@ def main():
                         args.quiet,
                         progress=args.progress,
                         verbose=args.verbose,
+                        debug=args.debug,
                         pqc_private_key=pqc_private_key,
                     )
                 try:
