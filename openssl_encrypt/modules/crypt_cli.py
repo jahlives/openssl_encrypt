@@ -985,6 +985,7 @@ def main():
         "Keystore Options", "Configure keystore integration for key management"
     )
     keystore_group.add_argument("--keystore", help="Path to the keystore file")
+    keystore_group.add_argument("--keystore-path", dest="keystore", help="Path to the keystore file (alias for --keystore)")
     keystore_group.add_argument(
         "--keystore-password",
         help="Password for the keystore (will prompt if not provided)",
