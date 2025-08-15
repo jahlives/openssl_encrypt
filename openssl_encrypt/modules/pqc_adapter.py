@@ -55,6 +55,13 @@ ALGORITHM_TYPE_MAP = {
     "SLH-DSA-SHA2-256F": "sig",
     "FN-DSA-512": "sig",
     "FN-DSA-1024": "sig",
+    # NIST Round 2 Additional Signature Algorithms
+    "MAYO-1": "sig",
+    "MAYO-3": "sig",
+    "MAYO-5": "sig",
+    "CROSS-128": "sig",
+    "CROSS-192": "sig",
+    "CROSS-256": "sig",
 }
 
 # Hybrid algorithm mapping (standard name to PQ algorithm)
@@ -70,6 +77,14 @@ HYBRID_ALGORITHM_MAP = {
     "hqc-128-hybrid": "HQC-128",
     "hqc-192-hybrid": "HQC-192",
     "hqc-256-hybrid": "HQC-256",
+    # MAYO hybrid algorithms
+    "mayo-1-hybrid": "MAYO-1",
+    "mayo-3-hybrid": "MAYO-3",
+    "mayo-5-hybrid": "MAYO-5",
+    # CROSS hybrid algorithms
+    "cross-128-hybrid": "CROSS-128",
+    "cross-192-hybrid": "CROSS-192",
+    "cross-256-hybrid": "CROSS-256",
     # ML-KEM with ChaCha20 (just for naming, actual cipher determined by user's choice)
     "ml-kem-512-chacha20": "ML-KEM-512",
     "ml-kem-768-chacha20": "ML-KEM-768",
@@ -89,6 +104,13 @@ NEW_PQ_ALGORITHMS = [
     "SLH-DSA-SHA2-256F",
     "FN-DSA-512",
     "FN-DSA-1024",
+    # NIST Round 2 Additional Signature Algorithms
+    "MAYO-1",
+    "MAYO-3",
+    "MAYO-5",
+    "CROSS-128",
+    "CROSS-192",
+    "CROSS-256",
 ]
 
 # Security level mapping (algorithm to security level)
@@ -113,6 +135,13 @@ SECURITY_LEVEL_MAP = {
     "ML-DSA-87": 5,
     "SLH-DSA-SHA2-256F": 5,
     "FN-DSA-1024": 5,
+    # NIST Round 2 Additional Signature Algorithms Security Levels
+    "MAYO-1": 1,  # Level 1 (128-bit security)
+    "MAYO-3": 3,  # Level 3 (192-bit security)
+    "MAYO-5": 5,  # Level 5 (256-bit security)
+    "CROSS-128": 1,  # Level 1 (128-bit security)
+    "CROSS-192": 3,  # Level 3 (192-bit security)
+    "CROSS-256": 5,  # Level 5 (256-bit security)
 }
 
 
