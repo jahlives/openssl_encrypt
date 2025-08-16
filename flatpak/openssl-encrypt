@@ -151,62 +151,81 @@ def main():
                 # Disable problematic X11 features that cause auth issues
                 os.environ["NO_AT_BRIDGE"] = "1"
                 
-            # For Flatpak+Wayland, create minimal display socket if no X11 display is available
-            if wayland_display and not os.path.exists(f"/tmp/.X11-unix/X0"):
-                print("🔧 No X11 display detected, creating minimal display socket...")
+            # For Flatpak+Wayland, try different approaches to get X11 working
+            if wayland_display:
+                print("🔧 Wayland detected - attempting XWayland compatibility fixes...")
+                
+                # Try approach 1: Force start XWayland via weston-terminal trick
                 try:
-                    import socket
-                    import tempfile
+                    import subprocess
+                    import time
                     import atexit
                     
-                    # Create the X11 socket directory
-                    socket_dir = "/tmp/.X11-unix"
-                    os.makedirs(socket_dir, exist_ok=True)
+                    print("🔄 Attempting to trigger XWayland startup...")
                     
-                    # Create a minimal socket for display :99
-                    display_num = "99" 
-                    socket_path = f"{socket_dir}/X{display_num}"
+                    # Try to start a minimal X11 client to force XWayland startup
+                    # Use xwininfo which should trigger XWayland if available
+                    trigger_process = subprocess.Popen(
+                        ['sh', '-c', 'DISPLAY=:0 timeout 2 xwininfo -root >/dev/null 2>&1 || true'],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
                     
-                    # Create a Unix socket that tkinter can connect to 
-                    display_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    # Wait a moment for XWayland to potentially start
+                    time.sleep(1)
+                    trigger_process.wait()
                     
-                    # Remove existing socket if it exists
-                    try:
-                        os.unlink(socket_path)
-                    except FileNotFoundError:
-                        pass
+                    # Check if XWayland socket appeared
+                    if os.path.exists("/tmp/.X11-unix/X0"):
+                        print("✅ XWayland socket detected after trigger")
+                        os.environ["DISPLAY"] = ":0"
+                        # Clear problematic auth for XWayland
+                        if "XAUTHORITY" in os.environ:
+                            del os.environ["XAUTHORITY"]
+                    else:
+                        print("⚠️ XWayland trigger didn't create socket")
+                        # Fall back to the original approach
+                        os.environ["DISPLAY"] = ":0"
+                        if "XAUTHORITY" in os.environ:
+                            del os.environ["XAUTHORITY"]
                         
-                    display_socket.bind(socket_path)
-                    display_socket.listen(1)
-                    os.chmod(socket_path, 0o777)
-                    
-                    os.environ["DISPLAY"] = f":{display_num}"
-                    print(f"✅ Minimal display socket created at {socket_path}")
-                    
-                    # Clean up socket when the program exits
-                    def cleanup_socket():
-                        try:
-                            display_socket.close()
-                            os.unlink(socket_path)
-                        except:
-                            pass
-                    atexit.register(cleanup_socket)
-                    
                 except Exception as e:
-                    print(f"⚠️ Could not create display socket: {e}")
-                    print("⚠️ Proceeding with existing DISPLAY setting...")
+                    print(f"⚠️ XWayland trigger failed: {e}")
+                    # Keep original settings
+                    pass
             else:
                 print("🔍 Using existing display configuration...")
                 
             print(f"🖥️ Final display configuration: DISPLAY={os.environ.get('DISPLAY')}")
+            print(f"🔑 Auth configuration: XAUTHORITY={os.environ.get('XAUTHORITY', 'CLEARED')}")
 
             # Then try to import the GUI module
             from openssl_encrypt.crypt_gui import main as gui_main
 
             print("✓ GUI module imported successfully")
 
-            # Font configuration will be handled by the GUI itself
-            gui_main()
+            # Add timeout protection for tkinter startup
+            print("🚀 Starting tkinter GUI...")
+            import signal
+            import sys
+            
+            def timeout_handler(signum, frame):
+                print("⏰ tkinter GUI startup timeout - forcing exit", file=sys.stderr)
+                raise TimeoutError("GUI startup timeout")
+            
+            # Set 10 second timeout for GUI startup
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(10)
+            
+            try:
+                # Font configuration will be handled by the GUI itself
+                gui_main()
+            except TimeoutError:
+                print("❌ tkinter GUI failed to start within timeout", file=sys.stderr)
+                raise Exception("GUI startup timeout - display connection failed")
+            finally:
+                # Disable timeout
+                signal.alarm(0)
         except ImportError as e:
             print(f"❌ Error: GUI components not available - {e}", file=sys.stderr)
             print("Python path:", sys.path, file=sys.stderr)
