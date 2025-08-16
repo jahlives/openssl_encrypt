@@ -138,8 +138,7 @@ echo ""
 echo "🎯 To test the application:"
 echo "   CLI: flatpak run com.opensslencrypt.OpenSSLEncrypt --help"
 if [[ "$BUILD_FLUTTER" == "true" ]]; then
-    echo "   GUI (Flutter): flatpak run com.opensslencrypt.OpenSSLEncrypt --gui"
-    echo "   GUI (Tkinter): flatpak run com.opensslencrypt.OpenSSLEncrypt --gui-tk"
+    echo "   GUI: flatpak run com.opensslencrypt.OpenSSLEncrypt --gui"
 else
     echo "   GUI: flatpak run com.opensslencrypt.OpenSSLEncrypt --gui"
     echo "   Note: Run with --build-flutter to include Flutter GUI"
