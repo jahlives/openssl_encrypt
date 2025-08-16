@@ -65,13 +65,14 @@
       ]
     },
     {
-      "name": "xvfb",
+      "name": "xvfb-check", 
       "buildsystem": "simple",
       "build-commands": [
-        "echo 'Installing Xvfb from freedesktop runtime...'",
-        "which Xvfb && echo 'Xvfb found in runtime' || echo 'Xvfb not available in runtime'",
-        "ls -la /usr/bin/X* || echo 'No X binaries found'",
-        "echo 'Note: Xvfb should be available from the freedesktop runtime'"
+        "echo 'Checking for Xvfb in runtime...'",
+        "find /usr -name 'Xvfb' -type f 2>/dev/null || echo 'Xvfb not found in /usr'", 
+        "which Xvfb && echo 'Xvfb found in PATH' || echo 'Xvfb not in PATH'",
+        "ls -la /usr/bin/X* 2>/dev/null || echo 'No X binaries in /usr/bin'",
+        "echo 'Xvfb check complete - will attempt runtime launch'"
       ],
       "sources": []
     },

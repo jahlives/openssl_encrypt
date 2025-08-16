@@ -149,8 +149,51 @@ def main():
                 # Disable problematic X11 features that cause auth issues
                 os.environ["NO_AT_BRIDGE"] = "1"
                 
-            # Skip display test in Flatpak - just try to launch the GUI directly
-            print("Skipping display test in Flatpak environment - launching GUI directly...")
+            # For Flatpak+Wayland, start Xvfb if no X11 display is available
+            if wayland_display and not os.path.exists(f"/tmp/.X11-unix/X0"):
+                print("🔧 No X11 display detected, starting virtual display (Xvfb)...")
+                try:
+                    import subprocess
+                    import time
+                    import os
+                    import signal
+                    import atexit
+                    
+                    # Try to start Xvfb on display :99
+                    xvfb_process = subprocess.Popen(
+                        ['Xvfb', ':99', '-screen', '0', '1024x768x24', '-nolisten', 'tcp'],
+                        stdout=subprocess.DEVNULL, 
+                        stderr=subprocess.PIPE
+                    )
+                    
+                    # Wait a moment for Xvfb to start
+                    time.sleep(2)
+                    
+                    # Check if Xvfb started successfully
+                    if xvfb_process.poll() is None:
+                        os.environ["DISPLAY"] = ":99"
+                        print("✅ Virtual display started successfully on :99")
+                        
+                        # Clean up Xvfb when the program exits
+                        def cleanup_xvfb():
+                            try:
+                                xvfb_process.terminate()
+                                xvfb_process.wait(timeout=5)
+                            except:
+                                xvfb_process.kill()
+                        atexit.register(cleanup_xvfb)
+                    else:
+                        stderr_output = xvfb_process.stderr.read().decode() if xvfb_process.stderr else ""
+                        print(f"⚠️ Xvfb failed to start: {stderr_output}")
+                        raise Exception("Xvfb startup failed")
+                        
+                except Exception as e:
+                    print(f"⚠️ Could not start virtual display: {e}")
+                    print("⚠️ Proceeding with existing DISPLAY setting...")
+            else:
+                print("🔍 Using existing display configuration...")
+                
+            print(f"🖥️ Final display configuration: DISPLAY={os.environ.get('DISPLAY')}")
 
             # Then try to import the GUI module
             from openssl_encrypt.crypt_gui import main as gui_main
