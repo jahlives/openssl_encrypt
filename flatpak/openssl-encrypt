@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 import os
 
-# Force set environment variables at the very start
+# Force set environment variables at the very start  
 os.environ["DISPLAY"] = ":0"
-os.environ["XAUTHORITY"] = "/run/user/1000/xauth_PaSUjl"
+# Don't hardcode XAUTHORITY - let it be detected from the host system
 """
 Launcher script for OpenSSL Encrypt Flatpak package.
 Handles both CLI and GUI modes based on command line arguments.
@@ -55,9 +55,8 @@ def main():
                 os.environ["DISPLAY"] = ":0"
                 print("Force setting DISPLAY to :0")
 
-            if not os.environ.get("XAUTHORITY"):
-                os.environ["XAUTHORITY"] = "/run/user/1000/xauth_PaSUjl"
-                print("Force setting XAUTHORITY")
+            # Don't force XAUTHORITY - use what the system provides
+            print(f"System XAUTHORITY: {os.environ.get('XAUTHORITY', 'NOT SET')}")
 
             print(f"Final DISPLAY: {os.environ.get('DISPLAY')}")
             print(f"Final XAUTHORITY: {os.environ.get('XAUTHORITY')}")
