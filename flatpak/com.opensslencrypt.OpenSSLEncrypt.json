@@ -7,7 +7,6 @@
   "finish-args": [
     "--share=ipc",
     "--socket=x11",
-    "--socket=fallback-x11",
     "--socket=wayland",
     "--device=dri",
     "--filesystem=host",
@@ -15,8 +14,7 @@
     "--talk-name=org.freedesktop.FileManager1",
     "--talk-name=org.gtk.vfs.*",
     "--talk-name=org.a11y.*",
-    "--env=PYTHONPATH=/app/lib/python3.12/site-packages",
-    "--env=GDK_BACKEND=wayland,x11"
+    "--env=PYTHONPATH=/app/lib/python3.12/site-packages"
   ],
   "modules": [
     {
@@ -62,16 +60,6 @@
           "sha256": "df999915204eb1eba311d89e83d1edd3a514d5a07374745d6a9e5b2dd0d59c08"
         }
       ]
-    },
-    {
-      "name": "xorg-server-xvfb",
-      "buildsystem": "simple",
-      "build-commands": [
-        "echo 'Checking Xvfb availability for virtual display support...'",
-        "which Xvfb && echo 'Xvfb found in runtime' || echo 'Xvfb not available - tkinter may need fallback-x11 socket'",
-        "echo 'X11 virtual framebuffer setup complete'"
-      ],
-      "sources": []
     },
     {
       "name": "python3-dependencies",
