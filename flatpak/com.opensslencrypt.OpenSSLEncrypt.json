@@ -15,7 +15,8 @@
     "--talk-name=org.gtk.vfs.*",
     "--talk-name=org.a11y.*",
     "--env=PYTHONPATH=/app/lib/python3.12/site-packages",
-    "--env=GDK_BACKEND=wayland,x11"
+    "--env=GDK_BACKEND=wayland,x11",
+    "--env=QT_QPA_PLATFORM=wayland;xcb"
   ],
   "modules": [
     {

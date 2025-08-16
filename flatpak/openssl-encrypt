@@ -86,27 +86,61 @@ def main():
             x11_display = os.environ.get("DISPLAY")
 
             if wayland_display:
-                # Wayland environment - remove X11 auth that's causing issues
+                # Wayland environment - properly configure for XWayland/tkinter compatibility
                 print(f"Detected Wayland environment: {wayland_display}")
                 os.environ["GDK_BACKEND"] = "wayland,x11"
-                # Remove XAUTHORITY to avoid auth issues in Flatpak
+                
+                # For Wayland+XWayland, we need to clear problematic X11 auth
+                # and let the system handle authentication automatically
                 if "XAUTHORITY" in os.environ:
                     del os.environ["XAUTHORITY"]
-                print("Using Wayland with X11 fallback (no X11 auth)")
+                
+                # Set DISPLAY if not already set (XWayland will handle this)
+                if not os.environ.get("DISPLAY"):
+                    os.environ["DISPLAY"] = ":0"
+                    
+                print("Using Wayland with XWayland fallback (automatic auth)")
             elif x11_display:
                 print(f"Using X11 display: {x11_display}")
                 os.environ["GDK_BACKEND"] = "x11"
+                # Keep existing X11 auth for pure X11 environments
             else:
-                # No display detected - try automatic detection
+                # No display detected - try Wayland first, then X11
                 print("WARNING: No display server detected")
-                print("Using automatic display detection...")
+                print("Attempting automatic display detection...")
                 os.environ["GDK_BACKEND"] = "wayland,x11"
+                
+                # Try to detect and set display automatically
+                if not os.environ.get("DISPLAY"):
+                    os.environ["DISPLAY"] = ":0"
 
             print(f"Final DISPLAY: {os.environ.get('DISPLAY')}")
             print(f"Final XAUTHORITY: {os.environ.get('XAUTHORITY')}")
+            print(f"Final GDK_BACKEND: {os.environ.get('GDK_BACKEND')}")
 
-            # Skip display test - let the GUI handle display connection directly
-            print("Skipping display test - letting GUI handle connection directly")
+            # For Flatpak + Wayland, add additional environment variables
+            if wayland_display:
+                # Force toolkit backends for better Wayland compatibility
+                os.environ["ELECTRON_OZONE_PLATFORM_HINT"] = "wayland"
+                os.environ["MOZ_ENABLE_WAYLAND"] = "1"
+                # Disable problematic X11 features that cause auth issues
+                os.environ["NO_AT_BRIDGE"] = "1"
+                
+            # Test display connection with better error handling
+            print("Testing display connection...")
+            try:
+                test_root = tkinter.Tk()
+                test_root.withdraw()
+                test_root.destroy()
+                print("✓ Display connection successful")
+            except Exception as e:
+                print(f"⚠️ Display connection test failed: {e}")
+                if wayland_display:
+                    print("⚠️ This is expected in some Wayland+Flatpak configurations")
+                    print("⚠️ Proceeding anyway - tkinter may still work...")
+                else:
+                    print("⚠️ X11 connection failed, this may cause issues")
+                # Don't fail here - let the actual GUI startup handle the connection
 
             # Then try to import the GUI module
             from openssl_encrypt.crypt_gui import main as gui_main
@@ -138,7 +172,22 @@ def main():
             
             sys.exit(1)
         except Exception as e:
-            print(f"❌ Error launching tkinter GUI: {e}", file=sys.stderr)
+            error_msg = str(e)
+            print(f"❌ Error launching tkinter GUI: {error_msg}", file=sys.stderr)
+            
+            # Provide specific help for common issues
+            if "couldn't connect to display" in error_msg or "Authorization required" in error_msg:
+                print("", file=sys.stderr)
+                print("🔍 Display connection troubleshooting:", file=sys.stderr)
+                if wayland_display:
+                    print("  • Wayland detected - tkinter requires XWayland compatibility", file=sys.stderr)
+                    print("  • Try: sudo apt install xwayland (on Debian/Ubuntu)", file=sys.stderr)
+                    print("  • Or install your distribution's XWayland package", file=sys.stderr)
+                else:
+                    print("  • X11 authorization failed - check display permissions", file=sys.stderr)
+                    print("  • Try: xhost +local: (to allow local connections)", file=sys.stderr)
+                print("  • Alternative: Use Flutter GUI with --gui command", file=sys.stderr)
+                print("", file=sys.stderr)
             
             # If --gui-tk was explicitly requested and failed, try Flutter fallback
             if force_tkinter and os.path.exists(flutter_gui_path):
