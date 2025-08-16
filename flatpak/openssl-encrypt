@@ -38,6 +38,9 @@ def main():
         flutter_gui_path = "/app/bin/openssl-encrypt-gui/openssl_encrypt_mobile"
         use_flutter_gui = not force_tkinter and os.path.exists(flutter_gui_path)
         
+        # Initialize variables at GUI scope level
+        wayland_display = os.environ.get("WAYLAND_DISPLAY")
+        
         if use_flutter_gui:
             # Launch Flutter GUI
             print("🚀 Launching Flutter desktop GUI...")
@@ -82,7 +85,6 @@ def main():
             print("✓ tkinter is available")
 
             # Handle Wayland vs X11 display setup
-            wayland_display = os.environ.get("WAYLAND_DISPLAY")
             x11_display = os.environ.get("DISPLAY")
 
             if wayland_display:
@@ -155,7 +157,6 @@ def main():
                 try:
                     import subprocess
                     import time
-                    import os
                     import signal
                     import atexit
                     
