@@ -65,12 +65,13 @@
       ]
     },
     {
-      "name": "x11-tools",
+      "name": "xvfb",
       "buildsystem": "simple",
       "build-commands": [
-        "echo 'Installing X11 virtual framebuffer...'",
-        "which Xvfb || echo 'Xvfb not available in runtime'",
-        "echo 'X11 tools check complete'"
+        "echo 'Installing Xvfb from freedesktop runtime...'",
+        "which Xvfb && echo 'Xvfb found in runtime' || echo 'Xvfb not available in runtime'",
+        "ls -la /usr/bin/X* || echo 'No X binaries found'",
+        "echo 'Note: Xvfb should be available from the freedesktop runtime'"
       ],
       "sources": []
     },

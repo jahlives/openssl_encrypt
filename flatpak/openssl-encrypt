@@ -149,72 +149,8 @@ def main():
                 # Disable problematic X11 features that cause auth issues
                 os.environ["NO_AT_BRIDGE"] = "1"
                 
-            # Test display connection with better error handling
-            print("Testing display connection...")
-            display_test_passed = False
-            try:
-                test_root = tkinter.Tk()
-                test_root.withdraw()
-                test_root.destroy()
-                print("✓ Display connection successful")
-                display_test_passed = True
-            except Exception as e:
-                print(f"⚠️ Display connection test failed: {e}")
-                
-                # Try alternative approaches for Wayland
-                error_str = str(e)
-                if wayland_display and ("Authorization required" in error_str or "couldn't connect to display" in error_str):
-                    print("⚠️ Trying alternative Wayland configuration...")
-                    
-                    # Try removing all X11 environment variables
-                    x11_vars_to_clear = ["DISPLAY", "XAUTHORITY", "XDISPLAY"]
-                    for var in x11_vars_to_clear:
-                        if var in os.environ:
-                            del os.environ[var]
-                    
-                    # Try with no DISPLAY set - let tkinter auto-detect
-                    print("⚠️ Attempting tkinter with no DISPLAY (auto-detection)...")
-                    try:
-                        test_root2 = tkinter.Tk()
-                        test_root2.withdraw() 
-                        test_root2.destroy()
-                        print("✓ Alternative display connection successful!")
-                        display_test_passed = True
-                    except Exception as e2:
-                        print(f"⚠️ Alternative approach also failed: {e2}")
-                        
-                        # Try one more approach - use Xvfb virtual framebuffer
-                        print("⚠️ Attempting to start virtual display (Xvfb)...")
-                        try:
-                            import subprocess
-                            import time
-                            
-                            # Try to start Xvfb on display :99
-                            xvfb_process = subprocess.Popen(['Xvfb', ':99', '-screen', '0', '1024x768x24'], 
-                                                          stdout=subprocess.DEVNULL, 
-                                                          stderr=subprocess.DEVNULL)
-                            time.sleep(1)  # Give Xvfb time to start
-                            
-                            os.environ["DISPLAY"] = ":99"
-                            
-                            # Test the virtual display
-                            test_root3 = tkinter.Tk()
-                            test_root3.withdraw()
-                            test_root3.destroy()
-                            print("✓ Virtual display connection successful!")
-                            display_test_passed = True
-                        except Exception as e3:
-                            print(f"⚠️ Virtual display also failed: {e3}")
-                            # Restore DISPLAY for the actual GUI attempt
-                            os.environ["DISPLAY"] = ":0"
-                
-                if not display_test_passed:
-                    if wayland_display:
-                        print("⚠️ This is expected in some Wayland+Flatpak configurations")
-                        print("⚠️ Proceeding anyway - tkinter may still work...")
-                    else:
-                        print("⚠️ X11 connection failed, this may cause issues")
-                # Don't fail here - let the actual GUI startup handle the connection
+            # Skip display test in Flatpak - just try to launch the GUI directly
+            print("Skipping display test in Flatpak environment - launching GUI directly...")
 
             # Then try to import the GUI module
             from openssl_encrypt.crypt_gui import main as gui_main
@@ -247,31 +183,31 @@ def main():
             sys.exit(1)
         except Exception as e:
             error_msg = str(e)
-            print(f"❌ Error launching tkinter GUI: {error_msg}", file=sys.stderr)
+            print(f"❌ tkinter GUI failed to start: {error_msg}", file=sys.stderr)
             
-            # Provide specific help for common issues
-            if "couldn't connect to display" in error_msg or "Authorization required" in error_msg:
+            # For Wayland environments, always try Flutter as fallback  
+            if wayland_display or "display" in error_msg.lower():
                 print("", file=sys.stderr)
-                print("🔍 Display connection troubleshooting:", file=sys.stderr)
-                if wayland_display:
-                    print("  • Wayland detected - tkinter requires XWayland compatibility", file=sys.stderr)
-                    print("  • Try: sudo apt install xwayland (on Debian/Ubuntu)", file=sys.stderr)
-                    print("  • Or install your distribution's XWayland package", file=sys.stderr)
-                else:
-                    print("  • X11 authorization failed - check display permissions", file=sys.stderr)
-                    print("  • Try: xhost +local: (to allow local connections)", file=sys.stderr)
-                print("  • Alternative: Use Flutter GUI with --gui command", file=sys.stderr)
-                print("", file=sys.stderr)
+                print("🔄 tkinter incompatible with this Wayland+Flatpak configuration", file=sys.stderr)
+                print("🔄 Attempting Flutter GUI (native Wayland support)...", file=sys.stderr)
             
-            # If --gui-tk was explicitly requested and failed, try Flutter fallback
-            if force_tkinter and os.path.exists(flutter_gui_path):
-                print("🔄 tkinter GUI failed, attempting Flutter GUI fallback...", file=sys.stderr)
+            # Try Flutter GUI fallback
+            if os.path.exists(flutter_gui_path):
                 try:
                     import subprocess
                     result = subprocess.run([flutter_gui_path], env=os.environ.copy())
                     sys.exit(result.returncode)
                 except Exception as flutter_error:
-                    print(f"❌ Flutter GUI fallback also failed: {flutter_error}", file=sys.stderr)
+                    print(f"❌ Flutter GUI also failed: {flutter_error}", file=sys.stderr)
+            else:
+                print("❌ No Flutter GUI available as fallback", file=sys.stderr)
+            
+            # If we reach here, both GUIs failed
+            print("", file=sys.stderr)
+            print("💡 GUI troubleshooting suggestions:", file=sys.stderr)
+            print("  • Use CLI mode instead: flatpak run com.opensslencrypt.OpenSSLEncrypt", file=sys.stderr)
+            print("  • Check if XWayland is installed on your system", file=sys.stderr)
+            print("  • Try running outside Flatpak for debugging", file=sys.stderr)
             
             sys.exit(1)
     else:
