@@ -27,8 +27,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Settings & Preferences'),
-        backgroundColor: Colors.blue.shade700,
-        foregroundColor: Colors.white,
+        backgroundColor: Colors.blue,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         elevation: 2,
         actions: [
           IconButton(
@@ -49,8 +49,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Container(
             padding: const EdgeInsets.all(16.0),
             decoration: BoxDecoration(
-              color: Colors.blue.shade50,
-              border: Border(bottom: BorderSide(color: Colors.blue.shade200)),
+              color: Theme.of(context).colorScheme.primaryContainer,
+              border: Border(bottom: BorderSide(color: Theme.of(context).colorScheme.outline)),
             ),
             child: TextField(
               controller: _searchController,
@@ -73,7 +73,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   borderSide: BorderSide.none,
                 ),
                 filled: true,
-                fillColor: Colors.white,
+                fillColor: Theme.of(context).colorScheme.surface,
               ),
               onChanged: (value) {
                 setState(() {
@@ -305,7 +305,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: Colors.grey.shade600),
+          Icon(icon, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -341,7 +341,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         children: [
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -356,7 +356,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   'Choose application theme',
                   style: TextStyle(
                     fontSize: 14,
-                    color: Colors.grey,
+                    color: Colors.grey.shade600,
                   ),
                 ),
               ],
@@ -389,7 +389,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         children: [
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -404,7 +404,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   'Default encryption algorithm for new operations',
                   style: TextStyle(
                     fontSize: 14,
-                    color: Colors.grey,
+                    color: Colors.grey.shade600,
                   ),
                 ),
               ],
@@ -438,7 +438,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         children: [
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -453,7 +453,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   'Default cryptographic parameter strength',
                   style: TextStyle(
                     fontSize: 14,
-                    color: Colors.grey,
+                    color: Colors.grey.shade600,
                   ),
                 ),
               ],
@@ -485,7 +485,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         children: [
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -500,7 +500,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   'Default format for encrypted output',
                   style: TextStyle(
                     fontSize: 14,
-                    color: Colors.grey,
+                    color: Colors.grey.shade600,
                   ),
                 ),
               ],
@@ -532,7 +532,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         children: [
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -547,7 +547,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   'Maximum number of recent files to remember',
                   style: TextStyle(
                     fontSize: 14,
-                    color: Colors.grey,
+                    color: Colors.grey.shade600,
                   ),
                 ),
               ],
@@ -601,8 +601,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               }
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
             ),
             child: const Text('Reset'),
           ),

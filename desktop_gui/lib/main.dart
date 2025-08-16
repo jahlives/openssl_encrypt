@@ -214,8 +214,8 @@ class _MainScreenState extends State<MainScreen> {
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.grey.shade100,
-            border: Border.all(color: Colors.grey.shade300),
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            border: Border.all(color: Theme.of(context).colorScheme.outline),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Column(
@@ -223,13 +223,13 @@ class _MainScreenState extends State<MainScreen> {
             children: [
               Row(
                 children: [
-                  Icon(Icons.info_outline, color: Colors.blue.shade600, size: 16),
+                  Icon(Icons.info_outline, color: Theme.of(context).colorScheme.primary, size: 16),
                   const SizedBox(width: 6),
                   Text(
                     'CLI Backend Information',
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
-                      color: Colors.blue.shade800,
+                      color: Colors.blue,
                       fontSize: 13,
                     ),
                   ),
@@ -238,10 +238,10 @@ class _MainScreenState extends State<MainScreen> {
               const SizedBox(height: 8),
               Text(
                 CLIService.getVersionInfo(),
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Courier',
                   fontSize: 11,
-                  color: Colors.black87,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
               if (CLIService.shouldHideLegacyAlgorithms()) ...[
@@ -249,20 +249,20 @@ class _MainScreenState extends State<MainScreen> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.orange.shade50,
-                    border: Border.all(color: Colors.orange.shade300),
+                    color: Theme.of(context).colorScheme.tertiaryContainer,
+                    border: Border.all(color: Theme.of(context).colorScheme.outline),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.info, color: Colors.orange.shade700, size: 14),
+                      Icon(Icons.info, color: Theme.of(context).colorScheme.onTertiaryContainer, size: 14),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
                           'Legacy algorithms (Whirlpool, PBKDF2) hidden due to CLI v1.2+ deprecation',
                           style: TextStyle(
                             fontSize: 10,
-                            color: Colors.orange.shade800,
+                            color: Theme.of(context).colorScheme.onTertiaryContainer,
                           ),
                         ),
                       ),
@@ -479,19 +479,19 @@ class _MainScreenState extends State<MainScreen> {
                 final bool isDragActive = candidateData.isNotEmpty;
                 return Container(
                   decoration: isDragActive ? BoxDecoration(
-                    border: Border.all(color: Colors.blue, width: 2),
+                    border: Border.all(color: Theme.of(context).colorScheme.primary, width: 2),
                     borderRadius: BorderRadius.circular(8),
-                    color: Colors.blue.withOpacity(0.1),
+                    color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
                   ) : null,
                   child: isDragActive ? 
-                    const Center(
+                    Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.file_upload, size: 64, color: Colors.blue),
+                          Icon(Icons.file_upload, size: 64, color: Theme.of(context).colorScheme.primary),
                           SizedBox(height: 16),
                           Text('Drop file here to encrypt/decrypt', 
-                               style: TextStyle(fontSize: 18, color: Colors.blue)),
+                               style: TextStyle(fontSize: 18, color: Theme.of(context).colorScheme.primary)),
                         ],
                       ),
                     ) : _getSelectedPage(),
@@ -811,8 +811,8 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  border: Border.all(color: Colors.grey.shade300),
+                  color: Theme.of(context).colorScheme.surfaceContainer,
+                  border: Border.all(color: Theme.of(context).colorScheme.outline),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: SelectableText(
@@ -824,9 +824,9 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                 ),
               ),
               const SizedBox(height: 12),
-              const Text(
+              Text(
                 'You can send this file to the developer for troubleshooting.',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
             ],
           ),
@@ -888,7 +888,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                 child: Container(
                   decoration: BoxDecoration(
                     color: Colors.grey.shade50,
-                    border: Border.all(color: Colors.grey.shade300),
+                    border: Border.all(color: Theme.of(context).colorScheme.outline),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: ListView.builder(
@@ -917,7 +917,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                     'Showing last ${CLIService.getDebugLogs().length} log entries (in-memory)',
                     style: TextStyle(
                       fontSize: 10,
-                      color: Colors.grey.shade600,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                   if (CLIService.getDebugLogFile() != null) ...[
@@ -926,7 +926,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                       'Full log file: ${CLIService.getDebugLogFile()}',
                       style: TextStyle(
                         fontSize: 9,
-                        color: Colors.grey.shade500,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                         fontFamily: 'monospace',
                       ),
                     ),
@@ -983,27 +983,27 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      border: Border.all(color: Colors.blue.shade300),
+                      border: Border.all(color: Theme.of(context).colorScheme.primary),
                       borderRadius: BorderRadius.circular(8),
-                      color: Colors.blue.shade50,
+                      color: Theme.of(context).colorScheme.primaryContainer,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
-                            Icon(Icons.check_circle, color: Colors.blue.shade700, size: 20),
+                            Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary, size: 20),
                             const SizedBox(width: 8),
                             Text(
                               'Selected: $_selectedAlgorithm',
-                              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade700),
+                              style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary),
                             ),
                           ],
                         ),
                         const SizedBox(height: 8),
                         Text(
                           _getAlgorithmDescription(_selectedAlgorithm),
-                          style: TextStyle(fontSize: 12, color: Colors.blue.shade600),
+                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary),
                         ),
                         const SizedBox(height: 8),
                         Row(
@@ -1013,8 +1013,8 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                               icon: const Icon(Icons.tune, size: 16),
                               label: const Text('Choose Algorithm'),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue.shade100,
-                                foregroundColor: Colors.blue.shade700,
+                                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                                foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -1023,7 +1023,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                               icon: const Icon(Icons.auto_awesome, size: 16),
                               label: const Text('Get Recommendations'),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green.shade100,
+                                backgroundColor: Colors.green.withOpacity(0.2),
                                 foregroundColor: Colors.green.shade700,
                               ),
                             ),
@@ -1091,9 +1091,9 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                             ),
                             if (_showHashConfig) ...[ 
                               const SizedBox(height: 12),
-                              const Text(
+                              Text(
                                 'Configure hash algorithms and rounds (CLI order)',
-                                style: TextStyle(fontSize: 12, color: Colors.grey),
+                                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                               ),
                               const SizedBox(height: 12),
                               ..._hashAlgorithms.map((hash) {
@@ -1182,9 +1182,9 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                               const SizedBox(height: 12),
                               Row(
                                 children: [
-                                  const Text(
+                                  Text(
                                     'Professional Key Derivation Configuration',
-                                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                                   ),
                                   const Spacer(),
                                   IconButton(
@@ -1285,7 +1285,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                             children: [
                               Icon(
                                 _debugLogging ? Icons.bug_report : Icons.bug_report_outlined,
-                                color: _debugLogging ? Colors.orange : Colors.grey,
+                                color: _debugLogging ? Colors.orange : Theme.of(context).colorScheme.onSurfaceVariant,
                               ),
                               const SizedBox(width: 8),
                               const Expanded(
@@ -1320,7 +1320,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                               : '🔲 Debug logging disabled - only basic status messages',
                             style: TextStyle(
                               fontSize: 12,
-                              color: _debugLogging ? Colors.orange.shade700 : Colors.grey.shade600,
+                              color: _debugLogging ? Colors.orange.shade700 : Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
                           ),
                           if (_debugLogging) ...[
@@ -1365,16 +1365,16 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: Colors.red.shade50,
+                                color: Theme.of(context).colorScheme.errorContainer,
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: Colors.red.shade300),
+                                border: Border.all(color: Theme.of(context).colorScheme.error),
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
                                     children: [
-                                      Icon(Icons.warning, size: 16, color: Colors.red.shade700),
+                                      Icon(Icons.warning, size: 16, color: Theme.of(context).colorScheme.error),
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: Text(
@@ -1382,7 +1382,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                                           style: TextStyle(
                                             fontSize: 12,
                                             fontWeight: FontWeight.bold,
-                                            color: Colors.red.shade700,
+                                            color: Theme.of(context).colorScheme.error,
                                           ),
                                         ),
                                       ),
@@ -1393,7 +1393,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                                     'Debug logs may contain sensitive information including passwords, keys, and decrypted content. Only use with test files and non-sensitive data. Never share debug logs containing real passwords or personal data.',
                                     style: TextStyle(
                                       fontSize: 11,
-                                      color: Colors.red.shade600,
+                                      color: Theme.of(context).colorScheme.error,
                                     ),
                                   ),
                                 ],
@@ -1421,7 +1421,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
           const SizedBox(height: 16),
           if (_isLoading)
             Card(
-              color: Colors.orange.shade100,
+              color: Theme.of(context).colorScheme.tertiaryContainer,
               elevation: 8,
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -1430,17 +1430,17 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                     // Progress bar
                     LinearProgressIndicator(
                       value: _progressValue,
-                      backgroundColor: Colors.orange.shade200,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.orange.shade700),
+                      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+                      valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary),
                     ),
                     const SizedBox(height: 12),
                     // Circular progress indicator
-                    const CircularProgressIndicator(color: Colors.orange),
+                    CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
                     const SizedBox(height: 12),
                     // Operation status
                     Text(
                       _operationStatus.isNotEmpty ? _operationStatus : 'Crypto operation in progress...',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.orange.shade800),
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onTertiaryContainer),
                       textAlign: TextAlign.center,
                     ),
                     // CLI progress output
@@ -1449,16 +1449,16 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                       Container(
                         padding: const EdgeInsets.all(8.0),
                         decoration: BoxDecoration(
-                          color: Colors.orange.shade50,
+                          color: Theme.of(context).colorScheme.tertiaryContainer,
                           borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: Colors.orange.shade300),
+                          border: Border.all(color: Theme.of(context).colorScheme.outline),
                         ),
                         child: Text(
                           _operationProgress,
                           style: TextStyle(
                             fontSize: 12,
                             fontFamily: 'monospace',
-                            color: Colors.orange.shade900,
+                            color: Theme.of(context).colorScheme.onTertiaryContainer,
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -1472,7 +1472,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
-                          color: Colors.orange.shade700,
+                          color: Theme.of(context).colorScheme.onTertiaryContainer,
                         ),
                       ),
                     ],
@@ -1509,8 +1509,8 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
               icon: const Icon(Icons.code, size: 16),
               label: const Text('Preview CLI Command'),
               style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.blue.shade600,
-                side: BorderSide(color: Colors.blue.shade300),
+                foregroundColor: Theme.of(context).colorScheme.primary,
+                side: BorderSide(color: Theme.of(context).colorScheme.outline),
               ),
             ),
           ),
@@ -1524,7 +1524,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                   height: 200,
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey.shade300),
+                    border: Border.all(color: Theme.of(context).colorScheme.outline),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: SingleChildScrollView(
@@ -1551,8 +1551,8 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                         );
                       }
                     },
-                    backgroundColor: Colors.blue,
-                    child: const Icon(Icons.copy, size: 16, color: Colors.white),
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    child: Icon(Icons.copy, size: 16, color: Theme.of(context).colorScheme.onPrimary),
                   ),
                 ),
               ],
@@ -1570,9 +1570,9 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        border: Border.all(color: isEnabled ? Colors.green : Colors.grey.shade300),
+        border: Border.all(color: isEnabled ? Colors.green : Theme.of(context).colorScheme.outline),
         borderRadius: BorderRadius.circular(8),
-        color: isEnabled ? Colors.green.shade50 : Colors.grey.shade50,
+        color: isEnabled ? Colors.green.withOpacity(0.1) : Theme.of(context).colorScheme.surfaceContainer,
       ),
       child: Column(
         children: [
@@ -1580,7 +1580,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
             children: [
               Switch(
                 value: isEnabled,
-                onChanged: (bool value) {
+                onChanged: (bool? value) {
                   setState(() {
                     if (_kdfConfig[kdfId] == null) {
                       _kdfConfig[kdfId] = {};
@@ -1589,9 +1589,9 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                     
                     // Special case for PBKDF2: set rounds to 0 when disabled
                     // This ensures CLI compatibility (CLI uses rounds > 0 for enablement)
-                    if (kdfId == 'pbkdf2' && !value) {
+                    if (kdfId == 'pbkdf2' && !(value ?? false)) {
                       _kdfConfig[kdfId]!['rounds'] = 0;
-                    } else if (kdfId == 'pbkdf2' && value) {
+                    } else if (kdfId == 'pbkdf2' && (value ?? false)) {
                       // When re-enabling PBKDF2, restore default rounds
                       _kdfConfig[kdfId]!['rounds'] = 100000;
                     }
@@ -1603,7 +1603,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                 kdfName,
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
-                  color: isEnabled ? Colors.green.shade700 : Colors.grey.shade600,
+                  color: isEnabled ? Colors.green.shade700 : Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
@@ -1625,9 +1625,9 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        border: Border.all(color: effectiveEnabled ? Colors.blue : Colors.grey.shade300),
+        border: Border.all(color: effectiveEnabled ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.outline),
         borderRadius: BorderRadius.circular(8),
-        color: effectiveEnabled ? Colors.blue.shade50 : Colors.grey.shade50,
+        color: effectiveEnabled ? Theme.of(context).colorScheme.primaryContainer : Theme.of(context).colorScheme.surfaceContainer,
       ),
       child: Column(
         children: [
@@ -1635,7 +1635,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
             children: [
               Switch(
                 value: effectiveEnabled,
-                onChanged: (bool value) {
+                onChanged: (bool? value) {
                   setState(() {
                     if (_hashConfig[hashId] == null) {
                       _hashConfig[hashId] = {'rounds': 1000};
@@ -1652,7 +1652,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 12,
-                    color: effectiveEnabled ? Colors.blue.shade700 : Colors.grey.shade600,
+                    color: effectiveEnabled ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -1763,9 +1763,9 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Select an encryption algorithm. Post-quantum algorithms provide protection against quantum computers.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 16),
                 ...algorithmCategories.entries.map((entry) {
@@ -1787,11 +1787,11 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                         final isPostQuantum = category.contains('Post-Quantum');
                         
                         return Card(
-                          color: isSelected ? Colors.blue.shade100 : null,
+                          color: isSelected ? Theme.of(context).colorScheme.primaryContainer : null,
                           child: ListTile(
                             leading: Icon(
                               isPostQuantum ? Icons.science : Icons.security,
-                              color: isPostQuantum ? Colors.purple : Colors.blue,
+                              color: isPostQuantum ? Colors.purple : Theme.of(context).colorScheme.primary,
                             ),
                             title: Row(
                               children: [
@@ -1833,9 +1833,9 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                             ),
                             subtitle: Text(
                               _getAlgorithmDescription(algorithm),
-                              style: const TextStyle(fontSize: 11),
+                              style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
                             ),
-                            trailing: isSelected ? const Icon(Icons.check_circle, color: Colors.blue) : null,
+                            trailing: isSelected ? Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary) : null,
                             onTap: () => Navigator.of(context).pop(algorithm),
                           ),
                         );
@@ -2019,7 +2019,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     final enabled = config['enabled'] ?? false;
     
     return Card(
-      color: enabled ? Colors.blue.shade50 : Colors.grey.shade50,
+      color: enabled ? Theme.of(context).colorScheme.primaryContainer : Theme.of(context).colorScheme.surfaceContainer,
       child: Padding(
         padding: const EdgeInsets.all(12.0),
         child: Column(
@@ -2080,7 +2080,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: Text(
                   'Higher iterations = more security but slower processing. 100,000+ recommended.',
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                  style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
               ),
             ],
@@ -2104,7 +2104,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     final enabled = config['enabled'] ?? false;
     
     return Card(
-      color: enabled ? Colors.purple.shade50 : Colors.grey.shade50,
+      color: enabled ? Theme.of(context).colorScheme.secondaryContainer : Theme.of(context).colorScheme.surfaceContainer,
       child: Padding(
         padding: const EdgeInsets.all(12.0),
         child: Column(
@@ -2187,7 +2187,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     final enabled = config['enabled'] ?? false;
     
     return Card(
-      color: enabled ? Colors.orange.shade50 : Colors.grey.shade50,
+      color: enabled ? Theme.of(context).colorScheme.tertiaryContainer : Theme.of(context).colorScheme.surfaceContainer,
       child: Padding(
         padding: const EdgeInsets.all(12.0),
         child: Column(
@@ -2246,7 +2246,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     final enabled = config['enabled'] ?? false;
     
     return Card(
-      color: enabled ? Colors.teal.shade50 : Colors.grey.shade50,
+      color: enabled ? Theme.of(context).colorScheme.tertiaryContainer : Theme.of(context).colorScheme.surfaceContainer,
       child: Padding(
         padding: const EdgeInsets.all(12.0),
         child: Column(
@@ -2334,7 +2334,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     final enabled = config['enabled'] ?? false;
     
     return Card(
-      color: enabled ? Colors.pink.shade50 : Colors.grey.shade50,
+      color: enabled ? Theme.of(context).colorScheme.errorContainer : Theme.of(context).colorScheme.surfaceContainer,
       child: Padding(
         padding: const EdgeInsets.all(12.0),
         child: Column(
@@ -2390,7 +2390,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
       child: Row(
         children: [
-          SizedBox(width: 120, child: Text(label + ':', style: const TextStyle(fontSize: 12))),
+          SizedBox(width: 120, child: Text(label + ':', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface))),
           // Decrement button with auto-repeat
           _buildAutoRepeatButton(
             icon: Icons.remove,
@@ -2423,7 +2423,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
             iconSize: 14,
           ),
           const SizedBox(width: 8),
-          SizedBox(width: 60, child: Text(value.toString(), style: const TextStyle(fontSize: 12))),
+          SizedBox(width: 60, child: Text(value.toString(), style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface))),
         ],
       ),
     );
@@ -2445,7 +2445,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w500,
-            color: Colors.blue.shade700,
+            color: Theme.of(context).colorScheme.primary,
           ),
         ),
         const SizedBox(height: 4),
@@ -2467,8 +2467,8 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                 max: maxRounds.toDouble(),
                 divisions: maxRounds ~/ 100, // Coarser divisions for slider
                 label: clampedRounds.toString(),
-                activeColor: Colors.blue.shade600,
-                inactiveColor: Colors.blue.shade200,
+                activeColor: Theme.of(context).colorScheme.primary,
+                inactiveColor: Theme.of(context).colorScheme.primary.withOpacity(0.3),
                 onChanged: (double value) => onChanged(value.toInt()),
               ),
             ),
@@ -2532,7 +2532,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('✨ Applied ${recommendation.profileName} configuration'),
-                Text(recommendation.explanation, style: const TextStyle(fontSize: 12)),
+                Text(recommendation.explanation, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
               ],
             ),
             duration: const Duration(seconds: 5),
@@ -2567,6 +2567,68 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   String _operationStatus = '';
   String _operationProgress = '';
   double _progressValue = 0.0;
+  
+  // Algorithm and configuration (same as TextCryptoTab)
+  List<String> _algorithms = [];
+  List<String> _hashAlgorithms = [];
+  String _selectedAlgorithm = 'fernet';
+  Map<String, Map<String, dynamic>> _hashConfig = {};
+  Map<String, Map<String, dynamic>> _kdfConfig = {};
+  bool _showAdvanced = false;
+  bool _showHashConfig = false;
+  bool _showKdfConfig = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAlgorithms();
+  }
+
+  Future<void> _loadAlgorithms() async {
+    try {
+      final algorithmMap = await CLIService.getSupportedAlgorithms();
+      final algorithms = algorithmMap.values.expand((list) => list).toList();
+      final hashAlgorithms = ['sha256', 'sha512', 'blake2b']; // Default hash algorithms
+      
+      setState(() {
+        _algorithms = algorithms;
+        _hashAlgorithms = hashAlgorithms;
+        
+        if (algorithms.isNotEmpty) {
+          _selectedAlgorithm = algorithms.first;
+        }
+        if (hashAlgorithms.isNotEmpty) {
+          // Initialize hash configuration with default values (CLI order)
+          _hashConfig = {};
+          for (String hash in hashAlgorithms) {
+            _hashConfig[hash] = {
+              'enabled': true,  // All hash functions enabled with CLI integration
+              'rounds': 1000    // Default rounds for all hash functions (CLI supports all)
+            };
+          }
+        }
+        // Initialize KDF chain configuration (CLI order)
+        _kdfConfig = {
+          'pbkdf2': {'enabled': !CLIService.shouldHideLegacyAlgorithms(), 'rounds': 100000},
+          'scrypt': {'enabled': false, 'n': 16384, 'r': 8, 'p': 1, 'rounds': 1},
+          'argon2': {'enabled': false, 'memory_cost': 65536, 'time_cost': 3, 'parallelism': 1, 'rounds': 1},
+          'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1},
+          'balloon': {'enabled': false, 'space_cost': 65536, 'time_cost': 3, 'parallelism': 4, 'rounds': 2, 'hash_len': 32},
+        };
+      });
+    } catch (e) {
+      setState(() {
+        _algorithms = ['fernet'];
+        _hashAlgorithms = ['sha256'];
+        _selectedAlgorithm = 'fernet';
+        _hashConfig = {'sha256': {'enabled': true, 'rounds': 1000}};
+        _kdfConfig = {
+          'pbkdf2': {'enabled': !CLIService.shouldHideLegacyAlgorithms(), 'rounds': 100000},
+          'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1}
+        };
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -2725,11 +2787,13 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
       return;
     }
 
-    // File encryption uses default algorithm (fernet) which is available on all platforms
-
+    // Use selected algorithm, hash, and KDF configuration
     setState(() {
       _isLoading = true;
-      _result = 'Encrypting file...';
+      _result = 'Encrypting file with $_selectedAlgorithm...';
+      _operationStatus = 'Preparing encryption...';
+      _operationProgress = '';
+      _progressValue = 0.0;
     });
 
     // Give UI a moment to update before heavy crypto operations
@@ -2742,13 +2806,22 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
         throw Exception('Could not read file');
       }
 
-      // Encrypt file content using CLI service
-      final encrypted = await CLIService.encryptText(
+      // Encrypt file content using CLI service with selected configurations
+      final encrypted = await CLIService.encryptTextWithProgress(
         fileContent,
         _passwordController.text,
-        'fernet', // Default algorithm
-        null,     // No hash config
-        null,     // No KDF config
+        _selectedAlgorithm, // Use selected algorithm
+        _hashConfig,        // Use hash configuration from UI
+        _kdfConfig,         // Use KDF configuration from UI
+        onProgress: (progress) {
+          setState(() {
+            _operationStatus = 'Encrypting with $_selectedAlgorithm...';
+            _operationProgress = progress;
+            _progressValue = progress.contains('%') 
+              ? (double.tryParse(progress.split('%')[0]) ?? 0.0) / 100.0
+              : 0.5;
+          });
+        },
       );
 
       if (encrypted.startsWith('ERROR:')) {
@@ -2768,8 +2841,9 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
               'Size: ${_selectedFile!.sizeFormatted}\n'
               'Encrypted: ${outputPath.split('/').last}\n'
               'Saved to: $outputPath\n\n'
+              'Algorithm: $_selectedAlgorithm\n'
               'CLI Compatible: Yes\n'
-              'Format: OpenSSL Encrypt Mobile v2.1';
+              'Format: OpenSSL Encrypt Desktop GUI';
           _isLoading = false;
         });
       } else {
@@ -2912,6 +2986,397 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     }
   }
 
+  // Helper methods (copied from TextCryptoTab)
+  String _getAlgorithmDescription(String algorithm) {
+    final descriptions = {
+      // Classical Symmetric
+      'fernet': 'Fernet - Symmetric encryption with built-in MAC (most compatible)',
+      'aes-gcm': 'AES-GCM - Modern authenticated encryption (high performance)',
+      'chacha20-poly1305': 'ChaCha20-Poly1305 - Fast stream cipher with authentication',
+      'xchacha20-poly1305': 'XChaCha20-Poly1305 - Extended nonce ChaCha20 variant',
+      // Post-quantum Key Encapsulation
+      'ml-kem-512': 'ML-KEM-512 - Post-quantum KEM (128-bit security)',
+      'ml-kem-768': 'ML-KEM-768 - Post-quantum KEM (192-bit security)',
+      'ml-kem-1024': 'ML-KEM-1024 - Post-quantum KEM (256-bit security)',
+    };
+    
+    return descriptions[algorithm] ?? 'Advanced encryption algorithm - see CLI documentation for details';
+  }
+
+  void _showAlgorithmPicker() async {
+    final selectedAlgorithm = await showDialog<String>(
+      context: context,
+      builder: (context) => _buildAlgorithmPicker(),
+    );
+    
+    if (selectedAlgorithm != null) {
+      setState(() {
+        _selectedAlgorithm = selectedAlgorithm;
+      });
+    }
+  }
+
+  Widget _buildAlgorithmPicker() {
+    final algorithmCategories = {
+      'Classical Symmetric': ['fernet', 'aes-gcm', 'chacha20-poly1305', 'xchacha20-poly1305'].where((a) => _algorithms.contains(a)).toList(),
+      'Post-Quantum': ['ml-kem-512', 'ml-kem-768', 'ml-kem-1024'].where((a) => _algorithms.contains(a)).toList(),
+    };
+
+    return AlertDialog(
+      title: const Text('Select Encryption Algorithm'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Text(
+              'Select an encryption algorithm. Post-quantum algorithms provide protection against quantum computers.',
+              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 16),
+            ...algorithmCategories.entries.map((entry) {
+              final category = entry.key;
+              final algorithms = entry.value;
+              
+              if (algorithms.isEmpty) return const SizedBox.shrink();
+              
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: Text(
+                      category,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                  ),
+                  ...algorithms.map((algorithm) {
+                    final isSelected = algorithm == _selectedAlgorithm;
+                    
+                    return Card(
+                      color: isSelected ? Theme.of(context).colorScheme.primaryContainer : null,
+                      child: ListTile(
+                        leading: Icon(Icons.security),
+                        title: Text(algorithm),
+                        subtitle: Text(_getAlgorithmDescription(algorithm)),
+                        trailing: isSelected ? Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary) : null,
+                        onTap: () => Navigator.of(context).pop(algorithm),
+                      ),
+                    );
+                  }).toList(),
+                  const SizedBox(height: 8),
+                ],
+              );
+            }).toList(),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+      ],
+    );
+  }
+
+  void _showRecommendationWizard() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Recommendation wizard: Use Fernet for compatibility or AES-GCM for performance'),
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
+
+  Widget _buildHashConfigSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.tag),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Hash Functions Configuration',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                Switch(
+                  value: _showHashConfig,
+                  onChanged: (bool? value) {
+                    setState(() {
+                      _showHashConfig = value ?? false;
+                    });
+                  },
+                ),
+              ],
+            ),
+            if (_showHashConfig) ...[
+              const SizedBox(height: 12),
+              ..._hashAlgorithms.map((hash) => _buildHashConfig(hash, hash.toUpperCase())),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKDFConfigSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.security),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Key Derivation Functions',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                Switch(
+                  value: _showKdfConfig,
+                  onChanged: (bool? value) {
+                    setState(() {
+                      _showKdfConfig = value ?? false;
+                    });
+                  },
+                ),
+              ],
+            ),
+            if (_showKdfConfig) ...[
+              const SizedBox(height: 12),
+              Text(
+                'KDF configuration enabled - switch to TextCrypto tab for full parameter control',
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 8),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      CheckboxListTile(
+                        title: const Text('PBKDF2'),
+                        subtitle: Text('Iterations: ${_kdfConfig['pbkdf2']?['iterations'] ?? 100000}'),
+                        value: _kdfConfig['pbkdf2']?['enabled'] ?? false,
+                        onChanged: (bool? value) {
+                          setState(() {
+                            if (_kdfConfig['pbkdf2'] == null) {
+                              _kdfConfig['pbkdf2'] = {'iterations': 100000};
+                            }
+                            _kdfConfig['pbkdf2']!['enabled'] = value;
+                          });
+                        },
+                      ),
+                      CheckboxListTile(
+                        title: const Text('Argon2'),
+                        subtitle: const Text('Modern memory-hard function'),
+                        value: _kdfConfig['argon2']?['enabled'] ?? false,
+                        onChanged: (bool? value) {
+                          setState(() {
+                            if (_kdfConfig['argon2'] == null) {
+                              _kdfConfig['argon2'] = {'time_cost': 3, 'memory_cost': 65536, 'parallelism': 4};
+                            }
+                            _kdfConfig['argon2']!['enabled'] = value;
+                          });
+                        },
+                      ),
+                      CheckboxListTile(
+                        title: const Text('Scrypt'),
+                        subtitle: const Text('Memory-hard function'),
+                        value: _kdfConfig['scrypt']?['enabled'] ?? false,
+                        onChanged: (bool? value) {
+                          setState(() {
+                            if (_kdfConfig['scrypt'] == null) {
+                              _kdfConfig['scrypt'] = {'n': 16384, 'r': 8, 'p': 1};
+                            }
+                            _kdfConfig['scrypt']!['enabled'] = value;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHashConfig(String hashId, String hashName) {
+    final isEnabled = _hashConfig[hashId]?['enabled'] ?? false;
+    final rounds = _hashConfig[hashId]?['rounds'] ?? 1000;
+    
+    // All hash functions now supported with CLI integration
+    final effectiveEnabled = isEnabled;
+    
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        border: Border.all(color: effectiveEnabled ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.outline),
+        borderRadius: BorderRadius.circular(8),
+        color: effectiveEnabled ? Theme.of(context).colorScheme.primaryContainer : Theme.of(context).colorScheme.surfaceContainer,
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Switch(
+                value: effectiveEnabled,
+                onChanged: (bool? value) {
+                  setState(() {
+                    if (_hashConfig[hashId] == null) {
+                      _hashConfig[hashId] = {'rounds': 1000};
+                    }
+                    _hashConfig[hashId]!['enabled'] = value;
+                  });
+                },
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 80,
+                child: Text(
+                  hashName.toUpperCase(),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                    color: effectiveEnabled ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (effectiveEnabled)
+                Expanded(
+                  child: _buildHashRoundsSlider(
+                    hashId,
+                    rounds,
+                    (int newRounds) {
+                      setState(() {
+                        _hashConfig[hashId]!['rounds'] = newRounds;
+                      });
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSimpleKDFConfig(String kdfId) {
+    final isEnabled = _kdfConfig[kdfId]?['enabled'] ?? false;
+    
+    return Card(
+      child: CheckboxListTile(
+        title: Text(kdfId.toUpperCase()),
+        subtitle: Text('Enable $kdfId key derivation'),
+        value: isEnabled,
+        onChanged: (bool? value) {
+          setState(() {
+            if (_kdfConfig[kdfId] != null) {
+              _kdfConfig[kdfId]!['enabled'] = value;
+            }
+          });
+        },
+      ),
+    );
+  }
+
+  Widget _buildHashRoundsSlider(String hashId, int currentRounds, Function(int) onChanged) {
+    // Get appropriate min/max values based on hash function
+    int minRounds = 0;  // Allow 0 to disable hash function
+    int maxRounds = _getMaxRounds(hashId);
+    
+    // Ensure current value is within bounds
+    int clampedRounds = currentRounds.clamp(minRounds, maxRounds);
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Rounds: $clampedRounds',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            // Decrement button with auto-repeat
+            _buildAutoRepeatButton(
+              icon: Icons.remove,
+              color: Colors.blue,
+              enabled: clampedRounds > minRounds,
+              onAction: () => onChanged((clampedRounds - 1).clamp(minRounds, maxRounds)),
+            ),
+            const SizedBox(width: 8),
+            // Slider
+            Expanded(
+              child: Slider(
+                value: clampedRounds.toDouble(),
+                min: minRounds.toDouble(),
+                max: maxRounds.toDouble(),
+                divisions: maxRounds ~/ 100, // Coarser divisions for slider
+                label: clampedRounds.toString(),
+                activeColor: Theme.of(context).colorScheme.primary,
+                inactiveColor: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                onChanged: (double value) => onChanged(value.toInt()),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Increment button with auto-repeat
+            _buildAutoRepeatButton(
+              icon: Icons.add,
+              color: Colors.blue,
+              enabled: clampedRounds < maxRounds,
+              onAction: () => onChanged((clampedRounds + 1).clamp(minRounds, maxRounds)),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// Get maximum recommended rounds for hash function
+  int _getMaxRounds(String hashName) {
+    // Hash functions use maximum of 1,000,000 rounds but with better precision control
+    return 1000000;
+  }
+
+  /// Build an auto-repeat button that continues action when held down
+  Widget _buildAutoRepeatButton({
+    required IconData icon,
+    required MaterialColor color,
+    required bool enabled,
+    required VoidCallback onAction,
+    double size = 32,
+    double iconSize = 16,
+  }) {
+    return AutoRepeatButton(
+      icon: icon,
+      color: color,
+      enabled: enabled,
+      onAction: onAction,
+      size: size,
+      iconSize: iconSize,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -2972,6 +3437,104 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
             ),
           ),
           const SizedBox(height: 16),
+          // Algorithm Selection Card (same as TextCryptoTab)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.security),
+                      const SizedBox(width: 8),
+                      const Text('Encryption Algorithm', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      const Spacer(),
+                      IconButton(
+                        icon: Icon(_showAdvanced ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
+                        onPressed: () => setState(() => _showAdvanced = !_showAdvanced),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Theme.of(context).colorScheme.primary),
+                      borderRadius: BorderRadius.circular(8),
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary, size: 20),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Selected: $_selectedAlgorithm',
+                              style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _getAlgorithmDescription(_selectedAlgorithm),
+                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            ElevatedButton.icon(
+                              onPressed: () => _showAlgorithmPicker(),
+                              icon: const Icon(Icons.tune, size: 16),
+                              label: const Text('Choose Algorithm'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                                foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            ElevatedButton.icon(
+                              onPressed: () => _showRecommendationWizard(),
+                              icon: const Icon(Icons.auto_awesome, size: 16),
+                              label: const Text('Get Recommendations'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green.withOpacity(0.2),
+                                foregroundColor: Colors.green.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_showAdvanced) ...[  
+                    const SizedBox(height: 16),
+                    ExpansionTile(
+                      leading: const Icon(Icons.tag),
+                      title: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Advanced Security Settings (CLI Compatible)',
+                              style: TextStyle(fontSize: 14),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      children: [
+                        _buildHashConfigSection(),
+                        _buildKDFConfigSection(),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
           TextField(
             controller: _passwordController,
             decoration: const InputDecoration(
@@ -3023,7 +3586,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                       : '🔲 Debug logging disabled - only basic status messages',
                     style: TextStyle(
                       fontSize: 12,
-                      color: _debugLogging ? Colors.orange.shade700 : Colors.grey.shade600,
+                      color: _debugLogging ? Colors.orange.shade700 : Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                   if (_debugLogging) ...[
@@ -3084,7 +3647,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
           const SizedBox(height: 16),
           if (_isLoading)
             Card(
-              color: Colors.orange.shade100,
+              color: Theme.of(context).colorScheme.tertiaryContainer,
               elevation: 8,
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -3093,17 +3656,17 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                     // Progress bar
                     LinearProgressIndicator(
                       value: _progressValue,
-                      backgroundColor: Colors.orange.shade200,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.orange.shade700),
+                      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+                      valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary),
                     ),
                     const SizedBox(height: 12),
                     // Circular progress indicator
-                    const CircularProgressIndicator(color: Colors.orange),
+                    CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
                     const SizedBox(height: 12),
                     // Operation status
                     Text(
                       _operationStatus.isNotEmpty ? _operationStatus : 'Crypto operation in progress...',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.orange.shade800),
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onTertiaryContainer),
                       textAlign: TextAlign.center,
                     ),
                     // CLI progress output
@@ -3112,16 +3675,16 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                       Container(
                         padding: const EdgeInsets.all(8.0),
                         decoration: BoxDecoration(
-                          color: Colors.orange.shade50,
+                          color: Theme.of(context).colorScheme.tertiaryContainer,
                           borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: Colors.orange.shade300),
+                          border: Border.all(color: Theme.of(context).colorScheme.outline),
                         ),
                         child: Text(
                           _operationProgress,
                           style: TextStyle(
                             fontSize: 12,
                             fontFamily: 'monospace',
-                            color: Colors.orange.shade900,
+                            color: Theme.of(context).colorScheme.onTertiaryContainer,
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -3135,7 +3698,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
-                          color: Colors.orange.shade700,
+                          color: Theme.of(context).colorScheme.onTertiaryContainer,
                         ),
                       ),
                     ],
@@ -3149,10 +3712,10 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: _isLoading ? null : _encryptFile,
-                  icon: Icon(Icons.lock, color: _isLoading ? Colors.grey : null),
+                  icon: Icon(Icons.lock, color: _isLoading ? Theme.of(context).colorScheme.onSurfaceVariant : null),
                   label: Text(_isLoading ? 'LOCKED - Encrypting...' : 'Encrypt File'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _isLoading ? Colors.grey.shade300 : null,
+                    backgroundColor: _isLoading ? Theme.of(context).colorScheme.surfaceContainer : null,
                   ),
                 ),
               ),
@@ -3160,10 +3723,10 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: _isLoading ? null : _decryptFile,
-                  icon: Icon(Icons.lock_open, color: _isLoading ? Colors.grey : null),
+                  icon: Icon(Icons.lock_open, color: _isLoading ? Theme.of(context).colorScheme.onSurfaceVariant : null),
                   label: Text(_isLoading ? 'LOCKED - Decrypting...' : 'Decrypt File'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _isLoading ? Colors.grey.shade300 : null,
+                    backgroundColor: _isLoading ? Theme.of(context).colorScheme.surfaceContainer : null,
                   ),
                 ),
               ),
@@ -3195,7 +3758,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                   height: 200,
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey.shade300),
+                    border: Border.all(color: Theme.of(context).colorScheme.outline),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: SingleChildScrollView(
@@ -3222,8 +3785,8 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                         );
                       }
                     },
-                    backgroundColor: Colors.blue,
-                    child: const Icon(Icons.copy, size: 16, color: Colors.white),
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    child: Icon(Icons.copy, size: 16, color: Theme.of(context).colorScheme.onPrimary),
                   ),
                 ),
               ],
@@ -3897,7 +4460,7 @@ class CommandPreviewDialog extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.code, color: Colors.blue.shade600),
+                Icon(Icons.code, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(width: 12),
                 const Text(
                   'CLI Command Preview',
@@ -3934,16 +4497,16 @@ class CommandPreviewDialog extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                border: Border.all(color: Colors.grey.shade300),
+                color: Theme.of(context).colorScheme.surfaceContainer,
+                border: Border.all(color: Theme.of(context).colorScheme.outline),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: SelectableText(
                 encryptCommand,
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Courier',
                   fontSize: 12,
-                  color: Colors.black87,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
             ),
@@ -3981,16 +4544,16 @@ class CommandPreviewDialog extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                border: Border.all(color: Colors.grey.shade300),
+                color: Theme.of(context).colorScheme.surfaceContainer,
+                border: Border.all(color: Theme.of(context).colorScheme.outline),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: SelectableText(
                 decryptCommand,
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Courier',
                   fontSize: 12,
-                  color: Colors.black87,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
             ),
@@ -4014,8 +4577,8 @@ class CommandPreviewDialog extends StatelessWidget {
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  border: Border.all(color: Colors.blue.shade200),
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  border: Border.all(color: Theme.of(context).colorScheme.outline),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Column(
@@ -4023,14 +4586,14 @@ class CommandPreviewDialog extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
+                        Icon(Icons.info_outline, color: Theme.of(context).colorScheme.primary, size: 20),
                         const SizedBox(width: 8),
                         Text(
                           'Usage Notes',
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: Colors.blue.shade800,
+                            color: Theme.of(context).colorScheme.onPrimaryContainer,
                           ),
                         ),
                       ],
@@ -4041,16 +4604,16 @@ class CommandPreviewDialog extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _buildUsageNote('• Replace [input-file] with the actual path to your input file'),
-                            _buildUsageNote('• Replace [output-file] with the desired path for the output file'),
-                            _buildUsageNote('• Replace [password] with your actual password (use quotes if it contains spaces)'),
-                            _buildUsageNote('• Replace [encrypted-file] with the path to the file you want to decrypt'),
+                            _buildUsageNote(context, '• Replace [input-file] with the actual path to your input file'),
+                            _buildUsageNote(context, '• Replace [output-file] with the desired path for the output file'),
+                            _buildUsageNote(context, '• Replace [password] with your actual password (use quotes if it contains spaces)'),
+                            _buildUsageNote(context, '• Replace [encrypted-file] with the path to the file you want to decrypt'),
                             const SizedBox(height: 12),
-                            _buildUsageNote('Algorithm: $algorithm', isHighlight: true),
+                            _buildUsageNote(context, 'Algorithm: $algorithm', isHighlight: true),
                             if (_hasActiveHashConfig())
-                              _buildUsageNote('Active hash functions: ${_getActiveHashFunctions()}', isHighlight: true),
+                              _buildUsageNote(context, 'Active hash functions: ${_getActiveHashFunctions()}', isHighlight: true),
                             if (_hasActiveKdfConfig())
-                              _buildUsageNote('Active KDF functions: ${_getActiveKdfFunctions()}', isHighlight: true),
+                              _buildUsageNote(context, 'Active KDF functions: ${_getActiveKdfFunctions()}', isHighlight: true),
                           ],
                         ),
                       ),
@@ -4065,14 +4628,14 @@ class CommandPreviewDialog extends StatelessWidget {
     );
   }
 
-  Widget _buildUsageNote(String text, {bool isHighlight = false}) {
+  Widget _buildUsageNote(BuildContext context, String text, {bool isHighlight = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Text(
         text,
         style: TextStyle(
           fontSize: 12,
-          color: isHighlight ? Colors.blue.shade800 : Colors.grey.shade700,
+          color: isHighlight ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurfaceVariant,
           fontWeight: isHighlight ? FontWeight.w600 : FontWeight.normal,
         ),
       ),
@@ -4200,16 +4763,16 @@ class _AutoRepeatButtonState extends State<AutoRepeatButton> {
         decoration: BoxDecoration(
           color: widget.enabled 
               ? (_isPressed ? widget.color.shade200 : widget.color.shade100)
-              : Colors.grey.shade200,
+              : Theme.of(context).colorScheme.surfaceContainer,
           borderRadius: BorderRadius.circular(4),
           border: Border.all(
-            color: widget.enabled ? widget.color.shade300 : Colors.grey.shade400,
+            color: widget.enabled ? widget.color.shade300 : Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
         child: Icon(
           widget.icon,
           size: widget.iconSize,
-          color: widget.enabled ? widget.color.shade700 : Colors.grey.shade500,
+          color: widget.enabled ? widget.color.shade700 : Theme.of(context).colorScheme.onSurfaceVariant,
         ),
       ),
     );
