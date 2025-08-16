@@ -96,17 +96,27 @@ def main():
                     del os.environ["XAUTHORITY"]
                 
                 # Try to find the correct XWayland display
-                if not os.environ.get("DISPLAY"):
-                    # Try common XWayland displays
+                current_display = os.environ.get("DISPLAY", ":0")
+                print(f"Current DISPLAY setting: {current_display}")
+                
+                # Check if current display socket exists, if not find an alternative
+                current_socket = f"/tmp/.X11-unix/X{current_display[1:] if current_display.startswith(':') else current_display}"
+                if os.path.exists(current_socket):
+                    print(f"✓ Display socket exists: {current_socket}")
+                else:
+                    print(f"⚠️ Display socket not found: {current_socket}")
+                    # Try to find an alternative XWayland display
+                    found_alternative = False
                     for display_num in [":0", ":1", ":2"]:
-                        if os.path.exists(f"/tmp/.X11-unix/X{display_num[1:]}"):
+                        socket_path = f"/tmp/.X11-unix/X{display_num[1:]}"
+                        if os.path.exists(socket_path):
                             os.environ["DISPLAY"] = display_num
-                            print(f"Found XWayland display: {display_num}")
+                            print(f"Found alternative XWayland display: {display_num}")
+                            found_alternative = True
                             break
-                    else:
-                        # Fallback to :0 if no socket found
-                        os.environ["DISPLAY"] = ":0"
-                        print("No XWayland socket detected, using :0 as fallback")
+                    
+                    if not found_alternative:
+                        print("No XWayland sockets detected, keeping current DISPLAY")
                 
                 # Additional Wayland compatibility settings
                 os.environ["XDG_SESSION_TYPE"] = "wayland"
@@ -172,8 +182,31 @@ def main():
                         display_test_passed = True
                     except Exception as e2:
                         print(f"⚠️ Alternative approach also failed: {e2}")
-                        # Restore DISPLAY for the actual GUI attempt
-                        os.environ["DISPLAY"] = ":0"
+                        
+                        # Try one more approach - use Xvfb virtual framebuffer
+                        print("⚠️ Attempting to start virtual display (Xvfb)...")
+                        try:
+                            import subprocess
+                            import time
+                            
+                            # Try to start Xvfb on display :99
+                            xvfb_process = subprocess.Popen(['Xvfb', ':99', '-screen', '0', '1024x768x24'], 
+                                                          stdout=subprocess.DEVNULL, 
+                                                          stderr=subprocess.DEVNULL)
+                            time.sleep(1)  # Give Xvfb time to start
+                            
+                            os.environ["DISPLAY"] = ":99"
+                            
+                            # Test the virtual display
+                            test_root3 = tkinter.Tk()
+                            test_root3.withdraw()
+                            test_root3.destroy()
+                            print("✓ Virtual display connection successful!")
+                            display_test_passed = True
+                        except Exception as e3:
+                            print(f"⚠️ Virtual display also failed: {e3}")
+                            # Restore DISPLAY for the actual GUI attempt
+                            os.environ["DISPLAY"] = ":0"
                 
                 if not display_test_passed:
                     if wayland_display:
