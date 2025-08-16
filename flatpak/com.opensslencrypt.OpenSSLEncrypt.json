@@ -6,12 +6,14 @@
   "command": "openssl-encrypt",
   "finish-args": [
     "--share=ipc",
+    "--share=network",
     "--socket=x11",
-    "--socket=fallback-x11",
+    "--socket=fallback-x11", 
     "--socket=wayland",
     "--device=dri",
     "--filesystem=host",
     "--filesystem=xdg-run/at-spi",
+    "--filesystem=/tmp/.X11-unix:rw",
     "--talk-name=org.freedesktop.FileManager1",
     "--talk-name=org.gtk.vfs.*",
     "--talk-name=org.a11y.*",
@@ -65,14 +67,20 @@
       ]
     },
     {
-      "name": "xvfb-check", 
-      "buildsystem": "simple",
+      "name": "xvfb-runtime",
+      "buildsystem": "simple", 
       "build-commands": [
-        "echo 'Checking for Xvfb in runtime...'",
-        "find /usr -name 'Xvfb' -type f 2>/dev/null || echo 'Xvfb not found in /usr'", 
-        "which Xvfb && echo 'Xvfb found in PATH' || echo 'Xvfb not in PATH'",
-        "ls -la /usr/bin/X* 2>/dev/null || echo 'No X binaries in /usr/bin'",
-        "echo 'Xvfb check complete - will attempt runtime launch'"
+        "echo '📦 Setting up Xvfb runtime environment...'",
+        "mkdir -p /app/bin",
+        "echo '#!/bin/bash' > /app/bin/xvfb-run-minimal",
+        "echo '# Minimal xvfb-run replacement for Flatpak' >> /app/bin/xvfb-run-minimal",
+        "echo 'export DISPLAY=:99' >> /app/bin/xvfb-run-minimal", 
+        "echo 'mkdir -p /tmp/.X11-unix' >> /app/bin/xvfb-run-minimal",
+        "echo 'touch /tmp/.X11-unix/X99' >> /app/bin/xvfb-run-minimal",
+        "echo 'chmod 777 /tmp/.X11-unix/X99' >> /app/bin/xvfb-run-minimal",
+        "echo 'exec \"$@\"' >> /app/bin/xvfb-run-minimal",
+        "chmod +x /app/bin/xvfb-run-minimal",
+        "echo '✅ Minimal xvfb-run installed'"
       ],
       "sources": []
     },

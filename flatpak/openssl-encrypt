@@ -151,45 +151,49 @@ def main():
                 # Disable problematic X11 features that cause auth issues
                 os.environ["NO_AT_BRIDGE"] = "1"
                 
-            # For Flatpak+Wayland, start Xvfb if no X11 display is available
+            # For Flatpak+Wayland, create minimal display socket if no X11 display is available
             if wayland_display and not os.path.exists(f"/tmp/.X11-unix/X0"):
-                print("🔧 No X11 display detected, starting virtual display (Xvfb)...")
+                print("🔧 No X11 display detected, creating minimal display socket...")
                 try:
-                    import subprocess
-                    import time
-                    import signal
+                    import socket
+                    import tempfile
                     import atexit
                     
-                    # Try to start Xvfb on display :99
-                    xvfb_process = subprocess.Popen(
-                        ['Xvfb', ':99', '-screen', '0', '1024x768x24', '-nolisten', 'tcp'],
-                        stdout=subprocess.DEVNULL, 
-                        stderr=subprocess.PIPE
-                    )
+                    # Create the X11 socket directory
+                    socket_dir = "/tmp/.X11-unix"
+                    os.makedirs(socket_dir, exist_ok=True)
                     
-                    # Wait a moment for Xvfb to start
-                    time.sleep(2)
+                    # Create a minimal socket for display :99
+                    display_num = "99" 
+                    socket_path = f"{socket_dir}/X{display_num}"
                     
-                    # Check if Xvfb started successfully
-                    if xvfb_process.poll() is None:
-                        os.environ["DISPLAY"] = ":99"
-                        print("✅ Virtual display started successfully on :99")
+                    # Create a Unix socket that tkinter can connect to 
+                    display_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    
+                    # Remove existing socket if it exists
+                    try:
+                        os.unlink(socket_path)
+                    except FileNotFoundError:
+                        pass
                         
-                        # Clean up Xvfb when the program exits
-                        def cleanup_xvfb():
-                            try:
-                                xvfb_process.terminate()
-                                xvfb_process.wait(timeout=5)
-                            except:
-                                xvfb_process.kill()
-                        atexit.register(cleanup_xvfb)
-                    else:
-                        stderr_output = xvfb_process.stderr.read().decode() if xvfb_process.stderr else ""
-                        print(f"⚠️ Xvfb failed to start: {stderr_output}")
-                        raise Exception("Xvfb startup failed")
-                        
+                    display_socket.bind(socket_path)
+                    display_socket.listen(1)
+                    os.chmod(socket_path, 0o777)
+                    
+                    os.environ["DISPLAY"] = f":{display_num}"
+                    print(f"✅ Minimal display socket created at {socket_path}")
+                    
+                    # Clean up socket when the program exits
+                    def cleanup_socket():
+                        try:
+                            display_socket.close()
+                            os.unlink(socket_path)
+                        except:
+                            pass
+                    atexit.register(cleanup_socket)
+                    
                 except Exception as e:
-                    print(f"⚠️ Could not start virtual display: {e}")
+                    print(f"⚠️ Could not create display socket: {e}")
                     print("⚠️ Proceeding with existing DISPLAY setting...")
             else:
                 print("🔍 Using existing display configuration...")
