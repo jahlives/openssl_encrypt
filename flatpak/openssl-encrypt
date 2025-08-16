@@ -152,7 +152,8 @@ def main():
                 print(f"⚠️ Display connection test failed: {e}")
                 
                 # Try alternative approaches for Wayland
-                if wayland_display and "Authorization required" in str(e):
+                error_str = str(e)
+                if wayland_display and ("Authorization required" in error_str or "couldn't connect to display" in error_str):
                     print("⚠️ Trying alternative Wayland configuration...")
                     
                     # Try removing all X11 environment variables
