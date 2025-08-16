@@ -207,7 +207,6 @@ def main():
             # Add timeout protection for tkinter startup
             print("🚀 Starting tkinter GUI...")
             import signal
-            import sys
             
             def timeout_handler(signum, frame):
                 print("⏰ tkinter GUI startup timeout - forcing exit", file=sys.stderr)
