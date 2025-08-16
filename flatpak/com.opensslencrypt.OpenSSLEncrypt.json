@@ -6,9 +6,8 @@
   "command": "openssl-encrypt",
   "finish-args": [
     "--share=ipc",
-    "--socket=x11",
-    "--socket=fallback-x11",
     "--socket=wayland",
+    "--socket=fallback-x11",
     "--filesystem=host",
     "--device=dri",
     "--talk-name=org.freedesktop.FileManager1",
@@ -61,16 +60,6 @@
       ]
     },
     {
-      "name": "x11-tools",
-      "buildsystem": "simple",
-      "build-commands": [
-        "echo 'Installing X11 virtual framebuffer...'",
-        "which Xvfb || echo 'Xvfb not available in runtime'",
-        "echo 'X11 tools check complete'"
-      ],
-      "sources": []
-    },
-    {
       "name": "python3-dependencies",
       "buildsystem": "simple",
       "build-options": {
@@ -82,8 +71,9 @@
         "pip3 install --prefix=${FLATPAK_DEST} 'cryptography>=44.0.1,<45.0.0'",
         "pip3 install --prefix=${FLATPAK_DEST} 'argon2-cffi>=23.1.0,<24.0.0'",
         "pip3 install --prefix=${FLATPAK_DEST} 'PyYAML>=6.0.2,<7.0.0'",
+        "pip3 install --prefix=${FLATPAK_DEST} 'argon2-cffi-bindings==21.2.0'",
         "pip3 install --prefix=${FLATPAK_DEST} 'whirlpool-py311>=1.0.0,<2.0.0; python_version >= \"3.11\"'",
-        "pip3 install --prefix=${FLATPAK_DEST} git+https://github.com/open-quantum-safe/liboqs-python.git"
+        "pip3 install --prefix=${FLATPAK_DEST} git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0"
       ],
       "sources": []
     },
