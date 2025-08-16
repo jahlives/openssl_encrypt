@@ -676,6 +676,85 @@ pip install liboqs-python
 python -c "from openssl_encrypt.modules.pqc import get_supported_algorithms; print(get_supported_algorithms())"
 ```
 
+#### Debug Mode for Troubleshooting
+
+> **🚨 SECURITY WARNING 🚨**
+>
+> **The `--debug` flag outputs highly sensitive cryptographic information including:**
+> - **Derived encryption keys in hex format**
+> - **Nonces, salts, and initialization vectors**
+> - **Plaintext data content in hex**
+> - **Intermediate hash values and cryptographic parameters**
+>
+> **⚠️ NEVER use `--debug` with sensitive or production data! ⚠️**
+>
+> **Only use debug mode with:**
+> - Test files and dummy data
+> - Non-sensitive documents
+> - Educational or development purposes
+> - Troubleshooting with data you can safely expose
+>
+> **Debug output should NEVER be logged, shared, or stored when working with confidential information.**
+
+The `--debug` flag provides comprehensive visibility into the encryption/decryption process, showing detailed information about every cryptographic operation. This is invaluable for troubleshooting, security analysis, and understanding how the tool works.
+
+**Basic Debug Usage**:
+```bash
+# Debug encryption process
+python -m openssl_encrypt.crypt encrypt -i document.txt --debug
+
+# Debug decryption process  
+python -m openssl_encrypt.crypt decrypt -i document.txt.enc --debug
+```
+
+**Debug Output Categories**:
+
+1. **Hash Processing Debug**: Shows INPUT/OUTPUT/FINAL hex values for every hash round
+2. **Key Derivation Debug**: Details for Argon2, Scrypt, Balloon, PBKDF2, HKDF operations
+3. **Encryption Algorithm Debug**: Algorithm-specific parameters, nonces, and data
+4. **Post-Quantum Debug**: PQC algorithm details, key lengths, and hybrid operations
+
+**Sample Debug Output**:
+
+*Hash Processing Debug*:
+```
+DEBUG - SHA-512:INPUT Round 1/1000000: 48656c6c6f20576f726c64...
+DEBUG - SHA-512:OUTPUT Round 1/1000000: e258d248fda94c63753607...
+DEBUG - SHA-512:FINAL After 1000000 rounds: b94d27b9934d3e08a52e...
+DEBUG - ARGON2:PARAMS time_cost=3, memory_cost=65536, parallelism=4
+DEBUG - ARGON2:OUTPUT Round 1/1: a1b2c3d4e5f6789a0b1c2d3e...
+```
+
+*Encryption Debug*:
+```
+DEBUG - ENCRYPT:AES_GCM Key length: 32 bytes
+DEBUG - ENCRYPT:AES_GCM Using 12-byte nonce for encryption
+DEBUG - ENCRYPT:AES_GCM Nonce: a1b2c3d4e5f6789a12b3c4d5
+DEBUG - ENCRYPT:AES_GCM Encrypted payload length: 45 bytes
+DEBUG - ENCRYPT:AES_GCM Encrypted payload: def456abc123...
+```
+
+*Post-Quantum Debug*:
+```
+DEBUG - ENCRYPT:PQC_SIG Algorithm: mayo-1-hybrid
+DEBUG - ENCRYPT:PQC_SIG HKDF salt: 4f70656e53534c2d456e63727970742d...
+DEBUG - ENCRYPT:PQC_KEM Algorithm: ML-KEM-512
+DEBUG - ENCRYPT:PQC_KEM Public key length: 800 bytes
+DEBUG - ENCRYPT:PQC_KEM Symmetric encryption: aes-gcm
+```
+
+**Debug Use Cases**:
+
+- **Troubleshooting failed operations**: See exactly where an error occurs
+- **Security analysis**: Verify all cryptographic parameters are correct
+- **Performance optimization**: Identify slow operations in the crypto pipeline
+- **Educational purposes**: Learn how modern cryptography works step-by-step
+- **Algorithm comparison**: Compare debug output between different algorithms
+
+> **⚠️ SECURITY REMINDER ⚠️**
+>
+> Debug output exposes **ALL** cryptographic secrets including encryption keys, plaintext data, and intermediate values. **NEVER** use debug mode with sensitive data or in production environments. Debug information should never be saved, logged, or shared when working with confidential files.
+
 ### Getting Help
 
 1. **Check version and basic info**:
@@ -691,7 +770,13 @@ python -m openssl_encrypt.crypt encrypt -i file.txt --verbose
 
 3. **Check logs and error messages carefully**
 
-4. **Report issues**: Use the project's issue tracking system
+4. **Use debug mode for detailed troubleshooting**:
+```bash
+python -m openssl_encrypt.crypt encrypt -i file.txt --debug
+python -m openssl_encrypt.crypt decrypt -i file.enc --debug
+```
+
+5. **Report issues**: Use the project's issue tracking system
 
 ### Best Practices
 

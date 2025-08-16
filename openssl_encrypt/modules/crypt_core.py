@@ -299,11 +299,25 @@ import cryptography.exceptions
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 try:
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+    HKDF_AVAILABLE = True
+except ImportError:
+    HKDF_AVAILABLE = False
+
+try:
     from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
     SCRYPT_AVAILABLE = True
 except ImportError:
     SCRYPT_AVAILABLE = False
+
+try:
+    import blake3
+
+    BLAKE3_AVAILABLE = True
+except ImportError:
+    BLAKE3_AVAILABLE = False
 
 from .secure_memory import SecureBytes, secure_memzero
 
@@ -487,6 +501,16 @@ class EncryptionAlgorithm(Enum):
     HQC_128_HYBRID = "hqc-128-hybrid"
     HQC_192_HYBRID = "hqc-192-hybrid"
     HQC_256_HYBRID = "hqc-256-hybrid"
+
+    # MAYO hybrid modes (NIST Round 2 candidates)
+    MAYO_1_HYBRID = "mayo-1-hybrid"
+    MAYO_3_HYBRID = "mayo-3-hybrid"
+    MAYO_5_HYBRID = "mayo-5-hybrid"
+
+    # CROSS hybrid modes (NIST Round 2 candidates)
+    CROSS_128_HYBRID = "cross-128-hybrid"
+    CROSS_192_HYBRID = "cross-192-hybrid"
+    CROSS_256_HYBRID = "cross-256-hybrid"
 
     @classmethod
     def from_string(cls, algorithm_str: str) -> "EncryptionAlgorithm":
@@ -1065,7 +1089,7 @@ def with_progress_bar(func, message, *args, quiet=False, **kwargs):
 
 
 @add_timing_jitter
-def multi_hash_password(password, salt, hash_config, quiet=False, progress=False):
+def multi_hash_password(password, salt, hash_config, quiet=False, progress=False, debug=False):
     """
     Apply multiple rounds of different hash algorithms to a password.
 
@@ -1092,10 +1116,15 @@ def multi_hash_password(password, salt, hash_config, quiet=False, progress=False
         hash_config (dict): Dictionary with algorithm names as keys and iteration/parameter values
         quiet (bool): Whether to suppress progress output
         progress (bool): Whether to use progress bar for progress output
+        debug (bool): Whether to show detailed debug output for each hash round
 
     Returns:
         bytes: The hashed password
     """
+    # Debug trace to check if debug parameter is reaching the function
+    if debug:
+        logger.debug(f"HASH-DEBUG: multi_hash_password called with debug=True, hash_config keys: {list(hash_config.keys()) if hash_config else 'None'}")
+    
     # If hash_config is provided but doesn't specify type, use 'id' (Argon2id)
     # as default
     if hash_config and "type" in hash_config:
@@ -1160,14 +1189,28 @@ def multi_hash_password(password, salt, hash_config, quiet=False, progress=False
                     elif not quiet:
                         print(f"Applying {params} rounds of SHA-512")
 
+                    if debug:
+                        logger.debug(f"SHA-512: Starting {params} rounds")
+
                     # SHA-512 produces 64 bytes
                     with secure_buffer(64, zero=False) as hash_buffer:
                         for i in range(params):
+                            if debug:
+                                logger.debug(f"SHA-512:INPUT Round {i+1}/{params}: {hashed.hex()}")
+                            
                             result = hashlib.sha512(hashed).digest()
                             secure_memcpy(hash_buffer, result)
                             secure_memcpy(hashed, hash_buffer)
+                            
+                            if debug:
+                                logger.debug(f"SHA-512:OUTPUT Round {i+1}/{params}: {hashed.hex()}")
+                            
                             show_progress("SHA-512", i + 1, params)
                             KeyStretch.hash_stretch = True
+                        
+                        if debug:
+                            logger.debug(f"SHA-512:FINAL After {params} rounds: {hashed.hex()}")
+                            
                         if not quiet and not progress:
                             print("✅")
 
@@ -1177,14 +1220,28 @@ def multi_hash_password(password, salt, hash_config, quiet=False, progress=False
                     elif not quiet:
                         print(f"Applying {params} rounds of SHA-256")
 
+                    if debug:
+                        logger.debug(f"SHA-256: Starting {params} rounds")
+
                     # SHA-256 produces 32 bytes
                     with secure_buffer(32, zero=False) as hash_buffer:
                         for i in range(params):
+                            if debug:
+                                logger.debug(f"SHA-256:INPUT Round {i+1}/{params}: {hashed.hex()}")
+                            
                             result = hashlib.sha256(hashed).digest()
                             secure_memcpy(hash_buffer, result)
                             secure_memcpy(hashed, hash_buffer)
+                            
+                            if debug:
+                                logger.debug(f"SHA-256:OUTPUT Round {i+1}/{params}: {hashed.hex()}")
+                            
                             show_progress("SHA-256", i + 1, params)
                             KeyStretch.hash_stretch = True
+                        
+                        if debug:
+                            logger.debug(f"SHA-256:FINAL After {params} rounds: {hashed.hex()}")
+                            
                         if not quiet and not progress:
                             print("✅")
 
@@ -1193,14 +1250,29 @@ def multi_hash_password(password, salt, hash_config, quiet=False, progress=False
                         print(f"Applying {params} rounds of SHA3-256", end=" ")
                     elif not quiet:
                         print(f"Applying {params} rounds of SHA3-256")
+                    
+                    if debug:
+                        logger.debug(f"SHA3-256: Starting {params} rounds")
+                    
                     # SHA3-256 produces 32 bytes
                     with secure_buffer(32, zero=False) as hash_buffer:
                         for i in range(params):
+                            if debug:
+                                logger.debug(f"SHA3-256:INPUT Round {i+1}/{params}: {hashed.hex()}")
+                            
                             result = hashlib.sha3_256(hashed).digest()
                             secure_memcpy(hash_buffer, result)
                             secure_memcpy(hashed, hash_buffer)
+                            
+                            if debug:
+                                logger.debug(f"SHA3-256:OUTPUT Round {i+1}/{params}: {hashed.hex()}")
+                            
                             show_progress("SHA3-256", i + 1, params)
                             KeyStretch.hash_stretch = True
+                        
+                        if debug:
+                            logger.debug(f"SHA3-256:FINAL After {params} rounds: {hashed.hex()}")
+                            
                         if not quiet and not progress:
                             print("✅")
 
@@ -1241,6 +1313,49 @@ def multi_hash_password(password, salt, hash_config, quiet=False, progress=False
                             KeyStretch.hash_stretch = True
                         if not quiet and not progress:
                             print("✅")
+
+                elif algorithm == "blake3" and params > 0:
+                    if not quiet and not progress:
+                        print(f"Applying {params} rounds of BLAKE3", end=" ")
+                    elif not quiet:
+                        print(f"Applying {params} rounds of BLAKE3")
+
+                    if BLAKE3_AVAILABLE:
+                        # BLAKE3 produces 64 bytes for consistency with other algorithms
+                        with secure_buffer(64, zero=False) as hash_buffer:
+                            for i in range(params):
+                                # Use salt for key to enhance security and prevent length extension attacks
+                                # BLAKE3 supports keyed hashing which is more secure than plain hashing
+                                key_material = hashlib.sha256(salt + str(i).encode()).digest()
+
+                                # Create a keyed BLAKE3 instance for each iteration
+                                # BLAKE3 keyed mode provides additional security over plain hashing
+                                hasher = blake3.blake3(key=key_material[:32])
+                                hasher.update(hashed)
+                                result = hasher.digest(64)  # Get 64 bytes for consistency
+
+                                secure_memcpy(hash_buffer, result)
+                                secure_memcpy(hashed, hash_buffer)
+                                show_progress("BLAKE3", i + 1, params)
+                                KeyStretch.hash_stretch = True
+                            if not quiet and not progress:
+                                print("✅")
+                    else:
+                        if not quiet:
+                            print("❌ BLAKE3 not available, falling back to BLAKE2b")
+                        # Fallback to BLAKE2b if BLAKE3 is not available
+                        with secure_buffer(64, zero=False) as hash_buffer:
+                            for i in range(params):
+                                key_material = hashlib.sha256(salt + str(i).encode()).digest()
+                                result = hashlib.blake2b(
+                                    hashed, key=key_material[:32], digest_size=64
+                                ).digest()
+                                secure_memcpy(hash_buffer, result)
+                                secure_memcpy(hashed, hash_buffer)
+                                show_progress("BLAKE2b (fallback)", i + 1, params)
+                                KeyStretch.hash_stretch = True
+                            if not quiet and not progress:
+                                print("✅")
 
                 elif algorithm == "shake256" and params > 0:
                     if not quiet and not progress:
@@ -1364,6 +1479,7 @@ def generate_key(
     quiet=False,
     algorithm=EncryptionAlgorithm.FERNET.value,
     progress=False,
+    debug=False,
     pqc_keypair=None,
 ):
     """
@@ -1376,6 +1492,7 @@ def generate_key(
         pbkdf2_iterations (int): Number of iterations for PBKDF2
         quiet (bool): Whether to suppress progress output
         progress (bool): Whether to use progress bar for progress output
+        debug (bool): Whether to show detailed debug output for each operation
         algorithm (str): The encryption algorithm to be used
         pqc_keypair (tuple, optional): Post-quantum keypair (public_key, private_key) for hybrid encryption
 
@@ -1386,6 +1503,10 @@ def generate_key(
         ValidationError: If input parameters are invalid
         KeyDerivationError: If key derivation fails
     """
+    # Debug trace to check if debug parameter is reaching generate_key
+    if debug:
+        logger.debug(f"KEY-DEBUG: generate_key called with debug=True")
+    
     # Validate input parameters
     if password is None:
         raise ValidationError("Password cannot be None")
@@ -1465,6 +1586,12 @@ def generate_key(
         EncryptionAlgorithm.HQC_128_HYBRID.value,
         EncryptionAlgorithm.HQC_192_HYBRID.value,
         EncryptionAlgorithm.HQC_256_HYBRID.value,
+        EncryptionAlgorithm.MAYO_1_HYBRID.value,
+        EncryptionAlgorithm.MAYO_3_HYBRID.value,
+        EncryptionAlgorithm.MAYO_5_HYBRID.value,
+        EncryptionAlgorithm.CROSS_128_HYBRID.value,
+        EncryptionAlgorithm.CROSS_192_HYBRID.value,
+        EncryptionAlgorithm.CROSS_256_HYBRID.value,
     ]:
         key_length = 32  # PQC hybrid modes use AES-256-GCM internally, requiring 32 bytes
     else:
@@ -1516,7 +1643,7 @@ def generate_key(
         elif not quiet:
             print("Applying hash iterations")
         # Apply multiple hash algorithms in sequence
-        password = multi_hash_password(password, salt, hash_config, quiet, progress=progress)
+        password = multi_hash_password(password, salt, hash_config, quiet, progress=progress, debug=debug)
     # Check if Argon2 is available on the system
     argon2_available = ARGON2_AVAILABLE
 
@@ -1533,12 +1660,14 @@ def generate_key(
         use_scrypt = kdf_config.get("scrypt", {}).get("enabled", False)
         use_pbkdf2 = kdf_config.get("pbkdf2_iterations", 0) > 0
         use_balloon = kdf_config.get("balloon", {}).get("enabled", False)
+        use_hkdf = kdf_config.get("hkdf", {}).get("enabled", False)
     else:
         # Original version 3 format
         use_argon2 = hash_config.get("argon2", {}).get("enabled", False)
         use_scrypt = hash_config.get("scrypt", {}).get("enabled", False)
         use_pbkdf2 = hash_config.get("pbkdf2_iterations", 0) > 0
         use_balloon = hash_config.get("balloon", {}).get("enabled", False)
+        use_hkdf = hash_config.get("hkdf", {}).get("enabled", False)
 
     # If hash_config has argon2 section with enabled explicitly set to False, honor that
     # if hash_config and 'argon2' in hash_config and 'enabled' in hash_config['argon2']:
@@ -1620,6 +1749,11 @@ def generate_key(
                 # Convert password to bytes format required by argon2
                 password_bytes = bytes(password)
 
+                if debug:
+                    logger.debug(f"ARGON2:INPUT Round {i+1}/{argon2_rounds}: {password_bytes.hex()}")
+                    logger.debug(f"ARGON2:SALT Round {i+1}/{argon2_rounds}: {round_salt.hex()}")
+                    logger.debug(f"ARGON2:PARAMS time_cost={time_cost}, memory_cost={memory_cost}, parallelism={parallelism}")
+
                 # Apply Argon2 KDF
                 result = argon2.low_level.hash_secret_raw(
                     secret=password_bytes,  # Use the potentially hashed password
@@ -1630,6 +1764,9 @@ def generate_key(
                     hash_len=hash_len,
                     type=argon2_type,
                 )
+
+                if debug:
+                    logger.debug(f"ARGON2:OUTPUT Round {i+1}/{argon2_rounds}: {result.hex()}")
 
                 # Securely overwrite the previous password value
                 secure_memzero(password_bytes)
@@ -1676,6 +1813,10 @@ def generate_key(
             hash_config["argon2"]["parallelism"] = parallelism
             hash_config["argon2"]["hash_len"] = hash_len
             hash_config["argon2"]["type"] = type_int
+            
+            if debug:
+                logger.debug(f"ARGON2:FINAL After {argon2_rounds} rounds: {password.hex()}")
+                
             if not quiet and not progress:
                 print("✅")
         except Exception as e:
@@ -1716,6 +1857,12 @@ def generate_key(
                 else:
                     password_bytes = bytes(password)
 
+                if debug:
+                    total_rounds = hash_config.get("balloon", {}).get("rounds", 1)
+                    logger.debug(f"BALLOON:INPUT Round {i+1}/{total_rounds}: {password_bytes.hex()}")
+                    logger.debug(f"BALLOON:SALT Round {i+1}/{total_rounds}: {round_salt.hex()}")
+                    logger.debug(f"BALLOON:PARAMS time_cost={time_cost}, space_cost={space_cost}, parallelism={parallelism}")
+
                 # Apply Balloon KDF with the new salt
                 result = balloon_m(
                     password=password_bytes,  # Use the potentially hashed password
@@ -1724,6 +1871,9 @@ def generate_key(
                     space_cost=space_cost,  # renamed from memory_cost
                     parallel_cost=parallelism,
                 )
+
+                if debug:
+                    logger.debug(f"BALLOON:OUTPUT Round {i+1}/{total_rounds}: {result.hex()}")
 
                 # Securely overwrite the previous password value
                 secure_memzero(password_bytes)
@@ -1761,6 +1911,11 @@ def generate_key(
                     "hash_len": hash_len,
                 }
             )
+            
+            if debug:
+                total_rounds = hash_config.get("balloon", {}).get("rounds", 1)
+                logger.debug(f"BALLOON:FINAL After {total_rounds} rounds: {password.hex()}")
+                
             if not quiet and not progress:
                 print("✅")
         except Exception as e:
@@ -1804,8 +1959,17 @@ def generate_key(
                 else:
                     password_bytes = bytes(password)
 
+                if debug:
+                    total_rounds = hash_config.get("scrypt", {}).get("rounds", 1)
+                    logger.debug(f"SCRYPT:INPUT Round {i+1}/{total_rounds}: {password_bytes.hex()}")
+                    logger.debug(f"SCRYPT:SALT Round {i+1}/{total_rounds}: {round_salt.hex()}")
+                    logger.debug(f"SCRYPT:PARAMS n={hash_config['scrypt']['n']}, r={hash_config['scrypt']['r']}, p={hash_config['scrypt']['p']}")
+
                 # Apply the KDF
                 result = scrypt_kdf.derive(password_bytes)
+
+                if debug:
+                    logger.debug(f"SCRYPT:OUTPUT Round {i+1}/{total_rounds}: {result.hex()}")
 
                 # Securely overwrite the previous password value
                 secure_memzero(password_bytes)
@@ -1818,6 +1982,11 @@ def generate_key(
                 secure_memzero(round_salt)
                 show_progress("Scrypt", i + 1, hash_config.get("scrypt", {}).get("rounds", 1))
             #           hashed_password = derived_key
+            
+            if debug:
+                total_rounds = hash_config.get("scrypt", {}).get("rounds", 1)
+                logger.debug(f"SCRYPT:FINAL After {total_rounds} rounds: {password.hex()}")
+                
             if not quiet and not progress:
                 print("✅")
         except Exception as e:
@@ -1846,6 +2015,78 @@ def generate_key(
             use_pbkdf2 = 100000
         elif pbkdf2_from_hash_config is not None and pbkdf2_from_hash_config > 0:
             use_pbkdf2 = pbkdf2_from_hash_config
+
+    if use_hkdf and HKDF_AVAILABLE:
+        # Create a copy of the salt to prevent modifications affecting the original
+        # This helps prevent salt reuse issues
+        base_salt = salt
+        if not quiet and not progress:
+            print("Using HKDF for key derivation", end=" ")
+        elif not quiet:
+            print("Using HKDF for key derivation")
+        hkdf_config = hash_config.get("hkdf", {}) if hash_config else {}
+        algorithm = hkdf_config.get("algorithm", "sha256")
+        info = hkdf_config.get("info", b"openssl_encrypt_hkdf")
+
+        # Convert string info to bytes if needed
+        if isinstance(info, str):
+            info = info.encode("utf-8")
+
+        try:
+            # Get hash algorithm
+            if algorithm == "sha256":
+                hash_algorithm = hashes.SHA256()
+            elif algorithm == "sha512":
+                hash_algorithm = hashes.SHA512()
+            elif algorithm == "sha384":
+                hash_algorithm = hashes.SHA384()
+            elif algorithm == "sha224":
+                hash_algorithm = hashes.SHA224()
+            else:
+                hash_algorithm = hashes.SHA256()  # Default fallback
+
+            for i in range(hkdf_config.get("rounds", 1)):
+                # Generate a new unique salt for each round to prevent salt reuse attacks
+                if i == 0:
+                    # Use the original salt for the first round
+                    round_salt = base_salt
+                else:
+                    # For subsequent rounds, derive a new unique salt using a secure method
+                    # This prevents potential weakening due to salt reuse
+                    salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
+                    round_salt = salt_material[:16]  # Use 16 bytes for salt
+
+                # Make a secure copy of the password for this operation
+                if hasattr(password, "to_bytes"):
+                    input_key_material = password.to_bytes()
+                else:
+                    input_key_material = password
+
+                # Apply HKDF key derivation
+                hkdf = HKDF(
+                    algorithm=hash_algorithm,
+                    length=key_length,
+                    salt=round_salt,
+                    info=info,
+                )
+                password = hkdf.derive(input_key_material)
+
+                show_progress("HKDF", i + 1, hkdf_config.get("rounds", 1))
+                KeyStretch.key_stretch = True
+
+            if not quiet and not progress:
+                print(" ✅")
+
+            # Update config to record HKDF usage
+            if isinstance(hash_config, dict) and "hkdf" in hash_config:
+                hash_config["hkdf"]["rounds"] = hkdf_config.get("rounds", 1)
+
+        except Exception as e:
+            if not quiet:
+                print("❌ HKDF failed, falling back to PBKDF2")
+            # Don't set use_hkdf to False here, as we want to record the attempt
+            use_hkdf = False  # Consider falling back to PBKDF2
+
     if use_pbkdf2 and use_pbkdf2 > 0:
         # Using a fixed salt initially but then generating unique salts for each iteration
         # to prevent salt reuse attacks
@@ -1957,11 +2198,17 @@ def convert_metadata_v3_to_v4(metadata):
     # Process hash algorithms to use nested structure
     hash_algorithms = [
         "sha512",
+        "sha384",
         "sha256",
-        "sha3_256",
+        "sha224",
         "sha3_512",
+        "sha3_384",
+        "sha3_256",
+        "sha3_224",
         "blake2b",
+        "blake3",
         "shake256",
+        "shake128",
         "whirlpool",
     ]
     hash_config = metadata.get("hash_config", {})
@@ -2172,11 +2419,17 @@ def create_metadata_v5(
     # Process hash algorithms to use nested structure
     hash_algorithms = [
         "sha512",
+        "sha384",
         "sha256",
-        "sha3_256",
+        "sha224",
         "sha3_512",
+        "sha3_384",
+        "sha3_256",
+        "sha3_224",
         "blake2b",
+        "blake3",
         "shake256",
+        "shake128",
         "whirlpool",
     ]
     for algo in hash_algorithms:
@@ -2188,7 +2441,7 @@ def create_metadata_v5(
         metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {"rounds": pbkdf2_iterations}
 
     # Move KDF configurations from hash_config if present
-    kdf_algorithms = ["scrypt", "argon2", "balloon"]
+    kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf"]
     for kdf in kdf_algorithms:
         if kdf in hash_config:
             metadata["derivation_config"]["kdf_config"][kdf] = hash_config[kdf]
@@ -2335,6 +2588,40 @@ def encrypt_file(
 
     if isinstance(algorithm, str):
         algorithm = EncryptionAlgorithm(algorithm)
+
+    # Handle signature algorithms (MAYO/CROSS) - generate keypair if not provided
+    is_signature_algorithm = algorithm in [
+        EncryptionAlgorithm.MAYO_1_HYBRID,
+        EncryptionAlgorithm.MAYO_3_HYBRID,
+        EncryptionAlgorithm.MAYO_5_HYBRID,
+        EncryptionAlgorithm.CROSS_128_HYBRID,
+        EncryptionAlgorithm.CROSS_192_HYBRID,
+        EncryptionAlgorithm.CROSS_256_HYBRID,
+    ]
+
+    if is_signature_algorithm and not pqc_keypair:
+        # Generate signature keypair for MAYO/CROSS algorithms
+        from .pqc_adapter import HYBRID_ALGORITHM_MAP, ExtendedPQCipher
+
+        # Map algorithm to signature algorithm name
+        sig_algorithm = HYBRID_ALGORITHM_MAP[algorithm.value]
+
+        if not quiet:
+            print(f"Generating {sig_algorithm} signature keypair...")
+
+        try:
+            sig_cipher = ExtendedPQCipher(sig_algorithm, quiet=quiet, verbose=verbose)
+            public_key, private_key = sig_cipher.generate_keypair()
+            pqc_keypair = (public_key, private_key)
+            if not quiet:
+                print(
+                    f"✅ Generated {sig_algorithm} keypair: pub={len(public_key)}B, priv={len(private_key)}B"
+                )
+        except Exception as e:
+            if not quiet:
+                print(f"❌ Failed to generate {sig_algorithm} keypair: {e}")
+            raise ValidationError(f"Failed to generate signature keypair: {e}")
+
     # Generate a key from the password
     salt = secrets.token_bytes(16)  # Unique salt for each encryption
     if not quiet:
@@ -2357,6 +2644,7 @@ def encrypt_file(
         quiet,
         algorithm_value,
         progress=progress,
+        debug=debug,
         pqc_keypair=pqc_keypair,
     )
     # Read the input file
@@ -2438,9 +2726,27 @@ def encrypt_file(
 
     # For large files, use progress bar for encryption
     def do_encrypt():
+        if debug:
+            logger.debug(f"ENCRYPT:KEY Final derived key for {algorithm_value}: {key.hex()}")
+            logger.debug(f"ENCRYPT:DATA Input data length: {len(data)} bytes")
+            logger.debug(f"ENCRYPT:DATA Input data (first 64 bytes): {data[:64].hex() if len(data) >= 64 else data.hex()}")
+        
         if algorithm == EncryptionAlgorithm.FERNET:
+            if debug:
+                logger.debug(f"ENCRYPT:FERNET Key length: {len(key)} bytes")
+                logger.debug(f"ENCRYPT:FERNET Key (Fernet base64): {key.decode('ascii')}")
+                logger.debug(f"ENCRYPT:FERNET Plaintext length: {len(data)} bytes")
+                logger.debug(f"ENCRYPT:FERNET Plaintext: {data.hex()}")
+            
             f = Fernet(key)
-            return f.encrypt(data)
+            encrypted_data = f.encrypt(data)
+            
+            if debug:
+                logger.debug(f"ENCRYPT:FERNET Encrypted token length: {len(encrypted_data)} bytes")
+                logger.debug(f"ENCRYPT:FERNET Encrypted token (base64): {encrypted_data.decode('ascii')}")
+                logger.debug(f"ENCRYPT:FERNET Encrypted token (hex): {encrypted_data.hex()}")
+            
+            return encrypted_data
         elif algorithm in [
             EncryptionAlgorithm.KYBER512_HYBRID,
             EncryptionAlgorithm.KYBER768_HYBRID,
@@ -2454,6 +2760,12 @@ def encrypt_file(
             EncryptionAlgorithm.HQC_128_HYBRID,
             EncryptionAlgorithm.HQC_192_HYBRID,
             EncryptionAlgorithm.HQC_256_HYBRID,
+            EncryptionAlgorithm.MAYO_1_HYBRID,
+            EncryptionAlgorithm.MAYO_3_HYBRID,
+            EncryptionAlgorithm.MAYO_5_HYBRID,
+            EncryptionAlgorithm.CROSS_128_HYBRID,
+            EncryptionAlgorithm.CROSS_192_HYBRID,
+            EncryptionAlgorithm.CROSS_256_HYBRID,
         ]:
             # PQC algorithms don't use nonces in the same way, handle separately
             if not PQC_AVAILABLE:
@@ -2480,65 +2792,214 @@ def encrypt_file(
                 EncryptionAlgorithm.HQC_128_HYBRID: "HQC-128",
                 EncryptionAlgorithm.HQC_192_HYBRID: "HQC-192",
                 EncryptionAlgorithm.HQC_256_HYBRID: "HQC-256",
+                # MAYO mappings
+                EncryptionAlgorithm.MAYO_1_HYBRID: "MAYO-1",
+                EncryptionAlgorithm.MAYO_3_HYBRID: "MAYO-3",
+                EncryptionAlgorithm.MAYO_5_HYBRID: "MAYO-5",
+                # CROSS mappings
+                EncryptionAlgorithm.CROSS_128_HYBRID: "CROSS-128",
+                EncryptionAlgorithm.CROSS_192_HYBRID: "CROSS-192",
+                EncryptionAlgorithm.CROSS_256_HYBRID: "CROSS-256",
             }
 
-            # Get public key from keypair or generate new keypair
-            if pqc_keypair and pqc_keypair[0]:
-                public_key = pqc_keypair[0]
-            else:
-                # If no keypair provided, we need to create a new one and store it in metadata
-                cipher = PQCipher(
-                    pqc_algo_map[algorithm], quiet=quiet, verbose=verbose, debug=debug
-                )
-                public_key, private_key = cipher.generate_keypair()
-                # We'll add these to metadata later
+            # Check if this is a signature algorithm (MAYO/CROSS) which needs special handling
+            is_signature_algorithm = algorithm in [
+                EncryptionAlgorithm.MAYO_1_HYBRID,
+                EncryptionAlgorithm.MAYO_3_HYBRID,
+                EncryptionAlgorithm.MAYO_5_HYBRID,
+                EncryptionAlgorithm.CROSS_128_HYBRID,
+                EncryptionAlgorithm.CROSS_192_HYBRID,
+                EncryptionAlgorithm.CROSS_256_HYBRID,
+            ]
 
-            # Initialize PQC cipher and encrypt
-            # Use encryption_data parameter passed to the parent function
-            cipher = PQCipher(
-                pqc_algo_map[algorithm],
-                quiet=quiet,
-                encryption_data=encryption_data,
-                verbose=verbose,
-                debug=debug,
-            )
-            return cipher.encrypt(data, public_key)
+            if is_signature_algorithm:
+                # For signature algorithms, use the private key directly for encryption
+                if not pqc_keypair or len(pqc_keypair) < 2:
+                    raise ValueError("Signature algorithm requires both public and private keys")
+
+                private_key = pqc_keypair[1]
+
+                if debug:
+                    logger.debug(f"ENCRYPT:PQC_SIG Algorithm: {algorithm.value}")
+                    logger.debug(f"ENCRYPT:PQC_SIG Private key length: {len(private_key)} bytes")
+                    logger.debug(f"ENCRYPT:PQC_SIG Input data length: {len(data)} bytes")
+
+                # Derive symmetric encryption key from signature private key
+                from cryptography.hazmat.primitives import hashes
+                from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+                # Derive 32-byte key for AES-GCM from signature private key
+                salt = b"OpenSSL-Encrypt-PQ-Signature-Hybrid"
+                info = f"encryption-key-{algorithm.value}".encode()
+
+                if debug:
+                    logger.debug(f"ENCRYPT:PQC_SIG HKDF salt: {salt.hex()}")
+                    logger.debug(f"ENCRYPT:PQC_SIG HKDF info: {info.hex()}")
+
+                derived_key = HKDF(
+                    algorithm=hashes.SHA256(),
+                    length=32,  # AES-256 key size
+                    salt=salt,
+                    info=info,
+                ).derive(private_key)
+
+                if debug:
+                    logger.debug(f"ENCRYPT:PQC_SIG Derived AES key length: {len(derived_key)} bytes")
+                    logger.debug(f"ENCRYPT:PQC_SIG Derived AES key: {derived_key.hex()}")
+
+                # Encrypt using AES-GCM with derived key
+                nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
+                
+                if debug:
+                    logger.debug(f"ENCRYPT:PQC_SIG AES-GCM nonce: {nonce.hex()}")
+                
+                aes_cipher = AESGCM(derived_key)
+                encrypted_payload = aes_cipher.encrypt(nonce, data, None)
+                encrypted_data = nonce + encrypted_payload
+                
+                if debug:
+                    logger.debug(f"ENCRYPT:PQC_SIG AES-GCM encrypted payload length: {len(encrypted_payload)} bytes")
+                    logger.debug(f"ENCRYPT:PQC_SIG AES-GCM encrypted payload: {encrypted_payload.hex()}")
+                    logger.debug(f"ENCRYPT:PQC_SIG Final encrypted data length: {len(encrypted_data)} bytes")
+                
+                return encrypted_data
+            else:
+                # Original KEM algorithm handling
+                # Get public key from keypair or generate new keypair
+                if pqc_keypair and pqc_keypair[0]:
+                    public_key = pqc_keypair[0]
+                else:
+                    # If no keypair provided, we need to create a new one and store it in metadata
+                    cipher = PQCipher(
+                        pqc_algo_map[algorithm], quiet=quiet, verbose=verbose, debug=debug
+                    )
+                    public_key, private_key = cipher.generate_keypair()
+                    # We'll add these to metadata later
+
+                # Initialize PQC cipher and encrypt
+                # Use encryption_data parameter passed to the parent function
+                cipher = PQCipher(
+                    pqc_algo_map[algorithm],
+                    quiet=quiet,
+                    encryption_data=encryption_data,
+                    verbose=verbose,
+                    debug=debug,
+                )
+                return cipher.encrypt(data, public_key)
         else:
             # Check if we're in test mode - this affects nonce generation for some algorithms
             is_test_env = os.environ.get("PYTEST_CURRENT_TEST") is not None
 
             # Generate appropriate nonce for the algorithm, considering test mode
             nonce, nonce_size = get_algorithm_nonce(algorithm, test_mode=is_test_env)
+            
+            if debug:
+                logger.debug(f"ENCRYPT:NONCE Generated nonce for {algorithm}: {nonce.hex()} (length: {len(nonce)} bytes)")
+                logger.debug(f"ENCRYPT:NONCE Effective nonce size used: {nonce_size} bytes")
+                logger.debug(f"ENCRYPT:NONCE Effective nonce: {nonce[:nonce_size].hex()}")
 
             if algorithm == EncryptionAlgorithm.AES_GCM:
+                if debug:
+                    logger.debug(f"ENCRYPT:AES_GCM Key length: {len(key)} bytes")
+                    logger.debug(f"ENCRYPT:AES_GCM Using {nonce_size}-byte nonce for encryption")
+                
                 cipher = AESGCM(key)
+                encrypted_payload = cipher.encrypt(nonce[:nonce_size], data, None)
+                
+                if debug:
+                    logger.debug(f"ENCRYPT:AES_GCM Encrypted payload length: {len(encrypted_payload)} bytes")
+                    logger.debug(f"ENCRYPT:AES_GCM Encrypted payload: {encrypted_payload.hex()}")
+                
                 # Always use 12 bytes for actual encryption, but prefix with full nonce
-                return nonce + cipher.encrypt(nonce[:nonce_size], data, None)
+                return nonce + encrypted_payload
 
             elif algorithm == EncryptionAlgorithm.AES_SIV:
+                if debug:
+                    logger.debug(f"ENCRYPT:AES_SIV Key length: {len(key)} bytes")
+                    logger.debug(f"ENCRYPT:AES_SIV Nonce (synthetic IV): {nonce.hex()}")
+                
                 cipher = AESSIV(key)
                 # AES-SIV is special as it doesn't use the nonce for encryption
-                return nonce + cipher.encrypt(data, None)
+                encrypted_payload = cipher.encrypt(data, None)
+                
+                if debug:
+                    logger.debug(f"ENCRYPT:AES_SIV Encrypted payload length: {len(encrypted_payload)} bytes")
+                    logger.debug(f"ENCRYPT:AES_SIV Encrypted payload: {encrypted_payload.hex()}")
+                
+                return nonce + encrypted_payload
 
             elif algorithm == EncryptionAlgorithm.CHACHA20_POLY1305:
+                if debug:
+                    logger.debug(f"ENCRYPT:CHACHA20 Key length: {len(key)} bytes")
+                    logger.debug(f"ENCRYPT:CHACHA20 Using {nonce_size}-byte nonce for encryption")
+                
                 cipher = ChaCha20Poly1305(key)
-                return nonce + cipher.encrypt(nonce[:nonce_size], data, None)
+                encrypted_payload = cipher.encrypt(nonce[:nonce_size], data, None)
+                
+                if debug:
+                    logger.debug(f"ENCRYPT:CHACHA20 Encrypted payload length: {len(encrypted_payload)} bytes")
+                    logger.debug(f"ENCRYPT:CHACHA20 Encrypted payload: {encrypted_payload.hex()}")
+                
+                return nonce + encrypted_payload
 
             elif algorithm == EncryptionAlgorithm.XCHACHA20_POLY1305:
+                if debug:
+                    logger.debug(f"ENCRYPT:XCHACHA20 Key length: {len(key)} bytes")
+                    logger.debug(f"ENCRYPT:XCHACHA20 Using {nonce_size}-byte nonce for encryption")
+                
                 cipher = XChaCha20Poly1305(key)
-                return nonce + cipher.encrypt(nonce[:nonce_size], data, None)
+                encrypted_payload = cipher.encrypt(nonce[:nonce_size], data, None)
+                
+                if debug:
+                    logger.debug(f"ENCRYPT:XCHACHA20 Encrypted payload length: {len(encrypted_payload)} bytes")
+                    logger.debug(f"ENCRYPT:XCHACHA20 Encrypted payload: {encrypted_payload.hex()}")
+                
+                return nonce + encrypted_payload
 
             elif algorithm == EncryptionAlgorithm.AES_GCM_SIV:
+                if debug:
+                    logger.debug(f"ENCRYPT:AES_GCM_SIV Key length: {len(key)} bytes")
+                    logger.debug(f"ENCRYPT:AES_GCM_SIV Using {nonce_size}-byte nonce for encryption")
+                    logger.debug(f"ENCRYPT:AES_GCM_SIV Nonce: {nonce[:nonce_size].hex()}")
+                
                 cipher = AESGCMSIV(key)
-                return nonce + cipher.encrypt(nonce[:nonce_size], data, None)
+                encrypted_payload = cipher.encrypt(nonce[:nonce_size], data, None)
+                
+                if debug:
+                    logger.debug(f"ENCRYPT:AES_GCM_SIV Encrypted payload length: {len(encrypted_payload)} bytes")
+                    logger.debug(f"ENCRYPT:AES_GCM_SIV Encrypted payload: {encrypted_payload.hex()}")
+                
+                return nonce + encrypted_payload
 
             elif algorithm == EncryptionAlgorithm.AES_OCB3:
+                if debug:
+                    logger.debug(f"ENCRYPT:AES_OCB3 Key length: {len(key)} bytes")
+                    logger.debug(f"ENCRYPT:AES_OCB3 Using {nonce_size}-byte nonce for encryption")
+                    logger.debug(f"ENCRYPT:AES_OCB3 Nonce: {nonce[:nonce_size].hex()}")
+                
                 cipher = AESOCB3(key)
-                return nonce + cipher.encrypt(nonce[:nonce_size], data, None)
+                encrypted_payload = cipher.encrypt(nonce[:nonce_size], data, None)
+                
+                if debug:
+                    logger.debug(f"ENCRYPT:AES_OCB3 Encrypted payload length: {len(encrypted_payload)} bytes")
+                    logger.debug(f"ENCRYPT:AES_OCB3 Encrypted payload: {encrypted_payload.hex()}")
+                
+                return nonce + encrypted_payload
 
             elif algorithm == EncryptionAlgorithm.CAMELLIA:
+                if debug:
+                    logger.debug(f"ENCRYPT:CAMELLIA Key length: {len(key)} bytes")
+                    logger.debug(f"ENCRYPT:CAMELLIA Using {nonce_size}-byte nonce for encryption")
+                    logger.debug(f"ENCRYPT:CAMELLIA Nonce: {nonce[:nonce_size].hex()}")
+                
                 cipher = CamelliaCipher(key)
-                return nonce + cipher.encrypt(nonce[:nonce_size], data, None)
+                encrypted_payload = cipher.encrypt(nonce[:nonce_size], data, None)
+                
+                if debug:
+                    logger.debug(f"ENCRYPT:CAMELLIA Encrypted payload length: {len(encrypted_payload)} bytes")
+                    logger.debug(f"ENCRYPT:CAMELLIA Encrypted payload: {encrypted_payload.hex()}")
+                
+                return nonce + encrypted_payload
 
             elif algorithm in [
                 EncryptionAlgorithm.KYBER512_HYBRID,
@@ -2583,6 +3044,11 @@ def encrypt_file(
         encrypted_data = with_progress_bar(do_encrypt, "Encrypting data", quiet=quiet)
     else:
         encrypted_data = do_encrypt()
+    
+    if debug:
+        logger.debug(f"ENCRYPT:OUTPUT Encrypted data length: {len(encrypted_data)} bytes")
+        logger.debug(f"ENCRYPT:OUTPUT Encrypted data (first 64 bytes): {encrypted_data[:64].hex() if len(encrypted_data) >= 64 else encrypted_data.hex()}")
+    
     if not quiet:
         print("✅")
     # Calculate hash of encrypted data
@@ -2609,6 +3075,12 @@ def encrypt_file(
         EncryptionAlgorithm.HQC_128_HYBRID,
         EncryptionAlgorithm.HQC_192_HYBRID,
         EncryptionAlgorithm.HQC_256_HYBRID,
+        EncryptionAlgorithm.MAYO_1_HYBRID,
+        EncryptionAlgorithm.MAYO_3_HYBRID,
+        EncryptionAlgorithm.MAYO_5_HYBRID,
+        EncryptionAlgorithm.CROSS_128_HYBRID,
+        EncryptionAlgorithm.CROSS_192_HYBRID,
+        EncryptionAlgorithm.CROSS_256_HYBRID,
     ]:
         pqc_info = {}
 
@@ -2921,7 +3393,7 @@ def decrypt_file(
 
         # Merge KDF configurations into hash_config for compatibility with generate_key
         for kdf_name, kdf_params in kdf_config.items():
-            if kdf_name in ["scrypt", "argon2", "balloon"]:
+            if kdf_name in ["scrypt", "argon2", "balloon", "hkdf"]:
                 hash_config[kdf_name] = kdf_params
             elif kdf_name == "pbkdf2" and isinstance(kdf_params, dict) and "rounds" in kdf_params:
                 # Also store pbkdf2_iterations directly in hash_config for generate_key
@@ -3065,6 +3537,7 @@ def decrypt_file(
         quiet,
         algorithm,
         progress=progress,
+        debug=debug,
         pqc_keypair=pqc_info,
     )
 
@@ -3232,9 +3705,27 @@ def decrypt_file(
         print("Decrypting content with " + algorithm, end=" ")
 
     def do_decrypt():
+        if debug:
+            logger.debug(f"DECRYPT:KEY Final derived key for {algorithm}: {key.hex()}")
+            logger.debug(f"DECRYPT:DATA Encrypted data length: {len(encrypted_data)} bytes")
+            logger.debug(f"DECRYPT:DATA Encrypted data (first 64 bytes): {encrypted_data[:64].hex() if len(encrypted_data) >= 64 else encrypted_data.hex()}")
+        
         if algorithm == EncryptionAlgorithm.FERNET.value:
+            if debug:
+                logger.debug(f"DECRYPT:FERNET Key length: {len(key)} bytes")
+                logger.debug(f"DECRYPT:FERNET Key (Fernet base64): {key.decode('ascii')}")
+                logger.debug(f"DECRYPT:FERNET Encrypted token length: {len(encrypted_data)} bytes")
+                logger.debug(f"DECRYPT:FERNET Encrypted token (base64): {encrypted_data.decode('ascii')}")
+                logger.debug(f"DECRYPT:FERNET Encrypted token (hex): {encrypted_data.hex()}")
+            
             f = Fernet(key)
-            return f.decrypt(encrypted_data)
+            decrypted_data = f.decrypt(encrypted_data)
+            
+            if debug:
+                logger.debug(f"DECRYPT:FERNET Decrypted plaintext length: {len(decrypted_data)} bytes")
+                logger.debug(f"DECRYPT:FERNET Decrypted plaintext: {decrypted_data.hex()}")
+            
+            return decrypted_data
         # Handle PQC algorithms first to ensure they're processed properly
         elif algorithm in [
             EncryptionAlgorithm.KYBER512_HYBRID.value,
@@ -3249,6 +3740,12 @@ def decrypt_file(
             EncryptionAlgorithm.HQC_128_HYBRID.value,
             EncryptionAlgorithm.HQC_192_HYBRID.value,
             EncryptionAlgorithm.HQC_256_HYBRID.value,
+            EncryptionAlgorithm.MAYO_1_HYBRID.value,
+            EncryptionAlgorithm.MAYO_3_HYBRID.value,
+            EncryptionAlgorithm.MAYO_5_HYBRID.value,
+            EncryptionAlgorithm.CROSS_128_HYBRID.value,
+            EncryptionAlgorithm.CROSS_192_HYBRID.value,
+            EncryptionAlgorithm.CROSS_256_HYBRID.value,
         ]:
             # Map algorithm to PQCAlgorithm
             pqc_algo_map = {
@@ -3268,52 +3765,118 @@ def decrypt_file(
                 EncryptionAlgorithm.HQC_128_HYBRID.value: "HQC-128",
                 EncryptionAlgorithm.HQC_192_HYBRID.value: "HQC-192",
                 EncryptionAlgorithm.HQC_256_HYBRID.value: "HQC-256",
+                # MAYO mappings
+                EncryptionAlgorithm.MAYO_1_HYBRID.value: "MAYO-1",
+                EncryptionAlgorithm.MAYO_3_HYBRID.value: "MAYO-3",
+                EncryptionAlgorithm.MAYO_5_HYBRID.value: "MAYO-5",
+                # CROSS mappings
+                EncryptionAlgorithm.CROSS_128_HYBRID.value: "CROSS-128",
+                EncryptionAlgorithm.CROSS_192_HYBRID.value: "CROSS-192",
+                EncryptionAlgorithm.CROSS_256_HYBRID.value: "CROSS-256",
             }
 
             # Check if we have the private key
             if not pqc_private_key:
                 raise ValueError("Post-quantum private key is required for decryption")
 
-            # Initialize PQC cipher and decrypt
-            # Use encryption_data parameter passed to the parent function
-            cipher = PQCipher(
-                pqc_algo_map[algorithm],
-                quiet=quiet,
-                encryption_data=encryption_data,
-                verbose=verbose,
-                debug=debug,
-            )
-            try:
-                # Pass the full file contents for recovery if needed
-                # This allows the PQCipher to try to recover the original content
-                # if the standard decryption approach fails
-                if "input_file" in locals() and input_file and os.path.exists(input_file):
-                    # Read the original encrypted file for content recovery
-                    with open(input_file, "rb") as f:
-                        original_file_contents = f.read()
-                        # Now decrypt with both the encrypted data and original file
-                        pqc_result = cipher.decrypt(
-                            encrypted_data,
-                            pqc_private_key,
-                            file_contents=original_file_contents,
-                        )
+            # Check if this is a signature algorithm (MAYO/CROSS) which needs special handling
+            is_signature_algorithm = algorithm in [
+                EncryptionAlgorithm.MAYO_1_HYBRID.value,
+                EncryptionAlgorithm.MAYO_3_HYBRID.value,
+                EncryptionAlgorithm.MAYO_5_HYBRID.value,
+                EncryptionAlgorithm.CROSS_128_HYBRID.value,
+                EncryptionAlgorithm.CROSS_192_HYBRID.value,
+                EncryptionAlgorithm.CROSS_256_HYBRID.value,
+            ]
+
+            if is_signature_algorithm:
+                # For signature algorithms, derive the same key from private key
+                if debug:
+                    logger.debug(f"DECRYPT:PQC_SIG Algorithm: {algorithm}")
+                    logger.debug(f"DECRYPT:PQC_SIG Private key length: {len(pqc_private_key)} bytes")
+                    logger.debug(f"DECRYPT:PQC_SIG Encrypted data length: {len(encrypted_data)} bytes")
+                
+                from cryptography.hazmat.primitives import hashes
+                from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+                # Derive 32-byte key for AES-GCM from signature private key
+                salt = b"OpenSSL-Encrypt-PQ-Signature-Hybrid"
+                info = f"encryption-key-{algorithm}".encode()
+
+                if debug:
+                    logger.debug(f"DECRYPT:PQC_SIG HKDF salt: {salt.hex()}")
+                    logger.debug(f"DECRYPT:PQC_SIG HKDF info: {info.hex()}")
+
+                derived_key = HKDF(
+                    algorithm=hashes.SHA256(),
+                    length=32,  # AES-256 key size
+                    salt=salt,
+                    info=info,
+                ).derive(pqc_private_key)
+
+                if debug:
+                    logger.debug(f"DECRYPT:PQC_SIG Derived AES key length: {len(derived_key)} bytes")
+                    logger.debug(f"DECRYPT:PQC_SIG Derived AES key: {derived_key.hex()}")
+
+                # Decrypt using AES-GCM with derived key
+                nonce = encrypted_data[:12]  # First 12 bytes are nonce
+                ciphertext = encrypted_data[12:]  # Rest is ciphertext
+                
+                if debug:
+                    logger.debug(f"DECRYPT:PQC_SIG AES-GCM nonce: {nonce.hex()}")
+                    logger.debug(f"DECRYPT:PQC_SIG AES-GCM ciphertext length: {len(ciphertext)} bytes")
+                    logger.debug(f"DECRYPT:PQC_SIG AES-GCM ciphertext: {ciphertext.hex()}")
+                
+                aes_cipher = AESGCM(derived_key)
+                decrypted_data = aes_cipher.decrypt(nonce, ciphertext, None)
+                
+                if debug:
+                    logger.debug(f"DECRYPT:PQC_SIG Decrypted data length: {len(decrypted_data)} bytes")
+                    logger.debug(f"DECRYPT:PQC_SIG Decrypted data: {decrypted_data.hex()}")
+                
+                return decrypted_data
+            else:
+                # Original KEM algorithm handling
+                # Initialize PQC cipher and decrypt
+                # Use encryption_data parameter passed to the parent function
+                cipher = PQCipher(
+                    pqc_algo_map[algorithm],
+                    quiet=quiet,
+                    encryption_data=encryption_data,
+                    verbose=verbose,
+                    debug=debug,
+                )
+                try:
+                    # Pass the full file contents for recovery if needed
+                    # This allows the PQCipher to try to recover the original content
+                    # if the standard decryption approach fails
+                    if "input_file" in locals() and input_file and os.path.exists(input_file):
+                        # Read the original encrypted file for content recovery
+                        with open(input_file, "rb") as f:
+                            original_file_contents = f.read()
+                            # Now decrypt with both the encrypted data and original file
+                            pqc_result = cipher.decrypt(
+                                encrypted_data,
+                                pqc_private_key,
+                                file_contents=original_file_contents,
+                            )
+                            # NOTE: Removed special case handling for test environment to ensure proper password validation
+                            return pqc_result
+                    else:
+                        # Standard approach without file contents
+                        pqc_result = cipher.decrypt(encrypted_data, pqc_private_key)
                         # NOTE: Removed special case handling for test environment to ensure proper password validation
                         return pqc_result
-                else:
-                    # Standard approach without file contents
-                    pqc_result = cipher.decrypt(encrypted_data, pqc_private_key)
-                    # NOTE: Removed special case handling for test environment to ensure proper password validation
-                    return pqc_result
-            except Exception as e:
-                # Use generic error message to prevent oracle attacks
-                if os.environ.get("PYTEST_CURRENT_TEST") is not None:
-                    raise e
-                # Try to show more information if available
-                if hasattr(e, "args") and len(e.args) > 0:
-                    err_msg = str(e.args[0])
-                    if "integrity" in err_msg.lower():
-                        print(f"PQC integrity verification failed: {err_msg}")
-                raise ValueError("Decryption failed: post-quantum decryption error")
+                except Exception as e:
+                    # Use generic error message to prevent oracle attacks
+                    if os.environ.get("PYTEST_CURRENT_TEST") is not None:
+                        raise e
+                    # Try to show more information if available
+                    if hasattr(e, "args") and len(e.args) > 0:
+                        err_msg = str(e.args[0])
+                        if "integrity" in err_msg.lower():
+                            print(f"PQC integrity verification failed: {err_msg}")
+                    raise ValueError("Decryption failed: post-quantum decryption error")
         else:
             # Get possible nonce sizes for this algorithm
             possible_nonce_sizes = get_nonce_size(algorithm, include_legacy=True)
@@ -3326,42 +3889,109 @@ def decrypt_file(
                 try:
                     # Special case for AES-SIV which doesn't use nonce for decryption
                     if algorithm == EncryptionAlgorithm.AES_SIV.value:
+                        if debug:
+                            logger.debug(f"DECRYPT:AES_SIV Key length: {len(key)} bytes")
+                            logger.debug(f"DECRYPT:AES_SIV Encrypted data length: {len(encrypted_data)} bytes")
+                        
                         # Special handling for test_decrypt_stdin and similar tests
                         # The test includes a known format where length is exactly 32 bytes
                         if len(encrypted_data) == 32:
                             # The unit test is using this specific format
+                            if debug:
+                                logger.debug(f"DECRYPT:AES_SIV Using test format (32 bytes): {encrypted_data.hex()}")
+                            
                             cipher = AESSIV(key)
                             result = cipher.decrypt(encrypted_data, None)
+                            
+                            if debug:
+                                logger.debug(f"DECRYPT:AES_SIV Decrypted plaintext length: {len(result)} bytes")
+                                logger.debug(f"DECRYPT:AES_SIV Decrypted plaintext: {result.hex()}")
+                            
                             return result
                         else:
                             # Skip header of appropriate size
+                            if debug:
+                                logger.debug(f"DECRYPT:AES_SIV Skipping header size: {stored_size} bytes")
+                                logger.debug(f"DECRYPT:AES_SIV Ciphertext: {encrypted_data[stored_size:].hex()}")
+                            
                             cipher = AESSIV(key)
                             result = cipher.decrypt(encrypted_data[stored_size:], None)
+                            
+                            if debug:
+                                logger.debug(f"DECRYPT:AES_SIV Decrypted plaintext length: {len(result)} bytes")
+                                logger.debug(f"DECRYPT:AES_SIV Decrypted plaintext: {result.hex()}")
+                            
                             return result
 
                     # Normal case for other algorithms
                     if stored_size > 0:
                         nonce = encrypted_data[:stored_size]
                         ciphertext = encrypted_data[stored_size:]
+                        
+                        if debug:
+                            logger.debug(f"DECRYPT:NONCE Extracted nonce for {algorithm}: {nonce.hex()} (stored size: {stored_size} bytes)")
+                            logger.debug(f"DECRYPT:NONCE Effective nonce size used: {effective_size} bytes")
+                            logger.debug(f"DECRYPT:NONCE Effective nonce: {nonce[:effective_size].hex()}")
+                            logger.debug(f"DECRYPT:CIPHER Ciphertext length: {len(ciphertext)} bytes")
 
                         if algorithm == EncryptionAlgorithm.AES_GCM.value:
+                            if debug:
+                                logger.debug(f"DECRYPT:AES_GCM Key length: {len(key)} bytes")
+                                logger.debug(f"DECRYPT:AES_GCM Ciphertext: {ciphertext.hex()}")
+                            
                             cipher = AESGCM(key)
                             # Use first effective_size bytes of nonce for decryption
                             result = cipher.decrypt(nonce[:effective_size], ciphertext, None)
+                            
+                            if debug:
+                                logger.debug(f"DECRYPT:AES_GCM Decrypted plaintext length: {len(result)} bytes")
+                                logger.debug(f"DECRYPT:AES_GCM Decrypted plaintext: {result.hex()}")
+                            
                             return result
                         elif algorithm == EncryptionAlgorithm.AES_GCM_SIV.value:
+                            if debug:
+                                logger.debug(f"DECRYPT:AES_GCM_SIV Key length: {len(key)} bytes")
+                                logger.debug(f"DECRYPT:AES_GCM_SIV Ciphertext: {ciphertext.hex()}")
+                            
                             cipher = AESGCMSIV(key)
                             result = cipher.decrypt(nonce[:effective_size], ciphertext, None)
+                            
+                            if debug:
+                                logger.debug(f"DECRYPT:AES_GCM_SIV Decrypted plaintext length: {len(result)} bytes")
+                                logger.debug(f"DECRYPT:AES_GCM_SIV Decrypted plaintext: {result.hex()}")
+                            
                             return result
                         elif algorithm == EncryptionAlgorithm.AES_OCB3.value:
+                            if debug:
+                                logger.debug(f"DECRYPT:AES_OCB3 Key length: {len(key)} bytes")
+                                logger.debug(f"DECRYPT:AES_OCB3 Ciphertext: {ciphertext.hex()}")
+                            
                             cipher = AESOCB3(key)
                             result = cipher.decrypt(nonce[:effective_size], ciphertext, None)
+                            
+                            if debug:
+                                logger.debug(f"DECRYPT:AES_OCB3 Decrypted plaintext length: {len(result)} bytes")
+                                logger.debug(f"DECRYPT:AES_OCB3 Decrypted plaintext: {result.hex()}")
+                            
                             return result
                         elif algorithm == EncryptionAlgorithm.CHACHA20_POLY1305.value:
+                            if debug:
+                                logger.debug(f"DECRYPT:CHACHA20 Key length: {len(key)} bytes")
+                                logger.debug(f"DECRYPT:CHACHA20 Ciphertext: {ciphertext.hex()}")
+                            
                             cipher = ChaCha20Poly1305(key)
                             result = cipher.decrypt(nonce[:effective_size], ciphertext, None)
+                            
+                            if debug:
+                                logger.debug(f"DECRYPT:CHACHA20 Decrypted plaintext length: {len(result)} bytes")
+                                logger.debug(f"DECRYPT:CHACHA20 Decrypted plaintext: {result.hex()}")
+                            
                             return result
                         elif algorithm == EncryptionAlgorithm.XCHACHA20_POLY1305.value:
+                            if debug:
+                                logger.debug(f"DECRYPT:XCHACHA20 Key length: {len(key)} bytes")
+                                logger.debug(f"DECRYPT:XCHACHA20 Ciphertext: {ciphertext.hex()}")
+                            
                             cipher = XChaCha20Poly1305(key)
                             # Show warning when using legacy size
                             if stored_size != 24 and not quiet:
@@ -3369,10 +3999,24 @@ def decrypt_file(
                                     "\nWARNING: Using legacy 12-byte nonce for XChaCha20-Poly1305"
                                 )
                             result = cipher.decrypt(nonce[:effective_size], ciphertext, None)
+                            
+                            if debug:
+                                logger.debug(f"DECRYPT:XCHACHA20 Decrypted plaintext length: {len(result)} bytes")
+                                logger.debug(f"DECRYPT:XCHACHA20 Decrypted plaintext: {result.hex()}")
+                            
                             return result
                         elif algorithm == EncryptionAlgorithm.CAMELLIA.value:
+                            if debug:
+                                logger.debug(f"DECRYPT:CAMELLIA Key length: {len(key)} bytes")
+                                logger.debug(f"DECRYPT:CAMELLIA Ciphertext: {ciphertext.hex()}")
+                            
                             cipher = CamelliaCipher(key)
                             result = cipher.decrypt(nonce[:effective_size], ciphertext, None)
+                            
+                            if debug:
+                                logger.debug(f"DECRYPT:CAMELLIA Decrypted plaintext length: {len(result)} bytes")
+                                logger.debug(f"DECRYPT:CAMELLIA Decrypted plaintext: {result.hex()}")
+                            
                             return result
                 except Exception as e:
                     # Save the error and try the next nonce size
@@ -3394,6 +4038,10 @@ def decrypt_file(
         decrypted_data = with_progress_bar(do_decrypt, "Decrypting data", quiet=quiet)
     else:
         decrypted_data = do_decrypt()
+    
+    if debug:
+        logger.debug(f"DECRYPT:OUTPUT Decrypted data length: {len(decrypted_data)} bytes")
+        logger.debug(f"DECRYPT:OUTPUT Decrypted data (first 64 bytes): {decrypted_data[:64].hex() if len(decrypted_data) >= 64 else decrypted_data.hex()}")
 
     if not quiet:
         print("✅")  # Green check symbol
@@ -3486,14 +4134,20 @@ def get_organized_hash_config(hash_config, encryption_algo=None, salt=None):
     }
 
     # Define which algorithms are KDFs and which are hashes
-    kdf_algorithms = ["scrypt", "argon2", "balloon", "pbkdf2_iterations", "pbkdf2"]
+    kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf", "pbkdf2_iterations", "pbkdf2"]
     hash_algorithms = [
         "sha3_512",
+        "sha3_384",
         "sha3_256",
+        "sha3_224",
         "sha512",
+        "sha384",
         "sha256",
+        "sha224",
         "blake2b",
+        "blake3",
         "shake256",
+        "shake128",
         "whirlpool",
     ]
 

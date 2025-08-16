@@ -49,6 +49,8 @@
                       <ul>
                           <li>ML-KEM (512/768/1024-bit)</li>
                           <li>HQC (128/192/256-bit)</li>
+                          <li>MAYO (1/3/5 multivariate)</li>
+                          <li>CROSS (128/192/256 code-based)</li>
                           <li>Kyber hybrid encryption</li>
                           <li>Quantum-resistant key exchange</li>
                           <li>Future-proof security</li>
@@ -58,9 +60,11 @@
                   <div class="feature-category">
                       <h3>&#128273; Key Derivation Functions</h3>
                       <ul>
+                          <li>HKDF (RFC 5869 modern standard)</li>
                           <li>Argon2 (recommended)</li>
-                          <li>PBKDF2</li>
                           <li>Scrypt</li>
+                          <li>Balloon Hashing</li>
+                          <li>PBKDF2 (legacy)</li>
                           <li>Configurable iterations</li>
                           <li>Salt generation</li>
                       </ul>
@@ -69,11 +73,12 @@
                   <div class="feature-category">
                       <h3>&#128221; Hash Algorithms</h3>
                       <ul>
-                          <li>SHA-3 (256/512-bit)</li>
-                          <li>BLAKE2b</li>
-                          <li>SHAKE-256</li>
-                          <li>Whirlpool</li>
-                          <li>SHA-256/512</li>
+                          <li>SHA-2 Family (224/256/384/512-bit)</li>
+                          <li>SHA-3 Family (224/256/384/512-bit)</li>
+                          <li>BLAKE3 (ultra-fast tree-based)</li>
+                          <li>BLAKE2b (high-performance)</li>
+                          <li>SHAKE (128/256 extendable-output)</li>
+                          <li>Whirlpool (legacy)</li>
                       </ul>
                   </div>
 
@@ -82,6 +87,7 @@
                       <ul>
                           <li>Modern GUI with dark/light themes</li>
                           <li>Command-line interface</li>
+                          <li>Comprehensive debug mode with --debug flag</li>
                           <li>Drag & drop file support</li>
                           <li>Progress indicators</li>
                           <li>Batch processing</li>
@@ -115,7 +121,40 @@
               </div>
               <div class="changelog-item">
                   <div class="version">
-                      1.0.0
+                      1.1.0-stable
+                      <span class="release-type stable">STABLE RELEASE</span>
+                      <span class="release-type minor">MINOR</span>
+                  </div>
+                  <div class="description">
+                      Major stable release with comprehensive debug system: All features from 1.1.0-dev now production-ready including extended hash support (SHA-224/384, SHA3-224/384, BLAKE3, SHAKE-128), HKDF key derivation, and MAYO/CROSS post-quantum signature algorithms with LibOQS integration. NEW: Complete debug system with comprehensive output for all encryption algorithms using structured prefixes (ENCRYPT:, DECRYPT:, HASH-TYPE:INPUT/OUTPUT/FINAL) providing detailed cryptographic operation visibility. Enhanced professional GUI with restructured settings and hash family groupings. Production-ready with complete backward compatibility.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      1.1.0-dev
+                      <span class="release-type stable">DEV RELEASE</span>
+                      <span class="release-type minor">MINOR</span>
+                  </div>
+                  <div class="description">
+                      Comprehensive cryptographic enhancement release: Extended hash support with complete SHA-2 (SHA-224/384) and SHA-3 (SHA3-224/384) families, added BLAKE3 ultra-fast hash and SHAKE-128 extendable-output function. Implemented HKDF (RFC 5869) key derivation with configurable hash algorithms and rounds. Added MAYO-1/3/5 multivariate and CROSS-128/192/256 code-based post-quantum signature algorithms. Completely reorganized GUI with professional hash family groupings (SHA-2, SHA-3, BLAKE, SHAKE, Legacy) and dedicated KDF Algorithm Settings section. Enhanced CLI with complete coverage of all hash algorithms and HKDF options.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      1.0.1-stable
+                      <span class="release-type stable">STABLE RELEASE</span>
+                      <span class="release-type minor">MINOR</span>
+                  </div>
+                  <div class="description">
+                      UI/UX enhancement release: Implemented segregated CLI help system where global help shows command overview and command-specific help shows only relevant parameters. Improved user experience with better command navigation and clearer help documentation.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      1.0.0-stable
                       <span class="release-type stable">STABLE RELEASE</span>
                       <span class="release-type major">MAJOR</span>
                   </div>
