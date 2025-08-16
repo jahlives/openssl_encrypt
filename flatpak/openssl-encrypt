@@ -2,14 +2,12 @@
 """
 Launcher script for OpenSSL Encrypt Flatpak package.
 Handles both CLI and GUI modes based on command line arguments.
+Flutter GUI only - tkinter support removed for 1.2.0 release.
 """
 
 import os
 import sys
-
-# Force set environment variables at the very start
-os.environ["DISPLAY"] = ":0"
-os.environ["XAUTHORITY"] = "/run/user/1000/xauth_PaSUjl"
+import subprocess
 
 # Add the application directory to Python path
 app_dir = os.path.dirname(os.path.abspath(__file__))
@@ -18,269 +16,37 @@ sys.path.insert(0, app_dir)
 
 def main():
     """Main launcher function."""
-    # Check for specific GUI mode requests
-    gui_mode = None
-    force_tkinter = False
-    
-    if len(sys.argv) > 1:
-        if "--gui-tk" in sys.argv:
-            gui_mode = "tkinter"
-            force_tkinter = True
-            # Remove --gui-tk from arguments to avoid conflicts
-            sys.argv = [arg for arg in sys.argv if arg != "--gui-tk"]
-        elif "--gui" in sys.argv:
-            gui_mode = "auto"
-            # Remove --gui from arguments to avoid conflicts
-            sys.argv = [arg for arg in sys.argv if arg != "--gui"]
-    
-    if gui_mode:
-        # Determine which GUI to use
+    # Check if GUI mode is requested
+    if len(sys.argv) > 1 and "--gui" in sys.argv:
+        # Remove --gui from arguments to avoid conflicts
+        sys.argv = [arg for arg in sys.argv if arg != "--gui"]
+
+        # Remove deprecated tkinter flags if present
+        deprecated_flags = ["--gui-tk", "--gui-tkinter"]
+        for flag in deprecated_flags:
+            if flag in sys.argv:
+                sys.argv = [arg for arg in sys.argv if arg != flag]
+                print(f"⚠️  Warning: {flag} is not supported in this release (Flutter GUI only)", file=sys.stderr)
+
+        # Launch Flutter GUI (only GUI option in 1.2.0)
         flutter_gui_path = "/app/bin/openssl-encrypt-gui/openssl_encrypt_mobile"
-        use_flutter_gui = not force_tkinter and os.path.exists(flutter_gui_path)
-        
-        # Initialize variables at GUI scope level
-        wayland_display = os.environ.get("WAYLAND_DISPLAY")
-        
-        if use_flutter_gui:
-            # Launch Flutter GUI
+        if os.path.exists(flutter_gui_path):
             print("🚀 Launching Flutter desktop GUI...")
             try:
-                import subprocess
-                # Run the Flutter executable directly
-                result = subprocess.run([flutter_gui_path], 
-                                      env=os.environ.copy())
+                # Run the Flutter executable directly with clean environment
+                result = subprocess.run([flutter_gui_path], env=os.environ.copy())
                 sys.exit(result.returncode)
             except Exception as e:
                 print(f"❌ Flutter GUI launch failed: {e}", file=sys.stderr)
-                print("🔄 Falling back to tkinter GUI...", file=sys.stderr)
-                # Fall through to tkinter GUI
-        
-        # Launch tkinter GUI (explicit request, fallback, or when Flutter not available)
-        if force_tkinter:
-            print("🎯 Launching tkinter GUI (explicitly requested)...")
-        elif not use_flutter_gui and gui_mode == "auto":
-            print("🔄 Launching tkinter GUI (Flutter not available)...")
-        try:
-            # Check display environment
-
-            print(f"DISPLAY environment: {os.environ.get('DISPLAY', 'NOT SET')}")
-            print(f"WAYLAND_DISPLAY environment: {os.environ.get('WAYLAND_DISPLAY', 'NOT SET')}")
-            print(f"XAUTHORITY environment: {os.environ.get('XAUTHORITY', 'NOT SET')}")
-            print(
-                f"Available display vars: {sorted([k for k in os.environ.keys() if 'DISPLAY' in k.upper() or 'WAYLAND' in k.upper() or 'AUTH' in k.upper()])}"
-            )
-            print(f"X11 socket exists: {os.path.exists('/tmp/.X11-unix/X0')}")
-
-            # Try to force set environment from command line args
-            for arg in sys.argv:
-                if arg.startswith("--env=DISPLAY="):
-                    display_val = arg.split("=", 2)[2]
-                    os.environ["DISPLAY"] = display_val
-                    print(f"Set DISPLAY from command line: {display_val}")
-                    break
-
-            # First check if tkinter is available
-            import tkinter
-
-            print("✓ tkinter is available")
-
-            # Handle Wayland vs X11 display setup
-            x11_display = os.environ.get("DISPLAY")
-
-            if wayland_display:
-                # Wayland environment - properly configure for XWayland/tkinter compatibility
-                print(f"Detected Wayland environment: {wayland_display}")
-                os.environ["GDK_BACKEND"] = "wayland,x11"
-                
-                # For Wayland+XWayland, we need to clear problematic X11 auth
-                # and let the system handle authentication automatically
-                if "XAUTHORITY" in os.environ:
-                    del os.environ["XAUTHORITY"]
-                
-                # Try to find the correct XWayland display
-                current_display = os.environ.get("DISPLAY", ":0")
-                print(f"Current DISPLAY setting: {current_display}")
-                
-                # Check if current display socket exists, if not find an alternative
-                current_socket = f"/tmp/.X11-unix/X{current_display[1:] if current_display.startswith(':') else current_display}"
-                if os.path.exists(current_socket):
-                    print(f"✓ Display socket exists: {current_socket}")
-                else:
-                    print(f"⚠️ Display socket not found: {current_socket}")
-                    # Try to find an alternative XWayland display
-                    found_alternative = False
-                    for display_num in [":0", ":1", ":2"]:
-                        socket_path = f"/tmp/.X11-unix/X{display_num[1:]}"
-                        if os.path.exists(socket_path):
-                            os.environ["DISPLAY"] = display_num
-                            print(f"Found alternative XWayland display: {display_num}")
-                            found_alternative = True
-                            break
-                    
-                    if not found_alternative:
-                        print("No XWayland sockets detected, keeping current DISPLAY")
-                
-                # Additional Wayland compatibility settings
-                os.environ["XDG_SESSION_TYPE"] = "wayland"
-                os.environ["QT_QPA_PLATFORM"] = "wayland"
-                    
-                print("Using Wayland with XWayland fallback (automatic auth)")
-            elif x11_display:
-                print(f"Using X11 display: {x11_display}")
-                os.environ["GDK_BACKEND"] = "x11"
-                # Keep existing X11 auth for pure X11 environments
-            else:
-                # No display detected - try Wayland first, then X11
-                print("WARNING: No display server detected")
-                print("Attempting automatic display detection...")
-                os.environ["GDK_BACKEND"] = "wayland,x11"
-                
-                # Try to detect and set display automatically
-                if not os.environ.get("DISPLAY"):
-                    os.environ["DISPLAY"] = ":0"
-
-            print(f"Final DISPLAY: {os.environ.get('DISPLAY')}")
-            print(f"Final XAUTHORITY: {os.environ.get('XAUTHORITY')}")
-            print(f"Final GDK_BACKEND: {os.environ.get('GDK_BACKEND')}")
-
-            # For Flatpak + Wayland, add additional environment variables
-            if wayland_display:
-                # Force toolkit backends for better Wayland compatibility
-                os.environ["ELECTRON_OZONE_PLATFORM_HINT"] = "wayland"
-                os.environ["MOZ_ENABLE_WAYLAND"] = "1"
-                # Disable problematic X11 features that cause auth issues
-                os.environ["NO_AT_BRIDGE"] = "1"
-                
-            # For Flatpak+Wayland, try different approaches to get X11 working
-            if wayland_display:
-                print("🔧 Wayland detected - attempting XWayland compatibility fixes...")
-                
-                # Try approach 1: Force start XWayland via weston-terminal trick
-                try:
-                    import subprocess
-                    import time
-                    import atexit
-                    
-                    print("🔄 Attempting to trigger XWayland startup...")
-                    
-                    # Try to start a minimal X11 client to force XWayland startup
-                    # Use xwininfo which should trigger XWayland if available
-                    trigger_process = subprocess.Popen(
-                        ['sh', '-c', 'DISPLAY=:0 timeout 2 xwininfo -root >/dev/null 2>&1 || true'],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
-                    )
-                    
-                    # Wait a moment for XWayland to potentially start
-                    time.sleep(1)
-                    trigger_process.wait()
-                    
-                    # Check if XWayland socket appeared
-                    if os.path.exists("/tmp/.X11-unix/X0"):
-                        print("✅ XWayland socket detected after trigger")
-                        os.environ["DISPLAY"] = ":0"
-                        # Clear problematic auth for XWayland
-                        if "XAUTHORITY" in os.environ:
-                            del os.environ["XAUTHORITY"]
-                    else:
-                        print("⚠️ XWayland trigger didn't create socket")
-                        # Fall back to the original approach
-                        os.environ["DISPLAY"] = ":0"
-                        if "XAUTHORITY" in os.environ:
-                            del os.environ["XAUTHORITY"]
-                        
-                except Exception as e:
-                    print(f"⚠️ XWayland trigger failed: {e}")
-                    # Keep original settings
-                    pass
-            else:
-                print("🔍 Using existing display configuration...")
-                
-            print(f"🖥️ Final display configuration: DISPLAY={os.environ.get('DISPLAY')}")
-            print(f"🔑 Auth configuration: XAUTHORITY={os.environ.get('XAUTHORITY', 'CLEARED')}")
-
-            # Then try to import the GUI module
-            from openssl_encrypt.crypt_gui import main as gui_main
-
-            print("✓ GUI module imported successfully")
-
-            # Add timeout protection for tkinter startup
-            print("🚀 Starting tkinter GUI...")
-            import signal
-            
-            def timeout_handler(signum, frame):
-                print("⏰ tkinter GUI startup timeout - forcing exit", file=sys.stderr)
-                raise TimeoutError("GUI startup timeout")
-            
-            # Set 10 second timeout for GUI startup
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(10)
-            
-            try:
-                # Font configuration will be handled by the GUI itself
-                gui_main()
-            except TimeoutError:
-                print("❌ tkinter GUI failed to start within timeout", file=sys.stderr)
-                raise Exception("GUI startup timeout - display connection failed")
-            finally:
-                # Disable timeout
-                signal.alarm(0)
-        except ImportError as e:
-            print(f"❌ Error: GUI components not available - {e}", file=sys.stderr)
-            print("Python path:", sys.path, file=sys.stderr)
-
-            # Try to give more specific error information
-            try:
-                import tkinter
-                print("✓ tkinter is available, issue is with openssl_encrypt module", file=sys.stderr)
-            except ImportError:
-                print("✗ tkinter is not available", file=sys.stderr)
-
-            # If --gui-tk was explicitly requested and failed, try Flutter fallback
-            if force_tkinter and os.path.exists(flutter_gui_path):
-                print("🔄 tkinter GUI failed, attempting Flutter GUI fallback...", file=sys.stderr)
-                try:
-                    import subprocess
-                    result = subprocess.run([flutter_gui_path], env=os.environ.copy())
-                    sys.exit(result.returncode)
-                except Exception as flutter_error:
-                    print(f"❌ Flutter GUI fallback also failed: {flutter_error}", file=sys.stderr)
-            
-            sys.exit(1)
-        except Exception as e:
-            error_msg = str(e)
-            print(f"❌ tkinter GUI failed to start: {error_msg}", file=sys.stderr)
-            
-            # For Wayland environments, always try Flutter as fallback  
-            if wayland_display or "display" in error_msg.lower():
-                print("", file=sys.stderr)
-                print("🔄 tkinter incompatible with this Wayland+Flatpak configuration", file=sys.stderr)
-                print("🔄 Attempting Flutter GUI (native Wayland support)...", file=sys.stderr)
-            
-            # Try Flutter GUI fallback
-            if os.path.exists(flutter_gui_path):
-                try:
-                    import subprocess
-                    result = subprocess.run([flutter_gui_path], env=os.environ.copy())
-                    sys.exit(result.returncode)
-                except Exception as flutter_error:
-                    print(f"❌ Flutter GUI also failed: {flutter_error}", file=sys.stderr)
-            else:
-                print("❌ No Flutter GUI available as fallback", file=sys.stderr)
-            
-            # If we reach here, both GUIs failed
-            print("", file=sys.stderr)
-            print("💡 GUI troubleshooting suggestions:", file=sys.stderr)
-            print("  • Use CLI mode instead: flatpak run com.opensslencrypt.OpenSSLEncrypt", file=sys.stderr)
-            print("  • Check if XWayland is installed on your system", file=sys.stderr)
-            print("  • Try running outside Flatpak for debugging", file=sys.stderr)
-            
+                sys.exit(1)
+        else:
+            print("❌ Flutter GUI not available - please rebuild with --build-flutter", file=sys.stderr)
+            print("💡 Note: tkinter GUI is not supported in this release", file=sys.stderr)
             sys.exit(1)
     else:
         # Launch CLI
         try:
             from openssl_encrypt.cli import main as cli_main
-
             cli_main()
         except ImportError:
             print("Error: CLI components not available", file=sys.stderr)

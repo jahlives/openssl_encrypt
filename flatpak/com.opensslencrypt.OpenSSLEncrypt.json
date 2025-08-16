@@ -6,20 +6,15 @@
   "command": "openssl-encrypt",
   "finish-args": [
     "--share=ipc",
-    "--share=network",
     "--socket=x11",
-    "--socket=fallback-x11", 
     "--socket=wayland",
     "--device=dri",
     "--filesystem=host",
     "--filesystem=xdg-run/at-spi",
-    "--filesystem=/tmp/.X11-unix:rw",
     "--talk-name=org.freedesktop.FileManager1",
     "--talk-name=org.gtk.vfs.*",
     "--talk-name=org.a11y.*",
-    "--env=PYTHONPATH=/app/lib/python3.12/site-packages",
-    "--env=GDK_BACKEND=wayland,x11",
-    "--env=QT_QPA_PLATFORM=wayland;xcb"
+    "--env=PYTHONPATH=/app/lib/python3.12/site-packages"
   ],
   "modules": [
     {
@@ -65,24 +60,6 @@
           "sha256": "df999915204eb1eba311d89e83d1edd3a514d5a07374745d6a9e5b2dd0d59c08"
         }
       ]
-    },
-    {
-      "name": "xvfb-runtime",
-      "buildsystem": "simple", 
-      "build-commands": [
-        "echo '📦 Setting up Xvfb runtime environment...'",
-        "mkdir -p /app/bin",
-        "echo '#!/bin/bash' > /app/bin/xvfb-run-minimal",
-        "echo '# Minimal xvfb-run replacement for Flatpak' >> /app/bin/xvfb-run-minimal",
-        "echo 'export DISPLAY=:99' >> /app/bin/xvfb-run-minimal", 
-        "echo 'mkdir -p /tmp/.X11-unix' >> /app/bin/xvfb-run-minimal",
-        "echo 'touch /tmp/.X11-unix/X99' >> /app/bin/xvfb-run-minimal",
-        "echo 'chmod 777 /tmp/.X11-unix/X99' >> /app/bin/xvfb-run-minimal",
-        "echo 'exec \"$@\"' >> /app/bin/xvfb-run-minimal",
-        "chmod +x /app/bin/xvfb-run-minimal",
-        "echo '✅ Minimal xvfb-run installed'"
-      ],
-      "sources": []
     },
     {
       "name": "python3-dependencies",
