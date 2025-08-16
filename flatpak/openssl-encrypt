@@ -95,9 +95,22 @@ def main():
                 if "XAUTHORITY" in os.environ:
                     del os.environ["XAUTHORITY"]
                 
-                # Set DISPLAY if not already set (XWayland will handle this)
+                # Try to find the correct XWayland display
                 if not os.environ.get("DISPLAY"):
-                    os.environ["DISPLAY"] = ":0"
+                    # Try common XWayland displays
+                    for display_num in [":0", ":1", ":2"]:
+                        if os.path.exists(f"/tmp/.X11-unix/X{display_num[1:]}"):
+                            os.environ["DISPLAY"] = display_num
+                            print(f"Found XWayland display: {display_num}")
+                            break
+                    else:
+                        # Fallback to :0 if no socket found
+                        os.environ["DISPLAY"] = ":0"
+                        print("No XWayland socket detected, using :0 as fallback")
+                
+                # Additional Wayland compatibility settings
+                os.environ["XDG_SESSION_TYPE"] = "wayland"
+                os.environ["QT_QPA_PLATFORM"] = "wayland"
                     
                 print("Using Wayland with XWayland fallback (automatic auth)")
             elif x11_display:
@@ -128,18 +141,45 @@ def main():
                 
             # Test display connection with better error handling
             print("Testing display connection...")
+            display_test_passed = False
             try:
                 test_root = tkinter.Tk()
                 test_root.withdraw()
                 test_root.destroy()
                 print("✓ Display connection successful")
+                display_test_passed = True
             except Exception as e:
                 print(f"⚠️ Display connection test failed: {e}")
-                if wayland_display:
-                    print("⚠️ This is expected in some Wayland+Flatpak configurations")
-                    print("⚠️ Proceeding anyway - tkinter may still work...")
-                else:
-                    print("⚠️ X11 connection failed, this may cause issues")
+                
+                # Try alternative approaches for Wayland
+                if wayland_display and "Authorization required" in str(e):
+                    print("⚠️ Trying alternative Wayland configuration...")
+                    
+                    # Try removing all X11 environment variables
+                    x11_vars_to_clear = ["DISPLAY", "XAUTHORITY", "XDISPLAY"]
+                    for var in x11_vars_to_clear:
+                        if var in os.environ:
+                            del os.environ[var]
+                    
+                    # Try with no DISPLAY set - let tkinter auto-detect
+                    print("⚠️ Attempting tkinter with no DISPLAY (auto-detection)...")
+                    try:
+                        test_root2 = tkinter.Tk()
+                        test_root2.withdraw() 
+                        test_root2.destroy()
+                        print("✓ Alternative display connection successful!")
+                        display_test_passed = True
+                    except Exception as e2:
+                        print(f"⚠️ Alternative approach also failed: {e2}")
+                        # Restore DISPLAY for the actual GUI attempt
+                        os.environ["DISPLAY"] = ":0"
+                
+                if not display_test_passed:
+                    if wayland_display:
+                        print("⚠️ This is expected in some Wayland+Flatpak configurations")
+                        print("⚠️ Proceeding anyway - tkinter may still work...")
+                    else:
+                        print("⚠️ X11 connection failed, this may cause issues")
                 # Don't fail here - let the actual GUI startup handle the connection
 
             # Then try to import the GUI module
