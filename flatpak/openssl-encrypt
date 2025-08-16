@@ -6,57 +6,110 @@ Handles both CLI and GUI modes based on command line arguments.
 
 import os
 import sys
-
-# Force set environment variables at the very start
-os.environ["DISPLAY"] = ":0"
-os.environ["XAUTHORITY"] = "/run/user/1000/xauth_PaSUjl"
+import subprocess
+import signal
+import atexit
 
 # Add the application directory to Python path
 app_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, app_dir)
 
+# Global variable to track Xvfb process
+_xvfb_process = None
+
+def cleanup_xvfb():
+    """Clean up Xvfb process on exit."""
+    global _xvfb_process
+    if _xvfb_process and _xvfb_process.poll() is None:
+        print("🧹 Cleaning up virtual display (Xvfb)...")
+        try:
+            _xvfb_process.terminate()
+            _xvfb_process.wait(timeout=5)
+        except (subprocess.TimeoutExpired, OSError):
+            try:
+                _xvfb_process.kill()
+                _xvfb_process.wait(timeout=2)
+            except (subprocess.TimeoutExpired, OSError):
+                pass
+        _xvfb_process = None
+
+def setup_xvfb_if_needed():
+    """Setup Xvfb virtual display if needed for tkinter in Flatpak+Wayland."""
+    global _xvfb_process
+    
+    wayland_display = os.environ.get("WAYLAND_DISPLAY")
+    x11_display = os.environ.get("DISPLAY")
+    
+    # Check if we're in Wayland without X11 display
+    if wayland_display and not x11_display:
+        print(f"🔧 Detected Wayland environment ({wayland_display}) without X11 display")
+        print("🔧 Setting up virtual display (Xvfb) for tkinter compatibility...")
+        
+        try:
+            # Start Xvfb on display :99
+            _xvfb_process = subprocess.Popen(
+                ['Xvfb', ':99', '-screen', '0', '1024x768x24', '-nolisten', 'tcp'],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE
+            )
+            
+            # Wait a moment for Xvfb to start
+            import time
+            time.sleep(1)
+            
+            # Check if Xvfb started successfully
+            if _xvfb_process.poll() is None:
+                os.environ["DISPLAY"] = ":99"
+                print("✅ Virtual display started successfully (DISPLAY=:99)")
+                # Register cleanup
+                atexit.register(cleanup_xvfb)
+                signal.signal(signal.SIGTERM, lambda s, f: cleanup_xvfb())
+                signal.signal(signal.SIGINT, lambda s, f: cleanup_xvfb())
+            else:
+                # Xvfb failed to start
+                stderr_output = _xvfb_process.stderr.read().decode() if _xvfb_process.stderr else "Unknown error"
+                print(f"⚠️  Virtual display setup failed: {stderr_output}")
+                _xvfb_process = None
+                
+        except (FileNotFoundError, OSError) as e:
+            print(f"⚠️  Xvfb not available in Flatpak environment: {e}")
+            print("💡 Falling back to Wayland-compatible options...")
+            _xvfb_process = None
 
 def main():
     """Main launcher function."""
-    # Check for specific GUI mode requests
-    gui_mode = None
-    force_tkinter = False
-    
-    if len(sys.argv) > 1:
-        if "--gui-tk" in sys.argv:
-            gui_mode = "tkinter"
-            force_tkinter = True
-            # Remove --gui-tk from arguments to avoid conflicts
+    # Check if GUI mode is requested
+    if len(sys.argv) > 1 and "--gui" in sys.argv:
+        # Remove --gui from arguments to avoid conflicts
+        sys.argv = [arg for arg in sys.argv if arg != "--gui"]
+
+        # Check for explicit GUI type flags
+        force_tkinter = "--gui-tk" in sys.argv
+        if force_tkinter:
             sys.argv = [arg for arg in sys.argv if arg != "--gui-tk"]
-        elif "--gui" in sys.argv:
-            gui_mode = "auto"
-            # Remove --gui from arguments to avoid conflicts
-            sys.argv = [arg for arg in sys.argv if arg != "--gui"]
-    
-    if gui_mode:
-        # Determine which GUI to use
+
+        # Try Flutter GUI first (preferred for Flatpak)
         flutter_gui_path = "/app/bin/openssl-encrypt-gui/openssl_encrypt_mobile"
-        use_flutter_gui = not force_tkinter and os.path.exists(flutter_gui_path)
-        
-        if use_flutter_gui:
-            # Launch Flutter GUI
+        if not force_tkinter and os.path.exists(flutter_gui_path):
             print("🚀 Launching Flutter desktop GUI...")
             try:
-                import subprocess
-                # Run the Flutter executable directly
-                result = subprocess.run([flutter_gui_path], 
-                                      env=os.environ.copy())
+                # Run the Flutter executable directly with clean environment
+                result = subprocess.run([flutter_gui_path], env=os.environ.copy())
                 sys.exit(result.returncode)
             except Exception as e:
                 print(f"❌ Flutter GUI launch failed: {e}", file=sys.stderr)
-                print("🔄 Falling back to tkinter GUI...", file=sys.stderr)
-                # Fall through to tkinter GUI
+                if not force_tkinter:
+                    print("🔄 Falling back to tkinter GUI...", file=sys.stderr)
+                # Continue to tkinter GUI below
+        elif not force_tkinter:
+            print("⚠️  Flutter GUI not available - using tkinter GUI fallback")
         
         # Launch tkinter GUI (explicit request, fallback, or when Flutter not available)
-        if force_tkinter:
-            print("🎯 Launching tkinter GUI (explicitly requested)...")
-        elif not use_flutter_gui and gui_mode == "auto":
-            print("🔄 Launching tkinter GUI (Flutter not available)...")
+        print("🎯 Launching tkinter GUI...")
+        
+        # Setup Xvfb if needed for Wayland environments
+        setup_xvfb_if_needed()
+        
         try:
             # Check display environment
 
