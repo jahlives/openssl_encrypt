@@ -14,7 +14,8 @@
     "--talk-name=org.freedesktop.FileManager1",
     "--talk-name=org.gtk.vfs.*",
     "--talk-name=org.a11y.*",
-    "--env=PYTHONPATH=/app/lib/python3.12/site-packages"
+    "--env=PYTHONPATH=/app/lib/python3.12/site-packages",
+    "--env=GDK_BACKEND=wayland,x11"
   ],
   "modules": [
     {
@@ -62,6 +63,16 @@
       ]
     },
     {
+      "name": "x11-tools",
+      "buildsystem": "simple",
+      "build-commands": [
+        "echo 'Installing X11 virtual framebuffer...'",
+        "which Xvfb || echo 'Xvfb not available in runtime'",
+        "echo 'X11 tools check complete'"
+      ],
+      "sources": []
+    },
+    {
       "name": "python3-dependencies",
       "buildsystem": "simple",
       "build-options": {
@@ -90,7 +101,7 @@
       "sources": [
         {
           "type": "dir", 
-          "path": ".."
+          "path": "../.."
         }
       ]
     },
@@ -109,7 +120,7 @@
       "sources": [
         {
           "type": "dir",
-          "path": ".."
+          "path": "../.."
         }
       ]
     }

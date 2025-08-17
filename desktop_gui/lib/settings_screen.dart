@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'settings_service.dart';
 import 'cli_service.dart';
 
@@ -348,7 +348,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Theme Mode',
                   style: TextStyle(
                     fontSize: 16,
@@ -396,7 +396,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Default Algorithm',
                   style: TextStyle(
                     fontSize: 16,
@@ -445,7 +445,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Default Security Level',
                   style: TextStyle(
                     fontSize: 16,
@@ -492,7 +492,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Default Output Format',
                   style: TextStyle(
                     fontSize: 16,
@@ -539,7 +539,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Max Recent Files',
                   style: TextStyle(
                     fontSize: 16,
@@ -594,7 +594,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               await SettingsService.resetToDefaults();
               setState(() {});
               if (mounted) {
+                // ignore: use_build_context_synchronously
                 Navigator.of(context).pop();
+                // ignore: use_build_context_synchronously
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Settings reset to defaults'),
@@ -753,17 +755,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
               }
             }
             
-            setState(() {}); // Refresh the UI
-            
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Settings imported successfully (${importMode} mode)'),
-                backgroundColor: Colors.green,
-                duration: const Duration(seconds: 4),
-              ),
-            );
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Settings imported successfully (${importMode}d ${settings.length} settings)',
+                  ),
+                  backgroundColor: Colors.green,
+                  duration: const Duration(seconds: 4),
+                ),
+              );
+              
+              // Refresh the UI
+              setState(() {});
+            }
           } else {
-            throw Exception('Failed to save imported settings');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Failed to import settings'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
           }
         }
       }
@@ -778,7 +792,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     }
   }
-
+  
   Future<bool> _showImportWarningDialog(String message) async {
     return await showDialog<bool>(
       context: context,
