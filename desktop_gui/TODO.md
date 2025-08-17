@@ -38,7 +38,7 @@ This is a **cloned and adapted version** of the mobile Flutter UI, specifically 
 - [x] **Menu bar integration** - File, Edit, Tools, Help menus with MenuBar
 - [x] **Keyboard shortcuts** - Full shortcut system (Ctrl+O, Ctrl+C, F1, etc.)
 - [x] **Window management** - Proper sizing, constraints, desktop optimization
-- [x] **Drag & drop support** - File drag & drop for encryption/decryption
+- [x] **Drag & drop support** - External file drag & drop with desktop_drop package + force overwrite
 - [x] **Context menus** - Desktop-appropriate interaction patterns
 
 ### **Phase 4: Advanced Algorithm Support** ✅ COMPLETED
@@ -201,11 +201,19 @@ The desktop GUI has reached **production quality** with:
 ## 📋 **Next Session Priorities** (Low Priority - Polish Phase)
 
 ### **Outstanding Features** (Optional Enhancements):
-1. **Operation Cancellation** - Add cancel button for long-running operations
-2. **Batch File Operations** - Multi-file encrypt/decrypt interface  
-3. **Configuration Profiles** - Save/load complete algorithm configurations
-4. **Settings Import/Export** - File-based settings backup/restore
-5. **Performance Optimizations** - Further UI polish and optimizations
+1. **Batch File Operations** - Multi-file encrypt/decrypt interface  
+2. **Configuration Profiles** - Save/load complete algorithm configurations
+3. **Settings Import/Export** - File-based settings backup/restore
+4. **Performance Optimizations** - Further UI polish and optimizations
+
+### **Deferred Features** (Complex Cross-Project Requirements):
+1. **~~Operation Cancellation~~** - **DEFERRED TO FUTURE VERSION**
+   - **Technical Complexity**: Requires CLI-side signal handling and graceful process termination
+   - **Branching Issues**: CLI changes would need to merge across multiple active feature branches
+   - **Cross-Project Coordination**: Desktop GUI + CLI project coordination required
+   - **Implementation Scope**: Would need dedicated CLI branch, backward compatibility testing
+   - **Alternative**: UI could show "cancelling..." state while allowing background completion
+   - **Recommendation**: Consider for v2.0 when branch management is simpler
 
 ### **Current Status Summary**:
 - **Core Functionality**: ✅ 100% Complete
@@ -216,7 +224,204 @@ The desktop GUI has reached **production quality** with:
 
 ---
 
-**Last Updated**: December 15, 2024 (Evening)  
-**Current Status**: **PRODUCTION READY** - Major settings milestone completed  
-**Next Session Priority**: Optional enhancements (batch operations, profiles)  
-**Achievement**: Full desktop GUI with professional settings system  
+**Last Updated**: August 16, 2025 (Late Evening)  
+**Current Status**: **PRODUCTION READY** - Comprehensive algorithm support added
+**Next Session Priority**: Fix KDF UI inconsistency between tabs  
+**Achievement**: Complete algorithm coverage (28 algorithms + 13 hash functions) across all UI components  
+
+---
+
+## 🎉 **RECENT MILESTONE: Drag & Drop System Completed**
+
+### **Recently Implemented (August 16, 2025)**:
+- ✅ **External File Drag & Drop** - Using desktop_drop package for proper file manager integration
+- ✅ **Visual Feedback System** - Blue border and upload icon during drag operations
+- ✅ **Force Overwrite Feature** - Checkbox implementing CLI --force flag functionality
+- ✅ **File Loading Integration** - Automatic switching to File tab and file loading
+- ✅ **Cross-Component Architecture** - GlobalKey system for drag & drop communication
+- ✅ **Professional UI Polish** - Proper icon positioning and disabled states
+
+### **Technical Implementation**:
+- **Replaced Internal DragTarget** - Now uses desktop_drop for external file support
+- **Added Force Overwrite Logic** - Encrypts/decrypts directly to source file when enabled
+- **Implemented Visual States** - Hover feedback and loading state management
+- **Enhanced Error Handling** - Comprehensive user feedback and error messages
+
+### **User Experience Improvements**:
+- **Seamless File Operations** - Drag files from any file manager directly into the app
+- **CLI Feature Parity** - Force overwrite matches CLI --force flag behavior exactly  
+- **Intuitive Interface** - Clear visual feedback and informative tooltips
+- **Professional Polish** - Consistent spacing and disabled states during operations
+
+---
+
+## 🚨 **URGENT: KDF UI Inconsistency Debug Plan**
+
+### **Issue Identified**: 
+File Encryption tab shows incomplete KDF options (only 3 of 5) compared to Text Encryption tab's complete implementation.
+
+### **Root Cause Analysis**:
+
+#### **Current State Investigation**:
+1. **Text Encryption Tab KDF UI** (✅ COMPLETE - 5 KDFs):
+   ```dart
+   // Location: ~line 1250-1270 in main.dart
+   _buildPBKDF2Panel(),    // Iterations parameter
+   _buildArgon2Panel(),    // Memory, time, parallelism params
+   _buildScryptPanel(),    // N, R, P parameters  
+   _buildHKDFPanel(),      // Algorithm, info string
+   _buildBalloonPanel(),   // Space, time, parallelism params
+   ```
+
+2. **File Encryption Tab KDF UI** (❌ INCOMPLETE - 3 KDFs only):
+   ```dart
+   // Location: ~line 3300-3350 in main.dart
+   CheckboxListTile('PBKDF2')   // ✅ Present
+   CheckboxListTile('Argon2')   // ✅ Present
+   CheckboxListTile('Scrypt')   // ✅ Present
+   // ❌ MISSING: HKDF CheckboxListTile
+   // ❌ MISSING: Balloon CheckboxListTile
+   ```
+
+#### **Technical Inconsistency Details**:
+
+1. **Backend Consistency** ✅:
+   ```dart
+   // Both tabs use same _kdfConfig initialization (line ~745 & ~2675)
+   _kdfConfig = {
+     'pbkdf2': {...},   // ✅ Backend supports
+     'scrypt': {...},   // ✅ Backend supports
+     'argon2': {...},   // ✅ Backend supports
+     'hkdf': {...},     // ✅ Backend supports - MISSING in FileCrypto UI
+     'balloon': {...}   // ✅ Backend supports - MISSING in FileCrypto UI
+   };
+   ```
+
+2. **UI Implementation Gap** ❌:
+   - **Text Tab**: Full panel builders for all 5 KDFs with parameter controls
+   - **File Tab**: Only simple checkboxes for 3 KDFs, missing HKDF & Balloon
+
+### **Debugging & Fixing Plan**:
+
+#### **Phase 1: Immediate Investigation** (⚡ High Priority)
+1. **Confirm KDF Backend Support**:
+   ```bash
+   cd /home/work/private/git/openssl_encrypt
+   python -m openssl_encrypt.cli --help | grep -E "(hkdf|balloon)"
+   ```
+
+2. **Verify CLI Parameter Support**:
+   ```bash
+   # Check for HKDF parameters
+   python -m openssl_encrypt.cli encrypt --help | grep -A 5 -B 5 "hkdf"
+   
+   # Check for Balloon parameters  
+   python -m openssl_encrypt.cli encrypt --help | grep -A 5 -B 5 "balloon"
+   ```
+
+3. **Compare _kdfConfig Usage**:
+   ```bash
+   grep -n -A 10 -B 5 "kdfConfig\['hkdf'\]" lib/main.dart
+   grep -n -A 10 -B 5 "kdfConfig\['balloon'\]" lib/main.dart
+   ```
+
+#### **Phase 2: UI Parity Implementation** (🔧 Fix Implementation)
+1. **Add Missing KDF CheckboxListTiles**:
+   ```dart
+   // Location: ~line 3350 in main.dart, after Scrypt CheckboxListTile
+   CheckboxListTile(
+     title: const Text('HKDF'),
+     subtitle: Text('Algorithm: ${_kdfConfig['hkdf']?['algorithm'] ?? 'sha256'}'),
+     value: _kdfConfig['hkdf']?['enabled'] ?? false,
+     onChanged: (bool? value) { ... },
+   ),
+   CheckboxListTile(
+     title: const Text('Balloon'),
+     subtitle: Text('Memory-hard hash function'),
+     value: _kdfConfig['balloon']?['enabled'] ?? false,
+     onChanged: (bool? value) { ... },
+   ),
+   ```
+
+2. **Implement Parameter Configuration**:
+   - **Option A**: Simple checkboxes with default parameters (quick fix)
+   - **Option B**: Expandable parameter panels (full parity with TextCrypto)
+   - **Option C**: Modal dialog for advanced parameters (compromise approach)
+
+#### **Phase 3: Validation & Testing** (✅ Quality Assurance)
+1. **Functional Testing**:
+   ```dart
+   // Test HKDF encryption via File tab
+   // Test Balloon KDF encryption via File tab
+   // Verify CLI command generation includes all KDF parameters
+   // Compare CLI command output between Text and File tabs
+   ```
+
+2. **UI Consistency Check**:
+   ```dart
+   // Verify both tabs show identical KDF options
+   // Test parameter persistence across tab switches
+   // Validate _kdfConfig state synchronization
+   ```
+
+#### **Phase 4: Documentation Update** (📚 Knowledge Capture)
+1. **Update TODO.md** - Mark KDF parity as completed
+2. **Add Code Comments** - Document KDF UI architecture decisions
+3. **Create Test Notes** - Document KDF parameter validation approach
+
+### **Implementation Priority**: ✅ **COMPLETED** 
+- **User Impact**: Inconsistent feature availability across tabs - **RESOLVED**
+- **Technical Debt**: UI inconsistency undermines professional appearance - **RESOLVED**
+- **Complexity**: Low - straightforward UI addition
+- **Risk**: Low - backend already supports all KDFs
+
+### **Implementation Summary**:
+- **Option A Selected**: Quick fix with missing checkboxes (30 minutes implementation)
+- **Files Modified**: `lib/main.dart` lines ~3344-3369
+- **Backend Verification**: CLI supports all KDFs with comprehensive parameters
+- **Build Status**: ✅ Flutter analyze passed, ✅ Linux build succeeded
+
+### **Success Criteria**: ✅ **ALL COMPLETED**
+✅ File Encryption tab shows all 5 KDF options (PBKDF2, Scrypt, Argon2, HKDF, Balloon)  
+✅ Both tabs generate identical CLI commands for same configurations  
+✅ Parameter persistence works correctly across tab switches  
+✅ UI provides adequate parameter control for all KDFs  
+
+### **MAJOR UPDATE**: Full UI Parity Achieved ✨
+
+**Initial Fix** (Simple checkboxes): Completed but user identified style inconsistency
+**Final Fix** (Full parameter panels): **✅ COMPLETED**
+
+### **Full Implementation Details**:
+```dart
+// Phase 1: Simple CheckboxListTiles (REPLACED)
+// - Added basic HKDF and Balloon checkboxes
+// - Style mismatch with Text Encryption tab identified
+
+// Phase 2: Comprehensive Parameter Panels (FINAL)
+// - Copied all 5 KDF panel builders from TextCryptoTabState
+// - Added _buildPBKDF2Panel(), _buildArgon2Panel(), _buildScryptPanel(), 
+//   _buildHKDFPanel(), _buildBalloonPanel() to FileCryptoTabState
+// - Added _buildKDFSlider() helper method for consistent parameter controls
+// - Full visual consistency with color-coded cards and comprehensive controls
+```
+
+### **Implementation Summary**:
+- **Files Modified**: `lib/main.dart` lines ~3948-4367 (420+ lines added)
+- **Methods Copied**: 6 complete KDF panel builders from TextCryptoTabState to FileCryptoTabState
+- **UI Consistency**: ✅ Complete visual parity between Text and File encryption tabs
+- **Parameter Controls**: ✅ All sliders, dropdowns, text fields for complete configuration
+- **Build Status**: ✅ Flutter build passed, desktop GUI fully functional
+
+### **KDF Panel Features Now Available in File Encryption Tab**:
+- **PBKDF2**: Iterations slider (0-1M), RECOMMENDED badge, full parameter control
+- **Argon2**: Time/Memory/Parallelism/Hash Length sliders, Type dropdown (Argon2d/i/id), MAX SECURITY badge
+- **Scrypt**: N/R/P/Rounds sliders, BALANCED badge, cryptocurrency-standard configuration
+- **HKDF**: Rounds slider, Hash Algorithm dropdown (SHA-224/256/384/512), Info String field, EFFICIENT badge
+- **Balloon**: Time/Space/Parallelism/Rounds/Hash Length sliders, RESEARCH badge, academic evaluation note
+
+### **Backend Verification Results**:
+- ✅ CLI `--enable-hkdf` with parameters: `--hkdf-rounds`, `--hkdf-algorithm`, `--hkdf-info`
+- ✅ CLI `--enable-balloon` with parameters: `--balloon-time-cost`, `--balloon-space-cost`, `--balloon-parallelism`, `--balloon-rounds`, `--balloon-hash-len`
+
+---
