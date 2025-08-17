@@ -3297,9 +3297,11 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                 style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
               const SizedBox(height: 8),
-              // PBKDF2 Panel
-              _buildPBKDF2Panel(),
-              const SizedBox(height: 8),
+              // PBKDF2 Panel (hidden in CLI v1.2+)
+              if (!CLIService.shouldHideLegacyAlgorithms()) ...[
+                _buildPBKDF2Panel(),
+                const SizedBox(height: 8),
+              ],
               
               // Argon2 Panel  
               _buildArgon2Panel(),
