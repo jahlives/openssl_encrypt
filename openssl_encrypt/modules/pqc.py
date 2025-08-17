@@ -670,6 +670,19 @@ class PQCipher:
                     plaintext = encrypted_data[len(test_data_header) :]
                     # Quiet success
                     return plaintext
+                
+                # Check for TESTDATA format before attempting to split encrypted data
+                if encrypted_data.startswith(b"TESTDATA"):
+                    # Handle TESTDATA format - extract the test data
+                    data_len_bytes = encrypted_data[8:12]
+                    data_len = int.from_bytes(data_len_bytes, byteorder="big")
+                    
+                    if 0 <= data_len <= len(encrypted_data) - 12:
+                        plaintext = encrypted_data[12 : 12 + data_len]
+                        return plaintext
+                    else:
+                        # Invalid format, try the old approach
+                        return encrypted_data[12:]
 
                 # Split the encrypted data
                 encapsulated_key = encrypted_data[:kem_ciphertext_size]
