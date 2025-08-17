@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'configuration_profiles_service.dart';
+import 'cli_service.dart';
 
 /// Screen for managing configuration profiles
 class ConfigurationProfilesScreen extends StatefulWidget {
@@ -997,12 +998,12 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
       'blake3': {'enabled': false, 'rounds': 1000},
       'shake128': {'enabled': false, 'rounds': 1000},
       'shake256': {'enabled': false, 'rounds': 1000},
-      'whirlpool': {'enabled': false, 'rounds': 1000},
+      if (!CLIService.shouldHideLegacyAlgorithms()) 'whirlpool': {'enabled': false, 'rounds': 1000},
     };
     
     // Initialize default KDF configuration  
     _kdfConfig = {
-      'pbkdf2': {'enabled': true, 'rounds': 100000},
+      'pbkdf2': {'enabled': !CLIService.shouldHideLegacyAlgorithms(), 'rounds': 100000},
       'scrypt': {'enabled': false, 'n': 16384, 'r': 8, 'p': 1, 'rounds': 1},
       'argon2': {'enabled': false, 'memory_cost': 65536, 'time_cost': 3, 'parallelism': 1, 'rounds': 1},
       'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1},
@@ -1177,7 +1178,13 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
         ),
         const SizedBox(height: 8),
         Column(
-          children: _hashConfig.entries.map((entry) {
+          children: _hashConfig.entries.where((entry) {
+            // Hide legacy algorithms in CLI v1.2+
+            if (CLIService.shouldHideLegacyAlgorithms() && entry.key == 'whirlpool') {
+              return false;
+            }
+            return true;
+          }).map((entry) {
             final hashName = entry.key;
             final config = entry.value;
             final isEnabled = config['enabled'] as bool;
@@ -1333,9 +1340,11 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
         ),
         const SizedBox(height: 8),
         
-        // PBKDF2 Panel
-        _buildPBKDF2Panel(),
-        const SizedBox(height: 8),
+        // PBKDF2 Panel (hidden in CLI v1.2+)
+        if (!CLIService.shouldHideLegacyAlgorithms()) ...[
+          _buildPBKDF2Panel(),
+          const SizedBox(height: 8),
+        ],
         
         // Argon2 Panel  
         _buildArgon2Panel(),
@@ -1356,18 +1365,19 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
         // Quick presets
         Row(
           children: [
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _kdfConfig['pbkdf2']!['enabled'] = true;
-                  _kdfConfig['scrypt']!['enabled'] = false;
-                  _kdfConfig['argon2']!['enabled'] = false;
-                  _kdfConfig['hkdf']!['enabled'] = false;
-                  _kdfConfig['balloon']!['enabled'] = false;
-                });
-              },
-              child: const Text('PBKDF2 Only', style: TextStyle(fontSize: 12)),
-            ),
+            if (!CLIService.shouldHideLegacyAlgorithms())
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    _kdfConfig['pbkdf2']!['enabled'] = true;
+                    _kdfConfig['scrypt']!['enabled'] = false;
+                    _kdfConfig['argon2']!['enabled'] = false;
+                    _kdfConfig['hkdf']!['enabled'] = false;
+                    _kdfConfig['balloon']!['enabled'] = false;
+                  });
+                },
+                child: const Text('PBKDF2 Only', style: TextStyle(fontSize: 12)),
+              ),
             const SizedBox(width: 8),
             TextButton(
               onPressed: () {
