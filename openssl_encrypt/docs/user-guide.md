@@ -21,6 +21,168 @@
 - **Memory**: Minimum 512MB RAM (2GB+ recommended for paranoid security settings)
 - **Storage**: 100MB for installation plus encrypted file storage space
 
+## Flutter Desktop GUI Installation
+
+### Overview
+
+The Flutter Desktop GUI provides a modern, cross-platform interface for OpenSSL Encrypt with enhanced usability and native performance. The GUI is available for Linux, macOS, and Windows.
+
+### Prerequisites
+
+#### Linux
+```bash
+# Install Flutter dependencies
+sudo apt-get update
+sudo apt-get install curl git unzip xz-utils zip libglu1-mesa
+
+# Install Flutter SDK
+git clone https://github.com/flutter/flutter.git -b stable
+export PATH="$PATH:`pwd`/flutter/bin"
+flutter doctor
+```
+
+#### macOS
+```bash
+# Install Xcode command line tools
+xcode-select --install
+
+# Install Flutter SDK
+git clone https://github.com/flutter/flutter.git -b stable
+export PATH="$PATH:`pwd`/flutter/bin"
+flutter doctor
+
+# Accept Xcode license
+sudo xcodebuild -license accept
+```
+
+#### Windows
+```powershell
+# Download Flutter SDK from https://flutter.dev/docs/get-started/install/windows
+# Extract to C:\flutter
+# Add C:\flutter\bin to PATH environment variable
+
+# Verify installation
+flutter doctor
+```
+
+### Installation Options
+
+#### Option 1: Flatpak Installation (Linux only)
+
+**Prerequisites**: Flatpak must be installed on your system.
+
+**Option 1A: Install from Custom Repository**
+```bash
+# Install Flatpak (if not already installed)
+# Ubuntu/Debian:
+sudo apt install flatpak
+
+# Fedora:
+sudo dnf install flatpak
+
+# Add custom repository
+flatpak remote-add --if-not-exists custom-repo https://flatpak.rm-rf.ch/custom-repo.flatpakrepo
+
+# Install OpenSSL Encrypt with Flutter GUI
+flatpak install custom-repo com.opensslencrypt.OpenSSLEncrypt
+
+# Run the GUI application
+flatpak run com.opensslencrypt.OpenSSLEncrypt --gui
+```
+
+**Option 1B: Build Flatpak Locally**
+```bash
+# Clone the repository
+git clone https://gitlab.rm-rf.ch/world/openssl_encrypt/
+cd openssl_encrypt
+
+# Build and install Flatpak with Flutter GUI
+cd flatpak
+./build-flatpak --build-flutter
+
+# Run the GUI application
+flatpak run com.opensslencrypt.OpenSSLEncrypt --gui
+```
+
+#### Option 2: Manual Installation (All Platforms)
+
+**Step 1: Clone the Repository**
+```bash
+git clone https://gitlab.rm-rf.ch/world/openssl_encrypt/
+cd openssl_encrypt
+```
+
+**Step 2: Build the Flutter Desktop GUI**
+```bash
+# Navigate to Flutter project directory
+cd desktop_gui
+
+# Get Flutter dependencies
+flutter pub get
+
+# Build for your platform
+# Linux:
+flutter build linux --release
+
+# macOS:
+flutter build macos --release
+
+# Windows:
+flutter build windows --release
+```
+
+**Step 3: Install OpenSSL Encrypt CLI**
+
+Choose one of the following methods:
+
+**Method A: Install from PyPI (Recommended)**
+```bash
+pip install openssl_encrypt
+```
+
+**Method B: Build and Install Locally**
+```bash
+# From the main project directory
+cd ..  # Back to openssl_encrypt root
+pip install -e .
+```
+
+**Step 4: Run the Flutter GUI**
+```bash
+# Linux:
+./desktop_gui/build/linux/x64/release/bundle/openssl_encrypt_gui
+
+# macOS:
+open ./desktop_gui/build/macos/Build/Products/Release/openssl_encrypt_gui.app
+
+# Windows:
+./desktop_gui/build/windows/x64/runner/Release/openssl_encrypt_gui.exe
+```
+
+### Integration with CLI
+
+The Flutter GUI automatically detects and integrates with the installed OpenSSL Encrypt CLI, providing seamless access to all encryption features through an intuitive interface.
+
+### Troubleshooting Flutter Installation
+
+**Problem**: `flutter doctor` shows issues
+**Solution**: Follow the specific recommendations provided by `flutter doctor` output
+
+**Problem**: Build fails with missing dependencies
+**Solution**: 
+```bash
+# Linux: Install additional build dependencies
+sudo apt-get install build-essential libgtk-3-dev
+
+# Ensure Flutter is properly configured
+flutter config --enable-linux-desktop  # Linux
+flutter config --enable-macos-desktop  # macOS  
+flutter config --enable-windows-desktop  # Windows
+```
+
+**Problem**: GUI fails to find CLI installation
+**Solution**: Ensure the `openssl_encrypt` Python package is installed and accessible from your PATH
+
 ### Installation Methods
 
 #### From PyPI (Recommended)
