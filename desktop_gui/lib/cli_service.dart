@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
 /// Service layer for integrating with OpenSSL Encrypt CLI
@@ -13,10 +14,11 @@ class CLIService {
   static String? _gitCommit; 
   static String? _pythonVersion;
   static String? _systemInfo;
-  static Map<String, String> _dependencies = {};
+  static final Map<String, String> _dependencies = {};
   static bool _isFlaspakVersion = false;
-  static List<String> _debugLogs = [];
+  static final List<String> _debugLogs = [];
   static String? _debugLogFile;
+  static VoidCallback? _onDebugLogAdded;
   
   /// Initialize CLI service and verify CLI is available
   static Future<bool> initialize() async {
@@ -486,7 +488,7 @@ class CLIService {
     final stderrBuffer = StringBuffer();
     
     // Listen to stdout stream
-    process.stdout.transform(utf8.decoder).transform(LineSplitter()).listen((line) {
+    process.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen((line) {
       stdoutBuffer.writeln(line);
       onStdout?.call(line);
       
@@ -497,7 +499,7 @@ class CLIService {
     });
     
     // Listen to stderr stream  
-    process.stderr.transform(utf8.decoder).transform(LineSplitter()).listen((line) {
+    process.stderr.transform(utf8.decoder).transform(const LineSplitter()).listen((line) {
       stderrBuffer.writeln(line);
       onStderr?.call(line);
       
@@ -535,7 +537,7 @@ class CLIService {
         }
         
         final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-').substring(0, 19);
-        _debugLogFile = path.join(logDir.path, 'debug_${timestamp}.log');
+        _debugLogFile = path.join(logDir.path, 'debug_$timestamp.log');
         
         // Write initial header
         final headerInfo = [
@@ -572,6 +574,9 @@ class CLIService {
       if (_debugLogs.length > 100) {
         _debugLogs.removeAt(0);
       }
+      
+      // Notify listeners of new debug log entry
+      _onDebugLogAdded?.call();
     }
   }
   
@@ -618,6 +623,11 @@ class CLIService {
   /// Get debug log file path
   static String? getDebugLogFile() {
     return _debugLogFile;
+  }
+  
+  /// Set callback to be notified when new debug logs are added
+  static void setDebugLogCallback(VoidCallback? callback) {
+    _onDebugLogAdded = callback;
   }
   
   /// Enable debug logging with file initialization
@@ -764,8 +774,12 @@ class CLIService {
     final v2Parts = v2Clean.split('.').map(int.parse).toList();
     
     // Pad shorter version with zeros
-    while (v1Parts.length < v2Parts.length) v1Parts.add(0);
-    while (v2Parts.length < v1Parts.length) v2Parts.add(0);
+    while (v1Parts.length < v2Parts.length) {
+      v1Parts.add(0);
+    }
+    while (v2Parts.length < v1Parts.length) {
+      v2Parts.add(0);
+    }
     
     for (int i = 0; i < v1Parts.length; i++) {
       if (v1Parts[i] < v2Parts[i]) return -1;

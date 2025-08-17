@@ -166,6 +166,31 @@ class FileManager {
     return null;
   }
 
+  /// Create FileInfo from a file path (for drag & drop support)
+  Future<FileInfo?> createFileInfoFromPath(String filePath) async {
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        CLIService.outputDebugLog('File does not exist: $filePath');
+        return null;
+      }
+
+      final stat = await file.stat();
+      final fileName = path.basename(filePath);
+
+      return FileInfo(
+        name: fileName,
+        path: filePath,
+        size: stat.size,
+        extension: path.extension(fileName).toLowerCase(),
+        lastModified: stat.modified,
+      );
+    } catch (e) {
+      CLIService.outputDebugLog('Error creating FileInfo from path $filePath: $e');
+      return null;
+    }
+  }
+
   /// Pick multiple files for batch operations
   Future<List<FileInfo>> pickMultipleFiles({List<String>? allowedExtensions}) async {
     try {

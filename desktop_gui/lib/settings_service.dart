@@ -233,7 +233,7 @@ class SettingsService {
     } else if (value is List<String>) {
       return prefs.setStringList(key, value);
     } else {
-      throw ArgumentError('Unsupported setting type: ${T}');
+      throw ArgumentError('Unsupported setting type: $T');
     }
   }
 }
