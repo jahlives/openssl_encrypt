@@ -101,7 +101,7 @@
       "sources": [
         {
           "type": "dir", 
-          "path": "../.."
+          "path": ".."
         }
       ]
     },
@@ -120,7 +120,7 @@
       "sources": [
         {
           "type": "dir",
-          "path": "../.."
+          "path": ".."
         }
       ]
     }
