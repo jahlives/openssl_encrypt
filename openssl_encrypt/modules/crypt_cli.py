@@ -1208,6 +1208,14 @@ def main():
     )
 
     args = parser.parse_args()
+    
+    # Store the original user-provided algorithm name from command line
+    import sys
+    original_algorithm = None
+    for i, arg in enumerate(sys.argv):
+        if arg == '--algorithm' and i + 1 < len(sys.argv):
+            original_algorithm = sys.argv[i + 1]
+            break
 
     # Configure logging level based on debug flag
     if args.debug:
@@ -1216,6 +1224,7 @@ def main():
             level=logging.DEBUG,
             format='%(levelname)s - %(name)s - %(message)s'
         )
+        print(f"DEBUG: sys.argv = {sys.argv}")
 
     # Enhance the args with better defaults for extended algorithms
     args = enhance_cli_args(args)
@@ -2051,8 +2060,27 @@ def main():
                 sys.exit(1)
 
             # DEPRECATED: Kyber algorithms are no longer supported for new encryptions
+            # Only warn if user actually used the old Kyber names, not if they used ML-KEM names
             kyber_algorithms = ["kyber512-hybrid", "kyber768-hybrid", "kyber1024-hybrid"]
-            if hasattr(args, 'algorithm') and args.algorithm in kyber_algorithms:
+            ml_kem_algorithms = ["ml-kem-512-hybrid", "ml-kem-768-hybrid", "ml-kem-1024-hybrid"]
+            
+            # Check if this algorithm was originally an ML-KEM name that got converted
+            original_ml_kem_algorithm = os.environ.get('OPENSSL_ENCRYPT_ORIGINAL_MLKEM_ALGORITHM')
+            
+            # Check the original user input, not the mapped algorithm
+            user_provided_algorithm = original_algorithm or args.algorithm
+            if args.debug:
+                print(f"DEBUG: args.algorithm = {args.algorithm}")
+                print(f"DEBUG: original_algorithm = {original_algorithm}")
+                print(f"DEBUG: original_ml_kem_algorithm = {original_ml_kem_algorithm}")
+                print(f"DEBUG: user_provided_algorithm = {user_provided_algorithm}")
+                print(f"DEBUG: user_provided_algorithm in ml_kem_algorithms = {user_provided_algorithm in ml_kem_algorithms}")
+            
+            # Don't warn if the user originally provided an ML-KEM name that got converted to kyber
+            if (hasattr(args, 'algorithm') and 
+                args.algorithm in kyber_algorithms and 
+                user_provided_algorithm not in ml_kem_algorithms and
+                not original_ml_kem_algorithm):
                 ml_kem_mapping = {
                     "kyber512-hybrid": "ml-kem-512-hybrid",
                     "kyber768-hybrid": "ml-kem-768-hybrid", 
@@ -2525,7 +2553,8 @@ def main():
                     # For regular files, append .encrypted extension
                     output_file = args.input + ".encrypted"
             else:
-                print(f"FLOW-DEBUG: Using normal output path: {args.output}")
+                if args.debug:
+                    print(f"FLOW-DEBUG: Using normal output path: {args.output}")
                 output_file = args.output
 
             # Handle stdout output for stdin input
