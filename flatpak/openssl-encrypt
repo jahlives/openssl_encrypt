@@ -2,7 +2,7 @@
 """
 Launcher script for OpenSSL Encrypt Flatpak package.
 Handles both CLI and GUI modes based on command line arguments.
-Flutter GUI only - tkinter support removed for 1.0.1 release.
+Flutter GUI only - tkinter support removed for 1.2.0 release.
 """
 
 import os
@@ -28,7 +28,7 @@ def main():
                 sys.argv = [arg for arg in sys.argv if arg != flag]
                 print(f"⚠️  Warning: {flag} is not supported in this release (Flutter GUI only)", file=sys.stderr)
 
-        # Launch Flutter GUI (only GUI option in 1.0.1)
+        # Launch Flutter GUI (only GUI option in 1.2.0)
         flutter_gui_path = "/app/bin/openssl-encrypt-gui/openssl_encrypt_mobile"
         if os.path.exists(flutter_gui_path):
             print("🚀 Launching Flutter desktop GUI...")

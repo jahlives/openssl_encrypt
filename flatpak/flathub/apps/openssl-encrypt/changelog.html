@@ -49,7 +49,18 @@
           </div>
 
           <!-- Stable Release Series -->
-          <h2>&#128640; Stable Release Series (1.1.x)</h2>
+          <h2>&#128640; Stable Release Series (1.x)</h2>
+
+          <div class="changelog-item" id="v1-1-0-stable">
+              <div class="version">
+                  1.1.0
+                  <span class="release-type stable">STABLE RELEASE</span>
+                  <span class="release-type minor">MINOR</span>
+              </div>
+              <div class="description">
+                  <strong>Major stable release with comprehensive debug system:</strong> All features from 1.1.0-dev now production-ready including extended hash support (SHA-224/384, SHA3-224/384, BLAKE3, SHAKE-128), HKDF key derivation, and MAYO/CROSS post-quantum signature algorithms with LibOQS integration. <strong>🔍 NEW: Complete Debug System</strong> - Implemented comprehensive debug output for ALL encryption algorithms with structured prefixes (ENCRYPT:, DECRYPT:, HASH-TYPE:INPUT/OUTPUT/FINAL) providing detailed cryptographic operation visibility including key derivation, hash processing, and algorithm-specific parameters. Added security-focused documentation with prominent warnings about sensitive data exposure. <strong>Enhanced Professional GUI:</strong> Restructured settings with hash family groupings and dedicated KDF sections. <strong>Production-ready:</strong> All development features stabilized, tested, and ready for production deployment with complete backward compatibility.
+              </div>
+          </div>
 
           <div class="changelog-item" id="v1-1-0">
               <div class="version">
@@ -58,10 +69,20 @@
                   <span class="release-type minor">MINOR</span>
               </div>
               <div class="description">
-                  <strong>Extended post-quantum hybrid encryption support:</strong> Added MAYO-1/3/5 (multivariate) and CROSS-128/192/256 (code-based) hybrid encryption algorithms following the same battle-tested pattern as ML-KEM and HQC. Enhanced test coverage for comprehensive PQC error handling across all algorithms. Achieved complete NIST Round 2 post-quantum encryption coverage with 5 algorithm families: ML-KEM, HQC, Kyber, MAYO, and CROSS providing diverse quantum-resistant encryption options.
+                  <strong>Comprehensive cryptographic enhancement release:</strong> Extended hash support with complete SHA-2 (SHA-224/384) and SHA-3 (SHA3-224/384) families, added BLAKE3 ultra-fast hash and SHAKE-128 extendable-output function. Implemented HKDF (RFC 5869) key derivation with configurable hash algorithms and rounds. <strong>Post-quantum expansion:</strong> Added MAYO-1/3/5 multivariate and CROSS-128/192/256 code-based post-quantum signature algorithms. <strong>Professional GUI reorganization:</strong> Completely restructured settings with hash family groupings (SHA-2, SHA-3, BLAKE, SHAKE, Legacy) and dedicated KDF Algorithm Settings section. <strong>Enhanced CLI:</strong> Complete coverage of all hash algorithms and HKDF options with improved security defaults by categorizing PBKDF2 as legacy KDF (disabled by default).
               </div>
           </div>
-          <h2>&#128640; Stable Release Series (1.0.0)</h2>
+
+          <div class="changelog-item" id="v1-0-1">
+              <div class="version">
+                  1.0.1
+                  <span class="release-type stable">STABLE RELEASE</span>
+                  <span class="release-type minor">MINOR</span>
+              </div>
+              <div class="description">
+                  <strong>UI/UX enhancement release:</strong> Implemented segregated CLI help system where global help (`openssl_encrypt --help`) shows comprehensive command overview, while command-specific help (`openssl_encrypt encrypt --help`) displays only relevant parameters for that command. Enhanced user experience with clearer navigation and improved command discovery. Maintains full backward compatibility with existing functionality while providing more intuitive help documentation structure.
+              </div>
+          </div>
 
           <div class="changelog-item" id="v1-0-0">
               <div class="version">
