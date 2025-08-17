@@ -1,4 +1,7 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'settings_service.dart';
 import 'cli_service.dart';
 
@@ -345,7 +348,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Theme Mode',
                   style: TextStyle(
                     fontSize: 16,
@@ -393,7 +396,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Default Algorithm',
                   style: TextStyle(
                     fontSize: 16,
@@ -442,7 +445,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Default Security Level',
                   style: TextStyle(
                     fontSize: 16,
@@ -489,7 +492,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Default Output Format',
                   style: TextStyle(
                     fontSize: 16,
@@ -536,7 +539,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Max Recent Files',
                   style: TextStyle(
                     fontSize: 16,
@@ -591,7 +594,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               await SettingsService.resetToDefaults();
               setState(() {});
               if (mounted) {
+                // ignore: use_build_context_synchronously
                 Navigator.of(context).pop();
+                // ignore: use_build_context_synchronously
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Settings reset to defaults'),
@@ -649,23 +654,192 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _exportSettings() {
-    final settings = SettingsService.exportSettings();
-    // TODO: Implement file export functionality
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Settings export feature coming soon'),
-        backgroundColor: Colors.blue,
-      ),
-    );
+  Future<void> _exportSettings() async {
+    try {
+      // Get all current settings
+      final settings = SettingsService.exportSettings();
+      
+      // Create export data with metadata
+      final exportData = {
+        'version': 1,
+        'app_name': 'OpenSSL Encrypt Desktop',
+        'exported_at': DateTime.now().toIso8601String(),
+        'settings': settings,
+      };
+      
+      // Convert to JSON
+      final jsonString = const JsonEncoder.withIndent('  ').convert(exportData);
+      
+      // Show file save dialog
+      final fileName = 'openssl_encrypt_settings_${DateTime.now().millisecondsSinceEpoch}.json';
+      final filePath = await FilePicker.platform.saveFile(
+        dialogTitle: 'Export Application Settings',
+        fileName: fileName,
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+      
+      if (filePath != null) {
+        // Write to file
+        await File(filePath).writeAsString(jsonString);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Settings exported to: ${filePath.split('/').last}'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
-  void _importSettings() {
-    // TODO: Implement file import functionality
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Settings import feature coming soon'),
-        backgroundColor: Colors.blue,
+  Future<void> _importSettings() async {
+    try {
+      // Show file picker dialog
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        dialogTitle: 'Import Application Settings',
+      );
+      
+      if (result != null && result.files.single.path != null) {
+        final file = File(result.files.single.path!);
+        final jsonString = await file.readAsString();
+        final importData = jsonDecode(jsonString) as Map<String, dynamic>;
+        
+        // Validate import data
+        if (importData['version'] != 1) {
+          throw Exception('Unsupported settings format version');
+        }
+        
+        if (importData['app_name'] != 'OpenSSL Encrypt Desktop') {
+          // Show warning but allow import
+          final confirmed = await _showImportWarningDialog(
+            'These settings were not exported from OpenSSL Encrypt Desktop. Import anyway?',
+          );
+          if (!confirmed) return;
+        }
+        
+        final settings = importData['settings'] as Map<String, dynamic>;
+        
+        if (mounted) {
+          // Ask user about import mode
+          final importMode = await _showImportModeDialog();
+          if (importMode == null) return; // User cancelled
+          
+          if (importMode == 'replace') {
+            // Clear existing settings first
+            await SettingsService.resetToDefaults();
+          }
+          
+          // Import the settings
+          final success = await SettingsService.importSettings(settings);
+          
+          if (success) {
+            // Notify about changes
+            if (widget.onSettingChanged != null) {
+              for (final entry in settings.entries) {
+                widget.onSettingChanged!(entry.key, entry.value);
+              }
+            }
+            
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Settings imported successfully (${importMode}d ${settings.length} settings)',
+                  ),
+                  backgroundColor: Colors.green,
+                  duration: const Duration(seconds: 4),
+                ),
+              );
+              
+              // Refresh the UI
+              setState(() {});
+            }
+          } else {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Failed to import settings'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Import failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+  
+  Future<bool> _showImportWarningDialog(String message) async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Import Warning'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            child: const Text('Import Anyway', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    ) ?? false;
+  }
+  
+  Future<String?> _showImportModeDialog() async {
+    return await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Import Mode'),
+        content: const Text(
+          'How would you like to import the settings?\n\n'
+          '• Merge: Add imported settings, keep existing ones\n'
+          '• Replace: Replace all settings with imported ones\n\n'
+          'Note: Replace will reset all settings to defaults first.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(null),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop('merge'),
+            child: const Text('Merge'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop('replace'),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            child: const Text('Replace', style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
     );
   }
