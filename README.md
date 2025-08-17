@@ -202,6 +202,11 @@ Whirlpool implementation.
   - Shred: Military-grade secure deletion
   - Settings: Organized hash families (SHA-2, SHA-3, BLAKE, SHAKE) and modern KDF configuration
 
+### Flutter Desktop GUI
+The Flutter-based desktop GUI has been ported to all versions and is available across all platforms (Linux, macOS, Windows) without requiring a version number upgrade. This modern interface provides enhanced usability and cross-platform compatibility.
+
+For detailed Flutter GUI installation instructions, see the [User Guide](openssl_encrypt/docs/user-guide.md#flutter-desktop-gui-installation).
+
 ## Documentation Structure
 
 The documentation has been consolidated from 37+ files into 10 comprehensive guides for better organization and usability.
