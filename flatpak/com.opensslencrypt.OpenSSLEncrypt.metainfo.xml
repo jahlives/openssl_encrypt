@@ -37,14 +37,14 @@
       <caption>Main encryption interface</caption>
     </screenshot>
   </screenshots>
+  <content_rating type="oars-1.1"/>
   <releases>
-    <release version="1.0.1" date="2025-06-26" type="stable">
+    <release version="1.1.1" date="2025-08-16" type="stable">
       <description>
-        <p>Version 1.0.1 build</p>
+        <p>Version 1.1.1 build</p>
       </description>
     </release>
   </releases>
-  <content_rating type="oars-1.1"/>
   <developer_name>OpenSSL Encrypt Project</developer_name>
   <url type="homepage">https://gitlab.rm-rf.ch/world/openssl_encrypt</url>
   <url type="bugtracker">https://gitlab.rm-rf.ch/world/openssl_encrypt/-/issues</url>

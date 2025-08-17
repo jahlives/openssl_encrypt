@@ -14,8 +14,7 @@
     "--talk-name=org.freedesktop.FileManager1",
     "--talk-name=org.gtk.vfs.*",
     "--talk-name=org.a11y.*",
-    "--env=PYTHONPATH=/app/lib/python3.12/site-packages",
-    "--env=GDK_BACKEND=wayland,x11"
+    "--env=PYTHONPATH=/app/lib/python3.12/site-packages"
   ],
   "modules": [
     {
@@ -63,16 +62,6 @@
       ]
     },
     {
-      "name": "x11-tools",
-      "buildsystem": "simple",
-      "build-commands": [
-        "echo 'Installing X11 virtual framebuffer...'",
-        "which Xvfb || echo 'Xvfb not available in runtime'",
-        "echo 'X11 tools check complete'"
-      ],
-      "sources": []
-    },
-    {
       "name": "python3-dependencies",
       "buildsystem": "simple",
       "build-options": {
@@ -87,7 +76,7 @@
         "pip3 install --prefix=${FLATPAK_DEST} 'PyYAML>=6.0.2,<7.0.0'",
         "pip3 install --prefix=${FLATPAK_DEST} 'whirlpool-py311>=1.0.0,<2.0.0; python_version >= \"3.11\"'",
         "pip3 install --prefix=${FLATPAK_DEST} 'blake3>=1.0.0,<2.0.0'",
-        "pip3 install --prefix=${FLATPAK_DEST} git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0"
+        "pip3 install --prefix=${FLATPAK_DEST} 'git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0'"
       ],
       "sources": []
     },
@@ -96,7 +85,7 @@
       "buildsystem": "simple",
       "build-commands": [
         "echo '📦 Installing pre-built Flutter desktop GUI...'",
-        "if [ -d desktop_gui/build/linux/x64/release/bundle ]; then echo '✅ Found pre-built Flutter binary' && mkdir -p /app/bin/openssl-encrypt-gui && cp -r desktop_gui/build/linux/x64/release/bundle/* /app/bin/openssl-encrypt-gui/ && chmod +x /app/bin/openssl-encrypt-gui/openssl_encrypt_mobile && echo '✅ Flutter desktop GUI installed successfully'; else echo '⚠️  No pre-built Flutter binary found' && echo '⚠️  Run: cd desktop_gui && flutter build linux --release' && echo '⚠️  Continuing without Flutter GUI'; fi"
+        "if [ -d desktop_gui/build/linux/x64/release/bundle ]; then echo '✅ Found pre-built Flutter binary' && mkdir -p /app/bin/openssl-encrypt-gui && cp -r desktop_gui/build/linux/x64/release/bundle/* /app/bin/openssl-encrypt-gui/ && chmod +x /app/bin/openssl-encrypt-gui/openssl_encrypt_mobile && echo '✅ Flutter desktop GUI installed successfully'; else echo '⚠️  No pre-built Flutter binary found' && echo '⚠️  Run: cd desktop_gui && flutter build linux --release' && echo '⚠️  Continuing without Flutter GUI (tkinter fallback available)'; fi"
       ],
       "sources": [
         {
