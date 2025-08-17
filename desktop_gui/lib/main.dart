@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:desktop_drop/desktop_drop.dart';
+import 'package:path/path.dart' as path;
 import 'cli_service.dart';
 import 'file_manager.dart';
 import 'settings_service.dart';
 import 'settings_screen.dart';
+import 'configuration_profiles_screen.dart';
 
 // Intent classes for keyboard shortcuts
 class OpenFileIntent extends Intent {
@@ -130,7 +134,11 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   final FileManager _fileManager = FileManager();
+  final GlobalKey<_FileCryptoTabState> _fileCryptoTabKey = GlobalKey<_FileCryptoTabState>();
   int _selectedIndex = 0;
+  bool _isDragOver = false;
+  bool _debugWindowVisible = false;
+  OverlayEntry? _debugOverlayEntry;
 
   @override
   void initState() {
@@ -139,6 +147,7 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
+    _hideDebugWindow(); // Clean up debug overlay if shown
     super.dispose();
   }
 
@@ -195,6 +204,21 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  void _showConfigurationProfiles(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const ConfigurationProfilesScreen(isSelectionMode: true),
+      ),
+    );
+  }
+  
+  void _showManageProfiles(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const ConfigurationProfilesScreen(),
+      ),
+    );
+  }
 
   void _showAbout(BuildContext context) {
     showAboutDialog(
@@ -225,7 +249,7 @@ class _MainScreenState extends State<MainScreen> {
                 children: [
                   Icon(Icons.info_outline, color: Theme.of(context).colorScheme.primary, size: 16),
                   const SizedBox(width: 6),
-                  Text(
+                  const Text(
                     'CLI Backend Information',
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
@@ -303,36 +327,113 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  void _handleFileDrop(String filePath) {
-    // Switch to file tab and load the dropped file
+  // Debug window methods
+  void _toggleDebugWindow() {
+    if (_debugWindowVisible) {
+      _hideDebugWindow();
+    } else {
+      _showDebugWindow();
+    }
+  }
+
+  void _showDebugWindow() {
+    if (_debugOverlayEntry != null) return; // Already shown
+    
+    _debugOverlayEntry = _createDebugOverlayEntry();
+    Overlay.of(context).insert(_debugOverlayEntry!);
+    setState(() {
+      _debugWindowVisible = true;
+    });
+  }
+
+  void _hideDebugWindow() {
+    _debugOverlayEntry?.remove();
+    _debugOverlayEntry = null;
+    setState(() {
+      _debugWindowVisible = false;
+    });
+  }
+
+  OverlayEntry _createDebugOverlayEntry() {
+    return OverlayEntry(
+      builder: (context) => _DraggableDebugWindow(
+        onClose: _hideDebugWindow,
+        onRefresh: () => _debugOverlayEntry?.markNeedsBuild(),
+      ),
+    );
+  }
+
+  void _handleFileDrop(DropDoneDetails details) async {
+    // Handle only the first file if multiple files are dropped
+    if (details.files.isEmpty) return;
+    
+    final file = details.files.first;
+    final filePath = file.path;
+    
+    // Switch to file tab first
     setState(() {
       _selectedIndex = 1;
     });
     
-    // Show feedback to user
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('File loaded: ${filePath.split('/').last}'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    // Wait a moment for the tab to be created if needed
+    await Future.delayed(const Duration(milliseconds: 50));
     
-    // TODO: Actually load the file in FileCryptoTab
-    // This would require passing the file path to the tab component
+    // Attempt to load the file in FileCryptoTab
+    final fileCryptoTabState = _fileCryptoTabKey.currentState;
+    if (fileCryptoTabState != null) {
+      final success = await fileCryptoTabState.loadFileFromPath(filePath);
+      
+      if (success) {
+        // Show success feedback
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('File loaded: ${file.name}'),
+              duration: const Duration(seconds: 2),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        // Show error feedback
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to load file: ${file.name}'),
+              duration: const Duration(seconds: 3),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } else {
+      // Tab state not available, show fallback message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please wait and try dropping the file again'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    }
   }
 
   Widget _getSelectedPage() {
     switch (_selectedIndex) {
       case 0:
-        return TextCryptoTab(onDebugChanged: widget.onDebugChanged);
+        return TextCryptoTab(onDebugChanged: widget.onDebugChanged, onToggleDebugWindow: _toggleDebugWindow);
       case 1:
-        return FileCryptoTab(fileManager: _fileManager, onDebugChanged: widget.onDebugChanged);
+        return FileCryptoTab(key: _fileCryptoTabKey, fileManager: _fileManager, onDebugChanged: widget.onDebugChanged);
       case 2:
-        return const InfoTab();
+        return BatchOperationsTab(fileManager: _fileManager, onDebugChanged: widget.onDebugChanged);
       case 3:
+        return const InfoTab();
+      case 4:
         return SettingsTab(onThemeChanged: widget.onThemeChanged);
       default:
-        return TextCryptoTab(onDebugChanged: widget.onDebugChanged);
+        return TextCryptoTab(onDebugChanged: widget.onDebugChanged, onToggleDebugWindow: _toggleDebugWindow);
     }
   }
 
@@ -380,8 +481,8 @@ class _MainScreenState extends State<MainScreen> {
                     onPressed: () => _openFile(),
                   ),
                   const MenuItemButton(
-                    child: Text('Recent Files'),
                     onPressed: null, // TODO: Implement recent files
+                    child: Text('Recent Files'),
                   ),
                   const Divider(),
                   MenuItemButton(
@@ -406,6 +507,15 @@ class _MainScreenState extends State<MainScreen> {
               ),
               SubmenuButton(
                 menuChildren: [
+                  MenuItemButton(
+                    child: const Text('Apply Profile Settings'),
+                    onPressed: () => _showConfigurationProfiles(context),
+                  ),
+                  MenuItemButton(
+                    child: const Text('Manage Profiles'),
+                    onPressed: () => _showManageProfiles(context),
+                  ),
+                  const Divider(),
                   MenuItemButton(
                     child: const Text('Algorithm Info'),
                     onPressed: () => _showAlgorithmInfo(context),
@@ -458,6 +568,11 @@ class _MainScreenState extends State<MainScreen> {
                 label: Text('File Encryption'),
               ),
               NavigationRailDestination(
+                icon: Icon(Icons.file_copy_outlined),
+                selectedIcon: Icon(Icons.file_copy),
+                label: Text('Batch Operations'),
+              ),
+              NavigationRailDestination(
                 icon: Icon(Icons.info_outline),
                 selectedIcon: Icon(Icons.info),
                 label: Text('Information'),
@@ -472,31 +587,39 @@ class _MainScreenState extends State<MainScreen> {
           const VerticalDivider(thickness: 1, width: 1),
           // Main Content Area with Drag & Drop
           Expanded(
-            child: DragTarget<String>(
-              onAcceptWithDetails: (details) => _handleFileDrop(details.data),
-              onWillAccept: (data) => data?.endsWith('.txt') == true || data?.endsWith('.encrypted') == true,
-              builder: (context, candidateData, rejectedData) {
-                final bool isDragActive = candidateData.isNotEmpty;
-                return Container(
-                  decoration: isDragActive ? BoxDecoration(
-                    border: Border.all(color: Theme.of(context).colorScheme.primary, width: 2),
-                    borderRadius: BorderRadius.circular(8),
-                    color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
-                  ) : null,
-                  child: isDragActive ? 
-                    Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.file_upload, size: 64, color: Theme.of(context).colorScheme.primary),
-                          SizedBox(height: 16),
-                          Text('Drop file here to encrypt/decrypt', 
-                               style: TextStyle(fontSize: 18, color: Theme.of(context).colorScheme.primary)),
-                        ],
-                      ),
-                    ) : _getSelectedPage(),
-                );
+            child: DropTarget(
+              onDragDone: _handleFileDrop,
+              onDragEntered: (details) {
+                setState(() {
+                  _isDragOver = true;
+                });
               },
+              onDragExited: (details) {
+                setState(() {
+                  _isDragOver = false;
+                });
+              },
+              child: Container(
+                decoration: _isDragOver ? BoxDecoration(
+                  border: Border.all(color: Theme.of(context).colorScheme.primary, width: 2),
+                  borderRadius: BorderRadius.circular(8),
+                  color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+                ) : null,
+                child: _isDragOver ? 
+                  Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.file_upload, size: 64, color: Theme.of(context).colorScheme.primary),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Drop file here to encrypt/decrypt', 
+                          style: TextStyle(fontSize: 18, color: Theme.of(context).colorScheme.primary),
+                        ),
+                      ],
+                    ),
+                  ) : _getSelectedPage(),
+              ),
             ),
           ),
         ],
@@ -510,8 +633,9 @@ class _MainScreenState extends State<MainScreen> {
 // Text encryption/decryption tab
 class TextCryptoTab extends StatefulWidget {
   final Function(bool) onDebugChanged;
+  final VoidCallback? onToggleDebugWindow;
 
-  const TextCryptoTab({super.key, required this.onDebugChanged});
+  const TextCryptoTab({super.key, required this.onDebugChanged, this.onToggleDebugWindow});
 
   @override
   State<TextCryptoTab> createState() => _TextCryptoTabState();
@@ -533,6 +657,12 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   Map<String, Map<String, dynamic>> _hashConfig = {};  // Hash algorithm -> {enabled, rounds} mapping
   Map<String, Map<String, dynamic>> _kdfConfig = {};  // KDF chain configuration
   bool _showAdvanced = false;
+  
+  // Performance optimization caches
+  static bool _algorithmsLoaded = false;
+  static List<String>? _cachedAlgorithms;
+  static List<String>? _cachedHashAlgorithms;
+  
   bool _showHashConfig = false;
   bool _showKdfConfig = false;
   bool _debugLogging = false;
@@ -566,6 +696,18 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   }
 
   void _loadAlgorithms() async {
+    // Performance optimization: Use static cache to avoid reloading
+    if (_algorithmsLoaded && _cachedAlgorithms != null && _cachedHashAlgorithms != null) {
+      setState(() {
+        _algorithms = _cachedAlgorithms!;
+        _hashAlgorithms = _cachedHashAlgorithms!;
+      });
+      return;
+    }
+    
+    // Early return if already loaded in this instance
+    if (_algorithms.isNotEmpty) return;
+    
     try {
       final algorithmCategories = await CLIService.getSupportedAlgorithms();
       final hashCategories = await CLIService.getHashAlgorithms();
@@ -608,6 +750,11 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
           'balloon': {'enabled': false, 'space_cost': 8, 'time_cost': 1, 'parallel_cost': 1, 'rounds': 1}
         };
       });
+      
+      // Cache the results for future use
+      _cachedAlgorithms = algorithms;
+      _cachedHashAlgorithms = hashAlgorithms;
+      _algorithmsLoaded = true;
     } catch (e) {
       setState(() {
         _algorithms = ['fernet'];
@@ -845,100 +992,6 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     }
   }
 
-  void _showDebugLogs() {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        child: Container(
-          width: 600,
-          height: 500,
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.bug_report, color: Colors.orange.shade600),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'Debug Logs',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () {
-                      CLIService.clearDebugLogs();
-                      Navigator.of(context).pop();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Debug logs cleared')),
-                      );
-                    },
-                    icon: const Icon(Icons.clear_all),
-                    tooltip: 'Clear logs',
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-              const Divider(),
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
-                    border: Border.all(color: Theme.of(context).colorScheme.outline),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: ListView.builder(
-                    itemCount: CLIService.getDebugLogs().length,
-                    itemBuilder: (context, index) {
-                      final logs = CLIService.getDebugLogs();
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        child: Text(
-                          logs[index],
-                          style: const TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 11,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Showing last ${CLIService.getDebugLogs().length} log entries (in-memory)',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  if (CLIService.getDebugLogFile() != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      'Full log file: ${CLIService.getDebugLogFile()}',
-                      style: TextStyle(
-                        fontSize: 9,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -1023,7 +1076,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                               icon: const Icon(Icons.auto_awesome, size: 16),
                               label: const Text('Get Recommendations'),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green.withOpacity(0.2),
+                                backgroundColor: Colors.green.withValues(alpha: 0.2),
                                 foregroundColor: Colors.green.shade700,
                               ),
                             ),
@@ -1339,7 +1392,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                                 ),
                                 const SizedBox(width: 8),
                                 ElevatedButton.icon(
-                                  onPressed: _showDebugLogs,
+                                  onPressed: widget.onToggleDebugWindow,
                                   icon: const Icon(Icons.visibility, size: 16),
                                   label: const Text('View Logs'),
                                   style: ElevatedButton.styleFrom(
@@ -1543,6 +1596,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                     onPressed: () async {
                       await Clipboard.setData(ClipboardData(text: _result));
                       if (mounted) {
+                        // ignore: use_build_context_synchronously
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('Result copied to clipboard'),
@@ -1565,6 +1619,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   }
 
   // Helper method to build KDF configuration sections
+  // ignore: unused_element
   Widget _buildKdfConfig(String kdfId, String kdfName, List<Widget> paramFields) {
     final isEnabled = _kdfConfig[kdfId]?['enabled'] ?? false;
     return Container(
@@ -1572,7 +1627,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       decoration: BoxDecoration(
         border: Border.all(color: isEnabled ? Colors.green : Theme.of(context).colorScheme.outline),
         borderRadius: BorderRadius.circular(8),
-        color: isEnabled ? Colors.green.withOpacity(0.1) : Theme.of(context).colorScheme.surfaceContainer,
+        color: isEnabled ? Colors.green.withValues(alpha: 0.1) : Theme.of(context).colorScheme.surfaceContainer,
       ),
       child: Column(
         children: [
@@ -1677,6 +1732,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   }
 
   // Helper method to build number input fields  
+  // ignore: unused_element
   Widget _buildNumberField(String kdfId, String paramId, String label, int defaultValue) {
     return Padding(
       padding: const EdgeInsets.only(top: 8.0),
@@ -1871,6 +1927,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   }
   
   /// Get hash function description
+  // ignore: unused_element
   String _getHashDescription(String hashName) {
     final descriptions = {
       // SHA-2 Family
@@ -1926,6 +1983,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   }
   
   /// Show hash information dialog
+  // ignore: unused_element
   void _showHashInfo() {
     showDialog(
       context: context,
@@ -2285,6 +2343,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                   children: [
                     const Text('Hash Algorithm: '),
                     DropdownButton<String>(
+                      key: ValueKey('hash_algorithm_${config['algorithm'] ?? 'sha256'}'),
                       value: config['algorithm'] ?? 'sha256',
                       items: const [
                         DropdownMenuItem(value: 'sha224', child: Text('SHA-224')),
@@ -2390,7 +2449,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
       child: Row(
         children: [
-          SizedBox(width: 120, child: Text(label + ':', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface))),
+          SizedBox(width: 120, child: Text('$label:', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface))),
           // Decrement button with auto-repeat
           _buildAutoRepeatButton(
             icon: Icons.remove,
@@ -2468,7 +2527,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                 divisions: maxRounds ~/ 100, // Coarser divisions for slider
                 label: clampedRounds.toString(),
                 activeColor: Theme.of(context).colorScheme.primary,
-                inactiveColor: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                inactiveColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
                 onChanged: (double value) => onChanged(value.toInt()),
               ),
             ),
@@ -2562,6 +2621,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   bool _isLoading = false;
   String? _decryptedContent; // Store decrypted content for optional saving
   bool _debugLogging = false;
+  bool _forceOverwrite = false; // Force overwrite source file with --force flag
   
   // Progress tracking
   String _operationStatus = '';
@@ -2588,19 +2648,19 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     try {
       final algorithmMap = await CLIService.getSupportedAlgorithms();
       final algorithms = algorithmMap.values.expand((list) => list).toList();
-      final hashAlgorithms = ['sha256', 'sha512', 'blake2b']; // Default hash algorithms
+      final hashAlgorithmsList = await CLIService.getHashAlgorithmsList();
       
       setState(() {
         _algorithms = algorithms;
-        _hashAlgorithms = hashAlgorithms;
+        _hashAlgorithms = hashAlgorithmsList;
         
         if (algorithms.isNotEmpty) {
           _selectedAlgorithm = algorithms.first;
         }
-        if (hashAlgorithms.isNotEmpty) {
+        if (hashAlgorithmsList.isNotEmpty) {
           // Initialize hash configuration with default values (CLI order)
           _hashConfig = {};
-          for (String hash in hashAlgorithms) {
+          for (String hash in hashAlgorithmsList) {
             _hashConfig[hash] = {
               'enabled': true,  // All hash functions enabled with CLI integration
               'rounds': 1000    // Default rounds for all hash functions (CLI supports all)
@@ -2646,6 +2706,25 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     }
   }
 
+  /// Load a file from a given path (for drag & drop support)
+  Future<bool> loadFileFromPath(String filePath) async {
+    try {
+      final fileInfo = await widget.fileManager.createFileInfoFromPath(filePath);
+      if (fileInfo != null) {
+        setState(() {
+          _selectedFile = fileInfo;
+          _result = 'Selected file: ${fileInfo.name}\nSize: ${fileInfo.sizeFormatted}';
+        });
+        return true;
+      }
+    } catch (e) {
+      setState(() {
+        _result = 'Error loading file: $e';
+      });
+    }
+    return false;
+  }
+
   void _pickTestFile() async {
     final testFileNames = await widget.fileManager.getTestFileNames();
     
@@ -2659,9 +2738,11 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
           content: SizedBox(
             width: double.maxFinite,
             height: 400,
-            child: ListView.builder(
-              itemCount: testFileNames.length,
-              itemBuilder: (context, index) {
+            child: RepaintBoundary(
+              child: ListView.builder(
+                key: const Key('test_files_listview'),
+                itemCount: testFileNames.length,
+                itemBuilder: (context, index) {
                 final fileName = testFileNames[index];
                 final isEncrypted = fileName.contains('test1_');
                 
@@ -2757,6 +2838,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                 );
               },
             ),
+            ),
           ),
           actions: [
             TextButton(
@@ -2828,22 +2910,35 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
         throw Exception(encrypted.substring(7));
       }
 
-      // Generate output filename
-      final outputPath = widget.fileManager.getEncryptedFileName(_selectedFile!.path);
+      // Generate output filename - use original path if force overwrite is enabled
+      final outputPath = _forceOverwrite 
+          ? _selectedFile!.path 
+          : widget.fileManager.getEncryptedFileName(_selectedFile!.path);
       
       // Save encrypted file
       final success = await widget.fileManager.writeFileText(outputPath, encrypted);
 
       if (success) {
         setState(() {
-          _result = 'File encrypted successfully!\n\n'
-              'Original: ${_selectedFile!.name}\n'
-              'Size: ${_selectedFile!.sizeFormatted}\n'
-              'Encrypted: ${outputPath.split('/').last}\n'
-              'Saved to: $outputPath\n\n'
-              'Algorithm: $_selectedAlgorithm\n'
-              'CLI Compatible: Yes\n'
-              'Format: OpenSSL Encrypt Desktop GUI';
+          if (_forceOverwrite) {
+            _result = 'File encrypted successfully (source overwritten)!\n\n'
+                'Original: ${_selectedFile!.name}\n'
+                'Size: ${_selectedFile!.sizeFormatted}\n'
+                'Status: Source file replaced with encrypted content\n'
+                'Path: $outputPath\n\n'
+                'Algorithm: $_selectedAlgorithm\n'
+                'CLI Compatible: Yes\n'
+                'Format: OpenSSL Encrypt Desktop GUI';
+          } else {
+            _result = 'File encrypted successfully!\n\n'
+                'Original: ${_selectedFile!.name}\n'
+                'Size: ${_selectedFile!.sizeFormatted}\n'
+                'Encrypted: ${outputPath.split('/').last}\n'
+                'Saved to: $outputPath\n\n'
+                'Algorithm: $_selectedAlgorithm\n'
+                'CLI Compatible: Yes\n'
+                'Format: OpenSSL Encrypt Desktop GUI';
+          }
           _isLoading = false;
         });
       } else {
@@ -2936,15 +3031,39 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
         throw Exception(decrypted.substring(7));
       }
 
-      // Store decrypted content and display it without saving to disk
-      setState(() {
-        _decryptedContent = decrypted; // Store for optional saving
-        _result = decrypted; // Show only the decrypted content
-        _isLoading = false;
-        _operationStatus = '';
-        _operationProgress = '';
-        _progressValue = 0.0;
-      });
+      // Store decrypted content and optionally save directly if force overwrite is enabled
+      if (_forceOverwrite) {
+        // Save decrypted content directly to source file
+        final success = await widget.fileManager.writeFileText(_selectedFile!.path, decrypted);
+        
+        if (success) {
+          setState(() {
+            _decryptedContent = decrypted;
+            _result = 'File decrypted successfully (source overwritten)!\n\n'
+                'Status: Source file replaced with decrypted content\n'
+                'Path: ${_selectedFile!.path}\n'
+                'File: ${_selectedFile!.name}\n\n'
+                'Decrypted Content Preview:\n'
+                '${decrypted.length > 200 ? '${decrypted.substring(0, 200)}...' : decrypted}';
+            _isLoading = false;
+            _operationStatus = '';
+            _operationProgress = '';
+            _progressValue = 0.0;
+          });
+        } else {
+          throw Exception('Failed to save decrypted file');
+        }
+      } else {
+        // Store for optional saving (existing behavior)
+        setState(() {
+          _decryptedContent = decrypted; // Store for optional saving
+          _result = decrypted; // Show only the decrypted content
+          _isLoading = false;
+          _operationStatus = '';
+          _operationProgress = '';
+          _progressValue = 0.0;
+        });
+      }
 
     } catch (e) {
       setState(() {
@@ -3018,8 +3137,26 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
 
   Widget _buildAlgorithmPicker() {
     final algorithmCategories = {
-      'Classical Symmetric': ['fernet', 'aes-gcm', 'chacha20-poly1305', 'xchacha20-poly1305'].where((a) => _algorithms.contains(a)).toList(),
-      'Post-Quantum': ['ml-kem-512', 'ml-kem-768', 'ml-kem-1024'].where((a) => _algorithms.contains(a)).toList(),
+      'Classical Symmetric': [
+        'fernet', 'aes-gcm', 'chacha20-poly1305', 'xchacha20-poly1305', 
+        'aes-siv', 'aes-gcm-siv', 'aes-ocb3', 'camellia'
+      ].where((a) => _algorithms.contains(a)).toList(),
+      'ML-KEM Post-Quantum': [
+        'ml-kem-512-hybrid', 'ml-kem-768-hybrid', 'ml-kem-1024-hybrid',
+        'ml-kem-512-chacha20', 'ml-kem-768-chacha20', 'ml-kem-1024-chacha20'
+      ].where((a) => _algorithms.contains(a)).toList(),
+      'Kyber Legacy': [
+        'kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid'
+      ].where((a) => _algorithms.contains(a)).toList(),
+      'HQC Code-Based': [
+        'hqc-128-hybrid', 'hqc-192-hybrid', 'hqc-256-hybrid'
+      ].where((a) => _algorithms.contains(a)).toList(),
+      'MAYO Signature': [
+        'mayo-1-hybrid', 'mayo-3-hybrid', 'mayo-5-hybrid'
+      ].where((a) => _algorithms.contains(a)).toList(),
+      'CROSS Signature': [
+        'cross-128-hybrid', 'cross-192-hybrid', 'cross-256-hybrid'
+      ].where((a) => _algorithms.contains(a)).toList(),
     };
 
     return AlertDialog(
@@ -3056,18 +3193,18 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                     return Card(
                       color: isSelected ? Theme.of(context).colorScheme.primaryContainer : null,
                       child: ListTile(
-                        leading: Icon(Icons.security),
+                        leading: const Icon(Icons.security),
                         title: Text(algorithm),
                         subtitle: Text(_getAlgorithmDescription(algorithm)),
                         trailing: isSelected ? Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary) : null,
                         onTap: () => Navigator.of(context).pop(algorithm),
                       ),
                     );
-                  }).toList(),
+                  }),
                   const SizedBox(height: 8),
                 ],
               );
-            }).toList(),
+            }),
           ],
         ),
       ),
@@ -3160,54 +3297,27 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                 style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
               const SizedBox(height: 8),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    children: [
-                      CheckboxListTile(
-                        title: const Text('PBKDF2'),
-                        subtitle: Text('Iterations: ${_kdfConfig['pbkdf2']?['iterations'] ?? 100000}'),
-                        value: _kdfConfig['pbkdf2']?['enabled'] ?? false,
-                        onChanged: (bool? value) {
-                          setState(() {
-                            if (_kdfConfig['pbkdf2'] == null) {
-                              _kdfConfig['pbkdf2'] = {'iterations': 100000};
-                            }
-                            _kdfConfig['pbkdf2']!['enabled'] = value;
-                          });
-                        },
-                      ),
-                      CheckboxListTile(
-                        title: const Text('Argon2'),
-                        subtitle: const Text('Modern memory-hard function'),
-                        value: _kdfConfig['argon2']?['enabled'] ?? false,
-                        onChanged: (bool? value) {
-                          setState(() {
-                            if (_kdfConfig['argon2'] == null) {
-                              _kdfConfig['argon2'] = {'time_cost': 3, 'memory_cost': 65536, 'parallelism': 4};
-                            }
-                            _kdfConfig['argon2']!['enabled'] = value;
-                          });
-                        },
-                      ),
-                      CheckboxListTile(
-                        title: const Text('Scrypt'),
-                        subtitle: const Text('Memory-hard function'),
-                        value: _kdfConfig['scrypt']?['enabled'] ?? false,
-                        onChanged: (bool? value) {
-                          setState(() {
-                            if (_kdfConfig['scrypt'] == null) {
-                              _kdfConfig['scrypt'] = {'n': 16384, 'r': 8, 'p': 1};
-                            }
-                            _kdfConfig['scrypt']!['enabled'] = value;
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              // PBKDF2 Panel (hidden in CLI v1.2+)
+              if (!CLIService.shouldHideLegacyAlgorithms()) ...[
+                _buildPBKDF2Panel(),
+                const SizedBox(height: 8),
+              ],
+              
+              // Argon2 Panel  
+              _buildArgon2Panel(),
+              const SizedBox(height: 8),
+              
+              // Scrypt Panel
+              _buildScryptPanel(),
+              const SizedBox(height: 8),
+              
+              // HKDF Panel
+              _buildHKDFPanel(),
+              const SizedBox(height: 8),
+              
+              // Balloon Panel
+              _buildBalloonPanel(),
+              const SizedBox(height: 8),
             ],
           ],
         ),
@@ -3276,6 +3386,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildSimpleKDFConfig(String kdfId) {
     final isEnabled = _kdfConfig[kdfId]?['enabled'] ?? false;
     
@@ -3334,7 +3445,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                 divisions: maxRounds ~/ 100, // Coarser divisions for slider
                 label: clampedRounds.toString(),
                 activeColor: Theme.of(context).colorScheme.primary,
-                inactiveColor: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                inactiveColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
                 onChanged: (double value) => onChanged(value.toInt()),
               ),
             ),
@@ -3500,7 +3611,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                               icon: const Icon(Icons.auto_awesome, size: 16),
                               label: const Text('Get Recommendations'),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green.withOpacity(0.2),
+                                backgroundColor: Colors.green.withValues(alpha: 0.2),
                                 foregroundColor: Colors.green.shade700,
                               ),
                             ),
@@ -3513,7 +3624,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                     const SizedBox(height: 16),
                     ExpansionTile(
                       leading: const Icon(Icons.tag),
-                      title: Row(
+                      title: const Row(
                         children: [
                           Expanded(
                             child: Text(
@@ -3707,6 +3818,43 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
               ),
             ),
           const SizedBox(height: 16),
+          // Force overwrite option
+          Row(
+            children: [
+              Checkbox(
+                value: _forceOverwrite,
+                onChanged: _isLoading ? null : (value) {
+                  setState(() {
+                    _forceOverwrite = value ?? false;
+                  });
+                },
+              ),
+              GestureDetector(
+                onTap: _isLoading ? null : () {
+                  setState(() {
+                    _forceOverwrite = !_forceOverwrite;
+                  });
+                },
+                child: Text(
+                  'Force overwrite source file (--force)',
+                  style: TextStyle(
+                    color: _isLoading ? Theme.of(context).colorScheme.onSurfaceVariant : null,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Tooltip(
+                message: 'When enabled, replaces the original file with encrypted/decrypted content instead of creating a new file',
+                child: Icon(
+                  Icons.info_outline,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const Spacer(), // Pushes everything else to the right, leaving space
+            ],
+          ),
+          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
@@ -3735,7 +3883,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
           const SizedBox(height: 16),
           // Save to File button (only shown when decrypted content is available)
           if (_decryptedContent != null)
-            Container(
+            SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: _isLoading ? null : _saveDecryptedToFile,
@@ -3777,6 +3925,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                     onPressed: () async {
                       await Clipboard.setData(ClipboardData(text: _result));
                       if (mounted) {
+                        // ignore: use_build_context_synchronously
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('Result copied to clipboard'),
@@ -3797,6 +3946,427 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
       ),
     );
   }
+
+  // =============================================================================
+  // KDF Panel Builders (copied from TextCryptoTabState for consistency)
+  // =============================================================================
+
+  /// Build PBKDF2 configuration panel
+  Widget _buildPBKDF2Panel() {
+    final config = _kdfConfig['pbkdf2'] ?? {'enabled': true, 'iterations': 100000};
+    final enabled = config['enabled'] ?? false;
+    
+    return Card(
+      color: enabled ? Theme.of(context).colorScheme.primaryContainer : Theme.of(context).colorScheme.surfaceContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CheckboxListTile(
+              title: Row(
+                children: [
+                  const Text('PBKDF2', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.green,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('RECOMMENDED', style: TextStyle(color: Colors.white, fontSize: 10)),
+                  ),
+                ],
+              ),
+              subtitle: const Text('Password-Based Key Derivation Function 2 - Industry standard, widely supported'),
+              value: enabled,
+              onChanged: (bool? value) {
+                setState(() {
+                  _kdfConfig['pbkdf2'] = {
+                    'enabled': value ?? false,
+                    'iterations': config['iterations'] ?? 100000,
+                  };
+                });
+              },
+            ),
+            if (enabled) ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Row(
+                  children: [
+                    const SizedBox(width: 100, child: Text('Iterations:')),
+                    Expanded(
+                      child: Slider(
+                        value: (config['iterations'] ?? 100000).toDouble(),
+                        min: 0,
+                        max: 1000000,
+                        divisions: 100,
+                        label: (config['iterations'] ?? 100000).toString(),
+                        onChanged: (double value) {
+                          setState(() {
+                            _kdfConfig['pbkdf2']!['iterations'] = value.toInt();
+                          });
+                        },
+                      ),
+                    ),
+                    SizedBox(width: 80, child: Text('${config['iterations'] ?? 100000}')),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Text(
+                  'Higher iterations = more security but slower processing. 100,000+ recommended.',
+                  style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build Argon2 configuration panel
+  Widget _buildArgon2Panel() {
+    final config = _kdfConfig['argon2'] ?? {
+      'enabled': false,
+      'time_cost': 3,
+      'memory_cost': 65536,
+      'parallelism': 4,
+      'hash_len': 32,
+      'type': 2,
+      'rounds': 10,
+    };
+    final enabled = config['enabled'] ?? false;
+    
+    return Card(
+      color: enabled ? Theme.of(context).colorScheme.secondaryContainer : Theme.of(context).colorScheme.surfaceContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CheckboxListTile(
+              title: Row(
+                children: [
+                  const Text('Argon2', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.purple,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('MAX SECURITY', style: TextStyle(color: Colors.white, fontSize: 10)),
+                  ),
+                ],
+              ),
+              subtitle: const Text('Memory-hard function, winner of Password Hashing Competition - best against hardware attacks'),
+              value: enabled,
+              onChanged: (bool? value) {
+                setState(() {
+                  _kdfConfig['argon2'] = Map.from(config)..['enabled'] = value ?? false;
+                });
+              },
+            ),
+            if (enabled) ...[
+              const SizedBox(height: 8),
+              ...[ 
+                _buildKDFSlider('Time Cost', config['time_cost'] ?? 3, 1, 1000, (v) => 
+                  setState(() => _kdfConfig['argon2']!['time_cost'] = v)),
+                _buildKDFSlider('Memory (MB)', ((config['memory_cost'] ?? 65536) / 1024).round(), 1, 1024, (v) => 
+                  setState(() => _kdfConfig['argon2']!['memory_cost'] = v * 1024)),
+                _buildKDFSlider('Parallelism', config['parallelism'] ?? 4, 1, 16, (v) => 
+                  setState(() => _kdfConfig['argon2']!['parallelism'] = v)),
+                _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 128, (v) => 
+                  setState(() => _kdfConfig['argon2']!['hash_len'] = v)),
+                _buildKDFSlider('Rounds', config['rounds'] ?? 10, 0, 1000000, (v) => 
+                  setState(() => _kdfConfig['argon2']!['rounds'] = v)),
+              ],
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Row(
+                  children: [
+                    const Text('Type: '),
+                    DropdownButton<int>(
+                      value: config['type'] ?? 2,
+                      items: const [
+                        DropdownMenuItem(value: 0, child: Text('Argon2d')),
+                        DropdownMenuItem(value: 1, child: Text('Argon2i')),
+                        DropdownMenuItem(value: 2, child: Text('Argon2id (recommended)')),
+                      ],
+                      onChanged: (int? value) {
+                        setState(() {
+                          _kdfConfig['argon2']!['type'] = value ?? 2;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build Scrypt configuration panel
+  Widget _buildScryptPanel() {
+    final config = _kdfConfig['scrypt'] ?? {
+      'enabled': false,
+      'n': 16384,
+      'r': 8,
+      'p': 1,
+      'rounds': 10,
+    };
+    final enabled = config['enabled'] ?? false;
+    
+    return Card(
+      color: enabled ? Theme.of(context).colorScheme.tertiaryContainer : Theme.of(context).colorScheme.surfaceContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CheckboxListTile(
+              title: Row(
+                children: [
+                  const Text('Scrypt', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.orange,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('BALANCED', style: TextStyle(color: Colors.white, fontSize: 10)),
+                  ),
+                ],
+              ),
+              subtitle: const Text('Memory-hard function used in cryptocurrencies - good balance of security and performance'),
+              value: enabled,
+              onChanged: (bool? value) {
+                setState(() {
+                  _kdfConfig['scrypt'] = Map.from(config)..['enabled'] = value ?? false;
+                });
+              },
+            ),
+            if (enabled) ...[
+              const SizedBox(height: 8),
+              ...[
+                _buildKDFSlider('N (CPU/Memory)', (config['n'] ?? 16384) ~/ 1024, 1, 1024, (v) => 
+                  setState(() => _kdfConfig['scrypt']!['n'] = v * 1024)),
+                _buildKDFSlider('R (Block Size)', config['r'] ?? 8, 1, 32, (v) => 
+                  setState(() => _kdfConfig['scrypt']!['r'] = v)),
+                _buildKDFSlider('P (Parallelism)', config['p'] ?? 1, 1, 16, (v) => 
+                  setState(() => _kdfConfig['scrypt']!['p'] = v)),
+                _buildKDFSlider('Rounds', config['rounds'] ?? 10, 0, 1000000, (v) => 
+                  setState(() => _kdfConfig['scrypt']!['rounds'] = v)),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build HKDF configuration panel
+  Widget _buildHKDFPanel() {
+    final config = _kdfConfig['hkdf'] ?? {
+      'enabled': false,
+      'rounds': 1,
+      'algorithm': 'sha256',
+      'info': 'openssl_encrypt_hkdf',
+    };
+    final enabled = config['enabled'] ?? false;
+    
+    return Card(
+      color: enabled ? Theme.of(context).colorScheme.tertiaryContainer : Theme.of(context).colorScheme.surfaceContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CheckboxListTile(
+              title: Row(
+                children: [
+                  const Text('HKDF', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.teal,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('EFFICIENT', style: TextStyle(color: Colors.white, fontSize: 10)),
+                  ),
+                ],
+              ),
+              subtitle: const Text('HMAC-based Key Derivation Function - efficient key expansion, suitable for low-latency applications'),
+              value: enabled,
+              onChanged: (bool? value) {
+                setState(() {
+                  _kdfConfig['hkdf'] = Map.from(config)..['enabled'] = value ?? false;
+                });
+              },
+            ),
+            if (enabled) ...[
+              const SizedBox(height: 8),
+              _buildKDFSlider('Rounds', config['rounds'] ?? 1, 0, 1000000, (v) => 
+                setState(() => _kdfConfig['hkdf']!['rounds'] = v)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Row(
+                  children: [
+                    const Text('Hash Algorithm: '),
+                    DropdownButton<String>(
+                      key: ValueKey('hash_algorithm_${config['algorithm'] ?? 'sha256'}'),
+                      value: config['algorithm'] ?? 'sha256',
+                      items: const [
+                        DropdownMenuItem(value: 'sha224', child: Text('SHA-224')),
+                        DropdownMenuItem(value: 'sha256', child: Text('SHA-256')),
+                        DropdownMenuItem(value: 'sha384', child: Text('SHA-384')),
+                        DropdownMenuItem(value: 'sha512', child: Text('SHA-512')),
+                      ],
+                      onChanged: (String? value) {
+                        setState(() {
+                          _kdfConfig['hkdf']!['algorithm'] = value ?? 'sha256';
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: TextFormField(
+                  initialValue: config['info'] ?? 'openssl_encrypt_hkdf',
+                  decoration: const InputDecoration(
+                    labelText: 'Info String',
+                    isDense: true,
+                  ),
+                  onChanged: (value) {
+                    _kdfConfig['hkdf']!['info'] = value;
+                  },
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build Balloon configuration panel
+  Widget _buildBalloonPanel() {
+    final config = _kdfConfig['balloon'] ?? {
+      'enabled': false,
+      'time_cost': 3,
+      'space_cost': 65536,
+      'parallelism': 4,
+      'rounds': 2,
+      'hash_len': 32,
+    };
+    final enabled = config['enabled'] ?? false;
+    
+    return Card(
+      color: enabled ? Theme.of(context).colorScheme.errorContainer : Theme.of(context).colorScheme.surfaceContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CheckboxListTile(
+              title: Row(
+                children: [
+                  const Text('Balloon', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.pink,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('RESEARCH', style: TextStyle(color: Colors.white, fontSize: 10)),
+                  ),
+                ],
+              ),
+              subtitle: const Text('Newer memory-hard function with configurable time/space tradeoffs - still under academic evaluation'),
+              value: enabled,
+              onChanged: (bool? value) {
+                setState(() {
+                  _kdfConfig['balloon'] = Map.from(config)..['enabled'] = value ?? false;
+                });
+              },
+            ),
+            if (enabled) ...[
+              const SizedBox(height: 8),
+              ...[
+                _buildKDFSlider('Time Cost', config['time_cost'] ?? 3, 1, 1000, (v) => 
+                  setState(() => _kdfConfig['balloon']!['time_cost'] = v)),
+                _buildKDFSlider('Space Cost (KB)', ((config['space_cost'] ?? 65536) / 1024).round(), 1, 1024, (v) => 
+                  setState(() => _kdfConfig['balloon']!['space_cost'] = v * 1024)),
+                _buildKDFSlider('Parallelism', config['parallelism'] ?? 4, 1, 16, (v) => 
+                  setState(() => _kdfConfig['balloon']!['parallelism'] = v)),
+                _buildKDFSlider('Rounds', config['rounds'] ?? 2, 0, 1000000, (v) => 
+                  setState(() => _kdfConfig['balloon']!['rounds'] = v)),
+                _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 128, (v) => 
+                  setState(() => _kdfConfig['balloon']!['hash_len'] = v)),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Helper to build KDF slider
+  Widget _buildKDFSlider(String label, int value, int min, int max, Function(int) onChanged) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+      child: Row(
+        children: [
+          SizedBox(width: 120, child: Text('$label:', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface))),
+          // Decrement button with auto-repeat
+          _buildAutoRepeatButton(
+            icon: Icons.remove,
+            color: Colors.orange,
+            enabled: value > min,
+            onAction: () => onChanged((value - 1).clamp(min, max)),
+            size: 28,
+            iconSize: 14,
+          ),
+          const SizedBox(width: 4),
+          // Slider
+          Expanded(
+            child: Slider(
+              value: value.toDouble(),
+              min: min.toDouble(),
+              max: max.toDouble(),
+              divisions: (max - min) > 1000 ? max ~/ 100 : max - min, // Smart divisions
+              label: value.toString(),
+              onChanged: (double v) => onChanged(v.toInt()),
+            ),
+          ),
+          const SizedBox(width: 4),
+          // Increment button with auto-repeat
+          _buildAutoRepeatButton(
+            icon: Icons.add,
+            color: Colors.orange,
+            enabled: value < max,
+            onAction: () => onChanged((value + 1).clamp(min, max)),
+            size: 28,
+            iconSize: 14,
+          ),
+          const SizedBox(width: 8),
+          SizedBox(width: 60, child: Text(value.toString(), style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface))),
+        ],
+      ),
+    );
+  }
 }
 
 // Info tab
@@ -3809,7 +4379,7 @@ class InfoTab extends StatefulWidget {
 
 class _InfoTabState extends State<InfoTab> {
   List<String> _algorithms = [];
-  Map<String, String> _algorithmDescriptions = {
+  final Map<String, String> _algorithmDescriptions = {
     'fernet': 'AES-128-CBC with HMAC authentication (Default)',
     'aes-gcm': 'AES-256-GCM authenticated encryption',
     'chacha20-poly1305': 'ChaCha20 stream cipher with Poly1305 MAC',
@@ -3843,6 +4413,9 @@ class _InfoTabState extends State<InfoTab> {
   }
 
   void _loadAlgorithms() async {
+    // Performance optimization: Only load if not already loaded  
+    if (_algorithms.isNotEmpty) return;
+    
     try {
       final algorithms = await CLIService.getSupportedAlgorithmsList();
       setState(() {
@@ -4682,6 +5255,216 @@ class CommandPreviewDialog extends StatelessWidget {
   }
 }
 
+/// Draggable debug window that can be moved around within the app bounds
+class _DraggableDebugWindow extends StatefulWidget {
+  final VoidCallback onClose;
+  final VoidCallback onRefresh;
+
+  const _DraggableDebugWindow({
+    required this.onClose,
+    required this.onRefresh,
+  });
+
+  @override
+  State<_DraggableDebugWindow> createState() => _DraggableDebugWindowState();
+}
+
+class _DraggableDebugWindowState extends State<_DraggableDebugWindow> {
+  double _x = 100.0;
+  double _y = 100.0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Set up real-time callback for debug log updates
+    CLIService.setDebugLogCallback(() {
+      if (mounted) {
+        setState(() {
+          // This triggers a rebuild to show new debug logs immediately
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    // Remove the callback to prevent memory leaks
+    CLIService.setDebugLogCallback(null);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
+    return Positioned(
+      left: _x,
+      top: _y,
+      child: Draggable(
+        feedback: _buildWindow(theme, isDragging: true),
+        childWhenDragging: Container(), // Hide original while dragging
+        onDragEnd: (details) {
+          setState(() {
+            // Keep window within screen bounds
+            final screenSize = MediaQuery.of(context).size;
+            _x = details.offset.dx.clamp(0.0, screenSize.width - 600);
+            _y = details.offset.dy.clamp(0.0, screenSize.height - 500);
+          });
+        },
+        child: _buildWindow(theme),
+      ),
+    );
+  }
+
+  Widget _buildWindow(ThemeData theme, {bool isDragging = false}) {
+    return Material(
+      elevation: isDragging ? 12 : 8,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        width: 600,
+        height: 500,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: theme.colorScheme.outline),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Draggable header
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(8),
+                  topRight: Radius.circular(8),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.bug_report,
+                    color: theme.colorScheme.onPrimaryContainer,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Live Debug Logs (Draggable Window)',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.open_with,
+                    color: theme.colorScheme.onPrimaryContainer,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: () {
+                      CLIService.clearDebugLogs();
+                      widget.onRefresh();
+                    },
+                    icon: Icon(
+                      Icons.clear_all,
+                      color: theme.colorScheme.onPrimaryContainer,
+                    ),
+                    tooltip: 'Clear logs',
+                    iconSize: 20,
+                  ),
+                  IconButton(
+                    onPressed: widget.onClose,
+                    icon: Icon(
+                      Icons.close,
+                      color: theme.colorScheme.onPrimaryContainer,
+                    ),
+                    tooltip: 'Close window',
+                    iconSize: 20,
+                  ),
+                ],
+              ),
+            ),
+            // Log content
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    border: Border.all(color: theme.colorScheme.outline),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: RepaintBoundary(
+                    child: ListView.builder(
+                      key: const Key('floating_debug_logs_listview'),
+                      itemCount: CLIService.getDebugLogs().length,
+                      itemBuilder: (context, index) {
+                        final logs = CLIService.getDebugLogs();
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          child: Text(
+                            logs[index],
+                            style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 11,
+                              color: theme.colorScheme.onSurface,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            // Footer info
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Live logs: ${CLIService.getDebugLogs().length} entries (updates automatically)',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  if (CLIService.getDebugLogFile() != null)
+                    Text(
+                      'Full logs saved to: ${CLIService.getDebugLogFile()}',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Drag the header to move this window around',
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: theme.colorScheme.primary,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Auto-repeat button widget that continues executing action when held down
 class AutoRepeatButton extends StatefulWidget {
   final IconData icon;
@@ -4818,4 +5601,738 @@ class _SettingsScreenWrapperState extends State<SettingsScreenWrapper> {
       },
     );
   }
+}
+
+/// Batch Operations tab for processing multiple files
+class BatchOperationsTab extends StatefulWidget {
+  final FileManager fileManager;
+  final Function(bool) onDebugChanged;
+
+  const BatchOperationsTab({
+    super.key,
+    required this.fileManager,
+    required this.onDebugChanged,
+  });
+
+  @override
+  State<BatchOperationsTab> createState() => _BatchOperationsTabState();
+}
+
+class _BatchOperationsTabState extends State<BatchOperationsTab> {
+  List<FileInfo> _selectedFiles = [];
+  bool _isLoading = false;
+  String _selectedAlgorithm = 'aes-gcm';
+  String _password = '';
+  String _confirmPassword = '';
+  String _selectedOperation = 'encrypt'; // 'encrypt' or 'decrypt'
+  final List<BatchOperationResult> _results = [];
+  
+  // Progress tracking
+  int _currentFileIndex = 0;
+  String _currentStatus = '';
+  
+  // Cached dropdown items for algorithms (performance optimization)
+  static final Map<String, List<DropdownMenuItem<String>>> _dropdownCache = {};
+  
+  List<DropdownMenuItem<String>> _getCachedAlgorithmDropdownItems(List<String> algorithms) {
+    final key = algorithms.join(',');
+    if (!_dropdownCache.containsKey(key)) {
+      _dropdownCache[key] = algorithms.map((algorithm) => DropdownMenuItem<String>(
+        value: algorithm,
+        child: Text(algorithm),
+      )).toList();
+    }
+    return _dropdownCache[key]!;
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Icon(Icons.file_copy, size: 28, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Batch Operations',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Process multiple files with the same encryption settings',
+            style: TextStyle(
+              fontSize: 14,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 24),
+          
+          // File Selection Section
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.folder_open, color: Theme.of(context).colorScheme.primary),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'File Selection',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      const Spacer(),
+                      ElevatedButton.icon(
+                        onPressed: _isLoading ? null : _selectFiles,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Select Files'),
+                      ),
+                      if (_selectedFiles.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        TextButton.icon(
+                          onPressed: _isLoading ? null : _clearFiles,
+                          icon: const Icon(Icons.clear),
+                          label: const Text('Clear'),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (_selectedFiles.isEmpty)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(32),
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.outline,
+                          style: BorderStyle.solid,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                        color: Theme.of(context).colorScheme.surfaceContainer,
+                      ),
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.file_upload,
+                            size: 48,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'No files selected',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Click "Select Files" to choose multiple files for batch processing',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${_selectedFiles.length} file(s) selected:',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          constraints: const BoxConstraints(maxHeight: 200),
+                          child: RepaintBoundary(
+                            child: ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: _selectedFiles.length,
+                            itemBuilder: (context, index) {
+                              final file = _selectedFiles[index];
+                              return Card(
+                                margin: const EdgeInsets.symmetric(vertical: 2),
+                                child: ListTile(
+                                  dense: true,
+                                  leading: Icon(
+                                    _getFileIcon(file.extension),
+                                    color: Theme.of(context).colorScheme.primary,
+                                  ),
+                                  title: Text(
+                                    file.name,
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                  subtitle: Text(
+                                    '${file.sizeFormatted} • ${file.extension.isEmpty ? 'No extension' : file.extension}',
+                                    style: const TextStyle(fontSize: 11),
+                                  ),
+                                  trailing: IconButton(
+                                    icon: const Icon(Icons.remove_circle_outline, size: 20),
+                                    onPressed: _isLoading ? null : () => _removeFile(index),
+                                  ),
+                                ),
+                              );
+                            },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
+          
+          const SizedBox(height: 16),
+          
+          // Configuration Section
+          if (_selectedFiles.isNotEmpty) ...[
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.settings, color: Theme.of(context).colorScheme.primary),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Operation Settings',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Operation Type
+                    Row(
+                      children: [
+                        Expanded(
+                          child: RadioListTile<String>(
+                            title: const Text('Encrypt Files'),
+                            subtitle: const Text('Encrypt all selected files'),
+                            value: 'encrypt',
+                            groupValue: _selectedOperation,
+                            onChanged: _isLoading ? null : (value) {
+                              setState(() {
+                                _selectedOperation = value!;
+                              });
+                            },
+                          ),
+                        ),
+                        Expanded(
+                          child: RadioListTile<String>(
+                            title: const Text('Decrypt Files'),
+                            subtitle: const Text('Decrypt all selected files'),
+                            value: 'decrypt',
+                            groupValue: _selectedOperation,
+                            onChanged: _isLoading ? null : (value) {
+                              setState(() {
+                                _selectedOperation = value!;
+                              });
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    
+                    const SizedBox(height: 16),
+                    
+                    // Algorithm Selection (only for encryption)
+                    if (_selectedOperation == 'encrypt') ...[
+                      Row(
+                        children: [
+                          const SizedBox(width: 100, child: Text('Algorithm:')),
+                          Expanded(
+                            child: DropdownButton<String>(
+                              key: ValueKey('algorithm_dropdown_$_selectedAlgorithm'),
+                              value: _selectedAlgorithm,
+                              isExpanded: true,
+                              items: _getCachedAlgorithmDropdownItems([
+                                // Classical symmetric algorithms
+                                'fernet',
+                                'aes-gcm',
+                                'chacha20-poly1305',
+                                'xchacha20-poly1305',
+                                'aes-siv',
+                                'aes-gcm-siv',
+                                'aes-ocb3',
+                                'camellia',
+                                
+                                // ML-KEM (NIST Post-Quantum) algorithms
+                                'ml-kem-512-hybrid',
+                                'ml-kem-768-hybrid', 
+                                'ml-kem-1024-hybrid',
+                                'ml-kem-512-chacha20',
+                                'ml-kem-768-chacha20',
+                                'ml-kem-1024-chacha20',
+                                
+                                // Kyber (pre-NIST) algorithms  
+                                'kyber512-hybrid',
+                                'kyber768-hybrid',
+                                'kyber1024-hybrid',
+                                
+                                // HQC algorithms
+                                'hqc-128-hybrid',
+                                'hqc-192-hybrid', 
+                                'hqc-256-hybrid',
+                                
+                                // MAYO signature-based algorithms
+                                'mayo-1-hybrid',
+                                'mayo-3-hybrid',
+                                'mayo-5-hybrid',
+                                
+                                // CROSS signature-based algorithms
+                                'cross-128-hybrid',
+                                'cross-192-hybrid',
+                                'cross-256-hybrid',
+                              ]),
+                              onChanged: _isLoading ? null : (value) {
+                                setState(() {
+                                  _selectedAlgorithm = value!;
+                                });
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    
+                    // Password Fields
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            obscureText: true,
+                            enabled: !_isLoading,
+                            onChanged: (value) => _password = value,
+                            decoration: InputDecoration(
+                              labelText: _selectedOperation == 'encrypt' ? 'Password' : 'Decryption Password',
+                              border: const OutlineInputBorder(),
+                              prefixIcon: const Icon(Icons.lock),
+                            ),
+                          ),
+                        ),
+                        if (_selectedOperation == 'encrypt') ...[
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: TextField(
+                              obscureText: true,
+                              enabled: !_isLoading,
+                              onChanged: (value) => _confirmPassword = value,
+                              decoration: InputDecoration(
+                                labelText: 'Confirm Password',
+                                border: const OutlineInputBorder(),
+                                prefixIcon: const Icon(Icons.lock_outline),
+                                errorText: _password.isNotEmpty && _confirmPassword.isNotEmpty && _password != _confirmPassword
+                                    ? 'Passwords do not match'
+                                    : null,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            
+            const SizedBox(height: 16),
+            
+            // Action Button
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: _canStartOperation() ? _startBatchOperation : null,
+                icon: _isLoading 
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : Icon(_selectedOperation == 'encrypt' ? Icons.lock : Icons.lock_open),
+                label: _isLoading
+                    ? Text('${_selectedOperation == 'encrypt' ? 'Encrypting' : 'Decrypting'} (${_currentFileIndex + 1}/${_selectedFiles.length})')
+                    : Text('${_selectedOperation == 'encrypt' ? 'Encrypt' : 'Decrypt'} ${_selectedFiles.length} file(s)'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _selectedOperation == 'encrypt' ? Colors.green : Colors.blue,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ),
+            
+            // Progress Indicator
+            if (_isLoading) ...[
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.hourglass_empty),
+                          const SizedBox(width: 8),
+                          const Text('Progress', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Spacer(),
+                          Text('${_currentFileIndex + 1} of ${_selectedFiles.length}'),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      LinearProgressIndicator(
+                        value: _selectedFiles.isEmpty ? 0 : (_currentFileIndex + 1) / _selectedFiles.length,
+                      ),
+                      if (_currentStatus.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          _currentStatus,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            
+            // Results Section
+            if (_results.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.assessment,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Operation Results',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                          const Spacer(),
+                          TextButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _results.clear();
+                              });
+                            },
+                            icon: const Icon(Icons.clear),
+                            label: const Text('Clear'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        constraints: const BoxConstraints(maxHeight: 300),
+                        child: RepaintBoundary(
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: _results.length,
+                          itemBuilder: (context, index) {
+                            final result = _results[index];
+                            return Card(
+                              margin: const EdgeInsets.symmetric(vertical: 2),
+                              color: result.success ? Colors.green.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.1),
+                              child: ListTile(
+                                dense: true,
+                                leading: Icon(
+                                  result.success ? Icons.check_circle : Icons.error,
+                                  color: result.success ? Colors.green : Colors.red,
+                                  size: 20,
+                                ),
+                                title: Text(
+                                  result.fileName,
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                                subtitle: Text(
+                                  result.success ? 'Success' : (result.errorMessage ?? 'Unknown error'),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: result.success ? Colors.green.shade700 : Colors.red.shade700,
+                                  ),
+                                ),
+                                trailing: result.success && result.outputPath != null
+                                    ? IconButton(
+                                        icon: const Icon(Icons.folder_open, size: 16),
+                                        onPressed: () => _showInFileManager(result.outputPath!),
+                                        tooltip: 'Show in file manager',
+                                      )
+                                    : null,
+                              ),
+                            );
+                          },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.check_circle,
+                            color: Colors.green,
+                            size: 16,
+                          ),
+                          Text(
+                            ' ${_results.where((r) => r.success).length} successful',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          const SizedBox(width: 16),
+                          const Icon(
+                            Icons.error,
+                            color: Colors.red,
+                            size: 16,
+                          ),
+                          Text(
+                            ' ${_results.where((r) => !r.success).length} failed',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+  
+  // Helper methods
+  IconData _getFileIcon(String extension) {
+    switch (extension.toLowerCase()) {
+      case '.txt':
+      case '.md':
+        return Icons.description;
+      case '.pdf':
+        return Icons.picture_as_pdf;
+      case '.jpg':
+      case '.jpeg':
+      case '.png':
+      case '.gif':
+        return Icons.image;
+      case '.zip':
+      case '.rar':
+      case '.7z':
+        return Icons.archive;
+      case '.doc':
+      case '.docx':
+        return Icons.article;
+      case '.enc':
+        return Icons.lock;
+      default:
+        return Icons.insert_drive_file;
+    }
+  }
+  
+  Future<void> _selectFiles() async {
+    try {
+      final files = await widget.fileManager.pickMultipleFiles();
+      setState(() {
+        _selectedFiles = files;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error selecting files: $e')),
+        );
+      }
+    }
+  }
+  
+  void _clearFiles() {
+    setState(() {
+      _selectedFiles.clear();
+      _results.clear();
+    });
+  }
+  
+  void _removeFile(int index) {
+    setState(() {
+      _selectedFiles.removeAt(index);
+    });
+  }
+  
+  bool _canStartOperation() {
+    if (_selectedFiles.isEmpty || _isLoading || _password.isEmpty) {
+      return false;
+    }
+    
+    if (_selectedOperation == 'encrypt') {
+      return _password == _confirmPassword;
+    }
+    
+    return true;
+  }
+  
+  Future<void> _startBatchOperation() async {
+    setState(() {
+      _isLoading = true;
+      _currentFileIndex = 0;
+      _results.clear();
+    });
+    
+    try {
+      for (int i = 0; i < _selectedFiles.length; i++) {
+        setState(() {
+          _currentFileIndex = i;
+          _currentStatus = 'Processing ${_selectedFiles[i].name}...';
+        });
+        
+        final result = await _processFile(_selectedFiles[i]);
+        setState(() {
+          _results.add(result);
+        });
+        
+        // Small delay to show progress
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+    } finally {
+      setState(() {
+        _isLoading = false;
+        _currentStatus = 'Completed';
+      });
+      
+      // Show summary
+      final successful = _results.where((r) => r.success).length;
+      final failed = _results.where((r) => !r.success).length;
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Batch operation completed: $successful successful, $failed failed'),
+            backgroundColor: failed > 0 ? Colors.orange : Colors.green,
+          ),
+        );
+      }
+    }
+  }
+  
+  Future<BatchOperationResult> _processFile(FileInfo file) async {
+    try {
+      if (_selectedOperation == 'encrypt') {
+        // Read file content
+        final content = await widget.fileManager.readFileText(file.path);
+        if (content == null) {
+          return BatchOperationResult(
+            fileName: file.name,
+            success: false,
+            errorMessage: 'Could not read file content',
+          );
+        }
+        
+        // Encrypt using CLI service
+        final encrypted = await CLIService.encryptText(content, _password, _selectedAlgorithm, null, null);
+        
+        // Save encrypted file
+        final outputPath = widget.fileManager.getEncryptedFileName(file.path);
+        final writeSuccess = await widget.fileManager.writeFileText(outputPath, encrypted);
+        
+        if (writeSuccess) {
+          return BatchOperationResult(
+            fileName: file.name,
+            success: true,
+            outputPath: outputPath,
+          );
+        } else {
+          return BatchOperationResult(
+            fileName: file.name,
+            success: false,
+            errorMessage: 'Could not write encrypted file',
+          );
+        }
+      } else {
+        // Decrypt operation
+        final content = await widget.fileManager.readFileText(file.path);
+        if (content == null) {
+          return BatchOperationResult(
+            fileName: file.name,
+            success: false,
+            errorMessage: 'Could not read file content',
+          );
+        }
+        
+        // Decrypt using CLI service
+        final decrypted = await CLIService.decryptText(content, _password);
+        
+        // Save decrypted file
+        final outputPath = widget.fileManager.getDecryptedFileName(file.path);
+        final writeSuccess = await widget.fileManager.writeFileText(outputPath, decrypted);
+        
+        if (writeSuccess) {
+          return BatchOperationResult(
+            fileName: file.name,
+            success: true,
+            outputPath: outputPath,
+          );
+        } else {
+          return BatchOperationResult(
+            fileName: file.name,
+            success: false,
+            errorMessage: 'Could not write decrypted file',
+          );
+        }
+      }
+    } catch (e) {
+      return BatchOperationResult(
+        fileName: file.name,
+        success: false,
+        errorMessage: e.toString(),
+      );
+    }
+  }
+  
+  Future<void> _showInFileManager(String filePath) async {
+    try {
+      await Process.start('xdg-open', [path.dirname(filePath)], mode: ProcessStartMode.detached);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open file manager: $e')),
+        );
+      }
+    }
+  }
+}
+
+/// Result of a single file operation in batch processing
+class BatchOperationResult {
+  final String fileName;
+  final bool success;
+  final String? errorMessage;
+  final String? outputPath;
+  
+  BatchOperationResult({
+    required this.fileName,
+    required this.success,
+    this.errorMessage,
+    this.outputPath,
+  });
 }
