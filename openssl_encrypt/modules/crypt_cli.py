@@ -2064,16 +2064,23 @@ def main():
             kyber_algorithms = ["kyber512-hybrid", "kyber768-hybrid", "kyber1024-hybrid"]
             ml_kem_algorithms = ["ml-kem-512-hybrid", "ml-kem-768-hybrid", "ml-kem-1024-hybrid"]
             
+            # Check if this algorithm was originally an ML-KEM name that got converted
+            original_ml_kem_algorithm = os.environ.get('OPENSSL_ENCRYPT_ORIGINAL_MLKEM_ALGORITHM')
+            
             # Check the original user input, not the mapped algorithm
             user_provided_algorithm = original_algorithm or args.algorithm
             if args.debug:
                 print(f"DEBUG: args.algorithm = {args.algorithm}")
                 print(f"DEBUG: original_algorithm = {original_algorithm}")
+                print(f"DEBUG: original_ml_kem_algorithm = {original_ml_kem_algorithm}")
                 print(f"DEBUG: user_provided_algorithm = {user_provided_algorithm}")
                 print(f"DEBUG: user_provided_algorithm in ml_kem_algorithms = {user_provided_algorithm in ml_kem_algorithms}")
+            
+            # Don't warn if the user originally provided an ML-KEM name that got converted to kyber
             if (hasattr(args, 'algorithm') and 
                 args.algorithm in kyber_algorithms and 
-                user_provided_algorithm not in ml_kem_algorithms):
+                user_provided_algorithm not in ml_kem_algorithms and
+                not original_ml_kem_algorithm):
                 ml_kem_mapping = {
                     "kyber512-hybrid": "ml-kem-512-hybrid",
                     "kyber768-hybrid": "ml-kem-768-hybrid", 
