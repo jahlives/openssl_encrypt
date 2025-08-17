@@ -6,12 +6,14 @@
   "command": "openssl-encrypt",
   "finish-args": [
     "--share=ipc",
+    "--socket=x11",
     "--socket=wayland",
-    "--socket=fallback-x11",
-    "--filesystem=host",
     "--device=dri",
+    "--filesystem=host",
+    "--filesystem=xdg-run/at-spi",
     "--talk-name=org.freedesktop.FileManager1",
     "--talk-name=org.gtk.vfs.*",
+    "--talk-name=org.a11y.*",
     "--env=PYTHONPATH=/app/lib/python3.12/site-packages"
   ],
   "modules": [

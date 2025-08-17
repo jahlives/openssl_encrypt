@@ -2,10 +2,12 @@
 """
 Launcher script for OpenSSL Encrypt Flatpak package.
 Handles both CLI and GUI modes based on command line arguments.
+Flutter GUI only - tkinter support removed for 1.2.0 release.
 """
 
 import os
 import sys
+import subprocess
 
 # Add the application directory to Python path
 app_dir = os.path.dirname(os.path.abspath(__file__))
@@ -19,12 +21,18 @@ def main():
         # Remove --gui from arguments to avoid conflicts
         sys.argv = [arg for arg in sys.argv if arg != "--gui"]
 
-        # Launch Flutter GUI (preferred for Flatpak)
+        # Remove deprecated tkinter flags if present
+        deprecated_flags = ["--gui-tk", "--gui-tkinter"]
+        for flag in deprecated_flags:
+            if flag in sys.argv:
+                sys.argv = [arg for arg in sys.argv if arg != flag]
+                print(f"⚠️  Warning: {flag} is not supported in this release (Flutter GUI only)", file=sys.stderr)
+
+        # Launch Flutter GUI (only GUI option in 1.2.0)
         flutter_gui_path = "/app/bin/openssl-encrypt-gui/openssl_encrypt_mobile"
         if os.path.exists(flutter_gui_path):
             print("🚀 Launching Flutter desktop GUI...")
             try:
-                import subprocess
                 # Run the Flutter executable directly with clean environment
                 result = subprocess.run([flutter_gui_path], env=os.environ.copy())
                 sys.exit(result.returncode)
@@ -33,12 +41,12 @@ def main():
                 sys.exit(1)
         else:
             print("❌ Flutter GUI not available - please rebuild with --build-flutter", file=sys.stderr)
+            print("💡 Note: tkinter GUI is not supported in this release", file=sys.stderr)
             sys.exit(1)
     else:
         # Launch CLI
         try:
             from openssl_encrypt.cli import main as cli_main
-
             cli_main()
         except ImportError:
             print("Error: CLI components not available", file=sys.stderr)
