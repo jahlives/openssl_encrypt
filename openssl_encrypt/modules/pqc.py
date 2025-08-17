@@ -623,10 +623,11 @@ class PQCipher:
                 kem_ciphertext_size = kem.length_ciphertext
                 shared_secret_len = kem.length_shared_secret
                 
-                if not self.quiet:
-                    print(f"DEBUG: encrypted_data length: {len(encrypted_data)}")
-                    print(f"DEBUG: kem_ciphertext_size: {kem_ciphertext_size}")
-                    print(f"DEBUG: encrypted_data starts with: {encrypted_data[:50]}")
+                if self.debug:
+                    logger = logging.getLogger(__name__)
+                    logger.debug(f"DECRYPT:PQC_KEM encrypted_data length: {len(encrypted_data)}")
+                    logger.debug(f"DECRYPT:PQC_KEM kem_ciphertext_size: {kem_ciphertext_size}")
+                    logger.debug(f"DECRYPT:PQC_KEM encrypted_data starts with: {encrypted_data[:50]}")
 
                 # CHECK FOR TEST DATA FORMAT FIRST
                 # This approach makes recovery extremely reliable
@@ -663,8 +664,9 @@ class PQCipher:
                 
                 elif encrypted_data.startswith(testdata_marker):
                     # Handle TESTDATA format - this is the old test format
-                    if not self.quiet:
-                        print("DEBUG: Detected TESTDATA format, processing test data")
+                    if self.debug:
+                        logger = logging.getLogger(__name__)
+                        logger.debug("DECRYPT:PQC_KEM Detected TESTDATA format, processing test data")
                     
                     # Extract the test data - format is TESTDATA + length + data
                     data_len_bytes = encrypted_data[8:12]
@@ -682,8 +684,9 @@ class PQCipher:
                 remaining_data = encrypted_data[kem_ciphertext_size:]
 
                 # Check for our special test marker in the encapsulated key
-                if not self.quiet:
-                    print(f"DEBUG: Encapsulated key starts with: {encapsulated_key[:20]}")
+                if self.debug:
+                    logger = logging.getLogger(__name__)
+                    logger.debug(f"DECRYPT:PQC_KEM Encapsulated key starts with: {encapsulated_key[:20]}")
                 if encapsulated_key.startswith(b"TESTDATA"):
                     # In test environment with negative test patterns, we should prevent recovery
                     is_negative_test = False
