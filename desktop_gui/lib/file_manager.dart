@@ -31,10 +31,10 @@ class FileInfo {
   /// Check if file contains valid OpenSSL Encrypt metadata
   Future<bool> get isEncrypted async {
     if (_isEncrypted != null) return _isEncrypted!;
-
+    
     try {
       String? content;
-
+      
       // Handle asset paths
       if (path.startsWith('assets/')) {
         try {
@@ -65,14 +65,14 @@ class FileInfo {
             final metadataBytes = base64Decode(parts[0]);
             final metadataJson = utf8.decode(metadataBytes);
             final metadata = jsonDecode(metadataJson);
-
+            
             if (metadata is Map<String, dynamic>) {
               // Check for CLI format structures (V3, V4, V5)
               if (metadata.containsKey('format_version')) {
                 final formatVersion = metadata['format_version'] as int?;
                 if (formatVersion == 3) {
                   // V3 format: has format_version=3, salt, algorithm, hash_config at root level
-                  if (metadata.containsKey('salt') &&
+                  if (metadata.containsKey('salt') && 
                       metadata.containsKey('algorithm') &&
                       metadata.containsKey('hash_config')) {
                     _isEncrypted = true;
@@ -95,22 +95,22 @@ class FileInfo {
           }
         }
       }
-
+      
       // Check for JSON formats (mobile or test formats)
       try {
         final jsonData = jsonDecode(content);
         if (jsonData is Map<String, dynamic>) {
           // Check for mobile format
-          if (jsonData.containsKey('format') &&
+          if (jsonData.containsKey('format') && 
               jsonData['format'] == 'openssl_encrypt_mobile' &&
               jsonData.containsKey('encrypted_data') &&
               jsonData.containsKey('metadata')) {
             _isEncrypted = true;
             return true;
           }
-
+          
           // Check for test JSON format (direct JSON with encrypted_data and metadata)
-          if (jsonData.containsKey('encrypted_data') &&
+          if (jsonData.containsKey('encrypted_data') && 
               jsonData.containsKey('metadata')) {
             final metadata = jsonData['metadata'];
             if (metadata is Map<String, dynamic>) {
@@ -125,11 +125,11 @@ class FileInfo {
       } catch (e) {
         // Not JSON format
       }
-
+      
     } catch (e) {
       CLIService.outputDebugLog('File encryption check failed: $e');
     }
-
+    
     _isEncrypted = false;
     return false;
   }
@@ -245,7 +245,7 @@ class FileManager {
       if (filePath.startsWith('assets/')) {
         return await rootBundle.loadString(filePath);
       }
-
+      
       // Regular file system path
       final file = File(filePath);
       if (await file.exists()) {
@@ -311,12 +311,12 @@ class FileManager {
   String getDecryptedFileName(String encryptedPath) {
     String baseName = path.basenameWithoutExtension(encryptedPath);
     final dir = path.dirname(encryptedPath);
-
+    
     // Remove .enc extension if present
     if (baseName.endsWith('.enc')) {
       baseName = baseName.substring(0, baseName.length - 4);
     }
-
+    
     return path.join(dir, '$baseName.decrypted');
   }
 
@@ -379,15 +379,15 @@ class FileManager {
       'v3/test1_chacha20-poly1305.txt',
       'v3/test1_xchacha20-poly1305.txt',
       'v3/test1_fernet_balloon.txt',
-
+      
       // V4 format test files (encrypted)
       'v4/test1_fernet.txt',
       'v4/test1_aes-gcm.txt',
       'v4/test1_chacha20-poly1305.txt',
       'v4/test1_xchacha20-poly1305.txt',
       'v4/test1_fernet_balloon.txt',
-
-      // V5 format test files (encrypted)
+      
+      // V5 format test files (encrypted)  
       'v5/test1_fernet.txt',
       'v5/test1_aes-gcm.txt',
       'v5/test1_chacha20-poly1305.txt',
@@ -396,7 +396,7 @@ class FileManager {
       'v5/test1_fernet_balloon_test.txt',
       'v5/mobile_generated_test.txt',
     ];
-
+    
     return testFiles;
   }
 
@@ -416,7 +416,7 @@ class FileManager {
     try {
       final String content = await rootBundle.loadString('assets/test_files/$fileName');
       final bytes = content.length; // Approximate size
-
+      
       return FileInfo(
         name: fileName.split('/').last, // Get just the filename part
         path: 'assets/test_files/$fileName', // Use asset path
