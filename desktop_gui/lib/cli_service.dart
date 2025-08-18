@@ -473,45 +473,56 @@ class CLIService {
 
   /// Run CLI command with appropriate executable path
   static Future<ProcessResult> _runCLICommand(List<String> args) async {
-    // Prefer development CLI when available due to Flatpak post-quantum issues
-    try {
-      final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
-
-      _outputDebugLog('Attempting development CLI: python ${pythonArgs.join(' ')}');
-      _outputDebugLog('Working directory: /home/work/private/git/openssl_encrypt');
-
-      // Check if input file exists before calling CLI
-      for (int i = 0; i < args.length; i++) {
-        if (args[i] == '-i' && i + 1 < args.length) {
-          final inputFile = File(args[i + 1]);
-          final exists = await inputFile.exists();
-          final size = exists ? await inputFile.length() : 0;
-          _outputDebugLog('Input file ${args[i + 1]}: exists=$exists, size=${size}bytes');
-          break;
-        }
-      }
-
-      // Add environment debugging
-      final env = Map<String, String>.from(Platform.environment);
-      _outputDebugLog('Environment PATH: ${env['PATH']}');
-      _outputDebugLog('Environment LD_LIBRARY_PATH: ${env['LD_LIBRARY_PATH'] ?? 'not set'}');
-      _outputDebugLog('Environment PYTHONPATH: ${env['PYTHONPATH'] ?? 'not set'}');
-
-      final result = await Process.run('python', pythonArgs,
-        workingDirectory: '/home/work/private/git/openssl_encrypt',
-        environment: env);
-
-      _outputDebugLog('Development CLI exit code: ${result.exitCode}');
-      _outputDebugLog('Development CLI stdout: ${result.stdout}');
-      _outputDebugLog('Development CLI stderr: ${result.stderr}');
-
+    // When running in Flatpak and we have a detected branch, prioritize Flatpak CLI for version consistency
+    if (_isFlaspakVersion && _flatpakBranch != null && await File(_cliPath).exists()) {
+      final flatpakCommand = 'flatpak run com.opensslencrypt.OpenSSLEncrypt//$_flatpakBranch';
+      _outputDebugLog('Using Flatpak CLI with branch: $flatpakCommand ${args.join(' ')}');
+      final result = await Process.run('flatpak', ['run', 'com.opensslencrypt.OpenSSLEncrypt//$_flatpakBranch', ...args]);
+      _outputDebugLog('Flatpak CLI exit code: ${result.exitCode}');
       return result;
-    } catch (e) {
-      _outputDebugLog('Development CLI exception: $e');
-      _outputDebugLog('Falling back to Flatpak CLI');
     }
 
-    // Fallback to Flatpak CLI when development CLI is unavailable
+    // Try development CLI as fallback (but only if not in Flatpak or no branch detected)
+    if (!_isFlaspakVersion || _flatpakBranch == null) {
+      try {
+        final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
+
+        _outputDebugLog('Attempting development CLI: python ${pythonArgs.join(' ')}');
+        _outputDebugLog('Working directory: /home/work/private/git/openssl_encrypt');
+
+        // Check if input file exists before calling CLI
+        for (int i = 0; i < args.length; i++) {
+          if (args[i] == '-i' && i + 1 < args.length) {
+            final inputFile = File(args[i + 1]);
+            final exists = await inputFile.exists();
+            final size = exists ? await inputFile.length() : 0;
+            _outputDebugLog('Input file ${args[i + 1]}: exists=$exists, size=${size}bytes');
+            break;
+          }
+        }
+
+        // Add environment debugging
+        final env = Map<String, String>.from(Platform.environment);
+        _outputDebugLog('Environment PATH: ${env['PATH']}');
+        _outputDebugLog('Environment LD_LIBRARY_PATH: ${env['LD_LIBRARY_PATH'] ?? 'not set'}');
+        _outputDebugLog('Environment PYTHONPATH: ${env['PYTHONPATH'] ?? 'not set'}');
+
+        final result = await Process.run('python', pythonArgs,
+          workingDirectory: '/home/work/private/git/openssl_encrypt',
+          environment: env);
+
+        _outputDebugLog('Development CLI exit code: ${result.exitCode}');
+        _outputDebugLog('Development CLI stdout: ${result.stdout}');
+        _outputDebugLog('Development CLI stderr: ${result.stderr}');
+
+        return result;
+      } catch (e) {
+        _outputDebugLog('Development CLI exception: $e');
+        _outputDebugLog('Falling back to Flatpak CLI');
+      }
+    }
+
+    // Final fallback to Flatpak CLI when development CLI is unavailable
     if (await File(_cliPath).exists()) {
       ProcessResult result;
 
@@ -719,30 +730,45 @@ class CLIService {
   /// Detect current Flatpak branch from environment or process info
   static Future<void> _detectFlatpakBranch() async {
     try {
+      _outputDebugLog('=== Starting Flatpak branch detection ===');
+
       // Try to detect branch from FLATPAK_DEST environment variable
       String? flatpakDest = Platform.environment['FLATPAK_DEST'];
       if (flatpakDest != null && flatpakDest.contains('app/com.opensslencrypt.OpenSSLEncrypt')) {
-        _outputDebugLog('FLATPAK_DEST: $flatpakDest');
+        _outputDebugLog('FLATPAK_DEST found: $flatpakDest');
+      } else {
+        _outputDebugLog('FLATPAK_DEST not found or not relevant: $flatpakDest');
       }
 
       // Try to detect from process command line by checking parent processes
       try {
+        _outputDebugLog('Running flatpak ps to detect branch...');
         final result = await Process.run('flatpak', ['ps'], runInShell: true);
+        _outputDebugLog('flatpak ps exit code: ${result.exitCode}');
+
         if (result.exitCode == 0) {
           final output = result.stdout.toString();
+          _outputDebugLog('flatpak ps output:\n$output');
           final lines = output.split('\n');
 
           for (final line in lines) {
+            _outputDebugLog('Checking line: $line');
             if (line.contains('com.opensslencrypt.OpenSSLEncrypt')) {
+              _outputDebugLog('Found matching line: $line');
               // Look for branch in format: com.opensslencrypt.OpenSSLEncrypt//branch
               final branchMatch = RegExp(r'com\.opensslencrypt\.OpenSSLEncrypt//([^\s]+)').firstMatch(line);
               if (branchMatch != null) {
                 _flatpakBranch = branchMatch.group(1);
-                _outputDebugLog('Detected Flatpak branch: $_flatpakBranch');
+                _outputDebugLog('SUCCESS: Detected Flatpak branch: $_flatpakBranch');
                 return;
+              } else {
+                _outputDebugLog('Line contains app ID but no branch detected');
               }
             }
           }
+          _outputDebugLog('No matching lines found in flatpak ps output');
+        } else {
+          _outputDebugLog('flatpak ps failed with stderr: ${result.stderr}');
         }
       } catch (e) {
         _outputDebugLog('Failed to detect branch from flatpak ps: $e');
@@ -767,9 +793,9 @@ class CLIService {
         _outputDebugLog('Failed to read /proc/self/cmdline: $e');
       }
 
-      _outputDebugLog('No specific Flatpak branch detected, using default');
+      _outputDebugLog('=== No specific Flatpak branch detected, using default ===');
     } catch (e) {
-      _outputDebugLog('Flatpak branch detection failed: $e');
+      _outputDebugLog('=== Flatpak branch detection failed: $e ===');
     }
   }
 
