@@ -1690,6 +1690,25 @@ class CryptGUI:
 
 def main():
     """Main entry point for the application"""
+    # Try to launch Flutter desktop GUI first (if available in Flatpak)
+    flutter_gui_paths = [
+        "/app/bin/openssl-encrypt-gui/openssl_encrypt_mobile",  # Flatpak installation
+        "./desktop_gui/build/linux/x64/release/bundle/openssl_encrypt_mobile",  # Local development
+        "../desktop_gui/build/linux/x64/release/bundle/openssl_encrypt_mobile",  # Alternative local path
+    ]
+
+    for flutter_path in flutter_gui_paths:
+        if os.path.exists(flutter_path) and os.access(flutter_path, os.X_OK):
+            try:
+                print(f"🚀 Launching Flutter desktop GUI: {flutter_path}")
+                subprocess.run([flutter_path], check=False)
+                return
+            except Exception as e:
+                print(f"⚠️  Failed to launch Flutter GUI ({flutter_path}): {e}")
+                continue
+
+    # Fallback to tkinter GUI if Flutter GUI is not available
+    print("📱 Flutter GUI not found, launching tkinter fallback GUI")
     root = tk.Tk()
     app = CryptGUI(root)
     root.mainloop()
