@@ -30,21 +30,21 @@ class ExitAppIntent extends Intent {
 void main() async {
   // Initialize Flutter framework
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Initialize settings service
   await SettingsService.initialize();
-  
+
   // Initialize CLI service
   final cliAvailable = await CLIService.initialize();
   if (!cliAvailable) {
     print('WARNING: OpenSSL Encrypt CLI not found. Some features may not work.');
   }
-  
+
   // Apply debug mode from settings
   if (SettingsService.getDebugMode()) {
     await CLIService.enableDebugLogging();
   }
-  
+
   runApp(const OpenSSLEncryptApp());
 }
 
@@ -117,9 +117,9 @@ class _OpenSSLEncryptAppState extends State<OpenSSLEncryptApp> {
 class MainScreen extends StatefulWidget {
   final Function(bool) onDebugChanged;
   final VoidCallback onThemeChanged;
-  
+
   const MainScreen({
-    super.key, 
+    super.key,
     required this.onDebugChanged,
     required this.onThemeChanged,
   });
@@ -308,7 +308,7 @@ class _MainScreenState extends State<MainScreen> {
     setState(() {
       _selectedIndex = 1;
     });
-    
+
     // Show feedback to user
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -316,7 +316,7 @@ class _MainScreenState extends State<MainScreen> {
         duration: const Duration(seconds: 2),
       ),
     );
-    
+
     // TODO: Actually load the file in FileCryptoTab
     // This would require passing the file path to the tab component
   }
@@ -483,14 +483,14 @@ class _MainScreenState extends State<MainScreen> {
                     borderRadius: BorderRadius.circular(8),
                     color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
                   ) : null,
-                  child: isDragActive ? 
+                  child: isDragActive ?
                     Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.file_upload, size: 64, color: Theme.of(context).colorScheme.primary),
                           SizedBox(height: 16),
-                          Text('Drop file here to encrypt/decrypt', 
+                          Text('Drop file here to encrypt/decrypt',
                                style: TextStyle(fontSize: 18, color: Theme.of(context).colorScheme.primary)),
                         ],
                       ),
@@ -554,10 +554,10 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   bool _isAlgorithmAvailable(String algorithm) {
     const Set<String> pythonOnlyAlgorithms = {
       'aes-siv',
-      'aes-gcm-siv', 
+      'aes-gcm-siv',
       'aes-ocb3',
     };
-    
+
     // These algorithms were only available with Python backend, now unavailable
     if (pythonOnlyAlgorithms.contains(algorithm)) {
       return false;
@@ -569,23 +569,23 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     try {
       final algorithmCategories = await CLIService.getSupportedAlgorithms();
       final hashCategories = await CLIService.getHashAlgorithms();
-      
+
       // Store both flat and categorized versions
       final algorithms = <String>[];
       for (final category in algorithmCategories.values) {
         algorithms.addAll(category);
       }
-      
+
       final hashAlgorithms = <String>[];
       for (final category in hashCategories.values) {
         hashAlgorithms.addAll(category);
       }
       // KDF algorithms are handled directly in _kdfConfig initialization
-      
+
       setState(() {
         _algorithms = algorithms;
         _hashAlgorithms = hashAlgorithms;
-        
+
         if (algorithms.isNotEmpty) {
           _selectedAlgorithm = algorithms.first;
         }
@@ -703,7 +703,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   void _decryptText() async {
     // Use encrypted data from previous encryption, or from input field if user pasted encrypted data
     final inputData = _encryptedData.isEmpty ? _textController.text.trim() : _encryptedData;
-    
+
     if (inputData.isEmpty || _passwordController.text.isEmpty) {
       setState(() {
         _result = 'Please encrypt some text first, paste encrypted data in the text field, or enter the password';
@@ -771,7 +771,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   void _showCommandPreview() {
     final inputText = _textController.text.trim();
     final password = _passwordController.text.trim();
-    
+
     if (inputText.isEmpty && password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -781,7 +781,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       );
       return;
     }
-    
+
     // Show command preview dialog
     showDialog(
       context: context,
@@ -1089,7 +1089,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                                 ],
                               ),
                             ),
-                            if (_showHashConfig) ...[ 
+                            if (_showHashConfig) ...[
                               const SizedBox(height: 12),
                               Text(
                                 'Configure hash algorithms and rounds (CLI order)',
@@ -1114,7 +1114,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                                         for (String hash in _hashAlgorithms) {
                                           // All algorithms now supported with CLI integration
                                           _hashConfig[hash] = {
-                                            'enabled': true, 
+                                            'enabled': true,
                                             'rounds': 1000
                                           };
                                         }
@@ -1195,25 +1195,25 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                                 ],
                               ),
                               const SizedBox(height: 12),
-                              
+
                               // PBKDF2 Panel (hidden in CLI v1.2+)
                               if (!CLIService.shouldHideLegacyAlgorithms()) ...[
                                 _buildPBKDF2Panel(),
                                 const SizedBox(height: 8),
                               ],
-                              
-                              // Argon2 Panel  
+
+                              // Argon2 Panel
                               _buildArgon2Panel(),
                               const SizedBox(height: 8),
-                              
+
                               // Scrypt Panel
                               _buildScryptPanel(),
                               const SizedBox(height: 8),
-                              
+
                               // HKDF Panel
                               _buildHKDFPanel(),
                               const SizedBox(height: 8),
-                              
+
                               // Balloon Panel
                               _buildBalloonPanel(),
                               const SizedBox(height: 8),
@@ -1272,7 +1272,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                       ),
                     ),
                   ],
-                  
+
                   // Debug Logging Toggle
                   const SizedBox(height: 16),
                   Card(
@@ -1302,7 +1302,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                                     // Update debug banner visibility
                                     widget.onDebugChanged(value);
                                   });
-                                  
+
                                   // Enable/disable debug logging with file initialization
                                   if (value) {
                                     await CLIService.enableDebugLogging();
@@ -1315,8 +1315,8 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            _debugLogging 
-                              ? '🟢 Debug logging enabled - logs captured in-app and saved to file' 
+                            _debugLogging
+                              ? '🟢 Debug logging enabled - logs captured in-app and saved to file'
                               : '🔲 Debug logging disabled - only basic status messages',
                             style: TextStyle(
                               fontSize: 12,
@@ -1586,7 +1586,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                       _kdfConfig[kdfId] = {};
                     }
                     _kdfConfig[kdfId]!['enabled'] = value;
-                    
+
                     // Special case for PBKDF2: set rounds to 0 when disabled
                     // This ensures CLI compatibility (CLI uses rounds > 0 for enablement)
                     if (kdfId == 'pbkdf2' && !(value ?? false)) {
@@ -1618,10 +1618,10 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   Widget _buildHashConfig(String hashId, String hashName) {
     final isEnabled = _hashConfig[hashId]?['enabled'] ?? false;
     final rounds = _hashConfig[hashId]?['rounds'] ?? 1000;
-    
+
     // All hash functions now supported with CLI integration
     final effectiveEnabled = isEnabled;
-    
+
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
@@ -1676,7 +1676,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     );
   }
 
-  // Helper method to build number input fields  
+  // Helper method to build number input fields
   Widget _buildNumberField(String kdfId, String paramId, String label, int defaultValue) {
     return Padding(
       padding: const EdgeInsets.only(top: 8.0),
@@ -1700,7 +1700,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   }
 
   // Helper method to build text input fields
-  
+
   /// Get detailed description for algorithm
   String _getAlgorithmDescription(String algorithm) {
     final descriptions = {
@@ -1713,27 +1713,27 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       'aes-gcm-siv': 'AES-GCM-SIV - Combines speed of GCM with misuse resistance',
       'aes-ocb3': 'AES-OCB3 high-performance authenticated encryption',
       'camellia': 'Camellia block cipher - International standard, alternative to AES',
-      
+
       // Post-Quantum ML-KEM
       'ml-kem-512-hybrid': 'ML-KEM-512 hybrid - Post-quantum with 128-bit classical security',
       'ml-kem-768-hybrid': 'ML-KEM-768 hybrid - Post-quantum with 192-bit classical security (Recommended PQC)',
       'ml-kem-1024-hybrid': 'ML-KEM-1024 hybrid - Post-quantum with 256-bit classical security',
-      
-      // Post-Quantum Kyber Legacy  
+
+      // Post-Quantum Kyber Legacy
       'kyber512-hybrid': 'Kyber-512 hybrid - Legacy PQC algorithm, use ML-KEM instead',
       'kyber768-hybrid': 'Kyber-768 hybrid - Legacy PQC algorithm, use ML-KEM instead',
       'kyber1024-hybrid': 'Kyber-1024 hybrid - Legacy PQC algorithm, use ML-KEM instead',
-      
+
       // Post-Quantum ChaCha20
       'ml-kem-512-chacha20': 'ML-KEM-512 + ChaCha20 - Post-quantum with stream cipher',
-      'ml-kem-768-chacha20': 'ML-KEM-768 + ChaCha20 - Post-quantum with stream cipher',  
+      'ml-kem-768-chacha20': 'ML-KEM-768 + ChaCha20 - Post-quantum with stream cipher',
       'ml-kem-1024-chacha20': 'ML-KEM-1024 + ChaCha20 - Post-quantum with stream cipher',
-      
+
       // Post-Quantum HQC
       'hqc-128-hybrid': 'HQC-128 hybrid - Alternative post-quantum KEM (128-bit security)',
       'hqc-192-hybrid': 'HQC-192 hybrid - Alternative post-quantum KEM (192-bit security)',
       'hqc-256-hybrid': 'HQC-256 hybrid - Alternative post-quantum KEM (256-bit security)',
-      
+
       // Post-Quantum Signatures
       'mayo-1-hybrid': 'MAYO-1 hybrid - Post-quantum signatures (128-bit security)',
       'mayo-3-hybrid': 'MAYO-3 hybrid - Post-quantum signatures (192-bit security)',
@@ -1742,16 +1742,16 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       'cross-192-hybrid': 'CROSS-192 hybrid - Post-quantum signatures (192-bit security)',
       'cross-256-hybrid': 'CROSS-256 hybrid - Post-quantum signatures (256-bit security)',
     };
-    
+
     return descriptions[algorithm] ?? 'Advanced encryption algorithm - see CLI documentation for details';
   }
-  
+
   /// Show algorithm picker dialog
   void _showAlgorithmPicker() async {
     final algorithmCategories = await CLIService.getSupportedAlgorithms();
-    
+
     if (!mounted) return;
-    
+
     final selectedAlgorithm = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -1771,7 +1771,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                 ...algorithmCategories.entries.map((entry) {
                   final category = entry.key;
                   final algorithms = entry.value;
-                  
+
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1785,7 +1785,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                       ...algorithms.map((algorithm) {
                         final isSelected = algorithm == _selectedAlgorithm;
                         final isPostQuantum = category.contains('Post-Quantum');
-                        
+
                         return Card(
                           color: isSelected ? Theme.of(context).colorScheme.primaryContainer : null,
                           child: ListTile(
@@ -1856,20 +1856,20 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
         ],
       ),
     );
-    
+
     if (selectedAlgorithm != null) {
       setState(() {
         _selectedAlgorithm = selectedAlgorithm;
       });
     }
   }
-  
-  /// Show algorithm info dialog - redirects to info tab  
+
+  /// Show algorithm info dialog - redirects to info tab
   void _showAlgorithmInfo(BuildContext context) {
     // This method is called from the menu, but we want to show the picker instead
     _showAlgorithmPicker();
   }
-  
+
   /// Get hash function description
   String _getHashDescription(String hashName) {
     final descriptions = {
@@ -1878,28 +1878,28 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       'sha256': 'SHA-256 - Most common secure hash, excellent balance of speed and security',
       'sha384': 'SHA-384 - Truncated SHA-512, good for high-security applications',
       'sha512': 'SHA-512 - Large output hash, maximum traditional security',
-      
+
       // SHA-3 Family
       'sha3-224': 'SHA-3-224 - New generation hash with different design from SHA-2',
       'sha3-256': 'SHA-3-256 - Alternative to SHA-256 with different security properties',
       'sha3-384': 'SHA-3-384 - Alternative to SHA-384 with sponge construction',
       'sha3-512': 'SHA-3-512 - Alternative to SHA-512 with sponge construction',
-      
+
       // SHAKE Functions
       'shake128': 'SHAKE-128 - Extendable-output function, configurable length',
       'shake256': 'SHAKE-256 - Extendable-output function, higher security level',
-      
+
       // Modern Hash Functions
       'blake2b': 'BLAKE2b - Ultra-fast cryptographic hash, faster than MD5 but secure',
       'blake3': 'BLAKE3 - Newest generation hash, extremely fast with tree structure',
-      
+
       // Legacy Hash Functions
       'whirlpool': 'Whirlpool - ISO standard hash, mainly for specialized applications',
     };
-    
+
     return descriptions[hashName] ?? 'Cryptographic hash function';
   }
-  
+
   /// Get maximum recommended rounds for hash function
   int _getMaxRounds(String hashName) {
     // Hash functions use maximum of 1,000,000 rounds but with better precision control
@@ -1924,7 +1924,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       iconSize: iconSize,
     );
   }
-  
+
   /// Show hash information dialog
   void _showHashInfo() {
     showDialog(
@@ -1961,7 +1961,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       ),
     );
   }
-  
+
   /// Show KDF information dialog
   void _showKDFInfo() {
     showDialog(
@@ -2017,7 +2017,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   Widget _buildPBKDF2Panel() {
     final config = _kdfConfig['pbkdf2'] ?? {'enabled': true, 'iterations': 100000};
     final enabled = config['enabled'] ?? false;
-    
+
     return Card(
       color: enabled ? Theme.of(context).colorScheme.primaryContainer : Theme.of(context).colorScheme.surfaceContainer,
       child: Padding(
@@ -2102,7 +2102,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       'rounds': 10,
     };
     final enabled = config['enabled'] ?? false;
-    
+
     return Card(
       color: enabled ? Theme.of(context).colorScheme.secondaryContainer : Theme.of(context).colorScheme.surfaceContainer,
       child: Padding(
@@ -2135,16 +2135,16 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
             ),
             if (enabled) ...[
               const SizedBox(height: 8),
-              ...[ 
-                _buildKDFSlider('Time Cost', config['time_cost'] ?? 3, 1, 1000, (v) => 
+              ...[
+                _buildKDFSlider('Time Cost', config['time_cost'] ?? 3, 1, 1000, (v) =>
                   setState(() => _kdfConfig['argon2']!['time_cost'] = v)),
-                _buildKDFSlider('Memory (MB)', ((config['memory_cost'] ?? 65536) / 1024).round(), 1, 1024, (v) => 
+                _buildKDFSlider('Memory (MB)', ((config['memory_cost'] ?? 65536) / 1024).round(), 1, 1024, (v) =>
                   setState(() => _kdfConfig['argon2']!['memory_cost'] = v * 1024)),
-                _buildKDFSlider('Parallelism', config['parallelism'] ?? 4, 1, 16, (v) => 
+                _buildKDFSlider('Parallelism', config['parallelism'] ?? 4, 1, 16, (v) =>
                   setState(() => _kdfConfig['argon2']!['parallelism'] = v)),
-                _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 128, (v) => 
+                _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 128, (v) =>
                   setState(() => _kdfConfig['argon2']!['hash_len'] = v)),
-                _buildKDFSlider('Rounds', config['rounds'] ?? 10, 0, 1000000, (v) => 
+                _buildKDFSlider('Rounds', config['rounds'] ?? 10, 0, 1000000, (v) =>
                   setState(() => _kdfConfig['argon2']!['rounds'] = v)),
               ],
               Padding(
@@ -2185,7 +2185,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       'rounds': 10,
     };
     final enabled = config['enabled'] ?? false;
-    
+
     return Card(
       color: enabled ? Theme.of(context).colorScheme.tertiaryContainer : Theme.of(context).colorScheme.surfaceContainer,
       child: Padding(
@@ -2219,13 +2219,13 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
             if (enabled) ...[
               const SizedBox(height: 8),
               ...[
-                _buildKDFSlider('N (CPU/Memory)', (config['n'] ?? 16384) ~/ 1024, 1, 1024, (v) => 
+                _buildKDFSlider('N (CPU/Memory)', (config['n'] ?? 16384) ~/ 1024, 1, 1024, (v) =>
                   setState(() => _kdfConfig['scrypt']!['n'] = v * 1024)),
-                _buildKDFSlider('R (Block Size)', config['r'] ?? 8, 1, 32, (v) => 
+                _buildKDFSlider('R (Block Size)', config['r'] ?? 8, 1, 32, (v) =>
                   setState(() => _kdfConfig['scrypt']!['r'] = v)),
-                _buildKDFSlider('P (Parallelism)', config['p'] ?? 1, 1, 16, (v) => 
+                _buildKDFSlider('P (Parallelism)', config['p'] ?? 1, 1, 16, (v) =>
                   setState(() => _kdfConfig['scrypt']!['p'] = v)),
-                _buildKDFSlider('Rounds', config['rounds'] ?? 10, 0, 1000000, (v) => 
+                _buildKDFSlider('Rounds', config['rounds'] ?? 10, 0, 1000000, (v) =>
                   setState(() => _kdfConfig['scrypt']!['rounds'] = v)),
               ],
             ],
@@ -2244,7 +2244,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       'info': 'openssl_encrypt_hkdf',
     };
     final enabled = config['enabled'] ?? false;
-    
+
     return Card(
       color: enabled ? Theme.of(context).colorScheme.tertiaryContainer : Theme.of(context).colorScheme.surfaceContainer,
       child: Padding(
@@ -2277,7 +2277,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
             ),
             if (enabled) ...[
               const SizedBox(height: 8),
-              _buildKDFSlider('Rounds', config['rounds'] ?? 1, 0, 1000000, (v) => 
+              _buildKDFSlider('Rounds', config['rounds'] ?? 1, 0, 1000000, (v) =>
                 setState(() => _kdfConfig['hkdf']!['rounds'] = v)),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -2332,7 +2332,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       'hash_len': 32,
     };
     final enabled = config['enabled'] ?? false;
-    
+
     return Card(
       color: enabled ? Theme.of(context).colorScheme.errorContainer : Theme.of(context).colorScheme.surfaceContainer,
       child: Padding(
@@ -2366,15 +2366,15 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
             if (enabled) ...[
               const SizedBox(height: 8),
               ...[
-                _buildKDFSlider('Time Cost', config['time_cost'] ?? 3, 1, 1000, (v) => 
+                _buildKDFSlider('Time Cost', config['time_cost'] ?? 3, 1, 1000, (v) =>
                   setState(() => _kdfConfig['balloon']!['time_cost'] = v)),
-                _buildKDFSlider('Space Cost (KB)', ((config['space_cost'] ?? 65536) / 1024).round(), 1, 1024, (v) => 
+                _buildKDFSlider('Space Cost (KB)', ((config['space_cost'] ?? 65536) / 1024).round(), 1, 1024, (v) =>
                   setState(() => _kdfConfig['balloon']!['space_cost'] = v * 1024)),
-                _buildKDFSlider('Parallelism', config['parallelism'] ?? 4, 1, 16, (v) => 
+                _buildKDFSlider('Parallelism', config['parallelism'] ?? 4, 1, 16, (v) =>
                   setState(() => _kdfConfig['balloon']!['parallelism'] = v)),
-                _buildKDFSlider('Rounds', config['rounds'] ?? 2, 0, 1000000, (v) => 
+                _buildKDFSlider('Rounds', config['rounds'] ?? 2, 0, 1000000, (v) =>
                   setState(() => _kdfConfig['balloon']!['rounds'] = v)),
-                _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 128, (v) => 
+                _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 128, (v) =>
                   setState(() => _kdfConfig['balloon']!['hash_len'] = v)),
               ],
             ],
@@ -2433,10 +2433,10 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     // Get appropriate min/max values based on hash function
     int minRounds = 0;  // Allow 0 to disable hash function
     int maxRounds = _getMaxRounds(hashId);
-    
+
     // Ensure current value is within bounds
     int clampedRounds = currentRounds.clamp(minRounds, maxRounds);
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2493,17 +2493,17 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   /// Show intelligent algorithm recommendation wizard
   void _showRecommendationWizard() async {
     if (!mounted) return;
-    
+
     final recommendation = await showDialog<AlgorithmRecommendation>(
       context: context,
       builder: (context) => const RecommendationWizardDialog(),
     );
-    
+
     if (recommendation != null) {
       // Apply the recommendation
       setState(() {
         _selectedAlgorithm = recommendation.algorithm;
-        
+
         // Apply hash configuration
         for (final hashEntry in recommendation.hashConfig.entries) {
           final hashName = hashEntry.key;
@@ -2512,7 +2512,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
             _hashConfig[hashName] = Map.from(config);
           }
         }
-        
+
         // Apply KDF configuration
         for (final kdfEntry in recommendation.kdfConfig.entries) {
           final kdfName = kdfEntry.key;
@@ -2522,7 +2522,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
           }
         }
       });
-      
+
       // Show success message with explanation
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2562,12 +2562,12 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   bool _isLoading = false;
   String? _decryptedContent; // Store decrypted content for optional saving
   bool _debugLogging = false;
-  
+
   // Progress tracking
   String _operationStatus = '';
   String _operationProgress = '';
   double _progressValue = 0.0;
-  
+
   // Algorithm and configuration (same as TextCryptoTab)
   List<String> _algorithms = [];
   List<String> _hashAlgorithms = [];
@@ -2589,11 +2589,11 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
       final algorithmMap = await CLIService.getSupportedAlgorithms();
       final algorithms = algorithmMap.values.expand((list) => list).toList();
       final hashAlgorithms = ['sha256', 'sha512', 'blake2b']; // Default hash algorithms
-      
+
       setState(() {
         _algorithms = algorithms;
         _hashAlgorithms = hashAlgorithms;
-        
+
         if (algorithms.isNotEmpty) {
           _selectedAlgorithm = algorithms.first;
         }
@@ -2648,9 +2648,9 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
 
   void _pickTestFile() async {
     final testFileNames = await widget.fileManager.getTestFileNames();
-    
+
     if (!mounted) return;
-    
+
     final selectedFileName = await showDialog<String>(
       context: context,
       builder: (BuildContext context) {
@@ -2664,7 +2664,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
               itemBuilder: (context, index) {
                 final fileName = testFileNames[index];
                 final isEncrypted = fileName.contains('test1_');
-                
+
                 // Determine format version and algorithm
                 String formatInfo = '';
                 String algorithmName = '';
@@ -2675,7 +2675,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                 } else if (fileName.startsWith('v5/')) {
                   formatInfo = 'v5';
                 }
-                
+
                 // Extract algorithm name from filename
                 final baseName = fileName.split('/').last;
                 if (baseName.contains('fernet_balloon')) {
@@ -2693,12 +2693,12 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                 } else {
                   algorithmName = 'Unknown';
                 }
-                
+
                 return ListTile(
                   leading: Icon(
                     isEncrypted ? Icons.lock : Icons.description,
-                    color: formatInfo == 'v5' ? Colors.green : 
-                           formatInfo == 'v4' ? Colors.orange : 
+                    color: formatInfo == 'v5' ? Colors.green :
+                           formatInfo == 'v4' ? Colors.orange :
                            formatInfo == 'v3' ? Colors.red : Colors.blue,
                   ),
                   title: Text(baseName),
@@ -2721,8 +2721,8 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: formatInfo == 'v5' ? Colors.green : 
-                                       formatInfo == 'v4' ? Colors.orange : 
+                                color: formatInfo == 'v5' ? Colors.green :
+                                       formatInfo == 'v4' ? Colors.orange :
                                        formatInfo == 'v3' ? Colors.red : Colors.grey,
                                 borderRadius: BorderRadius.circular(4),
                               ),
@@ -2817,7 +2817,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
           setState(() {
             _operationStatus = 'Encrypting with $_selectedAlgorithm...';
             _operationProgress = progress;
-            _progressValue = progress.contains('%') 
+            _progressValue = progress.contains('%')
               ? (double.tryParse(progress.split('%')[0]) ?? 0.0) / 100.0
               : 0.5;
           });
@@ -2830,7 +2830,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
 
       // Generate output filename
       final outputPath = widget.fileManager.getEncryptedFileName(_selectedFile!.path);
-      
+
       // Save encrypted file
       final success = await widget.fileManager.writeFileText(outputPath, encrypted);
 
@@ -2893,7 +2893,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
         _operationStatus = 'Reading encrypted file...';
         _progressValue = 0.2;
       });
-      
+
       final fileContent = await widget.fileManager.readFileText(_selectedFile!.path);
       if (fileContent == null) {
         throw Exception('Could not read file');
@@ -2999,7 +2999,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
       'ml-kem-768': 'ML-KEM-768 - Post-quantum KEM (192-bit security)',
       'ml-kem-1024': 'ML-KEM-1024 - Post-quantum KEM (256-bit security)',
     };
-    
+
     return descriptions[algorithm] ?? 'Advanced encryption algorithm - see CLI documentation for details';
   }
 
@@ -3008,7 +3008,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
       context: context,
       builder: (context) => _buildAlgorithmPicker(),
     );
-    
+
     if (selectedAlgorithm != null) {
       setState(() {
         _selectedAlgorithm = selectedAlgorithm;
@@ -3037,9 +3037,9 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
             ...algorithmCategories.entries.map((entry) {
               final category = entry.key;
               final algorithms = entry.value;
-              
+
               if (algorithms.isEmpty) return const SizedBox.shrink();
-              
+
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -3052,7 +3052,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                   ),
                   ...algorithms.map((algorithm) {
                     final isSelected = algorithm == _selectedAlgorithm;
-                    
+
                     return Card(
                       color: isSelected ? Theme.of(context).colorScheme.primaryContainer : null,
                       child: ListTile(
@@ -3218,10 +3218,10 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   Widget _buildHashConfig(String hashId, String hashName) {
     final isEnabled = _hashConfig[hashId]?['enabled'] ?? false;
     final rounds = _hashConfig[hashId]?['rounds'] ?? 1000;
-    
+
     // All hash functions now supported with CLI integration
     final effectiveEnabled = isEnabled;
-    
+
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
@@ -3278,7 +3278,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
 
   Widget _buildSimpleKDFConfig(String kdfId) {
     final isEnabled = _kdfConfig[kdfId]?['enabled'] ?? false;
-    
+
     return Card(
       child: CheckboxListTile(
         title: Text(kdfId.toUpperCase()),
@@ -3299,10 +3299,10 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     // Get appropriate min/max values based on hash function
     int minRounds = 0;  // Allow 0 to disable hash function
     int maxRounds = _getMaxRounds(hashId);
-    
+
     // Ensure current value is within bounds
     int clampedRounds = currentRounds.clamp(minRounds, maxRounds);
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -3509,7 +3509,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                       ],
                     ),
                   ),
-                  if (_showAdvanced) ...[  
+                  if (_showAdvanced) ...[
                     const SizedBox(height: 16),
                     ExpansionTile(
                       leading: const Icon(Icons.tag),
@@ -3581,8 +3581,8 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    _debugLogging 
-                      ? '🟢 Debug logging enabled - logs written to console and file' 
+                    _debugLogging
+                      ? '🟢 Debug logging enabled - logs written to console and file'
                       : '🔲 Debug logging disabled - only basic status messages',
                     style: TextStyle(
                       fontSize: 12,
@@ -3895,7 +3895,7 @@ class _InfoTabState extends State<InfoTab> {
                                       _getAlgorithmDescription(algo),
                                       style: TextStyle(
                                         fontSize: 12,
-                                        color: _isAlgorithmAvailable(algo) 
+                                        color: _isAlgorithmAvailable(algo)
                                             ? Colors.grey[600]
                                             : Colors.orange[600],
                                       ),
@@ -4121,7 +4121,7 @@ class _RecommendationWizardDialogState extends State<RecommendationWizardDialog>
           },
           steps: [
             _buildUseCaseStep(),
-            _buildSecurityStep(), 
+            _buildSecurityStep(),
             _buildPerformanceStep(),
             _buildPreferencesStep(),
           ],
@@ -4238,7 +4238,7 @@ class _RecommendationWizardDialogState extends State<RecommendationWizardDialog>
 
   AlgorithmRecommendation _computeRecommendation() {
     // Intelligent recommendation logic based on user preferences
-    
+
     String algorithm;
     String profileName;
     String explanation;
@@ -4247,17 +4247,17 @@ class _RecommendationWizardDialogState extends State<RecommendationWizardDialog>
 
     if (_futureProofing || _selectedUseCase == UseCase.postQuantum) {
       // Post-quantum recommendation
-      algorithm = _selectedSecurityLevel == SecurityLevel.maximum 
-        ? 'ml-kem-1024-hybrid' 
+      algorithm = _selectedSecurityLevel == SecurityLevel.maximum
+        ? 'ml-kem-1024-hybrid'
         : 'ml-kem-768-hybrid';
       profileName = 'Post-Quantum Security';
       explanation = 'ML-KEM provides protection against both classical and quantum computer attacks';
-      
+
       hashConfig = {
         'blake3': {'enabled': true, 'rounds': 10000},
         'sha256': {'enabled': true, 'rounds': 5000},
       };
-      
+
       kdfConfig = {
         'argon2': {
           'enabled': true,
@@ -4270,17 +4270,17 @@ class _RecommendationWizardDialogState extends State<RecommendationWizardDialog>
         },
         'pbkdf2': {'enabled': false, 'iterations': 0},
       };
-      
+
     } else if (_selectedPerformanceLevel == PerformanceLevel.fastest) {
       // Performance-optimized recommendation
       algorithm = 'chacha20-poly1305';
       profileName = 'High Performance';
       explanation = 'ChaCha20 provides excellent security with superior performance on all platforms';
-      
+
       hashConfig = {
         'blake2b': {'enabled': true, 'rounds': 1000},
       };
-      
+
       kdfConfig = {
         'hkdf': {
           'enabled': true,
@@ -4290,19 +4290,19 @@ class _RecommendationWizardDialogState extends State<RecommendationWizardDialog>
         },
         if (!CLIService.shouldHideLegacyAlgorithms()) 'pbkdf2': {'enabled': true, 'iterations': 50000},
       };
-      
+
     } else if (_selectedSecurityLevel == SecurityLevel.maximum) {
       // Maximum security recommendation
       algorithm = 'aes-gcm';
       profileName = 'Maximum Security';
       explanation = 'AES-256-GCM with Argon2 provides military-grade security with robust key derivation';
-      
+
       hashConfig = {
         'sha512': {'enabled': true, 'rounds': 10000},
         'blake3': {'enabled': true, 'rounds': 5000},
         'shake256': {'enabled': true, 'rounds': 2000},
       };
-      
+
       kdfConfig = {
         'argon2': {
           'enabled': true,
@@ -4315,32 +4315,32 @@ class _RecommendationWizardDialogState extends State<RecommendationWizardDialog>
         },
         if (!CLIService.shouldHideLegacyAlgorithms()) 'pbkdf2': {'enabled': true, 'iterations': 500000},
       };
-      
+
     } else if (_needsCompatibility) {
       // Compatibility-focused recommendation
       algorithm = 'fernet';
       profileName = 'Universal Compatibility';
       explanation = 'Fernet is Python-compatible and works everywhere with solid security';
-      
+
       hashConfig = {
         'sha256': {'enabled': true, 'rounds': 2000},
       };
-      
+
       kdfConfig = {
         if (!CLIService.shouldHideLegacyAlgorithms()) 'pbkdf2': {'enabled': true, 'iterations': 200000},
       };
-      
+
     } else {
       // Balanced general-purpose recommendation
       algorithm = 'aes-gcm';
       profileName = 'Balanced General Use';
       explanation = 'AES-GCM with PBKDF2 provides excellent security and performance for most applications';
-      
+
       hashConfig = {
         'sha256': {'enabled': true, 'rounds': 5000},
         'blake2b': {'enabled': true, 'rounds': 3000},
       };
-      
+
       kdfConfig = {
         if (!CLIService.shouldHideLegacyAlgorithms()) 'pbkdf2': {'enabled': true, 'iterations': 200000},
         'argon2': {
@@ -4447,7 +4447,7 @@ class CommandPreviewDialog extends StatelessWidget {
       hashConfig,
       kdfConfig,
     );
-    
+
     final decryptCommand = CLIService.previewDecryptCommand(password);
 
     return Dialog(
@@ -4476,7 +4476,7 @@ class CommandPreviewDialog extends StatelessWidget {
             ),
             const Divider(),
             const SizedBox(height: 16),
-            
+
             // Encrypt command section
             Row(
               children: [
@@ -4521,9 +4521,9 @@ class CommandPreviewDialog extends StatelessWidget {
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 24),
-            
+
             // Decrypt command section
             Row(
               children: [
@@ -4568,9 +4568,9 @@ class CommandPreviewDialog extends StatelessWidget {
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 24),
-            
+
             // Usage notes section
             Expanded(
               child: Container(
@@ -4643,9 +4643,9 @@ class CommandPreviewDialog extends StatelessWidget {
   }
 
   bool _hasActiveHashConfig() {
-    return hashConfig.values.any((config) => 
-        config['enabled'] == true && 
-        config['rounds'] != null && 
+    return hashConfig.values.any((config) =>
+        config['enabled'] == true &&
+        config['rounds'] != null &&
         config['rounds'] > 0
     );
   }
@@ -4656,8 +4656,8 @@ class CommandPreviewDialog extends StatelessWidget {
 
   String _getActiveHashFunctions() {
     return hashConfig.entries
-        .where((entry) => entry.value['enabled'] == true && 
-                         entry.value['rounds'] != null && 
+        .where((entry) => entry.value['enabled'] == true &&
+                         entry.value['rounds'] != null &&
                          entry.value['rounds'] > 0)
         .map((entry) => '${entry.key} (${entry.value['rounds']} rounds)')
         .join(', ');
@@ -4717,14 +4717,14 @@ class _AutoRepeatButtonState extends State<AutoRepeatButton> {
 
   void _onPointerDown(PointerDownEvent event) {
     if (!widget.enabled) return;
-    
+
     setState(() {
       _isPressed = true;
     });
-    
+
     // Execute immediately
     widget.onAction();
-    
+
     // Start repeating after a short delay
     _repeatTimer = Timer(const Duration(milliseconds: 300), () {
       if (_isPressed && mounted) {
@@ -4732,7 +4732,7 @@ class _AutoRepeatButtonState extends State<AutoRepeatButton> {
       }
     });
   }
-  
+
   void _startRepeating() {
     _repeatTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
       if (_isPressed && mounted && widget.enabled) {
@@ -4761,7 +4761,7 @@ class _AutoRepeatButtonState extends State<AutoRepeatButton> {
         width: widget.size,
         height: widget.size,
         decoration: BoxDecoration(
-          color: widget.enabled 
+          color: widget.enabled
               ? (_isPressed ? widget.color.shade200 : widget.color.shade100)
               : Theme.of(context).colorScheme.surfaceContainer,
           borderRadius: BorderRadius.circular(4),
@@ -4782,7 +4782,7 @@ class _AutoRepeatButtonState extends State<AutoRepeatButton> {
 /// Settings tab wrapper that integrates the SettingsScreen
 class SettingsTab extends StatelessWidget {
   final VoidCallback onThemeChanged;
-  
+
   const SettingsTab({super.key, required this.onThemeChanged});
 
   @override
@@ -4798,7 +4798,7 @@ class SettingsTab extends StatelessWidget {
 /// Wrapper for SettingsScreen that handles theme change notifications
 class SettingsScreenWrapper extends StatefulWidget {
   final VoidCallback onThemeChanged;
-  
+
   const SettingsScreenWrapper({super.key, required this.onThemeChanged});
 
   @override

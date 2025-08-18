@@ -14,12 +14,12 @@ void main() {
 
   test('ChaCha20 Heavy Multi-KDF: Match the failing configuration', () async {
     print('\n=== CHACHA20 HEAVY MULTI-KDF TEST ===');
-    
+
     const password = '1234';
     const plaintext = 'Test';
-    
+
     print('🔍 Testing ChaCha20 with heavy multi-KDF config that failed in CLI...');
-    
+
     // Heavy multi-KDF config matching your failing CLI command
     final hashConfig = {
       'sha512': {'rounds': 1000},
@@ -35,26 +35,26 @@ void main() {
       'scrypt': {'enabled': true, 'n': 128, 'r': 8, 'p': 1, 'rounds': 2},
       'pbkdf2': {'enabled': true, 'rounds': 100} // Reduced from 100000 for faster testing
     };
-    
+
     print('📱 Step 1: Mobile ChaCha20 heavy multi-KDF encryption...');
     final mobileEncrypted = await cryptoFFI.encryptText(plaintext, password, 'chacha20-poly1305', hashConfig, kdfConfig);
     print('✅ Mobile encryption completed');
-    
+
     print('📱 Step 2: Mobile self-test...');
     final mobileDecrypted = await cryptoFFI.decryptText(mobileEncrypted, password);
     expect(mobileDecrypted, equals(plaintext));
     print('✅ Mobile self-compatibility confirmed');
-    
+
     print('🖥️ Step 3: CLI decryption test...');
     final tempDir = Directory.systemTemp.createTempSync();
     final testFile = File('${tempDir.path}/mobile_chacha20_heavy.txt');
     await testFile.writeAsString(mobileEncrypted);
-    
+
     // Also save to persistent location for manual debugging
     final debugFile = File('/tmp/heavy_chacha20_debug.txt');
     await debugFile.writeAsString(mobileEncrypted);
     print('🐛 Debug file saved to: ${debugFile.path}');
-    
+
     try {
       final cliResult = await Process.run('python', [
         '-m', 'openssl_encrypt.crypt',
@@ -63,12 +63,12 @@ void main() {
         '--password', password,
         '--force-password'
       ], environment: {'PYTHONPATH': '/home/work/private/git/openssl_encrypt'});
-      
+
       print('CLI decrypt exit code: ${cliResult.exitCode}');
       if (cliResult.exitCode == 0) {
         final output = cliResult.stdout.toString();
         final lines = output.split('\n');
-        
+
         String? decryptedContent;
         for (int i = 0; i < lines.length - 1; i++) {
           if (lines[i].contains('Decrypted content:')) {
@@ -76,7 +76,7 @@ void main() {
             break;
           }
         }
-        
+
         if (decryptedContent == plaintext) {
           print('🎉 SUCCESS! ChaCha20 heavy multi-KDF CLI compatibility confirmed!');
         } else {
@@ -89,13 +89,13 @@ void main() {
         print('❌ CLI decryption FAILED - This matches your reported issue');
         print('STDOUT: ${cliResult.stdout}');
         print('STDERR: ${cliResult.stderr}');
-        
+
         print('\n📋 Analysis: ChaCha20 + Heavy Multi-KDF incompatibility detected');
         print('This suggests the issue is with the heavy KDF combination, not ChaCha20 itself');
-        
+
         fail('CLI decryption failed with heavy multi-KDF - expected behavior');
       }
-      
+
     } finally {
       await tempDir.delete(recursive: true);
     }

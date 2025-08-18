@@ -5,7 +5,7 @@ import 'cli_service.dart';
 /// Comprehensive settings and preferences screen
 class SettingsScreen extends StatefulWidget {
   final Function(String key, dynamic value)? onSettingChanged;
-  
+
   const SettingsScreen({super.key, this.onSettingChanged});
 
   @override
@@ -336,7 +336,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildThemeSelector() {
     final currentTheme = SettingsService.getThemeMode();
-    
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
@@ -384,7 +384,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildDefaultAlgorithmSelector() {
     final currentAlgorithm = SettingsService.getDefaultAlgorithm();
-    
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
@@ -433,7 +433,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildDefaultSecurityLevelSelector() {
     final currentLevel = SettingsService.getDefaultSecurityLevel();
-    
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
@@ -480,7 +480,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildDefaultOutputFormatSelector() {
     final currentFormat = SettingsService.getDefaultOutputFormat();
-    
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
@@ -527,7 +527,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildMaxRecentFilesSelector() {
     final currentMax = SettingsService.getMaxRecentFiles();
-    
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(

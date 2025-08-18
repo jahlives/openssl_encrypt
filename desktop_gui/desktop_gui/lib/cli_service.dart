@@ -7,17 +7,17 @@ import 'package:path/path.dart' as path;
 /// Replaces all pure Dart crypto implementations
 class CLIService {
   static const String _cliPath = '/app/bin/openssl-encrypt'; // Flatpak CLI path
-  
+
   static bool debugEnabled = false;
   static String? _cliVersion;
-  static String? _gitCommit; 
+  static String? _gitCommit;
   static String? _pythonVersion;
   static String? _systemInfo;
   static Map<String, String> _dependencies = {};
   static bool _isFlaspakVersion = false;
   static List<String> _debugLogs = [];
   static String? _debugLogFile;
-  
+
   /// Initialize CLI service and verify CLI is available
   static Future<bool> initialize() async {
     try {
@@ -28,10 +28,10 @@ class CLIService {
         await _detectVersion();
         return true;
       }
-      
+
       // For development, try running CLI via parent directory
       try {
-        final result = await Process.run('python', ['-m', 'openssl_encrypt.cli', '--help'], 
+        final result = await Process.run('python', ['-m', 'openssl_encrypt.cli', '--help'],
           workingDirectory: '/home/work/private/git/openssl_encrypt');
         if (result.exitCode == 0) {
           _outputDebugLog('CLI found via development path');
@@ -42,7 +42,7 @@ class CLIService {
       } catch (e) {
         _outputDebugLog('Development CLI test failed: $e');
       }
-      
+
       _outputDebugLog('CLI not found');
       return false;
     } catch (e) {
@@ -50,7 +50,7 @@ class CLIService {
       return false;
     }
   }
-  
+
   /// Get list of supported algorithms organized by category
   static Future<Map<String, List<String>>> getSupportedAlgorithms() async {
     try {
@@ -60,7 +60,7 @@ class CLIService {
         'Classical Symmetric': [
           'fernet',
           'aes-gcm',
-          'chacha20-poly1305', 
+          'chacha20-poly1305',
           'xchacha20-poly1305',
           'aes-siv',
           'aes-gcm-siv',
@@ -69,7 +69,7 @@ class CLIService {
         ],
         'Post-Quantum Hybrid (ML-KEM)': [
           'ml-kem-512-hybrid',
-          'ml-kem-768-hybrid', 
+          'ml-kem-768-hybrid',
           'ml-kem-1024-hybrid',
         ],
         'Post-Quantum Hybrid (Kyber Legacy)': [
@@ -84,7 +84,7 @@ class CLIService {
         ],
         'Post-Quantum HQC': [
           'hqc-128-hybrid',
-          'hqc-192-hybrid', 
+          'hqc-192-hybrid',
           'hqc-256-hybrid',
         ],
         'Post-Quantum Signatures (MAYO)': [
@@ -106,7 +106,7 @@ class CLIService {
       };
     }
   }
-  
+
   /// Get flat list of all algorithms for backward compatibility
   static Future<List<String>> getSupportedAlgorithmsList() async {
     final categorized = await getSupportedAlgorithms();
@@ -116,7 +116,7 @@ class CLIService {
     }
     return allAlgorithms;
   }
-  
+
   /// Get list of supported hash algorithms organized by category
   static Future<Map<String, List<String>>> getHashAlgorithms() async {
     try {
@@ -125,7 +125,7 @@ class CLIService {
         'SHA-2 Family': [
           'sha224',
           'sha256',
-          'sha384', 
+          'sha384',
           'sha512',
         ],
         'SHA-3 Family': [
@@ -155,8 +155,8 @@ class CLIService {
       };
     }
   }
-  
-  /// Get flat list of all hash algorithms for backward compatibility  
+
+  /// Get flat list of all hash algorithms for backward compatibility
   static Future<List<String>> getHashAlgorithmsList() async {
     final categorized = await getHashAlgorithms();
     final allHashAlgorithms = <String>[];
@@ -165,12 +165,12 @@ class CLIService {
     }
     return allHashAlgorithms;
   }
-  
+
   /// Encrypt text using CLI with progress callbacks
   static Future<String> encryptTextWithProgress(
-    String text, 
-    String password, 
-    String algorithm, 
+    String text,
+    String password,
+    String algorithm,
     Map<String, Map<String, dynamic>>? hashConfig,
     Map<String, Map<String, dynamic>>? kdfConfig,
     {Function(String)? onProgress, Function(String)? onStatus}
@@ -178,15 +178,15 @@ class CLIService {
     Directory? tempDir;
     try {
       onStatus?.call('Initializing encryption...');
-      
+
       // Create temporary input file
       tempDir = await Directory.systemTemp.createTemp('openssl_encrypt_');
       final inputFile = File('${tempDir.path}/input.txt');
       final outputFile = File('${tempDir.path}/output.txt');
-      
+
       await inputFile.writeAsString(text);
       onStatus?.call('Prepared temporary files');
-      
+
       // Build CLI command
       final args = [
         'encrypt',
@@ -195,7 +195,7 @@ class CLIService {
         '--password', password,
         '--algorithm', algorithm,
       ];
-      
+
       // Add hash configuration if provided
       if (hashConfig != null) {
         for (final entry in hashConfig.entries) {
@@ -222,7 +222,7 @@ class CLIService {
           }
         }
       }
-      
+
       // Add KDF configuration if provided
       if (kdfConfig != null) {
         for (final entry in kdfConfig.entries) {
@@ -280,17 +280,17 @@ class CLIService {
           }
         }
       }
-      
+
       if (debugEnabled) {
         args.add('--debug');
       }
-      
+
       // Add force password for simple passwords
       args.add('--force-password');
-      
+
       _outputDebugLog('CLI encrypt command: ${args.join(' ')}');
       onStatus?.call('Executing encryption...');
-      
+
       final result = await _runCLICommandWithProgress(
         args,
         onStdout: (line) {
@@ -303,7 +303,7 @@ class CLIService {
           onProgress?.call(line);
         },
       );
-      
+
       if (result.exitCode != 0) {
         final errorMsg = result.stderr.toString().trim();
         final stdoutMsg = result.stdout.toString().trim();
@@ -312,20 +312,20 @@ class CLIService {
         _outputDebugLog('Stdout: $stdoutMsg');
         throw Exception('Encryption failed: ${errorMsg.isNotEmpty ? errorMsg : stdoutMsg}');
       }
-      
+
       onStatus?.call('Reading encrypted output...');
-      
+
       // Read encrypted output
       if (!await outputFile.exists()) {
         throw Exception('CLI did not create output file');
       }
-      
+
       final encryptedContent = await outputFile.readAsString();
-      
+
       // Cleanup temporary files
       await tempDir.delete(recursive: true);
       onStatus?.call('Encryption completed successfully');
-      
+
       return encryptedContent.trim();
     } catch (e) {
       _outputDebugLog('Encryption error: $e');
@@ -346,34 +346,34 @@ class CLIService {
 
   /// Legacy encrypt method for backward compatibility
   static Future<String> encryptText(
-    String text, 
-    String password, 
-    String algorithm, 
+    String text,
+    String password,
+    String algorithm,
     Map<String, Map<String, dynamic>>? hashConfig,
     Map<String, Map<String, dynamic>>? kdfConfig,
   ) async {
     return encryptTextWithProgress(text, password, algorithm, hashConfig, kdfConfig);
   }
 
-  
+
   /// Decrypt text using CLI with progress callbacks
   static Future<String> decryptTextWithProgress(
-    String encryptedData, 
+    String encryptedData,
     String password,
     {Function(String)? onProgress, Function(String)? onStatus}
   ) async {
     Directory? tempDir;
     try {
       onStatus?.call('Initializing decryption...');
-      
+
       // Create temporary input file
       tempDir = await Directory.systemTemp.createTemp('openssl_encrypt_');
       final inputFile = File('${tempDir.path}/input.txt');
       final outputFile = File('${tempDir.path}/output.txt');
-      
+
       await inputFile.writeAsString(encryptedData);
       onStatus?.call('Prepared temporary files');
-      
+
       // Build CLI command
       final args = [
         'decrypt',
@@ -381,17 +381,17 @@ class CLIService {
         '-o', outputFile.path,
         '--password', password,
       ];
-      
+
       if (debugEnabled) {
         args.add('--debug');
       }
-      
-      // Add force password for simple passwords  
+
+      // Add force password for simple passwords
       args.add('--force-password');
-      
+
       _outputDebugLog('CLI decrypt command: ${args.join(' ')}');
       onStatus?.call('Executing decryption...');
-      
+
       final result = await _runCLICommandWithProgress(
         args,
         onStdout: (line) {
@@ -404,7 +404,7 @@ class CLIService {
           onProgress?.call(line);
         },
       );
-      
+
       if (result.exitCode != 0) {
         final errorMsg = result.stderr.toString().trim();
         final stdoutMsg = result.stdout.toString().trim();
@@ -413,20 +413,20 @@ class CLIService {
         _outputDebugLog('Stdout: $stdoutMsg');
         throw Exception('Decryption failed: ${errorMsg.isNotEmpty ? errorMsg : stdoutMsg}');
       }
-      
+
       onStatus?.call('Reading decrypted output...');
-      
+
       // Read decrypted output
       if (!await outputFile.exists()) {
         throw Exception('CLI did not create output file');
       }
-      
+
       final decryptedContent = await outputFile.readAsString();
-      
+
       // Cleanup temporary files
       await tempDir.delete(recursive: true);
       onStatus?.call('Decryption completed successfully');
-      
+
       return decryptedContent.trim();
     } catch (e) {
       _outputDebugLog('Decryption error: $e');
@@ -450,17 +450,17 @@ class CLIService {
     return decryptTextWithProgress(encryptedData, password);
   }
 
-  
+
   /// Run CLI command with appropriate executable path
   static Future<ProcessResult> _runCLICommand(List<String> args) async {
     // Use Flatpak CLI path when in production
     if (await File(_cliPath).exists()) {
       return await Process.run(_cliPath, args);
     }
-    
+
     // For development, use Python module from parent directory
     final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
-    return await Process.run('python', pythonArgs, 
+    return await Process.run('python', pythonArgs,
       workingDirectory: '/home/work/private/git/openssl_encrypt');
   }
 
@@ -470,7 +470,7 @@ class CLIService {
     {Function(String)? onStdout, Function(String)? onStderr, Function(String)? onProgress}
   ) async {
     Process process;
-    
+
     // Start the process
     if (await File(_cliPath).exists()) {
       process = await Process.start(_cliPath, args);
@@ -480,36 +480,36 @@ class CLIService {
       process = await Process.start('python', pythonArgs,
         workingDirectory: '/home/work/private/git/openssl_encrypt');
     }
-    
+
     // Capture stdout and stderr streams
     final stdoutBuffer = StringBuffer();
     final stderrBuffer = StringBuffer();
-    
+
     // Listen to stdout stream
     process.stdout.transform(utf8.decoder).transform(LineSplitter()).listen((line) {
       stdoutBuffer.writeln(line);
       onStdout?.call(line);
-      
+
       // Parse progress information from CLI output
       if (line.contains('Progress:') || line.contains('%') || line.contains('Processing')) {
         onProgress?.call(line);
       }
     });
-    
-    // Listen to stderr stream  
+
+    // Listen to stderr stream
     process.stderr.transform(utf8.decoder).transform(LineSplitter()).listen((line) {
       stderrBuffer.writeln(line);
       onStderr?.call(line);
-      
+
       // Some CLI tools output progress to stderr
       if (line.contains('Progress:') || line.contains('%') || line.contains('Processing')) {
         onProgress?.call(line);
       }
     });
-    
+
     // Wait for process completion
     final exitCode = await process.exitCode;
-    
+
     // Return a ProcessResult-compatible object
     return ProcessResult(
       process.pid,
@@ -518,7 +518,7 @@ class CLIService {
       stderrBuffer.toString(),
     );
   }
-  
+
   /// Initialize debug log file
   static Future<void> _initializeDebugLogFile() async {
     if (debugEnabled && _debugLogFile == null) {
@@ -528,15 +528,15 @@ class CLIService {
           Platform.environment['HOME'] ?? '/tmp',
           'Documents'
         ));
-        
+
         final logDir = Directory(path.join(documentsDir.path, 'OpenSSL_Encrypt_Logs'));
         if (!await logDir.exists()) {
           await logDir.create(recursive: true);
         }
-        
+
         final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-').substring(0, 19);
         _debugLogFile = path.join(logDir.path, 'debug_${timestamp}.log');
-        
+
         // Write initial header
         final headerInfo = [
           '=== OpenSSL Encrypt Desktop Debug Log ===',
@@ -546,17 +546,17 @@ class CLIService {
           '==========================================',
           ''
         ];
-        
+
         final file = File(_debugLogFile!);
         await file.writeAsString(headerInfo.join('\n'));
-        
+
         outputDebugLog('Debug log file initialized: $_debugLogFile');
       } catch (e) {
         print('Failed to initialize debug log file: $e');
       }
     }
   }
-  
+
   /// Debug logging utility - internal use
   static void _outputDebugLog(String message) {
     if (debugEnabled) {
@@ -564,35 +564,35 @@ class CLIService {
       final logEntry = '[$timestamp] [CLI-SERVICE] $message';
       print(logEntry);
       _debugLogs.add(logEntry);
-      
+
       // Write to file
       _writeLogToFile(logEntry);
-      
+
       // Keep only last 100 log entries to prevent memory issues
       if (_debugLogs.length > 100) {
         _debugLogs.removeAt(0);
       }
     }
   }
-  
-  /// Public debug logging utility for other components  
+
+  /// Public debug logging utility for other components
   static void outputDebugLog(String message) {
     if (debugEnabled) {
       final timestamp = DateTime.now().toIso8601String().substring(11, 19);
       final logEntry = '[$timestamp] [DEBUG] $message';
       print(logEntry);
       _debugLogs.add(logEntry);
-      
+
       // Write to file
       _writeLogToFile(logEntry);
-      
+
       // Keep only last 100 log entries to prevent memory issues
       if (_debugLogs.length > 100) {
         _debugLogs.removeAt(0);
       }
     }
   }
-  
+
   /// Write log entry to file
   static void _writeLogToFile(String logEntry) {
     if (_debugLogFile != null) {
@@ -604,64 +604,64 @@ class CLIService {
       }
     }
   }
-  
+
   /// Get debug logs for display in UI
   static List<String> getDebugLogs() {
     return List.from(_debugLogs);
   }
-  
+
   /// Clear debug logs
   static void clearDebugLogs() {
     _debugLogs.clear();
   }
-  
+
   /// Get debug log file path
   static String? getDebugLogFile() {
     return _debugLogFile;
   }
-  
+
   /// Enable debug logging with file initialization
   static Future<void> enableDebugLogging() async {
     debugEnabled = true;
     await _initializeDebugLogFile();
   }
-  
+
   /// Disable debug logging
   static void disableDebugLogging() {
     debugEnabled = false;
     _debugLogFile = null;
   }
-  
+
   /// Detect CLI version information
   static Future<void> _detectVersion() async {
     try {
       final result = await _runCLICommand(['version']);
-      
+
       if (result.exitCode == 0) {
         final output = result.stdout.toString();
-        
+
         // Parse version output
         // Expected format: "openssl_encrypt: v1.1.0 (commit: d324c72f169aebdd2134eafb4fe06aa04692ccd3)"
         final versionRegex = RegExp(r'openssl_encrypt:\s*v([0-9.]+(?:-rc\d+)?)\s*\(commit:\s*([a-f0-9]+)\)');
         final pythonRegex = RegExp(r'Python:\s*(.+)');
         final systemRegex = RegExp(r'System:\s*(.+)');
-        
+
         final versionMatch = versionRegex.firstMatch(output);
         if (versionMatch != null) {
           _cliVersion = versionMatch.group(1);
           _gitCommit = versionMatch.group(2);
         }
-        
+
         final pythonMatch = pythonRegex.firstMatch(output);
         if (pythonMatch != null) {
           _pythonVersion = pythonMatch.group(1);
         }
-        
+
         final systemMatch = systemRegex.firstMatch(output);
         if (systemMatch != null) {
           _systemInfo = systemMatch.group(1);
         }
-        
+
         // Parse dependencies section
         _dependencies.clear();
         final lines = output.split('\n');
@@ -682,7 +682,7 @@ class CLIService {
             }
           }
         }
-        
+
         _outputDebugLog('CLI Version: $_cliVersion');
         _outputDebugLog('Git Commit: $_gitCommit');
         _outputDebugLog('Python: $_pythonVersion');
@@ -693,44 +693,44 @@ class CLIService {
       _outputDebugLog('Version detection failed: $e');
     }
   }
-  
+
   /// Get CLI version string
   static String? get cliVersion => _cliVersion;
-  
+
   /// Get git commit hash
   static String? get gitCommit => _gitCommit;
-  
+
   /// Get Python version information
   static String? get pythonVersion => _pythonVersion;
-  
+
   /// Get system information
   static String? get systemInfo => _systemInfo;
-  
+
   /// Check if running via Flatpak
   static bool get isFlatpakVersion => _isFlaspakVersion;
-  
+
   /// Get formatted version information
   static String getVersionInfo() {
     if (_cliVersion == null) {
       return 'CLI version not detected';
     }
-    
+
     String info = 'OpenSSL Encrypt CLI v$_cliVersion';
     if (_gitCommit != null) {
       info += ' (${_gitCommit!.substring(0, 8)})';
     }
     info += '\n';
-    
+
     if (_pythonVersion != null) {
       info += 'Python: $_pythonVersion\n';
     }
-    
+
     if (_systemInfo != null) {
       info += 'System: $_systemInfo\n';
     }
-    
+
     info += 'Backend: ${_isFlaspakVersion ? 'Flatpak (/app/bin/openssl-encrypt)' : 'Development (python -m openssl_encrypt.cli)'}\n';
-    
+
     // Add dependencies if available
     if (_dependencies.isNotEmpty) {
       info += '\nDependencies:\n';
@@ -738,14 +738,14 @@ class CLIService {
         info += '  $name: $version\n';
       });
     }
-    
+
     return info.trim();
   }
-  
+
   /// Compare version strings (returns true if current >= target)
   static bool isVersionAtLeast(String targetVersion) {
     if (_cliVersion == null) return false;
-    
+
     try {
       return _compareVersions(_cliVersion!, targetVersion) >= 0;
     } catch (e) {
@@ -753,37 +753,37 @@ class CLIService {
       return false;
     }
   }
-  
+
   /// Compare two version strings (returns -1, 0, or 1)
   static int _compareVersions(String version1, String version2) {
     // Remove 'rc' suffixes for comparison
     final v1Clean = version1.replaceAll(RegExp(r'-rc\d+'), '');
     final v2Clean = version2.replaceAll(RegExp(r'-rc\d+'), '');
-    
+
     final v1Parts = v1Clean.split('.').map(int.parse).toList();
     final v2Parts = v2Clean.split('.').map(int.parse).toList();
-    
+
     // Pad shorter version with zeros
     while (v1Parts.length < v2Parts.length) v1Parts.add(0);
     while (v2Parts.length < v1Parts.length) v2Parts.add(0);
-    
+
     for (int i = 0; i < v1Parts.length; i++) {
       if (v1Parts[i] < v2Parts[i]) return -1;
       if (v1Parts[i] > v2Parts[i]) return 1;
     }
-    
+
     return 0;
   }
-  
+
   /// Check if legacy algorithms should be hidden (CLI v1.2+)
   static bool shouldHideLegacyAlgorithms() {
     return isVersionAtLeast('1.2.0');
   }
-  
+
   /// Generate CLI command preview without execution
   static String previewEncryptCommand(
     String inputText,
-    String password, 
+    String password,
     String algorithm,
     Map<String, Map<String, dynamic>>? hashConfig,
     Map<String, Map<String, dynamic>>? kdfConfig,
@@ -791,11 +791,11 @@ class CLIService {
     final args = <String>[
       'encrypt',
       '-i', '[input-file]',
-      '-o', '[output-file]', 
+      '-o', '[output-file]',
       '--password', '[password]',
       '--algorithm', algorithm,
     ];
-    
+
     // Add hash configuration if provided
     if (hashConfig != null) {
       for (final entry in hashConfig.entries) {
@@ -848,7 +848,7 @@ class CLIService {
         }
       }
     }
-    
+
     // Add KDF configuration if provided
     if (kdfConfig != null) {
       for (final entry in kdfConfig.entries) {
@@ -906,14 +906,14 @@ class CLIService {
         }
       }
     }
-    
+
     if (debugEnabled) {
       args.add('--debug');
     }
-    
+
     // Add force password for simple passwords
     args.add('--force-password');
-    
+
     // Show actual command that would be executed
     String commandPrefix = '';
     if (_isFlaspakVersion) {
@@ -921,10 +921,10 @@ class CLIService {
     } else {
       commandPrefix = 'python -m openssl_encrypt.cli';
     }
-    
+
     return '$commandPrefix ${args.join(' ')}';
   }
-  
+
   /// Generate CLI command preview for decryption without execution
   static String previewDecryptCommand(String password) {
     final args = <String>[
@@ -933,14 +933,14 @@ class CLIService {
       '-o', '[output-file]',
       '--password', '[password]',
     ];
-    
+
     if (debugEnabled) {
       args.add('--debug');
     }
-    
+
     // Add force password for simple passwords
     args.add('--force-password');
-    
+
     // Show actual command that would be executed
     String commandPrefix = '';
     if (_isFlaspakVersion) {
@@ -948,7 +948,7 @@ class CLIService {
     } else {
       commandPrefix = 'python -m openssl_encrypt.cli';
     }
-    
+
     return '$commandPrefix ${args.join(' ')}';
   }
 }
@@ -958,7 +958,7 @@ class CLIConfig {
   final String algorithm;
   final Map<String, Map<String, dynamic>>? hashConfig;
   final Map<String, Map<String, dynamic>>? kdfConfig;
-  
+
   CLIConfig({
     required this.algorithm,
     this.hashConfig,

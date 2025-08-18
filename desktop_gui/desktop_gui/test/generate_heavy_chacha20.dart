@@ -5,12 +5,12 @@ import '../lib/native_crypto.dart';
 void main() async {
   await NativeCrypto.initialize();
   final cryptoFFI = CryptoFFI();
-  
+
   const password = '1234';
   const plaintext = 'Test';
-  
+
   print('🔍 Generating ChaCha20 with heavy multi-KDF config...');
-  
+
   // Heavy multi-KDF config matching the failing CLI command
   final hashConfig = {
     'sha512': {'rounds': 1000},
@@ -26,17 +26,17 @@ void main() async {
     'scrypt': {'enabled': true, 'n': 128, 'r': 8, 'p': 1, 'rounds': 2},
     'pbkdf2': {'enabled': true, 'rounds': 100}
   };
-  
+
   print('📱 Mobile ChaCha20 heavy multi-KDF encryption...');
   final mobileEncrypted = await cryptoFFI.encryptText(plaintext, password, 'chacha20-poly1305', hashConfig, kdfConfig);
-  
+
   // Save to known location
   final outputFile = File('/tmp/heavy_chacha20_test.txt');
   await outputFile.writeAsString(mobileEncrypted);
-  
+
   print('✅ Mobile encryption completed and saved to: ${outputFile.path}');
   print('📏 File size: ${await outputFile.length()} bytes');
-  
+
   // Quick self-test
   print('🔍 Mobile self-test...');
   final decrypted = await cryptoFFI.decryptText(mobileEncrypted, password);

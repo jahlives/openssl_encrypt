@@ -3,7 +3,7 @@
 set -e  # Exit on any error
 
 # Configuration
-LOCAL_REPO="./repo"
+LOCAL_REPO="/home/work/private/flatpak-shared-repo"
 BUILD_DIR="./build-dir"
 MANIFEST="com.opensslencrypt.OpenSSLEncrypt.json"
 SERVER="gitlab.rm-rf.ch"

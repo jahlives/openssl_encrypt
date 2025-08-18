@@ -18,10 +18,10 @@ void main() {
 
     // Verify that our app starts up without crashing
     expect(find.byType(MaterialApp), findsOneWidget);
-    
+
     // Look for the main navigation
     expect(find.byType(NavigationRail), findsOneWidget);
-    
+
     // Look for text encryption tab (should be selected by default)
     expect(find.text('Text'), findsOneWidget);
     expect(find.text('File'), findsOneWidget);
@@ -31,7 +31,7 @@ void main() {
 
   testWidgets('Text encryption UI elements present', (WidgetTester tester) async {
     await tester.pumpWidget(const OpenSSLEncryptApp());
-    
+
     // Check for key UI elements in the text encryption tab
     expect(find.byType(TextField), findsWidgets); // Input text field and password field
     expect(find.text('Encrypt'), findsOneWidget);
@@ -40,18 +40,18 @@ void main() {
 
   testWidgets('Navigation works', (WidgetTester tester) async {
     await tester.pumpWidget(const OpenSSLEncryptApp());
-    
+
     // Tap on File tab
     await tester.tap(find.text('File'));
     await tester.pumpAndSettle();
-    
+
     // Should see file-related UI
     expect(find.text('Select File'), findsOneWidget);
-    
-    // Tap on Settings tab  
+
+    // Tap on Settings tab
     await tester.tap(find.text('Settings'));
     await tester.pumpAndSettle();
-    
+
     // Should see settings UI
     expect(find.text('Application Settings'), findsOneWidget);
   });
