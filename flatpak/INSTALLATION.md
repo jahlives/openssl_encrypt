@@ -60,6 +60,15 @@ flatpak install --user com.opensslencrypt.OpenSSLEncrypt.flatpak
 
 ## Troubleshooting
 
+**GUI mode fails with display connection errors:**
+```bash
+# For X11 systems, allow local connections:
+xhost +local:
+
+# Then run GUI mode:
+flatpak run com.opensslencrypt.OpenSSLEncrypt --gui
+```
+
 **Permission denied downloading packages:**
 - Ensure you're logged into GitLab
 - For CLI access, create a Personal Access Token with `read_api` scope
@@ -77,3 +86,6 @@ sudo apt install flatpak
 # Add Flathub for dependencies
 flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 ```
+
+**GUI fonts look poor:**
+This is a known limitation of tkinter in Flatpak sandboxes. The functionality remains intact, but font rendering may appear basic compared to native applications.
