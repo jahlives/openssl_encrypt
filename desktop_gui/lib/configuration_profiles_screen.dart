@@ -10,7 +10,7 @@ import 'cli_service.dart';
 class ConfigurationProfilesScreen extends StatefulWidget {
   final Function(ConfigurationProfile?)? onProfileSelected;
   final bool isSelectionMode;
-
+  
   const ConfigurationProfilesScreen({
     super.key,
     this.onProfileSelected,
@@ -75,13 +75,13 @@ class _ConfigurationProfilesScreenState extends State<ConfigurationProfilesScree
     if (_searchQuery.isEmpty) {
       return _profiles.entries.toList();
     }
-
+    
     return _profiles.entries.where((entry) {
       final name = entry.key.toLowerCase();
       final profile = entry.value;
       final description = profile.description.toLowerCase();
       final algorithm = profile.algorithm.toLowerCase();
-
+      
       return name.contains(_searchQuery) ||
              description.contains(_searchQuery) ||
              algorithm.contains(_searchQuery);
@@ -249,12 +249,12 @@ class _ConfigurationProfilesScreenState extends State<ConfigurationProfilesScree
           margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
             leading: CircleAvatar(
-              backgroundColor: isActive
+              backgroundColor: isActive 
                   ? Theme.of(context).colorScheme.primary
                   : Theme.of(context).colorScheme.surfaceContainer,
               child: Icon(
                 isActive ? Icons.star : Icons.settings,
-                color: isActive
+                color: isActive 
                     ? Theme.of(context).colorScheme.onPrimary
                     : Theme.of(context).colorScheme.onSurfaceVariant,
                 size: 20,
@@ -443,12 +443,12 @@ class _ConfigurationProfilesScreenState extends State<ConfigurationProfilesScree
   Future<void> _duplicateProfile(String originalName, ConfigurationProfile profile) async {
     String newName = '$originalName (Copy)';
     int counter = 1;
-
+    
     while (_profiles.containsKey(newName)) {
       counter++;
       newName = '$originalName (Copy $counter)';
     }
-
+    
     final success = await ConfigurationProfilesService.saveProfile(newName, profile);
     if (success) {
       await _loadProfiles();
@@ -765,14 +765,14 @@ class _AutoRepeatButtonState extends State<AutoRepeatButton> {
 
   void _onPointerDown(PointerDownEvent event) {
     if (!widget.enabled) return;
-
+    
     setState(() {
       _isPressed = true;
     });
-
+    
     // Execute immediately
     widget.onAction();
-
+    
     // Start repeating after a short delay
     _repeatTimer = Timer(const Duration(milliseconds: 300), () {
       if (_isPressed && mounted) {
@@ -780,7 +780,7 @@ class _AutoRepeatButtonState extends State<AutoRepeatButton> {
       }
     });
   }
-
+  
   void _startRepeating() {
     _repeatTimer?.cancel();
     _repeatTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
@@ -819,7 +819,7 @@ class _AutoRepeatButtonState extends State<AutoRepeatButton> {
         width: widget.size,
         height: widget.size,
         decoration: BoxDecoration(
-          color: widget.enabled
+          color: widget.enabled 
               ? (_isPressed ? widget.color.shade300 : widget.color.shade100)
               : Colors.grey.shade200,
           borderRadius: BorderRadius.circular(widget.size / 2),
@@ -831,7 +831,7 @@ class _AutoRepeatButtonState extends State<AutoRepeatButton> {
         child: Icon(
           widget.icon,
           size: widget.iconSize,
-          color: widget.enabled
+          color: widget.enabled 
               ? (_isPressed ? widget.color.shade700 : widget.color)
               : Colors.grey,
         ),
@@ -942,7 +942,7 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
   late TextEditingController _descriptionController;
   String _algorithm = 'aes-gcm';
   String? _nameError;
-
+  
   // Advanced configuration
   Map<String, Map<String, dynamic>> _hashConfig = {};
   Map<String, Map<String, dynamic>> _kdfConfig = {};
@@ -954,7 +954,7 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
     _nameController = TextEditingController(text: widget.initialName ?? '');
     _descriptionController = TextEditingController(text: widget.initialProfile?.description ?? '');
     _algorithm = widget.initialProfile?.algorithm ?? 'aes-gcm';
-
+    
     // Initialize configuration from existing profile or defaults
     if (widget.initialProfile != null) {
       _hashConfig = Map<String, Map<String, dynamic>>.from(widget.initialProfile!.hashConfig);
@@ -982,13 +982,13 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
       }
     });
   }
-
+  
   void _initializeDefaultConfiguration() {
     // Initialize default hash configuration (from CLI help)
     _hashConfig = {
       'sha224': {'enabled': false, 'rounds': 1000},
       'sha256': {'enabled': true, 'rounds': 1000},
-      'sha384': {'enabled': false, 'rounds': 1000},
+      'sha384': {'enabled': false, 'rounds': 1000}, 
       'sha512': {'enabled': false, 'rounds': 1000},
       'sha3-224': {'enabled': false, 'rounds': 1000},
       'sha3-256': {'enabled': false, 'rounds': 1000},
@@ -1000,8 +1000,8 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
       'shake256': {'enabled': false, 'rounds': 1000},
       if (!CLIService.shouldHideLegacyAlgorithms()) 'whirlpool': {'enabled': false, 'rounds': 1000},
     };
-
-    // Initialize default KDF configuration
+    
+    // Initialize default KDF configuration  
     _kdfConfig = {
       'pbkdf2': {'enabled': !CLIService.shouldHideLegacyAlgorithms(), 'rounds': 100000},
       'scrypt': {'enabled': false, 'n': 16384, 'r': 8, 'p': 1, 'rounds': 1},
@@ -1071,30 +1071,30 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
                 'aes-gcm-siv',
                 'aes-ocb3',
                 'camellia',
-
+                
                 // ML-KEM (NIST Post-Quantum) algorithms
                 'ml-kem-512-hybrid',
-                'ml-kem-768-hybrid',
+                'ml-kem-768-hybrid', 
                 'ml-kem-1024-hybrid',
                 'ml-kem-512-chacha20',
                 'ml-kem-768-chacha20',
                 'ml-kem-1024-chacha20',
-
-                // Kyber (pre-NIST) algorithms
+                
+                // Kyber (pre-NIST) algorithms  
                 'kyber512-hybrid',
                 'kyber768-hybrid',
                 'kyber1024-hybrid',
-
+                
                 // HQC algorithms
                 'hqc-128-hybrid',
-                'hqc-192-hybrid',
+                'hqc-192-hybrid', 
                 'hqc-256-hybrid',
-
+                
                 // MAYO signature-based algorithms
                 'mayo-1-hybrid',
                 'mayo-3-hybrid',
                 'mayo-5-hybrid',
-
+                
                 // CROSS signature-based algorithms
                 'cross-128-hybrid',
                 'cross-192-hybrid',
@@ -1110,7 +1110,7 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
               },
             ),
             const SizedBox(height: 20),
-
+            
             // Advanced Configuration Toggle
             Card(
               elevation: 1,
@@ -1164,7 +1164,7 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
       ],
     );
   }
-
+  
   Widget _buildHashConfigSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1189,7 +1189,7 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
             final config = entry.value;
             final isEnabled = config['enabled'] as bool;
             final rounds = config['rounds'] as int;
-
+            
             return Padding(
               padding: const EdgeInsets.only(bottom: 8.0),
               child: _buildHashConfig(hashName, hashName.toUpperCase(), isEnabled, rounds),
@@ -1225,7 +1225,7 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
       ],
     );
   }
-
+  
   Widget _buildHashConfig(String hashId, String hashName, bool isEnabled, int rounds) {
     return Container(
       width: double.infinity,
@@ -1268,12 +1268,12 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
       ),
     );
   }
-
+  
   Widget _buildHashRoundsSlider(String hashId, int currentRounds) {
     int minRounds = 0;
     int maxRounds = 1000000;
     int clampedRounds = currentRounds.clamp(minRounds, maxRounds);
-
+    
     return Row(
       children: [
         const SizedBox(width: 60, child: Text('Rounds:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500))),
@@ -1326,7 +1326,7 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
       ],
     );
   }
-
+  
   Widget _buildKdfConfigSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1339,29 +1339,29 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
           ],
         ),
         const SizedBox(height: 8),
-
+        
         // PBKDF2 Panel (hidden in CLI v1.2+)
         if (!CLIService.shouldHideLegacyAlgorithms()) ...[
           _buildPBKDF2Panel(),
           const SizedBox(height: 8),
         ],
-
-        // Argon2 Panel
+        
+        // Argon2 Panel  
         _buildArgon2Panel(),
         const SizedBox(height: 8),
-
+        
         // Scrypt Panel
         _buildScryptPanel(),
         const SizedBox(height: 8),
-
+        
         // HKDF Panel
         _buildHKDFPanel(),
         const SizedBox(height: 8),
-
+        
         // Balloon Panel
         _buildBalloonPanel(),
         const SizedBox(height: 8),
-
+        
         // Quick presets
         Row(
           children: [
@@ -1396,12 +1396,12 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
       ],
     );
   }
-
+  
   /// Build PBKDF2 configuration panel
   Widget _buildPBKDF2Panel() {
     final config = _kdfConfig['pbkdf2'] ?? {'enabled': true, 'rounds': 100000};
     final enabled = config['enabled'] ?? false;
-
+    
     return Card(
       color: enabled ? Theme.of(context).colorScheme.primaryContainer : Theme.of(context).colorScheme.surfaceContainer,
       child: Padding(
@@ -1478,7 +1478,7 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
       'rounds': 10,
     };
     final enabled = config['enabled'] ?? false;
-
+    
     return Card(
       color: enabled ? Theme.of(context).colorScheme.secondaryContainer : Theme.of(context).colorScheme.surfaceContainer,
       child: Padding(
@@ -1522,13 +1522,13 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
 
   List<Widget> _buildArgon2Parameters(Map<String, dynamic> config) {
     return [
-      _buildKDFSlider('Time Cost', config['time_cost'] ?? 3, 1, 1000, (v) =>
+      _buildKDFSlider('Time Cost', config['time_cost'] ?? 3, 1, 1000, (v) => 
         setState(() => _kdfConfig['argon2']!['time_cost'] = v)),
-      _buildKDFSlider('Memory (MB)', ((config['memory_cost'] ?? 65536) / 1024).round(), 1, 1024, (v) =>
+      _buildKDFSlider('Memory (MB)', ((config['memory_cost'] ?? 65536) / 1024).round(), 1, 1024, (v) => 
         setState(() => _kdfConfig['argon2']!['memory_cost'] = v * 1024)),
-      _buildKDFSlider('Parallelism', config['parallelism'] ?? 4, 1, 16, (v) =>
+      _buildKDFSlider('Parallelism', config['parallelism'] ?? 4, 1, 16, (v) => 
         setState(() => _kdfConfig['argon2']!['parallelism'] = v)),
-      _buildKDFSlider('Rounds', config['rounds'] ?? 10, 0, 1000000, (v) =>
+      _buildKDFSlider('Rounds', config['rounds'] ?? 10, 0, 1000000, (v) => 
         setState(() => _kdfConfig['argon2']!['rounds'] = v)),
     ];
   }
@@ -1543,7 +1543,7 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
       'rounds': 10,
     };
     final enabled = config['enabled'] ?? false;
-
+    
     return Card(
       color: enabled ? Theme.of(context).colorScheme.tertiaryContainer : Theme.of(context).colorScheme.surfaceContainer,
       child: Padding(
@@ -1587,13 +1587,13 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
 
   List<Widget> _buildScryptParameters(Map<String, dynamic> config) {
     return [
-      _buildKDFSlider('N (CPU/Memory)', (config['n'] ?? 16384) ~/ 1024, 1, 1024, (v) =>
+      _buildKDFSlider('N (CPU/Memory)', (config['n'] ?? 16384) ~/ 1024, 1, 1024, (v) => 
         setState(() => _kdfConfig['scrypt']!['n'] = v * 1024)),
-      _buildKDFSlider('R (Block Size)', config['r'] ?? 8, 1, 32, (v) =>
+      _buildKDFSlider('R (Block Size)', config['r'] ?? 8, 1, 32, (v) => 
         setState(() => _kdfConfig['scrypt']!['r'] = v)),
-      _buildKDFSlider('P (Parallelism)', config['p'] ?? 1, 1, 16, (v) =>
+      _buildKDFSlider('P (Parallelism)', config['p'] ?? 1, 1, 16, (v) => 
         setState(() => _kdfConfig['scrypt']!['p'] = v)),
-      _buildKDFSlider('Rounds', config['rounds'] ?? 10, 0, 1000000, (v) =>
+      _buildKDFSlider('Rounds', config['rounds'] ?? 10, 0, 1000000, (v) => 
         setState(() => _kdfConfig['scrypt']!['rounds'] = v)),
     ];
   }
@@ -1606,7 +1606,7 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
       'info': 'openssl_encrypt_hkdf',
     };
     final enabled = config['enabled'] ?? false;
-
+    
     return Card(
       color: enabled ? Theme.of(context).colorScheme.tertiaryContainer : Theme.of(context).colorScheme.surfaceContainer,
       child: Padding(
@@ -1640,7 +1640,7 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
             ),
             if (enabled) ...[
               const SizedBox(height: 8),
-              _buildKDFSlider('Rounds', config['rounds'] ?? 1, 0, 1000000, (v) =>
+              _buildKDFSlider('Rounds', config['rounds'] ?? 1, 0, 1000000, (v) => 
                 setState(() => _kdfConfig['hkdf']!['rounds'] = v)),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -1674,7 +1674,7 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
       'hash_len': 32,
     };
     final enabled = config['enabled'] ?? false;
-
+    
     return Card(
       color: enabled ? Theme.of(context).colorScheme.errorContainer : Theme.of(context).colorScheme.surfaceContainer,
       child: Padding(
@@ -1718,15 +1718,15 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
 
   List<Widget> _buildBalloonParameters(Map<String, dynamic> config) {
     return [
-      _buildKDFSlider('Time Cost', config['time_cost'] ?? 3, 1, 1000, (v) =>
+      _buildKDFSlider('Time Cost', config['time_cost'] ?? 3, 1, 1000, (v) => 
         setState(() => _kdfConfig['balloon']!['time_cost'] = v)),
-      _buildKDFSlider('Space Cost (KB)', ((config['space_cost'] ?? 65536) / 1024).round(), 1, 1024, (v) =>
+      _buildKDFSlider('Space Cost (KB)', ((config['space_cost'] ?? 65536) / 1024).round(), 1, 1024, (v) => 
         setState(() => _kdfConfig['balloon']!['space_cost'] = v * 1024)),
-      _buildKDFSlider('Parallelism', config['parallelism'] ?? 4, 1, 16, (v) =>
+      _buildKDFSlider('Parallelism', config['parallelism'] ?? 4, 1, 16, (v) => 
         setState(() => _kdfConfig['balloon']!['parallelism'] = v)),
-      _buildKDFSlider('Rounds', config['rounds'] ?? 2, 0, 1000000, (v) =>
+      _buildKDFSlider('Rounds', config['rounds'] ?? 2, 0, 1000000, (v) => 
         setState(() => _kdfConfig['balloon']!['rounds'] = v)),
-      _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 128, (v) =>
+      _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 128, (v) => 
         setState(() => _kdfConfig['balloon']!['hash_len'] = v)),
     ];
   }

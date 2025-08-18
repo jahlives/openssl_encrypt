@@ -30,6 +30,9 @@ class CLIService {
         _isFlaspakVersion = true;
         await _detectFlatpakBranch();
         await _detectVersion();
+        print('=== CLI Backend Initialized ===');
+        print(getVersionInfo());
+        print('===============================');
         return true;
       }
 
@@ -41,6 +44,9 @@ class CLIService {
           _outputDebugLog('CLI found via development path');
           _isFlaspakVersion = false;
           await _detectVersion();
+          print('=== CLI Backend Initialized ===');
+          print(getVersionInfo());
+          print('===============================');
           return true;
         }
       } catch (e) {
@@ -727,78 +733,6 @@ class CLIService {
     _debugLogFile = null;
   }
 
-  /// Detect current Flatpak branch from environment or process info
-  static Future<void> _detectFlatpakBranch() async {
-    try {
-      _outputDebugLog('=== Starting Flatpak branch detection ===');
-
-      // Try to detect branch from FLATPAK_DEST environment variable
-      String? flatpakDest = Platform.environment['FLATPAK_DEST'];
-      if (flatpakDest != null && flatpakDest.contains('app/com.opensslencrypt.OpenSSLEncrypt')) {
-        _outputDebugLog('FLATPAK_DEST found: $flatpakDest');
-      } else {
-        _outputDebugLog('FLATPAK_DEST not found or not relevant: $flatpakDest');
-      }
-
-      // Try to detect from process command line by checking parent processes
-      try {
-        _outputDebugLog('Running flatpak ps to detect branch...');
-        final result = await Process.run('flatpak', ['ps'], runInShell: true);
-        _outputDebugLog('flatpak ps exit code: ${result.exitCode}');
-
-        if (result.exitCode == 0) {
-          final output = result.stdout.toString();
-          _outputDebugLog('flatpak ps output:\n$output');
-          final lines = output.split('\n');
-
-          for (final line in lines) {
-            _outputDebugLog('Checking line: $line');
-            if (line.contains('com.opensslencrypt.OpenSSLEncrypt')) {
-              _outputDebugLog('Found matching line: $line');
-              // Look for branch in format: com.opensslencrypt.OpenSSLEncrypt//branch
-              final branchMatch = RegExp(r'com\.opensslencrypt\.OpenSSLEncrypt//([^\s]+)').firstMatch(line);
-              if (branchMatch != null) {
-                _flatpakBranch = branchMatch.group(1);
-                _outputDebugLog('SUCCESS: Detected Flatpak branch: $_flatpakBranch');
-                return;
-              } else {
-                _outputDebugLog('Line contains app ID but no branch detected');
-              }
-            }
-          }
-          _outputDebugLog('No matching lines found in flatpak ps output');
-        } else {
-          _outputDebugLog('flatpak ps failed with stderr: ${result.stderr}');
-        }
-      } catch (e) {
-        _outputDebugLog('Failed to detect branch from flatpak ps: $e');
-      }
-
-      // Fallback: try to detect from process environment
-      try {
-        final procSelfCmdline = await File('/proc/self/cmdline').readAsString();
-        final cmdlineArgs = procSelfCmdline.split('\x00');
-
-        for (final arg in cmdlineArgs) {
-          if (arg.contains('com.opensslencrypt.OpenSSLEncrypt//')) {
-            final branchMatch = RegExp(r'com\.opensslencrypt\.OpenSSLEncrypt//([^\s/]+)').firstMatch(arg);
-            if (branchMatch != null) {
-              _flatpakBranch = branchMatch.group(1);
-              _outputDebugLog('Detected Flatpak branch from cmdline: $_flatpakBranch');
-              return;
-            }
-          }
-        }
-      } catch (e) {
-        _outputDebugLog('Failed to read /proc/self/cmdline: $e');
-      }
-
-      _outputDebugLog('=== No specific Flatpak branch detected, using default ===');
-    } catch (e) {
-      _outputDebugLog('=== Flatpak branch detection failed: $e ===');
-    }
-  }
-
   /// Detect CLI version information
   static Future<void> _detectVersion() async {
     try {
@@ -858,6 +792,63 @@ class CLIService {
       }
     } catch (e) {
       _outputDebugLog('Version detection failed: $e');
+    }
+  }
+
+  /// Detect current Flatpak branch from environment or process info
+  static Future<void> _detectFlatpakBranch() async {
+    try {
+      // Try to detect branch from FLATPAK_DEST environment variable
+      String? flatpakDest = Platform.environment['FLATPAK_DEST'];
+      if (flatpakDest != null && flatpakDest.contains('app/com.opensslencrypt.OpenSSLEncrypt')) {
+        _outputDebugLog('FLATPAK_DEST: $flatpakDest');
+      }
+
+      // Try to detect from process command line by checking parent processes
+      try {
+        final result = await Process.run('flatpak', ['ps', '--columns=application,branch'], runInShell: true);
+        if (result.exitCode == 0) {
+          final output = result.stdout.toString();
+          final lines = output.split('\n');
+
+          for (final line in lines) {
+            if (line.contains('com.opensslencrypt.OpenSSLEncrypt')) {
+              // Parse format: "com.opensslencrypt.OpenSSLEncrypt	branch"
+              final parts = line.split('\t');
+              if (parts.length >= 2 && parts[0].trim() == 'com.opensslencrypt.OpenSSLEncrypt') {
+                _flatpakBranch = parts[1].trim();
+                _outputDebugLog('Detected Flatpak branch: $_flatpakBranch');
+                return;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        _outputDebugLog('Failed to detect branch from flatpak ps: $e');
+      }
+
+      // Fallback: try to detect from process environment
+      try {
+        final procSelfCmdline = await File('/proc/self/cmdline').readAsString();
+        final cmdlineArgs = procSelfCmdline.split('\x00');
+
+        for (final arg in cmdlineArgs) {
+          if (arg.contains('com.opensslencrypt.OpenSSLEncrypt//')) {
+            final branchMatch = RegExp(r'com\.opensslencrypt\.OpenSSLEncrypt//([^\s/]+)').firstMatch(arg);
+            if (branchMatch != null) {
+              _flatpakBranch = branchMatch.group(1);
+              _outputDebugLog('Detected Flatpak branch from cmdline: $_flatpakBranch');
+              return;
+            }
+          }
+        }
+      } catch (e) {
+        _outputDebugLog('Failed to read /proc/self/cmdline: $e');
+      }
+
+      _outputDebugLog('No specific Flatpak branch detected, using default');
+    } catch (e) {
+      _outputDebugLog('Flatpak branch detection failed: $e');
     }
   }
 
