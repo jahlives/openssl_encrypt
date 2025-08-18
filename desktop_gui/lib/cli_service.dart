@@ -299,8 +299,11 @@ class CLIService {
       // Add force password for simple passwords
       args.add('--force-password');
 
-      _outputDebugLog('CLI encrypt command: ${args.join(' ')}');
-      onStatus?.call('Executing encryption...');
+      final maskedCommand = _getMaskedCommand(args);
+      _outputDebugLog('=== CLI ENCRYPT COMMAND ===');
+      _outputDebugLog('Full command: $maskedCommand');
+      _outputDebugLog('Raw args: ${args.join(' ')}');
+      onStatus?.call('Executing: $maskedCommand');
 
       final result = await _runCLICommandWithProgress(
         args,
@@ -321,7 +324,7 @@ class CLIService {
         _outputDebugLog('CLI encryption failed. Exit code: ${result.exitCode}');
         _outputDebugLog('Stderr: $errorMsg');
         _outputDebugLog('Stdout: $stdoutMsg');
-        throw Exception('Encryption failed: ${errorMsg.isNotEmpty ? errorMsg : stdoutMsg}');
+        throw Exception('Encryption failed: ${errorMsg.isNotEmpty ? errorMsg : stdoutMsg}\n\nCommand executed: $maskedCommand');
       }
 
       onStatus?.call('Reading encrypted output...');
@@ -401,8 +404,11 @@ class CLIService {
       // Add force password for simple passwords
       args.add('--force-password');
 
-      _outputDebugLog('CLI decrypt command: ${args.join(' ')}');
-      onStatus?.call('Executing decryption...');
+      final maskedCommand = _getMaskedCommand(args);
+      _outputDebugLog('=== CLI DECRYPT COMMAND ===');
+      _outputDebugLog('Full command: $maskedCommand');
+      _outputDebugLog('Raw args: ${args.join(' ')}');
+      onStatus?.call('Executing: $maskedCommand');
 
       final result = await _runCLICommandWithProgress(
         args,
@@ -423,7 +429,7 @@ class CLIService {
         _outputDebugLog('CLI decryption failed. Exit code: ${result.exitCode}');
         _outputDebugLog('Stderr: $errorMsg');
         _outputDebugLog('Stdout: $stdoutMsg');
-        throw Exception('Decryption failed: ${errorMsg.isNotEmpty ? errorMsg : stdoutMsg}');
+        throw Exception('Decryption failed: ${errorMsg.isNotEmpty ? errorMsg : stdoutMsg}\n\nCommand executed: $maskedCommand');
       }
 
       onStatus?.call('Reading decrypted output...');
@@ -465,15 +471,24 @@ class CLIService {
 
   /// Run CLI command with appropriate executable path
   static Future<ProcessResult> _runCLICommand(List<String> args) async {
-    // Use Flatpak CLI path when in production
+    // Prefer development CLI when available due to Flatpak post-quantum issues
+    try {
+      final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
+      final result = await Process.run('python', pythonArgs,
+        workingDirectory: '/home/work/private/git/openssl_encrypt');
+      _outputDebugLog('Using development CLI (python module)');
+      return result;
+    } catch (e) {
+      _outputDebugLog('Development CLI unavailable: $e, trying Flatpak CLI');
+    }
+
+    // Fallback to Flatpak CLI when development CLI is unavailable
     if (await File(_cliPath).exists()) {
+      _outputDebugLog('Using Flatpak CLI');
       return await Process.run(_cliPath, args);
     }
 
-    // For development, use Python module from parent directory
-    final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
-    return await Process.run('python', pythonArgs,
-      workingDirectory: '/home/work/private/git/openssl_encrypt');
+    throw Exception('No CLI available');
   }
 
   /// Run CLI command with real-time progress streaming
@@ -483,14 +498,21 @@ class CLIService {
   ) async {
     Process process;
 
-    // Start the process
-    if (await File(_cliPath).exists()) {
-      process = await Process.start(_cliPath, args);
-    } else {
-      // For development, use Python module from parent directory
+    // Prefer development CLI when available due to Flatpak post-quantum issues
+    try {
       final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
       process = await Process.start('python', pythonArgs,
         workingDirectory: '/home/work/private/git/openssl_encrypt');
+      _outputDebugLog('Using development CLI with progress (python module)');
+    } catch (e) {
+      _outputDebugLog('Development CLI unavailable: $e, trying Flatpak CLI with progress');
+      // Fallback to Flatpak CLI
+      if (await File(_cliPath).exists()) {
+        process = await Process.start(_cliPath, args);
+        _outputDebugLog('Using Flatpak CLI with progress');
+      } else {
+        throw Exception('No CLI available');
+      }
     }
 
     // Capture stdout and stderr streams
@@ -974,6 +996,31 @@ class CLIService {
     }
 
     return '$commandPrefix ${args.join(' ')}';
+  }
+
+  /// Generate copy-pasteable CLI command with masked password
+  static String _getMaskedCommand(List<String> args) {
+    // Determine command prefix
+    String commandPrefix = '';
+    if (_isFlaspakVersion) {
+      commandPrefix = 'flatpak run com.opensslencrypt.OpenSSLEncrypt';
+    } else {
+      commandPrefix = 'python -m openssl_encrypt.cli';
+    }
+
+    // Create masked args by replacing password values with asterisks
+    final maskedArgs = <String>[];
+    for (int i = 0; i < args.length; i++) {
+      if (args[i] == '--password' && i + 1 < args.length) {
+        maskedArgs.add(args[i]);
+        maskedArgs.add('****');
+        i++; // Skip the actual password value
+      } else {
+        maskedArgs.add(args[i]);
+      }
+    }
+
+    return '$commandPrefix ${maskedArgs.join(' ')}';
   }
 
   /// Check if algorithm is post-quantum
