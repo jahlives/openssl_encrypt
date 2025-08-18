@@ -473,19 +473,49 @@ class CLIService {
   static Future<ProcessResult> _runCLICommand(List<String> args) async {
     // Prefer development CLI when available due to Flatpak post-quantum issues
     try {
+      final pythonCmd = '/usr/bin/python';  // Use the python that has pip install -e .
       final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
-      final result = await Process.run('python', pythonArgs,
-        workingDirectory: '/home/work/private/git/openssl_encrypt');
-      _outputDebugLog('Using development CLI (python module)');
+
+      _outputDebugLog('Attempting development CLI: $pythonCmd ${pythonArgs.join(' ')}');
+      _outputDebugLog('Working directory: /home/work/private/git/openssl_encrypt');
+
+      // Check if input file exists before calling CLI
+      for (int i = 0; i < args.length; i++) {
+        if (args[i] == '-i' && i + 1 < args.length) {
+          final inputFile = File(args[i + 1]);
+          final exists = await inputFile.exists();
+          final size = exists ? await inputFile.length() : 0;
+          _outputDebugLog('Input file ${args[i + 1]}: exists=$exists, size=${size}bytes');
+          break;
+        }
+      }
+
+      // Add environment debugging
+      final env = Map<String, String>.from(Platform.environment);
+      _outputDebugLog('Environment PATH: ${env['PATH']}');
+      _outputDebugLog('Environment LD_LIBRARY_PATH: ${env['LD_LIBRARY_PATH'] ?? 'not set'}');
+      _outputDebugLog('Environment PYTHONPATH: ${env['PYTHONPATH'] ?? 'not set'}');
+
+      final result = await Process.run(pythonCmd, pythonArgs,
+        workingDirectory: '/home/work/private/git/openssl_encrypt',
+        environment: env);
+
+      _outputDebugLog('Development CLI exit code: ${result.exitCode}');
+      _outputDebugLog('Development CLI stdout: ${result.stdout}');
+      _outputDebugLog('Development CLI stderr: ${result.stderr}');
+
       return result;
     } catch (e) {
-      _outputDebugLog('Development CLI unavailable: $e, trying Flatpak CLI');
+      _outputDebugLog('Development CLI exception: $e');
+      _outputDebugLog('Falling back to Flatpak CLI');
     }
 
     // Fallback to Flatpak CLI when development CLI is unavailable
     if (await File(_cliPath).exists()) {
-      _outputDebugLog('Using Flatpak CLI');
-      return await Process.run(_cliPath, args);
+      _outputDebugLog('Using Flatpak CLI: $_cliPath ${args.join(' ')}');
+      final result = await Process.run(_cliPath, args);
+      _outputDebugLog('Flatpak CLI exit code: ${result.exitCode}');
+      return result;
     }
 
     throw Exception('No CLI available');
@@ -500,8 +530,9 @@ class CLIService {
 
     // Prefer development CLI when available due to Flatpak post-quantum issues
     try {
+      final pythonCmd = '/usr/bin/python';  // Use the python that has pip install -e .
       final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
-      process = await Process.start('python', pythonArgs,
+      process = await Process.start(pythonCmd, pythonArgs,
         workingDirectory: '/home/work/private/git/openssl_encrypt');
       _outputDebugLog('Using development CLI with progress (python module)');
     } catch (e) {

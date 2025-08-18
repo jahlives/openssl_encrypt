@@ -9,6 +9,7 @@
     "--socket=x11",
     "--socket=wayland",
     "--device=dri",
+    "--device=all",
     "--filesystem=host",
     "--filesystem=xdg-run/at-spi",
     "--talk-name=org.freedesktop.FileManager1",
@@ -52,7 +53,8 @@
         "-DBUILD_SHARED_LIBS=ON",
         "-DOQS_BUILD_ONLY_LIB=ON",
         "-DOQS_DIST_BUILD=ON",
-        "-DOQS_USE_OPENSSL=ON"
+        "-DOQS_USE_OPENSSL=ON",
+        "-DCMAKE_C_FLAGS=-DOQS_HAVE_GETENTROPY"
       ],
       "sources": [
         {
@@ -100,7 +102,7 @@
       ],
       "sources": [
         {
-          "type": "dir", 
+          "type": "dir",
           "path": ".."
         }
       ]
