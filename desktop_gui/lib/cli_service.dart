@@ -473,10 +473,9 @@ class CLIService {
   static Future<ProcessResult> _runCLICommand(List<String> args) async {
     // Prefer development CLI when available due to Flatpak post-quantum issues
     try {
-      final pythonCmd = '/usr/bin/python';  // Use the python that has pip install -e .
       final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
 
-      _outputDebugLog('Attempting development CLI: $pythonCmd ${pythonArgs.join(' ')}');
+      _outputDebugLog('Attempting development CLI: python ${pythonArgs.join(' ')}');
       _outputDebugLog('Working directory: /home/work/private/git/openssl_encrypt');
 
       // Check if input file exists before calling CLI
@@ -496,7 +495,7 @@ class CLIService {
       _outputDebugLog('Environment LD_LIBRARY_PATH: ${env['LD_LIBRARY_PATH'] ?? 'not set'}');
       _outputDebugLog('Environment PYTHONPATH: ${env['PYTHONPATH'] ?? 'not set'}');
 
-      final result = await Process.run(pythonCmd, pythonArgs,
+      final result = await Process.run('python', pythonArgs,
         workingDirectory: '/home/work/private/git/openssl_encrypt',
         environment: env);
 
@@ -530,9 +529,8 @@ class CLIService {
 
     // Prefer development CLI when available due to Flatpak post-quantum issues
     try {
-      final pythonCmd = '/usr/bin/python';  // Use the python that has pip install -e .
       final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
-      process = await Process.start(pythonCmd, pythonArgs,
+      process = await Process.start('python', pythonArgs,
         workingDirectory: '/home/work/private/git/openssl_encrypt');
       _outputDebugLog('Using development CLI with progress (python module)');
     } catch (e) {
@@ -1031,8 +1029,13 @@ class CLIService {
 
   /// Generate copy-pasteable CLI command with masked password
   static String _getMaskedCommand(List<String> args) {
-    // Use same priority logic as actual CLI execution
-    String commandPrefix = 'python -m openssl_encrypt.cli';
+    // Determine command prefix
+    String commandPrefix = '';
+    if (_isFlaspakVersion) {
+      commandPrefix = 'flatpak run com.opensslencrypt.OpenSSLEncrypt';
+    } else {
+      commandPrefix = 'python -m openssl_encrypt.cli';
+    }
 
     // Create masked args by replacing password values with asterisks
     final maskedArgs = <String>[];
