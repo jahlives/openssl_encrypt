@@ -8,6 +8,7 @@ import 'package:path/path.dart' as path;
 /// Replaces all pure Dart crypto implementations
 class CLIService {
   static const String _cliPath = '/app/bin/openssl-encrypt'; // Flatpak CLI path
+  static String? _flatpakBranch; // Detected Flatpak branch
 
   static bool debugEnabled = false;
   static String? _cliVersion;
@@ -27,6 +28,7 @@ class CLIService {
       if (await File(_cliPath).exists()) {
         _outputDebugLog('CLI found at: $_cliPath');
         _isFlaspakVersion = true;
+        await _detectFlatpakBranch();
         await _detectVersion();
         return true;
       }
@@ -511,8 +513,19 @@ class CLIService {
 
     // Fallback to Flatpak CLI when development CLI is unavailable
     if (await File(_cliPath).exists()) {
-      _outputDebugLog('Using Flatpak CLI: $_cliPath ${args.join(' ')}');
-      final result = await Process.run(_cliPath, args);
+      ProcessResult result;
+
+      if (_flatpakBranch != null) {
+        // Use detected Flatpak branch to ensure version consistency
+        final flatpakCommand = 'flatpak run com.opensslencrypt.OpenSSLEncrypt//$_flatpakBranch';
+        _outputDebugLog('Using Flatpak CLI with branch: $flatpakCommand ${args.join(' ')}');
+        result = await Process.run('flatpak', ['run', 'com.opensslencrypt.OpenSSLEncrypt//$_flatpakBranch', ...args]);
+      } else {
+        // Fallback to direct CLI path if no branch detected
+        _outputDebugLog('Using Flatpak CLI (direct): $_cliPath ${args.join(' ')}');
+        result = await Process.run(_cliPath, args);
+      }
+
       _outputDebugLog('Flatpak CLI exit code: ${result.exitCode}');
       return result;
     }
@@ -703,6 +716,63 @@ class CLIService {
     _debugLogFile = null;
   }
 
+  /// Detect current Flatpak branch from environment or process info
+  static Future<void> _detectFlatpakBranch() async {
+    try {
+      // Try to detect branch from FLATPAK_DEST environment variable
+      String? flatpakDest = Platform.environment['FLATPAK_DEST'];
+      if (flatpakDest != null && flatpakDest.contains('app/com.opensslencrypt.OpenSSLEncrypt')) {
+        _outputDebugLog('FLATPAK_DEST: $flatpakDest');
+      }
+
+      // Try to detect from process command line by checking parent processes
+      try {
+        final result = await Process.run('flatpak', ['ps'], runInShell: true);
+        if (result.exitCode == 0) {
+          final output = result.stdout.toString();
+          final lines = output.split('\n');
+
+          for (final line in lines) {
+            if (line.contains('com.opensslencrypt.OpenSSLEncrypt')) {
+              // Look for branch in format: com.opensslencrypt.OpenSSLEncrypt//branch
+              final branchMatch = RegExp(r'com\.opensslencrypt\.OpenSSLEncrypt//([^\s]+)').firstMatch(line);
+              if (branchMatch != null) {
+                _flatpakBranch = branchMatch.group(1);
+                _outputDebugLog('Detected Flatpak branch: $_flatpakBranch');
+                return;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        _outputDebugLog('Failed to detect branch from flatpak ps: $e');
+      }
+
+      // Fallback: try to detect from process environment
+      try {
+        final procSelfCmdline = await File('/proc/self/cmdline').readAsString();
+        final cmdlineArgs = procSelfCmdline.split('\x00');
+
+        for (final arg in cmdlineArgs) {
+          if (arg.contains('com.opensslencrypt.OpenSSLEncrypt//')) {
+            final branchMatch = RegExp(r'com\.opensslencrypt\.OpenSSLEncrypt//([^\s/]+)').firstMatch(arg);
+            if (branchMatch != null) {
+              _flatpakBranch = branchMatch.group(1);
+              _outputDebugLog('Detected Flatpak branch from cmdline: $_flatpakBranch');
+              return;
+            }
+          }
+        }
+      } catch (e) {
+        _outputDebugLog('Failed to read /proc/self/cmdline: $e');
+      }
+
+      _outputDebugLog('No specific Flatpak branch detected, using default');
+    } catch (e) {
+      _outputDebugLog('Flatpak branch detection failed: $e');
+    }
+  }
+
   /// Detect CLI version information
   static Future<void> _detectVersion() async {
     try {
@@ -800,7 +870,12 @@ class CLIService {
       info += 'System: $_systemInfo\n';
     }
 
-    info += 'Backend: ${_isFlaspakVersion ? 'Flatpak (/app/bin/openssl-encrypt)' : 'Development (python -m openssl_encrypt.cli)'}\n';
+    String backendInfo = _isFlaspakVersion
+        ? (_flatpakBranch != null
+            ? 'Flatpak (com.opensslencrypt.OpenSSLEncrypt//$_flatpakBranch)'
+            : 'Flatpak (/app/bin/openssl-encrypt)')
+        : 'Development (python -m openssl_encrypt.cli)';
+    info += 'Backend: $backendInfo\n';
 
     // Add dependencies if available
     if (_dependencies.isNotEmpty) {
