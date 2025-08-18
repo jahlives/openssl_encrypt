@@ -1000,13 +1000,8 @@ class CLIService {
 
   /// Generate copy-pasteable CLI command with masked password
   static String _getMaskedCommand(List<String> args) {
-    // Determine command prefix
-    String commandPrefix = '';
-    if (_isFlaspakVersion) {
-      commandPrefix = 'flatpak run com.opensslencrypt.OpenSSLEncrypt';
-    } else {
-      commandPrefix = 'python -m openssl_encrypt.cli';
-    }
+    // Use same priority logic as actual CLI execution
+    String commandPrefix = 'python -m openssl_encrypt.cli';
 
     // Create masked args by replacing password values with asterisks
     final maskedArgs = <String>[];
