@@ -542,7 +542,7 @@ class PQCipher:
         if self.debug:
             logger = logging.getLogger(__name__)
             logger.debug(f"ENCRYPT:PQC_KEM Algorithm: {self.algorithm_name}")
-            logger.debug(f"ENCRYPT:PQC_KEM Public key length: {len(public_key)} bytes") 
+            logger.debug(f"ENCRYPT:PQC_KEM Public key length: {len(public_key)} bytes")
             logger.debug(f"ENCRYPT:PQC_KEM Input data length: {len(data)} bytes")
             logger.debug(f"ENCRYPT:PQC_KEM Symmetric encryption: {self.encryption_data}")
 
@@ -670,7 +670,7 @@ class PQCipher:
                     plaintext = encrypted_data[len(test_data_header) :]
                     # Quiet success
                     return plaintext
-                
+
                 # Check for TESTDATA format before attempting to split encrypted data
                 if encrypted_data.startswith(b"TESTDATA"):
                     # In test environment with negative test patterns, we should prevent recovery
@@ -692,11 +692,11 @@ class PQCipher:
                         raise ValueError(
                             "Security validation: TESTDATA recovery blocked in negative test case"
                         )
-                    
+
                     # Handle TESTDATA format - extract the test data
                     data_len_bytes = encrypted_data[8:12]
                     data_len = int.from_bytes(data_len_bytes, byteorder="big")
-                    
+
                     if 0 <= data_len <= len(encrypted_data) - 12:
                         plaintext = encrypted_data[12 : 12 + data_len]
                         return plaintext
