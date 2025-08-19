@@ -236,7 +236,16 @@
             "ml-kem-1024-hybrid",
             "kyber512-hybrid",
             "kyber768-hybrid",
-            "kyber1024-hybrid"
+            "kyber1024-hybrid",
+            "hqc-128-hybrid",
+            "hqc-192-hybrid",
+            "hqc-256-hybrid",
+            "cross-128-hybrid",
+            "cross-192-hybrid",
+            "cross-256-hybrid",
+            "mayo-1-hybrid",
+            "mayo-3-hybrid",
+            "mayo-5-hybrid"
           ],
           "description": "Encryption algorithm used"
         },
