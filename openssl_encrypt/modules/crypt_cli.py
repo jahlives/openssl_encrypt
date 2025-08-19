@@ -268,8 +268,12 @@ def debug_hash_config(args, hash_config, message="Hash configuration"):
     logger.debug(
         f"SHA3-256: args={args.sha3_256_rounds}, hash_config={hash_config.get('sha3_256', 'Not set')}"
     )
-    logger.debug(f"SHA-512: args={args.sha512_rounds}, hash_config={hash_config.get('sha512', 'Not set')}")
-    logger.debug(f"SHA-256: args={args.sha256_rounds}, hash_config={hash_config.get('sha256', 'Not set')}")
+    logger.debug(
+        f"SHA-512: args={args.sha512_rounds}, hash_config={hash_config.get('sha512', 'Not set')}"
+    )
+    logger.debug(
+        f"SHA-256: args={args.sha256_rounds}, hash_config={hash_config.get('sha256', 'Not set')}"
+    )
     logger.debug(
         f"BLAKE2b: args={args.blake2b_rounds}, hash_config={hash_config.get('blake2b', 'Not set')}"
     )
@@ -361,20 +365,27 @@ def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
     if not template_name or not isinstance(template_name, str):
         print("Error: Invalid template name provided")
         sys.exit(1)
-    
+
     # Remove any path separators and parent directory references
     safe_template_name = os.path.basename(template_name)
-    
+
     # Additional check for path traversal attempts
-    if ".." in template_name or os.sep in template_name or "/" in template_name or "\\" in template_name:
-        print(f"Error: Invalid template name '{template_name}'. Template names cannot contain path separators or parent directory references.")
+    if (
+        ".." in template_name
+        or os.sep in template_name
+        or "/" in template_name
+        or "\\" in template_name
+    ):
+        print(
+            f"Error: Invalid template name '{template_name}'. Template names cannot contain path separators or parent directory references."
+        )
         sys.exit(1)
-    
+
     # Ensure the cleaned name is not empty
     if not safe_template_name:
         print("Error: Empty template name after security validation")
         sys.exit(1)
-    
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
     # Move up one level from the modules directory to the project root
@@ -386,22 +397,26 @@ def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
     # Try different extensions
     for ext in [".json", ".yaml", ".yml"]:
         template_path = os.path.join(template_dir, safe_template_name + ext)
-        
+
         # Additional security check: ensure the resolved path is still within template_dir
         resolved_template_path = os.path.abspath(template_path)
         resolved_template_dir = os.path.abspath(template_dir)
-        
+
         # Use os.path.commonpath for robust path traversal prevention
         try:
             common_path = os.path.commonpath([resolved_template_path, resolved_template_dir])
             if common_path != resolved_template_dir:
-                print(f"Error: Security violation - template path '{template_path}' is outside allowed directory")
+                print(
+                    f"Error: Security violation - template path '{template_path}' is outside allowed directory"
+                )
                 sys.exit(1)
         except ValueError:
             # Different drives/roots on Windows - definitely not under template_dir
-            print(f"Error: Security violation - template path '{template_path}' is outside allowed directory")
+            print(
+                f"Error: Security violation - template path '{template_path}' is outside allowed directory"
+            )
             sys.exit(1)
-        
+
         if os.path.exists(template_path):
             try:
                 with open(template_path, "r") as f:
@@ -992,7 +1007,9 @@ def main():
         "Keystore Options", "Configure keystore integration for key management"
     )
     keystore_group.add_argument("--keystore", help="Path to the keystore file")
-    keystore_group.add_argument("--keystore-path", dest="keystore", help="Path to the keystore file (alias for --keystore)")
+    keystore_group.add_argument(
+        "--keystore-path", dest="keystore", help="Path to the keystore file (alias for --keystore)"
+    )
     keystore_group.add_argument(
         "--keystore-password",
         help="Password for the keystore (will prompt if not provided)",
@@ -1215,22 +1232,21 @@ def main():
     )
 
     args = parser.parse_args()
-    
+
     # Store the original user-provided algorithm name from command line
     import sys
+
     original_algorithm = None
     for i, arg in enumerate(sys.argv):
-        if arg == '--algorithm' and i + 1 < len(sys.argv):
+        if arg == "--algorithm" and i + 1 < len(sys.argv):
             original_algorithm = sys.argv[i + 1]
             break
 
     # Configure logging level based on debug flag
     if args.debug:
         import logging
-        logging.basicConfig(
-            level=logging.DEBUG,
-            format='%(levelname)s - %(name)s - %(message)s'
-        )
+
+        logging.basicConfig(level=logging.DEBUG, format="%(levelname)s - %(name)s - %(message)s")
         print(f"DEBUG: sys.argv = {sys.argv}")
 
     # Enhance the args with better defaults for extended algorithms
@@ -2011,7 +2027,7 @@ def main():
             "blake3": args.blake3_rounds,
             "shake256": args.shake256_rounds,
             "shake128": args.shake128_rounds,
-            "whirlpool": getattr(args, 'whirlpool_rounds', 0),
+            "whirlpool": getattr(args, "whirlpool_rounds", 0),
             "scrypt": {
                 "enabled": args.enable_scrypt,
                 "n": args.scrypt_n,
@@ -2042,7 +2058,7 @@ def main():
                 "algorithm": args.hkdf_algorithm,
                 "info": args.hkdf_info,
             },
-            "pbkdf2_iterations": getattr(args, 'pbkdf2_iterations', 0),
+            "pbkdf2_iterations": getattr(args, "pbkdf2_iterations", 0),
         }
 
     # Debug the hash configuration if debug mode is enabled
@@ -2053,14 +2069,14 @@ def main():
     try:
         if args.action == "encrypt":
             # DEPRECATED: Whirlpool is no longer supported for new encryptions
-            if hasattr(args, 'whirlpool_rounds') and getattr(args, 'whirlpool_rounds', 0) > 0:
+            if hasattr(args, "whirlpool_rounds") and getattr(args, "whirlpool_rounds", 0) > 0:
                 print("ERROR: Whirlpool is deprecated for new encryptions.")
                 print("Please use BLAKE2b, BLAKE3, or SHA-3 instead.")
                 print("Existing files encrypted with Whirlpool can still be decrypted.")
                 sys.exit(1)
 
             # DEPRECATED: PBKDF2 is no longer supported for new encryptions
-            if hasattr(args, 'pbkdf2_iterations') and getattr(args, 'pbkdf2_iterations', 0) > 0:
+            if hasattr(args, "pbkdf2_iterations") and getattr(args, "pbkdf2_iterations", 0) > 0:
                 print("ERROR: PBKDF2 is deprecated for new encryptions.")
                 print("Please use Argon2, Scrypt, or Balloon hashing instead.")
                 print("Existing files encrypted with PBKDF2 can still be decrypted.")
@@ -2070,10 +2086,10 @@ def main():
             # Only warn if user actually used the old Kyber names, not if they used ML-KEM names
             kyber_algorithms = ["kyber512-hybrid", "kyber768-hybrid", "kyber1024-hybrid"]
             ml_kem_algorithms = ["ml-kem-512-hybrid", "ml-kem-768-hybrid", "ml-kem-1024-hybrid"]
-            
+
             # Check if this algorithm was originally an ML-KEM name that got converted
-            original_ml_kem_algorithm = os.environ.get('OPENSSL_ENCRYPT_ORIGINAL_MLKEM_ALGORITHM')
-            
+            original_ml_kem_algorithm = os.environ.get("OPENSSL_ENCRYPT_ORIGINAL_MLKEM_ALGORITHM")
+
             # Check the original user input, not the mapped algorithm
             user_provided_algorithm = original_algorithm or args.algorithm
             if args.debug:
@@ -2081,17 +2097,21 @@ def main():
                 print(f"DEBUG: original_algorithm = {original_algorithm}")
                 print(f"DEBUG: original_ml_kem_algorithm = {original_ml_kem_algorithm}")
                 print(f"DEBUG: user_provided_algorithm = {user_provided_algorithm}")
-                print(f"DEBUG: user_provided_algorithm in ml_kem_algorithms = {user_provided_algorithm in ml_kem_algorithms}")
-            
+                print(
+                    f"DEBUG: user_provided_algorithm in ml_kem_algorithms = {user_provided_algorithm in ml_kem_algorithms}"
+                )
+
             # Don't warn if the user originally provided an ML-KEM name that got converted to kyber
-            if (hasattr(args, 'algorithm') and 
-                args.algorithm in kyber_algorithms and 
-                user_provided_algorithm not in ml_kem_algorithms and
-                not original_ml_kem_algorithm):
+            if (
+                hasattr(args, "algorithm")
+                and args.algorithm in kyber_algorithms
+                and user_provided_algorithm not in ml_kem_algorithms
+                and not original_ml_kem_algorithm
+            ):
                 ml_kem_mapping = {
                     "kyber512-hybrid": "ml-kem-512-hybrid",
-                    "kyber768-hybrid": "ml-kem-768-hybrid", 
-                    "kyber1024-hybrid": "ml-kem-1024-hybrid"
+                    "kyber768-hybrid": "ml-kem-768-hybrid",
+                    "kyber1024-hybrid": "ml-kem-1024-hybrid",
                 }
                 recommended = ml_kem_mapping[args.algorithm]
                 print(f"ERROR: {args.algorithm} is deprecated for new encryptions.")
@@ -2496,7 +2516,7 @@ def main():
                             temp_output,
                             password,
                             hash_config=hash_config,
-                            pbkdf2_iterations=getattr(args, 'pbkdf2_iterations', 0),
+                            pbkdf2_iterations=getattr(args, "pbkdf2_iterations", 0),
                             quiet=args.quiet,
                             algorithm=args.algorithm,
                             pqc_keypair=(pqc_keypair if "pqc_keypair" in locals() else None),
@@ -2568,9 +2588,12 @@ def main():
             if output_file is None:
                 # Encrypt stdin to stdout - create temporary output file first
                 import tempfile
-                with tempfile.NamedTemporaryFile(mode='w+b', delete=False, suffix='.encrypted') as temp_file:
+
+                with tempfile.NamedTemporaryFile(
+                    mode="w+b", delete=False, suffix=".encrypted"
+                ) as temp_file:
                     temp_output_file = temp_file.name
-                
+
                 # Use standard encryption to temporary file
                 success = encrypt_file(
                     args.input,
@@ -2585,11 +2608,11 @@ def main():
                     debug=args.debug,
                     encryption_data=args.encryption_data,
                 )
-                
+
                 if success:
                     # Output the encrypted content to stdout
                     try:
-                        with open(temp_output_file, 'rb') as f:
+                        with open(temp_output_file, "rb") as f:
                             sys.stdout.buffer.write(f.read())
                         sys.stdout.buffer.flush()
                     except Exception as e:
@@ -2602,7 +2625,7 @@ def main():
                             os.unlink(temp_output_file)
                         except:
                             pass
-                
+
                 # Skip the normal encryption logic
                 if success:
                     return
