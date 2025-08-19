@@ -24,10 +24,10 @@ The assessment identified **several critical security vulnerabilities** across m
 |----------|-------|---------|
 | 🔴 **CRITICAL** | 0 | **ALL CRITICAL FIXED** ✅ |
 | ✅ **CRITICAL FIXED** | 3 | Resolved across all branches |
-| 🟠 **HIGH** | 6 | Require urgent attention |
+| 🟠 **HIGH** | 5 | Require urgent attention |
 | 🟡 **MEDIUM** | 12 | Should be addressed promptly |
 | 🟢 **LOW** | 6 | Improvement recommended |
-| **TOTAL** | **28** | **ALL 3 CRITICAL FIXED, 25 remaining vulnerabilities** |
+| **TOTAL** | **27** | **ALL 3 CRITICAL FIXED, 24 remaining vulnerabilities** |
 
 ---
 
@@ -201,13 +201,47 @@ except ValueError:
 - ✅ **Proper scope** - Only affects test scenarios, not production usage
 - ✅ **No security risk** - Essential for validating PQC implementation security
 
-### HIGH-4: Privilege Escalation via Build Scripts
+### HIGH-4: Privilege Escalation via Build Scripts ✅
 - **File**: `flatpak/build-flatpak.sh`
 - **Lines**: 46-52
 - **CVSS Score**: 7.8 (HIGH)
 - **Impact**: Unauthorized system modification
+- **Status**: ✅ **FIXED** - Applied in feature/desktop-gui-cli-integration branch
 
 **Issue**: Automatic sudo execution without user consent.
+
+**Security Fix Applied**:
+```bash
+# BEFORE (vulnerable):
+if ! command -v flatpak-builder &> /dev/null; then
+    echo "❌ flatpak-builder not found. Installing..."
+    sudo dnf install -y flatpak-builder        # Automatic sudo!
+fi
+
+# AFTER (secure):
+if ! command -v flatpak-builder &> /dev/null; then
+    echo "❌ flatpak-builder not found."
+    echo "📋 This script needs to install flatpak-builder to continue."
+
+    # Ask for user consent before using sudo
+    read -p "🔐 Do you want to install flatpak-builder with sudo? (y/N): " consent
+    if [[ "$consent" != "y" && "$consent" != "Y" ]]; then
+        echo "❌ User declined installation. Please install flatpak-builder manually:"
+        echo "   sudo dnf install -y flatpak-builder"
+        exit 1
+    fi
+
+    echo "📦 Installing flatpak-builder..."
+    sudo dnf install -y flatpak-builder        # Only with explicit consent
+fi
+```
+
+**Security Improvement**:
+- ✅ **Added explicit user consent prompt** - prevents automatic privilege escalation
+- ✅ **Clear y/N choice required** - no assumptions about user intent
+- ✅ **Manual installation guidance** - provides instructions if user declines
+- ✅ **Applied to all package managers** - consistent security across dnf/apt/pacman
+- ✅ **Maintains functionality** - still installs dependencies when user consents
 
 ### HIGH-5: Insecure Default Configuration
 - **File**: `openssl_encrypt/templates/quick.json`
