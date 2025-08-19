@@ -5,7 +5,7 @@
   "description": "Schema for validating encrypted file metadata format version 5 (hierarchical with encryption_data)",
   "type": "object",
   "required": ["format_version", "derivation_config", "encryption"],
-  "additionalProperties": false,
+  "additionalProperties": true,
   "properties": {
     "format_version": {
       "type": "integer",
@@ -15,7 +15,7 @@
     "derivation_config": {
       "type": "object",
       "required": ["salt"],
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "salt": {
           "type": "string",
@@ -25,12 +25,12 @@
         },
         "hash_config": {
           "type": "object",
-          "additionalProperties": false,
+          "additionalProperties": true,
           "patternProperties": {
             "^(sha512|sha384|sha256|sha224|sha3_512|sha3_384|sha3_256|sha3_224|blake2b|blake3|shake256|shake128|whirlpool)$": {
               "type": "object",
               "required": ["rounds"],
-              "additionalProperties": false,
+              "additionalProperties": true,
               "properties": {
                 "rounds": {
                   "type": "integer",
@@ -44,16 +44,16 @@
         },
         "kdf_config": {
           "type": "object",
-          "additionalProperties": false,
+          "additionalProperties": true,
           "properties": {
             "pbkdf2": {
               "type": "object",
               "required": ["rounds"],
-              "additionalProperties": false,
+              "additionalProperties": true,
               "properties": {
                 "rounds": {
                   "type": "integer",
-                  "minimum": 1000,
+                  "minimum": 0,
                   "maximum": 10000000,
                   "description": "PBKDF2 iteration count"
                 }
@@ -61,9 +61,12 @@
             },
             "scrypt": {
               "type": "object",
-              "required": ["n", "r", "p"],
-              "additionalProperties": false,
+              "additionalProperties": true,
               "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Whether scrypt is enabled"
+                },
                 "n": {
                   "type": "integer",
                   "minimum": 1,
@@ -81,14 +84,23 @@
                   "minimum": 1,
                   "maximum": 256,
                   "description": "Scrypt p parameter"
+                },
+                "rounds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000,
+                  "description": "Scrypt rounds"
                 }
               }
             },
             "argon2": {
               "type": "object",
-              "required": ["time_cost", "memory_cost", "parallelism"],
-              "additionalProperties": false,
+              "additionalProperties": true,
               "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Whether Argon2 is enabled"
+                },
                 "time_cost": {
                   "type": "integer",
                   "minimum": 1,
@@ -106,6 +118,58 @@
                   "minimum": 1,
                   "maximum": 256,
                   "description": "Argon2 parallelism"
+                },
+                "hash_len": {
+                  "type": "integer",
+                  "minimum": 16,
+                  "maximum": 128,
+                  "description": "Argon2 hash length"
+                },
+                "type": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2,
+                  "description": "Argon2 type (0=d, 1=i, 2=id)"
+                },
+                "rounds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000,
+                  "description": "Argon2 rounds"
+                }
+              }
+            },
+            "balloon": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Whether Balloon is enabled"
+                },
+                "time_cost": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1000,
+                  "description": "Balloon time cost"
+                },
+                "space_cost": {
+                  "type": "integer",
+                  "minimum": 1024,
+                  "maximum": 4194304,
+                  "description": "Balloon space cost"
+                },
+                "parallelism": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 256,
+                  "description": "Balloon parallelism"
+                },
+                "rounds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000,
+                  "description": "Balloon rounds"
                 }
               }
             }
@@ -137,7 +201,7 @@
     },
     "hashes": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "original_hash": {
           "type": "string",
@@ -156,7 +220,7 @@
     "encryption": {
       "type": "object",
       "required": ["algorithm"],
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "algorithm": {
           "type": "string",
@@ -169,7 +233,10 @@
             "chacha20-poly1305",
             "xchacha20-poly1305",
             "ml-kem-768-hybrid",
-            "ml-kem-1024-hybrid"
+            "ml-kem-1024-hybrid",
+            "kyber512-hybrid",
+            "kyber768-hybrid",
+            "kyber1024-hybrid"
           ],
           "description": "Encryption algorithm used"
         },

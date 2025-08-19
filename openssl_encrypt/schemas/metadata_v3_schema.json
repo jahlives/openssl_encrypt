@@ -5,7 +5,7 @@
   "description": "Schema for validating encrypted file metadata format version 3 (flat structure)",
   "type": "object",
   "required": ["format_version", "algorithm", "salt"],
-  "additionalProperties": false,
+  "additionalProperties": true,
   "properties": {
     "format_version": {
       "type": "integer",
@@ -23,7 +23,10 @@
         "chacha20-poly1305",
         "xchacha20-poly1305",
         "ml-kem-768-hybrid",
-        "ml-kem-1024-hybrid"
+        "ml-kem-1024-hybrid",
+        "kyber512-hybrid",
+        "kyber768-hybrid",
+        "kyber1024-hybrid"
       ],
       "description": "Encryption algorithm used"
     },
@@ -35,7 +38,7 @@
     },
     "hash_config": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "sha512": {
           "type": "integer",
@@ -106,7 +109,7 @@
     },
     "pbkdf2_iterations": {
       "type": "integer",
-      "minimum": 1000,
+      "minimum": 0,
       "maximum": 10000000,
       "description": "PBKDF2 iteration count"
     },

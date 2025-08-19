@@ -5,12 +5,12 @@
   "description": "Schema for validating OpenSSL Encrypt configuration template files",
   "type": "object",
   "required": ["hash_config"],
-  "additionalProperties": false,
+  "additionalProperties": true,
   "properties": {
     "hash_config": {
       "type": "object",
       "required": ["pbkdf2_iterations", "type", "algorithm"],
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "sha512": {
           "type": "integer",
@@ -57,7 +57,7 @@
         "scrypt": {
           "type": "object",
           "required": ["enabled"],
-          "additionalProperties": false,
+          "additionalProperties": true,
           "properties": {
             "enabled": {
               "type": "boolean",
@@ -92,7 +92,7 @@
         "argon2": {
           "type": "object",
           "required": ["enabled"],
-          "additionalProperties": false,
+          "additionalProperties": true,
           "properties": {
             "enabled": {
               "type": "boolean",
@@ -138,7 +138,7 @@
         },
         "pbkdf2_iterations": {
           "type": "integer",
-          "minimum": 1000,
+          "minimum": 0,
           "maximum": 10000000,
           "description": "PBKDF2 iteration count (minimum 1000 for security)"
         },

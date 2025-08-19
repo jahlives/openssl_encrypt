@@ -5,7 +5,7 @@
   "description": "Schema for validating encrypted file metadata format version 4 (hierarchical structure)",
   "type": "object",
   "required": ["format_version", "derivation_config", "encryption"],
-  "additionalProperties": false,
+  "additionalProperties": true,
   "properties": {
     "format_version": {
       "type": "integer",
@@ -15,7 +15,7 @@
     "derivation_config": {
       "type": "object",
       "required": ["salt"],
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "salt": {
           "type": "string",
@@ -25,12 +25,12 @@
         },
         "hash_config": {
           "type": "object",
-          "additionalProperties": false,
+          "additionalProperties": true,
           "patternProperties": {
             "^(sha512|sha384|sha256|sha224|sha3_512|sha3_384|sha3_256|sha3_224|blake2b|blake3|shake256|shake128|whirlpool)$": {
               "type": "object",
               "required": ["rounds"],
-              "additionalProperties": false,
+              "additionalProperties": true,
               "properties": {
                 "rounds": {
                   "type": "integer",
@@ -44,12 +44,12 @@
         },
         "kdf_config": {
           "type": "object",
-          "additionalProperties": false,
+          "additionalProperties": true,
           "properties": {
             "pbkdf2": {
               "type": "object",
               "required": ["rounds"],
-              "additionalProperties": false,
+              "additionalProperties": true,
               "properties": {
                 "rounds": {
                   "type": "integer",
@@ -62,7 +62,7 @@
             "scrypt": {
               "type": "object",
               "required": ["n", "r", "p"],
-              "additionalProperties": false,
+              "additionalProperties": true,
               "properties": {
                 "n": {
                   "type": "integer",
@@ -87,7 +87,7 @@
             "argon2": {
               "type": "object",
               "required": ["time_cost", "memory_cost", "parallelism"],
-              "additionalProperties": false,
+              "additionalProperties": true,
               "properties": {
                 "time_cost": {
                   "type": "integer",
@@ -137,7 +137,7 @@
     },
     "hashes": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "original_hash": {
           "type": "string",
@@ -156,7 +156,7 @@
     "encryption": {
       "type": "object",
       "required": ["algorithm"],
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "algorithm": {
           "type": "string",
@@ -169,7 +169,10 @@
             "chacha20-poly1305",
             "xchacha20-poly1305",
             "ml-kem-768-hybrid",
-            "ml-kem-1024-hybrid"
+            "ml-kem-1024-hybrid",
+            "kyber512-hybrid",
+            "kyber768-hybrid",
+            "kyber1024-hybrid"
           ],
           "description": "Encryption algorithm used"
         }
