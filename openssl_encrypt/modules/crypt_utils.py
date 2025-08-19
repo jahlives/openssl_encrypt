@@ -192,6 +192,18 @@ def secure_shred_file(file_path, passes=3, quiet=False):
     Securely delete a file by overwriting its contents multiple times with random data
     before unlinking it from the filesystem.
     """
+    # Security: Canonicalize path to prevent symlink attacks
+    try:
+        canonical_path = os.path.realpath(os.path.abspath(file_path))
+        if not os.path.samefile(file_path, canonical_path):
+            if not quiet:
+                print(f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}")
+        file_path = canonical_path
+    except (OSError, ValueError) as e:
+        if not quiet:
+            print(f"Error canonicalizing path '{file_path}': {e}")
+        return False
+    
     if not os.path.exists(file_path):
         if not quiet:
             print(f"File not found: {file_path}")
