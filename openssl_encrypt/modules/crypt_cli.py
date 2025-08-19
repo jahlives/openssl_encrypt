@@ -2864,6 +2864,7 @@ def main():
                     import tempfile
 
                     stdin_temp_file = tempfile.NamedTemporaryFile(delete=False)
+                    os.chmod(stdin_temp_file.name, 0o600)  # Security: Restrict to user read/write only
                     temp_files_to_cleanup.append(stdin_temp_file.name)
 
                     # Copy all data from reconstructed stream to temp file
