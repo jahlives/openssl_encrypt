@@ -24,10 +24,11 @@ The assessment identified **several critical security vulnerabilities** across m
 |----------|-------|---------|
 | 🔴 **CRITICAL** | 0 | **ALL CRITICAL FIXED** ✅ |
 | ✅ **CRITICAL FIXED** | 3 | Resolved across all branches |
-| 🟠 **HIGH** | 2 | Require urgent attention |
+| 🟠 **HIGH** | 0 | **ALL HIGH FIXED** ✅ |
+| ✅ **HIGH FIXED** | 8 | Resolved across core/feature branches |
 | 🟡 **MEDIUM** | 12 | Should be addressed promptly |
 | 🟢 **LOW** | 6 | Improvement recommended |
-| **TOTAL** | **24** | **ALL 3 CRITICAL FIXED, 21 remaining vulnerabilities** |
+| **TOTAL** | **22** | **ALL 11 CRITICAL+HIGH FIXED, 18 remaining vulnerabilities** |
 
 ---
 
@@ -332,18 +333,60 @@ if not isinstance(space_cost, int) or space_cost < 1:
 - ✅ **Input validation** - All parameters are validated for type and range
 - ✅ **No security risk** - Users choosing extreme parameters experience expected behavior
 
-### HIGH-7: Clipboard Security Issues
+### HIGH-7: Clipboard Security Issues ✅
 - **File**: `desktop_gui/lib/main.dart`
 - **CVSS Score**: 6.8 (MEDIUM-HIGH)
 - **Impact**: Information disclosure through clipboard
+- **Status**: ✅ **FIXED** - Applied in feature/desktop-gui-cli-integration branch (commit f042477)
 
 **Issue**: Sensitive data copied to clipboard without secure clearing.
 
-### HIGH-8: Uncontrolled Shell Execution
+**Security Fix Applied**:
+```dart
+// BEFORE (vulnerable):
+await Clipboard.setData(ClipboardData(text: _result));
+// No clearing - data persists indefinitely in clipboard
+
+// AFTER (secure):
+await Clipboard.setData(ClipboardData(text: _result));
+// Schedule secure clipboard clearing after 30 seconds
+Timer(const Duration(seconds: 30), () async {
+  await Clipboard.setData(const ClipboardData(text: ''));
+});
+```
+
+**Security Improvements**:
+- ✅ **Automatic clipboard clearing after 30 seconds** for sensitive encryption results
+- ✅ **Automatic clipboard clearing after 60 seconds** for CLI commands (less sensitive)
+- ✅ **User notifications updated** to indicate auto-clear timing
+- ✅ **Enhanced async handling** for proper clipboard security
+- ✅ **Applied to all clipboard operations** - consistent security across GUI
+
+### HIGH-8: Uncontrolled Shell Execution ✅
 - **File**: `desktop_gui/lib/cli_service.dart`
-- **Line**: 787
+- **Line**: 794
 - **CVSS Score**: 6.5 (MEDIUM-HIGH)
 - **Impact**: Command injection potential
+- **Status**: ✅ **FIXED** - Applied in feature/desktop-gui-cli-integration branch (commit 2f3b294)
+
+**Issue**: Using `runInShell: true` allows shell interpretation of command arguments.
+
+**Security Fix Applied**:
+```dart
+// BEFORE (vulnerable):
+final result = await Process.run('flatpak', ['ps', '--columns=application,branch'], runInShell: true);
+// Shell interprets arguments - potential injection risk
+
+// AFTER (secure):
+final result = await Process.run('flatpak', ['ps', '--columns=application,branch']);
+// Direct process execution without shell interpretation
+```
+
+**Security Improvement**:
+- ✅ **Removed `runInShell: true` parameter** - eliminates shell interpretation
+- ✅ **Direct process execution** - arguments passed directly to flatpak command
+- ✅ **No shell metacharacter processing** - prevents command injection attacks
+- ✅ **Maintains functionality** - command still works correctly without shell
 
 ---
 
