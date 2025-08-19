@@ -172,7 +172,9 @@ class PQCKeystore:
                     try:
                         self.keystore_data = json.loads(json_content)
                     except json.JSONDecodeError as e:
-                        raise KeystoreCorruptedError(f"Keystore file is corrupted or invalid JSON: {e}")
+                        raise KeystoreCorruptedError(
+                            f"Keystore file is corrupted or invalid JSON: {e}"
+                        )
         except json.JSONDecodeError:
             raise KeystoreCorruptedError("Keystore file is corrupted or invalid JSON")
 
