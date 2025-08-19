@@ -26,10 +26,10 @@ The assessment identified **several critical security vulnerabilities** across m
 | ✅ **CRITICAL FIXED** | 3 | Resolved across all branches |
 | 🟠 **HIGH** | 0 | **ALL HIGH FIXED** ✅ |
 | ✅ **HIGH FIXED** | 8 | Resolved across core/feature branches |
-| 🟡 **MEDIUM** | 8 | Should be addressed promptly |
-| ✅ **MEDIUM FIXED** | 2 | Resolved in security branches |
+| 🟡 **MEDIUM** | 6 | Should be addressed promptly |
+| ✅ **MEDIUM FIXED** | 4 | Resolved in security/feature branches |
 | 🟢 **LOW** | 8 | Improvement recommended |
-| **TOTAL** | **22** | **ALL 11 CRITICAL+HIGH FIXED, 2 MEDIUM FIXED, 14 remaining vulnerabilities** |
+| **TOTAL** | **22** | **ALL 11 CRITICAL+HIGH FIXED, 4 MEDIUM FIXED, 12 remaining vulnerabilities** |
 
 ---
 
@@ -399,6 +399,8 @@ The following medium priority vulnerabilities have been completely resolved with
 
 - **✅ MED-1: Insecure Temporary File Creation** - Fixed with 0o600 permission restrictions (ALL branches)
 - **✅ MED-2: Missing Path Canonicalization** - Fixed with comprehensive symlink protection (ALL branches)
+- **✅ MED-4: Configuration Import Injection** - Fixed with comprehensive validation (feature/desktop-gui-cli-integration branch)
+- **✅ MED-5: Insufficient Input Validation in GUI** - Fixed with security-focused input controls (feature/desktop-gui-cli-integration branch)
 
 ### 🌟 **GUI Security Improvements Applied to ALL 9 BRANCHES** ✅
 
@@ -410,7 +412,7 @@ The following GUI security enhancements from `feature/desktop-gui-cli-integratio
 - **✅ Clipboard Auto-Clear Security** - Sensitive clipboard content automatically cleared after 30-60 seconds
 - **✅ Flatpak Security Hardening** - Removed dangerous `--device=all` permission, implements principle of least privilege
 
-### 🟡 **REMAINING MEDIUM PRIORITY ISSUES**
+### 🟡 **REMAINING MEDIUM PRIORITY ISSUES** (6 remaining)
 
 ### MED-1: Insecure Temporary File Creation ✅ **FIXED**
 - **Files**: `desktop_gui/lib/cli_service.dart`, `openssl_encrypt/modules/crypt_utils.py`
@@ -515,18 +517,36 @@ String _canonicalizePath(String filePath) {
 
 **Status**: **LOW PRIORITY** - Consider adding ownership validation for code clarity, but no immediate security risk.
 
-### MED-4: Configuration Import Injection
+### MED-4: Configuration Import Injection ✅ **FIXED**
 - **File**: `desktop_gui/lib/settings_service.dart`
-- **Line**: 193
-- **CVSS Score**: 5.2 (MEDIUM)
-- **Impact**: Application behavior modification
-- **Issue**: Settings import accepts arbitrary keys
+- **Line**: ~~193~~ → **Secured**
+- **CVSS Score**: ~~5.2 (MEDIUM)~~ → **RESOLVED**
+- **Impact**: ~~Application behavior modification~~ → **Prevented**
+- **Issue**: ~~Settings import accepts arbitrary keys~~ → **Comprehensive validation implemented**
+- **Status**: **FIXED** - Applied in feature/desktop-gui-cli-integration branch
 
-### MED-5: Insufficient Input Validation in GUI
-- **Files**: Throughout GUI components
-- **CVSS Score**: 5.1 (MEDIUM)
-- **Impact**: Buffer overflow potential
-- **Issue**: No length limits or special character validation
+**Security Fix Applied**:
+- **✅ Whitelist validation** - Only allow predefined configuration keys (`_themeKey`, `_defaultAlgorithmKey`, etc.)
+- **✅ Type validation** - Strict type checking for all setting values (String, bool, int with constraints)
+- **✅ Value range validation** - Theme modes limited to ['light', 'dark', 'system'], security levels to ['quick', 'standard', 'paranoid']
+- **✅ Length limits** - Algorithm names max 50 chars, output formats max 20 chars, integers 0-10000 range
+- **✅ Error handling** - Comprehensive validation with detailed error messages
+
+### MED-5: Insufficient Input Validation in GUI ✅ **FIXED**
+- **Files**: ~~Throughout GUI components~~ → **All GUI inputs secured**
+- **CVSS Score**: ~~5.1 (MEDIUM)~~ → **RESOLVED**
+- **Impact**: ~~Buffer overflow potential~~ → **Prevented**
+- **Issue**: ~~No length limits or special character validation~~ → **Comprehensive input validation implemented**
+- **Status**: **FIXED** - Applied in feature/desktop-gui-cli-integration branch
+
+**Security Fix Applied**:
+- **✅ InputValidator utility** - Created comprehensive validation class with security-focused controls
+- **✅ Password fields** - Max 1024 chars, filter null bytes and dangerous control characters
+- **✅ Text content fields** - Max 1MB limit with null byte filtering for DoS prevention
+- **✅ JSON validation** - Structure validation, depth limiting (10 levels max), size limits (1MB)
+- **✅ Real-time filtering** - InputFormatters prevent dangerous input as user types
+- **✅ Applied to all inputs** - TextFormField validation across all GUI components
+- **✅ Filename validation** - Path traversal protection, reserved name checking
 
 ### MED-6: File Path Injection Risk in GUI ⬇️ **DOWNGRADED TO LOW**
 - **File**: `desktop_gui/lib/file_manager.dart`
