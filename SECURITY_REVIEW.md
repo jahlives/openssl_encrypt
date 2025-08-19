@@ -26,10 +26,10 @@ The assessment identified **several critical security vulnerabilities** across m
 | ✅ **CRITICAL FIXED** | 3 | Resolved across all branches |
 | 🟠 **HIGH** | 0 | **ALL HIGH FIXED** ✅ |
 | ✅ **HIGH FIXED** | 8 | Resolved across core/feature branches |
-| 🟡 **MEDIUM** | 6 | Should be addressed promptly |
-| ✅ **MEDIUM FIXED** | 4 | Resolved in security/feature branches |
+| 🟡 **MEDIUM** | 5 | Should be addressed promptly |
+| ✅ **MEDIUM FIXED** | 5 | Resolved in security/feature branches |
 | 🟢 **LOW** | 8 | Improvement recommended |
-| **TOTAL** | **22** | **ALL 11 CRITICAL+HIGH FIXED, 4 MEDIUM FIXED, 12 remaining vulnerabilities** |
+| **TOTAL** | **22** | **ALL 11 CRITICAL+HIGH FIXED, 5 MEDIUM FIXED, 11 remaining vulnerabilities** |
 
 ---
 
@@ -401,6 +401,7 @@ The following medium priority vulnerabilities have been completely resolved with
 - **✅ MED-2: Missing Path Canonicalization** - Fixed with comprehensive symlink protection (ALL branches)
 - **✅ MED-4: Configuration Import Injection** - Fixed with comprehensive validation (feature/desktop-gui-cli-integration branch)
 - **✅ MED-5: Insufficient Input Validation in GUI** - Fixed with security-focused input controls (feature/desktop-gui-cli-integration branch)
+- **✅ MED-7: Insecure File Metadata Parsing** - Fixed with comprehensive size limits and PQC compatibility (security/med-7-file-metadata-parsing branch)
 
 ### 🌟 **GUI Security Improvements Applied to ALL 9 BRANCHES** ✅
 
@@ -564,13 +565,6 @@ String _canonicalizePath(String filePath) {
 **Actual Risk**: None. This is normal file manager behavior with proper security practices already implemented.
 
 **Status**: **LOW PRIORITY** - Consider this resolved, no security risk present.
-
-### MED-7: Insecure File Metadata Parsing
-- **File**: `openssl_encrypt/modules/crypt_utils.py`
-- **Lines**: 404-434
-- **CVSS Score**: 4.9 (MEDIUM)
-- **Impact**: DoS, memory exhaustion
-- **Issue**: No size limits in metadata parsing
 
 ### MED-8: Insufficient JSON Validation
 - **Files**: Multiple configuration files
