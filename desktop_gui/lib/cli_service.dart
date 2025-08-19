@@ -195,14 +195,23 @@ class CLIService {
       final outputFile = File('${tempDir.path}/output.txt');
 
       await inputFile.writeAsString(text);
+
+      // Security: Set restrictive permissions on temporary files (0o600 equivalent)
+      try {
+        await Process.run('chmod', ['600', inputFile.path]);
+        await Process.run('chmod', ['600', outputFile.path]);
+      } catch (e) {
+        // Fallback for systems without chmod command (Windows)
+        _outputDebugLog('Warning: Could not set restrictive permissions on temp files: $e');
+      }
+
       onStatus?.call('Prepared temporary files');
 
-      // Build CLI command
+      // Build CLI command - password passed via environment variable for security
       final args = [
         'encrypt',
         '-i', inputFile.path,
         '-o', outputFile.path,
-        '--password', password,
         '--algorithm', algorithm,
       ];
 
@@ -315,6 +324,7 @@ class CLIService {
 
       final result = await _runCLICommandWithProgress(
         args,
+        environment: {'CRYPT_PASSWORD': password},
         onStdout: (line) {
           if (debugEnabled) _outputDebugLog('CLI stdout: $line');
         },
@@ -395,14 +405,23 @@ class CLIService {
       final outputFile = File('${tempDir.path}/output.txt');
 
       await inputFile.writeAsString(encryptedData);
+
+      // Security: Set restrictive permissions on temporary files (0o600 equivalent)
+      try {
+        await Process.run('chmod', ['600', inputFile.path]);
+        await Process.run('chmod', ['600', outputFile.path]);
+      } catch (e) {
+        // Fallback for systems without chmod command (Windows)
+        _outputDebugLog('Warning: Could not set restrictive permissions on temp files: $e');
+      }
+
       onStatus?.call('Prepared temporary files');
 
-      // Build CLI command
+      // Build CLI command - password passed via environment variable for security
       final args = [
         'decrypt',
         '-i', inputFile.path,
         '-o', outputFile.path,
-        '--password', password,
       ];
 
       if (debugEnabled) {
@@ -420,6 +439,7 @@ class CLIService {
 
       final result = await _runCLICommandWithProgress(
         args,
+        environment: {'CRYPT_PASSWORD': password},
         onStdout: (line) {
           if (debugEnabled) _outputDebugLog('CLI stdout: $line');
         },
@@ -531,21 +551,28 @@ class CLIService {
   /// Run CLI command with real-time progress streaming
   static Future<ProcessResult> _runCLICommandWithProgress(
     List<String> args,
-    {Function(String)? onStdout, Function(String)? onStderr, Function(String)? onProgress}
+    {Map<String, String>? environment, Function(String)? onStdout, Function(String)? onStderr, Function(String)? onProgress}
   ) async {
     Process process;
+
+    // Merge environment variables for secure password passing
+    final processEnv = Map<String, String>.from(Platform.environment);
+    if (environment != null) {
+      processEnv.addAll(environment);
+    }
 
     // Prefer development CLI when available due to Flatpak post-quantum issues
     try {
       final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
       process = await Process.start('python', pythonArgs,
-        workingDirectory: '/home/work/private/git/openssl_encrypt');
+        workingDirectory: '/home/work/private/git/openssl_encrypt',
+        environment: processEnv);
       _outputDebugLog('Using development CLI with progress (python module)');
     } catch (e) {
       _outputDebugLog('Development CLI unavailable: $e, trying Flatpak CLI with progress');
       // Fallback to Flatpak CLI
       if (await File(_cliPath).exists()) {
-        process = await Process.start(_cliPath, args);
+        process = await Process.start(_cliPath, args, environment: processEnv);
         _outputDebugLog('Using Flatpak CLI with progress');
       } else {
         throw Exception('No CLI available');
@@ -784,7 +811,7 @@ class CLIService {
 
       // Try to detect from process command line by checking parent processes
       try {
-        final result = await Process.run('flatpak', ['ps', '--columns=application,branch'], runInShell: true);
+        final result = await Process.run('flatpak', ['ps', '--columns=application,branch']);
         if (result.exitCode == 0) {
           final output = result.stdout.toString();
           final lines = output.split('\n');
@@ -937,7 +964,6 @@ class CLIService {
       'encrypt',
       '-i', '[input-file]',
       '-o', '[output-file]',
-      '--password', '[password]',
       '--algorithm', algorithm,
     ];
 
@@ -1059,7 +1085,7 @@ class CLIService {
     // Add force password for simple passwords
     args.add('--force-password');
 
-    // Show actual command that would be executed
+    // Show actual command that would be executed with secure environment variable
     String commandPrefix = '';
     if (_isFlaspakVersion) {
       commandPrefix = '/app/bin/openssl-encrypt';
@@ -1067,7 +1093,7 @@ class CLIService {
       commandPrefix = 'python -m openssl_encrypt.cli';
     }
 
-    return '$commandPrefix ${args.join(' ')}';
+    return 'CRYPT_PASSWORD="[password]" $commandPrefix ${args.join(' ')}';
   }
 
   /// Generate CLI command preview for decryption without execution
@@ -1076,7 +1102,6 @@ class CLIService {
       'decrypt',
       '-i', '[encrypted-file]',
       '-o', '[output-file]',
-      '--password', '[password]',
     ];
 
     if (debugEnabled) {
@@ -1086,7 +1111,7 @@ class CLIService {
     // Add force password for simple passwords
     args.add('--force-password');
 
-    // Show actual command that would be executed
+    // Show actual command that would be executed with secure environment variable
     String commandPrefix = '';
     if (_isFlaspakVersion) {
       commandPrefix = '/app/bin/openssl-encrypt';
@@ -1094,7 +1119,7 @@ class CLIService {
       commandPrefix = 'python -m openssl_encrypt.cli';
     }
 
-    return '$commandPrefix ${args.join(' ')}';
+    return 'CRYPT_PASSWORD="[password]" $commandPrefix ${args.join(' ')}';
   }
 
   /// Generate copy-pasteable CLI command with masked password

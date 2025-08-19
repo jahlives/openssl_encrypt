@@ -40,7 +40,24 @@ done
 
 # Check if flatpak-builder is installed
 if ! command -v flatpak-builder &> /dev/null; then
-    echo "❌ flatpak-builder not found. Installing..."
+    echo "❌ flatpak-builder not found."
+    echo "📋 This script needs to install flatpak-builder to continue."
+
+    # Ask for user consent before using sudo
+    read -p "🔐 Do you want to install flatpak-builder with sudo? (y/N): " consent
+    if [[ "$consent" != "y" && "$consent" != "Y" ]]; then
+        echo "❌ User declined installation. Please install flatpak-builder manually:"
+        if command -v dnf &> /dev/null; then
+            echo "   sudo dnf install -y flatpak-builder"
+        elif command -v apt &> /dev/null; then
+            echo "   sudo apt update && sudo apt install -y flatpak-builder"
+        elif command -v pacman &> /dev/null; then
+            echo "   sudo pacman -S flatpak-builder"
+        fi
+        exit 1
+    fi
+
+    echo "📦 Installing flatpak-builder..."
     # Try different package managers
     if command -v dnf &> /dev/null; then
         sudo dnf install -y flatpak-builder
@@ -65,20 +82,20 @@ flatpak install -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//
 # Build Flutter desktop GUI if requested
 if [[ "$BUILD_FLUTTER" == "true" ]]; then
     echo "🦋 Building Flutter desktop GUI..."
-    
+
     # Store current directory
     FLATPAK_DIR="$(pwd)"
-    
+
     # Change to desktop_gui directory
     cd ../desktop_gui
-    
+
     # Check if Flutter is available
     if ! command -v flutter &> /dev/null; then
         echo "❌ Flutter not found. Please install Flutter SDK first."
         echo "   Visit: https://docs.flutter.dev/get-started/install/linux"
         exit 1
     fi
-    
+
     # Clean previous builds only if force clean is requested
     if [[ "$FORCE_CLEAN" == "true" ]]; then
         echo "🧹 Cleaning previous Flutter builds..."
@@ -86,15 +103,15 @@ if [[ "$BUILD_FLUTTER" == "true" ]]; then
     else
         echo "🏃 Skipping Flutter clean (preserving build cache)"
     fi
-    
+
     # Get dependencies
     echo "📦 Getting Flutter dependencies..."
     flutter pub get
-    
+
     # Build for Linux
     echo "🔨 Building Flutter for Linux release..."
     flutter build linux --release
-    
+
     # Verify build output
     if [[ -f "build/linux/x64/release/bundle/openssl_encrypt_mobile" ]]; then
         echo "✅ Flutter build successful"
@@ -103,7 +120,7 @@ if [[ "$BUILD_FLUTTER" == "true" ]]; then
         echo "❌ Flutter build failed - binary not found"
         exit 1
     fi
-    
+
     # Return to flatpak directory
     cd "$FLATPAK_DIR"
     echo "📁 Returned to Flatpak directory: $(pwd)"
@@ -131,7 +148,7 @@ flatpak build-update-repo repo
 if [[ "$LOCAL_INSTALL" == "true" ]]; then
     echo ""
     echo "🏠 Setting up local installation for testing..."
-    
+
     # Clean up any existing local installation and remote
     echo "🧹 Removing existing local installation and remote..."
     # First uninstall the specific app
@@ -148,7 +165,7 @@ if [[ "$LOCAL_INSTALL" == "true" ]]; then
     # Install the built package
     echo "💾 Installing the package locally..."
     flatpak --user install -y openssl-encrypt-local com.opensslencrypt.OpenSSLEncrypt
-    
+
     echo "✅ Local installation complete!"
     echo ""
     echo "🎯 To test the locally installed application:"
