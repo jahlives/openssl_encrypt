@@ -24,7 +24,7 @@ The assessment identified **several critical security vulnerabilities** across m
 |----------|-------|---------|
 | 🔴 **CRITICAL** | 0 | **ALL CRITICAL FIXED** ✅ |
 | ✅ **CRITICAL FIXED** | 3 | Resolved across all branches |
-| 🟠 **HIGH** | 8 | Require urgent attention |
+| 🟠 **HIGH** | 7 | Require urgent attention |
 | 🟡 **MEDIUM** | 12 | Should be addressed promptly |
 | 🟢 **LOW** | 6 | Improvement recommended |
 | **TOTAL** | **29** | **ALL 3 CRITICAL FIXED, 26 remaining vulnerabilities** |
@@ -150,13 +150,40 @@ final result = await _runCLICommandWithProgress(
 
 **Issue**: Random delays in MAC verification create statistical timing patterns that can be exploited.
 
-### HIGH-2: Path Traversal in Template Loading
+### HIGH-2: Path Traversal in Template Loading ✅
 - **File**: `openssl_encrypt/modules/crypt_cli.py`
 - **Lines**: 384-396
 - **CVSS Score**: 7.5 (HIGH)
 - **Impact**: File system traversal, information disclosure
+- **Status**: ✅ **FIXED** - Applied to ALL branches
 
 **Issue**: Template path validation can be bypassed through inconsistent validation logic.
+
+**Security Fix Applied**:
+```python
+# BEFORE (vulnerable):
+if not resolved_template_path.startswith(resolved_template_dir + os.sep):
+    print(f"Error: Security violation - template path '{template_path}' is outside allowed directory")
+    sys.exit(1)
+
+# AFTER (secure):
+# Use os.path.commonpath for robust path traversal prevention
+try:
+    common_path = os.path.commonpath([resolved_template_path, resolved_template_dir])
+    if common_path != resolved_template_dir:
+        print(f"Error: Security violation - template path '{template_path}' is outside allowed directory")
+        sys.exit(1)
+except ValueError:
+    # Different drives/roots on Windows - definitely not under template_dir
+    print(f"Error: Security violation - template path '{template_path}' is outside allowed directory")
+    sys.exit(1)
+```
+
+**Security Improvement**:
+- ✅ **Replaced vulnerable `startswith()` check** - eliminates edge case bypasses
+- ✅ **Used `os.path.commonpath()`** - provides robust path traversal prevention
+- ✅ **Added Windows drive handling** - prevents cross-drive path traversal attacks
+- ✅ **Applied to ALL branches** - systematic security remediation across entire codebase
 
 ### HIGH-3: PQC Test Mode Security Bypass
 - **File**: `openssl_encrypt/modules/pqc.py`
