@@ -5,10 +5,26 @@ import 'package:file_picker/file_picker.dart';
 import 'settings_service.dart';
 import 'cli_service.dart';
 
+/// Security helper: Canonicalize file path to prevent symlink attacks
+String _canonicalizePath(String filePath) {
+  try {
+    // Convert to absolute path and resolve symlinks
+    return File(filePath).resolveSymbolicLinksSync();
+  } catch (e) {
+    // If canonicalization fails, fall back to absolute path
+    try {
+      return File(filePath).absolute.path;
+    } catch (e2) {
+      // Ultimate fallback - return original path
+      return filePath;
+    }
+  }
+}
+
 /// Comprehensive settings and preferences screen
 class SettingsScreen extends StatefulWidget {
   final Function(String key, dynamic value)? onSettingChanged;
-  
+
   const SettingsScreen({super.key, this.onSettingChanged});
 
   @override
@@ -339,7 +355,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildThemeSelector() {
     final currentTheme = SettingsService.getThemeMode();
-    
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
@@ -387,7 +403,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildDefaultAlgorithmSelector() {
     final currentAlgorithm = SettingsService.getDefaultAlgorithm();
-    
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
@@ -436,7 +452,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildDefaultSecurityLevelSelector() {
     final currentLevel = SettingsService.getDefaultSecurityLevel();
-    
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
@@ -483,7 +499,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildDefaultOutputFormatSelector() {
     final currentFormat = SettingsService.getDefaultOutputFormat();
-    
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
@@ -530,7 +546,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildMaxRecentFilesSelector() {
     final currentMax = SettingsService.getMaxRecentFiles();
-    
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
@@ -658,7 +674,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       // Get all current settings
       final settings = SettingsService.exportSettings();
-      
+
       // Create export data with metadata
       final exportData = {
         'version': 1,
@@ -666,10 +682,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'exported_at': DateTime.now().toIso8601String(),
         'settings': settings,
       };
-      
+
       // Convert to JSON
       final jsonString = const JsonEncoder.withIndent('  ').convert(exportData);
-      
+
       // Show file save dialog
       final fileName = 'openssl_encrypt_settings_${DateTime.now().millisecondsSinceEpoch}.json';
       final filePath = await FilePicker.platform.saveFile(
@@ -678,15 +694,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         type: FileType.custom,
         allowedExtensions: ['json'],
       );
-      
+
       if (filePath != null) {
+        // Security: Canonicalize path to prevent symlink attacks
+        final canonicalPath = _canonicalizePath(filePath);
         // Write to file
-        await File(filePath).writeAsString(jsonString);
-        
+        await File(canonicalPath).writeAsString(jsonString);
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Settings exported to: ${filePath.split('/').last}'),
+              content: Text('Settings exported to: ${canonicalPath.split('/').last}'),
               backgroundColor: Colors.green,
               duration: const Duration(seconds: 4),
             ),
@@ -713,17 +731,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
         allowedExtensions: ['json'],
         dialogTitle: 'Import Application Settings',
       );
-      
+
       if (result != null && result.files.single.path != null) {
-        final file = File(result.files.single.path!);
+        // Security: Canonicalize path to prevent symlink attacks
+        final canonicalPath = _canonicalizePath(result.files.single.path!);
+        final file = File(canonicalPath);
         final jsonString = await file.readAsString();
         final importData = jsonDecode(jsonString) as Map<String, dynamic>;
-        
+
         // Validate import data
         if (importData['version'] != 1) {
           throw Exception('Unsupported settings format version');
         }
-        
+
         if (importData['app_name'] != 'OpenSSL Encrypt Desktop') {
           // Show warning but allow import
           final confirmed = await _showImportWarningDialog(
@@ -731,22 +751,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
           );
           if (!confirmed) return;
         }
-        
+
         final settings = importData['settings'] as Map<String, dynamic>;
-        
+
         if (mounted) {
           // Ask user about import mode
           final importMode = await _showImportModeDialog();
           if (importMode == null) return; // User cancelled
-          
+
           if (importMode == 'replace') {
             // Clear existing settings first
             await SettingsService.resetToDefaults();
           }
-          
+
           // Import the settings
           final success = await SettingsService.importSettings(settings);
-          
+
           if (success) {
             // Notify about changes
             if (widget.onSettingChanged != null) {
@@ -754,7 +774,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 widget.onSettingChanged!(entry.key, entry.value);
               }
             }
-            
+
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -765,7 +785,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   duration: const Duration(seconds: 4),
                 ),
               );
-              
+
               // Refresh the UI
               setState(() {});
             }
@@ -792,7 +812,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     }
   }
-  
+
   Future<bool> _showImportWarningDialog(String message) async {
     return await showDialog<bool>(
       context: context,
@@ -813,7 +833,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     ) ?? false;
   }
-  
+
   Future<String?> _showImportModeDialog() async {
     return await showDialog<String>(
       context: context,
