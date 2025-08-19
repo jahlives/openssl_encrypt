@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensslencrypt.com/schemas/metadata-v3.json",
+  "title": "OpenSSL Encrypt Metadata Schema Version 3",
+  "description": "Schema for validating encrypted file metadata format version 3 (flat structure)",
+  "type": "object",
+  "required": ["format_version", "algorithm", "salt"],
+  "additionalProperties": false,
+  "properties": {
+    "format_version": {
+      "type": "integer",
+      "const": 3,
+      "description": "Metadata format version (must be 3)"
+    },
+    "algorithm": {
+      "type": "string",
+      "enum": [
+        "fernet",
+        "aes-gcm",
+        "aes-gcm-siv",
+        "aes-ocb3",
+        "aes-siv",
+        "chacha20-poly1305",
+        "xchacha20-poly1305",
+        "ml-kem-768-hybrid",
+        "ml-kem-1024-hybrid"
+      ],
+      "description": "Encryption algorithm used"
+    },
+    "salt": {
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9+/]+=*$",
+      "description": "Base64-encoded salt"
+    },
+    "hash_config": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sha512": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "sha384": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "sha256": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "sha224": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "sha3_512": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "sha3_384": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "sha3_256": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "sha3_224": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "blake2b": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "blake3": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "shake256": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "shake128": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "whirlpool": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      }
+    },
+    "pbkdf2_iterations": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 10000000,
+      "description": "PBKDF2 iteration count"
+    },
+    "scrypt_n": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1048576,
+      "description": "Scrypt N parameter"
+    },
+    "scrypt_r": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 256,
+      "description": "Scrypt r parameter"
+    },
+    "scrypt_p": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 256,
+      "description": "Scrypt p parameter"
+    },
+    "argon2_time": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000,
+      "description": "Argon2 time cost"
+    },
+    "argon2_memory": {
+      "type": "integer",
+      "minimum": 1024,
+      "maximum": 4194304,
+      "description": "Argon2 memory cost in KiB"
+    },
+    "argon2_parallelism": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 256,
+      "description": "Argon2 parallelism"
+    },
+    "original_hash": {
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^[a-fA-F0-9]*$",
+      "description": "Hexadecimal hash of original file"
+    },
+    "encrypted_hash": {
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^[a-fA-F0-9]*$",
+      "description": "Hexadecimal hash of encrypted content"
+    },
+    "pqc_public_key": {
+      "type": "string",
+      "maxLength": 65536,
+      "pattern": "^[A-Za-z0-9+/]+=*$",
+      "description": "Base64-encoded PQC public key (max 64KB)"
+    },
+    "pqc_private_key": {
+      "type": "string",
+      "maxLength": 65536,
+      "pattern": "^[A-Za-z0-9+/]+=*$",
+      "description": "Base64-encoded PQC private key (max 64KB)"
+    },
+    "dual_encryption": {
+      "type": "boolean",
+      "description": "Whether dual encryption mode is used"
+    },
+    "keystore_id": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "description": "Keystore identifier"
+    }
+  }
+}
