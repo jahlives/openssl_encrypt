@@ -268,8 +268,12 @@ def debug_hash_config(args, hash_config, message="Hash configuration"):
     logger.debug(
         f"SHA3-256: args={args.sha3_256_rounds}, hash_config={hash_config.get('sha3_256', 'Not set')}"
     )
-    logger.debug(f"SHA-512: args={args.sha512_rounds}, hash_config={hash_config.get('sha512', 'Not set')}")
-    logger.debug(f"SHA-256: args={args.sha256_rounds}, hash_config={hash_config.get('sha256', 'Not set')}")
+    logger.debug(
+        f"SHA-512: args={args.sha512_rounds}, hash_config={hash_config.get('sha512', 'Not set')}"
+    )
+    logger.debug(
+        f"SHA-256: args={args.sha256_rounds}, hash_config={hash_config.get('sha256', 'Not set')}"
+    )
     logger.debug(
         f"BLAKE2b: args={args.blake2b_rounds}, hash_config={hash_config.get('blake2b', 'Not set')}"
     )
@@ -361,20 +365,27 @@ def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
     if not template_name or not isinstance(template_name, str):
         print("Error: Invalid template name provided")
         sys.exit(1)
-    
+
     # Remove any path separators and parent directory references
     safe_template_name = os.path.basename(template_name)
-    
+
     # Additional check for path traversal attempts
-    if ".." in template_name or os.sep in template_name or "/" in template_name or "\\" in template_name:
-        print(f"Error: Invalid template name '{template_name}'. Template names cannot contain path separators or parent directory references.")
+    if (
+        ".." in template_name
+        or os.sep in template_name
+        or "/" in template_name
+        or "\\" in template_name
+    ):
+        print(
+            f"Error: Invalid template name '{template_name}'. Template names cannot contain path separators or parent directory references."
+        )
         sys.exit(1)
-    
+
     # Ensure the cleaned name is not empty
     if not safe_template_name:
         print("Error: Empty template name after security validation")
         sys.exit(1)
-    
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
     # Move up one level from the modules directory to the project root
@@ -386,22 +397,26 @@ def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
     # Try different extensions
     for ext in [".json", ".yaml", ".yml"]:
         template_path = os.path.join(template_dir, safe_template_name + ext)
-        
+
         # Additional security check: ensure the resolved path is still within template_dir
         resolved_template_path = os.path.abspath(template_path)
         resolved_template_dir = os.path.abspath(template_dir)
-        
+
         # Use os.path.commonpath for robust path traversal prevention
         try:
             common_path = os.path.commonpath([resolved_template_path, resolved_template_dir])
             if common_path != resolved_template_dir:
-                print(f"Error: Security violation - template path '{template_path}' is outside allowed directory")
+                print(
+                    f"Error: Security violation - template path '{template_path}' is outside allowed directory"
+                )
                 sys.exit(1)
         except ValueError:
             # Different drives/roots on Windows - definitely not under template_dir
-            print(f"Error: Security violation - template path '{template_path}' is outside allowed directory")
+            print(
+                f"Error: Security violation - template path '{template_path}' is outside allowed directory"
+            )
             sys.exit(1)
-        
+
         if os.path.exists(template_path):
             try:
                 with open(template_path, "r") as f:
@@ -1218,10 +1233,8 @@ def main():
     # Configure logging level based on debug flag
     if args.debug:
         import logging
-        logging.basicConfig(
-            level=logging.DEBUG,
-            format='%(levelname)s - %(name)s - %(message)s'
-        )
+
+        logging.basicConfig(level=logging.DEBUG, format="%(levelname)s - %(name)s - %(message)s")
 
     # Enhance the args with better defaults for extended algorithms
     args = enhance_cli_args(args)
@@ -2510,9 +2523,12 @@ def main():
             if output_file is None:
                 # Encrypt stdin to stdout - create temporary output file first
                 import tempfile
-                with tempfile.NamedTemporaryFile(mode='w+b', delete=False, suffix='.encrypted') as temp_file:
+
+                with tempfile.NamedTemporaryFile(
+                    mode="w+b", delete=False, suffix=".encrypted"
+                ) as temp_file:
                     temp_output_file = temp_file.name
-                
+
                 # Use standard encryption to temporary file
                 success = encrypt_file(
                     args.input,
@@ -2527,11 +2543,11 @@ def main():
                     debug=args.debug,
                     encryption_data=args.encryption_data,
                 )
-                
+
                 if success:
                     # Output the encrypted content to stdout
                     try:
-                        with open(temp_output_file, 'rb') as f:
+                        with open(temp_output_file, "rb") as f:
                             sys.stdout.buffer.write(f.read())
                         sys.stdout.buffer.flush()
                     except Exception as e:
@@ -2544,7 +2560,7 @@ def main():
                             os.unlink(temp_output_file)
                         except:
                             pass
-                
+
                 # Skip the normal encryption logic
                 if success:
                     return
