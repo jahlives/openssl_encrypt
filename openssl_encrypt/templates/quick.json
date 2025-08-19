@@ -23,7 +23,7 @@
       "type": 2,
       "rounds": 10
     },
-    "pbkdf2_iterations": 10000,
+    "pbkdf2_iterations": 100000,
     "type": "id",
     "algorithm": "fernet"
   },
