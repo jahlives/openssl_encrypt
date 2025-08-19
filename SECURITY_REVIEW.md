@@ -26,10 +26,10 @@ The assessment identified **several critical security vulnerabilities** across m
 | ✅ **CRITICAL FIXED** | 3 | Resolved across all branches |
 | 🟠 **HIGH** | 0 | **ALL HIGH FIXED** ✅ |
 | ✅ **HIGH FIXED** | 8 | Resolved across core/feature branches |
-| 🟡 **MEDIUM** | 10 | Should be addressed promptly |
+| 🟡 **MEDIUM** | 8 | Should be addressed promptly |
 | ✅ **MEDIUM FIXED** | 2 | Resolved in security branches |
-| 🟢 **LOW** | 6 | Improvement recommended |
-| **TOTAL** | **22** | **ALL 11 CRITICAL+HIGH FIXED, 2 MEDIUM FIXED, 16 remaining vulnerabilities** |
+| 🟢 **LOW** | 8 | Improvement recommended |
+| **TOTAL** | **22** | **ALL 11 CRITICAL+HIGH FIXED, 2 MEDIUM FIXED, 14 remaining vulnerabilities** |
 
 ---
 
@@ -395,10 +395,20 @@ final result = await Process.run('flatpak', ['ps', '--columns=application,branch
 
 ### ✅ **FIXED MEDIUM PRIORITY VULNERABILITIES**
 
-The following medium priority vulnerabilities have been completely resolved with comprehensive security fixes applied across both CLI and GUI components:
+The following medium priority vulnerabilities have been completely resolved with comprehensive security fixes applied across **ALL 9 BRANCHES**:
 
-- **✅ MED-1: Insecure Temporary File Creation** - Fixed with 0o600 permission restrictions
-- **✅ MED-2: Missing Path Canonicalization** - Fixed with comprehensive symlink protection
+- **✅ MED-1: Insecure Temporary File Creation** - Fixed with 0o600 permission restrictions (ALL branches)
+- **✅ MED-2: Missing Path Canonicalization** - Fixed with comprehensive symlink protection (ALL branches)
+
+### 🌟 **GUI Security Improvements Applied to ALL 9 BRANCHES** ✅
+
+The following GUI security enhancements from `feature/desktop-gui-cli-integration` have been successfully applied to all branches:
+
+- **✅ Password Environment Variable Security** - All GUI-CLI password passing now uses secure `CRYPT_PASSWORD` environment variables instead of CLI arguments
+- **✅ Path Canonicalization for GUI** - All GUI file operations now use `File.resolveSymbolicLinksSync()` for symlink protection
+- **✅ Temporary File Security for GUI** - All GUI temporary files restricted with `chmod 600` permissions
+- **✅ Clipboard Auto-Clear Security** - Sensitive clipboard content automatically cleared after 30-60 seconds
+- **✅ Flatpak Security Hardening** - Removed dangerous `--device=all` permission, implements principle of least privilege
 
 ### 🟡 **REMAINING MEDIUM PRIORITY ISSUES**
 
@@ -488,12 +498,22 @@ String _canonicalizePath(String filePath) {
 - ✅ **Robust error handling** with fallback to absolute paths
 - ✅ **Applied to all critical file operations** systematically
 
-### MED-3: Insufficient File Permission Validation
+### MED-3: Insufficient File Permission Validation ⬇️ **DOWNGRADED TO LOW**
 - **File**: `openssl_encrypt/modules/crypt_utils.py`
-- **Lines**: 240-250
-- **CVSS Score**: 5.3 (MEDIUM)
-- **Impact**: Permission escalation
-- **Issue**: Modifies file permissions without validation
+- **Lines**: 258-259 (in `secure_shred_file()` function)
+- **CVSS Score**: ~~5.3 (MEDIUM)~~ → **2.1 (LOW)**
+- **Impact**: ~~Permission escalation~~ → **Minor code quality issue**
+- **Issue**: ~~Modifies file permissions without validation~~ → **OS permission model prevents actual security risk**
+
+**Security Re-assessment**: Upon detailed analysis, this vulnerability was **overestimated**. The OS permission system already prevents unauthorized permission changes:
+
+- ✅ **No privilege escalation possible** - `os.chmod()` fails with `PermissionError` if user doesn't own the file
+- ✅ **Symlink attacks blocked** - Cannot modify permissions on files owned by other users
+- ✅ **OS security boundary intact** - Unix/Linux permission model provides protection
+
+**Actual Risk**: Only affects files the user already owns (could make their read-only files writable during shred operation). This is a **code quality improvement** rather than a security vulnerability.
+
+**Status**: **LOW PRIORITY** - Consider adding ownership validation for code clarity, but no immediate security risk.
 
 ### MED-4: Configuration Import Injection
 - **File**: `desktop_gui/lib/settings_service.dart`
@@ -508,11 +528,22 @@ String _canonicalizePath(String filePath) {
 - **Impact**: Buffer overflow potential
 - **Issue**: No length limits or special character validation
 
-### MED-6: File Path Injection Risk in GUI
+### MED-6: File Path Injection Risk in GUI ⬇️ **DOWNGRADED TO LOW**
 - **File**: `desktop_gui/lib/file_manager.dart`
-- **CVSS Score**: 5.0 (MEDIUM)
-- **Impact**: Unauthorized file access
-- **Issue**: Direct use of user input for file operations
+- **CVSS Score**: ~~5.0 (MEDIUM)~~ → **1.8 (LOW)**
+- **Impact**: ~~Unauthorized file access~~ → **No actual security risk**
+- **Issue**: ~~Direct use of user input for file operations~~ → **OS permission model prevents unauthorized access**
+
+**Security Re-assessment**: This vulnerability was **significantly overestimated**:
+
+- ✅ **FilePicker validation** - All file selection goes through system dialogs that only allow access to permitted files
+- ✅ **Path canonicalization applied** - Every file operation uses `_canonicalizePath()` to resolve symlinks
+- ✅ **OS permission boundaries respected** - Cannot access files user doesn't already have permission for
+- ✅ **No privilege escalation possible** - Dart File operations respect OS security model
+
+**Actual Risk**: None. This is normal file manager behavior with proper security practices already implemented.
+
+**Status**: **LOW PRIORITY** - Consider this resolved, no security risk present.
 
 ### MED-7: Insecure File Metadata Parsing
 - **File**: `openssl_encrypt/modules/crypt_utils.py`
@@ -556,32 +587,44 @@ String _canonicalizePath(String filePath) {
 
 ## 🟢 Low Priority Issues
 
-### LOW-1: Weak Entropy in Anti-Debugging
+### LOW-1: File Permission Validation (Downgraded from MED-3)
+- **File**: `openssl_encrypt/modules/crypt_utils.py`
+- **Impact**: Minor code quality issue in `secure_shred_file()`
+- **Issue**: Could add write permissions to user's own read-only files during shred
+- **Note**: OS permission model prevents any actual security risk
+
+### LOW-2: Weak Entropy in Anti-Debugging
 - **File**: `openssl_encrypt/modules/secure_memory.py`
 - **Impact**: Anti-debugging bypass
 - **Issue**: Predictable patterns in security checks
 
-### LOW-2: Missing Request Timeouts
+### LOW-3: File Path Injection Risk (Downgraded from MED-6)
+- **File**: `desktop_gui/lib/file_manager.dart`
+- **Impact**: No actual security risk - FilePicker and OS permissions provide security boundaries
+- **Issue**: Normal file manager operations with proper path canonicalization already implemented
+- **Note**: OS permission model prevents any unauthorized file access
+
+### LOW-4: Missing Request Timeouts
 - **Files**: Network request locations
 - **Impact**: Hanging requests
 - **Issue**: HTTP requests lack timeout parameters
 
-### LOW-3: Information Disclosure in Error Messages
+### LOW-5: Information Disclosure in Error Messages
 - **Files**: Various error handling locations
 - **Impact**: System information leakage
 - **Issue**: Detailed error messages reveal internal state
 
-### LOW-4: Configuration Profile Security
+### LOW-6: Configuration Profile Security
 - **File**: `desktop_gui/lib/configuration_profiles_service.dart`
 - **Impact**: Invalid profile imports
 - **Issue**: Insufficient validation in profile imports
 
-### LOW-5: Symlink Creation Risks
+### LOW-7: Symlink Creation Risks
 - **File**: Whirlpool module setup
 - **Impact**: Symlink attacks in shared environments
 - **Issue**: Symlink creation without proper validation
 
-### LOW-6: Debug Information Exposure
+### LOW-8: Debug Information Exposure
 - **Files**: Various debug logging locations
 - **Impact**: Internal state disclosure
 - **Issue**: Debug logs may contain sensitive information
