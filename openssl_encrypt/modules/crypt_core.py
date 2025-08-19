@@ -902,6 +902,16 @@ def set_secure_permissions(file_path):
     Args:
         file_path (str): Path to the file
     """
+    # Security: Canonicalize path to prevent symlink attacks
+    try:
+        canonical_path = os.path.realpath(os.path.abspath(file_path))
+        if not os.path.samefile(file_path, canonical_path):
+            print(f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}")
+        file_path = canonical_path
+    except (OSError, ValueError) as e:
+        print(f"Error canonicalizing path '{file_path}': {e}")
+        return
+    
     # Set permissions to 0600 (read/write for owner only)
     os.chmod(file_path, stat.S_IRUSR | stat.S_IWUSR)
 
@@ -916,6 +926,16 @@ def get_file_permissions(file_path):
     Returns:
         int: File permissions mode
     """
+    # Security: Canonicalize path to prevent symlink attacks
+    try:
+        canonical_path = os.path.realpath(os.path.abspath(file_path))
+        if not os.path.samefile(file_path, canonical_path):
+            print(f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}")
+        file_path = canonical_path
+    except (OSError, ValueError) as e:
+        print(f"Error canonicalizing path '{file_path}': {e}")
+        raise
+    
     return os.stat(file_path).st_mode & 0o777  # Get just the permission bits
 
 
