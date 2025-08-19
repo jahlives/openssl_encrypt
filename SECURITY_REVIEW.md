@@ -24,10 +24,10 @@ The assessment identified **several critical security vulnerabilities** across m
 |----------|-------|---------|
 | 🔴 **CRITICAL** | 0 | **ALL CRITICAL FIXED** ✅ |
 | ✅ **CRITICAL FIXED** | 3 | Resolved across all branches |
-| 🟠 **HIGH** | 4 | Require urgent attention |
+| 🟠 **HIGH** | 3 | Require urgent attention |
 | 🟡 **MEDIUM** | 12 | Should be addressed promptly |
 | 🟢 **LOW** | 6 | Improvement recommended |
-| **TOTAL** | **26** | **ALL 3 CRITICAL FIXED, 23 remaining vulnerabilities** |
+| **TOTAL** | **25** | **ALL 3 CRITICAL FIXED, 22 remaining vulnerabilities** |
 
 ---
 
@@ -142,13 +142,49 @@ final result = await _runCLICommandWithProgress(
 
 ## 🟠 High Priority Vulnerabilities
 
-### HIGH-1: Timing Side-Channel in MAC Verification
+### HIGH-1: Timing Side-Channel in MAC Verification ✅
 - **File**: `openssl_encrypt/modules/secure_ops_core.py`
 - **Lines**: 83-91
 - **CVSS Score**: 8.8 (HIGH)
 - **Impact**: MAC forgery through timing analysis
+- **Status**: ✅ **FIXED** - Applied to ALL branches
 
 **Issue**: Random delays in MAC verification create statistical timing patterns that can be exploited.
+
+**Security Fix Applied**:
+```python
+# BEFORE (vulnerable):
+def constant_time_mac_verify(expected_mac: bytes, received_mac: bytes) -> bool:
+    # Add a small variable delay before verification to mask timing differences
+    time.sleep(secrets.randbelow(5) / 1000.0)  # 0-4ms delay
+    result = constant_time_compare_core(expected_mac, received_mac)
+    time.sleep(secrets.randbelow(5) / 1000.0)  # 0-4ms delay
+    return result
+
+# AFTER (secure):
+def constant_time_mac_verify(expected_mac: bytes, received_mac: bytes) -> bool:
+    # Validate inputs and convert to bytes if needed
+    if expected_mac is None:
+        expected_mac = b""
+    elif not isinstance(expected_mac, bytes):
+        expected_mac = bytes(expected_mac)
+
+    if received_mac is None:
+        received_mac = b""
+    elif not isinstance(received_mac, bytes):
+        received_mac = bytes(received_mac)
+
+    # Use Python's built-in constant-time comparison - no timing side-channels
+    # hmac.compare_digest is specifically designed to prevent timing attacks
+    return hmac.compare_digest(expected_mac, received_mac)
+```
+
+**Security Improvement**:
+- ✅ **Removed vulnerable timing delays** - eliminated statistical timing patterns
+- ✅ **Used `hmac.compare_digest()`** - cryptographically secure constant-time comparison
+- ✅ **Added input validation** - proper bytes conversion and None handling
+- ✅ **Applied to ALL branches** - systematic security improvement across entire codebase
+- ✅ **Eliminated timing side-channels** - no exploitable timing information leakage
 
 ### HIGH-2: Path Traversal in Template Loading ✅
 - **File**: `openssl_encrypt/modules/crypt_cli.py`
