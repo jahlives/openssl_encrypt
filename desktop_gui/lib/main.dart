@@ -163,11 +163,25 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  void _copyToClipboard() {
+  void _copyToClipboard() async {
     // TODO: Copy current result to clipboard
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Result copied to clipboard')),
-    );
+    if (_result.isNotEmpty) {
+      await Clipboard.setData(ClipboardData(text: _result));
+
+      // Schedule secure clipboard clearing after 30 seconds
+      Timer(const Duration(seconds: 30), () async {
+        await Clipboard.setData(const ClipboardData(text: ''));
+      });
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Result copied to clipboard (will auto-clear in 30s)'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   void _clearAll() {
@@ -1648,12 +1662,18 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                     heroTag: "copy_text_result",
                     onPressed: () async {
                       await Clipboard.setData(ClipboardData(text: _result));
+
+                      // Schedule secure clipboard clearing after 30 seconds
+                      Timer(const Duration(seconds: 30), () async {
+                        await Clipboard.setData(const ClipboardData(text: ''));
+                      });
+
                       if (mounted) {
                         // ignore: use_build_context_synchronously
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content: Text('Result copied to clipboard'),
-                            duration: Duration(seconds: 2),
+                            content: Text('Result copied to clipboard (will auto-clear in 30s)'),
+                            duration: Duration(seconds: 3),
                           ),
                         );
                       }
@@ -4050,12 +4070,18 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                     heroTag: "copy_file_result",
                     onPressed: () async {
                       await Clipboard.setData(ClipboardData(text: _result));
+
+                      // Schedule secure clipboard clearing after 30 seconds
+                      Timer(const Duration(seconds: 30), () async {
+                        await Clipboard.setData(const ClipboardData(text: ''));
+                      });
+
                       if (mounted) {
                         // ignore: use_build_context_synchronously
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content: Text('Result copied to clipboard'),
-                            duration: Duration(seconds: 2),
+                            content: Text('Result copied to clipboard (will auto-clear in 30s)'),
+                            duration: Duration(seconds: 3),
                           ),
                         );
                       }
@@ -5389,14 +5415,21 @@ class CommandPreviewDialog extends StatelessWidget {
         .join(', ');
   }
 
-  void _copyToClipboard(BuildContext context, String text) {
-    Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Command copied to clipboard'),
-        backgroundColor: Colors.green.shade600,
-        duration: const Duration(seconds: 2),
-      ),
+  void _copyToClipboard(BuildContext context, String text) async {
+    await Clipboard.setData(ClipboardData(text: text));
+
+    // Schedule secure clipboard clearing after 60 seconds for commands (less sensitive)
+    Timer(const Duration(seconds: 60), () async {
+      await Clipboard.setData(const ClipboardData(text: ''));
+    });
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Command copied to clipboard (will auto-clear in 60s)'),
+          backgroundColor: Colors.green.shade600,
+          duration: const Duration(seconds: 3),
+        ),
     );
   }
 }
