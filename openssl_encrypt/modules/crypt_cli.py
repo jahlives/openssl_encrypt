@@ -391,7 +391,14 @@ def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
         resolved_template_path = os.path.abspath(template_path)
         resolved_template_dir = os.path.abspath(template_dir)
         
-        if not resolved_template_path.startswith(resolved_template_dir + os.sep):
+        # Use os.path.commonpath for robust path traversal prevention
+        try:
+            common_path = os.path.commonpath([resolved_template_path, resolved_template_dir])
+            if common_path != resolved_template_dir:
+                print(f"Error: Security violation - template path '{template_path}' is outside allowed directory")
+                sys.exit(1)
+        except ValueError:
+            # Different drives/roots on Windows - definitely not under template_dir
             print(f"Error: Security violation - template path '{template_path}' is outside allowed directory")
             sys.exit(1)
         
