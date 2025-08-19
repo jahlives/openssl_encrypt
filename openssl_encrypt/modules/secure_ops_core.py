@@ -14,8 +14,6 @@ which provides a more comprehensive and easy-to-use API with proper validation.
 
 import hmac
 import secrets
-import time
-from typing import Any, Optional, Union
 
 
 def constant_time_compare_core(a: bytes, b: bytes) -> bool:
@@ -62,8 +60,8 @@ def constant_time_mac_verify(expected_mac: bytes, received_mac: bytes) -> bool:
     """
     Verify a message authentication code (MAC) in constant time.
 
-    This function is specifically optimized for MAC verification and
-    includes additional protections against advanced timing attacks.
+    This function uses Python's built-in hmac.compare_digest() which provides
+    cryptographically secure constant-time comparison without timing vulnerabilities.
 
     Args:
         expected_mac: The expected MAC value (computed)
@@ -72,24 +70,20 @@ def constant_time_mac_verify(expected_mac: bytes, received_mac: bytes) -> bool:
     Returns:
         bool: True if the MACs match, False otherwise
     """
-    # Validate inputs to ensure correct types
-    if not isinstance(expected_mac, bytes) or not isinstance(received_mac, bytes):
-        # Convert to bytes if needed to ensure consistent operation
-        expected_mac = bytes(expected_mac) if expected_mac is not None else b""
-        received_mac = bytes(received_mac) if received_mac is not None else b""
+    # Validate inputs and convert to bytes if needed
+    if expected_mac is None:
+        expected_mac = b""
+    elif not isinstance(expected_mac, bytes):
+        expected_mac = bytes(expected_mac)
 
-    # Add a small variable delay before verification to mask timing differences
-    # This uses a cryptographically secure random number to prevent patterns
-    time.sleep(secrets.randbelow(5) / 1000.0)  # 0-4ms delay
+    if received_mac is None:
+        received_mac = b""
+    elif not isinstance(received_mac, bytes):
+        received_mac = bytes(received_mac)
 
-    # Compare MACs using the core constant-time comparison
-    result = constant_time_compare_core(expected_mac, received_mac)
-
-    # Add another small delay after verification to mask timing differences
-    # The delay after comparison is essential to prevent timing analysis of the return path
-    time.sleep(secrets.randbelow(5) / 1000.0)  # 0-4ms delay
-
-    return result
+    # Use Python's built-in constant-time comparison - no timing side-channels
+    # hmac.compare_digest is specifically designed to prevent timing attacks
+    return hmac.compare_digest(expected_mac, received_mac)
 
 
 def constant_time_bytes_eq(a: bytes, b: bytes) -> bool:
