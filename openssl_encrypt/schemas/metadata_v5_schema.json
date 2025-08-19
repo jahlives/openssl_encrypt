@@ -69,21 +69,21 @@
                 },
                 "n": {
                   "type": "integer",
-                  "minimum": 1,
+                  "minimum": 0,
                   "maximum": 1048576,
-                  "description": "Scrypt N parameter"
+                  "description": "Scrypt N parameter (0 = disabled)"
                 },
                 "r": {
                   "type": "integer",
-                  "minimum": 1,
+                  "minimum": 0,
                   "maximum": 256,
-                  "description": "Scrypt r parameter"
+                  "description": "Scrypt r parameter (0 = disabled)"
                 },
                 "p": {
                   "type": "integer",
-                  "minimum": 1,
+                  "minimum": 0,
                   "maximum": 256,
-                  "description": "Scrypt p parameter"
+                  "description": "Scrypt p parameter (0 = disabled)"
                 },
                 "rounds": {
                   "type": "integer",
@@ -103,27 +103,27 @@
                 },
                 "time_cost": {
                   "type": "integer",
-                  "minimum": 1,
+                  "minimum": 0,
                   "maximum": 1000,
-                  "description": "Argon2 time cost"
+                  "description": "Argon2 time cost (0 = disabled)"
                 },
                 "memory_cost": {
                   "type": "integer",
-                  "minimum": 1024,
+                  "minimum": 0,
                   "maximum": 4194304,
-                  "description": "Argon2 memory cost in KiB"
+                  "description": "Argon2 memory cost in KiB (0 = disabled)"
                 },
                 "parallelism": {
                   "type": "integer",
-                  "minimum": 1,
+                  "minimum": 0,
                   "maximum": 256,
-                  "description": "Argon2 parallelism"
+                  "description": "Argon2 parallelism (0 = disabled)"
                 },
                 "hash_len": {
                   "type": "integer",
-                  "minimum": 16,
+                  "minimum": 0,
                   "maximum": 128,
-                  "description": "Argon2 hash length"
+                  "description": "Argon2 hash length (0 = disabled)"
                 },
                 "type": {
                   "type": "integer",
@@ -149,21 +149,21 @@
                 },
                 "time_cost": {
                   "type": "integer",
-                  "minimum": 1,
+                  "minimum": 0,
                   "maximum": 1000,
-                  "description": "Balloon time cost"
+                  "description": "Balloon time cost (0 = disabled)"
                 },
                 "space_cost": {
                   "type": "integer",
-                  "minimum": 1024,
+                  "minimum": 0,
                   "maximum": 4194304,
-                  "description": "Balloon space cost"
+                  "description": "Balloon space cost (0 = disabled)"
                 },
                 "parallelism": {
                   "type": "integer",
-                  "minimum": 1,
+                  "minimum": 0,
                   "maximum": 256,
-                  "description": "Balloon parallelism"
+                  "description": "Balloon parallelism (0 = disabled)"
                 },
                 "rounds": {
                   "type": "integer",

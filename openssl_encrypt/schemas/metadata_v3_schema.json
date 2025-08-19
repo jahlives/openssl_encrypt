@@ -115,39 +115,39 @@
     },
     "scrypt_n": {
       "type": "integer",
-      "minimum": 1,
+      "minimum": 0,
       "maximum": 1048576,
-      "description": "Scrypt N parameter"
+      "description": "Scrypt N parameter (0 = disabled)"
     },
     "scrypt_r": {
       "type": "integer",
-      "minimum": 1,
+      "minimum": 0,
       "maximum": 256,
-      "description": "Scrypt r parameter"
+      "description": "Scrypt r parameter (0 = disabled)"
     },
     "scrypt_p": {
       "type": "integer",
-      "minimum": 1,
+      "minimum": 0,
       "maximum": 256,
-      "description": "Scrypt p parameter"
+      "description": "Scrypt p parameter (0 = disabled)"
     },
     "argon2_time": {
       "type": "integer",
-      "minimum": 1,
+      "minimum": 0,
       "maximum": 1000,
-      "description": "Argon2 time cost"
+      "description": "Argon2 time cost (0 = disabled)"
     },
     "argon2_memory": {
       "type": "integer",
-      "minimum": 1024,
+      "minimum": 0,
       "maximum": 4194304,
-      "description": "Argon2 memory cost in KiB"
+      "description": "Argon2 memory cost in KiB (0 = disabled)"
     },
     "argon2_parallelism": {
       "type": "integer",
-      "minimum": 1,
+      "minimum": 0,
       "maximum": 256,
-      "description": "Argon2 parallelism"
+      "description": "Argon2 parallelism (0 = disabled)"
     },
     "original_hash": {
       "type": "string",
