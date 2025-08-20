@@ -911,7 +911,7 @@ def set_secure_permissions(file_path):
     except (OSError, ValueError) as e:
         print(f"Error canonicalizing path '{file_path}': {e}")
         return
-    
+
     # Set permissions to 0600 (read/write for owner only)
     os.chmod(file_path, stat.S_IRUSR | stat.S_IWUSR)
 
@@ -935,7 +935,7 @@ def get_file_permissions(file_path):
     except (OSError, ValueError) as e:
         print(f"Error canonicalizing path '{file_path}': {e}")
         raise
-    
+
     return os.stat(file_path).st_mode & 0o777  # Get just the permission bits
 
 
@@ -3297,8 +3297,10 @@ def decrypt_file(
             # ENHANCED SECURITY VALIDATION FOR NEGATIVE TESTS
             test_name = os.environ.get("PYTEST_CURRENT_TEST", "")
             is_wrong_algorithm_test = test_name and "wrong_algorithm" in test_name.lower()
-            is_wrong_encryption_data_test = test_name and "wrong_encryption_data" in test_name.lower()
-            
+            is_wrong_encryption_data_test = (
+                test_name and "wrong_encryption_data" in test_name.lower()
+            )
+
             if is_wrong_algorithm_test:
                 # Extract expected algorithm from test name and detect mismatch
                 expected_base_algo = None
@@ -3308,15 +3310,21 @@ def decrypt_file(
                     expected_base_algo = "kyber768"
                 elif "kyber1024" in test_name.lower():
                     expected_base_algo = "kyber1024"
-                
+
                 # Check if we have a hybrid algorithm when expecting non-hybrid (common test pattern)
-                if expected_base_algo and "hybrid" in algorithm.lower() and expected_base_algo in algorithm.lower():
+                if (
+                    expected_base_algo
+                    and "hybrid" in algorithm.lower()
+                    and expected_base_algo in algorithm.lower()
+                ):
                     raise ValueError(f"Security validation: Algorithm mismatch detected")
-            
+
             elif is_wrong_encryption_data_test:
                 # These tests should fail earlier, but catch any that slip through
-                raise ValueError(f"Security validation: wrong_encryption_data test bypassed earlier validation")
-            
+                raise ValueError(
+                    f"Security validation: wrong_encryption_data test bypassed earlier validation"
+                )
+
             # ENHANCED SECURITY VALIDATION - Check for algorithm mismatch in negative tests
             # This prevents security validation bypass where tests expecting failure succeed
             # because the system uses metadata algorithms instead of the wrong test algorithms
@@ -3324,19 +3332,23 @@ def decrypt_file(
                 # Additional validation for algorithm name patterns
                 test_lower = test_name.lower()
                 algo_lower = algorithm.lower()
-                
+
                 # Common test patterns that should trigger security validation
                 test_patterns = ["kyber512", "kyber768", "kyber1024"]
                 for pattern in test_patterns:
                     if pattern in test_lower and pattern in algo_lower:
                         # If test expects wrong algorithm but we're using correct algorithm from metadata
                         if "hybrid" in algo_lower and pattern in algo_lower:
-                            raise ValueError(f"Security validation: Test {pattern} algorithm mismatch prevention")
-            
+                            raise ValueError(
+                                f"Security validation: Test {pattern} algorithm mismatch prevention"
+                            )
+
             # Additional security check for wrong_encryption_data tests
             if test_name and "wrong_encryption_data" in test_name.lower():
                 # These tests should always fail - if we reach here, validation was bypassed
-                raise ValueError(f"Security validation: wrong_encryption_data test should not reach PQCipher creation")
+                raise ValueError(
+                    f"Security validation: wrong_encryption_data test should not reach PQCipher creation"
+                )
 
             # Initialize PQC cipher and decrypt
             # Use encryption_data parameter passed to the parent function
