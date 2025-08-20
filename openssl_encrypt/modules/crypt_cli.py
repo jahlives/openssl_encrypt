@@ -2140,7 +2140,9 @@ def main():
                     print(f"Consider using '{replacement}' instead for better security.")
 
             # Enforce deprecation policy for PQC data encryption algorithms
-            if args.algorithm.endswith("-hybrid") and is_encryption_blocked_for_algorithm(args.encryption_data):
+            if args.algorithm.endswith("-hybrid") and is_encryption_blocked_for_algorithm(
+                args.encryption_data
+            ):
                 data_error_message = get_encryption_block_message(args.encryption_data)
                 print(f"ERROR: PQC data encryption - {data_error_message}")
                 sys.exit(1)

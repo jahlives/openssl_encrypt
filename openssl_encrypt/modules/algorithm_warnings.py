@@ -349,57 +349,57 @@ def get_algorithms_by_level(level: DeprecationLevel) -> List[str]:
 def is_encryption_blocked_for_algorithm(algorithm: str, current_version: str = "1.2.0") -> bool:
     """
     Check if encryption should be blocked for a deprecated algorithm in the current version.
-    
+
     This function enforces the deprecation policy by blocking new encryption with deprecated
     algorithms once their removal version is reached. Decryption of existing files continues
     to work regardless of deprecation status.
-    
+
     Args:
         algorithm: The algorithm identifier
         current_version: The current software version (default: "1.2.0")
-        
+
     Returns:
         bool: True if encryption should be blocked, False if allowed
     """
     # Normalize algorithm name to lowercase for comparison
     normalized_algorithm = algorithm.lower().replace("-", "").replace("_", "")
-    
+
     # Check algorithm registry
     for alg_name, info in DEPRECATED_ALGORITHMS.items():
         normalized_name = alg_name.lower().replace("-", "").replace("_", "")
         if normalized_algorithm == normalized_name:
             level, replacement, message, removal_version, removal_date = info
-            
+
             # Block encryption if we've reached the removal version
             if current_version >= removal_version:
                 return True
-    
+
     return False
 
 
 def get_encryption_block_message(algorithm: str) -> str:
     """
     Get the error message for blocked encryption algorithms.
-    
+
     Args:
         algorithm: The algorithm identifier
-        
+
     Returns:
         str: Error message explaining why encryption is blocked
     """
     # Normalize algorithm name to lowercase for comparison
     normalized_algorithm = algorithm.lower().replace("-", "").replace("_", "")
-    
+
     # Check algorithm registry
     for alg_name, info in DEPRECATED_ALGORITHMS.items():
         normalized_name = alg_name.lower().replace("-", "").replace("_", "")
         if normalized_algorithm == normalized_name:
             level, replacement, message, removal_version, removal_date = info
-            
+
             return (
                 f"Encryption with algorithm '{algorithm}' is no longer supported in version {removal_version}. "
                 f"Please use {replacement} instead. Decryption of existing files encrypted with '{algorithm}' "
                 f"will continue to work."
             )
-    
+
     return f"Encryption with algorithm '{algorithm}' is no longer supported."
