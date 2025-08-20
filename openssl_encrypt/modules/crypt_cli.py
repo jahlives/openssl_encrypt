@@ -204,7 +204,21 @@ class StdinMetadataExtractor:
         try:
             # Decode base64 metadata
             metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
-            metadata = json.loads(metadata_json)
+            # MED-8 Security fix: Use secure JSON validation for metadata parsing
+            try:
+                from .json_validator import (
+                    JSONSecurityError,
+                    JSONValidationError,
+                    secure_metadata_loads,
+                )
+
+                metadata = secure_metadata_loads(metadata_json)
+            except (JSONSecurityError, JSONValidationError) as e:
+                print(f"Error: Invalid metadata JSON: {e}")
+                return None
+            except ImportError:
+                # Fallback to basic validation if json_validator is not available
+                metadata = json.loads(metadata_json)
 
             # Extract algorithm info based on format version
             format_version = metadata.get("format_version", 1)
@@ -421,7 +435,23 @@ def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
             try:
                 with open(template_path, "r") as f:
                     if ext == ".json":
-                        return json.load(f)
+                        # MED-8 Security fix: Use secure JSON validation for template loading
+                        json_content = f.read()
+                        try:
+                            from .json_validator import (
+                                JSONSecurityError,
+                                JSONValidationError,
+                                secure_template_loads,
+                            )
+
+                            return secure_template_loads(json_content)
+                        except (JSONSecurityError, JSONValidationError) as e:
+                            print(f"Error: Invalid template JSON in {template_path}: {e}")
+                            sys.exit(1)
+                        except ImportError:
+                            # Fallback to basic validation if json_validator is not available
+                            import json
+                            return json.loads(json_content)
                     else:
                         return yaml.safe_load(f)
             except Exception as e:
@@ -2218,7 +2248,22 @@ def main():
                             import json
 
                             with open(args.pqc_keyfile, "r") as f:
-                                key_data = json.load(f)
+                                # MED-8 Security fix: Use secure JSON validation for PQC key file loading
+                                json_content = f.read()
+                                try:
+                                    from .json_validator import (
+                                        JSONSecurityError,
+                                        JSONValidationError,
+                                        secure_json_loads,
+                                    )
+
+                                    key_data = secure_json_loads(json_content)
+                                except (JSONSecurityError, JSONValidationError) as e:
+                                    print(f"Error: PQC key file validation failed: {e}")
+                                    sys.exit(1)
+                                except ImportError:
+                                    # Fallback to basic validation if json_validator is not available
+                                    key_data = json.loads(json_content)
 
                             if "public_key" in key_data and "private_key" in key_data:
                                 public_key = base64.b64decode(key_data["public_key"])
@@ -3217,7 +3262,22 @@ def main():
 
                         try:
                             with open(args.pqc_keyfile, "r") as f:
-                                key_data = json.load(f)
+                                # MED-8 Security fix: Use secure JSON validation for PQC key file loading
+                                json_content = f.read()
+                                try:
+                                    from .json_validator import (
+                                        JSONSecurityError,
+                                        JSONValidationError,
+                                        secure_json_loads,
+                                    )
+
+                                    key_data = secure_json_loads(json_content)
+                                except (JSONSecurityError, JSONValidationError) as e:
+                                    print(f"Error: PQC key file validation failed: {e}")
+                                    sys.exit(1)
+                                except ImportError:
+                                    # Fallback to basic validation if json_validator is not available
+                                    key_data = json.loads(json_content)
 
                             if "private_key" in key_data:
                                 encrypted_private_key = base64.b64decode(key_data["private_key"])

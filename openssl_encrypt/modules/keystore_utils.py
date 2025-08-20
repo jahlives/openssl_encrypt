@@ -486,7 +486,26 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
             import json
 
             with open(args.pqc_keyfile, "r") as f:
-                key_data = json.load(f)
+                # MED-8 Security fix: Use secure JSON validation for PQC key file loading
+                json_content = f.read()
+                try:
+                    from .json_validator import (
+                        JSONSecurityError,
+                        JSONValidationError,
+                        secure_json_loads,
+                    )
+
+                    key_data = secure_json_loads(json_content)
+                except (JSONSecurityError, JSONValidationError) as e:
+                    print(f"Error: PQC key file validation failed: {e}")
+                    return False
+                except ImportError:
+                    # Fallback to basic JSON loading if validator not available
+                    try:
+                        key_data = json.loads(json_content)
+                    except json.JSONDecodeError as e:
+                        print(f"Error: Invalid JSON in PQC key file: {e}")
+                        return False
 
             if "public_key" in key_data and "private_key" in key_data:
                 # Check if the private key is encrypted
