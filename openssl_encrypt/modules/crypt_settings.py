@@ -1198,7 +1198,28 @@ class SettingsTab:
         try:
             if os.path.exists(CONFIG_FILE):
                 with open(CONFIG_FILE, "r") as f:
-                    loaded_config = json.load(f)
+                    # MED-8 Security fix: Use secure JSON validation for settings loading
+                    json_content = f.read()
+                    try:
+                        from .json_validator import (
+                            JSONSecurityError,
+                            JSONValidationError,
+                            secure_json_loads,
+                        )
+
+                        loaded_config = secure_json_loads(json_content)
+                    except (JSONSecurityError, JSONValidationError) as e:
+                        print(f"Warning: Settings file validation failed: {e}")
+                        print("Using default configuration")
+                        return  # Use default config on validation failure
+                    except ImportError:
+                        # Fallback to basic JSON loading if validator not available
+                        try:
+                            loaded_config = json.loads(json_content)
+                        except json.JSONDecodeError as e:
+                            print(f"Warning: Invalid JSON in settings file: {e}")
+                            print("Using default configuration")
+                            return
 
                 # Merge with default config to ensure all keys exist
                 self.merge_config(loaded_config)
