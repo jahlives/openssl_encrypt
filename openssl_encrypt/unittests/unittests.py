@@ -1330,7 +1330,7 @@ class TestCLIInterface(unittest.TestCase):
             "--force-password",
             "--algorithm",
             "fernet",
-            "--pbkdf2-iterations",
+            "--argon2-rounds",
             "1000",
         ]
 
