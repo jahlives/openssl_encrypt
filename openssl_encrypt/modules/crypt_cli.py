@@ -715,7 +715,7 @@ def main():
     data_algorithms = [
         "aes-gcm",
         "aes-gcm-siv",
-        "aes-ocb3",
+        # "aes-ocb3",  # Removed - deprecated due to security concerns
         "aes-siv",
         "chacha20-poly1305",
         "xchacha20-poly1305",
@@ -1989,7 +1989,7 @@ def main():
             hash_config["hash_config"]["algorithm"] = "xchacha20-poly1305"
         elif args.quick:
             hash_config = get_template_config(SecurityTemplate.QUICK)
-            hash_config["hash_config"]["algorithm"] = "aes-ocb3"
+            hash_config["hash_config"]["algorithm"] = "aes-gcm"  # Changed from aes-ocb3 due to deprecation
         elif args.standard:
             hash_config = get_template_config(SecurityTemplate.STANDARD)
             hash_config["hash_config"]["algorithm"] = "aes-gcm-siv"
@@ -2070,6 +2070,14 @@ def main():
                 print("ERROR: PBKDF2 is deprecated for new encryptions.")
                 print("Please use Argon2, Scrypt, or Balloon hashing instead.")
                 print("Existing files encrypted with PBKDF2 can still be decrypted.")
+                sys.exit(1)
+
+            # DEPRECATED: AES-OCB3 is no longer supported for new encryptions due to security concerns
+            if hasattr(args, "algorithm") and args.algorithm == "aes-ocb3":
+                print("ERROR: AES-OCB3 is deprecated for new encryptions.")
+                print("Please use AES-GCM or AES-GCM-SIV instead.")
+                print("AES-OCB3 has security concerns with short nonces and implementation issues.")
+                print("Existing files encrypted with AES-OCB3 can still be decrypted.")
                 sys.exit(1)
 
             # DEPRECATED: Kyber algorithms are no longer supported for new encryptions
