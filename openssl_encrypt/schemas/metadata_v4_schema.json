@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensslencrypt.com/schemas/metadata-v4.json",
+  "title": "OpenSSL Encrypt Metadata Schema Version 4",
+  "description": "Schema for validating encrypted file metadata format version 4 (hierarchical structure)",
+  "type": "object",
+  "required": ["format_version", "derivation_config", "encryption"],
+  "additionalProperties": true,
+  "properties": {
+    "format_version": {
+      "type": "integer",
+      "const": 4,
+      "description": "Metadata format version (must be 4)"
+    },
+    "derivation_config": {
+      "type": "object",
+      "required": ["salt"],
+      "additionalProperties": true,
+      "properties": {
+        "salt": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9+/]+=*$",
+          "description": "Base64-encoded salt"
+        },
+        "hash_config": {
+          "type": "object",
+          "additionalProperties": true,
+          "patternProperties": {
+            "^(sha512|sha384|sha256|sha224|sha3_512|sha3_384|sha3_256|sha3_224|blake2b|blake3|shake256|shake128|whirlpool)$": {
+              "type": "object",
+              "required": ["rounds"],
+              "additionalProperties": true,
+              "properties": {
+                "rounds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Number of hash rounds (0 = disabled)"
+                }
+              }
+            }
+          }
+        },
+        "kdf_config": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "pbkdf2": {
+              "type": "object",
+              "required": ["rounds"],
+              "additionalProperties": true,
+              "properties": {
+                "rounds": {
+                  "type": "integer",
+                  "minimum": 1000,
+                  "maximum": 10000000,
+                  "description": "PBKDF2 iteration count"
+                }
+              }
+            },
+            "scrypt": {
+              "type": "object",
+              "required": ["n", "r", "p"],
+              "additionalProperties": true,
+              "properties": {
+                "n": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1048576,
+                  "description": "Scrypt N parameter"
+                },
+                "r": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 256,
+                  "description": "Scrypt r parameter"
+                },
+                "p": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 256,
+                  "description": "Scrypt p parameter"
+                }
+              }
+            },
+            "argon2": {
+              "type": "object",
+              "required": ["time_cost", "memory_cost", "parallelism"],
+              "additionalProperties": true,
+              "properties": {
+                "time_cost": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1000,
+                  "description": "Argon2 time cost"
+                },
+                "memory_cost": {
+                  "type": "integer",
+                  "minimum": 1024,
+                  "maximum": 4194304,
+                  "description": "Argon2 memory cost in KiB"
+                },
+                "parallelism": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 256,
+                  "description": "Argon2 parallelism"
+                }
+              }
+            }
+          }
+        },
+        "pqc_public_key": {
+          "type": "string",
+          "maxLength": 65536,
+          "pattern": "^[A-Za-z0-9+/]+=*$",
+          "description": "Base64-encoded PQC public key (max 64KB)"
+        },
+        "pqc_private_key": {
+          "type": "string",
+          "maxLength": 65536,
+          "pattern": "^[A-Za-z0-9+/]+=*$",
+          "description": "Base64-encoded PQC private key (max 64KB)"
+        },
+        "dual_encryption": {
+          "type": "boolean",
+          "description": "Whether dual encryption mode is used"
+        },
+        "keystore_id": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "description": "Keystore identifier"
+        }
+      }
+    },
+    "hashes": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "original_hash": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-fA-F0-9]*$",
+          "description": "Hexadecimal hash of original file"
+        },
+        "encrypted_hash": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-fA-F0-9]*$",
+          "description": "Hexadecimal hash of encrypted content"
+        }
+      }
+    },
+    "encryption": {
+      "type": "object",
+      "required": ["algorithm"],
+      "additionalProperties": true,
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "enum": [
+            "fernet",
+            "aes-gcm",
+            "aes-gcm-siv",
+            "aes-ocb3",
+            "aes-siv",
+            "chacha20-poly1305",
+            "xchacha20-poly1305",
+            "ml-kem-768-hybrid",
+            "ml-kem-1024-hybrid",
+            "kyber512",
+            "kyber768",
+            "kyber1024",
+            "kyber512-hybrid",
+            "kyber768-hybrid",
+            "kyber1024-hybrid"
+          ],
+          "description": "Encryption algorithm used"
+        }
+      }
+    }
+  }
+}
