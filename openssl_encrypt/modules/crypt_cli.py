@@ -1989,7 +1989,9 @@ def main():
             hash_config["hash_config"]["algorithm"] = "xchacha20-poly1305"
         elif args.quick:
             hash_config = get_template_config(SecurityTemplate.QUICK)
-            hash_config["hash_config"]["algorithm"] = "aes-gcm"  # Changed from aes-ocb3 due to deprecation
+            hash_config["hash_config"][
+                "algorithm"
+            ] = "aes-gcm"  # Changed from aes-ocb3 due to deprecation
         elif args.standard:
             hash_config = get_template_config(SecurityTemplate.STANDARD)
             hash_config["hash_config"]["algorithm"] = "aes-gcm-siv"
@@ -3166,7 +3168,9 @@ def main():
                     import tempfile
 
                     stdin_temp_file = tempfile.NamedTemporaryFile(delete=False)
-                    os.chmod(stdin_temp_file.name, 0o600)  # Security: Restrict to user read/write only
+                    os.chmod(
+                        stdin_temp_file.name, 0o600
+                    )  # Security: Restrict to user read/write only
                     temp_files_to_cleanup.append(stdin_temp_file.name)
 
                     # Copy all data from reconstructed stream to temp file
