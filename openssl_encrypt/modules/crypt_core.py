@@ -48,8 +48,10 @@ from cryptography.hazmat.primitives.ciphers.aead import (
 
 # Import algorithm warning system
 from .algorithm_warnings import (
+    get_encryption_block_message,
     get_recommended_replacement,
     is_deprecated,
+    is_encryption_blocked_for_algorithm,
     warn_deprecated_algorithm,
 )
 
@@ -2624,6 +2626,12 @@ def encrypt_file(
 
     if isinstance(algorithm, str):
         algorithm = EncryptionAlgorithm(algorithm)
+
+    # Enforce deprecation policy: Block encryption with deprecated algorithms in version 1.2.0
+    algorithm_value = algorithm.value if isinstance(algorithm, EncryptionAlgorithm) else algorithm
+    if is_encryption_blocked_for_algorithm(algorithm_value):
+        error_message = get_encryption_block_message(algorithm_value)
+        raise ValidationError(error_message)
 
     # Handle signature algorithms (MAYO/CROSS) - generate keypair if not provided
     is_signature_algorithm = algorithm in [

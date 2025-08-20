@@ -31,8 +31,10 @@ import yaml
 
 from .algorithm_warnings import (
     AlgorithmWarningConfig,
+    get_encryption_block_message,
     get_recommended_replacement,
     is_deprecated,
+    is_encryption_blocked_for_algorithm,
     warn_deprecated_algorithm,
 )
 
@@ -2119,6 +2121,12 @@ def main():
                 print(f"Existing files encrypted with {args.algorithm} can still be decrypted.")
                 sys.exit(1)
 
+            # Enforce deprecation policy: Block encryption with deprecated algorithms in version 1.2.0
+            if is_encryption_blocked_for_algorithm(args.algorithm):
+                error_message = get_encryption_block_message(args.algorithm)
+                print(f"ERROR: {error_message}")
+                sys.exit(1)
+
             # Check if main algorithm is deprecated and issue warning
             if is_deprecated(args.algorithm):
                 replacement = get_recommended_replacement(args.algorithm)
@@ -2130,6 +2138,12 @@ def main():
                 ):
                     print(f"Warning: The algorithm '{args.algorithm}' is deprecated.")
                     print(f"Consider using '{replacement}' instead for better security.")
+
+            # Enforce deprecation policy for PQC data encryption algorithms
+            if args.algorithm.endswith("-hybrid") and is_encryption_blocked_for_algorithm(args.encryption_data):
+                data_error_message = get_encryption_block_message(args.encryption_data)
+                print(f"ERROR: PQC data encryption - {data_error_message}")
+                sys.exit(1)
 
             # Check if data encryption algorithm is deprecated for PQC
             if args.algorithm.endswith("-hybrid") and is_deprecated(args.encryption_data):
