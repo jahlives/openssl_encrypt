@@ -37,6 +37,7 @@ sync-wiki:
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_COMMIT_BRANCH =~ /^releases\/.*/
     - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH == "dev"
       when: manual
@@ -70,6 +71,7 @@ dependency-scan:
     - if: $CI_COMMIT_BRANCH == "testing"
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_COMMIT_BRANCH =~ /^releases\/.*/
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
 # Python code security scanning with Bandit
@@ -96,6 +98,7 @@ code-security-scan:
     - if: $CI_COMMIT_BRANCH == "testing"
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_COMMIT_BRANCH =~ /^releases\/.*/
     - if: $CI_COMMIT_BRANCH == "nightly"
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
@@ -125,6 +128,7 @@ code-quality-scan:
     - if: $CI_COMMIT_BRANCH == "testing"
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_COMMIT_BRANCH =~ /^releases\/.*/
     - if: $CI_COMMIT_BRANCH == "nightly"
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
@@ -151,6 +155,7 @@ type-checking:
     - if: $CI_COMMIT_BRANCH == "testing"
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_COMMIT_BRANCH =~ /^releases\/.*/
     - if: $CI_COMMIT_BRANCH == "nightly"
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
@@ -179,6 +184,7 @@ semgrep-security-scan:
     - if: $CI_COMMIT_BRANCH == "testing"
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_COMMIT_BRANCH =~ /^releases\/.*/
     - if: $CI_COMMIT_BRANCH == "nightly"
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
@@ -218,6 +224,7 @@ code-complexity-scan:
     - if: $CI_COMMIT_BRANCH == "testing"
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_COMMIT_BRANCH =~ /^releases\/.*/
     - if: $CI_COMMIT_BRANCH == "nightly"
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
@@ -241,6 +248,7 @@ sbom-generation:
     - if: $CI_COMMIT_BRANCH == "testing"
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_COMMIT_BRANCH =~ /^releases\/.*/
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
 test:
@@ -260,6 +268,9 @@ test:
     - if: $CI_COMMIT_BRANCH == "testing"
     - if: $CI_COMMIT_BRANCH == "release"
       # Must succeed on release branch
+      allow_failure: false
+    - if: $CI_COMMIT_BRANCH =~ /^releases\/.*/
+      # Must succeed on releases branches
       allow_failure: false
     - if: $CI_COMMIT_TAG
   # Fallback configuration if the custom image is not available
@@ -306,6 +317,10 @@ test-fallback:
       when: on_failure
       # Must succeed on release branch
       allow_failure: false
+    - if: $CI_COMMIT_BRANCH =~ /^releases\/.*/
+      when: on_failure
+      # Must succeed on releases branches
+      allow_failure: false
     - if: $CI_COMMIT_TAG
       when: on_failure
 
@@ -324,6 +339,7 @@ build:
     - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_COMMIT_BRANCH =~ /^releases\/.*/
     - if: $CI_COMMIT_BRANCH == "testing"
     - if: $CI_COMMIT_BRANCH == "dev"
 
@@ -341,17 +357,9 @@ publish:
     - if: $CI_COMMIT_TAG
       when: manual
       allow_failure: true
-    - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_COMMIT_BRANCH =~ /^releases\/.*/
       when: manual
       allow_failure: true
-    - if: $CI_COMMIT_BRANCH == "main"
-      when: manual
-      allow_failure: true
-    - if: $CI_COMMIT_BRANCH == "dev"
-      when: manual
-      allow_failure: true
-
-
 
 publish-pypi-test:
   stage: publish
@@ -366,7 +374,7 @@ publish-pypi-test:
     - if: $CI_COMMIT_TAG
       when: manual
       allow_failure: true
-    - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_COMMIT_BRANCH =~ /^releases\/.*/
       when: manual
       allow_failure: true
 
@@ -383,6 +391,6 @@ publish-pypi-prod:
     - if: $CI_COMMIT_TAG
       when: manual
       allow_failure: true
-    - if: $CI_COMMIT_BRANCH == "release"
+    - if: $CI_COMMIT_BRANCH =~ /^releases\/.*/
       when: manual
       allow_failure: true
