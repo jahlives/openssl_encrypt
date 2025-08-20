@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensslencrypt.com/schemas/config-template.json",
+  "title": "OpenSSL Encrypt Configuration Template Schema",
+  "description": "Schema for validating OpenSSL Encrypt configuration template files",
+  "type": "object",
+  "required": ["hash_config"],
+  "additionalProperties": true,
+  "properties": {
+    "hash_config": {
+      "type": "object",
+      "required": ["pbkdf2_iterations", "type", "algorithm"],
+      "additionalProperties": true,
+      "properties": {
+        "sha512": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "SHA-512 rounds (0 = disabled)"
+        },
+        "sha256": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "SHA-256 rounds (0 = disabled)"
+        },
+        "sha3_256": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "SHA3-256 rounds (0 = disabled)"
+        },
+        "sha3_512": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "SHA3-512 rounds (0 = disabled)"
+        },
+        "blake2b": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "BLAKE2b rounds (0 = disabled)"
+        },
+        "shake256": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "SHAKE256 rounds (0 = disabled)"
+        },
+        "whirlpool": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "Whirlpool rounds (0 = disabled)"
+        },
+        "scrypt": {
+          "type": "object",
+          "required": ["enabled"],
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether scrypt is enabled"
+            },
+            "n": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1048576,
+              "description": "CPU/memory cost parameter"
+            },
+            "r": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 256,
+              "description": "Block size parameter"
+            },
+            "p": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 256,
+              "description": "Parallelization parameter"
+            },
+            "rounds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000,
+              "description": "Number of scrypt rounds"
+            }
+          }
+        },
+        "argon2": {
+          "type": "object",
+          "required": ["enabled"],
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether Argon2 is enabled"
+            },
+            "time_cost": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "description": "Time cost parameter"
+            },
+            "memory_cost": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 4194304,
+              "description": "Memory cost in KiB"
+            },
+            "parallelism": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 256,
+              "description": "Number of parallel threads"
+            },
+            "hash_len": {
+              "type": "integer",
+              "minimum": 16,
+              "maximum": 64,
+              "description": "Hash output length in bytes"
+            },
+            "type": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2,
+              "description": "Argon2 type (0=d, 1=i, 2=id)"
+            },
+            "rounds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000,
+              "description": "Number of Argon2 rounds"
+            }
+          }
+        },
+        "pbkdf2_iterations": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000000,
+          "description": "PBKDF2 iteration count (minimum 1000 for security)"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["id", "hash", "key"],
+          "description": "Configuration type identifier"
+        },
+        "algorithm": {
+          "type": "string",
+          "enum": [
+            "fernet",
+            "aes-gcm",
+            "aes-gcm-siv",
+            "aes-ocb3",
+            "aes-siv",
+            "chacha20-poly1305",
+            "xchacha20-poly1305",
+            "ml-kem-768-hybrid",
+            "ml-kem-1024-hybrid"
+          ],
+          "description": "Encryption algorithm to use"
+        }
+      }
+    },
+    "encryption_data": {
+      "type": "string",
+      "enum": [
+        "aes-gcm",
+        "aes-gcm-siv",
+        "aes-ocb3",
+        "aes-siv",
+        "chacha20-poly1305",
+        "xchacha20-poly1305",
+        "fernet"
+      ],
+      "description": "Data encryption algorithm"
+    }
+  }
+}
