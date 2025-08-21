@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'settings_service.dart';
 import 'cli_service.dart';
+import 'input_validation.dart';
 
 /// Security helper: Canonicalize file path to prevent symlink attacks
 String _canonicalizePath(String filePath) {
@@ -737,6 +738,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final canonicalPath = _canonicalizePath(result.files.single.path!);
         final file = File(canonicalPath);
         final jsonString = await file.readAsString();
+
+        // Security: Validate JSON input before parsing
+        final jsonValidation = InputValidator.validateJsonInput(jsonString);
+        if (jsonValidation != null) {
+          throw Exception('Invalid JSON: $jsonValidation');
+        }
+
         final importData = jsonDecode(jsonString) as Map<String, dynamic>;
 
         // Validate import data

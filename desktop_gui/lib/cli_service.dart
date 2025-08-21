@@ -544,8 +544,6 @@ class CLIService {
       _outputDebugLog('Development CLI exception: $e');
       throw Exception('No CLI available');
     }
-
-    throw Exception('No CLI available');
   }
 
   /// Run CLI command with real-time progress streaming
