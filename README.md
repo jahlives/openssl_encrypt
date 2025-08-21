@@ -14,10 +14,10 @@ Whirlpool implementation.
     - AES-GCM - Authenticated encryption with associated data
     - AES-GCM-SIV - Misuse-resistant authenticated encryption
     - AES-SIV - Synthetic IV mode for nonce reuse resistance
-    - AES-OCB3 - High-performance authenticated encryption
+    - AES-OCB3 - High-performance authenticated encryption (removed for encryption in 1.2.0, still supported for decryption)
     - ChaCha20-Poly1305 - Stream cipher with authentication
     - XChaCha20-Poly1305 - Extended nonce variant
-    - Camellia - International standard block cipher
+    - Camellia - International standard block cipher (removed for encryption in 1.2.0, still supported for decryption)
 
 ###  Advanced Post-Quantum Cryptography
 
@@ -48,7 +48,7 @@ Whirlpool implementation.
     - SHA-3 Family (FIPS 202): SHA3-512, SHA3-384, SHA3-256, SHA3-224
     - BLAKE Family: BLAKE2b (high-performance), BLAKE3 (ultra-fast tree-based)
     - SHAKE Functions: SHAKE-256, SHAKE-128 (extendable-output functions)
-    - Legacy: Whirlpool (512-bit cryptographic hash)
+    - Legacy: Whirlpool (512-bit cryptographic hash, removed for encryption in 1.2.0, still supported for decryption)
   - Key Derivation Functions (KDFs):
     - Modern KDFs:
         - HKDF - HMAC-based Key Derivation Function (RFC 5869)
@@ -56,7 +56,7 @@ Whirlpool implementation.
         - Argon2 - Winner of Password Hashing Competition (Argon2i, Argon2d, Argon2id variants)
         - Balloon Hashing - Memory-hard function with proven security
     - Legacy KDF:
-        - PBKDF2 - Password-Based Key Derivation Function 2
+        - PBKDF2 - Password-Based Key Derivation Function 2 (removed for encryption in 1.2.0, still supported for decryption)
 
 ###  Enterprise Security Features
 
