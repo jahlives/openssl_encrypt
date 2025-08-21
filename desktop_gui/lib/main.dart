@@ -9,6 +9,7 @@ import 'file_manager.dart';
 import 'settings_service.dart';
 import 'settings_screen.dart';
 import 'configuration_profiles_screen.dart';
+import 'input_validation.dart';
 
 // Intent classes for keyboard shortcuts
 class OpenFileIntent extends Intent {
@@ -135,6 +136,8 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   final FileManager _fileManager = FileManager();
   final GlobalKey<_FileCryptoTabState> _fileCryptoTabKey = GlobalKey<_FileCryptoTabState>();
+  final GlobalKey<_TextCryptoTabState> _textCryptoTabKey = GlobalKey<_TextCryptoTabState>();
+  final GlobalKey<_BatchOperationsTabState> _batchOperationsTabKey = GlobalKey<_BatchOperationsTabState>();
   int _selectedIndex = 0;
   bool _isDragOver = false;
   bool _debugWindowVisible = false;
@@ -164,23 +167,49 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   void _copyToClipboard() async {
-    // TODO: Copy current result to clipboard
-    if (_result.isNotEmpty) {
-      await Clipboard.setData(ClipboardData(text: _result));
+    // Get result from current active tab
+    String? currentResult;
+
+    if (_selectedIndex == 0) {
+      // Text crypto tab
+      final textTabState = _textCryptoTabKey.currentState;
+      currentResult = textTabState?.result;
+    } else if (_selectedIndex == 1) {
+      // File crypto tab
+      final fileTabState = _fileCryptoTabKey.currentState;
+      currentResult = fileTabState?.result;
+    } else if (_selectedIndex == 2) {
+      // Batch operations tab
+      final batchTabState = _batchOperationsTabKey.currentState;
+      currentResult = batchTabState?.result;
+    }
+
+    if (currentResult != null && currentResult.isNotEmpty) {
+      await Clipboard.setData(ClipboardData(text: currentResult));
 
       // Schedule secure clipboard clearing after 30 seconds
       Timer(const Duration(seconds: 30), () async {
         await Clipboard.setData(const ClipboardData(text: ''));
       });
-    }
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Result copied to clipboard (will auto-clear in 30s)'),
-          duration: Duration(seconds: 3),
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Result copied to clipboard (will auto-clear in 30s)'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No result to copy'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     }
   }
 
@@ -437,11 +466,11 @@ class _MainScreenState extends State<MainScreen> {
   Widget _getSelectedPage() {
     switch (_selectedIndex) {
       case 0:
-        return TextCryptoTab(onDebugChanged: widget.onDebugChanged, onToggleDebugWindow: _toggleDebugWindow);
+        return TextCryptoTab(key: _textCryptoTabKey, onDebugChanged: widget.onDebugChanged, onToggleDebugWindow: _toggleDebugWindow);
       case 1:
         return FileCryptoTab(key: _fileCryptoTabKey, fileManager: _fileManager, onDebugChanged: widget.onDebugChanged);
       case 2:
-        return BatchOperationsTab(fileManager: _fileManager, onDebugChanged: widget.onDebugChanged);
+        return BatchOperationsTab(key: _batchOperationsTabKey, fileManager: _fileManager, onDebugChanged: widget.onDebugChanged);
       case 3:
         return const InfoTab();
       case 4:
@@ -658,7 +687,7 @@ class TextCryptoTab extends StatefulWidget {
 class _TextCryptoTabState extends State<TextCryptoTab> {
   final TextEditingController _textController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  String _result = '';
+  String result = '';
   String _encryptedData = '';
   bool _isLoading = false;
   String _operationStatus = '';
@@ -787,7 +816,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   void _encryptText() async {
     if (_textController.text.isEmpty || _passwordController.text.isEmpty) {
       setState(() {
-        _result = 'Please enter both text and password';
+        result = 'Please enter both text and password';
       });
       return;
     }
@@ -795,7 +824,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     // Check if selected algorithm is available on current platform
     if (!_isAlgorithmAvailable(_selectedAlgorithm)) {
       setState(() {
-        _result = 'Error: $_selectedAlgorithm is not available. This algorithm required the Python cryptography backend which has been removed in favor of pure Dart implementation.';
+        result = 'Error: $_selectedAlgorithm is not available. This algorithm required the Python cryptography backend which has been removed in favor of pure Dart implementation.';
       });
       return;
     }
@@ -805,7 +834,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       _operationStatus = 'Encrypting data...';
       _operationProgress = '';
       _progressValue = 0.0;
-      _result = 'Encrypting...';
+      result = 'Encrypting...';
     });
 
     // Give UI a moment to update before heavy crypto operations
@@ -846,7 +875,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
 
       setState(() {
         _encryptedData = encrypted;
-        _result = encrypted; // Show only the base64 encoded string
+        result = encrypted; // Show only the base64 encoded string
         _isLoading = false;
         _operationStatus = '';
         _operationProgress = '';
@@ -854,7 +883,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       });
     } catch (e) {
       setState(() {
-        _result = 'Encryption failed: $e';
+        result = 'Encryption failed: $e';
         _isLoading = false;
         _operationStatus = '';
         _operationProgress = '';
@@ -869,7 +898,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
 
     if (inputData.isEmpty || _passwordController.text.isEmpty) {
       setState(() {
-        _result = 'Please encrypt some text first, paste encrypted data in the text field, or enter the password';
+        result = 'Please encrypt some text first, paste encrypted data in the text field, or enter the password';
       });
       return;
     }
@@ -879,7 +908,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       _operationStatus = 'Decrypting data...';
       _operationProgress = '';
       _progressValue = 0.0;
-      _result = 'Decrypting...';
+      result = 'Decrypting...';
     });
 
     // Give UI a moment to update before heavy crypto operations
@@ -914,7 +943,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       );
 
       setState(() {
-        _result = decrypted; // Show only the decrypted text
+        result = decrypted; // Show only the decrypted text
         _isLoading = false;
         _operationStatus = '';
         _operationProgress = '';
@@ -922,7 +951,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       });
     } catch (e) {
       setState(() {
-        _result = 'Decryption failed: $e';
+        result = 'Decryption failed: $e';
         _isLoading = false;
         _operationStatus = '';
         _operationProgress = '';
@@ -1018,15 +1047,21 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
+            TextFormField(
               controller: _textController,
               decoration: const InputDecoration(
                 labelText: 'Text to encrypt',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.text_fields),
+                helperText: 'Maximum 1MB text content',
+              ),
+              maxLines: 3,
+              validator: InputValidator.validateTextContent,
+              // Security: Prevent excessively long input that could cause DoS
+              inputFormatters: [
+                LengthLimitingTextInputFormatter(InputValidator.maxTextLength),
+              ],
             ),
-            maxLines: 3,
-          ),
           const SizedBox(height: 16),
           // Advanced Algorithm Selection
           Card(
@@ -1120,7 +1155,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                         const SizedBox(width: 8),
                         const Text('Private Key Encryption', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                         const Spacer(),
-                        Icon(Icons.security, color: Colors.purple, size: 20),
+                        const Icon(Icons.security, color: Colors.purple, size: 20),
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -1529,14 +1564,22 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
             ),
           ),
           const SizedBox(height: 16),
-          TextField(
+          TextFormField(
             controller: _passwordController,
             decoration: const InputDecoration(
               labelText: 'Password',
               border: OutlineInputBorder(),
               prefixIcon: Icon(Icons.lock),
+              helperText: 'Maximum 1024 characters',
             ),
             obscureText: true,
+            validator: InputValidator.validatePassword,
+            // Security: Prevent excessively long passwords that could cause buffer overflow
+            inputFormatters: [
+              LengthLimitingTextInputFormatter(InputValidator.maxPasswordLength),
+              // Security: Filter out null bytes and dangerous control characters
+              FilteringTextInputFormatter.deny(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]')),
+            ],
           ),
           const SizedBox(height: 16),
           if (_isLoading)
@@ -1649,19 +1692,19 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                   ),
                   child: SingleChildScrollView(
                     child: SelectableText(
-                      _result.isEmpty ? 'Results will appear here...' : _result,
+                      result.isEmpty ? 'Results will appear here...' : result,
                       style: const TextStyle(fontFamily: 'monospace'),
                     ),
                   ),
                 ),
-              if (_result.isNotEmpty)
+              if (result.isNotEmpty)
                 Positioned(
                   top: 8,
                   right: 8,
                   child: FloatingActionButton.small(
-                    heroTag: "copy_text_result",
+                    heroTag: "copy_textresult",
                     onPressed: () async {
-                      await Clipboard.setData(ClipboardData(text: _result));
+                      await Clipboard.setData(ClipboardData(text: result));
 
                       // Schedule secure clipboard clearing after 30 seconds
                       Timer(const Duration(seconds: 30), () async {
@@ -2710,7 +2753,7 @@ class FileCryptoTab extends StatefulWidget {
 class _FileCryptoTabState extends State<FileCryptoTab> {
   final TextEditingController _passwordController = TextEditingController();
   FileInfo? _selectedFile;
-  String _result = '';
+  String result = '';
   bool _isLoading = false;
   String? _decryptedContent; // Store decrypted content for optional saving
   bool _debugLogging = false;
@@ -2795,7 +2838,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     if (file != null) {
       setState(() {
         _selectedFile = file;
-        _result = 'Selected file: ${file.name}\nSize: ${file.sizeFormatted}';
+        result = 'Selected file: ${file.name}\nSize: ${file.sizeFormatted}';
       });
     }
   }
@@ -2807,13 +2850,13 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
       if (fileInfo != null) {
         setState(() {
           _selectedFile = fileInfo;
-          _result = 'Selected file: ${fileInfo.name}\nSize: ${fileInfo.sizeFormatted}';
+          result = 'Selected file: ${fileInfo.name}\nSize: ${fileInfo.sizeFormatted}';
         });
         return true;
       }
     } catch (e) {
       setState(() {
-        _result = 'Error loading file: $e';
+        result = 'Error loading file: $e';
       });
     }
     return false;
@@ -2949,7 +2992,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
       if (fileInfo != null) {
         setState(() {
           _selectedFile = fileInfo;
-          _result = 'Selected test file: ${fileInfo.name}\nSize: ${fileInfo.sizeFormatted}\nNote: Test password is "1234"';
+          result = 'Selected test file: ${fileInfo.name}\nSize: ${fileInfo.sizeFormatted}\nNote: Test password is "1234"';
         });
       }
     }
@@ -2958,7 +3001,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   void _encryptFile() async {
     if (_selectedFile == null || _passwordController.text.isEmpty) {
       setState(() {
-        _result = 'Please select a file and enter a password';
+        result = 'Please select a file and enter a password';
       });
       return;
     }
@@ -2966,7 +3009,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     // Use selected algorithm, hash, and KDF configuration
     setState(() {
       _isLoading = true;
-      _result = 'Encrypting file with $_selectedAlgorithm...';
+      result = 'Encrypting file with $_selectedAlgorithm...';
       _operationStatus = 'Preparing encryption...';
       _operationProgress = '';
       _progressValue = 0.0;
@@ -3016,7 +3059,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
       if (success) {
         setState(() {
           if (_forceOverwrite) {
-            _result = 'File encrypted successfully (source overwritten)!\n\n'
+            result = 'File encrypted successfully (source overwritten)!\n\n'
                 'Original: ${_selectedFile!.name}\n'
                 'Size: ${_selectedFile!.sizeFormatted}\n'
                 'Status: Source file replaced with encrypted content\n'
@@ -3025,7 +3068,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                 'CLI Compatible: Yes\n'
                 'Format: OpenSSL Encrypt Desktop GUI';
           } else {
-            _result = 'File encrypted successfully!\n\n'
+            result = 'File encrypted successfully!\n\n'
                 'Original: ${_selectedFile!.name}\n'
                 'Size: ${_selectedFile!.sizeFormatted}\n'
                 'Encrypted: ${outputPath.split('/').last}\n'
@@ -3041,7 +3084,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
       }
     } catch (e) {
       setState(() {
-        _result = 'File encryption failed: $e';
+        result = 'File encryption failed: $e';
         _isLoading = false;
       });
     }
@@ -3050,7 +3093,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   void _decryptFile() async {
     if (_selectedFile == null || _passwordController.text.isEmpty) {
       setState(() {
-        _result = 'Please select an encrypted file and enter a password';
+        result = 'Please select an encrypted file and enter a password';
       });
       return;
     }
@@ -3059,7 +3102,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     bool fileIsEncrypted = await _selectedFile!.isEncrypted;
     if (!fileIsEncrypted) {
       setState(() {
-        _result = 'Selected file does not appear to be encrypted.\n'
+        result = 'Selected file does not appear to be encrypted.\n'
             'Expected: CLI format (base64_metadata:base64_data) or JSON format with encrypted_data and metadata fields.\n'
             'File: ${_selectedFile!.name}';
       });
@@ -3068,7 +3111,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
 
     setState(() {
       _isLoading = true;
-      _result = 'Decrypting file...';
+      result = 'Decrypting file...';
       _operationStatus = 'Starting decryption...';
       _operationProgress = '';
       _progressValue = 0.0;
@@ -3134,7 +3177,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
         if (success) {
           setState(() {
             _decryptedContent = decrypted;
-            _result = 'File decrypted successfully (source overwritten)!\n\n'
+            result = 'File decrypted successfully (source overwritten)!\n\n'
                 'Status: Source file replaced with decrypted content\n'
                 'Path: ${_selectedFile!.path}\n'
                 'File: ${_selectedFile!.name}\n\n'
@@ -3152,7 +3195,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
         // Store for optional saving (existing behavior)
         setState(() {
           _decryptedContent = decrypted; // Store for optional saving
-          _result = decrypted; // Show only the decrypted content
+          result = decrypted; // Show only the decrypted content
           _isLoading = false;
           _operationStatus = '';
           _operationProgress = '';
@@ -3162,7 +3205,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
 
     } catch (e) {
       setState(() {
-        _result = 'File decryption failed: $e';
+        result = 'File decryption failed: $e';
         _isLoading = false;
         _operationStatus = '';
         _operationProgress = '';
@@ -3174,7 +3217,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   void _saveDecryptedToFile() async {
     if (_decryptedContent == null || _selectedFile == null) {
       setState(() {
-        _result = 'No decrypted content available to save';
+        result = 'No decrypted content available to save';
       });
       return;
     }
@@ -3186,16 +3229,16 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
 
       if (success) {
         setState(() {
-          _result += '\n\n✅ Content saved to file:\n$outputPath';
+          result += '\n\n✅ Content saved to file:\n$outputPath';
         });
       } else {
         setState(() {
-          _result += '\n\n❌ Failed to save content to file';
+          result += '\n\n❌ Failed to save content to file';
         });
       }
     } catch (e) {
       setState(() {
-        _result += '\n\n❌ Save failed: $e';
+        result += '\n\n❌ Save failed: $e';
       });
     }
   }
@@ -3755,7 +3798,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                         const SizedBox(width: 8),
                         const Text('Private Key Encryption', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                         const Spacer(),
-                        Icon(Icons.security, color: Colors.purple, size: 20),
+                        const Icon(Icons.security, color: Colors.purple, size: 20),
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -3792,14 +3835,22 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
             ),
             const SizedBox(height: 16),
           ],
-          TextField(
+          TextFormField(
             controller: _passwordController,
             decoration: const InputDecoration(
               labelText: 'Password',
               border: OutlineInputBorder(),
               prefixIcon: Icon(Icons.lock),
+              helperText: 'Maximum 1024 characters',
             ),
             obscureText: true,
+            validator: InputValidator.validatePassword,
+            // Security: Prevent excessively long passwords that could cause buffer overflow
+            inputFormatters: [
+              LengthLimitingTextInputFormatter(InputValidator.maxPasswordLength),
+              // Security: Filter out null bytes and dangerous control characters
+              FilteringTextInputFormatter.deny(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]')),
+            ],
           ),
           const SizedBox(height: 16),
           // Debug Logging Toggle
@@ -4057,19 +4108,19 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                   ),
                   child: SingleChildScrollView(
                     child: SelectableText(
-                      _result.isEmpty ? 'File operation results will appear here...' : _result,
+                      result.isEmpty ? 'File operation results will appear here...' : result,
                       style: const TextStyle(fontFamily: 'monospace'),
                     ),
                   ),
                 ),
-              if (_result.isNotEmpty)
+              if (result.isNotEmpty)
                 Positioned(
                   top: 8,
                   right: 8,
                   child: FloatingActionButton.small(
-                    heroTag: "copy_file_result",
+                    heroTag: "copy_fileresult",
                     onPressed: () async {
-                      await Clipboard.setData(ClipboardData(text: _result));
+                      await Clipboard.setData(ClipboardData(text: result));
 
                       // Schedule secure clipboard clearing after 30 seconds
                       Timer(const Duration(seconds: 30), () async {
@@ -5430,7 +5481,8 @@ class CommandPreviewDialog extends StatelessWidget {
           backgroundColor: Colors.green.shade600,
           duration: const Duration(seconds: 3),
         ),
-    );
+      );
+    }
   }
 }
 
@@ -5826,6 +5878,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
   String _confirmPassword = '';
   String _selectedOperation = 'encrypt'; // 'encrypt' or 'decrypt'
   final List<BatchOperationResult> _results = [];
+  String result = ''; // Add result field for clipboard copying
 
   // Progress tracking
   int _currentFileIndex = 0;
@@ -6130,7 +6183,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                                     const SizedBox(width: 8),
                                     const Text('Private Key Encryption', style: TextStyle(fontWeight: FontWeight.bold)),
                                     const Spacer(),
-                                    Icon(Icons.security, color: Colors.purple, size: 18),
+                                    const Icon(Icons.security, color: Colors.purple, size: 18),
                                   ],
                                 ),
                                 const SizedBox(height: 8),
@@ -6173,7 +6226,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                     Row(
                       children: [
                         Expanded(
-                          child: TextField(
+                          child: TextFormField(
                             obscureText: true,
                             enabled: !_isLoading,
                             onChanged: (value) => _password = value,
@@ -6181,13 +6234,21 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                               labelText: _selectedOperation == 'encrypt' ? 'Password' : 'Decryption Password',
                               border: const OutlineInputBorder(),
                               prefixIcon: const Icon(Icons.lock),
+                              helperText: 'Maximum 1024 characters',
                             ),
+                            validator: InputValidator.validatePassword,
+                            // Security: Prevent excessively long passwords that could cause buffer overflow
+                            inputFormatters: [
+                              LengthLimitingTextInputFormatter(InputValidator.maxPasswordLength),
+                              // Security: Filter out null bytes and dangerous control characters
+                              FilteringTextInputFormatter.deny(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]')),
+                            ],
                           ),
                         ),
                         if (_selectedOperation == 'encrypt') ...[
                           const SizedBox(width: 16),
                           Expanded(
-                            child: TextField(
+                            child: TextFormField(
                               obscureText: true,
                               enabled: !_isLoading,
                               onChanged: (value) => _confirmPassword = value,
@@ -6195,10 +6256,25 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                                 labelText: 'Confirm Password',
                                 border: const OutlineInputBorder(),
                                 prefixIcon: const Icon(Icons.lock_outline),
+                                helperText: 'Maximum 1024 characters',
                                 errorText: _password.isNotEmpty && _confirmPassword.isNotEmpty && _password != _confirmPassword
                                     ? 'Passwords do not match'
                                     : null,
                               ),
+                              validator: (value) {
+                                final passwordValidation = InputValidator.validatePassword(value);
+                                if (passwordValidation != null) return passwordValidation;
+                                if (_password.isNotEmpty && value != _password) {
+                                  return 'Passwords do not match';
+                                }
+                                return null;
+                              },
+                              // Security: Prevent excessively long passwords that could cause buffer overflow
+                              inputFormatters: [
+                                LengthLimitingTextInputFormatter(InputValidator.maxPasswordLength),
+                                // Security: Filter out null bytes and dangerous control characters
+                                FilteringTextInputFormatter.deny(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]')),
+                              ],
                             ),
                           ),
                         ],
