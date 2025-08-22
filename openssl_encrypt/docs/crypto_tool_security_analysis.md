@@ -83,7 +83,7 @@ Our design **eliminates all attack optimizations** and forces sequential process
 | 13 characters | 2.9 × 10^21 years | 5.7 × 10^21 years | 207 trillion |
 | 15 characters | 2.5 × 10^26 years | 4.9 × 10^26 years | 18 quintillion |
 
-#### 10 Balloon Rounds (~80 seconds per attempt)  
+#### 10 Balloon Rounds (~80 seconds per attempt)
 | Password Length | Average Crack Time | Maximum Crack Time | Universe Lifetimes* |
 |-----------------|-------------------|-------------------|-------------------|
 | 8 characters | 7.7 × 10^12 years | 1.5 × 10^13 years | 564,000 |
@@ -103,7 +103,7 @@ Our design **eliminates all attack optimizations** and forces sequential process
 
 ### 13-Character Password Example (5 Balloon Rounds)
 - **Without key stretching**: Already very strong (71 trillion years)
-- **With balloon KDF**: **207 trillion universe lifetimes** 
+- **With balloon KDF**: **207 trillion universe lifetimes**
 - **Security multiplier**: 4.1 × 10^7 (41 million times stronger)
 
 ## Attack Scenario Analysis
@@ -114,7 +114,7 @@ Our design **eliminates all attack optimizations** and forces sequential process
 
 **Parallelization is IMPOSSIBLE:**
 - Each hash round depends on the previous round's output
-- Round salts are derived from previous results  
+- Round salts are derived from previous results
 - Computation MUST be strictly sequential
 - No GPU farms, distributed computing, or parallel processing can help
 
@@ -137,7 +137,7 @@ Even with **unlimited money, hardware, and energy**, attackers face a **hard seq
 
 ### Additional Real-World Attack Constraints
 Beyond the fundamental sequential limitation, attackers also face:
-- **Hardware costs** (electricity, cooling, equipment)  
+- **Hardware costs** (electricity, cooling, equipment)
 - **Time value of money** (opportunity cost over astronomical timeframes)
 - **Detection risks** (security monitoring)
 - **Memory requirements** (Balloon hashing demands significant RAM per attempt)
@@ -185,7 +185,7 @@ Beyond the fundamental sequential limitation, attackers also face:
 ### Key Findings
 
 1. **Forced Sequential Attacks**: Chained design eliminates parallelization, GPU acceleration, and distributed computing
-2. **No Precomputation Possible**: Dynamic salting prevents rainbow tables and cached lookups  
+2. **No Precomputation Possible**: Dynamic salting prevents rainbow tables and cached lookups
 3. **Computational Impossibility**: Attack times exceed the age of the universe by astronomical factors
 4. **Attack Method Immunity**: Resistant to all known cryptographic attack optimizations
 5. **Future-proof Security**: No conceivable technological advance can bypass sequential constraint
@@ -194,7 +194,7 @@ Beyond the fundamental sequential limitation, attackers also face:
 ### Economic and Physical Impossibility
 
 Even if an attacker had:
-- **Unlimited budget** 
+- **Unlimited budget**
 - **Every computer on Earth**
 - **Perfect quantum computers**
 - **Violation of thermodynamic laws**
@@ -218,7 +218,7 @@ The attack becomes not just computationally impossible, but **economically and p
 Our crypto tool's **chained hash/KDF architecture** provides fundamentally unbreakable security through:
 
 - **Sequential constraint**: Forces 60+ seconds per password attempt regardless of attacker resources
-- **Dynamic salting**: Eliminates precomputation and rainbow table attacks  
+- **Dynamic salting**: Eliminates precomputation and rainbow table attacks
 - **Parallelization immunity**: Cannot be optimized with multiple processors or distributed computing
 
 **The mathematics and architecture are definitive**: Any password 8+ characters with our chained key stretching creates an **absolutely unbreakable cryptographic barrier** that will remain secure until the heat death of the universe - and no technological advancement can change the fundamental sequential constraint.

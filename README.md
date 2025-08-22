@@ -44,7 +44,7 @@ Our architecture fundamentally breaks traditional cryptographic attack methods:
 
 **🛡️ Threat Actor Resistance:**
 - **Individual hackers**: ✅ Impossible
-- **Criminal organizations**: ✅ Impossible  
+- **Criminal organizations**: ✅ Impossible
 - **Nation-state actors**: ✅ Impossible
 - **Future quantum computers**: ✅ Impossible
 - **Unlimited computational resources**: ✅ Still impossible (sequential constraint)
