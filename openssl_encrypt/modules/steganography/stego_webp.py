@@ -510,7 +510,8 @@ class WEBPSteganography(SteganographyBase):
                 
                 for bit_offset in range(self.bits_per_channel):
                     if bit_index < 32:
-                        length_bits.append((extracted_bits >> bit_offset) & 1)
+                        bit_value = (extracted_bits >> bit_offset) & 1
+                        length_bits.append(bit_value)
                         bit_index += 1
             
             # Convert length bits to integer
@@ -518,11 +519,20 @@ class WEBPSteganography(SteganographyBase):
             for i, bit in enumerate(length_bits):
                 data_length |= (bit << i)
             
-            if data_length <= 0 or data_length > 100 * 1024 * 1024:  # Sanity check
-                raise ExtractionError("Invalid data length detected")
+            # More robust sanity check for data length
+            if data_length <= 0 or data_length > 10 * 1024 * 1024:  # Max 10MB
+                raise ExtractionError(f"Invalid data length detected: {data_length}")
             
-            # Extract actual data
+            # Check for numerical overflow before calculation
+            max_safe_length = (2**31 - 1000) // 8  # Safe limit to avoid overflow
+            if data_length > max_safe_length:
+                raise ExtractionError(f"Data length too large: {data_length}")
+            
+            # Extract actual data  
+            # Length (4 bytes) + data + end marker (4 bytes) = 8 bytes overhead
             total_bits_needed = (data_length * 8) + 32 + 32  # Length + data + end marker
+            if total_bits_needed < 0:  # Overflow check
+                raise ExtractionError("Calculation overflow in bit requirement")
             extracted_bits = []
             
             bit_index = 0
@@ -602,8 +612,9 @@ class WEBPSteganography(SteganographyBase):
                 
                 data_length = max(set(length_candidates), key=length_candidates.count)
                 
-                if data_length <= 0 or data_length > 50 * 1024 * 1024:
-                    raise ExtractionError("Invalid data length detected")
+                # More robust sanity check for data length
+                if data_length <= 0 or data_length > 10 * 1024 * 1024:  # Max 10MB
+                    raise ExtractionError(f"Invalid data length detected: {data_length}")
                 
                 # Extract data with redundancy (skip 12 bytes of length data)
                 data_start = 12
