@@ -11,6 +11,13 @@ import logging
 import os
 from typing import Optional
 
+# Import secure memory functions for handling sensitive data
+try:
+    from ..secure_memory import SecureBytes, secure_memzero
+except ImportError:
+    # Fallback for standalone testing
+    from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
+
 from .stego_core import (
     SteganographyConfig,
     SteganographyError,
@@ -187,7 +194,14 @@ def create_steganography_transport(args, derived_key: Optional[bytes] = None) ->
         if derived_key:
             # Convert first 32 bytes of derived key to a base64 string for compatibility
             import base64
-            stego_password = base64.b64encode(derived_key[:32]).decode('ascii')
+            try:
+                # Use SecureBytes for the key slice to protect in memory
+                secure_key_slice = SecureBytes(derived_key[:32])
+                stego_password = base64.b64encode(secure_key_slice).decode('ascii')
+            finally:
+                # Securely wipe the key slice from memory
+                if 'secure_key_slice' in locals():
+                    secure_memzero(secure_key_slice)
         
         options = {
             'randomize_pixels': getattr(args, 'stego_randomize_pixels', False),
