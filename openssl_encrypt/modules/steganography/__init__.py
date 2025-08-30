@@ -20,7 +20,8 @@ Supported Cover Media:
 - TIFF images (LZW/PackBits/uncompressed support, new in v1.3.0)
 - WEBP images (lossless/lossy support, new in v1.3.0)
 - WAV audio files (uncompressed PCM, new in v1.3.0)
-- Future: GIF, FLAC audio files
+- FLAC audio files (lossless compression, new in v1.3.0)
+- Future: GIF audio files
 
 Security Architecture:
 - Cover media → Steganographic hiding → Additional security layers
@@ -69,6 +70,12 @@ from .stego_wav import (
     create_wav_test_audio,
     is_wav_steganography_available,
 )
+from .stego_flac import (
+    FLACSteganography,
+    FLACAnalyzer,
+    create_flac_test_audio,
+    is_flac_steganography_available,
+)
 from .stego_analysis import (
     CapacityAnalyzer,
     SecurityAnalyzer,
@@ -94,6 +101,7 @@ __all__ = [
     'TIFFSteganography',
     'WEBPSteganography',
     'WAVSteganography',
+    'FLACSteganography',
     
     # Transport layer
     'SteganographyTransport',
@@ -103,6 +111,7 @@ __all__ = [
     'is_tiff_steganography_available',
     'is_webp_steganography_available',
     'is_wav_steganography_available',
+    'is_flac_steganography_available',
     
     # Analysis tools
     'CapacityAnalyzer',
@@ -114,12 +123,14 @@ __all__ = [
     'TIFFAnalyzer',
     'WEBPAnalyzer',
     'WAVAnalyzer',
+    'FLACAnalyzer',
     
     # Utilities
     'create_jpeg_test_image',
     'create_tiff_test_image',
     'create_webp_test_image',
     'create_wav_test_audio',
+    'create_flac_test_audio',
     
     # Exceptions
     'SteganographyError',
@@ -130,7 +141,7 @@ __all__ = [
 
 # Module-level constants
 SUPPORTED_IMAGE_FORMATS = ['PNG', 'BMP', 'JPEG', 'JPG', 'TIFF', 'TIF', 'WEBP']
-SUPPORTED_AUDIO_FORMATS = ['WAV']
+SUPPORTED_AUDIO_FORMATS = ['WAV', 'FLAC']
 FUTURE_FORMATS = ['GIF', 'FLAC', 'MP3']
 EOF_MARKER = b'\xFF\xFF\xFF\xFE'  # Steganography end-of-file marker
 MIN_COVER_SIZE = 1024  # Minimum pixels required for hiding

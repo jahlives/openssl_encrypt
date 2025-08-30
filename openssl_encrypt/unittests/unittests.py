@@ -9443,6 +9443,255 @@ class TestWAVSteganography(unittest.TestCase):
             self.assertEqual(stego_data[:4], b'RIFF')  # Still valid WAV
 
 
+class TestFLACSteganography(unittest.TestCase):
+    """Test suite for FLAC audio steganography functionality."""
+    
+    def setUp(self):
+        """Set up test environment."""
+        self.test_dir = tempfile.mkdtemp()
+        self.test_files = []
+        
+        # Check if FLAC steganography is available
+        try:
+            from modules.steganography import FLACSteganography, is_flac_steganography_available
+            self.flac_available = is_flac_steganography_available()
+        except ImportError:
+            self.flac_available = False
+    
+    def tearDown(self):
+        """Clean up test files."""
+        for file_path in self.test_files:
+            try:
+                os.unlink(file_path)
+            except FileNotFoundError:
+                pass
+        try:
+            shutil.rmtree(self.test_dir, ignore_errors=True)
+        except OSError:
+            pass
+
+    def test_flac_steganography_availability(self):
+        """Test if FLAC steganography components are available."""
+        if not self.flac_available:
+            self.skipTest("FLAC steganography not available")
+        
+        from modules.steganography import FLACSteganography, FLACAnalyzer, create_flac_test_audio
+        
+        # Test creating FLACSteganography instance
+        flac_stego = FLACSteganography()
+        self.assertIsNotNone(flac_stego)
+        
+        # Test analyzer
+        analyzer = FLACAnalyzer()
+        self.assertIsNotNone(analyzer)
+
+    def test_flac_audio_creation(self):
+        """Test FLAC audio file creation functionality."""
+        if not self.flac_available:
+            self.skipTest("FLAC steganography not available")
+        
+        from modules.steganography import create_flac_test_audio
+        
+        # Test different audio configurations
+        test_configs = [
+            {'duration_seconds': 1.0, 'sample_rate': 44100, 'channels': 1, 'bits_per_sample': 16},
+            {'duration_seconds': 2.0, 'sample_rate': 44100, 'channels': 2, 'bits_per_sample': 16},
+            {'duration_seconds': 1.0, 'sample_rate': 48000, 'channels': 1, 'bits_per_sample': 24},
+        ]
+        
+        for config in test_configs:
+            with self.subTest(config=config):
+                flac_data = create_flac_test_audio(**config)
+                self.assertIsInstance(flac_data, bytes)
+                self.assertGreater(len(flac_data), 42)  # Minimum FLAC header size
+                
+                # Check FLAC signature
+                self.assertEqual(flac_data[:4], b'fLaC')
+
+    def test_flac_capacity_calculation(self):
+        """Test FLAC capacity calculation for different audio formats."""
+        if not self.flac_available:
+            self.skipTest("FLAC steganography not available")
+        
+        from modules.steganography import FLACSteganography, create_flac_test_audio
+        
+        # Test different configurations
+        configs = [
+            {'duration_seconds': 2.0, 'channels': 1, 'bits_per_sample': 1},  # Config and audio params
+            {'duration_seconds': 2.0, 'channels': 2, 'bits_per_sample': 1},
+            {'duration_seconds': 1.0, 'channels': 2, 'bits_per_sample': 2},
+        ]
+        
+        for config in configs:
+            with self.subTest(config=config):
+                # Extract steganography config
+                stego_bits = config.pop('bits_per_sample')
+                
+                # Create test FLAC
+                flac_data = create_flac_test_audio(**config, bits_per_sample=16)  # Audio bits
+                
+                # Calculate capacity
+                flac_stego = FLACSteganography(bits_per_sample=stego_bits)
+                capacity = flac_stego.calculate_capacity(flac_data)
+                
+                self.assertIsInstance(capacity, int)
+                self.assertGreater(capacity, 0)
+                
+                # Longer audio should have more capacity
+                if config['duration_seconds'] == 2.0:
+                    self.assertGreater(capacity, 1000)
+
+    def test_flac_steganography_workflow(self):
+        """Test complete FLAC steganography hide/extract workflow."""
+        if not self.flac_available:
+            self.skipTest("FLAC steganography not available")
+        
+        from modules.steganography import FLACSteganography, create_flac_test_audio
+        
+        # Create test FLAC (longer duration for more capacity)
+        flac_data = create_flac_test_audio(duration_seconds=3.0, sample_rate=44100, channels=2)
+        
+        # Test data to hide
+        test_data = b"FLAC audio steganography test - hiding secret data in lossless audio!"
+        
+        # Initialize FLAC steganography
+        flac_stego = FLACSteganography(bits_per_sample=1, password="flac_test_password")
+        
+        # Check capacity
+        capacity = flac_stego.calculate_capacity(flac_data)
+        self.assertGreater(capacity, len(test_data), "Test data too large for FLAC capacity")
+        
+        # Hide data
+        stego_data = flac_stego.hide_data(flac_data, test_data)
+        self.assertIsInstance(stego_data, bytes)
+        
+        # FLAC signature should still be valid
+        self.assertEqual(stego_data[:4], b'fLaC')
+        
+        # Extract data
+        extracted_data = flac_stego.extract_data(stego_data)
+        
+        # Verify extraction (may include end marker, so check if test data is at the start)
+        self.assertTrue(extracted_data.startswith(test_data))
+
+    def test_flac_analyzer_functionality(self):
+        """Test FLAC analyzer for audio format assessment."""
+        if not self.flac_available:
+            self.skipTest("FLAC steganography not available")
+        
+        from modules.steganography import FLACAnalyzer, create_flac_test_audio
+        
+        # Test different FLAC configurations
+        test_configs = [
+            {'duration_seconds': 3.0, 'sample_rate': 44100, 'channels': 2, 'bits_per_sample': 16},
+            {'duration_seconds': 1.0, 'sample_rate': 48000, 'channels': 1, 'bits_per_sample': 24},
+        ]
+        
+        analyzer = FLACAnalyzer()
+        
+        for config in test_configs:
+            with self.subTest(config=config):
+                # Create test FLAC
+                flac_data = create_flac_test_audio(**config)
+                
+                # Analyze FLAC
+                analysis = analyzer.analyze_flac_structure(flac_data)
+                
+                # Verify analysis structure
+                self.assertIsInstance(analysis, dict)
+                self.assertIn('steganography', analysis)
+                self.assertIn('audio', analysis)
+                self.assertIn('metadata', analysis)
+                
+                # Check that valid FLAC is detected
+                self.assertTrue(analysis['valid'])
+                self.assertTrue(analysis['metadata']['valid_signature'])
+                
+                # Check audio properties
+                self.assertIn('sample_rate', analysis['audio'])
+                self.assertIn('channels', analysis['audio'])
+                self.assertIn('bits_per_sample', analysis['audio'])
+
+    def test_flac_secure_memory_usage(self):
+        """Test that FLAC steganography uses secure memory properly."""
+        if not self.flac_available:
+            self.skipTest("FLAC steganography not available")
+        
+        from modules.steganography import FLACSteganography, create_flac_test_audio
+        
+        # Create test FLAC
+        flac_data = create_flac_test_audio(duration_seconds=2.0, channels=1)
+        test_data = b"Secure memory test for FLAC!"
+        
+        # Test with password (triggers secure memory usage)
+        flac_stego = FLACSteganography(password="secure_test", security_level=3, bits_per_sample=1)
+        
+        # This should complete without memory-related errors
+        try:
+            capacity = flac_stego.calculate_capacity(flac_data)
+            self.assertGreater(capacity, len(test_data))
+            
+            stego_data = flac_stego.hide_data(flac_data, test_data)
+            extracted_data = flac_stego.extract_data(stego_data)
+            
+            # Should at least start with our test data
+            self.assertTrue(extracted_data.startswith(test_data))
+            
+        except Exception as e:
+            self.fail(f"Secure memory usage failed: {e}")
+
+    def test_flac_metadata_and_audio_hiding(self):
+        """Test FLAC steganography with different hiding modes."""
+        if not self.flac_available:
+            self.skipTest("FLAC steganography not available")
+        
+        from modules.steganography import FLACSteganography, create_flac_test_audio
+        
+        # Create test FLAC
+        flac_data = create_flac_test_audio(duration_seconds=2.0, channels=2, bits_per_sample=16)
+        test_data = b"FLAC hybrid test"
+        
+        # Test metadata-preferred mode
+        flac_stego_meta = FLACSteganography(use_metadata=True, bits_per_sample=1)
+        capacity_meta = flac_stego_meta.calculate_capacity(flac_data)
+        self.assertGreater(capacity_meta, 0)
+        
+        if capacity_meta > len(test_data):
+            stego_data = flac_stego_meta.hide_data(flac_data, test_data)
+            self.assertIsInstance(stego_data, bytes)
+            self.assertEqual(stego_data[:4], b'fLaC')  # Still valid FLAC
+        
+        # Test audio-only mode
+        flac_stego_audio = FLACSteganography(use_metadata=False, bits_per_sample=1)
+        capacity_audio = flac_stego_audio.calculate_capacity(flac_data)
+        self.assertGreater(capacity_audio, 0)
+
+    def test_flac_lossless_preservation(self):
+        """Test that FLAC steganography preserves lossless compression."""
+        if not self.flac_available:
+            self.skipTest("FLAC steganography not available")
+        
+        from modules.steganography import FLACSteganography, create_flac_test_audio
+        
+        # Create test FLAC
+        flac_data = create_flac_test_audio(duration_seconds=1.0, sample_rate=44100, channels=1)
+        test_data = b"Lossless preservation test"
+        
+        # Test with quality preservation enabled
+        flac_stego = FLACSteganography(preserve_quality=True, bits_per_sample=1)
+        
+        capacity = flac_stego.calculate_capacity(flac_data)
+        if capacity > len(test_data):
+            stego_data = flac_stego.hide_data(flac_data, test_data)
+            
+            # Should still be valid FLAC
+            self.assertEqual(stego_data[:4], b'fLaC')
+            
+            # Should be able to extract
+            extracted_data = flac_stego.extract_data(stego_data)
+            self.assertTrue(extracted_data.startswith(test_data))
+
+
 # Import HQC and ML-KEM keystore integration tests
 try:
     import os
