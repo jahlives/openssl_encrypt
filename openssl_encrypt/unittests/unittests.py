@@ -8965,6 +8965,262 @@ class TestTIFFSteganography(unittest.TestCase):
                     self.assertIsInstance(analysis['steganography']['overall_score'], (int, float))
 
 
+class TestWEBPSteganography(unittest.TestCase):
+    """Test suite for WEBP steganography functionality."""
+    
+    def setUp(self):
+        """Set up test environment."""
+        self.test_dir = tempfile.mkdtemp()
+        self.test_files = []
+        
+        # Check if WEBP steganography is available
+        try:
+            from modules.steganography import WEBPSteganography, is_webp_steganography_available
+            self.webp_available = is_webp_steganography_available()
+        except ImportError:
+            self.webp_available = False
+    
+    def tearDown(self):
+        """Clean up test files."""
+        for file_path in self.test_files:
+            try:
+                os.unlink(file_path)
+            except FileNotFoundError:
+                pass
+        try:
+            shutil.rmtree(self.test_dir, ignore_errors=True)
+        except OSError:
+            pass
+
+    def test_webp_steganography_availability(self):
+        """Test if WEBP steganography components are available."""
+        if not self.webp_available:
+            self.skipTest("WEBP steganography not available")
+        
+        from modules.steganography import WEBPSteganography, WEBPAnalyzer, create_webp_test_image
+        
+        # Test creating WEBPSteganography instance
+        webp_stego = WEBPSteganography()
+        self.assertIsNotNone(webp_stego)
+        
+        # Test analyzer
+        analyzer = WEBPAnalyzer()
+        self.assertIsNotNone(analyzer)
+
+    def test_webp_format_detection(self):
+        """Test WEBP format detection in transport layer."""
+        if not self.webp_available:
+            self.skipTest("WEBP steganography not available")
+        
+        from modules.steganography import SteganographyTransport, create_webp_test_image
+        
+        # Create a test WEBP image
+        webp_data = create_webp_test_image(width=50, height=50, lossless=True)
+        webp_path = os.path.join(self.test_dir, "test_detection.webp")
+        self.test_files.append(webp_path)
+        
+        with open(webp_path, 'wb') as f:
+            f.write(webp_data)
+        
+        # Test format detection
+        transport = SteganographyTransport()
+        format_detected = transport._detect_image_format(webp_data)
+        self.assertEqual(format_detected, 'WEBP')
+
+    def test_webp_capacity_calculation(self):
+        """Test WEBP capacity calculation for lossless and lossy variants."""
+        if not self.webp_available:
+            self.skipTest("WEBP steganography not available")
+        
+        from modules.steganography import WEBPSteganography, create_webp_test_image
+        
+        # Test lossless WEBP
+        lossless_webp = create_webp_test_image(width=60, height=60, lossless=True)
+        webp_stego = WEBPSteganography(bits_per_channel=2)
+        lossless_capacity = webp_stego.calculate_capacity(lossless_webp)
+        
+        self.assertIsInstance(lossless_capacity, int)
+        self.assertGreater(lossless_capacity, 0)
+        
+        # Test lossy WEBP
+        lossy_webp = create_webp_test_image(width=60, height=60, lossless=False, quality=80)
+        lossy_capacity = webp_stego.calculate_capacity(lossy_webp)
+        
+        self.assertIsInstance(lossy_capacity, int)
+        self.assertGreater(lossy_capacity, 0)
+        
+        # Lossless should typically have higher capacity
+        self.assertGreaterEqual(lossless_capacity, lossy_capacity * 0.5)  # Allow some variance
+
+    def test_webp_steganography_workflow_lossless(self):
+        """Test complete WEBP steganography hide/extract workflow with lossless format."""
+        if not self.webp_available:
+            self.skipTest("WEBP steganography not available")
+        
+        from modules.steganography import WEBPSteganography, create_webp_test_image
+        
+        # Create test lossless WEBP
+        webp_data = create_webp_test_image(width=80, height=80, lossless=True)
+        
+        # Test data to hide
+        test_data = b"WEBP lossless steganography test - hiding data securely!"
+        
+        # Initialize WEBP steganography
+        webp_stego = WEBPSteganography(bits_per_channel=2, password="webp_test_password")
+        
+        # Check capacity
+        capacity = webp_stego.calculate_capacity(webp_data)
+        self.assertGreater(capacity, len(test_data), "Test data too large for WEBP capacity")
+        
+        # Hide data
+        stego_data = webp_stego.hide_data(webp_data, test_data)
+        self.assertIsInstance(stego_data, bytes)
+        self.assertNotEqual(webp_data, stego_data)  # Should be modified
+        
+        # Extract data
+        extracted_data = webp_stego.extract_data(stego_data)
+        self.assertEqual(test_data, extracted_data)
+
+    def test_webp_steganography_workflow_lossy(self):
+        """Test complete WEBP steganography hide/extract workflow with lossy format."""
+        if not self.webp_available:
+            self.skipTest("WEBP steganography not available")
+        
+        from modules.steganography import WEBPSteganography, create_webp_test_image
+        
+        # Create test lossy WEBP
+        webp_data = create_webp_test_image(width=120, height=120, lossless=False, quality=85)
+        
+        # Test data to hide (smaller for lossy format)
+        test_data = b"WEBP lossy steganography test!"
+        
+        # Initialize WEBP steganography
+        webp_stego = WEBPSteganography(bits_per_channel=1, password="webp_lossy_test")
+        
+        # Check capacity
+        capacity = webp_stego.calculate_capacity(webp_data)
+        self.assertGreater(capacity, len(test_data), "Test data too large for lossy WEBP capacity")
+        
+        # Hide data
+        stego_data = webp_stego.hide_data(webp_data, test_data)
+        self.assertIsInstance(stego_data, bytes)
+        
+        # Extract data
+        extracted_data = webp_stego.extract_data(stego_data)
+        self.assertEqual(test_data, extracted_data)
+
+    def test_webp_transport_integration(self):
+        """Test WEBP steganography through transport layer."""
+        if not self.webp_available:
+            self.skipTest("WEBP steganography not available")
+        
+        from modules.steganography import SteganographyTransport, create_webp_test_image
+        
+        # Create test WEBP files
+        webp_path = os.path.join(self.test_dir, "test_transport.webp")
+        output_path = os.path.join(self.test_dir, "output_transport.webp")
+        self.test_files.extend([webp_path, output_path])
+        
+        webp_data = create_webp_test_image(width=70, height=70, lossless=True)
+        with open(webp_path, 'wb') as f:
+            f.write(webp_data)
+        
+        # Test data (simulating encrypted data)
+        test_encrypted_data = b"Encrypted WEBP steganography transport test!"
+        
+        # Create transport with WEBP-appropriate settings
+        transport = SteganographyTransport(
+            method="lsb", 
+            bits_per_channel=2, 
+            password="transport_test_key"
+        )
+        
+        # Hide encrypted data
+        transport.hide_data_in_image(test_encrypted_data, webp_path, output_path)
+        self.assertTrue(os.path.exists(output_path))
+        
+        # Verify output is valid WEBP
+        with open(output_path, 'rb') as f:
+            output_data = f.read()
+        
+        # WEBP signature check
+        self.assertTrue(
+            output_data.startswith(b'RIFF') and output_data[8:12] == b'WEBP',
+            "Output should be valid WEBP format"
+        )
+        
+        # Extract data
+        extracted_data = transport.extract_data_from_image(output_path)
+        self.assertEqual(test_encrypted_data, extracted_data)
+
+    def test_webp_analyzer_functionality(self):
+        """Test WEBP analyzer for format assessment."""
+        if not self.webp_available:
+            self.skipTest("WEBP steganography not available")
+        
+        from modules.steganography import WEBPAnalyzer, create_webp_test_image
+        
+        # Test different WEBP configurations
+        test_configs = [
+            {'lossless': True, 'expected_score_min': 0.8},
+            {'lossless': False, 'quality': 90, 'expected_score_min': 0.5},
+            {'lossless': False, 'quality': 70, 'expected_score_min': 0.4},
+        ]
+        
+        for i, config in enumerate(test_configs):
+            with self.subTest(config=config):
+                # Create test WEBP
+                webp_data = create_webp_test_image(
+                    width=60, 
+                    height=60, 
+                    lossless=config['lossless'],
+                    quality=config.get('quality', 90)
+                )
+                
+                # Analyze WEBP
+                analyzer = WEBPAnalyzer()
+                analysis = analyzer.analyze_webp_structure(webp_data)
+                
+                # Verify analysis structure
+                self.assertIsInstance(analysis, dict)
+                self.assertIn('steganography', analysis)
+                self.assertIn('chunks', analysis)
+                self.assertIn('header', analysis)
+                
+                # Check suitability expectation
+                if 'expected_score_min' in config:
+                    self.assertGreaterEqual(
+                        analysis['steganography']['overall_score'], 
+                        config['expected_score_min']
+                    )
+
+    def test_webp_secure_memory_usage(self):
+        """Test that WEBP steganography uses secure memory properly."""
+        if not self.webp_available:
+            self.skipTest("WEBP steganography not available")
+        
+        from modules.steganography import WEBPSteganography, create_webp_test_image
+        
+        # Create test WEBP
+        webp_data = create_webp_test_image(width=50, height=50, lossless=True)
+        test_data = b"Secure memory test for WEBP!"
+        
+        # Test with password (triggers secure memory usage)
+        webp_stego = WEBPSteganography(password="secure_test", security_level=3)
+        
+        # This should complete without memory-related errors
+        try:
+            capacity = webp_stego.calculate_capacity(webp_data)
+            self.assertGreater(capacity, len(test_data))
+            
+            stego_data = webp_stego.hide_data(webp_data, test_data)
+            extracted_data = webp_stego.extract_data(stego_data)
+            self.assertEqual(test_data, extracted_data)
+            
+        except Exception as e:
+            self.fail(f"Secure memory usage failed: {e}")
+
+
 # Import HQC and ML-KEM keystore integration tests
 try:
     import os

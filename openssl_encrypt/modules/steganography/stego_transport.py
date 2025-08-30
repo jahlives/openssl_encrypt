@@ -27,6 +27,7 @@ from .stego_core import (
 from .stego_image import LSBImageStego, AdaptiveLSBStego
 from .stego_jpeg import JPEGSteganography
 from .stego_tiff import TIFFSteganography
+from .stego_webp import WEBPSteganography
 
 # Set up module logger
 logger = logging.getLogger(__name__)
@@ -77,6 +78,8 @@ class SteganographyTransport:
             return 'BMP'
         elif image_data.startswith((b'II*\x00', b'MM\x00*')):
             return 'TIFF'
+        elif image_data.startswith(b'RIFF') and image_data[8:12] == b'WEBP':
+            return 'WEBP'
         else:
             # Try to detect via PIL
             try:
@@ -111,6 +114,14 @@ class SteganographyTransport:
         elif image_format in ['TIFF', 'TIF']:
             # TIFF methods
             self.stego = TIFFSteganography(
+                password=self.password,
+                security_level=2 if self.method == 'adaptive' else 1,
+                bits_per_channel=self.bits_per_channel,
+                config=self.config
+            )
+        elif image_format == 'WEBP':
+            # WEBP methods
+            self.stego = WEBPSteganography(
                 password=self.password,
                 security_level=2 if self.method == 'adaptive' else 1,
                 bits_per_channel=self.bits_per_channel,
