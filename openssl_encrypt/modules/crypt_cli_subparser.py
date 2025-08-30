@@ -423,9 +423,9 @@ def setup_encrypt_parser(subparser):
     )
     stego_group.add_argument(
         "--stego-method",
-        choices=["lsb", "adaptive"],
+        choices=["lsb", "adaptive", "f5", "outguess", "basic"],
         default="lsb",
-        help="Steganographic method to use (default: lsb)"
+        help="Steganographic method to use (default: lsb). For JPEG: f5, outguess, or basic"
     )
     stego_group.add_argument(
         "--stego-bits-per-channel",
@@ -443,6 +443,14 @@ def setup_encrypt_parser(subparser):
         "--stego-decoy-data",
         action="store_true",
         help="Fill unused capacity with decoy data"
+    )
+    stego_group.add_argument(
+        "--jpeg-quality",
+        type=int,
+        choices=range(70, 101),
+        metavar="70-100",
+        default=85,
+        help="JPEG quality factor for steganography (default: 85)"
     )
 
 
@@ -511,16 +519,24 @@ def setup_decrypt_parser(subparser):
     )
     stego_group.add_argument(
         "--stego-method",
-        choices=["lsb", "adaptive"],
+        choices=["lsb", "adaptive", "f5", "outguess", "basic"],
         default="lsb",
-        help="Steganographic method used for hiding (default: lsb)"
+        help="Steganographic method used for hiding (default: lsb). For JPEG: f5, outguess, or basic"
     )
     stego_group.add_argument(
         "--stego-bits-per-channel",
         type=int,
         choices=[1, 2, 3],
         default=1,
-        help="LSB bits per color channel used (default: 1)"
+        help="LSB bits per color channel used (default: 1) - ignored for JPEG methods"
+    )
+    stego_group.add_argument(
+        "--jpeg-quality",
+        type=int,
+        choices=range(70, 101),
+        metavar="70-100",
+        default=85,
+        help="JPEG quality factor used for steganography (default: 85)"
     )
 
 
