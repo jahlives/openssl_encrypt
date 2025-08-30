@@ -9692,6 +9692,306 @@ class TestFLACSteganography(unittest.TestCase):
             self.assertTrue(extracted_data.startswith(test_data))
 
 
+class TestMP3Steganography(unittest.TestCase):
+    """Test suite for MP3 audio steganography functionality."""
+    
+    def setUp(self):
+        """Set up test environment."""
+        self.test_dir = tempfile.mkdtemp()
+        self.test_files = []
+        
+        # Check if MP3 steganography is available
+        try:
+            from modules.steganography import MP3Steganography, is_mp3_steganography_available
+            self.mp3_available = is_mp3_steganography_available()
+        except ImportError:
+            self.mp3_available = False
+    
+    def tearDown(self):
+        """Clean up test files."""
+        for file_path in self.test_files:
+            try:
+                os.unlink(file_path)
+            except FileNotFoundError:
+                pass
+        try:
+            shutil.rmtree(self.test_dir, ignore_errors=True)
+        except OSError:
+            pass
+
+    def test_mp3_steganography_availability(self):
+        """Test if MP3 steganography components are available."""
+        if not self.mp3_available:
+            self.skipTest("MP3 steganography not available")
+        
+        from modules.steganography import MP3Steganography, MP3Analyzer, create_mp3_test_audio
+        
+        # Test creating MP3Steganography instance
+        mp3_stego = MP3Steganography()
+        self.assertIsNotNone(mp3_stego)
+        
+        # Test analyzer
+        analyzer = MP3Analyzer()
+        self.assertIsNotNone(analyzer)
+
+    def test_mp3_audio_creation(self):
+        """Test MP3 audio file creation functionality."""
+        if not self.mp3_available:
+            self.skipTest("MP3 steganography not available")
+        
+        from modules.steganography import create_mp3_test_audio
+        
+        # Test different MP3 configurations
+        test_configs = [
+            {'duration_seconds': 2.0, 'bitrate': 128, 'sample_rate': 44100, 'mode': 'stereo'},
+            {'duration_seconds': 1.0, 'bitrate': 192, 'sample_rate': 44100, 'mode': 'mono'},
+            {'duration_seconds': 3.0, 'bitrate': 320, 'sample_rate': 48000, 'mode': 'joint_stereo'},
+        ]
+        
+        for config in test_configs:
+            with self.subTest(config=config):
+                mp3_data = create_mp3_test_audio(**config)
+                self.assertIsInstance(mp3_data, bytes)
+                self.assertGreater(len(mp3_data), 100)  # Minimum MP3 size
+                
+                # Check for MP3 frame sync (0xFF at start of frames)
+                self.assertIn(b'\xFF', mp3_data[:100])  # Should find sync word early
+
+    def test_mp3_capacity_calculation(self):
+        """Test MP3 capacity calculation for different configurations."""
+        if not self.mp3_available:
+            self.skipTest("MP3 steganography not available")
+        
+        from modules.steganography import MP3Steganography, create_mp3_test_audio
+        
+        # Test different configurations
+        configs = [
+            {'duration_seconds': 3.0, 'bitrate': 128, 'coefficient_bits': 1},
+            {'duration_seconds': 2.0, 'bitrate': 192, 'coefficient_bits': 2},
+            {'duration_seconds': 5.0, 'bitrate': 320, 'coefficient_bits': 1},
+        ]
+        
+        for config in configs:
+            with self.subTest(config=config):
+                # Extract steganography config
+                coeff_bits = config.pop('coefficient_bits')
+                
+                # Create test MP3
+                mp3_data = create_mp3_test_audio(**config)
+                
+                # Calculate capacity
+                mp3_stego = MP3Steganography(coefficient_bits=coeff_bits)
+                capacity = mp3_stego.calculate_capacity(mp3_data)
+                
+                self.assertIsInstance(capacity, int)
+                self.assertGreater(capacity, 0)
+                
+                # Higher bitrate should generally provide more capacity
+                if config['bitrate'] >= 192:
+                    self.assertGreater(capacity, 100)
+
+    def test_mp3_steganography_workflow(self):
+        """Test complete MP3 steganography hide/extract workflow."""
+        if not self.mp3_available:
+            self.skipTest("MP3 steganography not available")
+        
+        from modules.steganography import MP3Steganography, create_mp3_test_audio
+        
+        # Create test MP3 (higher bitrate for better capacity)
+        mp3_data = create_mp3_test_audio(duration_seconds=5.0, bitrate=192, sample_rate=44100)
+        
+        # Test data to hide
+        test_data = b"MP3 steganography test - hiding in DCT coefficients and bit reservoir!"
+        
+        # Initialize MP3 steganography
+        mp3_stego = MP3Steganography(coefficient_bits=1, password="mp3_test_password")
+        
+        # Check capacity
+        capacity = mp3_stego.calculate_capacity(mp3_data)
+        self.assertGreater(capacity, len(test_data), "Test data too large for MP3 capacity")
+        
+        # Hide data
+        stego_data = mp3_stego.hide_data(mp3_data, test_data)
+        self.assertIsInstance(stego_data, bytes)
+        
+        # MP3 should still contain frame sync patterns
+        self.assertIn(b'\xFF', stego_data[:100])
+        
+        # Extract data
+        extracted_data = mp3_stego.extract_data(stego_data)
+        
+        # Verify extraction (may include end marker, so check if test data is at the start)
+        self.assertTrue(extracted_data.startswith(test_data))
+
+    def test_mp3_analyzer_functionality(self):
+        """Test MP3 analyzer for audio format assessment."""
+        if not self.mp3_available:
+            self.skipTest("MP3 steganography not available")
+        
+        from modules.steganography import MP3Analyzer, create_mp3_test_audio
+        
+        # Test different MP3 configurations
+        test_configs = [
+            {'duration_seconds': 3.0, 'bitrate': 128, 'sample_rate': 44100, 'mode': 'stereo'},
+            {'duration_seconds': 2.0, 'bitrate': 256, 'sample_rate': 48000, 'mode': 'mono'},
+        ]
+        
+        analyzer = MP3Analyzer()
+        
+        for config in test_configs:
+            with self.subTest(config=config):
+                # Create test MP3
+                mp3_data = create_mp3_test_audio(**config)
+                
+                # Analyze MP3
+                analysis = analyzer.analyze_mp3_structure(mp3_data)
+                
+                # Verify analysis structure
+                self.assertIsInstance(analysis, dict)
+                self.assertIn('steganography', analysis)
+                self.assertIn('audio', analysis)
+                self.assertIn('frames', analysis)
+                
+                # Check that valid MP3 is detected
+                self.assertTrue(analysis['valid'])
+                
+                # Check audio properties
+                self.assertIn('bitrate', analysis['audio'])
+                self.assertIn('sample_rate', analysis['audio'])
+                self.assertIn('mode', analysis['audio'])
+                
+                # Check steganographic suitability
+                self.assertTrue(analysis['steganography']['total_capacity'] > 0)
+
+    def test_mp3_secure_memory_usage(self):
+        """Test that MP3 steganography uses secure memory properly."""
+        if not self.mp3_available:
+            self.skipTest("MP3 steganography not available")
+        
+        from modules.steganography import MP3Steganography, create_mp3_test_audio
+        
+        # Create test MP3
+        mp3_data = create_mp3_test_audio(duration_seconds=3.0, bitrate=128)
+        test_data = b"Secure memory test for MP3!"
+        
+        # Test with password (triggers secure memory usage)
+        mp3_stego = MP3Steganography(password="secure_test", security_level=3, coefficient_bits=1)
+        
+        # This should complete without memory-related errors
+        try:
+            capacity = mp3_stego.calculate_capacity(mp3_data)
+            self.assertGreater(capacity, len(test_data))
+            
+            stego_data = mp3_stego.hide_data(mp3_data, test_data)
+            extracted_data = mp3_stego.extract_data(stego_data)
+            
+            # Should at least start with our test data
+            self.assertTrue(extracted_data.startswith(test_data))
+            
+        except Exception as e:
+            self.fail(f"Secure memory usage failed: {e}")
+
+    def test_mp3_different_bitrates(self):
+        """Test MP3 steganography with different bitrates."""
+        if not self.mp3_available:
+            self.skipTest("MP3 steganography not available")
+        
+        from modules.steganography import MP3Steganography, create_mp3_test_audio
+        
+        # Test different bitrates
+        bitrates = [96, 128, 192, 256]
+        test_data = b"Bitrate test"
+        
+        for bitrate in bitrates:
+            with self.subTest(bitrate=bitrate):
+                mp3_data = create_mp3_test_audio(duration_seconds=3.0, bitrate=bitrate)
+                mp3_stego = MP3Steganography(coefficient_bits=1)
+                
+                capacity = mp3_stego.calculate_capacity(mp3_data)
+                self.assertGreater(capacity, 0)
+                
+                # Basic functionality test if capacity allows
+                if capacity > len(test_data):
+                    stego_data = mp3_stego.hide_data(mp3_data, test_data)
+                    self.assertIsInstance(stego_data, bytes)
+                    self.assertIn(b'\xFF', stego_data[:100])  # Still has MP3 sync
+
+    def test_mp3_coefficient_bits_variation(self):
+        """Test MP3 steganography with different coefficient bit settings."""
+        if not self.mp3_available:
+            self.skipTest("MP3 steganography not available")
+        
+        from modules.steganography import MP3Steganography, create_mp3_test_audio
+        
+        # Create high-quality MP3 for testing
+        mp3_data = create_mp3_test_audio(duration_seconds=4.0, bitrate=256, sample_rate=44100)
+        test_data = b"Coefficient bits test!"
+        
+        # Test different coefficient bit settings
+        for coeff_bits in [1, 2, 3]:
+            with self.subTest(coefficient_bits=coeff_bits):
+                mp3_stego = MP3Steganography(coefficient_bits=coeff_bits)
+                
+                capacity = mp3_stego.calculate_capacity(mp3_data)
+                self.assertGreater(capacity, 0)
+                
+                # Higher coefficient bits should generally provide more capacity
+                # (though quality preservation may reduce this)
+                if capacity > len(test_data):
+                    stego_data = mp3_stego.hide_data(mp3_data, test_data)
+                    extracted_data = mp3_stego.extract_data(stego_data)
+                    self.assertTrue(extracted_data.startswith(test_data))
+
+    def test_mp3_bit_reservoir_usage(self):
+        """Test MP3 steganography with bit reservoir functionality."""
+        if not self.mp3_available:
+            self.skipTest("MP3 steganography not available")
+        
+        from modules.steganography import MP3Steganography, create_mp3_test_audio
+        
+        # Create test MP3
+        mp3_data = create_mp3_test_audio(duration_seconds=3.0, bitrate=192)
+        
+        # Test with and without bit reservoir
+        mp3_with_reservoir = MP3Steganography(use_bit_reservoir=True, coefficient_bits=1)
+        mp3_without_reservoir = MP3Steganography(use_bit_reservoir=False, coefficient_bits=1)
+        
+        capacity_with = mp3_with_reservoir.calculate_capacity(mp3_data)
+        capacity_without = mp3_without_reservoir.calculate_capacity(mp3_data)
+        
+        self.assertGreater(capacity_with, 0)
+        self.assertGreater(capacity_without, 0)
+        
+        # Reservoir should generally provide additional capacity
+        # (Though this might not always be true depending on the frame structure)
+        self.assertGreaterEqual(capacity_with, capacity_without)
+
+    def test_mp3_quality_preservation_mode(self):
+        """Test MP3 steganography quality preservation settings."""
+        if not self.mp3_available:
+            self.skipTest("MP3 steganography not available")
+        
+        from modules.steganography import MP3Steganography, create_mp3_test_audio
+        
+        # Create test MP3
+        mp3_data = create_mp3_test_audio(duration_seconds=2.0, bitrate=128)
+        test_data = b"Quality preservation test"
+        
+        # Test with quality preservation enabled
+        mp3_stego = MP3Steganography(preserve_quality=True, coefficient_bits=1)
+        
+        capacity = mp3_stego.calculate_capacity(mp3_data)
+        if capacity > len(test_data):
+            stego_data = mp3_stego.hide_data(mp3_data, test_data)
+            
+            # Should still contain MP3 frame sync
+            self.assertIn(b'\xFF', stego_data[:100])
+            
+            # Should be able to extract
+            extracted_data = mp3_stego.extract_data(stego_data)
+            self.assertTrue(extracted_data.startswith(test_data))
+
+
 # Import HQC and ML-KEM keystore integration tests
 try:
     import os

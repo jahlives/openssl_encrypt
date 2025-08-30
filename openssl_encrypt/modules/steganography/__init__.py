@@ -21,7 +21,8 @@ Supported Cover Media:
 - WEBP images (lossless/lossy support, new in v1.3.0)
 - WAV audio files (uncompressed PCM, new in v1.3.0)
 - FLAC audio files (lossless compression, new in v1.3.0)
-- Future: GIF audio files
+- MP3 audio files (lossy compression with DCT coefficients, new in v1.3.0)
+- Future: GIF, additional audio formats
 
 Security Architecture:
 - Cover media → Steganographic hiding → Additional security layers
@@ -76,6 +77,12 @@ from .stego_flac import (
     create_flac_test_audio,
     is_flac_steganography_available,
 )
+from .stego_mp3 import (
+    MP3Steganography,
+    MP3Analyzer,
+    create_mp3_test_audio,
+    is_mp3_steganography_available,
+)
 from .stego_analysis import (
     CapacityAnalyzer,
     SecurityAnalyzer,
@@ -102,6 +109,7 @@ __all__ = [
     'WEBPSteganography',
     'WAVSteganography',
     'FLACSteganography',
+    'MP3Steganography',
     
     # Transport layer
     'SteganographyTransport',
@@ -112,6 +120,7 @@ __all__ = [
     'is_webp_steganography_available',
     'is_wav_steganography_available',
     'is_flac_steganography_available',
+    'is_mp3_steganography_available',
     
     # Analysis tools
     'CapacityAnalyzer',
@@ -124,6 +133,7 @@ __all__ = [
     'WEBPAnalyzer',
     'WAVAnalyzer',
     'FLACAnalyzer',
+    'MP3Analyzer',
     
     # Utilities
     'create_jpeg_test_image',
@@ -131,6 +141,7 @@ __all__ = [
     'create_webp_test_image',
     'create_wav_test_audio',
     'create_flac_test_audio',
+    'create_mp3_test_audio',
     
     # Exceptions
     'SteganographyError',
@@ -141,7 +152,7 @@ __all__ = [
 
 # Module-level constants
 SUPPORTED_IMAGE_FORMATS = ['PNG', 'BMP', 'JPEG', 'JPG', 'TIFF', 'TIF', 'WEBP']
-SUPPORTED_AUDIO_FORMATS = ['WAV', 'FLAC']
+SUPPORTED_AUDIO_FORMATS = ['WAV', 'FLAC', 'MP3']
 FUTURE_FORMATS = ['GIF', 'FLAC', 'MP3']
 EOF_MARKER = b'\xFF\xFF\xFF\xFE'  # Steganography end-of-file marker
 MIN_COVER_SIZE = 1024  # Minimum pixels required for hiding
