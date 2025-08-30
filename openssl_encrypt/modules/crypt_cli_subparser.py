@@ -419,13 +419,13 @@ def setup_encrypt_parser(subparser):
     stego_group.add_argument(
         "--stego-hide",
         metavar="COVER_IMAGE",
-        help="Hide encrypted data in cover image instead of writing to file"
+        help="Hide encrypted data in cover image instead of writing to file (supports PNG, BMP, JPEG, TIFF formats)"
     )
     stego_group.add_argument(
         "--stego-method",
         choices=["lsb", "adaptive", "f5", "outguess", "basic"],
         default="lsb",
-        help="Steganographic method to use (default: lsb). For JPEG: f5, outguess, or basic"
+        help="Steganographic method to use (default: lsb). For JPEG: f5, outguess, or basic. For TIFF/PNG/BMP: lsb or adaptive"
     )
     stego_group.add_argument(
         "--stego-bits-per-channel",
@@ -521,7 +521,7 @@ def setup_decrypt_parser(subparser):
         "--stego-method",
         choices=["lsb", "adaptive", "f5", "outguess", "basic"],
         default="lsb",
-        help="Steganographic method used for hiding (default: lsb). For JPEG: f5, outguess, or basic"
+        help="Steganographic method used for hiding (default: lsb). For JPEG: f5, outguess, or basic. For TIFF/PNG/BMP: lsb or adaptive"
     )
     stego_group.add_argument(
         "--stego-bits-per-channel",

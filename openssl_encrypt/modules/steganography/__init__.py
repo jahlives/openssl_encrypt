@@ -17,7 +17,8 @@ Supported Cover Media:
 - PNG images (lossless, recommended)
 - BMP images (uncompressed, testing)
 - JPEG images (DCT-based, new in v1.3.0)
-- Future: TIFF, WEBP, Audio files
+- TIFF images (LZW/PackBits/uncompressed support, new in v1.3.0)
+- Future: WEBP, GIF, Audio files
 
 Security Architecture:
 - Cover media → Steganographic hiding → Additional security layers
@@ -48,6 +49,12 @@ from .jpeg_utils import (
     create_jpeg_test_image,
     is_jpeg_steganography_available,
 )
+from .stego_tiff import (
+    TIFFSteganography,
+    TIFFAnalyzer,
+    create_tiff_test_image,
+    is_tiff_steganography_available,
+)
 from .stego_analysis import (
     CapacityAnalyzer,
     SecurityAnalyzer,
@@ -70,12 +77,14 @@ __all__ = [
     'LSBImageStego',
     'AdaptiveLSBStego',
     'JPEGSteganography',
+    'TIFFSteganography',
     
     # Transport layer
     'SteganographyTransport',
     'create_steganography_transport',
     'is_steganography_available',
     'is_jpeg_steganography_available',
+    'is_tiff_steganography_available',
     
     # Analysis tools
     'CapacityAnalyzer',
@@ -84,9 +93,11 @@ __all__ = [
     'JPEGSteganalysisResistance',
     'JPEGAnalyzer',
     'DCTUtils',
+    'TIFFAnalyzer',
     
     # Utilities
     'create_jpeg_test_image',
+    'create_tiff_test_image',
     
     # Exceptions
     'SteganographyError',
@@ -96,7 +107,7 @@ __all__ = [
 ]
 
 # Module-level constants
-SUPPORTED_IMAGE_FORMATS = ['PNG', 'BMP', 'JPEG', 'JPG']
-FUTURE_FORMATS = ['TIFF', 'WEBP']
+SUPPORTED_IMAGE_FORMATS = ['PNG', 'BMP', 'JPEG', 'JPG', 'TIFF', 'TIF']
+FUTURE_FORMATS = ['WEBP', 'GIF']
 EOF_MARKER = b'\xFF\xFF\xFF\xFE'  # Steganography end-of-file marker
 MIN_COVER_SIZE = 1024  # Minimum pixels required for hiding

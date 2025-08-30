@@ -26,6 +26,7 @@ from .stego_core import (
 )
 from .stego_image import LSBImageStego, AdaptiveLSBStego
 from .stego_jpeg import JPEGSteganography
+from .stego_tiff import TIFFSteganography
 
 # Set up module logger
 logger = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ class SteganographyTransport:
         
         Args:
             method: Steganographic method ('lsb', 'adaptive', 'f5', 'outguess')
-            bits_per_channel: LSB bits per color channel (1-3) for non-JPEG methods
+            bits_per_channel: LSB bits per color channel (1-3) for non-JPEG/TIFF methods
             password: Optional password for pixel randomization
             **options: Additional steganography options
         """
@@ -74,6 +75,8 @@ class SteganographyTransport:
             return 'PNG'
         elif image_data.startswith(b'BM'):
             return 'BMP'
+        elif image_data.startswith((b'II*\x00', b'MM\x00*')):
+            return 'TIFF'
         else:
             # Try to detect via PIL
             try:
@@ -105,6 +108,14 @@ class SteganographyTransport:
                     dct_method='basic',
                     config=self.config
                 )
+        elif image_format in ['TIFF', 'TIF']:
+            # TIFF methods
+            self.stego = TIFFSteganography(
+                password=self.password,
+                security_level=2 if self.method == 'adaptive' else 1,
+                bits_per_channel=self.bits_per_channel,
+                config=self.config
+            )
         else:
             # PNG/BMP methods (existing)
             if self.method == 'adaptive':

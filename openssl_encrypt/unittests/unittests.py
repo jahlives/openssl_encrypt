@@ -8736,6 +8736,235 @@ class TestSteganographyErrorHandling(unittest.TestCase):
             JPEGSteganography(dct_method="invalid")
 
 
+class TestTIFFSteganography(unittest.TestCase):
+    """Test suite for TIFF steganography functionality."""
+    
+    def setUp(self):
+        """Set up test environment."""
+        self.test_dir = tempfile.mkdtemp()
+        self.test_files = []
+        
+        # Check if TIFF steganography is available
+        try:
+            from modules.steganography import TIFFSteganography, is_tiff_steganography_available
+            self.tiff_available = is_tiff_steganography_available()
+        except ImportError:
+            self.tiff_available = False
+    
+    def tearDown(self):
+        """Clean up test files."""
+        for file_path in self.test_files:
+            try:
+                os.unlink(file_path)
+            except FileNotFoundError:
+                pass
+        try:
+            shutil.rmtree(self.test_dir, ignore_errors=True)
+        except OSError:
+            pass
+
+    def test_tiff_steganography_availability(self):
+        """Test if TIFF steganography components are available."""
+        if not self.tiff_available:
+            self.skipTest("TIFF steganography not available")
+        
+        from modules.steganography import TIFFSteganography, TIFFAnalyzer, create_tiff_test_image
+        
+        # Test creating TIFFSteganography instance
+        tiff_stego = TIFFSteganography()
+        self.assertIsNotNone(tiff_stego)
+        
+        # Test analyzer
+        analyzer = TIFFAnalyzer()
+        self.assertIsNotNone(analyzer)
+
+    def test_tiff_format_detection(self):
+        """Test TIFF format detection in transport layer."""
+        if not self.tiff_available:
+            self.skipTest("TIFF steganography not available")
+        
+        from modules.steganography import SteganographyTransport, create_tiff_test_image
+        
+        # Create a test TIFF image
+        tiff_path = os.path.join(self.test_dir, "test_detection.tiff")
+        self.test_files.append(tiff_path)
+        tiff_data = create_tiff_test_image(width=50, height=50, compression='raw')
+        with open(tiff_path, 'wb') as f:
+            f.write(tiff_data)
+        
+        # Test format detection
+        transport = SteganographyTransport()
+        with open(tiff_path, 'rb') as f:
+            tiff_data = f.read()
+        
+        # Should detect as TIFF format
+        format_detected = transport._detect_image_format(tiff_data)
+        self.assertEqual(format_detected, 'TIFF')
+
+    def test_tiff_capacity_calculation(self):
+        """Test TIFF capacity calculation for different compressions."""
+        if not self.tiff_available:
+            self.skipTest("TIFF steganography not available")
+        
+        from modules.steganography import TIFFSteganography, create_tiff_test_image
+        
+        compression_tests = ['raw', 'lzw', 'packbits']
+        capacities = {}
+        
+        for compression in compression_tests:
+            # Create test TIFF with specific compression
+            tiff_path = os.path.join(self.test_dir, f"test_capacity_{compression}.tiff")
+            self.test_files.append(tiff_path)
+            tiff_data = create_tiff_test_image(width=40, height=40, compression=compression)
+            with open(tiff_path, 'wb') as f:
+                f.write(tiff_data)
+            
+            # Calculate capacity
+            tiff_stego = TIFFSteganography(bits_per_channel=1)
+            with open(tiff_path, 'rb') as f:
+                tiff_data = f.read()
+            
+            capacity = tiff_stego.calculate_capacity(tiff_data)
+            capacities[compression] = capacity
+            
+            self.assertIsInstance(capacity, int)
+            self.assertGreater(capacity, 0)
+        
+        # Uncompressed should typically have higher capacity
+        if 'raw' in capacities and 'lzw' in capacities:
+            self.assertGreaterEqual(capacities['raw'], capacities['lzw'])
+
+    def test_tiff_steganography_workflow(self):
+        """Test complete TIFF steganography hide/extract workflow."""
+        if not self.tiff_available:
+            self.skipTest("TIFF steganography not available")
+        
+        from modules.steganography import TIFFSteganography, create_tiff_test_image
+        
+        # Create test TIFF (uncompressed for best results)
+        tiff_path = os.path.join(self.test_dir, "test_workflow.tiff")
+        self.test_files.append(tiff_path)
+        tiff_data = create_tiff_test_image(width=60, height=60, compression='raw')
+        with open(tiff_path, 'wb') as f:
+            f.write(tiff_data)
+        
+        # Test data to hide
+        test_data = b"TIFF steganography test - hiding data in TIFF!"
+        
+        # Initialize TIFF steganography with secure parameters
+        tiff_stego = TIFFSteganography(bits_per_channel=2, password="tiff_test_password")
+        
+        # Read original TIFF
+        with open(tiff_path, 'rb') as f:
+            cover_data = f.read()
+        
+        # Check capacity
+        capacity = tiff_stego.calculate_capacity(cover_data)
+        self.assertGreater(capacity, len(test_data), "Test data too large for TIFF capacity")
+        
+        # Hide data
+        stego_data = tiff_stego.hide_data(cover_data, test_data)
+        self.assertIsInstance(stego_data, bytes)
+        self.assertNotEqual(cover_data, stego_data)  # Should be modified
+        
+        # Extract data
+        extracted_data = tiff_stego.extract_data(stego_data)
+        self.assertEqual(test_data, extracted_data)
+
+    def test_tiff_transport_integration(self):
+        """Test TIFF steganography through transport layer."""
+        if not self.tiff_available:
+            self.skipTest("TIFF steganography not available")
+        
+        from modules.steganography import SteganographyTransport, create_tiff_test_image
+        
+        # Create test TIFF
+        tiff_path = os.path.join(self.test_dir, "test_transport.tiff")
+        output_path = os.path.join(self.test_dir, "output_transport.tiff")
+        self.test_files.extend([tiff_path, output_path])
+        
+        tiff_data = create_tiff_test_image(width=50, height=50, compression='raw')
+        with open(tiff_path, 'wb') as f:
+            f.write(tiff_data)
+        
+        # Test data (simulating encrypted data)
+        test_encrypted_data = b"Encrypted TIFF steganography transport test!"
+        
+        # Create transport with TIFF-appropriate settings
+        transport = SteganographyTransport(
+            method="lsb", 
+            bits_per_channel=1, 
+            password="transport_test_key"
+        )
+        
+        # Hide encrypted data
+        transport.hide_data_in_image(test_encrypted_data, tiff_path, output_path)
+        self.assertTrue(os.path.exists(output_path))
+        
+        # Verify output is valid TIFF
+        with open(output_path, 'rb') as f:
+            output_data = f.read()
+        
+        # TIFF signature check
+        self.assertTrue(
+            output_data.startswith(b'II*\x00') or output_data.startswith(b'MM\x00*'),
+            "Output should be valid TIFF format"
+        )
+        
+        # Extract data
+        extracted_data = transport.extract_data_from_image(output_path)
+        self.assertEqual(test_encrypted_data, extracted_data)
+
+    def test_tiff_analyzer_functionality(self):
+        """Test TIFF analyzer for steganography suitability assessment."""
+        if not self.tiff_available:
+            self.skipTest("TIFF steganography not available")
+        
+        from modules.steganography import TIFFAnalyzer, create_tiff_test_image
+        
+        # Test different TIFF configurations
+        test_configs = [
+            {'compression': 'raw', 'expected_suitable': True},
+            {'compression': 'lzw', 'expected_suitable': False},
+            {'compression': 'packbits', 'expected_suitable': False},
+        ]
+        
+        for i, config in enumerate(test_configs):
+            with self.subTest(config=config):
+                tiff_path = os.path.join(self.test_dir, f"analyze_{i}.tiff")
+                self.test_files.append(tiff_path)
+                
+                # Create test TIFF
+                tiff_data = create_tiff_test_image(
+                    width=40, 
+                    height=40, 
+                    compression=config['compression']
+                )
+                with open(tiff_path, 'wb') as f:
+                    f.write(tiff_data)
+                
+                # Analyze TIFF
+                with open(tiff_path, 'rb') as f:
+                    tiff_data_for_analysis = f.read()
+                
+                analyzer = TIFFAnalyzer()
+                analysis = analyzer.analyze_tiff_structure(tiff_data_for_analysis)
+                
+                # Verify analysis structure
+                self.assertIsInstance(analysis, dict)
+                self.assertIn('steganography', analysis)
+                self.assertIn('image', analysis)
+                self.assertIn('compression', analysis['image'])
+                
+                # Check suitability expectation - raw compression should score higher
+                if config['compression'] == 'raw':
+                    self.assertGreater(analysis['steganography']['overall_score'], 0.5)
+                    self.assertEqual(analysis['steganography']['compression_score'], 1.0)
+                else:
+                    # Compressed formats may have lower scores but we'll just check they exist
+                    self.assertIsInstance(analysis['steganography']['overall_score'], (int, float))
+
+
 # Import HQC and ML-KEM keystore integration tests
 try:
     import os
