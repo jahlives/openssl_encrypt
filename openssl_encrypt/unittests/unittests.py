@@ -9221,6 +9221,228 @@ class TestWEBPSteganography(unittest.TestCase):
             self.fail(f"Secure memory usage failed: {e}")
 
 
+class TestWAVSteganography(unittest.TestCase):
+    """Test suite for WAV audio steganography functionality."""
+    
+    def setUp(self):
+        """Set up test environment."""
+        self.test_dir = tempfile.mkdtemp()
+        self.test_files = []
+        
+        # Check if WAV steganography is available
+        try:
+            from modules.steganography import WAVSteganography, is_wav_steganography_available
+            self.wav_available = is_wav_steganography_available()
+        except ImportError:
+            self.wav_available = False
+    
+    def tearDown(self):
+        """Clean up test files."""
+        for file_path in self.test_files:
+            try:
+                os.unlink(file_path)
+            except FileNotFoundError:
+                pass
+        try:
+            shutil.rmtree(self.test_dir, ignore_errors=True)
+        except OSError:
+            pass
+
+    def test_wav_steganography_availability(self):
+        """Test if WAV steganography components are available."""
+        if not self.wav_available:
+            self.skipTest("WAV steganography not available")
+        
+        from modules.steganography import WAVSteganography, WAVAnalyzer, create_wav_test_audio
+        
+        # Test creating WAVSteganography instance
+        wav_stego = WAVSteganography()
+        self.assertIsNotNone(wav_stego)
+        
+        # Test analyzer
+        analyzer = WAVAnalyzer()
+        self.assertIsNotNone(analyzer)
+
+    def test_wav_audio_creation(self):
+        """Test WAV audio file creation functionality."""
+        if not self.wav_available:
+            self.skipTest("WAV steganography not available")
+        
+        from modules.steganography import create_wav_test_audio
+        
+        # Test different audio configurations
+        test_configs = [
+            {'duration_seconds': 1.0, 'sample_rate': 44100, 'channels': 1, 'bits_per_sample': 16},
+            {'duration_seconds': 2.0, 'sample_rate': 44100, 'channels': 2, 'bits_per_sample': 16},
+            {'duration_seconds': 1.0, 'sample_rate': 22050, 'channels': 1, 'bits_per_sample': 16},
+        ]
+        
+        for config in test_configs:
+            with self.subTest(config=config):
+                wav_data = create_wav_test_audio(**config)
+                self.assertIsInstance(wav_data, bytes)
+                self.assertGreater(len(wav_data), 44)  # Minimum WAV header size
+                
+                # Check WAV signature
+                self.assertEqual(wav_data[:4], b'RIFF')
+                self.assertEqual(wav_data[8:12], b'WAVE')
+
+    def test_wav_capacity_calculation(self):
+        """Test WAV capacity calculation for different audio formats."""
+        if not self.wav_available:
+            self.skipTest("WAV steganography not available")
+        
+        from modules.steganography import WAVSteganography, create_wav_test_audio
+        
+        # Test different configurations
+        configs = [
+            {'duration_seconds': 2.0, 'channels': 1, 'bits_per_sample': 1},  # Config and audio params
+            {'duration_seconds': 2.0, 'channels': 2, 'bits_per_sample': 1},
+            {'duration_seconds': 1.0, 'channels': 2, 'bits_per_sample': 2},
+        ]
+        
+        for config in configs:
+            with self.subTest(config=config):
+                # Extract steganography config
+                stego_bits = config.pop('bits_per_sample')
+                
+                # Create test WAV
+                wav_data = create_wav_test_audio(**config)
+                
+                # Calculate capacity
+                wav_stego = WAVSteganography(bits_per_sample=stego_bits)
+                capacity = wav_stego.calculate_capacity(wav_data)
+                
+                self.assertIsInstance(capacity, int)
+                self.assertGreater(capacity, 0)
+                
+                # Longer audio should have more capacity
+                if config['duration_seconds'] == 2.0:
+                    self.assertGreater(capacity, 1000)
+
+    def test_wav_steganography_workflow(self):
+        """Test complete WAV steganography hide/extract workflow."""
+        if not self.wav_available:
+            self.skipTest("WAV steganography not available")
+        
+        from modules.steganography import WAVSteganography, create_wav_test_audio
+        
+        # Create test WAV (longer duration for more capacity)
+        wav_data = create_wav_test_audio(duration_seconds=3.0, sample_rate=44100, channels=2)
+        
+        # Test data to hide
+        test_data = b"WAV audio steganography test - hiding secret data in audio!"
+        
+        # Initialize WAV steganography
+        wav_stego = WAVSteganography(bits_per_sample=1, password="wav_test_password")
+        
+        # Check capacity
+        capacity = wav_stego.calculate_capacity(wav_data)
+        self.assertGreater(capacity, len(test_data), "Test data too large for WAV capacity")
+        
+        # Hide data
+        stego_data = wav_stego.hide_data(wav_data, test_data)
+        self.assertIsInstance(stego_data, bytes)
+        
+        # WAV signature should still be valid
+        self.assertEqual(stego_data[:4], b'RIFF')
+        self.assertEqual(stego_data[8:12], b'WAVE')
+        
+        # Extract data
+        extracted_data = wav_stego.extract_data(stego_data)
+        
+        # Verify extraction (may include end marker, so check if test data is at the start)
+        self.assertTrue(extracted_data.startswith(test_data))
+
+    def test_wav_analyzer_functionality(self):
+        """Test WAV analyzer for audio format assessment."""
+        if not self.wav_available:
+            self.skipTest("WAV steganography not available")
+        
+        from modules.steganography import WAVAnalyzer, create_wav_test_audio
+        
+        # Test different WAV configurations
+        test_configs = [
+            {'duration_seconds': 3.0, 'sample_rate': 44100, 'channels': 2, 'bits_per_sample': 16},
+            {'duration_seconds': 1.0, 'sample_rate': 22050, 'channels': 1, 'bits_per_sample': 16},
+        ]
+        
+        analyzer = WAVAnalyzer()
+        
+        for config in test_configs:
+            with self.subTest(config=config):
+                # Create test WAV
+                wav_data = create_wav_test_audio(**config)
+                
+                # Analyze WAV
+                analysis = analyzer.analyze_wav_structure(wav_data)
+                
+                # Verify analysis structure
+                self.assertIsInstance(analysis, dict)
+                self.assertIn('steganography', analysis)
+                self.assertIn('audio', analysis)
+                self.assertIn('header', analysis)
+                
+                # Check that valid WAV is detected
+                self.assertTrue(analysis['valid'])
+                self.assertTrue(analysis['header']['valid_riff'])
+                self.assertTrue(analysis['header']['valid_wave'])
+                
+                # Check audio properties
+                self.assertIn('format_code', analysis['audio'])
+                self.assertIn('sample_rate', analysis['audio'])
+                self.assertIn('channels', analysis['audio'])
+
+    def test_wav_secure_memory_usage(self):
+        """Test that WAV steganography uses secure memory properly."""
+        if not self.wav_available:
+            self.skipTest("WAV steganography not available")
+        
+        from modules.steganography import WAVSteganography, create_wav_test_audio
+        
+        # Create test WAV
+        wav_data = create_wav_test_audio(duration_seconds=2.0, channels=1)
+        test_data = b"Secure memory test for WAV!"
+        
+        # Test with password (triggers secure memory usage)
+        wav_stego = WAVSteganography(password="secure_test", security_level=3, bits_per_sample=1)
+        
+        # This should complete without memory-related errors
+        try:
+            capacity = wav_stego.calculate_capacity(wav_data)
+            self.assertGreater(capacity, len(test_data))
+            
+            stego_data = wav_stego.hide_data(wav_data, test_data)
+            extracted_data = wav_stego.extract_data(stego_data)
+            
+            # Should at least start with our test data
+            self.assertTrue(extracted_data.startswith(test_data))
+            
+        except Exception as e:
+            self.fail(f"Secure memory usage failed: {e}")
+
+    def test_wav_different_bit_depths(self):
+        """Test WAV steganography with different audio bit depths."""
+        if not self.wav_available:
+            self.skipTest("WAV steganography not available")
+        
+        from modules.steganography import WAVSteganography, create_wav_test_audio
+        
+        # Test 16-bit audio (most common)
+        wav_16bit = create_wav_test_audio(duration_seconds=2.0, bits_per_sample=16)
+        wav_stego = WAVSteganography(bits_per_sample=1)
+        
+        capacity = wav_stego.calculate_capacity(wav_16bit)
+        self.assertGreater(capacity, 0)
+        
+        # Basic functionality test
+        test_data = b"16-bit WAV test"
+        if capacity > len(test_data):
+            stego_data = wav_stego.hide_data(wav_16bit, test_data)
+            self.assertIsInstance(stego_data, bytes)
+            self.assertEqual(stego_data[:4], b'RIFF')  # Still valid WAV
+
+
 # Import HQC and ML-KEM keystore integration tests
 try:
     import os
