@@ -106,6 +106,11 @@ def setup_encrypt_parser(subparser):
         metavar="LENGTH",
         help="Generate a random password of specified length for encryption",
     )
+    subparser.add_argument(
+        "--force-password",
+        action="store_true",
+        help="Force acceptance of weak passwords (use with caution)",
+    )
 
     # I/O options
     subparser.add_argument(
@@ -409,6 +414,37 @@ def setup_encrypt_parser(subparser):
         help="Additional data to be encrypted alongside the file",
     )
 
+    # Steganography options
+    stego_group = subparser.add_argument_group("Steganography options")
+    stego_group.add_argument(
+        "--stego-hide",
+        metavar="COVER_IMAGE",
+        help="Hide encrypted data in cover image instead of writing to file"
+    )
+    stego_group.add_argument(
+        "--stego-method",
+        choices=["lsb", "adaptive"],
+        default="lsb",
+        help="Steganographic method to use (default: lsb)"
+    )
+    stego_group.add_argument(
+        "--stego-bits-per-channel",
+        type=int,
+        choices=[1, 2, 3],
+        default=1,
+        help="LSB bits per color channel (default: 1)"
+    )
+    stego_group.add_argument(
+        "--stego-randomize-pixels",
+        action="store_true",
+        help="Randomize pixel selection order (uses derived encryption key)"
+    )
+    stego_group.add_argument(
+        "--stego-decoy-data",
+        action="store_true",
+        help="Fill unused capacity with decoy data"
+    )
+
 
 def setup_decrypt_parser(subparser):
     """Set up arguments specific to the decrypt command"""
@@ -417,6 +453,11 @@ def setup_decrypt_parser(subparser):
         "--password",
         "-p",
         help="Password (will prompt if not provided, or use CRYPT_PASSWORD environment variable)",
+    )
+    subparser.add_argument(
+        "--force-password",
+        action="store_true",
+        help="Force acceptance of weak passwords (use with caution)",
     )
 
     # I/O options
@@ -459,6 +500,27 @@ def setup_decrypt_parser(subparser):
     keystore_group.add_argument(
         "--keystore-password",
         help="Password for the keystore (will prompt if not provided)",
+    )
+
+    # Steganography options  
+    stego_group = subparser.add_argument_group("Steganography options")
+    stego_group.add_argument(
+        "--stego-extract",
+        action="store_true",
+        help="Extract encrypted data from steganographic image (input must be stego image)"
+    )
+    stego_group.add_argument(
+        "--stego-method",
+        choices=["lsb", "adaptive"],
+        default="lsb",
+        help="Steganographic method used for hiding (default: lsb)"
+    )
+    stego_group.add_argument(
+        "--stego-bits-per-channel",
+        type=int,
+        choices=[1, 2, 3],
+        default=1,
+        help="LSB bits per color channel used (default: 1)"
     )
 
 
@@ -613,6 +675,9 @@ def create_subparser_main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_simple_parser(show_version_file_parser)
+
+    # Note: Steganography is now integrated into encrypt/decrypt commands
+    # rather than separate commands
 
     # Parse arguments
     args = parser.parse_args()

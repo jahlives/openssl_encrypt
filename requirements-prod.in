@@ -6,6 +6,10 @@ whirlpool-py311>=1.0.0,<2.0.0; python_version >= '3.11'
 PyYAML>=6.0.2,<7.0.0
 blake3>=1.0.0,<2.0.0
 
+# Steganography dependencies (v1.3.0)
+Pillow>=10.0.0,<11.0.0
+numpy>=1.24.0,<2.0.0
+
 # Windows-specific dependencies
 pywin32>=306,<307; sys_platform == 'win32'
 

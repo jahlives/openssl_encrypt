@@ -2566,6 +2566,7 @@ def encrypt_file(
     pqc_store_private_key=False,
     pqc_dual_encrypt_key=False,
     encryption_data="aes-gcm",
+    return_derived_key=False,
 ):
     """
     Encrypt a file with a password using the specified algorithm.
@@ -3284,10 +3285,15 @@ def encrypt_file(
 
     # Clean up sensitive data properly
     try:
-        return True
+        if return_derived_key:
+            # Return both success status and the derived key
+            return True, bytes(key) if key is not None else None
+        else:
+            return True
     finally:
         # Wipe sensitive data from memory in the correct order
-        if "key" in locals() and key is not None:
+        # Only wipe if we're not returning the key
+        if not return_derived_key and "key" in locals() and key is not None:
             secure_memzero(key)
             key = None
 
