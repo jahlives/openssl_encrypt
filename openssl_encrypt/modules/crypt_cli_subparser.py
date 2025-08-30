@@ -435,9 +435,13 @@ def setup_encrypt_parser(subparser):
         help="LSB bits per color channel (default: 1)"
     )
     stego_group.add_argument(
+        "--stego-password",
+        help="Password for steganographic security (separate from encryption password)"
+    )
+    stego_group.add_argument(
         "--stego-randomize-pixels",
         action="store_true",
-        help="Randomize pixel selection order (uses derived encryption key)"
+        help="Randomize pixel selection order (requires --stego-password)"
     )
     stego_group.add_argument(
         "--stego-decoy-data",
@@ -529,6 +533,10 @@ def setup_decrypt_parser(subparser):
         choices=[1, 2, 3],
         default=1,
         help="LSB bits per color channel used (default: 1) - ignored for JPEG methods"
+    )
+    stego_group.add_argument(
+        "--stego-password",
+        help="Password for steganographic security (separate from encryption password)"
     )
     stego_group.add_argument(
         "--jpeg-quality",

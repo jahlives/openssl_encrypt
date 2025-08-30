@@ -254,13 +254,12 @@ class SteganographyTransport:
         return self.stego.calculate_capacity(cover_data)
 
 
-def create_steganography_transport(args, derived_key: Optional[bytes] = None) -> Optional[SteganographyTransport]:
+def create_steganography_transport(args) -> Optional[SteganographyTransport]:
     """
     Create steganography transport from CLI arguments
     
     Args:
         args: Parsed CLI arguments  
-        password: The main user password to derive steganography key from
         
     Returns:
         SteganographyTransport instance or None if not using steganography
@@ -277,19 +276,8 @@ def create_steganography_transport(args, derived_key: Optional[bytes] = None) ->
         method = getattr(args, 'stego_method', 'lsb')
         bits_per_channel = getattr(args, 'stego_bits_per_channel', 1)
         
-        # Use the derived encryption key for steganography security
-        stego_password = None
-        if derived_key:
-            # Convert first 32 bytes of derived key to a base64 string for compatibility
-            import base64
-            try:
-                # Use SecureBytes for the key slice to protect in memory
-                secure_key_slice = SecureBytes(derived_key[:32])
-                stego_password = base64.b64encode(secure_key_slice).decode('ascii')
-            finally:
-                # Securely wipe the key slice from memory
-                if 'secure_key_slice' in locals():
-                    secure_memzero(secure_key_slice)
+        # Use dedicated steganography password for security
+        stego_password = getattr(args, 'stego_password', None)
         
         options = {
             'randomize_pixels': getattr(args, 'stego_randomize_pixels', False),

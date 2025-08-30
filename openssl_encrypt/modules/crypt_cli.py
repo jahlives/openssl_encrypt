@@ -2598,51 +2598,8 @@ def main_with_args(args=None):
                             pqc_dual_encryption=getattr(args, "pqc_dual_encrypt_key", False),
                         )
                     else:
-                        # Use standard encryption - request derived key only if enhanced stego features are used
-                        use_stego = hasattr(args, 'stego_hide') and args.stego_hide
-                        enhanced_stego = use_stego and (
-                            getattr(args, 'stego_randomize_pixels', False) or 
-                            getattr(args, 'stego_decoy_data', False)
-                        )
-                        derived_key = None
-                        if enhanced_stego:
-                            # Need derived key for enhanced steganography features
-                            success, derived_key = encrypt_file(
-                                args.input,
-                                temp_output,
-                                password,
-                                hash_config,
-                                args.pbkdf2_iterations,
-                                args.quiet,
-                                algorithm=args.algorithm,
-                                progress=args.progress,
-                                verbose=args.verbose,
-                                debug=args.debug,
-                                pqc_keypair=(pqc_keypair if "pqc_keypair" in locals() else None),
-                                pqc_store_private_key=args.pqc_store_key,
-                                encryption_data=args.encryption_data,
-                                return_derived_key=True,
-                            )
-                        elif use_stego:
-                            # Basic steganography without enhanced features
-                            success = encrypt_file(
-                                args.input,
-                                temp_output,
-                                password,
-                                hash_config,
-                                args.pbkdf2_iterations,
-                                args.quiet,
-                                algorithm=args.algorithm,
-                                progress=args.progress,
-                                verbose=args.verbose,
-                                debug=args.debug,
-                                pqc_keypair=(pqc_keypair if "pqc_keypair" in locals() else None),
-                                pqc_store_private_key=args.pqc_store_key,
-                                encryption_data=args.encryption_data,
-                            )
-                        else:
-                            # No steganography
-                            success = encrypt_file(
+                        # Use standard encryption
+                        success = encrypt_file(
                                 args.input,
                                 temp_output,
                                 password,
@@ -2667,8 +2624,8 @@ def main_with_args(args=None):
                             try:
                                 from .steganography.stego_transport import create_steganography_transport
                                 
-                                # Create steganography transport with derived key
-                                stego_transport = create_steganography_transport(args, derived_key)
+                                # Create steganography transport with dedicated password
+                                stego_transport = create_steganography_transport(args)
                                 if stego_transport:
                                     # Read encrypted data from temp file
                                     with open(temp_output, 'rb') as f:
