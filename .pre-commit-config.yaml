@@ -42,7 +42,7 @@ repos:
       - id: flake8
         args: [
           '--max-line-length=100',
-          '--extend-ignore=E203,W503,E501',  # Ignore black conflicts
+          '--extend-ignore=E203,W503,E501,S404,S603',  # Ignore black conflicts and setup.py security warnings
           '--exclude=build,dist,.git,__pycache__,.pytest_cache,.venv'
         ]
         additional_dependencies: [
@@ -62,6 +62,7 @@ repos:
           '-r', 'openssl_encrypt/',
           '--exclude', 'openssl_encrypt/unittests/'
         ]
+        exclude: '^setup\.py$'
 
   # Type checking with mypy
   - repo: https://github.com/pre-commit/mirrors-mypy

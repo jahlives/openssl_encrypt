@@ -1,7 +1,8 @@
-import logging
+"""Setup script for the openssl-encrypt package."""
 import os
-import subprocess
+import subprocess  # nosec B404
 import sys
+from typing import List
 
 from setuptools import Command, find_packages, setup
 
@@ -13,7 +14,7 @@ this_directory = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(this_directory, "README.md"), encoding="utf-8") as f:
     long_description = f.read()
 
-VERSION = "1.1.0"  # Define version in a variable for reuse
+VERSION = "1.2.1"  # Define version in a variable for reuse
 
 # Get git commit hash
 git_hash = "unknown"
@@ -24,7 +25,14 @@ if os.environ.get("CI_COMMIT_SHA"):
 # Otherwise try to get it from git directly
 else:
     try:
-        git_hash = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("ascii").strip()
+        # subprocess usage is necessary for getting git commit hash during build
+        git_hash = (
+            subprocess.check_output(
+                ["/usr/bin/git", "rev-parse", "HEAD"], cwd=this_directory  # nosec B603 B607
+            )
+            .decode("ascii")
+            .strip()
+        )
     except (subprocess.SubprocessError, FileNotFoundError):
         # Keep default "unknown"
         pass
@@ -53,23 +61,27 @@ __git_commit__ = "{git_hash}"
         )
 
 
-# Custom install command that runs setup_whirlpool after installation
 class PostInstallCommand(Command):
+    """Custom install command that runs setup_whirlpool after installation."""
+
     description = "Command to run post install tasks"
-    user_options = []
+    user_options: List[str] = []
 
     def initialize_options(self):
+        """Initialize command options."""
         pass
 
     def finalize_options(self):
+        """Finalize command options."""
         pass
 
     def run(self):
+        """Run the post-install command."""
         try:
-            # Run the post-install script
-            import subprocess
-
-            subprocess.check_call([sys.executable, "-m", "openssl_encrypt.post_install"])
+            # subprocess usage is necessary for running post-install script
+            subprocess.check_call(
+                [sys.executable, "-m", "openssl_encrypt.post_install"]  # nosec B603
+            )
         except Exception as e:
             print(f"Warning: Failed to run post-install setup: {e}")
             print("You may need to manually install Whirlpool: pip install whirlpool-py311")
@@ -103,9 +115,11 @@ setup(
             and not line.startswith("-")
             and line.strip()
             not in [
-                l.strip()
-                for l in open("requirements-prod.txt")
-                if l.strip() and not l.startswith("#") and not l.startswith("-")
+                prod_line.strip()
+                for prod_line in open("requirements-prod.txt")
+                if prod_line.strip()
+                and not prod_line.startswith("#")
+                and not prod_line.startswith("-")
             ]
         ],
     },

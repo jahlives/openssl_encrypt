@@ -31,8 +31,10 @@ import yaml
 
 from .algorithm_warnings import (
     AlgorithmWarningConfig,
+    get_encryption_block_message,
     get_recommended_replacement,
     is_deprecated,
+    is_encryption_blocked_for_algorithm,
     warn_deprecated_algorithm,
 )
 
@@ -596,14 +598,25 @@ def main():
             "version",
             "show-version-file",
         ]
-        and ("--help" in sys.argv or "-h" in sys.argv)
     ):
-        # Use subparser for command-specific help
+        # Use subparser for all command-specific operations
         from .crypt_cli_subparser import create_subparser_main
 
         parser, args = create_subparser_main()
-        return
+        
+        # If it's just help, return after displaying help
+        if "--help" in sys.argv or "-h" in sys.argv:
+            return
+        
+        # Otherwise, continue with the parsed args from subparser  
+        # We need to call the main logic with the subparser args
+        return main_with_args(args)
+    else:
+        # Use original argument parsing for non-command operations
+        return main_with_args()
 
+def main_with_args(args=None):
+    """Main logic with pre-parsed arguments (or None to parse from command line)"""
     # Original main function continues below...
     # Global variable to track temporary files that need cleanup
     temp_files_to_cleanup = []
@@ -1045,6 +1058,9 @@ def main():
     )
     keystore_group.add_argument("--keystore", help="Path to the keystore file")
     keystore_group.add_argument(
+        "--keystore-path", dest="keystore", help="Path to the keystore file (alias for --keystore)"
+    )
+    keystore_group.add_argument(
         "--keystore-password",
         help="Password for the keystore (will prompt if not provided)",
     )
@@ -1265,13 +1281,60 @@ def main():
         "--custom-password-list", help="Path to custom common password list file"
     )
 
-    args = parser.parse_args()
+    # Don't parse args again if they're already provided from subparser
+    # This avoids the "unrecognized arguments" error for steganography options  
+    if args is None:
+        args = parser.parse_args()
+    
+    # Add compatibility layer for subparser args - set missing attributes to defaults
+    default_attrs = {
+        'password_policy': 'none', 'argon2_preset': None,
+        'sha512': None, 'sha256': None, 'sha3_256': None, 'sha3_512': None,
+        'blake2b': None, 'shake256': None, 'pbkdf2': 100000,
+        'use_argon2': False, 'enable_balloon': False, 'use_balloon': False,
+        'scrypt_cost': 0, 'scrypt_n': 0, 'scrypt_r': 8, 'scrypt_p': 1,
+        'whirlpool_rounds': 0, 'tiger_rounds': 0, 'ripemd160_rounds': 0,
+        'sha1_rounds': 0, 'md5_rounds': 0, 'md4_rounds': 0,
+        'custom_password_list': None, 'password_length': 64,
+        'password_charset': None, 'password_file': None,
+        'show_password_policy': False, 'balloon_cost': 14,
+        'sha512_rounds': None, 'sha256_rounds': None, 'sha3_256_rounds': None,
+        'sha3_512_rounds': None, 'blake2b_rounds': None, 'shake256_rounds': None,
+        'sha384_rounds': None, 'sha224_rounds': None, 'sha3_384_rounds': None, 'sha3_224_rounds': None,
+        'blake3_rounds': None, 'shake128_rounds': None,
+        'pbkdf2_iterations': 0, 'enable_argon2': False,
+        'argon2_type': 'id', 'argon2_memory': 65536, 'argon2_time': 3, 'argon2_parallelism': 1,
+        'argon2_hash_len': 32, 'argon2_rounds': 1, 'balloon_time_cost': 1, 'balloon_space_cost': 1024,
+        'balloon_parallelism': 1, 'balloon_hash_len': 32, 'hkdf_rounds': 1, 'hkdf_algorithm': 'sha256',
+        'hkdf_info': 'openssl_encrypt_hkdf', 'enable_hkdf': False,
+        'algorithm': None, 'random': None, 'overwrite': False, 'shred': False,
+        'shred_passes': 3, 'pqc_keyfile': None, 'pqc_store_key': False,
+        'kdf_rounds': 0, 'enable_scrypt': False, 'scrypt_rounds': 0,
+        'balloon_rounds': 0, 'keystore_path': None, 'keystore_password': None,
+        'dual_encrypt_key': None, 'encryption_data': None,
+        'quick': False, 'standard': False, 'paranoid': False, 'template': None,
+        'force_password': False,
+    }
+    
+    for attr, default_val in default_attrs.items():
+        if not hasattr(args, attr):
+            setattr(args, attr, default_val)
+
+    # Store the original user-provided algorithm name from command line
+    import sys
+
+    original_algorithm = None
+    for i, arg in enumerate(sys.argv):
+        if arg == "--algorithm" and i + 1 < len(sys.argv):
+            original_algorithm = sys.argv[i + 1]
+            break
 
     # Configure logging level based on debug flag
     if args.debug:
         import logging
 
         logging.basicConfig(level=logging.DEBUG, format="%(levelname)s - %(name)s - %(message)s")
+        print(f"DEBUG: sys.argv = {sys.argv}")
 
     # Enhance the args with better defaults for extended algorithms
     args = enhance_cli_args(args)
@@ -1280,29 +1343,30 @@ def main():
     AlgorithmWarningConfig.configure(verbose_mode=args.verbose or args.debug)
 
     # Handle legacy options and map to new names
-    # SHA family mappings
-    if not args.sha512_rounds and args.sha512:
+    # SHA family mappings - use getattr for safety with subparser args
+    if not getattr(args, 'sha512_rounds', None) and getattr(args, 'sha512', None):
         args.sha512_rounds = args.sha512
-    if not args.sha256_rounds and args.sha256:
+    if not getattr(args, 'sha256_rounds', None) and getattr(args, 'sha256', None):
         args.sha256_rounds = args.sha256
-    if not args.sha3_256_rounds and args.sha3_256:
+    if not getattr(args, 'sha3_256_rounds', None) and getattr(args, 'sha3_256', None):
         args.sha3_256_rounds = args.sha3_256
-    if not args.sha3_512_rounds and args.sha3_512:
+    if not getattr(args, 'sha3_512_rounds', None) and getattr(args, 'sha3_512', None):
         args.sha3_512_rounds = args.sha3_512
-    if not args.blake2b_rounds and args.blake2b:
+    if not getattr(args, 'blake2b_rounds', None) and getattr(args, 'blake2b', None):
         args.blake2b_rounds = args.blake2b
-    if not args.shake256_rounds and args.shake256:
+    if not getattr(args, 'shake256_rounds', None) and getattr(args, 'shake256', None):
         args.shake256_rounds = args.shake256
 
     # PBKDF2 mapping
-    if args.pbkdf2 != 100000:  # Only override if not the default
-        args.pbkdf2_iterations = args.pbkdf2
+    pbkdf2_val = getattr(args, 'pbkdf2', 100000)
+    if pbkdf2_val != 100000:  # Only override if not the default
+        args.pbkdf2_iterations = pbkdf2_val
 
     # Argon2 mapping
-    if args.use_argon2:
+    if getattr(args, 'use_argon2', False):
         args.enable_argon2 = True
 
-    if args.enable_balloon:
+    if getattr(args, 'enable_balloon', False):
         args.use_balloon = True
 
     if args.action == "version":
@@ -1331,9 +1395,12 @@ def main():
             print("Version module not found. Run 'pip install -e .' to generate the version file.")
             return 1
 
+
     # Handle scrypt_cost conversion to scrypt_n
-    if args.scrypt_cost > 0 and args.scrypt_n == 0:
-        args.scrypt_n = 2**args.scrypt_cost
+    scrypt_cost = getattr(args, 'scrypt_cost', 0)
+    scrypt_n = getattr(args, 'scrypt_n', 0)
+    if scrypt_cost > 0 and scrypt_n == 0:
+        args.scrypt_n = 2**scrypt_cost
 
     # Check for utility and information actions first
     if args.action == "security-info":
@@ -2051,7 +2118,7 @@ def main():
             "blake3": args.blake3_rounds,
             "shake256": args.shake256_rounds,
             "shake128": args.shake128_rounds,
-            "whirlpool": args.whirlpool_rounds,
+            "whirlpool": getattr(args, "whirlpool_rounds", 0),
             "scrypt": {
                 "enabled": args.enable_scrypt,
                 "n": args.scrypt_n,
@@ -2066,7 +2133,7 @@ def main():
                 "parallelism": args.argon2_parallelism,
                 "hash_len": args.argon2_hash_len,
                 # Store integer value for JSON serialization
-                "type": ARGON2_TYPE_INT_MAP[args.argon2_type],
+                "type": ARGON2_TYPE_INT_MAP.get(args.argon2_type, 2),  # Default to 'id' type (2)
                 "rounds": args.argon2_rounds,
             },
             "balloon": {
@@ -2082,7 +2149,7 @@ def main():
                 "algorithm": args.hkdf_algorithm,
                 "info": args.hkdf_info,
             },
-            "pbkdf2_iterations": args.pbkdf2_iterations,
+            "pbkdf2_iterations": getattr(args, "pbkdf2_iterations", 0),
         }
 
     # Debug the hash configuration if debug mode is enabled
@@ -2092,6 +2159,63 @@ def main():
     exit_code = 0
     try:
         if args.action == "encrypt":
+            # DEPRECATED: Whirlpool is no longer supported for new encryptions
+            if hasattr(args, "whirlpool_rounds") and getattr(args, "whirlpool_rounds", 0) > 0:
+                print("ERROR: Whirlpool is deprecated for new encryptions.")
+                print("Please use BLAKE2b, BLAKE3, or SHA-3 instead.")
+                print("Existing files encrypted with Whirlpool can still be decrypted.")
+                sys.exit(1)
+
+            # DEPRECATED: PBKDF2 is no longer supported for new encryptions
+            if hasattr(args, "pbkdf2_iterations") and getattr(args, "pbkdf2_iterations", 0) > 0:
+                print("ERROR: PBKDF2 is deprecated for new encryptions.")
+                print("Please use Argon2, Scrypt, or Balloon hashing instead.")
+                print("Existing files encrypted with PBKDF2 can still be decrypted.")
+                sys.exit(1)
+
+            # DEPRECATED: Kyber algorithms are no longer supported for new encryptions
+            # Only warn if user actually used the old Kyber names, not if they used ML-KEM names
+            kyber_algorithms = ["kyber512-hybrid", "kyber768-hybrid", "kyber1024-hybrid"]
+            ml_kem_algorithms = ["ml-kem-512-hybrid", "ml-kem-768-hybrid", "ml-kem-1024-hybrid"]
+
+            # Check if this algorithm was originally an ML-KEM name that got converted
+            original_ml_kem_algorithm = os.environ.get("OPENSSL_ENCRYPT_ORIGINAL_MLKEM_ALGORITHM")
+
+            # Check the original user input, not the mapped algorithm
+            user_provided_algorithm = original_algorithm or args.algorithm
+            if args.debug:
+                print(f"DEBUG: args.algorithm = {args.algorithm}")
+                print(f"DEBUG: original_algorithm = {original_algorithm}")
+                print(f"DEBUG: original_ml_kem_algorithm = {original_ml_kem_algorithm}")
+                print(f"DEBUG: user_provided_algorithm = {user_provided_algorithm}")
+                print(
+                    f"DEBUG: user_provided_algorithm in ml_kem_algorithms = {user_provided_algorithm in ml_kem_algorithms}"
+                )
+
+            # Don't warn if the user originally provided an ML-KEM name that got converted to kyber
+            if (
+                hasattr(args, "algorithm")
+                and args.algorithm in kyber_algorithms
+                and user_provided_algorithm not in ml_kem_algorithms
+                and not original_ml_kem_algorithm
+            ):
+                ml_kem_mapping = {
+                    "kyber512-hybrid": "ml-kem-512-hybrid",
+                    "kyber768-hybrid": "ml-kem-768-hybrid",
+                    "kyber1024-hybrid": "ml-kem-1024-hybrid",
+                }
+                recommended = ml_kem_mapping[args.algorithm]
+                print(f"ERROR: {args.algorithm} is deprecated for new encryptions.")
+                print(f"Please use {recommended} instead (NIST standardized equivalent).")
+                print(f"Existing files encrypted with {args.algorithm} can still be decrypted.")
+                sys.exit(1)
+
+            # Enforce deprecation policy: Block encryption with deprecated algorithms in version 1.2.0
+            if is_encryption_blocked_for_algorithm(args.algorithm):
+                error_message = get_encryption_block_message(args.algorithm)
+                print(f"ERROR: {error_message}")
+                sys.exit(1)
+
             # Check if main algorithm is deprecated and issue warning
             if is_deprecated(args.algorithm):
                 replacement = get_recommended_replacement(args.algorithm)
@@ -2103,6 +2227,14 @@ def main():
                 ):
                     print(f"Warning: The algorithm '{args.algorithm}' is deprecated.")
                     print(f"Consider using '{replacement}' instead for better security.")
+
+            # Enforce deprecation policy for PQC data encryption algorithms
+            if args.algorithm.endswith("-hybrid") and is_encryption_blocked_for_algorithm(
+                args.encryption_data
+            ):
+                data_error_message = get_encryption_block_message(args.encryption_data)
+                print(f"ERROR: PQC data encryption - {data_error_message}")
+                sys.exit(1)
 
             # Check if data encryption algorithm is deprecated for PQC
             if args.algorithm.endswith("-hybrid") and is_deprecated(args.encryption_data):
@@ -2508,7 +2640,7 @@ def main():
                             temp_output,
                             password,
                             hash_config=hash_config,
-                            pbkdf2_iterations=args.pbkdf2_iterations,
+                            pbkdf2_iterations=getattr(args, "pbkdf2_iterations", 0),
                             quiet=args.quiet,
                             algorithm=args.algorithm,
                             pqc_keypair=(pqc_keypair if "pqc_keypair" in locals() else None),
@@ -2522,33 +2654,106 @@ def main():
                             pqc_dual_encryption=getattr(args, "pqc_dual_encrypt_key", False),
                         )
                     else:
-                        # Use standard encryption
-                        success = encrypt_file(
-                            args.input,
-                            temp_output,
-                            password,
-                            hash_config,
-                            args.pbkdf2_iterations,
-                            args.quiet,
-                            algorithm=args.algorithm,
-                            progress=args.progress,
-                            verbose=args.verbose,
-                            debug=args.debug,
-                            pqc_keypair=(pqc_keypair if "pqc_keypair" in locals() else None),
-                            pqc_store_private_key=args.pqc_store_key,
-                            encryption_data=args.encryption_data,
+                        # Use standard encryption - request derived key only if enhanced stego features are used
+                        use_stego = hasattr(args, 'stego_hide') and args.stego_hide
+                        enhanced_stego = use_stego and (
+                            getattr(args, 'stego_randomize_pixels', False) or 
+                            getattr(args, 'stego_decoy_data', False)
                         )
+                        derived_key = None
+                        if enhanced_stego:
+                            # Need derived key for enhanced steganography features
+                            success, derived_key = encrypt_file(
+                                args.input,
+                                temp_output,
+                                password,
+                                hash_config,
+                                args.pbkdf2_iterations,
+                                args.quiet,
+                                algorithm=args.algorithm,
+                                progress=args.progress,
+                                verbose=args.verbose,
+                                debug=args.debug,
+                                pqc_keypair=(pqc_keypair if "pqc_keypair" in locals() else None),
+                                pqc_store_private_key=args.pqc_store_key,
+                                encryption_data=args.encryption_data,
+                                return_derived_key=True,
+                            )
+                        elif use_stego:
+                            # Basic steganography without enhanced features
+                            success = encrypt_file(
+                                args.input,
+                                temp_output,
+                                password,
+                                hash_config,
+                                args.pbkdf2_iterations,
+                                args.quiet,
+                                algorithm=args.algorithm,
+                                progress=args.progress,
+                                verbose=args.verbose,
+                                debug=args.debug,
+                                pqc_keypair=(pqc_keypair if "pqc_keypair" in locals() else None),
+                                pqc_store_private_key=args.pqc_store_key,
+                                encryption_data=args.encryption_data,
+                            )
+                        else:
+                            # No steganography
+                            success = encrypt_file(
+                                args.input,
+                                temp_output,
+                                password,
+                                hash_config,
+                                args.pbkdf2_iterations,
+                                args.quiet,
+                                algorithm=args.algorithm,
+                                progress=args.progress,
+                                verbose=args.verbose,
+                                debug=args.debug,
+                                pqc_keypair=(pqc_keypair if "pqc_keypair" in locals() else None),
+                                pqc_store_private_key=args.pqc_store_key,
+                                encryption_data=args.encryption_data,
+                            )
 
                     if success:
                         # Apply the original permissions to the temp file
                         os.chmod(temp_output, original_permissions)
 
-                        # Replace the original file with the encrypted file
-                        # (atomic operation)
-                        os.replace(temp_output, output_file)
+                        # Handle steganography if requested
+                        if hasattr(args, 'stego_hide') and args.stego_hide:
+                            try:
+                                from .steganography.stego_transport import create_steganography_transport
+                                
+                                # Create steganography transport with derived key
+                                stego_transport = create_steganography_transport(args, derived_key)
+                                if stego_transport:
+                                    # Read encrypted data from temp file
+                                    with open(temp_output, 'rb') as f:
+                                        encrypted_data = f.read()
+                                    
+                                    # Hide in cover image and save to output file
+                                    stego_transport.hide_data_in_image(
+                                        encrypted_data, 
+                                        args.stego_hide,  # cover image path
+                                        output_file       # output path
+                                    )
+                                    
+                                    if not args.quiet:
+                                        print(f"Data successfully hidden in image: {output_file}")
+                                else:
+                                    # Fallback to normal file output
+                                    os.replace(temp_output, output_file)
+                            except ImportError:
+                                print("Error: Steganography requires additional dependencies.")
+                                print("Install with: pip install Pillow numpy")
+                                return 1
+                            except Exception as e:
+                                print(f"Steganography error: {e}")
+                                return 1
+                        else:
+                            # Normal file output
+                            os.replace(temp_output, output_file)
 
-                        # Successful replacement means we don't need to clean
-                        # up the temp file
+                        # Successful operation means we don't need to clean up the temp file
                         temp_files_to_cleanup.remove(temp_output)
                     else:
                         # Clean up the temp file if it exists
@@ -2572,7 +2777,8 @@ def main():
                     # For regular files, append .encrypted extension
                     output_file = args.input + ".encrypted"
             else:
-                print(f"FLOW-DEBUG: Using normal output path: {args.output}")
+                if args.debug:
+                    print(f"FLOW-DEBUG: Using normal output path: {args.output}")
                 output_file = args.output
 
             # Handle stdout output for stdin input
@@ -3071,6 +3277,35 @@ def main():
                         pqc_store_private_key=args.pqc_store_key,
                         encryption_data=args.encryption_data,
                     )
+                
+                # Handle steganography if requested
+                if success and hasattr(args, 'stego_hide') and args.stego_hide:
+                    try:
+                        from .steganography.stego_transport import create_steganography_transport
+                        
+                        # Create steganography transport
+                        stego_transport = create_steganography_transport(args)
+                        if stego_transport:
+                            # Read encrypted data from output file
+                            with open(output_file, 'rb') as f:
+                                encrypted_data = f.read()
+                            
+                            # Hide in cover image and overwrite output file
+                            stego_transport.hide_data_in_image(
+                                encrypted_data, 
+                                args.stego_hide,  # cover image path
+                                output_file       # output path (will be overwritten with stego image)
+                            )
+                            
+                            if not args.quiet:
+                                print(f"Data successfully hidden in image: {output_file}")
+                    except ImportError:
+                        print("Error: Steganography requires additional dependencies.")
+                        print("Install with: pip install Pillow numpy")
+                        return 1
+                    except Exception as e:
+                        print(f"Steganography error: {e}")
+                        return 1
 
             if success:
                 if not args.quiet:
@@ -3280,8 +3515,45 @@ def main():
                 temp_files_to_cleanup.append(temp_output)
 
                 try:
+                    # Handle steganography extraction if requested
+                    actual_input_file = args.input
+                    temp_extracted_file = None
+                    
+                    if hasattr(args, 'stego_extract') and args.stego_extract:
+                        try:
+                            from .steganography.stego_transport import create_steganography_transport
+                            import tempfile
+                            
+                            if not args.quiet:
+                                print("Extracting encrypted data from steganographic image...")
+                            
+                            # Create steganography transport
+                            stego_transport = create_steganography_transport(args)
+                            if stego_transport:
+                                # Extract encrypted data from image
+                                encrypted_data = stego_transport.extract_data_from_image(args.input)
+                                
+                                # Create temporary file for extracted data
+                                with tempfile.NamedTemporaryFile(delete=False, suffix='.enc') as temp_file:
+                                    temp_extracted_file = temp_file.name
+                                    temp_file.write(encrypted_data)
+                                
+                                # Use extracted file as input for decryption
+                                actual_input_file = temp_extracted_file
+                                temp_files_to_cleanup.append(temp_extracted_file)
+                                
+                                if not args.quiet:
+                                    print(f"Extracted {len(encrypted_data)} bytes from image")
+                        except ImportError:
+                            print("Error: Steganography requires additional dependencies.")
+                            print("Install with: pip install Pillow numpy")
+                            return 1
+                        except Exception as e:
+                            print(f"Steganography extraction error: {e}")
+                            return 1
+
                     # Get original file permissions before doing anything
-                    original_permissions = get_file_permissions(args.input)
+                    original_permissions = get_file_permissions(actual_input_file)
 
                     # Handle PQC key operations for decryption
                     pqc_private_key = None
@@ -3410,7 +3682,7 @@ def main():
 
                         # Decrypt using keystore integration
                         success = decrypt_file_with_keystore(
-                            args.input,
+                            actual_input_file,
                             temp_output,
                             password,
                             quiet=args.quiet,
@@ -3425,7 +3697,7 @@ def main():
                     else:
                         # Use standard decryption
                         success = decrypt_file(
-                            args.input,
+                            actual_input_file,
                             temp_output,
                             password,
                             args.quiet,
@@ -3546,6 +3818,43 @@ def main():
                         if not args.quiet:
                             print(f"Warning: Failed to load PQC key file: {e}")
 
+                # Handle steganography extraction if requested  
+                actual_input_file = args.input
+                temp_extracted_file = None
+                
+                if hasattr(args, 'stego_extract') and args.stego_extract:
+                    try:
+                        from .steganography.stego_transport import create_steganography_transport
+                        import tempfile
+                        
+                        if not args.quiet:
+                            print("Extracting encrypted data from steganographic image...")
+                        
+                        # Create steganography transport
+                        stego_transport = create_steganography_transport(args)
+                        if stego_transport:
+                            # Extract encrypted data from image
+                            encrypted_data = stego_transport.extract_data_from_image(args.input)
+                            
+                            # Create temporary file for extracted data
+                            with tempfile.NamedTemporaryFile(delete=False, suffix='.enc') as temp_file:
+                                temp_extracted_file = temp_file.name
+                                temp_file.write(encrypted_data)
+                            
+                            # Use extracted file as input for decryption
+                            actual_input_file = temp_extracted_file
+                            temp_files_to_cleanup.append(temp_extracted_file)
+                            
+                            if not args.quiet:
+                                print(f"Extracted {len(encrypted_data)} bytes from image")
+                    except ImportError:
+                        print("Error: Steganography requires additional dependencies.")
+                        print("Install with: pip install Pillow numpy")
+                        return 1
+                    except Exception as e:
+                        print(f"Steganography extraction error: {e}")
+                        return 1
+
                 # Check if we should use keystore integration
                 if hasattr(args, "keystore") and args.keystore:
                     # Get keystore password if needed
@@ -3586,7 +3895,7 @@ def main():
                 else:
                     # Use standard decryption
                     success = decrypt_file(
-                        args.input,
+                        actual_input_file,
                         args.output,
                         password,
                         args.quiet,

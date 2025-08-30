@@ -124,74 +124,74 @@ DEPRECATED_ALGORITHMS: Dict[
     "camellia": (
         DeprecationLevel.DEPRECATED,
         "aes-gcm or chacha20-poly1305",
-        "Camellia is not a NIST-recommended algorithm and has limited adoption.",
-        "1.0.0",
+        "Camellia is not a NIST-recommended algorithm and has limited adoption. Support for new encryption will be removed, but decryption of existing files will continue to work.",
+        "1.2.0",
         datetime.date(2026, 1, 1),
     ),
     "aes-ocb3": (
         DeprecationLevel.WARNING,
         "aes-gcm or aes-gcm-siv",
-        "AES-OCB3 has security concerns with short nonces. Use AES-GCM or AES-GCM-SIV instead.",
-        "1.0.0",
+        "AES-OCB3 has security concerns with short nonces. Use AES-GCM or AES-GCM-SIV instead. Support for new encryption will be removed, but decryption of existing files will continue to work.",
+        "1.2.0",
         datetime.date(2026, 1, 1),
     ),
     # Post-quantum cryptography algorithms (legacy names)
     "kyber512-hybrid": (
         DeprecationLevel.INFO,
         "ml-kem-512-hybrid",
-        "Kyber naming is deprecated in favor of NIST standardized ML-KEM naming.",
-        "1.0.0",
+        "Kyber naming is deprecated in favor of NIST standardized ML-KEM naming. Support for new encryption will be removed, but decryption of existing files will continue to work.",
+        "1.2.0",
         datetime.date(2026, 1, 1),
     ),
     "kyber768-hybrid": (
         DeprecationLevel.INFO,
         "ml-kem-768-hybrid",
-        "Kyber naming is deprecated in favor of NIST standardized ML-KEM naming.",
-        "1.0.0",
+        "Kyber naming is deprecated in favor of NIST standardized ML-KEM naming. Support for new encryption will be removed, but decryption of existing files will continue to work.",
+        "1.2.0",
         datetime.date(2026, 1, 1),
     ),
     "kyber1024-hybrid": (
         DeprecationLevel.INFO,
         "ml-kem-1024-hybrid",
-        "Kyber naming is deprecated in favor of NIST standardized ML-KEM naming.",
-        "1.0.0",
+        "Kyber naming is deprecated in favor of NIST standardized ML-KEM naming. Support for new encryption will be removed, but decryption of existing files will continue to work.",
+        "1.2.0",
         datetime.date(2026, 1, 1),
     ),
     "Kyber512": (
         DeprecationLevel.INFO,
         "ML-KEM-512",
-        "Kyber naming is deprecated in favor of NIST standardized ML-KEM naming.",
-        "1.0.0",
+        "Kyber naming is deprecated in favor of NIST standardized ML-KEM naming. Support for new encryption will be removed, but decryption of existing files will continue to work.",
+        "1.2.0",
         datetime.date(2026, 1, 1),
     ),
     "Kyber768": (
         DeprecationLevel.INFO,
         "ML-KEM-768",
-        "Kyber naming is deprecated in favor of NIST standardized ML-KEM naming.",
-        "1.0.0",
+        "Kyber naming is deprecated in favor of NIST standardized ML-KEM naming. Support for new encryption will be removed, but decryption of existing files will continue to work.",
+        "1.2.0",
         datetime.date(2026, 1, 1),
     ),
     "Kyber1024": (
         DeprecationLevel.INFO,
         "ML-KEM-1024",
-        "Kyber naming is deprecated in favor of NIST standardized ML-KEM naming.",
-        "1.0.0",
+        "Kyber naming is deprecated in favor of NIST standardized ML-KEM naming. Support for new encryption will be removed, but decryption of existing files will continue to work.",
+        "1.2.0",
         datetime.date(2026, 1, 1),
     ),
     # Hash functions
     "whirlpool": (
         DeprecationLevel.WARNING,
         "sha3-512 or blake2b",
-        "Whirlpool has limited adoption and maintenance challenges. Use SHA3-512 or BLAKE2b instead.",
-        "1.0.0",
+        "Whirlpool has limited adoption and maintenance challenges. Use SHA3-512 or BLAKE2b instead. Support for new encryption will be removed, but decryption of existing files will continue to work.",
+        "1.2.0",
         datetime.date(2026, 1, 1),
     ),
     # Key derivation functions
     "pbkdf2": (
         DeprecationLevel.WARNING,
         "argon2id or scrypt",
-        "PBKDF2 is not memory-hard. Use Argon2id or Scrypt for stronger password hashing.",
-        "1.0.0",
+        "PBKDF2 is not memory-hard. Use Argon2id or Scrypt for stronger password hashing. Support for new encryption will be removed, but decryption of existing files will continue to work.",
+        "1.2.0",
         datetime.date(2026, 1, 1),
     ),
 }
@@ -344,3 +344,62 @@ def get_algorithms_by_level(level: DeprecationLevel) -> List[str]:
         List of algorithm names
     """
     return [alg for alg, info in DEPRECATED_ALGORITHMS.items() if info[0].value >= level.value]
+
+
+def is_encryption_blocked_for_algorithm(algorithm: str, current_version: str = "1.2.0") -> bool:
+    """
+    Check if encryption should be blocked for a deprecated algorithm in the current version.
+
+    This function enforces the deprecation policy by blocking new encryption with deprecated
+    algorithms once their removal version is reached. Decryption of existing files continues
+    to work regardless of deprecation status.
+
+    Args:
+        algorithm: The algorithm identifier
+        current_version: The current software version (default: "1.2.0")
+
+    Returns:
+        bool: True if encryption should be blocked, False if allowed
+    """
+    # Normalize algorithm name to lowercase for comparison
+    normalized_algorithm = algorithm.lower().replace("-", "").replace("_", "")
+
+    # Check algorithm registry
+    for alg_name, info in DEPRECATED_ALGORITHMS.items():
+        normalized_name = alg_name.lower().replace("-", "").replace("_", "")
+        if normalized_algorithm == normalized_name:
+            level, replacement, message, removal_version, removal_date = info
+
+            # Block encryption if we've reached the removal version
+            if current_version >= removal_version:
+                return True
+
+    return False
+
+
+def get_encryption_block_message(algorithm: str) -> str:
+    """
+    Get the error message for blocked encryption algorithms.
+
+    Args:
+        algorithm: The algorithm identifier
+
+    Returns:
+        str: Error message explaining why encryption is blocked
+    """
+    # Normalize algorithm name to lowercase for comparison
+    normalized_algorithm = algorithm.lower().replace("-", "").replace("_", "")
+
+    # Check algorithm registry
+    for alg_name, info in DEPRECATED_ALGORITHMS.items():
+        normalized_name = alg_name.lower().replace("-", "").replace("_", "")
+        if normalized_algorithm == normalized_name:
+            level, replacement, message, removal_version, removal_date = info
+
+            return (
+                f"Encryption with algorithm '{algorithm}' is no longer supported in version {removal_version}. "
+                f"Please use {replacement} instead. Decryption of existing files encrypted with '{algorithm}' "
+                f"will continue to work."
+            )
+
+    return f"Encryption with algorithm '{algorithm}' is no longer supported."

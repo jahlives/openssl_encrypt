@@ -5,6 +5,40 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2025-08-16
+
+### Added
+- **Flutter Desktop GUI**: Professional desktop GUI application built with Flutter providing native Wayland and X11 support
+- **Advanced CLI Integration**: Complete Flutter-to-CLI bridge service with real-time progress monitoring and error handling
+- **Comprehensive Settings System**: Professional settings interface with theme switching, cryptographic defaults, and debug features
+- **Desktop UX Excellence**: Professional menu bar, keyboard shortcuts (Ctrl+O, Ctrl+S, F1), drag & drop file operations
+- **Algorithm Configuration UI**: Advanced parameter tuning interface for all KDFs (Argon2, Scrypt, Balloon, HKDF)
+- **Post-Quantum Algorithm UI**: Complete interface for ML-KEM, Kyber, HQC, MAYO, and CROSS algorithms
+- **Flatpak Desktop Integration**: Complete Flatpak packaging with desktop file, icons, and system integration
+
+### Changed
+- **GUI Architecture**: Migrated from tkinter to Flutter for superior desktop experience and cross-platform compatibility  
+- **Flatpak Launcher**: Simplified launcher focusing on Flutter GUI with tkinter support removed from release branches
+- **User Interface**: Desktop-optimized layout with NavigationRail, tabbed interface, and professional visual design
+- **File Operations**: Native desktop file dialogs with drag & drop support replacing basic file selection
+- **Algorithm Selection**: Interactive algorithm picker with security level recommendations and performance guidance
+
+### Removed
+- **PBKDF2 Support**: Removed legacy PBKDF2 key derivation function from encryption operations due to security concerns
+- **Whirlpool Hash**: Removed deprecated Whirlpool hash algorithm from encryption operations for security hardening
+
+### Fixed
+- **Wayland Compatibility**: Native Wayland support through Flutter eliminating X11 authorization issues
+- **Display Server Support**: Robust support for both Wayland and X11 environments without manual configuration
+- **Desktop Integration**: Proper desktop environment integration with system theming and accessibility support
+- **Performance**: Significant UI responsiveness improvements through native Flutter rendering
+
+### Security  
+- **Reduced Attack Surface**: Elimination of complex X11/XWayland compatibility layers in Flatpak environment
+- **Native Desktop Security**: Flutter's native platform integration provides better sandboxing than X11-based solutions
+- **Streamlined Permissions**: Simplified Flatpak permissions removing unnecessary X11 fallback mechanisms
+- **Algorithm Hardening**: Removed deprecated PBKDF2 and Whirlpool algorithms to eliminate weak cryptographic options
+
 ## [1.1.0] - 2025-06-26
 
 ### Added

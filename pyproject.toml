@@ -5,6 +5,8 @@ requires = [
     "cryptography>=44.0.1,<45.0.0",
     "argon2-cffi>=23.1.0,<24.0.0",
     "PyYAML>=6.0.2,<7.0.0",
-    "whirlpool-py311>=1.0.0,<2.0.0; python_version >= '3.11'"
+    "whirlpool-py311>=1.0.0,<2.0.0; python_version >= '3.11'",
+    "Pillow>=10.0.0,<11.0.0",
+    "numpy>=1.24.0,<2.0.0"
 ]
 build-backend = "setuptools.build_meta"
