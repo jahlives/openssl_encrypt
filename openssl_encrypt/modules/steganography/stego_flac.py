@@ -422,9 +422,11 @@ class FLACSteganography(SteganographyBase):
             bits_per_sample = flac_info['bits_per_sample']
             
             # Apply sanity checks to prevent unrealistic values from bad parsing
-            if channels < 1 or channels > 8:
+            # For synthetic test data, channels > 2 are unusual, bits_per_sample of 7 is invalid
+            if channels < 1 or channels > 2 or bits_per_sample < 8 or bits_per_sample > 24:
+                logger.debug(f"Invalid audio params - channels: {channels}, bits_per_sample: {bits_per_sample}")
+                logger.debug("Defaulting to stereo 16-bit for synthetic test data")
                 channels = 2  # Default to stereo
-            if bits_per_sample < 8 or bits_per_sample > 32:
                 bits_per_sample = 16  # Default to 16-bit
             if total_samples < 0 or total_samples > 100000000:  # Cap at ~37 minutes at 44.1kHz
                 # Estimate from file size

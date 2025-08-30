@@ -9605,7 +9605,7 @@ class TestFLACSteganography(unittest.TestCase):
                 
                 # Check that valid FLAC is detected
                 self.assertTrue(analysis['valid'])
-                self.assertTrue(analysis['metadata']['valid_signature'])
+                self.assertTrue(analysis['header']['valid_signature'])
                 
                 # Check audio properties
                 self.assertIn('sample_rate', analysis['audio'])
