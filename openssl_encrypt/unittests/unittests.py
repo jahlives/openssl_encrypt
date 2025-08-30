@@ -8545,28 +8545,34 @@ class TestSteganographyCLIIntegration(unittest.TestCase):
         transport = create_steganography_transport(args)
         self.assertIsNone(transport)
 
-    def test_derived_key_integration(self):
-        """Test derived key integration with steganography."""
+    def test_dedicated_password_integration(self):
+        """Test dedicated password integration with steganography."""
         from modules.steganography import create_steganography_transport
         from argparse import Namespace
-        import os
         
-        # Test with derived key
-        derived_key = os.urandom(32)  # Simulate derived encryption key
+        # Test with dedicated steganography password
+        stego_password = "dedicated_stego_password_123"
         
         args = Namespace(
             stego_hide="test.png",
             stego_extract=False,
             stego_method="lsb",
             stego_bits_per_channel=1,
+            stego_password=stego_password,
             stego_randomize_pixels=True,
             stego_decoy_data=False,
             jpeg_quality=85
         )
         
-        transport = create_steganography_transport(args, derived_key)
+        transport = create_steganography_transport(args)
         self.assertIsNotNone(transport)
-        self.assertIsNotNone(transport.password)  # Should have password from derived key
+        self.assertEqual(transport.password, stego_password)  # Should use dedicated password
+        
+        # Test without password (should still work but no password)
+        args.stego_password = None
+        transport_no_pass = create_steganography_transport(args)
+        self.assertIsNotNone(transport_no_pass)
+        self.assertIsNone(transport_no_pass.password)  # Should have no password
 
     def test_steganography_parameters_validation(self):
         """Test steganography parameter validation."""
