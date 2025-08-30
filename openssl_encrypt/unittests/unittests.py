@@ -8673,8 +8673,8 @@ class TestSteganographyErrorHandling(unittest.TestCase):
         import numpy as np
         from PIL import Image
         
-        # Create very small image
-        img_array = np.random.randint(0, 255, (10, 10, 3), dtype=np.uint8)
+        # Create small image (large enough to pass minimum size but small capacity)
+        img_array = np.random.randint(0, 255, (50, 50, 3), dtype=np.uint8)
         test_image = Image.fromarray(img_array)
         
         test_image_path = os.path.join(self.test_dir, "small.png")

@@ -212,7 +212,7 @@ class JPEGAnalyzer:
             b'\xFF\xE2': 'APP2',
         }
         
-        return marker_map.get(marker, f'UNKNOWN_{marker[1]:02X}')
+        return marker_map.get(bytes(marker), f'UNKNOWN_{marker[1]:02X}')
     
     def _analyze_quality(self, segments: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Analyze JPEG quality from quantization tables"""
