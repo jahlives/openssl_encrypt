@@ -11,6 +11,13 @@ import logging
 import os
 from typing import Optional
 
+# Import secure memory functions for handling sensitive data
+try:
+    from ..secure_memory import SecureBytes, secure_memzero
+except ImportError:
+    # Fallback for standalone testing
+    from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
+
 from .stego_core import (
     SteganographyConfig,
     SteganographyError,
@@ -18,6 +25,9 @@ from .stego_core import (
     CoverMediaError,
 )
 from .stego_image import LSBImageStego, AdaptiveLSBStego
+from .stego_jpeg import JPEGSteganography
+from .stego_tiff import TIFFSteganography
+from .stego_webp import WEBPSteganography
 
 # Set up module logger
 logger = logging.getLogger(__name__)
@@ -38,14 +48,15 @@ class SteganographyTransport:
         Initialize steganography transport
         
         Args:
-            method: Steganographic method ('lsb' or 'adaptive')
-            bits_per_channel: LSB bits per color channel (1-3)
+            method: Steganographic method ('lsb', 'adaptive', 'f5', 'outguess')
+            bits_per_channel: LSB bits per color channel (1-3) for non-JPEG/TIFF methods
             password: Optional password for pixel randomization
             **options: Additional steganography options
         """
         self.method = method
         self.bits_per_channel = bits_per_channel
         self.password = password
+        self.options = options
         
         # Create configuration
         self.config = SteganographyConfig()
@@ -54,20 +65,83 @@ class SteganographyTransport:
         self.config.preserve_statistics = options.get('preserve_stats', True)
         self.config.max_bits_per_sample = bits_per_channel
         
-        # Create steganography instance
-        if method == 'adaptive':
-            self.stego = AdaptiveLSBStego(
-                password=password,
-                security_level=2,
+        # Steganography instance will be created dynamically based on image format
+        self.stego = None
+    
+    def _detect_image_format(self, image_data: bytes) -> str:
+        """Detect image format from data"""
+        if image_data.startswith(b'\xFF\xD8\xFF'):
+            return 'JPEG'
+        elif image_data.startswith(b'\x89PNG'):
+            return 'PNG'
+        elif image_data.startswith(b'BM'):
+            return 'BMP'
+        elif image_data.startswith((b'II*\x00', b'MM\x00*')):
+            return 'TIFF'
+        elif image_data.startswith(b'RIFF') and image_data[8:12] == b'WEBP':
+            return 'WEBP'
+        else:
+            # Try to detect via PIL
+            try:
+                from PIL import Image
+                import io
+                image = Image.open(io.BytesIO(image_data))
+                return image.format or 'UNKNOWN'
+            except Exception:
+                return 'UNKNOWN'
+    
+    def _create_stego_instance(self, image_format: str):
+        """Create appropriate steganography instance based on format"""
+        if image_format in ['JPEG', 'JPG']:
+            # JPEG methods
+            if self.method in ['f5', 'outguess']:
+                self.stego = JPEGSteganography(
+                    password=self.password,
+                    security_level=2,
+                    quality_factor=self.options.get('jpeg_quality', 85),
+                    dct_method=self.method,
+                    config=self.config
+                )
+            else:
+                # Default to basic JPEG method for lsb/adaptive
+                self.stego = JPEGSteganography(
+                    password=self.password,
+                    security_level=1,
+                    quality_factor=self.options.get('jpeg_quality', 85),
+                    dct_method='basic',
+                    config=self.config
+                )
+        elif image_format in ['TIFF', 'TIF']:
+            # TIFF methods
+            self.stego = TIFFSteganography(
+                password=self.password,
+                security_level=2 if self.method == 'adaptive' else 1,
+                bits_per_channel=self.bits_per_channel,
+                config=self.config
+            )
+        elif image_format == 'WEBP':
+            # WEBP methods
+            self.stego = WEBPSteganography(
+                password=self.password,
+                security_level=2 if self.method == 'adaptive' else 1,
+                bits_per_channel=self.bits_per_channel,
                 config=self.config
             )
         else:
-            self.stego = LSBImageStego(
-                password=password,
-                security_level=1,
-                bits_per_channel=bits_per_channel,
-                config=self.config
-            )
+            # PNG/BMP methods (existing)
+            if self.method == 'adaptive':
+                self.stego = AdaptiveLSBStego(
+                    password=self.password,
+                    security_level=2,
+                    config=self.config
+                )
+            else:
+                self.stego = LSBImageStego(
+                    password=self.password,
+                    security_level=1,
+                    bits_per_channel=self.bits_per_channel,
+                    config=self.config
+                )
     
     def hide_data_in_image(self, encrypted_data: bytes, cover_image_path: str, 
                           output_image_path: str) -> None:
@@ -93,10 +167,17 @@ class SteganographyTransport:
             with open(cover_image_path, 'rb') as f:
                 cover_data = f.read()
             
+            # Detect image format and create appropriate steganography instance
+            image_format = self._detect_image_format(cover_data)
+            if image_format == 'UNKNOWN':
+                raise CoverMediaError(f"Unsupported image format in: {cover_image_path}")
+            
+            self._create_stego_instance(image_format)
+            
             # Check capacity
             capacity = self.stego.calculate_capacity(cover_data)
             if len(encrypted_data) > capacity:
-                raise CapacityError(len(encrypted_data), capacity, "image")
+                raise CapacityError(len(encrypted_data), capacity, f"{image_format} image")
             
             # Hide data
             stego_data = self.stego.hide_data(cover_data, encrypted_data)
@@ -133,6 +214,13 @@ class SteganographyTransport:
             with open(stego_image_path, 'rb') as f:
                 stego_data = f.read()
             
+            # Detect image format and create appropriate steganography instance
+            image_format = self._detect_image_format(stego_data)
+            if image_format == 'UNKNOWN':
+                raise CoverMediaError(f"Unsupported image format in: {stego_image_path}")
+            
+            self._create_stego_instance(image_format)
+            
             # Extract data
             encrypted_data = self.stego.extract_data(stego_data)
             
@@ -155,6 +243,13 @@ class SteganographyTransport:
         """
         with open(cover_image_path, 'rb') as f:
             cover_data = f.read()
+        
+        # Detect format and create instance if needed
+        image_format = self._detect_image_format(cover_data)
+        if image_format == 'UNKNOWN':
+            raise CoverMediaError(f"Unsupported image format: {cover_image_path}")
+        
+        self._create_stego_instance(image_format)
         
         return self.stego.calculate_capacity(cover_data)
 
@@ -187,7 +282,14 @@ def create_steganography_transport(args, derived_key: Optional[bytes] = None) ->
         if derived_key:
             # Convert first 32 bytes of derived key to a base64 string for compatibility
             import base64
-            stego_password = base64.b64encode(derived_key[:32]).decode('ascii')
+            try:
+                # Use SecureBytes for the key slice to protect in memory
+                secure_key_slice = SecureBytes(derived_key[:32])
+                stego_password = base64.b64encode(secure_key_slice).decode('ascii')
+            finally:
+                # Securely wipe the key slice from memory
+                if 'secure_key_slice' in locals():
+                    secure_memzero(secure_key_slice)
         
         options = {
             'randomize_pixels': getattr(args, 'stego_randomize_pixels', False),

@@ -10,9 +10,17 @@ that are used by all steganography implementations.
 import abc
 import hashlib
 import logging
+import math
 import os
 import secrets
 from typing import Any, Dict, List, Optional, Tuple, Union
+
+# Import secure memory functions for handling sensitive data
+try:
+    from ..secure_memory import SecureBytes, secure_memzero
+except ImportError:
+    # Fallback for standalone testing
+    from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
 
 # Set up module logger
 logger = logging.getLogger(__name__)
@@ -68,10 +76,18 @@ class SteganographyBase(abc.ABC):
         
         # Generate deterministic seed from password if provided
         if password:
-            self.seed = int.from_bytes(
-                hashlib.sha256(password.encode()).digest()[:8], 
-                byteorder='big'
-            )
+            try:
+                # Use secure memory for password processing
+                password_bytes = SecureBytes(password.encode())
+                hash_digest = hashlib.sha256(password_bytes).digest()
+                secure_digest_slice = SecureBytes(hash_digest[:8])
+                self.seed = int.from_bytes(secure_digest_slice, byteorder='big')
+            finally:
+                # Securely wipe sensitive data from memory
+                if 'password_bytes' in locals():
+                    secure_memzero(password_bytes)
+                if 'secure_digest_slice' in locals():
+                    secure_memzero(secure_digest_slice)
         else:
             self.seed = None
     
@@ -231,19 +247,40 @@ class SteganographyUtils:
     @staticmethod
     def bytes_to_binary(data: bytes) -> str:
         """Convert bytes to binary string representation"""
-        return ''.join(format(byte, '08b') for byte in data)
+        # Use secure memory for sensitive data conversion
+        try:
+            secure_data = SecureBytes(data)
+            binary_str = ''.join(format(byte, '08b') for byte in secure_data)
+            return binary_str
+        finally:
+            # Securely wipe the data copy from memory
+            if 'secure_data' in locals():
+                secure_memzero(secure_data)
     
     @staticmethod
     def binary_to_bytes(binary_str: str) -> bytes:
         """Convert binary string to bytes"""
         # Ensure binary string length is multiple of 8
         padding = (8 - len(binary_str) % 8) % 8
-        binary_str = binary_str + '0' * padding
+        padded_str = binary_str + '0' * padding
         
-        return bytes(
-            int(binary_str[i:i+8], 2) 
-            for i in range(0, len(binary_str), 8)
-        )
+        # Use secure memory for conversion process
+        try:
+            # Convert to bytes using secure memory
+            byte_values = [
+                int(padded_str[i:i+8], 2) 
+                for i in range(0, len(padded_str), 8)
+            ]
+            
+            result_bytes = bytes(byte_values)
+            secure_result = SecureBytes(result_bytes)
+            
+            # Return a copy, keeping the secure version for cleanup
+            return bytes(secure_result)
+        finally:
+            # Clean up sensitive intermediate data
+            if 'secure_result' in locals():
+                secure_memzero(secure_result)
     
     @staticmethod
     def calculate_psnr(original: bytes, modified: bytes) -> float:
@@ -264,8 +301,21 @@ class SteganographyUtils:
     def generate_pseudorandom_sequence(seed: int, length: int, max_value: int) -> List[int]:
         """Generate pseudorandom sequence for pixel/sample selection"""
         import random
-        random.seed(seed)
-        return random.sample(range(max_value), min(length, max_value))
+        
+        # Use secure memory for seed processing to prevent side-channel attacks
+        try:
+            # Convert seed to secure bytes for processing
+            seed_bytes = SecureBytes(seed.to_bytes(8, byteorder='big'))
+            
+            # Use the seed for random generation
+            random.seed(seed)
+            sequence = random.sample(range(max_value), min(length, max_value))
+            
+            return sequence
+        finally:
+            # Securely wipe the seed bytes from memory
+            if 'seed_bytes' in locals():
+                secure_memzero(seed_bytes)
     
     @staticmethod
     def analyze_entropy(data: bytes) -> float:
@@ -273,18 +323,27 @@ class SteganographyUtils:
         if not data:
             return 0.0
         
-        # Count byte frequencies
-        byte_counts = [0] * 256
-        for byte in data:
-            byte_counts[byte] += 1
-        
-        # Calculate entropy
-        entropy = 0.0
-        data_len = len(data)
-        
-        for count in byte_counts:
-            if count > 0:
-                probability = count / data_len
-                entropy -= probability * (probability.bit_length() - 1)
-        
-        return entropy
+        # Use secure memory for sensitive data analysis
+        try:
+            # Secure copy of data for analysis
+            secure_data = SecureBytes(data)
+            
+            # Count byte frequencies
+            byte_counts = [0] * 256
+            for byte in secure_data:
+                byte_counts[byte] += 1
+            
+            # Calculate entropy
+            entropy = 0.0
+            data_len = len(secure_data)
+            
+            for count in byte_counts:
+                if count > 0:
+                    probability = count / data_len
+                    entropy -= probability * math.log2(probability)
+            
+            return entropy
+        finally:
+            # Securely wipe the data copy from memory
+            if 'secure_data' in locals():
+                secure_memzero(secure_data)

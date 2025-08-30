@@ -16,7 +16,13 @@ Key Features:
 Supported Cover Media:
 - PNG images (lossless, recommended)
 - BMP images (uncompressed, testing)
-- Future: JPEG (DCT-based), Audio files
+- JPEG images (DCT-based, new in v1.3.0)
+- TIFF images (LZW/PackBits/uncompressed support, new in v1.3.0)
+- WEBP images (lossless/lossy support, new in v1.3.0)
+- WAV audio files (uncompressed PCM, new in v1.3.0)
+- FLAC audio files (lossless compression, new in v1.3.0)
+- MP3 audio files (lossy compression with DCT coefficients, new in v1.3.0)
+- Future: GIF, additional audio formats
 
 Security Architecture:
 - Cover media → Steganographic hiding → Additional security layers
@@ -36,6 +42,46 @@ from .stego_image import (
     ImageSteganography,
     LSBImageStego,
     AdaptiveLSBStego,
+)
+from .stego_jpeg import (
+    JPEGSteganography,
+    JPEGSteganalysisResistance,
+)
+from .jpeg_utils import (
+    JPEGAnalyzer,
+    DCTUtils,
+    create_jpeg_test_image,
+    is_jpeg_steganography_available,
+)
+from .stego_tiff import (
+    TIFFSteganography,
+    TIFFAnalyzer,
+    create_tiff_test_image,
+    is_tiff_steganography_available,
+)
+from .stego_webp import (
+    WEBPSteganography,
+    WEBPAnalyzer,
+    create_webp_test_image,
+    is_webp_steganography_available,
+)
+from .stego_wav import (
+    WAVSteganography,
+    WAVAnalyzer,
+    create_wav_test_audio,
+    is_wav_steganography_available,
+)
+from .stego_flac import (
+    FLACSteganography,
+    FLACAnalyzer,
+    create_flac_test_audio,
+    is_flac_steganography_available,
+)
+from .stego_mp3 import (
+    MP3Steganography,
+    MP3Analyzer,
+    create_mp3_test_audio,
+    is_mp3_steganography_available,
 )
 from .stego_analysis import (
     CapacityAnalyzer,
@@ -58,16 +104,44 @@ __all__ = [
     'ImageSteganography',
     'LSBImageStego',
     'AdaptiveLSBStego',
+    'JPEGSteganography',
+    'TIFFSteganography',
+    'WEBPSteganography',
+    'WAVSteganography',
+    'FLACSteganography',
+    'MP3Steganography',
     
     # Transport layer
     'SteganographyTransport',
     'create_steganography_transport',
     'is_steganography_available',
+    'is_jpeg_steganography_available',
+    'is_tiff_steganography_available',
+    'is_webp_steganography_available',
+    'is_wav_steganography_available',
+    'is_flac_steganography_available',
+    'is_mp3_steganography_available',
     
     # Analysis tools
     'CapacityAnalyzer',
     'SecurityAnalyzer',
     'SteganalysisResistance',
+    'JPEGSteganalysisResistance',
+    'JPEGAnalyzer',
+    'DCTUtils',
+    'TIFFAnalyzer',
+    'WEBPAnalyzer',
+    'WAVAnalyzer',
+    'FLACAnalyzer',
+    'MP3Analyzer',
+    
+    # Utilities
+    'create_jpeg_test_image',
+    'create_tiff_test_image',
+    'create_webp_test_image',
+    'create_wav_test_audio',
+    'create_flac_test_audio',
+    'create_mp3_test_audio',
     
     # Exceptions
     'SteganographyError',
@@ -77,7 +151,8 @@ __all__ = [
 ]
 
 # Module-level constants
-SUPPORTED_IMAGE_FORMATS = ['PNG', 'BMP']
-FUTURE_FORMATS = ['JPEG', 'TIFF', 'WEBP']
+SUPPORTED_IMAGE_FORMATS = ['PNG', 'BMP', 'JPEG', 'JPG', 'TIFF', 'TIF', 'WEBP']
+SUPPORTED_AUDIO_FORMATS = ['WAV', 'FLAC', 'MP3']
+FUTURE_FORMATS = ['GIF', 'FLAC', 'MP3']
 EOF_MARKER = b'\xFF\xFF\xFF\xFE'  # Steganography end-of-file marker
 MIN_COVER_SIZE = 1024  # Minimum pixels required for hiding
