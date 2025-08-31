@@ -3323,7 +3323,24 @@ def extract_file_metadata(input_file):
 
         # Split metadata and encrypted data
         metadata_b64, _ = file_content.split(b":", 1)
-        metadata = json.loads(base64.b64decode(metadata_b64))
+        # MED-8 Security fix: Use secure JSON validation for metadata parsing
+        metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
+        try:
+            from .json_validator import (
+                JSONSecurityError,
+                JSONValidationError,
+                secure_metadata_loads,
+            )
+
+            metadata = secure_metadata_loads(metadata_json)
+        except (JSONSecurityError, JSONValidationError) as e:
+            raise ValueError(f"Invalid metadata: {e}")  # Maintain original exception type
+        except ImportError:
+            # Fallback to basic JSON loading if validator not available
+            try:
+                metadata = json.loads(metadata_json)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON in metadata: {e}")
 
         format_version = metadata.get("format_version", 1)
 
@@ -3424,7 +3441,24 @@ def decrypt_file(
     try:
         # Revert to the original simpler parsing
         metadata_b64, encrypted_data_b64 = file_content.split(b":", 1)
-        metadata = json.loads(base64.b64decode(metadata_b64))
+        # MED-8 Security fix: Use secure JSON validation for metadata parsing
+        metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
+        try:
+            from .json_validator import (
+                JSONSecurityError,
+                JSONValidationError,
+                secure_metadata_loads,
+            )
+
+            metadata = secure_metadata_loads(metadata_json)
+        except (JSONSecurityError, JSONValidationError) as e:
+            raise ValueError(f"Invalid metadata: {e}")  # Maintain original exception type
+        except ImportError:
+            # Fallback to basic JSON loading if validator not available
+            try:
+                metadata = json.loads(metadata_json)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON in metadata: {e}")
         encrypted_data = base64.b64decode(encrypted_data_b64)
     except Exception as e:
         # Keep the original ValueError to maintain compatibility

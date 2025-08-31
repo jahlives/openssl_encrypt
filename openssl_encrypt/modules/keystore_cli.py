@@ -169,7 +169,26 @@ class PQCKeystore:
         # Load keystore file
         try:
             with open(self.keystore_path, "r") as f:
-                self.keystore_data = json.load(f)
+                # MED-8 Security fix: Use secure JSON validation for keystore loading
+                json_content = f.read()
+                try:
+                    from .json_validator import (
+                        JSONSecurityError,
+                        JSONValidationError,
+                        secure_keystore_loads,
+                    )
+
+                    self.keystore_data = secure_keystore_loads(json_content)
+                except (JSONSecurityError, JSONValidationError) as e:
+                    raise KeystoreCorruptedError(f"Keystore file validation failed: {e}")
+                except ImportError:
+                    # Fallback to basic JSON loading if validator not available
+                    try:
+                        self.keystore_data = json.loads(json_content)
+                    except json.JSONDecodeError as e:
+                        raise KeystoreCorruptedError(
+                            f"Keystore file is corrupted or invalid JSON: {e}"
+                        )
         except json.JSONDecodeError:
             raise KeystoreCorruptedError("Keystore file is corrupted or invalid JSON")
 
