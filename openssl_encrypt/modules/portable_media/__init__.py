@@ -24,6 +24,14 @@ from .qr_distribution import (
     SecureBytes,
 )
 
+from .usb_creator import (
+    USBDriveCreator,
+    USBCreationError,
+    USBSecurityProfile,
+    create_portable_usb,
+    verify_usb_integrity,
+)
+
 __all__ = [
     'QRKeyDistribution',
     'QRKeyError', 
@@ -31,6 +39,11 @@ __all__ = [
     'create_key_qr',
     'read_key_qr',
     'SecureBytes',
+    'USBDriveCreator',
+    'USBCreationError',
+    'USBSecurityProfile', 
+    'create_portable_usb',
+    'verify_usb_integrity',
 ]
 
 __version__ = '1.3.0'
