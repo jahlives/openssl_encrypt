@@ -657,26 +657,36 @@ def main_with_args(args=None):
 
     # Set up argument parser
     parser = argparse.ArgumentParser(
-        description="Encrypt or decrypt a file with a password\n\nEnvironment Variables:\n  CRYPT_PASSWORD    Password for encryption/decryption (alternative to -p)",
+        description="Encrypt or decrypt a file with a password\n\n"
+                   "USAGE PATTERN:\n"
+                   "  %(prog)s [GLOBAL_OPTIONS] COMMAND [COMMAND_OPTIONS]\n\n"
+                   "GLOBAL_OPTIONS:\n"
+                   "  --progress, --verbose, --debug, --quiet, --template, --quick, --standard, --paranoid\n\n"
+                   "COMMANDS:\n"
+                   "  encrypt, decrypt, shred, generate-password, security-info, check-argon2, check-pqc, version\n\n"
+                   "EXAMPLES:\n"
+                   "  %(prog)s --debug encrypt --input file.txt --output file.enc\n"
+                   "  %(prog)s --quiet --progress decrypt --input file.enc --output file.txt\n"
+                   "  %(prog)s --verbose encrypt --input file.txt --algorithm aes-gcm\n\n"
+                   "Environment Variables:\n"
+                   "  CRYPT_PASSWORD    Password for encryption/decryption (alternative to -p)",
         formatter_class=argparse.RawTextHelpFormatter,
     )
 
-    # show or hide progess
-    parser.add_argument("--progress", action="store_true", help="Show progress bar")
-
-    parser.add_argument("--verbose", action="store_true", help="Show hash/kdf details")
-
-    parser.add_argument("--debug", action="store_true", help="Show detailed debug information")
-
-    # Add template argument
-    parser.add_argument(
+    # Global options group
+    global_group = parser.add_argument_group('Global Options (must be specified BEFORE command)')
+    global_group.add_argument("--progress", action="store_true", help="Show progress bar")
+    global_group.add_argument("--verbose", action="store_true", help="Show hash/kdf details")
+    global_group.add_argument("--debug", action="store_true", help="Show detailed debug information")
+    global_group.add_argument("--quiet", "-q", action="store_true", help="Suppress all output except decrypted content and exit code")
+    global_group.add_argument(
         "-t",
         "--template",
         help="Specify a template name (built-in or from ./template directory)",
     )
 
-    # Template selection group
-    template_group = parser.add_mutually_exclusive_group()
+    # Template selection group (global options)
+    template_group = global_group.add_mutually_exclusive_group()
     template_group.add_argument(
         "--quick", action="store_true", help="Use quick but secure configuration"
     )
@@ -817,12 +827,6 @@ def main_with_args(args=None):
         help="Input file or directory (supports glob patterns for shred action)",
     )
     parser.add_argument("--output", "-o", help="Output file (optional for decrypt)")
-    parser.add_argument(
-        "--quiet",
-        "-q",
-        action="store_true",
-        help="Suppress all output except decrypted content and exit code",
-    )
     parser.add_argument(
         "--overwrite",
         "-f",
@@ -1333,7 +1337,19 @@ def main_with_args(args=None):
     if args.debug:
         import logging
 
-        logging.basicConfig(level=logging.DEBUG, format="%(levelname)s - %(name)s - %(message)s")
+        # Configure the root logger to DEBUG level
+        root_logger = logging.getLogger()
+        root_logger.setLevel(logging.DEBUG)
+        
+        # Also configure this module's logger explicitly
+        logger.setLevel(logging.DEBUG)
+        
+        # Try to configure basic config for new handlers, but don't fail if handlers exist
+        try:
+            logging.basicConfig(level=logging.DEBUG, format="%(levelname)s - %(name)s - %(message)s")
+        except:
+            pass
+        
         print(f"DEBUG: sys.argv = {sys.argv}")
 
     # Enhance the args with better defaults for extended algorithms
@@ -1571,7 +1587,7 @@ def main_with_args(args=None):
         sys.exit(0)
 
     # For other actions, input file is required
-    if args.input is None and args.action not in [
+    if getattr(args, 'input', None) is None and args.action not in [
         "generate-password",
         "security-info",
         "check-argon2",
