@@ -324,6 +324,9 @@ except ImportError:
 from .secure_memory import SecureBytes, secure_memzero
 
 # Try to import optional dependencies
+# Initialize WHIRLPOOL_AVAILABLE before trying to import
+WHIRLPOOL_AVAILABLE = False
+
 try:
     import sys
 

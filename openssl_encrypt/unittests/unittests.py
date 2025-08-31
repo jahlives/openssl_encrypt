@@ -1321,12 +1321,12 @@ class TestCLIInterface(unittest.TestCase):
         # Test encryption through CLI
         sys.argv = [
             "crypt.py",
+            "--quiet",  # Global flags must come before subcommand
             "encrypt",
             "--input",
             self.test_file,
             "--output",
             encrypted_file,
-            "--quiet",
             "--force-password",
             "--algorithm",
             "fernet",
@@ -1354,12 +1354,12 @@ class TestCLIInterface(unittest.TestCase):
 
         sys.argv = [
             "crypt.py",
+            "--quiet",  # Global flags must come before subcommand
             "decrypt",
             "--input",
             encrypted_file,
             "--output",
             decrypted_file,
-            "--quiet",
             "--force-password",
             "--algorithm",
             "fernet",
@@ -1456,6 +1456,7 @@ class TestCLIInterface(unittest.TestCase):
             # Configure CLI args - specify rounds without enable flags
             sys.argv = [
                 "crypt.py",
+                "--debug",  # Global flags must come before subcommand
                 "encrypt",
                 "--input",
                 self.test_file,
@@ -1468,7 +1469,6 @@ class TestCLIInterface(unittest.TestCase):
                 "2",  # Should implicitly enable Scrypt
                 "--balloon-rounds",
                 "1",  # Should implicitly enable Balloon
-                "--debug",  # Use debug flag to see DEBUG level messages
             ]
 
             with mock.patch("sys.exit") as mock_exit:
@@ -1513,6 +1513,7 @@ class TestCLIInterface(unittest.TestCase):
             # Configure CLI args - specify enable flags without rounds
             sys.argv = [
                 "crypt.py",
+                "--debug",  # Global flags must come before subcommand
                 "encrypt",
                 "--input",
                 self.test_file,
@@ -1522,7 +1523,6 @@ class TestCLIInterface(unittest.TestCase):
                 "--enable-argon2",  # Should get default rounds=10
                 "--enable-scrypt",  # Should get default rounds=10
                 "--enable-balloon",  # Should get default rounds=10
-                "--debug",  # Use debug flag to see DEBUG level messages
             ]
 
             with mock.patch("sys.exit") as mock_exit:
@@ -1567,6 +1567,7 @@ class TestCLIInterface(unittest.TestCase):
             # Configure CLI args - use global rounds
             sys.argv = [
                 "crypt.py",
+                "--debug",  # Global flags must come before subcommand
                 "encrypt",
                 "--input",
                 self.test_file,
@@ -1578,7 +1579,6 @@ class TestCLIInterface(unittest.TestCase):
                 "--enable-balloon",
                 "--kdf-rounds",
                 "3",  # Global rounds value
-                "--debug",  # Use debug flag to see DEBUG level messages
             ]
 
             with mock.patch("sys.exit") as mock_exit:
@@ -1623,6 +1623,7 @@ class TestCLIInterface(unittest.TestCase):
             # Configure CLI args with mixed specific and global rounds
             sys.argv = [
                 "crypt.py",
+                "--debug",  # Global flags must come before subcommand
                 "encrypt",
                 "--input",
                 self.test_file,
@@ -1636,7 +1637,6 @@ class TestCLIInterface(unittest.TestCase):
                 "--enable-balloon",  # Should use global value
                 "--kdf-rounds",
                 "2",  # Global value
-                "--debug",  # Use debug flag to see DEBUG level messages
             ]
 
             with mock.patch("sys.exit") as mock_exit:
@@ -1689,13 +1689,13 @@ class TestCLIInterface(unittest.TestCase):
                     "python",
                     "-m",
                     "openssl_encrypt.crypt",
+                    "--quiet",  # Global flags must come before subcommand
                     "decrypt",
                     "--input",
                     "/dev/stdin",
                     "--password",
                     "1234",
                     "--force-password",
-                    "--quiet",
                 ],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
@@ -1751,13 +1751,13 @@ class TestCLIInterface(unittest.TestCase):
                     "python",
                     "-m",
                     "openssl_encrypt.crypt",
+                    "--verbose",  # Global flags must come before subcommand
                     "decrypt",
                     "--input",
                     "/dev/stdin",
                     "--password",
                     "1234",
                     "--force-password",
-                    "--verbose",  # Enable verbose to see warnings
                 ],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
@@ -1813,12 +1813,12 @@ class TestCLIInterface(unittest.TestCase):
             # Test encryption with debug flag
             sys.argv = [
                 "crypt_cli.py",
+                "--debug",  # Enable debug output - must come before subcommand
                 "encrypt",
                 "--input",
                 self.test_file,
                 "--output",
                 encrypted_file,
-                "--debug",  # Enable debug output
                 "--algorithm",
                 "fernet",
                 "--force-password",  # Skip password validation
@@ -1871,12 +1871,12 @@ class TestCLIInterface(unittest.TestCase):
             # Test decryption with debug flag
             sys.argv = [
                 "crypt_cli.py",
+                "--debug",  # Enable debug output - must come before subcommand
                 "decrypt",
                 "--input",
                 encrypted_file,
                 "--output",
                 decrypted_file,
-                "--debug",  # Enable debug output
                 "--force-password",  # Skip password validation
             ]
 
