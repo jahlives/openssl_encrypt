@@ -3131,11 +3131,11 @@ class TestPostQuantumCrypto(unittest.TestCase):
         """Find a suitable Kyber/ML-KEM algorithm for testing."""
         # Try to find a good test algorithm
         for algo_name in [
-            "ML-KEM-768",
-            "ML-KEM-768",
+            "ml-kem-768",
+            "ml-kem-512", 
+            "ml-kem-1024",
             "Kyber-768",
             "Kyber512",
-            "ML-KEM-512",
             "Kyber-512",
             "Kyber1024",
             "ML-KEM-1024",
@@ -3867,7 +3867,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         self.test_files.extend([encrypted_file, decrypted_file])
 
         # Use Kyber768 for testing
-        pqc_algorithm = "ML-KEM-768"
+        pqc_algorithm = "ml-kem-768"
         algorithm_name = "ml-kem-768-hybrid"
 
         # Generate a keypair manually
@@ -3964,7 +3964,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         self.test_files.extend([encrypted_file, decrypted_file])
 
         # Use Kyber768 for testing
-        pqc_algorithm = "ML-KEM-768"
+        pqc_algorithm = "ml-kem-768"
         algorithm_name = "ml-kem-768-hybrid"
 
         # Generate a keypair manually
@@ -4062,7 +4062,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         self.test_files.extend([encrypted_file, decrypted_file])
 
         # Use Kyber768 for testing
-        pqc_algorithm = "ML-KEM-768"
+        pqc_algorithm = "ml-kem-768"
         algorithm_name = "ml-kem-768-hybrid"
 
         # Generate a keypair manually
@@ -4170,7 +4170,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         self.test_files.extend([encrypted_file, decrypted_file])
 
         # Use kyber768-hybrid for testing
-        pqc_algorithm = "ML-KEM-768"
+        pqc_algorithm = "ml-kem-768"
         algorithm_name = "ml-kem-768-hybrid"
 
         # Generate a keypair manually first to work around auto-generation issue
@@ -5010,11 +5010,11 @@ class TestKeystoreOperations(unittest.TestCase):
         """Find a suitable Kyber/ML-KEM algorithm for testing."""
         # Try to find a good test algorithm
         for algo_name in [
-            "ML-KEM-768",
-            "ML-KEM-768",
+            "ml-kem-768",
+            "ml-kem-512", 
+            "ml-kem-1024",
             "Kyber-768",
             "Kyber512",
-            "ML-KEM-512",
             "Kyber-512",
             "Kyber1024",
             "ML-KEM-1024",

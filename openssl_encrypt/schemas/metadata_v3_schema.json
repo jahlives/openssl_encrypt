@@ -22,6 +22,7 @@
         "aes-siv",
         "chacha20-poly1305",
         "xchacha20-poly1305",
+        "ml-kem-512-hybrid",
         "ml-kem-768-hybrid",
         "ml-kem-1024-hybrid",
         "kyber512",
