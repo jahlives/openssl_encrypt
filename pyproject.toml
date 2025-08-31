@@ -7,6 +7,6 @@ requires = [
     "PyYAML>=6.0.2,<7.0.0",
     "whirlpool-py311>=1.0.0,<2.0.0; python_version >= '3.11'",
     "Pillow>=10.0.0,<11.0.0",
-    "numpy>=1.24.0,<2.0.0"
+    "numpy>=2.1.0,<3.0.0"
 ]
 build-backend = "setuptools.build_meta"

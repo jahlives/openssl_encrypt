@@ -16,7 +16,7 @@ cffi==1.17.1
     #   cryptography
 cryptography==44.0.3
     # via -r requirements-prod.in
-numpy==1.26.4
+numpy==2.3.2
     # via -r requirements-prod.in
 pillow==10.4.0
     # via
