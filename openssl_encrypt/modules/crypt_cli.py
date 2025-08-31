@@ -577,12 +577,61 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
             sys.exit(1)
 
 
+def preprocess_global_args(argv):
+    """
+    Preprocess sys.argv to move truly global flags to the front for subparser compatibility.
+    This allows global flags like --debug, --verbose, --quiet, --progress to be specified
+    anywhere in the command line, maintaining backward compatibility with v1.2.1 behavior.
+    """
+    # Flags that are truly global and can appear anywhere
+    TRULY_GLOBAL_FLAGS = {
+        '--debug', '--verbose', '--quiet', '-q', '--progress'
+    }
+    
+    # Find the command position
+    commands = {
+        'encrypt', 'decrypt', 'shred', 'generate-password', 
+        'security-info', 'check-argon2', 'check-pqc', 'version', 'show-version-file'
+    }
+    
+    command_pos = None
+    for i, arg in enumerate(argv[1:], 1):  # Skip argv[0] (script name)
+        if arg in commands:
+            command_pos = i
+            break
+    
+    if command_pos is None:
+        return argv  # No command found, return as-is
+    
+    # Extract global flags and their values from anywhere in the command line
+    global_args = []
+    other_args = [argv[0]]  # Keep script name
+    i = 1
+    
+    while i < len(argv):
+        arg = argv[i]
+        
+        if arg in TRULY_GLOBAL_FLAGS:
+            global_args.append(arg)
+            # Check if this flag takes a value (currently none of our global flags do, but future-proof)
+            if arg in ['--template', '-t'] and i + 1 < len(argv) and not argv[i + 1].startswith('-'):
+                i += 1
+                global_args.append(argv[i])
+        else:
+            other_args.append(arg)
+        i += 1
+    
+    # Rebuild argv: script_name + global_args + other_args
+    return [argv[0]] + global_args + other_args[1:]
+
+
 def main():
     """
     Main function that handles the command-line interface.
     """
-    # Check if we should use subparser-based help
+    # Preprocess arguments to move global flags to the front
     import sys
+    sys.argv = preprocess_global_args(sys.argv)
 
     if (
         len(sys.argv) > 1
@@ -659,22 +708,25 @@ def main_with_args(args=None):
     parser = argparse.ArgumentParser(
         description="Encrypt or decrypt a file with a password\n\n"
                    "USAGE PATTERN:\n"
-                   "  %(prog)s [GLOBAL_OPTIONS] COMMAND [COMMAND_OPTIONS]\n\n"
-                   "GLOBAL_OPTIONS:\n"
-                   "  --progress, --verbose, --debug, --quiet, --template, --quick, --standard, --paranoid\n\n"
+                   "  %(prog)s COMMAND [OPTIONS] [GLOBAL_FLAGS]\n"
+                   "  %(prog)s [GLOBAL_FLAGS] COMMAND [OPTIONS]\n\n"
+                   "GLOBAL FLAGS (can be placed anywhere):\n"
+                   "  --progress, --verbose, --debug, --quiet\n\n"
+                   "COMMAND-SPECIFIC FLAGS:\n"
+                   "  --template, --quick, --standard, --paranoid (encryption only)\n\n"
                    "COMMANDS:\n"
                    "  encrypt, decrypt, shred, generate-password, security-info, check-argon2, check-pqc, version\n\n"
                    "EXAMPLES:\n"
-                   "  %(prog)s --debug encrypt --input file.txt --output file.enc\n"
-                   "  %(prog)s --quiet --progress decrypt --input file.enc --output file.txt\n"
-                   "  %(prog)s --verbose encrypt --input file.txt --algorithm aes-gcm\n\n"
+                   "  %(prog)s encrypt --input file.txt --debug --output file.enc\n"
+                   "  %(prog)s --quiet decrypt --input file.enc --progress --output file.txt\n"
+                   "  %(prog)s encrypt --verbose --input file.txt --paranoid --algorithm aes-gcm\n\n"
                    "Environment Variables:\n"
                    "  CRYPT_PASSWORD    Password for encryption/decryption (alternative to -p)",
         formatter_class=argparse.RawTextHelpFormatter,
     )
 
     # Global options group
-    global_group = parser.add_argument_group('Global Options (must be specified BEFORE command)')
+    global_group = parser.add_argument_group('Global Options (can be specified anywhere in command line)')
     global_group.add_argument("--progress", action="store_true", help="Show progress bar")
     global_group.add_argument("--verbose", action="store_true", help="Show hash/kdf details")
     global_group.add_argument("--debug", action="store_true", help="Show detailed debug information")
