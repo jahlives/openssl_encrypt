@@ -10,6 +10,10 @@ blake3>=1.0.0,<2.0.0
 Pillow>=10.0.0,<11.0.0
 numpy>=1.24.0,<2.0.0
 
+# QR Code Key Distribution dependencies (v1.3.0)
+qrcode[pil]>=7.0.0,<9.0.0
+pyzbar>=0.1.9,<1.0.0
+
 # Windows-specific dependencies
 pywin32>=306,<307; sys_platform == 'win32'
 

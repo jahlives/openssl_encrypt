@@ -8,6 +8,10 @@ whirlpool-py311>=1.0.0,<2.0.0 ; python_version >= '3.11'
 pywin32>=306,<307; sys_platform == 'win32'
 PyYAML>=6.0.2,<7.0.0
 
+# QR Code Key Distribution dependencies (v1.3.0)
+qrcode[pil]>=7.0.0,<9.0.0
+pyzbar>=0.1.9,<1.0.0
+
 # Optional post-quantum cryptography dependencies
 # liboqs-python>=0.7.0  # Uncomment to enable post-quantum cryptography support
 

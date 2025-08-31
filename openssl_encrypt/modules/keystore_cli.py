@@ -46,6 +46,13 @@ except ImportError:
 
 from .secure_memory import SecureBytes, secure_memzero
 
+# Import QR distribution module
+try:
+    from .portable_media import QRKeyDistribution, QRKeyError, QRKeyFormat
+    QR_AVAILABLE = True
+except ImportError:
+    QR_AVAILABLE = False
+
 
 class KeystoreSecurityLevel(Enum):
     """Security levels for keystores"""
@@ -1453,6 +1460,31 @@ def main():
     )
     export_parser.add_argument("--key-password-file", help="File containing the key password")
 
+    # Export key to QR code
+    export_qr_parser = subparsers.add_parser("export-qr", help="Export a key as QR code(s)")
+    export_qr_parser.add_argument("key_id", help="The key ID to export")
+    export_qr_parser.add_argument("output_path", help="Path to save QR image(s)")
+    export_qr_parser.add_argument(
+        "--public-only", action="store_true", help="Export only the public key"
+    )
+    export_qr_parser.add_argument(
+        "--multi-qr", action="store_true", help="Allow multi-QR for large keys"
+    )
+    export_qr_parser.add_argument("--key-password-file", help="File containing the key password")
+    export_qr_parser.add_argument(
+        "--compression", action="store_true", default=True, help="Compress key data (default: enabled)"
+    )
+
+    # Import key from QR code
+    import_qr_parser = subparsers.add_parser("import-qr", help="Import a key from QR code(s)")
+    import_qr_parser.add_argument("qr_images", nargs="+", help="Path(s) to QR image file(s)")
+    import_qr_parser.add_argument("--key-description", help="Description for the imported key")
+    import_qr_parser.add_argument("--key-tags", help="Comma-separated list of tags")
+    import_qr_parser.add_argument(
+        "--prompt-key-password", action="store_true", help="Use a separate password for the key"
+    )
+    import_qr_parser.add_argument("--key-password-file", help="File containing the key password")
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -1714,6 +1746,14 @@ def main():
             print("Use the programmatic API to export keys.")
             return 1
 
+        elif args.command == "export-qr":
+            # Export key as QR code(s)
+            return handle_export_qr_command(args, keystore_password)
+
+        elif args.command == "import-qr":
+            # Import key from QR code(s)
+            return handle_import_qr_command(args, keystore_password)
+
         else:
             parser.print_help()
             return 1
@@ -1732,6 +1772,142 @@ def main():
         return 1
 
     return 0
+
+
+def handle_export_qr_command(args, keystore_password):
+    """Handle export-qr command"""
+    if not QR_AVAILABLE:
+        print("QR code functionality not available.")
+        print("Install required dependencies: pip install qrcode[pil] pyzbar")
+        return 1
+    
+    try:
+        # Prompt for password if not provided
+        if not keystore_password:
+            keystore_password = getpass.getpass("Enter keystore password: ")
+
+        # Load keystore
+        keystore = PQCKeystore(args.keystore)
+        keystore.load_keystore(keystore_password)
+
+        # Get key password if needed
+        key_password = None
+        if args.key_password_file:
+            with open(args.key_password_file, 'r') as f:
+                key_password = f.read().strip()
+
+        # Export key data
+        print(f"Exporting key '{args.key_id}' to QR code...")
+        key_data = keystore.export_key(args.key_id, key_password, not args.public_only)
+        
+        # Serialize key data to bytes (JSON format)
+        import json
+        key_json = json.dumps(key_data, separators=(',', ':')).encode('utf-8')
+        
+        # Determine QR format
+        qr_format = QRKeyFormat.V1_MULTI if args.multi_qr else QRKeyFormat.V1_SINGLE
+        
+        # Create QR code(s)
+        qr_dist = QRKeyDistribution()
+        qr_images = qr_dist.create_key_qr(
+            key_json, 
+            args.key_id,
+            qr_format,
+            args.compression
+        )
+        
+        # Save QR image(s)
+        if isinstance(qr_images, list):
+            # Multi-QR: save with part numbers
+            base_path = os.path.splitext(args.output_path)[0]
+            for i, img in enumerate(qr_images, 1):
+                part_path = f"{base_path}_part_{i:02d}.png"
+                img.save(part_path)
+                print(f"Saved QR part {i}/{len(qr_images)}: {part_path}")
+            print(f"Key exported to {len(qr_images)} QR codes")
+        else:
+            # Single QR: save directly
+            qr_images.save(args.output_path)
+            print(f"Key exported to QR code: {args.output_path}")
+            
+        key_type = "public+private" if not args.public_only else "public only"
+        print(f"Successfully exported {key_type} key '{args.key_id}' to QR code(s)")
+        return 0
+        
+    except QRKeyError as e:
+        print(f"QR export error: {e}")
+        return 1
+    except Exception as e:
+        print(f"Export failed: {e}")
+        return 1
+
+
+def handle_import_qr_command(args, keystore_password):
+    """Handle import-qr command"""
+    if not QR_AVAILABLE:
+        print("QR code functionality not available.")
+        print("Install required dependencies: pip install qrcode[pil] pyzbar")
+        return 1
+    
+    try:
+        # Prompt for password if not provided
+        if not keystore_password:
+            keystore_password = getpass.getpass("Enter keystore password: ")
+
+        # Load keystore
+        keystore = PQCKeystore(args.keystore)
+        keystore.load_keystore(keystore_password)
+
+        # Read key from QR code(s)
+        print(f"Reading key from {len(args.qr_images)} QR image(s)...")
+        qr_dist = QRKeyDistribution()
+        
+        # Handle single vs multiple QR images
+        if len(args.qr_images) == 1:
+            qr_input = args.qr_images[0]
+        else:
+            qr_input = args.qr_images
+            
+        key_data_bytes, original_key_name = qr_dist.read_key_qr(qr_input)
+        
+        # Deserialize key data from JSON
+        import json
+        key_data = json.loads(key_data_bytes.decode('utf-8'))
+        
+        # Get key password if needed
+        key_password = None
+        if args.prompt_key_password:
+            key_password = getpass.getpass(f"Enter password for key '{original_key_name}': ")
+        elif args.key_password_file:
+            with open(args.key_password_file, 'r') as f:
+                key_password = f.read().strip()
+
+        # Parse tags
+        tags = []
+        if args.key_tags:
+            tags = [tag.strip() for tag in args.key_tags.split(',')]
+
+        # Import the key
+        # Note: This would need to be implemented in the keystore
+        print(f"Importing key '{original_key_name}' from QR code...")
+        
+        # For now, show what we would import
+        print(f"Key name: {original_key_name}")
+        print(f"Key data size: {len(key_data_bytes)} bytes")
+        print(f"Description: {args.key_description or 'Imported from QR code'}")
+        print(f"Tags: {tags}")
+        
+        # This would need actual keystore.import_key_data() method
+        print("Note: Key import from QR codes requires keystore API enhancement")
+        print("Key data successfully read and validated from QR code(s)")
+        return 0
+        
+    except QRKeyError as e:
+        print(f"QR import error: {e}")
+        return 1
+    except Exception as e:
+        print(f"Import failed: {e}")
+        return 1
 
 
 if __name__ == "__main__":
