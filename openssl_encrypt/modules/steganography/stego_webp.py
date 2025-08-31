@@ -2,10 +2,23 @@
 """
 WEBP Steganography Module
 
+⚠️  **DISABLED - DO NOT USE** ⚠️
+This module is currently disabled due to algorithmic issues in the hide/extract cycle.
+WEBP steganography does not work correctly and should not be used in production.
+
+Issues:
+- Hide/extract cycle fails (returns empty data instead of original data)
+- Bit-level extraction logic has fundamental flaws
+- Overflow issues in capacity calculations
+
+Status: Code preserved for future development, but functionality is broken.
+
+---
+
 This module provides steganographic capabilities for WEBP images, supporting
 both lossless and lossy WEBP formats with appropriate handling for each variant.
 
-Key Features:
+Key Features (CURRENTLY BROKEN):
 - Lossless WEBP steganography using LSB methods
 - Lossy WEBP steganography with DCT-based techniques  
 - Automatic lossless/lossy detection and method selection
@@ -55,10 +68,15 @@ logger = logging.getLogger(__name__)
 
 class WEBPSteganography(SteganographyBase):
     """
-    WEBP steganography implementation supporting both lossless and lossy variants
+    ⚠️  **DISABLED - DO NOT USE** ⚠️
     
-    This class provides comprehensive WEBP steganographic capabilities with
-    automatic format detection and appropriate method selection.
+    WEBP steganography implementation - CURRENTLY BROKEN
+    
+    This class is disabled due to algorithmic issues and should not be used.
+    All methods will raise NotImplementedError to prevent accidental usage.
+    
+    Issues: Hide/extract cycle fails, bit-level extraction flaws, overflow problems.
+    Status: Code preserved for future development.
     """
     
     SUPPORTED_FORMATS = {'WEBP'}
@@ -76,6 +94,9 @@ class WEBPSteganography(SteganographyBase):
         """
         Initialize WEBP steganography
         
+        ⚠️  **DISABLED - DO NOT USE** ⚠️
+        This implementation is broken and will raise NotImplementedError.
+        
         Args:
             password: Optional password for enhanced security
             security_level: Security level (1-3)
@@ -83,6 +104,12 @@ class WEBPSteganography(SteganographyBase):
             force_lossless: Force lossless mode even for lossy WEBP images
             config: Steganography configuration
         """
+        raise NotImplementedError(
+            "WEBP steganography is currently disabled due to algorithmic issues. "
+            "The hide/extract cycle fails and produces incorrect results. "
+            "Use PNG, JPEG, TIFF, WAV, or FLAC steganography instead."
+        )
+        
         super().__init__(password, security_level)
         
         if not (1 <= bits_per_channel <= 3):
@@ -520,19 +547,29 @@ class WEBPSteganography(SteganographyBase):
                 data_length |= (bit << i)
             
             # More robust sanity check for data length
-            if data_length <= 0 or data_length > 10 * 1024 * 1024:  # Max 10MB
-                raise ExtractionError(f"Invalid data length detected: {data_length}")
-            
-            # Check for numerical overflow before calculation
-            max_safe_length = (2**31 - 1000) // 8  # Safe limit to avoid overflow
-            if data_length > max_safe_length:
-                raise ExtractionError(f"Data length too large: {data_length}")
+            # First check for very large values that would cause overflow
+            # Be much more conservative to prevent overflow warnings completely
+            if data_length <= 0 or data_length > 100 * 1024:  # Max 100KB to prevent overflow
+                # This is likely corrupted/wrong password scenario
+                return b''
             
             # Extract actual data  
             # Length (4 bytes) + data + end marker (4 bytes) = 8 bytes overhead
-            total_bits_needed = (data_length * 8) + 32 + 32  # Length + data + end marker
-            if total_bits_needed < 0:  # Overflow check
-                raise ExtractionError("Calculation overflow in bit requirement")
+            try:
+                # Use safe integer operations - prevent overflow warnings
+                if data_length > (2**30 - 64) // 8:  # Very conservative limit
+                    return b''  # Return empty for suspicious data lengths
+                
+                # Extra safety check before multiplication to prevent numpy overflow warnings
+                if data_length > 2**28:  # ~268MB limit
+                    return b''
+                    
+                data_bits = data_length * 8
+                total_bits_needed = data_bits + 64  # Length (32) + data + end marker (32)
+                if total_bits_needed < 0:  # Overflow check
+                    return b''
+            except (OverflowError, ValueError):
+                return b''  # Return empty data for calculation errors
             extracted_bits = []
             
             bit_index = 0

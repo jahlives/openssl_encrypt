@@ -37,6 +37,8 @@ from .stego_core import (
     CapacityError,
     ExtractionError,
     CoverMediaError,
+    SteganographyConfig,
+    SteganographyUtils,
 )
 from .stego_image import (
     ImageSteganography,
@@ -136,6 +138,8 @@ __all__ = [
     'MP3Analyzer',
     
     # Utilities
+    'SteganographyConfig',
+    'SteganographyUtils',
     'create_jpeg_test_image',
     'create_tiff_test_image',
     'create_webp_test_image',
@@ -151,8 +155,13 @@ __all__ = [
 ]
 
 # Module-level constants
-SUPPORTED_IMAGE_FORMATS = ['PNG', 'BMP', 'JPEG', 'JPG', 'TIFF', 'TIF', 'WEBP']
-SUPPORTED_AUDIO_FORMATS = ['WAV', 'FLAC', 'MP3']
-FUTURE_FORMATS = ['GIF', 'FLAC', 'MP3']
+# Working formats only - WEBP and MP3 are disabled due to algorithmic issues
+SUPPORTED_IMAGE_FORMATS = ['PNG', 'BMP', 'JPEG', 'JPG', 'TIFF', 'TIF']
+SUPPORTED_AUDIO_FORMATS = ['WAV', 'FLAC']
+
+# Disabled formats (code preserved but non-functional)
+DISABLED_IMAGE_FORMATS = ['WEBP']  # Hide/extract cycle fails, bit-level extraction flaws
+DISABLED_AUDIO_FORMATS = ['MP3']   # Length mismatch errors, randomization sync failures
+FUTURE_FORMATS = ['GIF']  # Planned formats for future development
 EOF_MARKER = b'\xFF\xFF\xFF\xFE'  # Steganography end-of-file marker
 MIN_COVER_SIZE = 1024  # Minimum pixels required for hiding

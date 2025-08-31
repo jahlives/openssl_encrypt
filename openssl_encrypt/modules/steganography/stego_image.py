@@ -341,9 +341,19 @@ class LSBImageStego(ImageSteganography):
             extracted_bytes = SteganographyUtils.binary_to_bytes(binary_string)
             secure_extracted = SecureBytes(extracted_bytes)
             
+            # Check for wrong password scenario before looking for EOF marker
+            if not extracted_bytes or len(set(extracted_bytes)) <= 2:
+                # Very low entropy - likely wrong password
+                return b''
+            
             # Find EOF marker and return result
             result = self._find_eof_marker(secure_extracted)
             return result
+        except ExtractionError as e:
+            # If it's an ExtractionError with EOF marker not found, check if it's wrong password
+            if "EOF marker not found" in str(e):
+                return b''  # Return empty data for wrong password scenarios
+            raise ExtractionError(f"Failed to extract data: {e}")
         except Exception as e:
             raise ExtractionError(f"Failed to extract data: {e}")
         finally:

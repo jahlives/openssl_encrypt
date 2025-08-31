@@ -2,11 +2,24 @@
 """
 MP3 Steganography Implementation for OpenSSL Encrypt
 
+⚠️  **DISABLED - DO NOT USE** ⚠️
+This module is currently disabled due to fundamental algorithmic issues.
+MP3 steganography does not work correctly and should not be used in production.
+
+Issues:
+- Length mismatch errors during data extraction
+- Bit alignment/synchronization problems between hide and extract operations
+- Randomization state inconsistencies causing extraction failures
+
+Status: Code preserved for future development, but functionality is broken.
+
+---
+
 This module provides steganographic capabilities for MP3 audio files using
 advanced lossy compression-aware techniques. Unlike lossless formats, MP3
 steganography must account for psychoacoustic masking and quantization.
 
-Key Features:
+Key Features (CURRENTLY BROKEN):
 - DCT coefficient manipulation in frequency domain
 - Bit reservoir utilization for additional capacity
 - Frame header modification techniques
@@ -62,11 +75,15 @@ class MP3FrameHeader:
 
 class MP3Steganography(SteganographyBase):
     """
-    MP3 steganography implementation using DCT coefficient modification
-    and bit reservoir manipulation.
+    ⚠️  **DISABLED - DO NOT USE** ⚠️
     
-    This class provides robust steganographic embedding in MP3 files while
-    maintaining audio quality and format compatibility.
+    MP3 steganography implementation - CURRENTLY BROKEN
+    
+    This class is disabled due to algorithmic issues and should not be used.
+    All methods will raise NotImplementedError to prevent accidental usage.
+    
+    Issues: Length mismatch errors, bit alignment problems, randomization sync failures.
+    Status: Code preserved for future development.
     """
     
     # MP3 constants
@@ -93,6 +110,9 @@ class MP3Steganography(SteganographyBase):
         """
         Initialize MP3 steganography
         
+        ⚠️  **DISABLED - DO NOT USE** ⚠️
+        This implementation is broken and will raise NotImplementedError.
+        
         Args:
             password: Optional password for enhanced security
             security_level: Security level (1-5)
@@ -101,6 +121,12 @@ class MP3Steganography(SteganographyBase):
             preserve_quality: Prioritize audio quality preservation
             config: Optional steganography configuration object
         """
+        raise NotImplementedError(
+            "MP3 steganography is currently disabled due to algorithmic issues. "
+            "The hide/extract cycle fails with length mismatch errors and bit alignment problems. "
+            "Use WAV, FLAC, or other working audio formats instead."
+        )
+        
         super().__init__(password, security_level)
         
         # MP3-specific parameters
@@ -586,8 +612,11 @@ class MP3Steganography(SteganographyBase):
             if self.password:
                 np.random.seed(hash(self.password) & 0xFFFFFFFF)
             
-            # Extract length first (4 bytes = 32 bits)
-            for frame in frames[:10]:  # Check first few frames for length
+            # Do extraction in single pass to avoid randomization sync issues
+            # First, estimate how much data we might need (we'll extract length as we go)
+            max_reasonable_bits = 32 + (1024 * 1024 * 8) + 16  # 1MB max + overhead
+            
+            for frame in frames:
                 frame_payload = frame['payload']
                 coefficients_available = min(len(frame_payload) // 4, 200)
                 
@@ -596,8 +625,30 @@ class MP3Steganography(SteganographyBase):
                     np.random.shuffle(coeff_indices)
                 
                 for coeff_idx in coeff_indices:
-                    if len(extracted_bits) >= 32:
-                        break
+                    # Check if we have enough for length extraction
+                    if len(extracted_bits) == 32:
+                        # We have the length, calculate total needed
+                        data_length = 0
+                        for i in range(32):
+                            data_length |= (extracted_bits[i] << i)
+                        
+                        if data_length <= 0 or data_length > 10 * 1024 * 1024:
+                            raise ExtractionError("Invalid data length")
+                        
+                        # Set the actual total bits needed
+                        total_bits_needed = 32 + (data_length * 8) + 16
+                    
+                    # Check if we have everything we need
+                    if len(extracted_bits) >= 32:  # Only check this after we have length
+                        # Re-calculate data_length from current bits if needed
+                        if 'total_bits_needed' not in locals():
+                            temp_length = 0
+                            for i in range(32):
+                                temp_length |= (extracted_bits[i] << i)
+                            total_bits_needed = 32 + (temp_length * 8) + 16
+                        
+                        if len(extracted_bits) >= total_bits_needed:
+                            break
                     
                     byte_pos = (coeff_idx * 4) % len(frame_payload)
                     if byte_pos >= len(frame_payload):
@@ -608,57 +659,27 @@ class MP3Steganography(SteganographyBase):
                     coeff_bits = byte_val & mask
                     
                     for b in range(bits_per_coefficient):
-                        if len(extracted_bits) < 32:
-                            extracted_bits.append((coeff_bits >> b) & 1)
+                        if 'total_bits_needed' in locals() and len(extracted_bits) >= total_bits_needed:
+                            break
+                        extracted_bits.append((coeff_bits >> b) & 1)
                 
-                if len(extracted_bits) >= 32:
+                # Check if we're done after this frame
+                if 'total_bits_needed' in locals() and len(extracted_bits) >= total_bits_needed:
                     break
             
+            # Final validation
             if len(extracted_bits) < 32:
                 raise ExtractionError("Could not extract data length")
             
-            # Convert length bits to integer
+            # Get data length from extracted bits
             data_length = 0
             for i in range(32):
                 data_length |= (extracted_bits[i] << i)
             
-            if data_length <= 0 or data_length > 10 * 1024 * 1024:  # Sanity check
+            if data_length <= 0 or data_length > 10 * 1024 * 1024:
                 raise ExtractionError("Invalid data length")
             
-            # Extract the actual data
-            total_bits_needed = 32 + (data_length * 8) + 16  # length + data + end marker
-            extracted_bits = []
-            
-            # Reset seed for consistent extraction
-            if self.password:
-                np.random.seed(hash(self.password) & 0xFFFFFFFF)
-            
-            for frame in frames:
-                if len(extracted_bits) >= total_bits_needed:
-                    break
-                
-                frame_payload = frame['payload']
-                coefficients_available = min(len(frame_payload) // 4, 200)
-                
-                coeff_indices = list(range(coefficients_available))
-                if self.password:
-                    np.random.shuffle(coeff_indices)
-                
-                for coeff_idx in coeff_indices:
-                    if len(extracted_bits) >= total_bits_needed:
-                        break
-                    
-                    byte_pos = (coeff_idx * 4) % len(frame_payload)
-                    if byte_pos >= len(frame_payload):
-                        continue
-                    
-                    byte_val = frame_payload[byte_pos]
-                    mask = (1 << bits_per_coefficient) - 1
-                    coeff_bits = byte_val & mask
-                    
-                    for b in range(bits_per_coefficient):
-                        if len(extracted_bits) < total_bits_needed:
-                            extracted_bits.append((coeff_bits >> b) & 1)
+            total_bits_needed = 32 + (data_length * 8) + 16
             
             if len(extracted_bits) < total_bits_needed:
                 raise ExtractionError("Insufficient data extracted")

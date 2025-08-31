@@ -79,14 +79,19 @@ class SteganographyTransport:
         elif image_data.startswith((b'II*\x00', b'MM\x00*')):
             return 'TIFF'
         elif image_data.startswith(b'RIFF') and image_data[8:12] == b'WEBP':
-            return 'WEBP'
+            # WEBP is disabled due to algorithmic issues
+            return 'UNKNOWN'
         else:
             # Try to detect via PIL
             try:
                 from PIL import Image
                 import io
                 image = Image.open(io.BytesIO(image_data))
-                return image.format or 'UNKNOWN'
+                detected_format = image.format or 'UNKNOWN'
+                # Block disabled formats
+                if detected_format == 'WEBP':
+                    return 'UNKNOWN'  # WEBP is disabled
+                return detected_format
             except Exception:
                 return 'UNKNOWN'
     
@@ -120,12 +125,11 @@ class SteganographyTransport:
                 config=self.config
             )
         elif image_format == 'WEBP':
-            # WEBP methods
-            self.stego = WEBPSteganography(
-                password=self.password,
-                security_level=2 if self.method == 'adaptive' else 1,
-                bits_per_channel=self.bits_per_channel,
-                config=self.config
+            # WEBP is disabled due to algorithmic issues
+            raise NotImplementedError(
+                "WEBP steganography is currently disabled due to algorithmic issues. "
+                "The hide/extract cycle fails and produces incorrect results. "
+                "Use PNG, JPEG, TIFF, WAV, or FLAC steganography instead."
             )
         else:
             # PNG/BMP methods (existing)
