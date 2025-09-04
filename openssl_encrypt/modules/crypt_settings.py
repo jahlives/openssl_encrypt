@@ -36,7 +36,7 @@ DEFAULT_CONFIG = {
     # Scrypt parameters
     "scrypt": {
         "enabled": False,
-        "rounds": 100,
+        "rounds": 5,
         "n": 16384,  # CPU/memory cost factor (must be power of 2)
         "r": 8,  # Block size
         "p": 1,  # Parallelization factor
@@ -44,7 +44,7 @@ DEFAULT_CONFIG = {
     # Argon2 parameters
     "argon2": {
         "enabled": False,
-        "rounds": 100,
+        "rounds": 5,
         "time_cost": 3,
         "memory_cost": 65536,  # 64 MB
         "parallelism": 4,
