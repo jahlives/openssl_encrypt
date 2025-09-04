@@ -89,6 +89,7 @@ from .password_policy import (
     validate_password,
     validate_password_or_raise,
 )
+from .crypt_settings import DEFAULT_CONFIG
 
 
 class ReconstructedStdinStream:
@@ -2016,36 +2017,48 @@ def main():
             setattr(args, "algorithm", "fernet")
         hash_config = hash_config["hash_config"]
     else:
+        # Check if any hash/KDF arguments were provided - if not, use defaults
+        hash_args_provided = any([
+            args.sha512_rounds > 0, args.sha384_rounds > 0, args.sha256_rounds > 0, args.sha224_rounds > 0,
+            args.sha3_512_rounds > 0, args.sha3_384_rounds > 0, args.sha3_256_rounds > 0, args.sha3_224_rounds > 0,
+            args.blake2b_rounds > 0, args.blake3_rounds > 0, args.shake256_rounds > 0, args.shake128_rounds > 0,
+            getattr(args, "whirlpool_rounds", 0) > 0, getattr(args, "pbkdf2_iterations", 0) > 0
+        ])
+        kdf_args_provided = any([
+            args.enable_scrypt, args.enable_argon2, args.enable_balloon, args.enable_hkdf
+        ])
+        enable_default_kdfs = not (hash_args_provided or kdf_args_provided)
+        
         hash_config = {
-            "sha512": args.sha512_rounds,
-            "sha384": args.sha384_rounds,
-            "sha256": args.sha256_rounds,
-            "sha224": args.sha224_rounds,
-            "sha3_512": args.sha3_512_rounds,
-            "sha3_384": args.sha3_384_rounds,
-            "sha3_256": args.sha3_256_rounds,
-            "sha3_224": args.sha3_224_rounds,
-            "blake2b": args.blake2b_rounds,
-            "blake3": args.blake3_rounds,
-            "shake256": args.shake256_rounds,
-            "shake128": args.shake128_rounds,
-            "whirlpool": getattr(args, "whirlpool_rounds", 0),
+            "sha512": args.sha512_rounds if args.sha512_rounds > 0 else DEFAULT_CONFIG["sha512"],
+            "sha384": args.sha384_rounds if args.sha384_rounds > 0 else DEFAULT_CONFIG["sha384"],
+            "sha256": args.sha256_rounds if args.sha256_rounds > 0 else DEFAULT_CONFIG["sha256"],
+            "sha224": args.sha224_rounds if args.sha224_rounds > 0 else DEFAULT_CONFIG["sha224"],
+            "sha3_512": args.sha3_512_rounds if args.sha3_512_rounds > 0 else DEFAULT_CONFIG["sha3_512"],
+            "sha3_384": args.sha3_384_rounds if args.sha3_384_rounds > 0 else DEFAULT_CONFIG["sha3_384"],
+            "sha3_256": args.sha3_256_rounds if args.sha3_256_rounds > 0 else DEFAULT_CONFIG["sha3_256"],
+            "sha3_224": args.sha3_224_rounds if args.sha3_224_rounds > 0 else DEFAULT_CONFIG["sha3_224"],
+            "blake2b": args.blake2b_rounds if args.blake2b_rounds > 0 else DEFAULT_CONFIG["blake2b"],
+            "blake3": args.blake3_rounds if args.blake3_rounds > 0 else DEFAULT_CONFIG["blake3"],
+            "shake256": args.shake256_rounds if args.shake256_rounds > 0 else DEFAULT_CONFIG["shake256"],
+            "shake128": args.shake128_rounds if args.shake128_rounds > 0 else DEFAULT_CONFIG["shake128"],
+            "whirlpool": getattr(args, "whirlpool_rounds", 0) if getattr(args, "whirlpool_rounds", 0) > 0 else DEFAULT_CONFIG["whirlpool"],
             "scrypt": {
-                "enabled": args.enable_scrypt,
-                "n": args.scrypt_n,
-                "r": args.scrypt_r,
-                "p": args.scrypt_p,
-                "rounds": args.scrypt_rounds,
+                "enabled": args.enable_scrypt if kdf_args_provided else enable_default_kdfs,
+                "n": args.scrypt_n if args.scrypt_n != 128 else DEFAULT_CONFIG["scrypt"]["n"],
+                "r": args.scrypt_r if args.scrypt_r != 8 else DEFAULT_CONFIG["scrypt"]["r"],
+                "p": args.scrypt_p if args.scrypt_p != 1 else DEFAULT_CONFIG["scrypt"]["p"],
+                "rounds": args.scrypt_rounds if args.scrypt_rounds > 0 else DEFAULT_CONFIG["scrypt"]["rounds"],
             },
             "argon2": {
-                "enabled": args.enable_argon2,
-                "time_cost": args.argon2_time,
-                "memory_cost": args.argon2_memory,
-                "parallelism": args.argon2_parallelism,
-                "hash_len": args.argon2_hash_len,
+                "enabled": args.enable_argon2 if kdf_args_provided else enable_default_kdfs,
+                "time_cost": args.argon2_time if args.argon2_time != 3 else DEFAULT_CONFIG["argon2"]["time_cost"],
+                "memory_cost": args.argon2_memory if args.argon2_memory != 65536 else DEFAULT_CONFIG["argon2"]["memory_cost"],
+                "parallelism": args.argon2_parallelism if args.argon2_parallelism != 4 else DEFAULT_CONFIG["argon2"]["parallelism"],
+                "hash_len": args.argon2_hash_len if args.argon2_hash_len != 32 else DEFAULT_CONFIG["argon2"]["hash_len"],
                 # Store integer value for JSON serialization
                 "type": ARGON2_TYPE_INT_MAP[args.argon2_type],
-                "rounds": args.argon2_rounds,
+                "rounds": args.argon2_rounds if args.argon2_rounds > 0 else DEFAULT_CONFIG["argon2"]["rounds"],
             },
             "balloon": {
                 "enabled": args.enable_balloon,
