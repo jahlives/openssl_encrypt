@@ -312,10 +312,10 @@ test:
     policy: pull  # Only restore cache, don't save (build-liboqs handles saving)
   before_script:
     - apt-get update
-    # Install runtime dependencies (no need for heavy build tools)
-    - apt-get install -y python3-tk  # For GUI components
+    - apt-get install -y python3-tk
     - pip install -r requirements.txt --break-system-packages || echo "Some dependencies may have failed to install"
-    - pip install pytest pytest-order setuptools --break-system-packages  # setuptools provides pkg_resources
+    - pip install pytest pytest-order setuptools --break-system-packages
+  script:
     # Restore cached liboqs build (should exist from build-liboqs job)
     - echo "=== Restoring liboqs from cache ==="
     - ls -la liboqs-cache/ || echo "ERROR: No cache directory found!"
@@ -326,7 +326,7 @@ test:
     - cp -r liboqs-cache/pkgconfig/* /usr/local/lib/pkgconfig/ || echo "No cached pkgconfig found"
     - mkdir -p /usr/local/lib/pkgconfig
     - echo "=== liboqs restored from cache ==="
-    # CRITICAL: Set up ALL library paths BEFORE installing liboqs-python
+    # Set up library paths
     - export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
     - export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
     - export C_INCLUDE_PATH=/usr/local/include:$C_INCLUDE_PATH
@@ -340,12 +340,6 @@ test:
     - pkg-config --modversion liboqs || echo "No liboqs version from pkg-config"
     # Install liboqs Python bindings (pinned to 0.12.0 to match liboqs version)
     - pip install --user git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0
-  script:
-    - export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-    - export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
-    - export C_INCLUDE_PATH=/usr/local/include:$C_INCLUDE_PATH
-    - export LIBRARY_PATH=/usr/local/lib:$LIBRARY_PATH
-    - export LIBOQS_INSTALL_PATH=/usr/local
     - echo "=== Runtime Library Debug ==="
     - ldd /usr/local/lib/liboqs.so || echo "No liboqs.so found"
     - ls -la /usr/local/lib/liboqs* || echo "No liboqs libraries"
