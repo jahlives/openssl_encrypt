@@ -267,6 +267,8 @@ test:
     # Install tkinter for GUI components (fixes ImportError: libtk8.6.so)
     - apk add tk-dev tcl-dev
     # Check if we have cached liboqs build
+    - echo "=== Cache Debug ==="
+    - ls -la liboqs-cache/ || echo "No cache directory found"
     - |
       if [ -f "liboqs-cache/BUILT_SUCCESS" ]; then
         echo "=== Using cached liboqs build ==="
