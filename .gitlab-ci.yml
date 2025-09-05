@@ -272,9 +272,23 @@ test:
     - ninja install
     # Return to project root directory
     - cd $CI_PROJECT_DIR
+    # Set library path for liboqs
+    - export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+    - ldconfig
     # Install liboqs Python bindings
     - pip install --user git+https://github.com/open-quantum-safe/liboqs-python.git
   script:
+    - echo "=== Python Environment ==="
+    - python3 --version
+    - python3 -c "import sys; print('Python path:', sys.path)"
+    - echo "=== Testing pytest collection ==="
+    - python3 -c "import openssl_encrypt.unittests.unittests; print('Direct import successful')" || echo "Direct import failed, trying individual modules:"
+    - python3 -c "import openssl_encrypt.modules.crypt_core; print('crypt_core import successful')" || echo "crypt_core import failed"
+    - python3 -c "import openssl_encrypt.modules.pqc; print('pqc import successful')" || echo "pqc import failed"
+    - python3 -c "from openssl_encrypt.modules.pqc import LIBOQS_AVAILABLE; print('LIBOQS_AVAILABLE:', LIBOQS_AVAILABLE)" || echo "liboqs check failed"
+    - python3 -m pytest openssl_encrypt/unittests/unittests.py --collect-only -v || echo "Collection failed, trying with traceback:"
+    - python3 -m pytest openssl_encrypt/unittests/unittests.py --collect-only --tb=long -v || echo "Collection still failed"
+    - echo "=== Running tests if collection works ==="
     - python3 -m pytest openssl_encrypt/unittests/unittests.py -v
   rules:
     # Run tests on dev, testing, and release branches, and for tags
@@ -290,46 +304,7 @@ test:
 
 # Fallback test job that builds liboqs from scratch
 # This runs only if the main test job fails, typically due to missing image
-test-fallback:
-  stage: test
-  image: python:3.13-alpine
-  variables:
-    PQC_QUIET: "true"  # Suppress PQC module initialization messages
-  before_script:
-    - pip install -r requirements.txt --break-system-packages
-    - pip install pytest pytest-order setuptools --break-system-packages  # setuptools provides pkg_resources
-    # Explicitly pin cryptography version to match the tests
-    # Install dependencies for building liboqs (Alpine Linux packages)
-    - apk add git gcc g++ cmake ninja make go python3-dev openssl-dev musl-dev
-    # Clone liboqs repository with submodules
-    - git clone --recurse-submodules https://github.com/open-quantum-safe/liboqs.git
-    # Build and install liboqs
-    - cd liboqs
-    - mkdir build && cd build
-    - cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local ..
-    - ninja
-    - ninja install
-    # Return to project root directory
-    - cd $CI_PROJECT_DIR
-    # Install liboqs Python bindings
-    - pip install --user git+https://github.com/open-quantum-safe/liboqs-python.git
-  script:
-    - python3 -m pytest openssl_encrypt/unittests/unittests.py -v
-  rules:
-    - if: $CI_COMMIT_BRANCH == "dev" && $DOCS_ONLY != "true"
-      when: on_failure
-    - if: $CI_COMMIT_BRANCH == "testing" && $DOCS_ONLY != "true"
-      when: on_failure
-    - if: $CI_COMMIT_BRANCH == "release" && $DOCS_ONLY != "true"
-      when: on_failure
-      # Must succeed on release branch
-      allow_failure: false
-    - if: $CI_COMMIT_BRANCH =~ /^releases\/.*/ && $DOCS_ONLY != "true"
-      when: on_failure
-      # Must succeed on releases branches
-      allow_failure: false
-    - if: $CI_COMMIT_TAG && $DOCS_ONLY != "true"
-      when: on_failure
+# Remove the fallback test job since we're now using the self-contained approach in the main test job
 
 
 build:
