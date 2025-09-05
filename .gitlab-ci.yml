@@ -308,8 +308,8 @@ test:
     - echo "=== Environment Check ==="
     - python3 --version
     - python3 -c "import oqs; print('liboqs version:', getattr(oqs, 'get_version', getattr(oqs, 'oqs_version', 'unknown'))()); print('HQC-128 available:', 'HQC-128' in oqs.get_enabled_kem_mechanisms())"
-    - echo "=== Running Failing Test ==="
-    - python3 -m pytest openssl_encrypt/unittests/unittests.py::TestPostQuantumCrypto::test_encrypt_decrypt_data -v -s
+    - echo "=== Running All Tests ==="
+    - python3 -m pytest openssl_encrypt/unittests/unittests.py -v
   rules:
     # Run tests on dev, testing, and release branches, and for tags
     - if: $CI_COMMIT_BRANCH == "dev" && $DOCS_ONLY != "true"
