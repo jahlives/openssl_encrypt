@@ -263,10 +263,12 @@ test:
       - liboqs-cache/
   before_script:
     - apt-get update
-    - pip install -r requirements.txt --break-system-packages || echo "Some dependencies may have failed to install"
-    - pip install pytest pytest-order setuptools --break-system-packages  # setuptools provides pkg_resources
+    # Install build dependencies first (needed for whirlpool-py311 compilation)
+    - apt-get install -y git gcc g++ cmake ninja-build make golang-go python3-dev libssl-dev
     # Install tkinter for GUI components (fixes ImportError: libtk8.6.so)
     - apt-get install -y python3-tk
+    - pip install -r requirements.txt --break-system-packages || echo "Some dependencies may have failed to install"
+    - pip install pytest pytest-order setuptools --break-system-packages  # setuptools provides pkg_resources
     # Check if we have cached liboqs build
     - echo "=== Cache Debug ==="
     - ls -la liboqs-cache/ || echo "No cache directory found"
