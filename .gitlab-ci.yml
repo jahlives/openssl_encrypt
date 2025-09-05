@@ -258,7 +258,7 @@ test:
   variables:
     PQC_QUIET: "true"  # Suppress PQC module initialization messages
   cache:
-    key: "liboqs-cache-v3-shared-0.12.0"  # Updated to rebuild with shared libraries
+    key: "liboqs-cache-v4-openssl-0.12.0"  # Updated with OpenSSL support and proper ldconfig
     paths:
       - liboqs-cache/
   before_script:
@@ -282,10 +282,14 @@ test:
         apk add git gcc g++ cmake ninja make go python3-dev openssl-dev musl-dev
         # Clone liboqs repository with submodules (pinned to 0.12.0 for HQC algorithm support)
         git clone --recurse-submodules --branch 0.12.0 https://github.com/open-quantum-safe/liboqs.git
-        # Build and install liboqs
+        # Build and install liboqs (match Dockerfile configuration exactly)
         cd liboqs
         mkdir build && cd build
-        cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=ON ..
+        cmake -GNinja \
+          -DCMAKE_INSTALL_PREFIX=/usr/local \
+          -DBUILD_SHARED_LIBS=ON \
+          -DOQS_USE_OPENSSL=ON \
+          ..
         ninja
         ninja install
         # Cache the built artifacts
@@ -305,7 +309,9 @@ test:
     - export C_INCLUDE_PATH=/usr/local/include:$C_INCLUDE_PATH
     - export LIBRARY_PATH=/usr/local/lib:$LIBRARY_PATH
     - export LIBOQS_INSTALL_PATH=/usr/local
-    - ldconfig || echo "ldconfig failed, continuing"
+    # Update library cache (match Dockerfile setup)
+    - echo "/usr/local/lib" > /etc/ld.so.conf.d/liboqs.conf
+    - ldconfig
     # Debug: Check if pkg-config can find our liboqs
     - pkg-config --exists liboqs && echo "✅ pkg-config found liboqs" || echo "❌ pkg-config did not find liboqs"
     - pkg-config --modversion liboqs || echo "No liboqs version from pkg-config"
