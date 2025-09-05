@@ -258,7 +258,7 @@ test:
   variables:
     PQC_QUIET: "true"  # Suppress PQC module initialization messages
   cache:
-    key: "liboqs-cache-v2-0.12.0"  # Updated to force rebuild with liboqs 0.12.0
+    key: "liboqs-cache-v3-shared-0.12.0"  # Updated to rebuild with shared libraries
     paths:
       - liboqs-cache/
   before_script:
@@ -285,7 +285,7 @@ test:
         # Build and install liboqs
         cd liboqs
         mkdir build && cd build
-        cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local ..
+        cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=ON ..
         ninja
         ninja install
         # Cache the built artifacts
