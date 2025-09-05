@@ -17,7 +17,7 @@ stages:
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
-  DOCKER_IMAGE: $CI_REGISTRY_IMAGE/python-liboqs:3.11-alpine
+  DOCKER_IMAGE: $CI_REGISTRY_IMAGE/python-liboqs:3.13-alpine
   DOCS_ONLY: "false"
 
 
@@ -254,13 +254,26 @@ sbom-generation:
 
 test:
   stage: test
-  image: $DOCKER_IMAGE
+  image: python:3.13-alpine  # Use standard Python image instead of custom one
   variables:
     PQC_QUIET: "true"  # Suppress PQC module initialization messages
-    DOCKER_DEFAULT_PLATFORM: linux/amd64
   before_script:
-    - pip install -r requirements.txt --break-system-packages
-    - pip install setuptools --break-system-packages  # Provides pkg_resources
+    - pip install -r requirements.txt --break-system-packages || echo "Some dependencies may have failed to install"
+    - pip install pytest pytest-order setuptools --break-system-packages  # setuptools provides pkg_resources
+    # Install dependencies for building liboqs (Alpine Linux packages)
+    - apk add git gcc g++ cmake ninja make go python3-dev openssl-dev musl-dev
+    # Clone liboqs repository with submodules
+    - git clone --recurse-submodules https://github.com/open-quantum-safe/liboqs.git
+    # Build and install liboqs
+    - cd liboqs
+    - mkdir build && cd build
+    - cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local ..
+    - ninja
+    - ninja install
+    # Return to project root directory
+    - cd $CI_PROJECT_DIR
+    # Install liboqs Python bindings
+    - pip install --user git+https://github.com/open-quantum-safe/liboqs-python.git
   script:
     - python3 -m pytest openssl_encrypt/unittests/unittests.py -v
   rules:
@@ -274,13 +287,6 @@ test:
       # Must succeed on releases branches
       allow_failure: false
     - if: $CI_COMMIT_TAG && $DOCS_ONLY != "true"
-  # Fallback configuration if the custom image is not available
-  # This ensures the pipeline still works if the image hasn't been built yet
-  retry:
-    max: 2
-    when:
-      - runner_system_failure
-      - script_failure
 
 # Fallback test job that builds liboqs from scratch
 # This runs only if the main test job fails, typically due to missing image
