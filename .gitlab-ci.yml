@@ -17,7 +17,7 @@ stages:
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
-  DOCKER_IMAGE: $CI_REGISTRY_IMAGE/python-liboqs:3.13-alpine
+  DOCKER_IMAGE: $CI_REGISTRY_IMAGE/python-liboqs:3.11-alpine
   DOCS_ONLY: "false"
 
 
