@@ -276,20 +276,8 @@ test:
     - pip install --user git+https://github.com/open-quantum-safe/liboqs-python.git
   script:
     - export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-    - echo "=== Library Environment ==="
-    - echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
-    - ls -la /usr/local/lib/liboqs* || echo "No liboqs libraries found"
-    - echo "=== Python Environment ==="
-    - python3 --version
-    - python3 -c "import sys; print('Python path:', sys.path)"
-    - echo "=== Testing pytest collection ==="
-    - python3 -c "import openssl_encrypt.unittests.unittests; print('Direct import successful')" || echo "Direct import failed, trying individual modules:"
-    - python3 -c "import openssl_encrypt.modules.crypt_core; print('crypt_core import successful')" || echo "crypt_core import failed"
-    - python3 -c "import openssl_encrypt.modules.pqc; print('pqc import successful')" || echo "pqc import failed"
-    - python3 -c "from openssl_encrypt.modules.pqc import LIBOQS_AVAILABLE; print('LIBOQS_AVAILABLE:', LIBOQS_AVAILABLE)" || echo "liboqs check failed"
-    - python3 -m pytest openssl_encrypt/unittests/unittests.py --collect-only -v || echo "Collection failed, trying with traceback:"
-    - python3 -m pytest openssl_encrypt/unittests/unittests.py --collect-only --tb=long -v || echo "Collection still failed"
-    - echo "=== Running tests if collection works ==="
+    - echo "Library path set, checking imports"
+    - python3 -c "import openssl_encrypt.unittests.unittests; print('Import successful')" || echo "Import failed"
     - python3 -m pytest openssl_encrypt/unittests/unittests.py -v
   rules:
     # Run tests on dev, testing, and release branches, and for tags
