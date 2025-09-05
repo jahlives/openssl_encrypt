@@ -333,7 +333,7 @@ test:
     - python3 --version
     - python3 -c "import oqs; print('liboqs version:', getattr(oqs, 'get_version', getattr(oqs, 'oqs_version', 'unknown'))()); print('HQC-128 available:', 'HQC-128' in oqs.get_enabled_kem_mechanisms())"
     - echo "=== Testing HQC Round-Trip in CI ==="
-    - python3 -c "from openssl_encrypt.modules.pqc_adapter import PQCipher; cipher = PQCipher('HQC-128'); pub, priv = cipher.generate_keypair(); test_data = b'Hello HQC Test'; encrypted = cipher.encrypt(test_data, pub); decrypted = cipher.decrypt(encrypted, priv); print('HQC Round-trip test:', 'SUCCESS' if decrypted == test_data else 'FAILED'); print('Original:', test_data); print('Decrypted:', decrypted)"
+    - python3 -c "from openssl_encrypt.modules.pqc_adapter import ExtendedPQCipher; cipher = ExtendedPQCipher('HQC-128'); pub, priv = cipher.generate_keypair(); test_data = b'Hello HQC Test'; encrypted = cipher.encrypt(test_data, pub); decrypted = cipher.decrypt(encrypted, priv); print('HQC Round-trip test:', 'SUCCESS' if decrypted == test_data else 'FAILED'); print('Original:', test_data); print('Decrypted:', decrypted)"
     - echo "=== Running All Tests ==="
     - python3 -c "import os; print('PYTEST_CURRENT_TEST env var support:', 'PYTEST_CURRENT_TEST' in os.environ)"
     - python3 -m pytest openssl_encrypt/unittests/unittests.py -v
