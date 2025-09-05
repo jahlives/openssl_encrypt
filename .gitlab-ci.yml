@@ -254,18 +254,19 @@ sbom-generation:
 
 test:
   stage: test
-  image: python:3.13-alpine  # Use standard Python image instead of custom one
+  image: python:3.11-slim  # Use same Debian-based image as working Docker setup
   variables:
     PQC_QUIET: "true"  # Suppress PQC module initialization messages
   cache:
-    key: "liboqs-cache-v4-openssl-0.12.0"  # Updated with OpenSSL support and proper ldconfig
+    key: "liboqs-cache-v5-debian-0.12.0"  # Updated for Debian-based environment (glibc vs musl)
     paths:
       - liboqs-cache/
   before_script:
+    - apt-get update
     - pip install -r requirements.txt --break-system-packages || echo "Some dependencies may have failed to install"
     - pip install pytest pytest-order setuptools --break-system-packages  # setuptools provides pkg_resources
     # Install tkinter for GUI components (fixes ImportError: libtk8.6.so)
-    - apk add tk-dev tcl-dev
+    - apt-get install -y python3-tk
     # Check if we have cached liboqs build
     - echo "=== Cache Debug ==="
     - ls -la liboqs-cache/ || echo "No cache directory found"
@@ -278,8 +279,8 @@ test:
         mkdir -p /usr/local/lib/pkgconfig
       else
         echo "=== Building liboqs from scratch ==="
-        # Install build dependencies only when building
-        apk add git gcc g++ cmake ninja make go python3-dev openssl-dev musl-dev
+        # Install build dependencies only when building (Debian packages)
+        apt-get install -y git gcc g++ cmake ninja-build make golang-go python3-dev libssl-dev
         # Clone liboqs repository with submodules (pinned to 0.12.0 for HQC algorithm support)
         git clone --recurse-submodules --branch 0.12.0 https://github.com/open-quantum-safe/liboqs.git
         # Build and install liboqs (match Dockerfile configuration exactly)
@@ -309,7 +310,7 @@ test:
     - export C_INCLUDE_PATH=/usr/local/include:$C_INCLUDE_PATH
     - export LIBRARY_PATH=/usr/local/lib:$LIBRARY_PATH
     - export LIBOQS_INSTALL_PATH=/usr/local
-    # Update library cache (match Dockerfile setup)
+    # Update library cache (Debian approach)
     - echo "/usr/local/lib" > /etc/ld.so.conf.d/liboqs.conf
     - ldconfig
     # Debug: Check if pkg-config can find our liboqs
