@@ -318,9 +318,12 @@ test:
   script:
     # Restore cached liboqs build (should exist from build-liboqs job)
     - echo "=== Restoring liboqs from cache ==="
-    - ls -la liboqs-cache/ || echo "ERROR: No cache directory found!"
-    - test -f "liboqs-cache/BUILT_SUCCESS" || echo "ERROR: liboqs cache not found! build-liboqs job may have failed."
-    - test -f "liboqs-cache/BUILT_SUCCESS" || exit 1
+    - ls -la liboqs-cache/
+    - |
+      if [ ! -f "liboqs-cache/BUILT_SUCCESS" ]; then
+        echo "ERROR: liboqs cache not found! build-liboqs job may have failed."
+        exit 1
+      fi
     - echo "=== Using cached liboqs build ==="
     - cp -r liboqs-cache/lib/* /usr/local/lib/ || echo "No cached libraries found"
     - cp -r liboqs-cache/include/* /usr/local/include/ || echo "No cached headers found"
