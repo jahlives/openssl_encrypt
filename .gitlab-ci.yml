@@ -299,10 +299,16 @@ test:
         touch liboqs-cache/BUILT_SUCCESS
         echo "=== liboqs build cached ==="
       fi
-    # Set up library paths so liboqs-python can find our pre-built liboqs
+    # CRITICAL: Set up ALL library paths BEFORE installing liboqs-python
     - export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
     - export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
+    - export C_INCLUDE_PATH=/usr/local/include:$C_INCLUDE_PATH
+    - export LIBRARY_PATH=/usr/local/lib:$LIBRARY_PATH
+    - export LIBOQS_INSTALL_PATH=/usr/local
     - ldconfig || echo "ldconfig failed, continuing"
+    # Debug: Check if pkg-config can find our liboqs
+    - pkg-config --exists liboqs && echo "✅ pkg-config found liboqs" || echo "❌ pkg-config did not find liboqs"
+    - pkg-config --modversion liboqs || echo "No liboqs version from pkg-config"
     # Install liboqs Python bindings (pinned to 0.12.0 to match liboqs version)
     - pip install --user git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0
   script:
