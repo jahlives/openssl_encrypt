@@ -257,23 +257,45 @@ test:
   image: python:3.13-alpine  # Use standard Python image instead of custom one
   variables:
     PQC_QUIET: "true"  # Suppress PQC module initialization messages
+  cache:
+    key: "liboqs-cache-v1"
+    paths:
+      - liboqs-cache/
   before_script:
     - pip install -r requirements.txt --break-system-packages || echo "Some dependencies may have failed to install"
     - pip install pytest pytest-order setuptools --break-system-packages  # setuptools provides pkg_resources
-    # Install dependencies for building liboqs (Alpine Linux packages)
-    - apk add git gcc g++ cmake ninja make go python3-dev openssl-dev musl-dev
     # Install tkinter for GUI components (fixes ImportError: libtk8.6.so)
     - apk add tk-dev tcl-dev
-    # Clone liboqs repository with submodules
-    - git clone --recurse-submodules https://github.com/open-quantum-safe/liboqs.git
-    # Build and install liboqs
-    - cd liboqs
-    - mkdir build && cd build
-    - cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local ..
-    - ninja
-    - ninja install
-    # Return to project root directory
-    - cd $CI_PROJECT_DIR
+    # Check if we have cached liboqs build
+    - |
+      if [ -f "liboqs-cache/BUILT_SUCCESS" ]; then
+        echo "=== Using cached liboqs build ==="
+        cp -r liboqs-cache/lib/* /usr/local/lib/ || echo "No cached libraries found"
+        cp -r liboqs-cache/include/* /usr/local/include/ || echo "No cached headers found"
+        export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+      else
+        echo "=== Building liboqs from scratch ==="
+        # Install build dependencies only when building
+        apk add git gcc g++ cmake ninja make go python3-dev openssl-dev musl-dev
+        # Clone liboqs repository with submodules
+        git clone --recurse-submodules https://github.com/open-quantum-safe/liboqs.git
+        # Build and install liboqs
+        cd liboqs
+        mkdir build && cd build
+        cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local ..
+        ninja
+        ninja install
+        # Cache the built artifacts
+        cd $CI_PROJECT_DIR
+        mkdir -p liboqs-cache/lib liboqs-cache/include
+        cp -r /usr/local/lib/liboqs* liboqs-cache/lib/ || echo "No liboqs libraries to cache"
+        cp -r /usr/local/lib/cmake/liboqs liboqs-cache/lib/ || echo "No cmake files to cache"
+        cp -r /usr/local/lib/pkgconfig/liboqs.pc liboqs-cache/lib/ || echo "No pkgconfig to cache"
+        cp -r /usr/local/include/oqs liboqs-cache/include/ || echo "No headers to cache"
+        touch liboqs-cache/BUILT_SUCCESS
+        echo "=== liboqs build cached ==="
+        export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+      fi
     # Install liboqs Python bindings
     - pip install --user git+https://github.com/open-quantum-safe/liboqs-python.git
   script:
