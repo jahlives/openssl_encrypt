@@ -309,6 +309,7 @@ test:
     - python3 --version
     - python3 -c "import oqs; print('liboqs version:', getattr(oqs, 'get_version', getattr(oqs, 'oqs_version', 'unknown'))()); print('HQC-128 available:', 'HQC-128' in oqs.get_enabled_kem_mechanisms())"
     - echo "=== Running All Tests ==="
+    - python3 -c "import os; print('PYTEST_CURRENT_TEST env var support:', 'PYTEST_CURRENT_TEST' in os.environ)"
     - python3 -m pytest openssl_encrypt/unittests/unittests.py -v
   rules:
     # Run tests on dev, testing, and release branches, and for tags
