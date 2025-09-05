@@ -313,6 +313,13 @@ test:
     - pip install --user git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0
   script:
     - export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+    - export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
+    - export C_INCLUDE_PATH=/usr/local/include:$C_INCLUDE_PATH
+    - export LIBRARY_PATH=/usr/local/lib:$LIBRARY_PATH
+    - export LIBOQS_INSTALL_PATH=/usr/local
+    - echo "=== Runtime Library Debug ==="
+    - ldd /usr/local/lib/liboqs.so || echo "No liboqs.so found"
+    - ls -la /usr/local/lib/liboqs* || echo "No liboqs libraries"
     - echo "=== Environment Check ==="
     - python3 --version
     - python3 -c "import oqs; print('liboqs version:', getattr(oqs, 'get_version', getattr(oqs, 'oqs_version', 'unknown'))()); print('HQC-128 available:', 'HQC-128' in oqs.get_enabled_kem_mechanisms())"
