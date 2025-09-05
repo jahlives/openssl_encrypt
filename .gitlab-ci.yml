@@ -272,7 +272,8 @@ test:
         echo "=== Using cached liboqs build ==="
         cp -r liboqs-cache/lib/* /usr/local/lib/ || echo "No cached libraries found"
         cp -r liboqs-cache/include/* /usr/local/include/ || echo "No cached headers found"
-        export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+        cp -r liboqs-cache/pkgconfig/* /usr/local/lib/pkgconfig/ || echo "No cached pkgconfig found"
+        mkdir -p /usr/local/lib/pkgconfig
       else
         echo "=== Building liboqs from scratch ==="
         # Install build dependencies only when building
@@ -287,22 +288,26 @@ test:
         ninja install
         # Cache the built artifacts
         cd $CI_PROJECT_DIR
-        mkdir -p liboqs-cache/lib liboqs-cache/include
+        mkdir -p liboqs-cache/lib liboqs-cache/include liboqs-cache/pkgconfig
         cp -r /usr/local/lib/liboqs* liboqs-cache/lib/ || echo "No liboqs libraries to cache"
-        cp -r /usr/local/lib/cmake/liboqs liboqs-cache/lib/ || echo "No cmake files to cache"
-        cp -r /usr/local/lib/pkgconfig/liboqs.pc liboqs-cache/lib/ || echo "No pkgconfig to cache"
+        mkdir -p liboqs-cache/lib/cmake
+        cp -r /usr/local/lib/cmake/liboqs liboqs-cache/lib/cmake/ || echo "No cmake files to cache"
+        cp /usr/local/lib/pkgconfig/liboqs.pc liboqs-cache/pkgconfig/ || echo "No pkgconfig to cache"
         cp -r /usr/local/include/oqs liboqs-cache/include/ || echo "No headers to cache"
         touch liboqs-cache/BUILT_SUCCESS
         echo "=== liboqs build cached ==="
-        export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
       fi
+    # Set up library paths so liboqs-python can find our pre-built liboqs
+    - export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+    - export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
+    - ldconfig || echo "ldconfig failed, continuing"
     # Install liboqs Python bindings (pinned to 0.12.0 to match liboqs version)
     - pip install --user git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0
   script:
     - export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
     - echo "=== Environment Check ==="
     - python3 --version
-    - python3 -c "import oqs; print('liboqs version:', oqs.get_version()); print('HQC-128 available:', 'HQC-128' in oqs.get_enabled_kem_mechanisms())"
+    - python3 -c "import oqs; print('liboqs version:', getattr(oqs, 'get_version', getattr(oqs, 'oqs_version', 'unknown'))()); print('HQC-128 available:', 'HQC-128' in oqs.get_enabled_kem_mechanisms())"
     - echo "=== Running Failing Test ==="
     - python3 -m pytest openssl_encrypt/unittests/unittests.py::TestPostQuantumCrypto::test_encrypt_decrypt_data -v -s
   rules:
