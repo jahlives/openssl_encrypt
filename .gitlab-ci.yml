@@ -272,12 +272,13 @@ test:
     - ninja install
     # Return to project root directory
     - cd $CI_PROJECT_DIR
-    # Set library path for liboqs
-    - export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-    - ldconfig
     # Install liboqs Python bindings
     - pip install --user git+https://github.com/open-quantum-safe/liboqs-python.git
   script:
+    - export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+    - echo "=== Library Environment ==="
+    - echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
+    - ls -la /usr/local/lib/liboqs* || echo "No liboqs libraries found"
     - echo "=== Python Environment ==="
     - python3 --version
     - python3 -c "import sys; print('Python path:', sys.path)"
