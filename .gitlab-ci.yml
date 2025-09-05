@@ -267,7 +267,25 @@ build-liboqs:
   script:
     - echo "=== Cache Debug ==="
     - ls -la liboqs-cache/ || echo "No cache directory found"
-    - if [ -f "liboqs-cache/BUILT_SUCCESS" ]; then echo "=== liboqs already cached, skipping build ==="; ls -la liboqs-cache/; else echo "=== Building liboqs from scratch ==="; git clone --recurse-submodules --branch 0.12.0 https://github.com/open-quantum-safe/liboqs.git; cd liboqs; mkdir build && cd build; cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=ON -DOQS_USE_OPENSSL=ON ..; ninja; ninja install; cd $CI_PROJECT_DIR; mkdir -p liboqs-cache/lib liboqs-cache/include liboqs-cache/pkgconfig; cp -r /usr/local/lib/liboqs* liboqs-cache/lib/ || echo "No liboqs libraries to cache"; mkdir -p liboqs-cache/lib/cmake; cp -r /usr/local/lib/cmake/liboqs liboqs-cache/lib/cmake/ || echo "No cmake files to cache"; cp /usr/local/lib/pkgconfig/liboqs.pc liboqs-cache/pkgconfig/ || echo "No pkgconfig to cache"; cp -r /usr/local/include/oqs liboqs-cache/include/ || echo "No headers to cache"; touch liboqs-cache/BUILT_SUCCESS; echo "=== liboqs build cached ==="; fi
+    - |
+      if [ -f "liboqs-cache/BUILT_SUCCESS" ]; then
+        echo "=== liboqs already cached, skipping build ==="
+        ls -la liboqs-cache/
+      else
+        echo "=== Building liboqs from scratch ==="
+        git clone --recurse-submodules --branch 0.12.0 https://github.com/open-quantum-safe/liboqs.git
+        cd liboqs && mkdir build && cd build
+        cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=ON -DOQS_USE_OPENSSL=ON ..
+        ninja && ninja install
+        cd $CI_PROJECT_DIR
+        mkdir -p liboqs-cache/lib liboqs-cache/include liboqs-cache/pkgconfig liboqs-cache/lib/cmake
+        cp -r /usr/local/lib/liboqs* liboqs-cache/lib/ || echo "No liboqs libraries to cache"
+        cp -r /usr/local/lib/cmake/liboqs liboqs-cache/lib/cmake/ || echo "No cmake files to cache"
+        cp /usr/local/lib/pkgconfig/liboqs.pc liboqs-cache/pkgconfig/ || echo "No pkgconfig to cache"
+        cp -r /usr/local/include/oqs liboqs-cache/include/ || echo "No headers to cache"
+        touch liboqs-cache/BUILT_SUCCESS
+        echo "=== liboqs build cached ==="
+      fi
     - echo "=== Build artifacts summary ==="
     - ls -la liboqs-cache/
     - du -sh liboqs-cache/
@@ -301,7 +319,13 @@ test:
     # Restore cached liboqs build (should exist from build-liboqs job)
     - echo "=== Restoring liboqs from cache ==="
     - ls -la liboqs-cache/ || echo "ERROR: No cache directory found!"
-    - if [ -f "liboqs-cache/BUILT_SUCCESS" ]; then echo "=== Using cached liboqs build ==="; cp -r liboqs-cache/lib/* /usr/local/lib/ || echo "No cached libraries found"; cp -r liboqs-cache/include/* /usr/local/include/ || echo "No cached headers found"; cp -r liboqs-cache/pkgconfig/* /usr/local/lib/pkgconfig/ || echo "No cached pkgconfig found"; mkdir -p /usr/local/lib/pkgconfig; echo "=== liboqs restored from cache ==="; else echo "ERROR: liboqs cache not found! build-liboqs job may have failed."; exit 1; fi
+    - test -f "liboqs-cache/BUILT_SUCCESS" || (echo "ERROR: liboqs cache not found! build-liboqs job may have failed." && exit 1)
+    - echo "=== Using cached liboqs build ==="
+    - cp -r liboqs-cache/lib/* /usr/local/lib/ || echo "No cached libraries found"
+    - cp -r liboqs-cache/include/* /usr/local/include/ || echo "No cached headers found"
+    - cp -r liboqs-cache/pkgconfig/* /usr/local/lib/pkgconfig/ || echo "No cached pkgconfig found"
+    - mkdir -p /usr/local/lib/pkgconfig
+    - echo "=== liboqs restored from cache ==="
     # CRITICAL: Set up ALL library paths BEFORE installing liboqs-python
     - export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
     - export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
