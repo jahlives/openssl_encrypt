@@ -255,52 +255,51 @@ sbom-generation:
 
 # Build liboqs library and cache it for use in tests
 # NOTE: Currently disabled while testing Alpine image approach
-build-liboqs:
-  stage: dependencies
-  when: never  # Disable this job while testing Alpine image
-  image: python:3.11-slim  # Use same Debian-based image as test
-  cache:
-    key: "liboqs-cache-v5-debian-0.12.0"  # Same cache key as test job
-    paths:
-      - liboqs-cache/
-  before_script:
-    - apt-get update
-    # Install build dependencies (needed for liboqs compilation)
-    - apt-get install -y git gcc g++ cmake ninja-build make golang-go python3-dev libssl-dev
-  script:
-    - echo "=== Cache Debug ==="
-    - ls -la liboqs-cache/ || echo "No cache directory found"
-    - |
-      if [ -f "liboqs-cache/BUILT_SUCCESS" ]; then
-        echo "=== liboqs already cached, skipping build ==="
-        ls -la liboqs-cache/
-      else
-        echo "=== Building liboqs from scratch ==="
-        git clone --recurse-submodules --branch 0.12.0 https://github.com/open-quantum-safe/liboqs.git
-        cd liboqs && mkdir build && cd build
-        cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=ON -DOQS_USE_OPENSSL=ON ..
-        ninja && ninja install
-        cd $CI_PROJECT_DIR
-        mkdir -p liboqs-cache/lib liboqs-cache/include liboqs-cache/pkgconfig liboqs-cache/lib/cmake
-        cp -r /usr/local/lib/liboqs* liboqs-cache/lib/ || echo "No liboqs libraries to cache"
-        cp -r /usr/local/lib/cmake/liboqs liboqs-cache/lib/cmake/ || echo "No cmake files to cache"
-        cp /usr/local/lib/pkgconfig/liboqs.pc liboqs-cache/pkgconfig/ || echo "No pkgconfig to cache"
-        cp -r /usr/local/include/oqs liboqs-cache/include/ || echo "No headers to cache"
-        touch liboqs-cache/BUILT_SUCCESS
-        echo "=== liboqs build cached ==="
-      fi
-    - echo "=== Build artifacts summary ==="
-    - ls -la liboqs-cache/
-    - du -sh liboqs-cache/
-  rules:
-    # Build liboqs for the same conditions as test job
-    - if: $CI_COMMIT_BRANCH == "dev" && $DOCS_ONLY != "true"
-    - if: $CI_COMMIT_BRANCH == "testing" && $DOCS_ONLY != "true"
-    - if: $CI_COMMIT_BRANCH == "main" && $DOCS_ONLY != "true"
-    - if: $CI_COMMIT_BRANCH == "release" && $DOCS_ONLY != "true"
-    - if: $CI_COMMIT_BRANCH =~ /^releases\/.*/ && $DOCS_ONLY != "true"
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $DOCS_ONLY != "true"
-    - if: $CI_COMMIT_TAG && $DOCS_ONLY != "true"
+# build-liboqs:
+#   stage: dependencies
+#   image: python:3.11-slim  # Use same Debian-based image as test
+#   cache:
+#     key: "liboqs-cache-v5-debian-0.12.0"  # Same cache key as test job
+#     paths:
+#       - liboqs-cache/
+#   before_script:
+#     - apt-get update
+#     # Install build dependencies (needed for liboqs compilation)
+#     - apt-get install -y git gcc g++ cmake ninja-build make golang-go python3-dev libssl-dev
+#   script:
+#     - echo "=== Cache Debug ==="
+#     - ls -la liboqs-cache/ || echo "No cache directory found"
+#     - |
+#       if [ -f "liboqs-cache/BUILT_SUCCESS" ]; then
+#         echo "=== liboqs already cached, skipping build ==="
+#         ls -la liboqs-cache/
+#       else
+#         echo "=== Building liboqs from scratch ==="
+#         git clone --recurse-submodules --branch 0.12.0 https://github.com/open-quantum-safe/liboqs.git
+#         cd liboqs && mkdir build && cd build
+#         cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=ON -DOQS_USE_OPENSSL=ON ..
+#         ninja && ninja install
+#         cd $CI_PROJECT_DIR
+#         mkdir -p liboqs-cache/lib liboqs-cache/include liboqs-cache/pkgconfig liboqs-cache/lib/cmake
+#         cp -r /usr/local/lib/liboqs* liboqs-cache/lib/ || echo "No liboqs libraries to cache"
+#         cp -r /usr/local/lib/cmake/liboqs liboqs-cache/lib/cmake/ || echo "No cmake files to cache"
+#         cp /usr/local/lib/pkgconfig/liboqs.pc liboqs-cache/pkgconfig/ || echo "No pkgconfig to cache"
+#         cp -r /usr/local/include/oqs liboqs-cache/include/ || echo "No headers to cache"
+#         touch liboqs-cache/BUILT_SUCCESS
+#         echo "=== liboqs build cached ==="
+#       fi
+#     - echo "=== Build artifacts summary ==="
+#     - ls -la liboqs-cache/
+#     - du -sh liboqs-cache/
+#   rules:
+#     # Build liboqs for the same conditions as test job
+#     - if: $CI_COMMIT_BRANCH == "dev" && $DOCS_ONLY != "true"
+#     - if: $CI_COMMIT_BRANCH == "testing" && $DOCS_ONLY != "true"
+#     - if: $CI_COMMIT_BRANCH == "main" && $DOCS_ONLY != "true"
+#     - if: $CI_COMMIT_BRANCH == "release" && $DOCS_ONLY != "true"
+#     - if: $CI_COMMIT_BRANCH =~ /^releases\/.*/ && $DOCS_ONLY != "true"
+#     - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $DOCS_ONLY != "true"
+#     - if: $CI_COMMIT_TAG && $DOCS_ONLY != "true"
 
 test:
   stage: test
