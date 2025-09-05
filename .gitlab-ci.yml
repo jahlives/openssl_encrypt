@@ -262,6 +262,8 @@ test:
     - pip install pytest pytest-order setuptools --break-system-packages  # setuptools provides pkg_resources
     # Install dependencies for building liboqs (Alpine Linux packages)
     - apk add git gcc g++ cmake ninja make go python3-dev openssl-dev musl-dev
+    # Install tkinter for GUI components (fixes ImportError: libtk8.6.so)
+    - apk add tk-dev tcl-dev
     # Clone liboqs repository with submodules
     - git clone --recurse-submodules https://github.com/open-quantum-safe/liboqs.git
     # Build and install liboqs
