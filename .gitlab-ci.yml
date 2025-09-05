@@ -254,8 +254,10 @@ sbom-generation:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $DOCS_ONLY != "true"
 
 # Build liboqs library and cache it for use in tests
+# NOTE: Currently disabled while testing Alpine image approach
 build-liboqs:
   stage: dependencies
+  when: never  # Disable this job while testing Alpine image
   image: python:3.11-slim  # Use same Debian-based image as test
   cache:
     key: "liboqs-cache-v5-debian-0.12.0"  # Same cache key as test job
