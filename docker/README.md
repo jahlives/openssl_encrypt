@@ -15,7 +15,10 @@ Instead of complex automated Docker-in-Docker builds in GitLab CI, we use a simp
 
 ```bash
 # Use your GitLab username and personal access token with 'write_registry' scope
-docker login registry.gitlab.com
+# The script auto-detects Docker or Podman
+docker login registry.rm-rf.ch
+# OR
+podman login registry.rm-rf.ch
 ```
 
 ### 2. Build and Push Base Image
@@ -26,19 +29,25 @@ docker login registry.gitlab.com
 ```
 
 This will:
+- **Auto-detect Docker or Podman** (works with either!)
 - Build `python:3.13-alpine` with liboqs 0.12.0 compiled from source
 - Install Python liboqs bindings
 - Test the image with basic PQC operations
 - Push multiple tags to the registry
 
+**Container Runtime Support:**
+- ✅ **Docker** - Traditional container runtime (requires daemon)
+- ✅ **Podman** - Rootless alternative (no daemon, better security)
+- 🔄 **Auto-detection** - Script automatically uses what's available
+
 ### 3. Available Tags
 
 The script creates several tags for flexibility:
 
-- `registry.gitlab.com/world/openssl_encrypt/python-liboqs:3.13-alpine` (default)
-- `registry.gitlab.com/world/openssl_encrypt/python-liboqs:latest`
-- `registry.gitlab.com/world/openssl_encrypt/python-liboqs:python3.13-liboqs0.12.0`
-- `registry.gitlab.com/world/openssl_encrypt/python-liboqs:20241206` (date stamp)
+- `registry.rm-rf.ch/world/openssl_encrypt/python-liboqs:3.13-alpine` (default)
+- `registry.rm-rf.ch/world/openssl_encrypt/python-liboqs:latest`
+- `registry.rm-rf.ch/world/openssl_encrypt/python-liboqs:python3.13-liboqs0.12.0`
+- `registry.rm-rf.ch/world/openssl_encrypt/python-liboqs:20241206` (date stamp)
 
 ## When to Rebuild
 
@@ -55,7 +64,7 @@ Your GitLab CI pipeline automatically uses the base image:
 
 ```yaml
 variables:
-  DOCKER_IMAGE: registry.gitlab.com/world/openssl_encrypt/python-liboqs:3.13-alpine
+  DOCKER_IMAGE: registry.rm-rf.ch/world/openssl_encrypt/python-liboqs:3.13-alpine
 
 test:
   image: $DOCKER_IMAGE

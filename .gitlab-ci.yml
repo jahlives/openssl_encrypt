@@ -21,7 +21,7 @@ stages:
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
   # Use manually built base image (built with docker/build-base-image.sh)
-  DOCKER_IMAGE: registry.gitlab.com/world/openssl_encrypt/python-liboqs:3.13-alpine
+  DOCKER_IMAGE: registry.rm-rf.ch/world/openssl_encrypt/python-liboqs:3.13-alpine
   DOCS_ONLY: "false"
 
 

@@ -10,7 +10,7 @@ cd "$SCRIPT_DIR"
 # Configuration
 PYTHON_VERSION="3.13"
 LIBOQS_VERSION="0.12.0"
-REGISTRY="registry.gitlab.com"
+REGISTRY="registry.rm-rf.ch"
 PROJECT_PATH="world/openssl_encrypt"
 IMAGE_NAME="python-liboqs"
 TAG="${PYTHON_VERSION}-alpine"
@@ -26,17 +26,37 @@ echo "liboqs version: ${LIBOQS_VERSION}"
 echo "Target image: ${FULL_IMAGE}"
 echo ""
 
-# Check if Docker is available
-if ! command -v docker &> /dev/null; then
-    echo "❌ Docker is not installed or not in PATH"
+# Detect and setup container runtime (Docker or Podman)
+echo "Detecting container runtime..."
+
+if command -v docker &> /dev/null && docker info &> /dev/null; then
+    echo "✓ Using Docker"
+    CONTAINER_CMD="docker"
+elif command -v podman &> /dev/null; then
+    echo "✓ Using Podman (rootless alternative to Docker)"
+    # Create alias within script scope
+    alias docker=podman
+    CONTAINER_CMD="podman"
+else
+    echo "❌ Neither Docker nor Podman is available"
+    echo ""
+    echo "Please install one of the following:"
+    echo "  Docker: https://docs.docker.com/get-docker/"
+    echo "  Podman: https://podman.io/getting-started/installation"
     exit 1
 fi
 
 # Check if user is logged in to GitLab Container Registry
-echo "Checking GitLab Container Registry authentication..."
-if ! docker info | grep -q "Username:"; then
-    echo "⚠️  Please login to GitLab Container Registry first:"
-    echo "   docker login ${REGISTRY}"
+echo "Checking ${REGISTRY} authentication..."
+if ! ${CONTAINER_CMD} info | grep -q "Username:" 2>/dev/null; then
+    # For podman, check differently as it may not show Username in info
+    if [[ "$CONTAINER_CMD" == "podman" ]]; then
+        echo "⚠️  Please login to GitLab Container Registry first:"
+        echo "   podman login ${REGISTRY}"
+    else
+        echo "⚠️  Please login to GitLab Container Registry first:"
+        echo "   docker login ${REGISTRY}"
+    fi
     echo ""
     echo "Use your GitLab username and a personal access token with 'write_registry' scope"
     exit 1
@@ -93,7 +113,7 @@ echo ""
 echo "Building base image (this may take 10-15 minutes)..."
 echo "Building: ${FULL_IMAGE}"
 
-docker build \
+${CONTAINER_CMD} build \
     --file Dockerfile.base \
     --tag "${FULL_IMAGE}" \
     --tag "${FULL_IMAGE%:*}:latest" \
@@ -108,7 +128,7 @@ echo "✓ Build completed successfully!"
 # Test the built image
 echo ""
 echo "Testing built image..."
-docker run --rm "${FULL_IMAGE}" python -c "
+${CONTAINER_CMD} run --rm "${FULL_IMAGE}" python -c "
 import oqs
 print('✓ liboqs version:', oqs.oqs_version())
 print('✓ Available KEMs:', len(oqs.get_enabled_KEM_mechanisms()))
@@ -129,10 +149,10 @@ echo "✓ Image test passed!"
 # Push all tags to registry
 echo ""
 echo "Pushing images to GitLab Container Registry..."
-docker push "${FULL_IMAGE}"
-docker push "${FULL_IMAGE%:*}:latest"
-docker push "${FULL_IMAGE%:*}:python${PYTHON_VERSION}-liboqs${LIBOQS_VERSION}"
-docker push "${FULL_IMAGE%:*}:$(date +%Y%m%d)"
+${CONTAINER_CMD} push "${FULL_IMAGE}"
+${CONTAINER_CMD} push "${FULL_IMAGE%:*}:latest"
+${CONTAINER_CMD} push "${FULL_IMAGE%:*}:python${PYTHON_VERSION}-liboqs${LIBOQS_VERSION}"
+${CONTAINER_CMD} push "${FULL_IMAGE%:*}:$(date +%Y%m%d)"
 
 echo ""
 echo "========================================="
