@@ -1,10 +1,5 @@
-# Include Docker build jobs for scheduled pipelines and manual triggers
-include:
-  - local: '.gitlab-ci-docker.yml'
-    rules:
-      - if: $CI_PIPELINE_SOURCE == "schedule"
-      - if: $CI_COMMIT_BRANCH == "dev"
-      - if: $CI_COMMIT_BRANCH == "main"
+# Note: Base image is built manually using docker/build-base-image.sh
+# This avoids complex CI Docker builds and allows local debugging
 
 default:
   image: python:3.13-alpine
@@ -19,15 +14,14 @@ default:
 stages:
   - sync
   - security
-  - docker-build
   - test
   - build
   - publish
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
-  # Use hardcoded lowercase registry path to avoid case issues
-  DOCKER_IMAGE: $CI_REGISTRY/world/openssl_encrypt/python-liboqs:3.13-alpine
+  # Use manually built base image (built with docker/build-base-image.sh)
+  DOCKER_IMAGE: registry.gitlab.com/world/openssl_encrypt/python-liboqs:3.13-alpine
   DOCS_ONLY: "false"
 
 
@@ -265,10 +259,6 @@ sbom-generation:
 test:
   stage: test
   image: $DOCKER_IMAGE
-  # For scheduled pipelines, depend on the freshly built base image
-  needs:
-    - job: docker-build-base
-      optional: true
   variables:
     PQC_QUIET: "true"  # Suppress PQC module initialization messages
     DOCKER_DEFAULT_PLATFORM: linux/amd64
