@@ -141,15 +141,16 @@ docker-test-base:
     - python -c "import oqs; print(f'✓ Available KEMs: {len(oqs.get_enabled_KEM_mechanisms())}')"
     - python -c "import oqs; print(f'✓ Available Signatures: {len(oqs.get_enabled_sig_mechanisms())}')"
     - echo "Testing basic KEM operations..."
-    - python -c "
-import oqs
-kem = oqs.KeyEncapsulation('Kyber512')
-public_key, secret_key = kem.generate_keypair()
-ciphertext, shared_secret = kem.encap(public_key) 
-decrypted_secret = kem.decap(secret_key, ciphertext)
-assert shared_secret == decrypted_secret
-print('✓ Basic KEM test passed')
-"
+    - |
+      python -c "
+      import oqs
+      kem = oqs.KeyEncapsulation('Kyber512')
+      public_key, secret_key = kem.generate_keypair()
+      ciphertext, shared_secret = kem.encap(public_key) 
+      decrypted_secret = kem.decap(secret_key, ciphertext)
+      assert shared_secret == decrypted_secret
+      print('✓ Basic KEM test passed')
+      "
     - echo "=== Base image test completed successfully! ==="
   rules:
     # Test after successful build
