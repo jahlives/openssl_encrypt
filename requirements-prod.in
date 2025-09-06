@@ -21,4 +21,4 @@ pywin32>=306,<307; sys_platform == 'win32'
 # liboqs-python>=0.7.0
 
 # Optional RandomX KDF dependencies
-pyrx>=0.3.0
+RandomX>=1.1.10
