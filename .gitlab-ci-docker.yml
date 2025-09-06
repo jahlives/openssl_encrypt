@@ -6,7 +6,8 @@ stages:
 
 variables:
   # Override these variables if needed
-  DOCKER_IMAGE: $CI_REGISTRY_IMAGE/python-liboqs:3.13-alpine
+  # Use hardcoded lowercase registry path to avoid case issues
+  DOCKER_IMAGE: $CI_REGISTRY/world/openssl_encrypt/python-liboqs:3.13-alpine
   LIBOQS_VERSION: "0.12.0"
   PYTHON_VERSION: "3.13"
 

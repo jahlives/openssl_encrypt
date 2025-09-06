@@ -26,7 +26,8 @@ stages:
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
-  DOCKER_IMAGE: $CI_REGISTRY_IMAGE/python-liboqs:3.13-alpine
+  # Use hardcoded lowercase registry path to avoid case issues
+  DOCKER_IMAGE: $CI_REGISTRY/world/openssl_encrypt/python-liboqs:3.13-alpine
   DOCS_ONLY: "false"
 
 
