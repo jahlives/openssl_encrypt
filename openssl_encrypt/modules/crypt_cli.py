@@ -502,14 +502,14 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
         },
         SecurityTemplate.STANDARD: {
             "hash_config": {
-                "sha512": 0,
+                "sha512": 10000,
                 "sha256": 0,
-                "sha3_256": 0,
-                "sha3_512": 600000,
-                "blake2b": 200000,
-                "shake256": 200000,
+                "sha3_256": 10000,
+                "sha3_512": 0,
+                "blake2b": 0,
+                "shake256": 0,
                 "whirlpool": 0,
-                "scrypt": {"enabled": True, "n": 128, "r": 8, "p": 1, "rounds": 10},
+                "scrypt": {"enabled": True, "n": 128, "r": 8, "p": 1, "rounds": 5},
                 "argon2": {
                     "enabled": True,
                     "time_cost": 3,
@@ -517,7 +517,7 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                     "parallelism": 4,
                     "hash_len": 32,
                     "type": 2,
-                    "rounds": 100,
+                    "rounds": 5,
                 },
                 "pbkdf2_iterations": 0,
                 "type": "id",
@@ -1106,6 +1106,41 @@ def main_with_args(args=None):
         type=str,
         default="openssl_encrypt_hkdf",
         help="HKDF info string for context (default: openssl_encrypt_hkdf)",
+    )
+
+    # RandomX options
+    randomx_group = parser.add_argument_group(
+        "RandomX Options", "Configure RandomX Key Derivation Function"
+    )
+    randomx_group.add_argument(
+        "--enable-randomx",
+        action="store_true",
+        help="Enable RandomX key derivation (disabled by default, requires pyrx package)",
+        default=False,
+    )
+    randomx_group.add_argument(
+        "--randomx-rounds",
+        type=int,
+        default=1,
+        help="Number of RandomX rounds (default: 1)",
+    )
+    randomx_group.add_argument(
+        "--randomx-mode",
+        choices=["light", "fast"],
+        default="light",
+        help="RandomX mode: light (256MB RAM) or fast (2GB RAM, default: light)",
+    )
+    randomx_group.add_argument(
+        "--randomx-height",
+        type=int,
+        default=1,
+        help="RandomX block height parameter (default: 1)",
+    )
+    randomx_group.add_argument(
+        "--randomx-hash-len",
+        type=int,
+        default=32,
+        help="RandomX output hash length in bytes (default: 32)",
     )
 
     # Add Keystore options
@@ -2173,49 +2208,89 @@ def main_with_args(args=None):
             setattr(args, "algorithm", "fernet")
         hash_config = hash_config["hash_config"]
     else:
-        hash_config = {
-            "sha512": args.sha512_rounds,
-            "sha384": args.sha384_rounds,
-            "sha256": args.sha256_rounds,
-            "sha224": args.sha224_rounds,
-            "sha3_512": args.sha3_512_rounds,
-            "sha3_384": args.sha3_384_rounds,
-            "sha3_256": args.sha3_256_rounds,
-            "sha3_224": args.sha3_224_rounds,
-            "blake2b": args.blake2b_rounds,
-            "blake3": args.blake3_rounds,
-            "shake256": args.shake256_rounds,
-            "shake128": args.shake128_rounds,
-            "whirlpool": getattr(args, "whirlpool_rounds", 0),
-            "scrypt": {
-                "enabled": args.enable_scrypt,
-                "n": args.scrypt_n,
-                "r": args.scrypt_r,
-                "p": args.scrypt_p,
-                "rounds": args.scrypt_rounds,
-            },
-            "argon2": {
-                "enabled": args.enable_argon2,
-                "time_cost": args.argon2_time,
-                "memory_cost": args.argon2_memory,
-                "parallelism": args.argon2_parallelism,
-                "hash_len": args.argon2_hash_len,
-                # Store integer value for JSON serialization
-                "type": ARGON2_TYPE_INT_MAP.get(args.argon2_type, 2),  # Default to 'id' type (2)
-                "rounds": args.argon2_rounds,
-            },
-            "balloon": {
-                "enabled": args.enable_balloon,
-                "time_cost": args.balloon_time_cost,
-                "space_cost": args.balloon_space_cost,
-                "parallelism": args.balloon_parallelism,
-                "rounds": args.balloon_rounds,
-            },
-            "hkdf": {
-                "enabled": args.enable_hkdf,
-                "rounds": args.hkdf_rounds,
-                "algorithm": args.hkdf_algorithm,
-                "info": args.hkdf_info,
+        # Check if all values are at their defaults (no arguments provided)
+        all_hash_rounds_zero = (
+            args.sha512_rounds == 0 and
+            args.sha384_rounds == 0 and
+            args.sha256_rounds == 0 and
+            args.sha224_rounds == 0 and
+            args.sha3_512_rounds == 0 and
+            args.sha3_384_rounds == 0 and
+            args.sha3_256_rounds == 0 and
+            args.sha3_224_rounds == 0 and
+            args.blake2b_rounds == 0 and
+            args.blake3_rounds == 0 and
+            args.shake256_rounds == 0 and
+            args.shake128_rounds == 0 and
+            getattr(args, "whirlpool_rounds", 0) == 0
+        )
+        
+        all_kdfs_disabled = (
+            not args.enable_scrypt and
+            not args.enable_argon2 and
+            not args.enable_balloon and
+            not args.enable_hkdf and
+            not getattr(args, "enable_randomx", False)
+        )
+        
+        # If no arguments are provided, use the standard template as default
+        if all_hash_rounds_zero and all_kdfs_disabled:
+            hash_config = get_template_config(SecurityTemplate.STANDARD)
+            hash_config["hash_config"]["algorithm"] = "aes-gcm-siv"
+            setattr(args, "algorithm", hash_config["hash_config"]["algorithm"])
+            hash_config = hash_config["hash_config"]
+        else:
+            # User provided specific arguments, build custom configuration
+            hash_config = {
+                "sha512": args.sha512_rounds,
+                "sha384": args.sha384_rounds,
+                "sha256": args.sha256_rounds,
+                "sha224": args.sha224_rounds,
+                "sha3_512": args.sha3_512_rounds,
+                "sha3_384": args.sha3_384_rounds,
+                "sha3_256": args.sha3_256_rounds,
+                "sha3_224": args.sha3_224_rounds,
+                "blake2b": args.blake2b_rounds,
+                "blake3": args.blake3_rounds,
+                "shake256": args.shake256_rounds,
+                "shake128": args.shake128_rounds,
+                "whirlpool": getattr(args, "whirlpool_rounds", 0),
+                "scrypt": {
+                    "enabled": args.enable_scrypt,
+                    "n": args.scrypt_n,
+                    "r": args.scrypt_r,
+                    "p": args.scrypt_p,
+                    "rounds": args.scrypt_rounds,
+                },
+                "argon2": {
+                    "enabled": args.enable_argon2,
+                    "time_cost": args.argon2_time,
+                    "memory_cost": args.argon2_memory,
+                    "parallelism": args.argon2_parallelism,
+                    "hash_len": args.argon2_hash_len,
+                    # Store integer value for JSON serialization
+                    "type": ARGON2_TYPE_INT_MAP.get(args.argon2_type, 2),  # Default to 'id' type (2)
+                    "rounds": args.argon2_rounds,
+                },
+                "balloon": {
+                    "enabled": args.enable_balloon,
+                    "time_cost": args.balloon_time_cost,
+                    "space_cost": args.balloon_space_cost,
+                    "parallelism": args.balloon_parallelism,
+                    "rounds": args.balloon_rounds,
+                },
+                "hkdf": {
+                    "enabled": args.enable_hkdf,
+                    "rounds": args.hkdf_rounds,
+                    "algorithm": args.hkdf_algorithm,
+                    "info": args.hkdf_info,
+                },
+                "randomx": {
+                    "enabled": getattr(args, "enable_randomx", False),
+                    "rounds": getattr(args, "randomx_rounds", 1),
+                    "mode": getattr(args, "randomx_mode", "light"),
+                    "height": getattr(args, "randomx_height", 1),
+                "hash_len": getattr(args, "randomx_hash_len", 32),
             },
             "pbkdf2_iterations": getattr(args, "pbkdf2_iterations", 0),
         }

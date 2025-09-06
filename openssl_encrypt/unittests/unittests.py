@@ -10487,6 +10487,452 @@ class TestPortableMediaIntegration(unittest.TestCase):
 
 
 # Import HQC and ML-KEM keystore integration tests
+class TestRandomXIntegration(unittest.TestCase):
+    """Test class for RandomX KDF integration functionality."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        self.test_dir = tempfile.mkdtemp()
+        self.test_file = os.path.join(self.test_dir, "test_file.txt")
+        self.test_password = "test_password_123"
+        
+        # Create test file
+        with open(self.test_file, "w", encoding="utf-8") as f:
+            f.write("This is a test file for RandomX encryption testing.")
+        
+        # Import the basic config structure that works for comparison (flattened)
+        self.basic_hash_config = {
+            "sha512": 0,  # Reduced from potentially higher values
+            "sha256": 0,
+            "sha3_256": 0,  # Reduced from potentially higher values
+            "sha3_512": 0,
+            "blake2b": 0,  # Added for testing new hash function
+            "shake256": 0,  # Added for testing new hash function
+            "whirlpool": 0,
+            "scrypt": {
+                "enabled": False,
+                "n": 1024,  # Reduced from potentially higher values
+                "r": 8,
+                "p": 1,
+                "rounds": 1,
+            },
+            "argon2": {
+                "enabled": False,
+                "time_cost": 1,
+                "memory_cost": 8192,
+                "parallelism": 1,
+                "hash_len": 32,
+                "type": 2,  # Argon2id
+                "rounds": 1,
+            },
+            "pbkdf2_iterations": 1000,  # Reduced for testing
+        }
+            
+        # RandomX test configuration (flattened structure)
+        self.randomx_hash_config = {
+            "sha512": 0,
+            "sha256": 0,
+            "sha3_256": 0,
+            "sha3_512": 0,
+            "blake2b": 0,
+            "shake256": 0,
+            "whirlpool": 0,
+            "scrypt": {
+                "enabled": False,
+                "n": 1024,
+                "r": 8,
+                "p": 1,
+                "rounds": 0,
+            },
+            "argon2": {
+                "enabled": False,
+                "time_cost": 1,
+                "memory_cost": 8192,
+                "parallelism": 1,
+                "hash_len": 32,
+                "type": 2,
+                "rounds": 0,
+            },
+            "randomx": {
+                "enabled": True,
+                "rounds": 2,
+                "mode": "light",
+                "height": 1,
+                "hash_len": 32,
+            },
+            "pbkdf2_iterations": 0,  # Disable PBKDF2 when using RandomX
+        }
+        
+        # Config with hashes before RandomX (no security warning expected)
+        # Using flattened structure that matches what create_metadata_v5 expects
+        self.safe_randomx_config = {
+            "sha512": 100,  # Prior hashing present
+            "sha256": 0,
+            "sha3_256": 0,
+            "sha3_512": 0,
+            "blake2b": 0,
+            "shake256": 0,
+            "whirlpool": 0,
+            "scrypt": {
+                "enabled": False,
+                "n": 1024,
+                "r": 8,
+                "p": 1,
+                "rounds": 0,
+            },
+            "argon2": {
+                "enabled": False,
+                "time_cost": 1,
+                "memory_cost": 8192,
+                "parallelism": 1,
+                "hash_len": 32,
+                "type": 2,
+                "rounds": 0,
+            },
+            "randomx": {
+                "enabled": True,
+                "rounds": 1,
+                "mode": "light",
+                "height": 1,
+                "hash_len": 32,
+            },
+            "pbkdf2_iterations": 0,  # Explicitly disable PBKDF2 fallback
+        }
+
+    def tearDown(self):
+        """Clean up test fixtures."""
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_randomx_availability(self):
+        """Test that RandomX module is available and can be loaded."""
+        try:
+            from ..modules.randomx import RANDOMX_AVAILABLE, check_randomx_support, get_randomx_info
+            
+            # Check that RandomX is available
+            self.assertTrue(RANDOMX_AVAILABLE, "RandomX should be available for testing")
+            
+            # Check support function (returns bool)
+            support_available = check_randomx_support()
+            self.assertIsInstance(support_available, bool, "Support check should return boolean")
+            self.assertTrue(support_available, "RandomX support should be available")
+            
+            # Check info function (returns dict)
+            info = get_randomx_info()
+            self.assertIsInstance(info, dict, "RandomX info should be a dictionary")
+            self.assertIn("available", info, "Info should include availability")
+            self.assertTrue(info["available"], "RandomX should be available in info")
+            
+        except ImportError as e:
+            self.fail(f"Failed to import RandomX module: {e}")
+
+    def test_randomx_encryption_decryption(self):
+        """Test that RandomX is properly used in encryption and decryption."""
+        from ..modules.crypt_core import encrypt_file, decrypt_file, EncryptionAlgorithm
+        
+        encrypted_file = self.test_file + ".enc"
+        
+        try:
+            # Encrypt with RandomX and explicit algorithm
+            result = encrypt_file(
+                self.test_file, 
+                encrypted_file, 
+                self.test_password, 
+                self.safe_randomx_config, 
+                pbkdf2_iterations=0,  # Explicitly disable PBKDF2
+                quiet=True,
+                algorithm=EncryptionAlgorithm.AES_GCM
+            )
+            
+            self.assertTrue(result, "Encryption should succeed")
+            self.assertTrue(os.path.exists(encrypted_file), "Encrypted file should exist")
+            
+            # Decrypt the file
+            decrypted_file = self.test_file + ".dec"
+            result = decrypt_file(
+                encrypted_file, 
+                decrypted_file, 
+                self.test_password, 
+                quiet=True
+            )
+            
+            self.assertTrue(result, "Decryption should succeed")
+            self.assertTrue(os.path.exists(decrypted_file), "Decrypted file should exist")
+            
+            # Verify content matches
+            with open(self.test_file, "r", encoding="utf-8") as original, \
+                 open(decrypted_file, "r", encoding="utf-8") as decrypted:
+                self.assertEqual(original.read(), decrypted.read(), 
+                               "Decrypted content should match original")
+                               
+        except Exception as e:
+            if "RandomX requested but not available" in str(e):
+                self.skipTest("RandomX library not available")
+            else:
+                raise
+
+    def test_randomx_metadata_presence(self):
+        """Test that RandomX configuration is properly stored in metadata."""
+        from ..modules.crypt_core import encrypt_file, extract_file_metadata, EncryptionAlgorithm
+        
+        encrypted_file = self.test_file + ".enc"
+        
+        try:
+            # Encrypt with RandomX
+            result = encrypt_file(
+                self.test_file, 
+                encrypted_file, 
+                self.test_password, 
+                self.safe_randomx_config, 
+                pbkdf2_iterations=0,  # Explicitly disable PBKDF2
+                quiet=True,
+                algorithm=EncryptionAlgorithm.AES_GCM
+            )
+            
+            self.assertTrue(result, "Encryption should succeed")
+            
+            # Read and verify metadata
+            metadata = extract_file_metadata(encrypted_file)
+            self.assertIsNotNone(metadata, "Metadata should be present")
+            
+            # Check RandomX configuration in nested metadata structure
+            self.assertIn("metadata", metadata, "Metadata should contain metadata field")
+            inner_metadata = metadata["metadata"]
+            self.assertIn("derivation_config", inner_metadata, "Inner metadata should contain derivation_config")
+            self.assertIn("kdf_config", inner_metadata["derivation_config"], 
+                         "derivation_config should contain kdf_config")
+            
+            # Check RandomX configuration in metadata
+            kdf_config = inner_metadata["derivation_config"]["kdf_config"]
+            self.assertIn("randomx", kdf_config, "KDF config should contain randomx configuration")
+            
+            randomx_config = kdf_config["randomx"]
+            self.assertTrue(randomx_config["enabled"], "RandomX should be enabled in metadata")
+            self.assertEqual(randomx_config["rounds"], 1, "RandomX rounds should match")
+            self.assertEqual(randomx_config["mode"], "light", "RandomX mode should match")
+            
+        except Exception as e:
+            if "RandomX requested but not available" in str(e):
+                self.skipTest("RandomX library not available")
+            else:
+                raise
+
+    @unittest.mock.patch('builtins.input', return_value='n')
+    @unittest.mock.patch('sys.exit')
+    def test_security_warning_randomx_no_hashing(self, mock_exit, mock_input):
+        """Test that security warning appears when RandomX is used without prior hashing."""
+        from ..modules.crypt_core import encrypt_file
+        
+        encrypted_file = self.test_file + ".enc"
+        
+        try:
+            # Attempt encryption with RandomX but no prior hashing (should trigger warning)
+            with self.assertLogs(level='INFO') as cm:
+                encrypt_file(
+                    self.test_file, 
+                    encrypted_file, 
+                    self.test_password, 
+                    self.randomx_hash_config,  # No prior hashing
+                    quiet=False  # Don't suppress warnings
+                )
+                
+            # Verify that user was prompted and operation was cancelled
+            mock_input.assert_called_once()
+            mock_exit.assert_called_once_with(1)
+            
+        except Exception as e:
+            if "RandomX requested but not available" in str(e):
+                self.skipTest("RandomX library not available")
+            else:
+                # Check if the exit was called due to security warning
+                if not mock_exit.called:
+                    raise
+
+    @unittest.mock.patch('builtins.input', return_value='y')
+    def test_security_warning_randomx_user_accepts(self, mock_input):
+        """Test that encryption proceeds when user accepts security warning."""
+        from ..modules.crypt_core import encrypt_file, EncryptionAlgorithm
+        
+        encrypted_file = self.test_file + ".enc"
+        
+        try:
+            # Encrypt with RandomX but no prior hashing, user accepts warning
+            result = encrypt_file(
+                self.test_file, 
+                encrypted_file, 
+                self.test_password, 
+                self.randomx_hash_config,  # No prior hashing
+                pbkdf2_iterations=0,  # Explicitly disable PBKDF2
+                quiet=False,  # Don't suppress warnings
+                algorithm=EncryptionAlgorithm.AES_GCM
+            )
+            
+            self.assertTrue(result, "Encryption should succeed after user acceptance")
+            
+            # Verify encryption succeeded
+            self.assertTrue(os.path.exists(encrypted_file), "Encrypted file should exist after user acceptance")
+            mock_input.assert_called_once()
+            
+        except Exception as e:
+            if "RandomX requested but not available" in str(e):
+                self.skipTest("RandomX library not available")
+            else:
+                raise
+
+    def test_no_security_warning_with_prior_hashing(self):
+        """Test that no security warning appears when RandomX is used with prior hashing."""
+        from ..modules.crypt_core import encrypt_file, EncryptionAlgorithm
+        
+        encrypted_file = self.test_file + ".enc"
+        
+        try:
+            # This should not trigger any security warnings since we have prior hashing
+            with unittest.mock.patch('builtins.input') as mock_input:
+                result = encrypt_file(
+                    self.test_file, 
+                    encrypted_file, 
+                    self.test_password, 
+                    self.safe_randomx_config,  # Has prior hashing (SHA-512: 100)
+                    pbkdf2_iterations=0,  # Explicitly disable PBKDF2
+                    quiet=False,
+                    algorithm=EncryptionAlgorithm.AES_GCM
+                )
+                
+                self.assertTrue(result, "Encryption should succeed")
+                
+                # Verify no user input was requested (no warning)
+                mock_input.assert_not_called()
+                
+            self.assertTrue(os.path.exists(encrypted_file), "Encrypted file should exist")
+            
+        except Exception as e:
+            if "RandomX requested but not available" in str(e):
+                self.skipTest("RandomX library not available")
+            else:
+                raise
+
+
+class TestDefaultConfiguration(unittest.TestCase):
+    """Test class for default configuration application."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        self.test_dir = tempfile.mkdtemp()
+        self.test_file = os.path.join(self.test_dir, "test_file.txt")
+        self.test_password = "test_password_123"
+        
+        # Create test file
+        with open(self.test_file, "w", encoding="utf-8") as f:
+            f.write("This is a test file for default configuration testing.")
+
+    def tearDown(self):
+        """Clean up test fixtures."""
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_default_configuration_applied(self):
+        """Test that default configuration is applied when no arguments provided."""
+        from ..modules.crypt_core import encrypt_file, extract_file_metadata, EncryptionAlgorithm
+        
+        encrypted_file = self.test_file + ".enc"
+        
+        # Encrypt with no hash configuration (should use defaults)
+        result = encrypt_file(
+            self.test_file, 
+            encrypted_file, 
+            self.test_password, 
+            hash_config=None,  # No configuration provided
+            quiet=True,
+            algorithm=EncryptionAlgorithm.AES_GCM
+        )
+        
+        self.assertTrue(result, "Encryption with default config should succeed")
+        
+        self.assertTrue(os.path.exists(encrypted_file), "Encrypted file should exist")
+        
+        # Read and verify metadata contains default configuration
+        metadata = extract_file_metadata(encrypted_file)
+        self.assertIsNotNone(metadata, "Metadata should be present")
+        
+        # Check that default hash configurations are applied (using correct nested structure)
+        inner_metadata = metadata["metadata"]
+        hash_config = inner_metadata["derivation_config"]["hash_config"]
+        self.assertEqual(hash_config["sha512"]["rounds"], 10000, 
+                        "Default should include 10k SHA-512 rounds")
+        self.assertEqual(hash_config["sha3_256"]["rounds"], 10000, 
+                        "Default should include 10k SHA3-256 rounds")
+        
+        # Check that default KDF configurations are applied
+        kdf_config = inner_metadata["derivation_config"]["kdf_config"]
+        self.assertTrue(kdf_config["scrypt"]["enabled"], 
+                       "Default should enable Scrypt")
+        self.assertEqual(kdf_config["scrypt"]["rounds"], 5, 
+                        "Default should include 5 Scrypt rounds")
+        self.assertTrue(kdf_config["argon2"]["enabled"], 
+                       "Default should enable Argon2")
+        self.assertEqual(kdf_config["argon2"]["rounds"], 5, 
+                        "Default should include 5 Argon2 rounds")
+
+    def test_default_configuration_decryption(self):
+        """Test that files encrypted with default configuration can be decrypted."""
+        from ..modules.crypt_core import encrypt_file, decrypt_file, EncryptionAlgorithm
+        
+        encrypted_file = self.test_file + ".enc"
+        decrypted_file = self.test_file + ".dec"
+        
+        # Encrypt with default configuration
+        result = encrypt_file(
+            self.test_file, 
+            encrypted_file, 
+            self.test_password, 
+            hash_config=None,  # Use defaults
+            quiet=True,
+            algorithm=EncryptionAlgorithm.AES_GCM
+        )
+        
+        self.assertTrue(result, "Encryption with default config should succeed")
+        
+        # Decrypt the file
+        result = decrypt_file(
+            encrypted_file, 
+            decrypted_file, 
+            self.test_password, 
+            quiet=True
+        )
+        
+        self.assertTrue(result, "Decryption should succeed")
+        
+        self.assertTrue(os.path.exists(decrypted_file), "Decrypted file should exist")
+        
+        # Verify content matches
+        with open(self.test_file, "r", encoding="utf-8") as original, \
+             open(decrypted_file, "r", encoding="utf-8") as decrypted:
+            self.assertEqual(original.read(), decrypted.read(), 
+                           "Decrypted content should match original")
+
+    def test_no_security_warning_with_defaults(self):
+        """Test that no security warning appears with default configuration."""
+        from ..modules.crypt_core import encrypt_file, EncryptionAlgorithm
+        
+        encrypted_file = self.test_file + ".enc"
+        
+        # This should not trigger security warnings since defaults include prior hashing
+        with unittest.mock.patch('builtins.input') as mock_input:
+            result = encrypt_file(
+                self.test_file, 
+                encrypted_file, 
+                self.test_password, 
+                hash_config=None,  # Use defaults
+                quiet=False,
+                algorithm=EncryptionAlgorithm.AES_GCM
+            )
+            
+            self.assertTrue(result, "Encryption with defaults should succeed")
+            
+            # Verify no user input was requested (no warning)
+            mock_input.assert_not_called()
+            
+        self.assertTrue(os.path.exists(encrypted_file), "Encrypted file should exist")
+
+
 try:
     import os
     import sys
