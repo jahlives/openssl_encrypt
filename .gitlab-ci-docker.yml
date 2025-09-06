@@ -14,21 +14,17 @@ variables:
 # This job builds Python 3.13 Alpine with liboqs pre-installed for faster CI testing
 docker-build-base:
   stage: docker-build
-  image: docker:24-cli
-  services:
-    - name: docker:24-dind
-      alias: docker
-      command: ["--tls=false"]
+  # Use kaniko to build Docker images without Docker daemon
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.0-debug
+    entrypoint: [""]
   variables:
-    DOCKER_HOST: tcp://docker:2375
-    DOCKER_TLS_CERTDIR: ""
-    DOCKER_DRIVER: overlay2
-    DOCKER_BUILDKIT: 1
+    # Kaniko cache and configuration
+    KANIKO_CACHE_ARGS: "--cache=true --cache-copy-layers=true --cache-ttl=24h"
   before_script:
-    # Wait for Docker daemon to be ready
-    - until docker info; do sleep 1; done
-    # Login to GitLab Container Registry
-    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+    # Setup kaniko authentication for GitLab Container Registry
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"${CI_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
   script:
     - |
       # Create Dockerfile for python-liboqs base image
@@ -75,31 +71,28 @@ docker-build-base:
       WORKDIR /
       EOF
     
-    # Build the base image
+    # Build and push base image with kaniko (no Docker daemon needed)
     - echo "Building base image with Python ${PYTHON_VERSION} and liboqs ${LIBOQS_VERSION}..."
-    - docker build -f Dockerfile.base -t $DOCKER_IMAGE .
+    - |
+      /kaniko/executor \
+        --context . \
+        --dockerfile Dockerfile.base \
+        --destination $DOCKER_IMAGE \
+        --destination $DOCKER_IMAGE:latest \
+        --destination $DOCKER_IMAGE:python${PYTHON_VERSION}-liboqs${LIBOQS_VERSION} \
+        --destination $DOCKER_IMAGE:$(date +%Y%m%d) \
+        --build-arg PYTHON_VERSION=${PYTHON_VERSION} \
+        --build-arg LIBOQS_VERSION=${LIBOQS_VERSION} \
+        $KANIKO_CACHE_ARGS
     
-    # Tag with additional version tags
-    - docker tag $DOCKER_IMAGE $DOCKER_IMAGE:latest
-    - docker tag $DOCKER_IMAGE $DOCKER_IMAGE:python${PYTHON_VERSION}-liboqs${LIBOQS_VERSION}
-    - docker tag $DOCKER_IMAGE $DOCKER_IMAGE:$(date +%Y%m%d)
-    
-    # Push all tags to registry
-    - docker push $DOCKER_IMAGE
-    - docker push $DOCKER_IMAGE:latest  
-    - docker push $DOCKER_IMAGE:python${PYTHON_VERSION}-liboqs${LIBOQS_VERSION}
-    - docker push $DOCKER_IMAGE:$(date +%Y%m%d)
-    
-    # Display build info
-    - echo "=== Docker Image Build Summary ==="
-    - docker images $DOCKER_IMAGE*
-    - docker inspect $DOCKER_IMAGE --format='{{.Config.Labels}}'
-    - echo "Base image built and pushed successfully!"
+    - echo "=== Kaniko Build Summary ==="
+    - echo "Base image built and pushed successfully using kaniko!"
     - echo "Available tags:"
     - echo "  - $DOCKER_IMAGE (default)"
     - echo "  - $DOCKER_IMAGE:latest"
     - echo "  - $DOCKER_IMAGE:python${PYTHON_VERSION}-liboqs${LIBOQS_VERSION}"
     - echo "  - $DOCKER_IMAGE:$(date +%Y%m%d)"
+    - echo "No Docker daemon required - built with Google's kaniko!"
   rules:
     # Run on scheduled pipelines (nightly builds) 
     - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == "dev"
