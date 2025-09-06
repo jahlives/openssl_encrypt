@@ -19,3 +19,6 @@ pywin32>=306,<307; sys_platform == 'win32'
 
 # Optional post-quantum cryptography dependencies (commented by default)
 # liboqs-python>=0.7.0
+
+# Optional RandomX KDF dependencies
+pyrx>=0.3.0

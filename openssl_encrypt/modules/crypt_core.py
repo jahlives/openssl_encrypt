@@ -452,6 +452,14 @@ try:
 except ImportError:
     BALLOON_AVAILABLE = False
 
+# Try to import RandomX KDF module
+try:
+    from .randomx import randomx_kdf, check_randomx_support, get_randomx_info
+
+    RANDOMX_AVAILABLE = True
+except ImportError:
+    RANDOMX_AVAILABLE = False
+
 # Try to import post-quantum cryptography module
 try:
     from .pqc import PQCAlgorithm, PQCipher, check_pqc_support
@@ -1666,7 +1674,7 @@ def generate_key(
                     "whirlpool",
                 ]
             )
-            or (hash_config and hash_config.get("scrypt", {}).get("n", 0) > 0)
+            or (hash_config and hash_config.get("scrypt", {}).get("enabled", False) and hash_config.get("scrypt", {}).get("rounds", 0) > 0)
         )
 
     if has_hash_iterations:
@@ -1695,6 +1703,7 @@ def generate_key(
         use_pbkdf2 = kdf_config.get("pbkdf2_iterations", 0) > 0
         use_balloon = kdf_config.get("balloon", {}).get("enabled", False)
         use_hkdf = kdf_config.get("hkdf", {}).get("enabled", False)
+        use_randomx = kdf_config.get("randomx", {}).get("enabled", False)
     else:
         # Original version 3 format
         use_argon2 = hash_config.get("argon2", {}).get("enabled", False)
@@ -1702,6 +1711,38 @@ def generate_key(
         use_pbkdf2 = hash_config.get("pbkdf2_iterations", 0) > 0
         use_balloon = hash_config.get("balloon", {}).get("enabled", False)
         use_hkdf = hash_config.get("hkdf", {}).get("enabled", False)
+        use_randomx = hash_config.get("randomx", {}).get("enabled", False)
+
+    # Security check: Warn if KDFs are used without prior hashing
+    any_kdf_enabled = use_argon2 or use_randomx or use_balloon or use_hkdf or use_scrypt
+    if any_kdf_enabled and not has_hash_iterations and not quiet:
+        # Check if this is from decryption metadata (skip warning for decryption)
+        is_decryption = hash_config and hash_config.get("_is_from_decryption_metadata", False)
+        if not is_decryption:
+            enabled_kdfs = []
+            if use_argon2: enabled_kdfs.append("Argon2")
+            if use_randomx: enabled_kdfs.append("RandomX") 
+            if use_balloon: enabled_kdfs.append("Balloon")
+            if use_hkdf: enabled_kdfs.append("HKDF")
+            if use_scrypt: enabled_kdfs.append("Scrypt")
+            
+            print(f"\n⚠️  WARNING: Security Risk Detected")
+            print(f"KDFs ({', '.join(enabled_kdfs)}) will operate directly on your password without prior hashing.")
+            print(f"This may be insecure if your password is short or has low entropy.")
+            print(f"Consider adding hash rounds (--sha256-rounds, --blake2b-rounds, etc.) for better security.")
+            print(f"Continue anyway? [y/N]: ", end="", flush=True)
+            
+            # Get user confirmation
+            import sys
+            try:
+                response = input().strip().lower()
+                if response not in ['y', 'yes']:
+                    print("Operation cancelled by user.")
+                    sys.exit(1)
+                print()  # Add blank line after confirmation
+            except (KeyboardInterrupt, EOFError):
+                print("\nOperation cancelled by user.")
+                sys.exit(1)
 
     # If hash_config has argon2 section with enabled explicitly set to False, honor that
     # if hash_config and 'argon2' in hash_config and 'enabled' in hash_config['argon2']:
@@ -2131,6 +2172,106 @@ def generate_key(
             # Don't set use_hkdf to False here, as we want to record the attempt
             use_hkdf = False  # Consider falling back to PBKDF2
 
+    # RandomX KDF - Applied after HKDF as the final KDF in the chain
+    if use_randomx and RANDOMX_AVAILABLE:
+        # For RandomX, derive a unique salt from the current password state
+        # This ensures RandomX gets different salt material than previous KDFs
+        if hasattr(password, "to_bytes"):
+            password_for_salt = bytes(password)
+        else:
+            password_for_salt = bytes(password)
+        
+        # Create unique salt for RandomX by combining original salt with current password state
+        # This prevents salt reuse while maintaining deterministic behavior
+        randomx_salt_material = salt + password_for_salt[:16] + b'randomx_salt'
+        base_salt = hashlib.sha256(randomx_salt_material).digest()[:16]
+        if not quiet and not progress:
+            print("Using RandomX for key derivation", end=" ")
+        elif not quiet:
+            print("Using RandomX for key derivation")
+
+        # Get RandomX parameters from appropriate config structure
+        if (
+            hash_config
+            and "derivation_config" in hash_config
+            and "kdf_config" in hash_config["derivation_config"]
+        ):
+            # Version 4 structure
+            randomx_config = hash_config["derivation_config"]["kdf_config"].get("randomx", {})
+        else:
+            # Original version 3 format
+            randomx_config = hash_config.get("randomx", {}) if hash_config else {}
+
+        rounds = randomx_config.get("rounds", 1)
+        mode = randomx_config.get("mode", "light")
+        height = randomx_config.get("height", 1)
+        hash_len = randomx_config.get("hash_len", key_length)
+
+        try:
+            # Apply RandomX key derivation
+            for i in range(rounds):
+                # Generate a unique salt for each round
+                if i == 0:
+                    # Use the original salt for the first round
+                    round_salt = base_salt
+                else:
+                    # For subsequent rounds, use previous hash result as salt (dynamic salt chaining)
+                    round_salt = password[:32] if len(password) >= 32 else password
+
+                # Make a secure copy of the password for this operation
+                if hasattr(password, "to_bytes"):
+                    password_bytes = bytes(password)
+                else:
+                    password_bytes = bytes(password)
+
+                # Ensure round_salt is also bytes
+                if hasattr(round_salt, "to_bytes"):
+                    salt_bytes = bytes(round_salt)
+                else:
+                    salt_bytes = bytes(round_salt)
+
+                # Apply RandomX KDF
+                result = randomx_kdf(
+                    password=password_bytes,
+                    salt=salt_bytes,
+                    rounds=1,  # We control rounds at this level
+                    mode=mode,
+                    height=height,
+                    hash_len=hash_len,
+                )
+
+                # Securely overwrite the previous password value
+                secure_memzero(password_bytes)
+                
+                # Securely clean up the salt bytes
+                secure_memzero(salt_bytes)
+
+                # Store the result securely for the next round
+                password = SecureBytes(result)
+
+                show_progress("RandomX", i + 1, rounds)
+
+            if not quiet and not progress:
+                print(" ✅")
+
+            KeyStretch.key_stretch = True
+
+            # Update config to record RandomX usage
+            if isinstance(hash_config, dict) and "randomx" in hash_config:
+                hash_config["randomx"]["rounds"] = rounds
+
+        except Exception as e:
+            if not quiet:
+                print("❌ RandomX failed, continuing without RandomX")
+            logger.warning(f"RandomX key derivation failed: {e}")
+            # Don't fail the entire operation, just skip RandomX
+            use_randomx = False
+
+    elif use_randomx and not RANDOMX_AVAILABLE:
+        if not quiet:
+            print("⚠️ RandomX requested but not available (install pyrx package)")
+        logger.warning("RandomX requested but pyrx library not available")
+
     if use_pbkdf2 and use_pbkdf2 > 0:
         # Using a fixed salt initially but then generating unique salts for each iteration
         # to prevent salt reuse attacks
@@ -2485,7 +2626,7 @@ def create_metadata_v5(
         metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {"rounds": pbkdf2_iterations}
 
     # Move KDF configurations from hash_config if present
-    kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf"]
+    kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf", "randomx"]
     for kdf in kdf_algorithms:
         if kdf in hash_config:
             metadata["derivation_config"]["kdf_config"][kdf] = hash_config[kdf]
@@ -3477,7 +3618,7 @@ def decrypt_file(
 
         # Merge KDF configurations into hash_config for compatibility with generate_key
         for kdf_name, kdf_params in kdf_config.items():
-            if kdf_name in ["scrypt", "argon2", "balloon", "hkdf"]:
+            if kdf_name in ["scrypt", "argon2", "balloon", "hkdf", "randomx"]:
                 hash_config[kdf_name] = kdf_params
             elif kdf_name == "pbkdf2" and isinstance(kdf_params, dict) and "rounds" in kdf_params:
                 # Also store pbkdf2_iterations directly in hash_config for generate_key

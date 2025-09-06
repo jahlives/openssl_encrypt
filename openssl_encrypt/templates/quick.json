@@ -23,6 +23,19 @@
       "type": 2,
       "rounds": 10
     },
+    "hkdf": {
+      "enabled": false,
+      "rounds": 1,
+      "algorithm": "sha256",
+      "info": "openssl_encrypt_quick"
+    },
+    "randomx": {
+      "enabled": false,
+      "rounds": 1,
+      "mode": "light",
+      "height": 1,
+      "hash_len": 32
+    },
     "pbkdf2_iterations": 100000,
     "type": "id",
     "algorithm": "fernet"

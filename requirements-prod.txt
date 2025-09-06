@@ -28,6 +28,8 @@ pyyaml==6.0.2
     # via -r requirements-prod.in
 pyzbar==0.1.9
     # via -r requirements-prod.in
+pyrx==0.3.0
+    # via -r requirements-prod.in
 qrcode[pil]==8.2
     # via -r requirements-prod.in
 whirlpool-py311==1 ; python_version >= "3.11"

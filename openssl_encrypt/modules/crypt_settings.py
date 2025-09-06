@@ -67,6 +67,14 @@ DEFAULT_CONFIG = {
         "algorithm": "sha256",  # Hash algorithm: sha224, sha256, sha384, sha512
         "info": "openssl_encrypt_hkdf",  # Application-specific context info
     },
+    # RandomX parameters
+    "randomx": {
+        "enabled": False,
+        "rounds": 1,  # Number of RandomX rounds
+        "mode": "light",  # light (256MB RAM) or fast (2GB RAM)
+        "height": 1,  # RandomX block height parameter
+        "hash_len": 32,  # Output hash length in bytes
+    },
     # PBKDF2 parameters
     "pbkdf2_iterations": 0,
 }

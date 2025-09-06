@@ -386,6 +386,39 @@ def setup_encrypt_parser(subparser):
         help="HKDF info string for context (default: openssl_encrypt_hkdf)",
     )
 
+    # RandomX options for encryption
+    randomx_group = subparser.add_argument_group("RandomX options")
+    randomx_group.add_argument(
+        "--enable-randomx",
+        action="store_true",
+        help="Enable RandomX key derivation (disabled by default, requires pyrx package)",
+        default=False,
+    )
+    randomx_group.add_argument(
+        "--randomx-rounds",
+        type=int,
+        default=1,
+        help="Number of RandomX rounds (default: 1)",
+    )
+    randomx_group.add_argument(
+        "--randomx-mode",
+        choices=["light", "fast"],
+        default="light",
+        help="RandomX mode: light (256MB RAM) or fast (2GB RAM, default: light)",
+    )
+    randomx_group.add_argument(
+        "--randomx-height",
+        type=int,
+        default=1,
+        help="RandomX block height parameter (default: 1)",
+    )
+    randomx_group.add_argument(
+        "--randomx-hash-len",
+        type=int,
+        default=32,
+        help="RandomX output hash length in bytes (default: 32)",
+    )
+
     # PQC options for encryption
     pqc_group = subparser.add_argument_group("Post-Quantum Cryptography options")
     pqc_group.add_argument("--pqc-keyfile", help="Path to save/load the PQC key file")
