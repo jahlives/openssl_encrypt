@@ -1,3 +1,13 @@
+# Include Docker build jobs for scheduled pipelines
+include:
+  - local: '.gitlab-ci-docker.yml'
+    rules:
+      - if: $CI_PIPELINE_SOURCE == "schedule"
+      - if: $CI_COMMIT_BRANCH == "dev"
+        when: manual
+      - if: $CI_COMMIT_BRANCH == "main"
+        when: manual
+
 default:
   image: python:3.13-alpine
   cache:
@@ -252,80 +262,6 @@ sbom-generation:
     - if: $CI_COMMIT_BRANCH == "release" && $DOCS_ONLY != "true"
     - if: $CI_COMMIT_BRANCH =~ /^releases\/.*/ && $DOCS_ONLY != "true"
     - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $DOCS_ONLY != "true"
-
-# Build the python-liboqs base image for testing
-# This job builds Python 3.13 Alpine with liboqs pre-installed for faster CI testing
-docker-build-base:
-  stage: docker-build
-  image: docker:24-cli
-  services:
-    - name: docker:24-dind
-      alias: docker
-      command: ["--tls=false"]
-  variables:
-    DOCKER_HOST: tcp://docker:2375
-    DOCKER_TLS_CERTDIR: ""
-    DOCKER_DRIVER: overlay2
-    DOCKER_BUILDKIT: 1
-  before_script:
-    # Wait for Docker daemon to be ready
-    - until docker info; do sleep 1; done
-    # Login to GitLab Container Registry
-    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
-  script:
-    - |
-      # Create Dockerfile for python-liboqs base image
-      cat > Dockerfile.base << 'EOF'
-      FROM python:3.13-alpine
-      
-      # Install build dependencies for liboqs (Alpine Linux packages)
-      RUN apk add --no-cache \
-          git gcc g++ cmake ninja make go \
-          python3-dev openssl-dev musl-dev \
-          linux-headers
-      
-      # Clone and build liboqs 0.12.0
-      WORKDIR /build
-      RUN git clone --recurse-submodules --branch 0.12.0 https://github.com/open-quantum-safe/liboqs.git
-      WORKDIR /build/liboqs
-      RUN mkdir build && cd build && \
-          cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local .. && \
-          ninja && \
-          ninja install
-      
-      # Install Python liboqs bindings
-      RUN pip install --no-cache-dir git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0
-      
-      # Clean up build artifacts but keep runtime libraries
-      RUN apk del git gcc g++ cmake ninja make go && \
-          rm -rf /build /var/cache/apk/*
-      
-      # Update library cache
-      RUN ldconfig /usr/local/lib
-      
-      # Verify liboqs installation
-      RUN python -c "import oqs; print(f'liboqs version: {oqs.oqs_version()}')" && \
-          python -c "import oqs; print(f'Available KEMs: {len(oqs.get_enabled_KEM_mechanisms())}')"
-      
-      WORKDIR /
-      EOF
-    
-    # Build the base image
-    - docker build -f Dockerfile.base -t $DOCKER_IMAGE .
-    
-    # Push to registry
-    - docker push $DOCKER_IMAGE
-    
-    # Display image info
-    - docker images $DOCKER_IMAGE
-    - echo "Base image built and pushed successfully!"
-  rules:
-    # Only run on scheduled pipelines (nightly builds)
-    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == "dev"
-    # Manual trigger for rebuilding base image
-    - if: $CI_COMMIT_BRANCH == "dev"
-      when: manual
-      allow_failure: false
 
 test:
   stage: test
