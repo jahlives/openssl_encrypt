@@ -257,13 +257,19 @@ sbom-generation:
 # This job builds Python 3.13 Alpine with liboqs pre-installed for faster CI testing
 docker-build-base:
   stage: docker-build
-  image: docker:24-dind
+  image: docker:24-cli
   services:
-    - docker:24-dind
+    - name: docker:24-dind
+      alias: docker
+      command: ["--tls=false"]
   variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
     DOCKER_BUILDKIT: 1
-    DOCKER_TLS_CERTDIR: "/certs"
   before_script:
+    # Wait for Docker daemon to be ready
+    - until docker info; do sleep 1; done
     # Login to GitLab Container Registry
     - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
   script:
