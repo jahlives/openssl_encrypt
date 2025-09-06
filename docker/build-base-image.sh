@@ -109,30 +109,46 @@ FROM python:${PYTHON_VERSION}-alpine
 RUN apk add --no-cache \\
     git gcc g++ cmake ninja make go \\
     python3-dev openssl-dev musl-dev \\
-    linux-headers
+    linux-headers pkgconfig
 
 # Clone and build liboqs ${LIBOQS_VERSION}
 WORKDIR /build
 RUN git clone --recurse-submodules --branch ${LIBOQS_VERSION} https://github.com/open-quantum-safe/liboqs.git
 WORKDIR /build/liboqs
 RUN mkdir build && cd build && \\
-    cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local .. && \\
+    cmake -GNinja \\
+          -DCMAKE_INSTALL_PREFIX=/usr/local \\
+          -DBUILD_SHARED_LIBS=ON \\
+          -DOQS_BUILD_ONLY_LIB=ON \\
+          .. && \\
     ninja && \\
     ninja install
 
-# Install Python liboqs bindings
-RUN pip install --no-cache-dir git+https://github.com/open-quantum-safe/liboqs-python.git@${LIBOQS_VERSION}
+# Set environment variables for liboqs discovery
+ENV LD_LIBRARY_PATH="/usr/local/lib"
+ENV PKG_CONFIG_PATH="/usr/local/lib/pkgconfig"
+ENV OQS_INSTALL_PATH="/usr/local"
 
-# Clean up build artifacts but keep runtime libraries
-RUN apk del git gcc g++ cmake ninja make go && \\
+# Debug what we actually built
+RUN echo "=== Checking liboqs installation ===" && \\
+    ls -la /usr/local/lib/liboqs* && \\
+    ls -la /usr/local/lib/pkgconfig/liboqs* && \\
+    pkg-config --exists liboqs && echo "pkg-config found liboqs" || echo "pkg-config CANNOT find liboqs" && \\
+    pkg-config --cflags --libs liboqs || echo "No pkg-config info"
+
+# Install Python liboqs bindings using pip with proper environment
+RUN export LD_LIBRARY_PATH="/usr/local/lib" && \\
+    export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig" && \\
+    pip install --no-cache-dir git+https://github.com/open-quantum-safe/liboqs-python.git@${LIBOQS_VERSION} && \\
+    python -c "import oqs; print('✓ oqs module installed successfully')" || echo "❌ oqs module import failed"
+
+# Clean up build artifacts but keep essential tools that oqs module needs
+RUN apk del gcc g++ ninja make go && \\
     rm -rf /build /var/cache/apk/*
-
-# Update library cache
-RUN ldconfig /usr/local/lib
 
 # Verify liboqs installation
 RUN python -c "import oqs; print('liboqs version:', oqs.oqs_version())" && \\
-    python -c "import oqs; print('Available KEMs:', len(oqs.get_enabled_KEM_mechanisms()))"
+    python -c "import oqs; print('Available KEMs:', len(oqs.get_enabled_kem_mechanisms()))"
 
 # Add build metadata
 LABEL org.opencontainers.image.title="Python liboqs Base Image"
@@ -169,7 +185,7 @@ echo "Testing built image..."
 ${CONTAINER_CMD} run --rm "${FULL_IMAGE}" python -c "
 import oqs
 print('✓ liboqs version:', oqs.oqs_version())
-print('✓ Available KEMs:', len(oqs.get_enabled_KEM_mechanisms()))
+print('✓ Available KEMs:', len(oqs.get_enabled_kem_mechanisms()))
 print('✓ Available Signatures:', len(oqs.get_enabled_sig_mechanisms()))
 
 # Test basic KEM operations
