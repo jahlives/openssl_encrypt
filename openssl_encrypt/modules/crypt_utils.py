@@ -9,6 +9,7 @@ secure file deletion, password generation, and other helper functions.
 import glob
 import json
 import os
+import random
 import secrets
 import signal
 import stat
@@ -417,32 +418,141 @@ def request_confirmation(message):
 
 def parse_metadata(encrypted_data):
     """
-    Parse metadata from encrypted file content.
+    Parse metadata from encrypted file content with security limits.
+
+    This function securely parses metadata from encrypted file content
+    with comprehensive size limits and validation to prevent DoS attacks.
+    Designed to accommodate large Post-Quantum Cryptography (PQC) private
+    keys while maintaining security boundaries.
 
     Args:
-        encrypted_data (bytes): The encrypted file content
+        encrypted_data (bytes): The encrypted file content to parse
 
     Returns:
-        dict: Metadata dictionary if found, empty dict otherwise
+        dict: Metadata dictionary if found and valid, empty dict otherwise
+
+    Security Features:
+        - Maximum metadata size limits (512KB total, 64KB per value)
+        - Search range limits to prevent scanning huge files
+        - JSON structure validation and type checking
+        - Key count limits to prevent resource exhaustion
+        - Unicode validation with error handling
     """
+    # Security: Maximum metadata size to prevent DoS attacks
+    # Note: PQC private keys can be large (ML-KEM-1024 ~3KB, HQC-256 ~7KB+, base64 encoded +33%)
+    # Allow generous limit for legitimate PQC use while preventing massive DoS attacks
+    MAX_METADATA_SIZE = 512 * 1024  # 512KB limit for metadata (accommodates large PQC keys)
+    MAX_SEARCH_RANGE = 2 * 1024 * 1024  # Search first 2MB of file for metadata
+
     try:
+        # Security: Limit search range to prevent scanning huge files
+        search_data = (
+            encrypted_data[:MAX_SEARCH_RANGE]
+            if len(encrypted_data) > MAX_SEARCH_RANGE
+            else encrypted_data
+        )
+
         # Look for the METADATA marker
         metadata_marker = b"METADATA:"
-        metadata_start = encrypted_data.find(metadata_marker)
+        metadata_start = search_data.find(metadata_marker)
 
         if metadata_start < 0:
             return {}
 
-        # Extract the JSON metadata
+        # Extract the JSON metadata with size limits
         metadata_start += len(metadata_marker)
-        metadata_end = encrypted_data.find(b":", metadata_start)
 
-        if metadata_end < 0:
+        # Security: Limit search range for metadata end marker
+        search_end = min(metadata_start + MAX_METADATA_SIZE, len(search_data))
+        metadata_end = search_data.find(b":", metadata_start)
+
+        # Security: Ensure metadata_end is within safe bounds
+        if metadata_end < 0 or metadata_end > search_end:
+            print("Warning: Metadata section too large or malformed, ignoring")
             return {}
 
-        metadata_json = encrypted_data[metadata_start:metadata_end].decode("utf-8")
-        metadata = json.loads(metadata_json)
+        # Security: Additional size check for extracted metadata
+        metadata_size = metadata_end - metadata_start
+        if metadata_size > MAX_METADATA_SIZE:
+            print(
+                f"Warning: Metadata size ({metadata_size} bytes) exceeds limit ({MAX_METADATA_SIZE} bytes)"
+            )
+            return {}
+
+        if metadata_size == 0:
+            return {}
+
+        # Security: Decode with error handling and size validation
+        try:
+            metadata_json = search_data[metadata_start:metadata_end].decode("utf-8")
+        except UnicodeDecodeError as e:
+            print(f"Warning: Invalid UTF-8 in metadata: {e}")
+            return {}
+
+        # Security: Validate JSON structure and size
+        if len(metadata_json) > MAX_METADATA_SIZE:
+            print(f"Warning: Metadata JSON too large ({len(metadata_json)} characters)")
+            return {}
+
+        # Security: Parse JSON with comprehensive validation (MED-8 fix)
+        try:
+            from .json_validator import (
+                JSONSecurityError,
+                JSONValidationError,
+                secure_metadata_loads,
+            )
+
+            metadata = secure_metadata_loads(metadata_json)
+        except (JSONSecurityError, JSONValidationError) as e:
+            print(f"Warning: Secure JSON validation failed in metadata: {e}")
+            return {}
+        except ImportError:
+            # Fallback to basic validation if json_validator is not available
+            try:
+                metadata = json.loads(metadata_json)
+            except json.JSONDecodeError as e:
+                print(f"Warning: Invalid JSON in metadata: {e}")
+                return {}
+        except Exception as e:
+            print(f"Warning: Unexpected error in metadata JSON validation: {e}")
+            return {}
+
+        # Security: Ensure result is a dictionary and validate structure
+        if not isinstance(metadata, dict):
+            print("Warning: Metadata must be a JSON object, not array or primitive")
+            return {}
+
+        # Security: Limit the number of metadata keys to prevent resource exhaustion
+        MAX_METADATA_KEYS = 100
+        if len(metadata) > MAX_METADATA_KEYS:
+            print(
+                f"Warning: Too many metadata keys ({len(metadata)}), limit is {MAX_METADATA_KEYS}"
+            )
+            return {}
+
+        # Security: Validate that all keys and values are reasonable
+        for key, value in metadata.items():
+            if not isinstance(key, str) or len(key) > 256:
+                print(f"Warning: Invalid metadata key: {key}")
+                return {}
+
+            # Allow reasonable value types and sizes
+            # Note: PQC private keys can be large when base64 encoded (up to ~15KB for largest keys)
+            MAX_VALUE_SIZE = 64 * 1024  # 64KB per individual metadata value
+
+            if isinstance(value, str) and len(value) > MAX_VALUE_SIZE:
+                print(
+                    f"Warning: Metadata value too long for key '{key}' ({len(value)} chars, max {MAX_VALUE_SIZE})"
+                )
+                return {}
+            elif isinstance(value, (list, dict)) and len(str(value)) > MAX_VALUE_SIZE:
+                print(
+                    f"Warning: Complex metadata value too large for key '{key}' ({len(str(value))} chars, max {MAX_VALUE_SIZE})"
+                )
+                return {}
+
         return metadata
+
     except Exception as e:
         print(f"Error parsing metadata: {e}")
         return {}

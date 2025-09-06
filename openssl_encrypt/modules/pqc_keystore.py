@@ -163,9 +163,25 @@ class PQCKeystore:
             with open(self.keystore_path, "rb") as f:
                 encrypted_data = f.read()
 
-            # Parse the encrypted data
+            # Parse the encrypted data with secure validation (MED-8 fix)
             header_size = int.from_bytes(encrypted_data[:4], byteorder="big")
-            header = json.loads(encrypted_data[4 : 4 + header_size].decode("utf-8"))
+            header_json = encrypted_data[4 : 4 + header_size].decode("utf-8")
+            try:
+                from .json_validator import (
+                    JSONSecurityError,
+                    JSONValidationError,
+                    secure_json_loads,
+                )
+
+                header = secure_json_loads(header_json)
+            except (JSONSecurityError, JSONValidationError) as e:
+                raise ValidationError(f"Keystore header validation failed: {e}")
+            except ImportError:
+                # Fallback to basic JSON loading if validator not available
+                try:
+                    header = json.loads(header_json)
+                except json.JSONDecodeError as e:
+                    raise ValidationError(f"Invalid JSON in keystore header: {e}")
             ciphertext = encrypted_data[4 + header_size :]
 
             # Extract parameters
@@ -275,8 +291,24 @@ class PQCKeystore:
                             # Raise the original error
                             raise e1
 
-            # Parse the decrypted data
-            self.keystore_data = json.loads(plaintext.decode("utf-8"))
+            # Parse the decrypted data with secure validation (MED-8 fix)
+            plaintext_json = plaintext.decode("utf-8")
+            try:
+                from .json_validator import (
+                    JSONSecurityError,
+                    JSONValidationError,
+                    secure_keystore_loads,
+                )
+
+                self.keystore_data = secure_keystore_loads(plaintext_json)
+            except (JSONSecurityError, JSONValidationError) as e:
+                raise ValidationError(f"Keystore data validation failed: {e}")
+            except ImportError:
+                # Fallback to basic JSON loading if validator not available
+                try:
+                    self.keystore_data = json.loads(plaintext_json)
+                except json.JSONDecodeError as e:
+                    raise ValidationError(f"Invalid JSON in keystore data: {e}")
 
             # Store the derived key for later use (cached)
             self.master_key = bytes(derived_key)
