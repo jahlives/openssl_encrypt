@@ -137,20 +137,11 @@ docker-test-base:
     - echo "=== Testing Python liboqs Base Image ==="
     - python --version
     - echo "Testing liboqs availability..."
-    - python -c "import oqs; print(f'✓ liboqs version: {oqs.oqs_version()}')"
-    - python -c "import oqs; print(f'✓ Available KEMs: {len(oqs.get_enabled_KEM_mechanisms())}')"
-    - python -c "import oqs; print(f'✓ Available Signatures: {len(oqs.get_enabled_sig_mechanisms())}')"
+    - python -c "import oqs; print('✓ liboqs version:', oqs.oqs_version())"
+    - python -c "import oqs; print('✓ Available KEMs:', len(oqs.get_enabled_KEM_mechanisms()))"  
+    - python -c "import oqs; print('✓ Available Signatures:', len(oqs.get_enabled_sig_mechanisms()))"
     - echo "Testing basic KEM operations..."
-    - |
-      python -c "
-      import oqs
-      kem = oqs.KeyEncapsulation('Kyber512')
-      public_key, secret_key = kem.generate_keypair()
-      ciphertext, shared_secret = kem.encap(public_key) 
-      decrypted_secret = kem.decap(secret_key, ciphertext)
-      assert shared_secret == decrypted_secret
-      print('✓ Basic KEM test passed')
-      "
+    - python -c "import oqs; kem = oqs.KeyEncapsulation('Kyber512'); pk, sk = kem.generate_keypair(); ct, ss1 = kem.encap(pk); ss2 = kem.decap(sk, ct); assert ss1 == ss2; print('✓ Basic KEM test passed')"
     - echo "=== Base image test completed successfully! ==="
   rules:
     # Test after successful build
