@@ -188,12 +188,12 @@ print('✓ liboqs version:', oqs.oqs_version())
 print('✓ Available KEMs:', len(oqs.get_enabled_kem_mechanisms()))
 print('✓ Available Signatures:', len(oqs.get_enabled_sig_mechanisms()))
 
-# Test basic KEM operations
+# Test basic KEM operations  
 kem = oqs.KeyEncapsulation('Kyber512')
-pk, sk = kem.generate_keypair()
-ct, ss1 = kem.encap(pk)
-ss2 = kem.decap(sk, ct)
-assert ss1 == ss2
+public_key = kem.generate_keypair()
+ciphertext, shared_secret_1 = kem.encap_secret(public_key)
+shared_secret_2 = kem.decap_secret(ciphertext)
+assert shared_secret_1 == shared_secret_2
 print('✓ Basic KEM test passed')
 print('✓ Base image is working correctly!')
 "
