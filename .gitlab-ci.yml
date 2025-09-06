@@ -1,12 +1,10 @@
-# Include Docker build jobs for scheduled pipelines
+# Include Docker build jobs for scheduled pipelines and manual triggers
 include:
   - local: '.gitlab-ci-docker.yml'
     rules:
       - if: $CI_PIPELINE_SOURCE == "schedule"
       - if: $CI_COMMIT_BRANCH == "dev"
-        when: manual
       - if: $CI_COMMIT_BRANCH == "main"
-        when: manual
 
 default:
   image: python:3.13-alpine
