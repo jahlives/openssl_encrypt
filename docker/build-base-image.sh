@@ -103,7 +103,8 @@ fi
 # Create Dockerfile for base image
 echo "Creating Dockerfile for python-liboqs base image..."
 cat > Dockerfile.base << EOF
-FROM python:${PYTHON_VERSION}-alpine
+# Build stage
+FROM python:${PYTHON_VERSION}-alpine AS builder
 
 # Install build dependencies for liboqs (Alpine Linux packages)
 RUN apk add --no-cache \\
@@ -124,27 +125,28 @@ RUN mkdir build && cd build && \\
     ninja && \\
     ninja install
 
+# Install Python liboqs bindings
+RUN export LD_LIBRARY_PATH="/usr/local/lib" && \\
+    export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig" && \\
+    export OQS_INSTALL_PATH="/usr/local" && \\
+    pip install --no-cache-dir git+https://github.com/open-quantum-safe/liboqs-python.git@${LIBOQS_VERSION}
+
+# Runtime stage
+FROM python:${PYTHON_VERSION}-alpine
+
+# Install minimal runtime dependencies and build tools needed for Python packages
+RUN apk add --no-cache git cmake pkgconfig gcc g++ musl-dev python3-dev
+
+# Copy liboqs libraries and Python bindings from builder
+COPY --from=builder /usr/local/lib/liboqs.so* /usr/local/lib/
+COPY --from=builder /usr/local/lib/pkgconfig/liboqs.pc /usr/local/lib/pkgconfig/
+COPY --from=builder /usr/local/include/oqs/ /usr/local/include/oqs/
+COPY --from=builder /usr/local/lib/python*/site-packages/*oqs* /usr/local/lib/python${PYTHON_VERSION}/site-packages/
+
 # Set environment variables for liboqs discovery
 ENV LD_LIBRARY_PATH="/usr/local/lib"
 ENV PKG_CONFIG_PATH="/usr/local/lib/pkgconfig"
 ENV OQS_INSTALL_PATH="/usr/local"
-
-# Debug what we actually built
-RUN echo "=== Checking liboqs installation ===" && \\
-    ls -la /usr/local/lib/liboqs* && \\
-    ls -la /usr/local/lib/pkgconfig/liboqs* && \\
-    pkg-config --exists liboqs && echo "pkg-config found liboqs" || echo "pkg-config CANNOT find liboqs" && \\
-    pkg-config --cflags --libs liboqs || echo "No pkg-config info"
-
-# Install Python liboqs bindings using pip with proper environment
-RUN export LD_LIBRARY_PATH="/usr/local/lib" && \\
-    export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig" && \\
-    pip install --no-cache-dir git+https://github.com/open-quantum-safe/liboqs-python.git@${LIBOQS_VERSION} && \\
-    python -c "import oqs; print('✓ oqs module installed successfully')" || echo "❌ oqs module import failed"
-
-# Clean up build artifacts but keep essential tools that oqs module needs
-RUN apk del gcc g++ ninja make go && \\
-    rm -rf /build /var/cache/apk/*
 
 # Verify liboqs installation
 RUN python -c "import oqs; print('liboqs version:', oqs.oqs_version())" && \\
