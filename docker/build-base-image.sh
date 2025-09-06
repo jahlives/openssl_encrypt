@@ -46,20 +46,58 @@ else
     exit 1
 fi
 
-# Check if user is logged in to GitLab Container Registry
-echo "Checking ${REGISTRY} authentication..."
-if ! ${CONTAINER_CMD} info | grep -q "Username:" 2>/dev/null; then
-    # For podman, check differently as it may not show Username in info
-    if [[ "$CONTAINER_CMD" == "podman" ]]; then
-        echo "⚠️  Please login to GitLab Container Registry first:"
-        echo "   podman login ${REGISTRY}"
-    else
-        echo "⚠️  Please login to GitLab Container Registry first:"
-        echo "   docker login ${REGISTRY}"
+# Handle authentication to GitLab Container Registry
+echo "Setting up ${REGISTRY} authentication..."
+
+# Check for GitLab token in environment variables
+if [[ -n "$GITLAB_TOKEN" ]]; then
+    echo "✓ Using GitLab token from GITLAB_TOKEN environment variable"
+    # Login using token (username can be arbitrary with token auth)
+    echo "$GITLAB_TOKEN" | ${CONTAINER_CMD} login ${REGISTRY} --username gitlab-ci-token --password-stdin
+    if [[ $? -ne 0 ]]; then
+        echo "❌ Failed to authenticate with GitLab token"
+        echo "Please check that your GITLAB_TOKEN is valid and has 'write_registry' scope"
+        exit 1
     fi
-    echo ""
-    echo "Use your GitLab username and a personal access token with 'write_registry' scope"
-    exit 1
+elif [[ -n "$GITLAB_USER" && -n "$GITLAB_PASSWORD" ]]; then
+    echo "✓ Using GitLab credentials from environment variables"
+    echo "$GITLAB_PASSWORD" | ${CONTAINER_CMD} login ${REGISTRY} --username "$GITLAB_USER" --password-stdin
+    if [[ $? -ne 0 ]]; then
+        echo "❌ Failed to authenticate with GitLab credentials"
+        exit 1
+    fi
+else
+    # Check if already logged in
+    if ${CONTAINER_CMD} info | grep -q "Username:" 2>/dev/null; then
+        echo "✓ Already authenticated to registry"
+    else
+        echo "⚠️  Authentication required for GitLab Container Registry"
+        echo ""
+        echo "Choose one of the following options:"
+        echo ""
+        echo "1. Use GitLab Personal Access Token (RECOMMENDED):"
+        echo "   export GITLAB_TOKEN='glpat-your-token-here'"
+        echo "   ./docker/build-base-image.sh"
+        echo ""
+        echo "2. Use username/password:"
+        echo "   export GITLAB_USER='your-username'"
+        echo "   export GITLAB_PASSWORD='your-token-or-password'"
+        echo "   ./docker/build-base-image.sh"
+        echo ""
+        echo "3. Manual login:"
+        if [[ "$CONTAINER_CMD" == "podman" ]]; then
+            echo "   podman login ${REGISTRY}"
+        else
+            echo "   docker login ${REGISTRY}"
+        fi
+        echo ""
+        echo "To create a GitLab Personal Access Token:"
+        echo "  1. Go to GitLab → User Settings → Access Tokens"
+        echo "  2. Name: 'Docker Registry Access'"
+        echo "  3. Scopes: ✓ write_registry (and optionally read_registry)"
+        echo "  4. Copy the token and use as GITLAB_TOKEN"
+        exit 1
+    fi
 fi
 
 # Create Dockerfile for base image

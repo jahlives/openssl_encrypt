@@ -11,7 +11,25 @@ Instead of complex automated Docker-in-Docker builds in GitLab CI, we use a simp
 
 ## Quick Start
 
-### 1. Login to GitLab Container Registry
+### 1. Authentication Setup
+
+**Option A: GitLab Personal Access Token (RECOMMENDED)**
+
+```bash
+# Create token at GitLab → User Settings → Access Tokens with 'write_registry' scope
+export GITLAB_TOKEN='glpat-your-token-here'
+./docker/build-base-image.sh
+```
+
+**Option B: Username/Password**
+
+```bash
+export GITLAB_USER='your-username'
+export GITLAB_PASSWORD='your-token-or-password'  
+./docker/build-base-image.sh
+```
+
+**Option C: Manual Login**
 
 ```bash
 # Use your GitLab username and personal access token with 'write_registry' scope
@@ -24,7 +42,7 @@ podman login registry.rm-rf.ch
 ### 2. Build and Push Base Image
 
 ```bash
-# Run the build script
+# Run the build script (authentication handled automatically)
 ./docker/build-base-image.sh
 ```
 
@@ -78,12 +96,12 @@ You can also use the base image locally for development:
 
 ```bash
 # Pull the latest base image
-docker pull registry.gitlab.com/world/openssl_encrypt/python-liboqs:latest
+docker pull registry.rm-rf.ch/world/openssl_encrypt/python-liboqs:latest
 
 # Run interactively
 docker run -it --rm \
   -v $(pwd):/workspace \
-  registry.gitlab.com/world/openssl_encrypt/python-liboqs:latest \
+  registry.rm-rf.ch/world/openssl_encrypt/python-liboqs:latest \
   sh
 
 # Inside container - liboqs is ready to use
@@ -97,7 +115,7 @@ python -c "import oqs; print(f'KEMs: {len(oqs.get_enabled_KEM_mechanisms())}')"
 If the build fails:
 
 1. **Check Docker daemon**: `docker info`
-2. **Check registry login**: `docker login registry.gitlab.com`
+2. **Check authentication**: Set `GITLAB_TOKEN` or run `docker login registry.rm-rf.ch`
 3. **Check internet connectivity**: The build downloads liboqs from GitHub
 4. **Clear Docker cache**: `docker system prune -a`
 
@@ -107,7 +125,7 @@ If push fails:
 
 1. **Check personal access token** has `write_registry` scope
 2. **Verify project permissions** - you need Developer/Maintainer role
-3. **Try manual push**: `docker push registry.gitlab.com/world/openssl_encrypt/python-liboqs:latest`
+3. **Try manual push**: `docker push registry.rm-rf.ch/world/openssl_encrypt/python-liboqs:latest`
 
 ### CI Issues
 
