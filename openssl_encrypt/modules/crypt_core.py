@@ -2813,6 +2813,45 @@ def encrypt_file(
                 print(f"❌ Failed to generate {sig_algorithm} keypair: {e}")
             raise ValidationError(f"Failed to generate signature keypair: {e}")
 
+    # Handle default configuration when hash_config is None
+    if hash_config is None:
+        # Apply standard security template as default
+        try:
+            from .crypt_cli import get_template_config, SecurityTemplate
+            template_config = get_template_config(SecurityTemplate.STANDARD)
+            # Use flattened structure expected by generate_key
+            hash_config = {}
+            # Add hash algorithms
+            for hash_algo, rounds in template_config["hash_config"].items():
+                if hash_algo not in ["type", "algorithm"]:
+                    hash_config[hash_algo] = rounds
+            # Add KDF configurations  
+            if "scrypt" in template_config["hash_config"]:
+                hash_config["scrypt"] = template_config["hash_config"]["scrypt"]
+            if "argon2" in template_config["hash_config"]:
+                hash_config["argon2"] = template_config["hash_config"]["argon2"]
+            if "hkdf" in template_config["hash_config"]:
+                hash_config["hkdf"] = template_config["hash_config"]["hkdf"]
+            if "randomx" in template_config["hash_config"]:
+                hash_config["randomx"] = template_config["hash_config"]["randomx"]
+            # Set PBKDF2 iterations to 0 since we have other KDFs
+            hash_config["pbkdf2_iterations"] = 0
+        except ImportError:
+            # Fallback to basic configuration if template system not available
+            hash_config = {
+                "sha512": 10000,
+                "sha256": 0,
+                "sha3_256": 10000,
+                "sha3_512": 0,
+                "blake2b": 0,
+                "shake256": 0,
+                "whirlpool": 0,
+                "scrypt": {"enabled": True, "n": 128, "r": 8, "p": 1, "rounds": 5},
+                "argon2": {"enabled": True, "time_cost": 3, "memory_cost": 65536, 
+                          "parallelism": 4, "hash_len": 32, "type": 2, "rounds": 5},
+                "pbkdf2_iterations": 0,
+            }
+
     # Generate a key from the password
     salt = secrets.token_bytes(16)  # Unique salt for each encryption
     if not quiet:

@@ -10499,87 +10499,104 @@ class TestRandomXIntegration(unittest.TestCase):
         # Create test file
         with open(self.test_file, "w", encoding="utf-8") as f:
             f.write("This is a test file for RandomX encryption testing.")
+        
+        # Import the basic config structure that works for comparison (flattened)
+        self.basic_hash_config = {
+            "sha512": 0,  # Reduced from potentially higher values
+            "sha256": 0,
+            "sha3_256": 0,  # Reduced from potentially higher values
+            "sha3_512": 0,
+            "blake2b": 0,  # Added for testing new hash function
+            "shake256": 0,  # Added for testing new hash function
+            "whirlpool": 0,
+            "scrypt": {
+                "enabled": False,
+                "n": 1024,  # Reduced from potentially higher values
+                "r": 8,
+                "p": 1,
+                "rounds": 1,
+            },
+            "argon2": {
+                "enabled": False,
+                "time_cost": 1,
+                "memory_cost": 8192,
+                "parallelism": 1,
+                "hash_len": 32,
+                "type": 2,  # Argon2id
+                "rounds": 1,
+            },
+            "pbkdf2_iterations": 1000,  # Reduced for testing
+        }
             
-        # RandomX test configuration
+        # RandomX test configuration (flattened structure)
         self.randomx_hash_config = {
-            "derivation_config": {
-                "hash_config": {
-                    "sha512": 0,
-                    "sha256": 0,
-                    "sha3_256": 0,
-                    "sha3_512": 0,
-                    "blake2b": 0,
-                    "shake256": 0,
-                    "whirlpool": 0,
-                },
-                "kdf_config": {
-                    "scrypt": {
-                        "enabled": False,
-                        "n": 1024,
-                        "r": 8,
-                        "p": 1,
-                        "rounds": 0,
-                    },
-                    "argon2": {
-                        "enabled": False,
-                        "time_cost": 1,
-                        "memory_cost": 8192,
-                        "parallelism": 1,
-                        "hash_len": 32,
-                        "type": 2,
-                        "rounds": 0,
-                    },
-                    "randomx": {
-                        "enabled": True,
-                        "rounds": 2,
-                        "mode": "light",
-                        "height": 1,
-                        "hash_len": 32,
-                    },
-                    "pbkdf2_iterations": 0,  # Disable PBKDF2 when using RandomX
-                },
-            }
+            "sha512": 0,
+            "sha256": 0,
+            "sha3_256": 0,
+            "sha3_512": 0,
+            "blake2b": 0,
+            "shake256": 0,
+            "whirlpool": 0,
+            "scrypt": {
+                "enabled": False,
+                "n": 1024,
+                "r": 8,
+                "p": 1,
+                "rounds": 0,
+            },
+            "argon2": {
+                "enabled": False,
+                "time_cost": 1,
+                "memory_cost": 8192,
+                "parallelism": 1,
+                "hash_len": 32,
+                "type": 2,
+                "rounds": 0,
+            },
+            "randomx": {
+                "enabled": True,
+                "rounds": 2,
+                "mode": "light",
+                "height": 1,
+                "hash_len": 32,
+            },
+            "pbkdf2_iterations": 0,  # Disable PBKDF2 when using RandomX
         }
         
         # Config with hashes before RandomX (no security warning expected)
+        # Using flattened structure that matches what create_metadata_v5 expects
         self.safe_randomx_config = {
-            "derivation_config": {
-                "hash_config": {
-                    "sha512": 100,  # Prior hashing present
-                    "sha256": 0,
-                    "sha3_256": 0,
-                    "sha3_512": 0,
-                    "blake2b": 0,
-                    "shake256": 0,
-                    "whirlpool": 0,
-                },
-                "kdf_config": {
-                    "scrypt": {
-                        "enabled": False,
-                        "n": 1024,
-                        "r": 8,
-                        "p": 1,
-                        "rounds": 0,
-                    },
-                    "argon2": {
-                        "enabled": False,
-                        "time_cost": 1,
-                        "memory_cost": 8192,
-                        "parallelism": 1,
-                        "hash_len": 32,
-                        "type": 2,
-                        "rounds": 0,
-                    },
-                    "randomx": {
-                        "enabled": True,
-                        "rounds": 1,
-                        "mode": "light",
-                        "height": 1,
-                        "hash_len": 32,
-                    },
-                    "pbkdf2_iterations": 0,  # Disable PBKDF2 when using RandomX
-                },
-            }
+            "sha512": 100,  # Prior hashing present
+            "sha256": 0,
+            "sha3_256": 0,
+            "sha3_512": 0,
+            "blake2b": 0,
+            "shake256": 0,
+            "whirlpool": 0,
+            "scrypt": {
+                "enabled": False,
+                "n": 1024,
+                "r": 8,
+                "p": 1,
+                "rounds": 0,
+            },
+            "argon2": {
+                "enabled": False,
+                "time_cost": 1,
+                "memory_cost": 8192,
+                "parallelism": 1,
+                "hash_len": 32,
+                "type": 2,
+                "rounds": 0,
+            },
+            "randomx": {
+                "enabled": True,
+                "rounds": 1,
+                "mode": "light",
+                "height": 1,
+                "hash_len": 32,
+            },
+            "pbkdf2_iterations": 0,  # Explicitly disable PBKDF2 fallback
         }
 
     def tearDown(self):
@@ -10621,6 +10638,7 @@ class TestRandomXIntegration(unittest.TestCase):
                 encrypted_file, 
                 self.test_password, 
                 self.safe_randomx_config, 
+                pbkdf2_iterations=0,  # Explicitly disable PBKDF2
                 quiet=True,
                 algorithm=EncryptionAlgorithm.AES_GCM
             )
@@ -10665,6 +10683,7 @@ class TestRandomXIntegration(unittest.TestCase):
                 encrypted_file, 
                 self.test_password, 
                 self.safe_randomx_config, 
+                pbkdf2_iterations=0,  # Explicitly disable PBKDF2
                 quiet=True,
                 algorithm=EncryptionAlgorithm.AES_GCM
             )
@@ -10682,19 +10701,14 @@ class TestRandomXIntegration(unittest.TestCase):
             self.assertIn("kdf_config", inner_metadata["derivation_config"], 
                          "derivation_config should contain kdf_config")
             
-            # Debug: Print the actual KDF config to see what's being used
+            # Check RandomX configuration in metadata
             kdf_config = inner_metadata["derivation_config"]["kdf_config"]
-            print(f"DEBUG: KDF config = {kdf_config}")
+            self.assertIn("randomx", kdf_config, "KDF config should contain randomx configuration")
             
-            # Check if RandomX is actually being used (it might be falling back to other KDFs)
-            if "randomx" in kdf_config:
-                randomx_config = kdf_config["randomx"]
-                self.assertTrue(randomx_config["enabled"], "RandomX should be enabled in metadata")
-                self.assertEqual(randomx_config["rounds"], 1, "RandomX rounds should match")
-                self.assertEqual(randomx_config["mode"], "light", "RandomX mode should match")
-            else:
-                # If RandomX is not present, check if other KDFs are being used instead
-                self.fail(f"RandomX not found in KDF config. Available KDFs: {list(kdf_config.keys())}")
+            randomx_config = kdf_config["randomx"]
+            self.assertTrue(randomx_config["enabled"], "RandomX should be enabled in metadata")
+            self.assertEqual(randomx_config["rounds"], 1, "RandomX rounds should match")
+            self.assertEqual(randomx_config["mode"], "light", "RandomX mode should match")
             
         except Exception as e:
             if "RandomX requested but not available" in str(e):
@@ -10747,6 +10761,7 @@ class TestRandomXIntegration(unittest.TestCase):
                 encrypted_file, 
                 self.test_password, 
                 self.randomx_hash_config,  # No prior hashing
+                pbkdf2_iterations=0,  # Explicitly disable PBKDF2
                 quiet=False,  # Don't suppress warnings
                 algorithm=EncryptionAlgorithm.AES_GCM
             )
@@ -10777,6 +10792,7 @@ class TestRandomXIntegration(unittest.TestCase):
                     encrypted_file, 
                     self.test_password, 
                     self.safe_randomx_config,  # Has prior hashing (SHA-512: 100)
+                    pbkdf2_iterations=0,  # Explicitly disable PBKDF2
                     quiet=False,
                     algorithm=EncryptionAlgorithm.AES_GCM
                 )
@@ -10836,15 +10852,16 @@ class TestDefaultConfiguration(unittest.TestCase):
         metadata = extract_file_metadata(encrypted_file)
         self.assertIsNotNone(metadata, "Metadata should be present")
         
-        # Check that default hash configurations are applied
-        hash_config = metadata["derivation_config"]["hash_config"]
+        # Check that default hash configurations are applied (using correct nested structure)
+        inner_metadata = metadata["metadata"]
+        hash_config = inner_metadata["derivation_config"]["hash_config"]
         self.assertEqual(hash_config["sha512"]["rounds"], 10000, 
                         "Default should include 10k SHA-512 rounds")
         self.assertEqual(hash_config["sha3_256"]["rounds"], 10000, 
                         "Default should include 10k SHA3-256 rounds")
         
         # Check that default KDF configurations are applied
-        kdf_config = metadata["derivation_config"]["kdf_config"]
+        kdf_config = inner_metadata["derivation_config"]["kdf_config"]
         self.assertTrue(kdf_config["scrypt"]["enabled"], 
                        "Default should enable Scrypt")
         self.assertEqual(kdf_config["scrypt"]["rounds"], 5, 
