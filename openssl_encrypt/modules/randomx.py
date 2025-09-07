@@ -19,32 +19,75 @@ from typing import Optional
 # Set up module-level logger
 logger = logging.getLogger(__name__)
 
+# Safely test RandomX import to avoid illegal instruction crashes
+def _test_randomx_import():
+    """Test if RandomX can be imported without causing illegal instruction errors."""
+    import subprocess
+    import sys
+    
+    try:
+        # Test RandomX import in a subprocess to catch fatal errors
+        result = subprocess.run([
+            sys.executable, '-c', 
+            'import randomx; print("SUCCESS")'
+        ], capture_output=True, text=True, timeout=10)
+        
+        return result.returncode == 0 and "SUCCESS" in result.stdout
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError):
+        return False
+
+def _test_pyrx_import():
+    """Test if pyrx can be imported without causing illegal instruction errors."""
+    import subprocess
+    import sys
+    
+    try:
+        # Test pyrx import in a subprocess to catch fatal errors
+        result = subprocess.run([
+            sys.executable, '-c', 
+            'import pyrx; print("SUCCESS")'
+        ], capture_output=True, text=True, timeout=10)
+        
+        return result.returncode == 0 and "SUCCESS" in result.stdout
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError):
+        return False
+
 # Try to import RandomX library (try RandomX package first, then pyrx as fallback)
 try:
-    import randomx
-    RANDOMX_AVAILABLE = True
-    RANDOMX_LIBRARY = 'randomx'
-    logger.info("RandomX library loaded successfully")
-except ImportError:
+    # First test if RandomX import is safe
+    if _test_randomx_import():
+        import randomx
+        RANDOMX_AVAILABLE = True
+        RANDOMX_LIBRARY = 'randomx'
+        logger.info("RandomX library loaded successfully")
+    else:
+        raise ImportError("RandomX import test failed - likely CPU incompatibility")
+except (ImportError, SystemError, OSError, Exception) as e:
+    logger.warning(f"RandomX import failed: {e}")
     try:
-        import pyrx
-        # Check if this is the correct RandomX pyrx library (not the schema validator)
-        if hasattr(pyrx, 'get_rx_hash'):
-            randomx = pyrx  # Use pyrx as randomx for compatibility
-            RANDOMX_AVAILABLE = True
-            RANDOMX_LIBRARY = 'pyrx'
-            logger.info("RandomX (pyrx) library loaded successfully")
+        # Test if pyrx import is safe before attempting it
+        if _test_pyrx_import():
+            import pyrx
+            # Check if this is the correct RandomX pyrx library (not the schema validator)
+            if hasattr(pyrx, 'get_rx_hash'):
+                randomx = pyrx  # Use pyrx as randomx for compatibility
+                RANDOMX_AVAILABLE = True
+                RANDOMX_LIBRARY = 'pyrx'
+                logger.info("RandomX (pyrx) library loaded successfully")
+            else:
+                RANDOMX_AVAILABLE = False
+                RANDOMX_LIBRARY = None
+                randomx = None
+                logger.warning("Wrong pyrx library detected (schema validator instead of RandomX). "
+                              "Install correct RandomX: pip install RandomX")
         else:
-            RANDOMX_AVAILABLE = False
-            RANDOMX_LIBRARY = None
-            randomx = None
-            logger.warning("Wrong pyrx library detected (schema validator instead of RandomX). "
-                          "Install correct RandomX: pip install RandomX")
-    except ImportError:
+            raise ImportError("pyrx import test failed - likely CPU incompatibility")
+    except (ImportError, SystemError, OSError, Exception) as e:
         RANDOMX_AVAILABLE = False
         RANDOMX_LIBRARY = None
         randomx = None
-        logger.warning("RandomX library not available - install with: pip install RandomX")
+        logger.warning(f"RandomX library not available or incompatible with CPU architecture: {e}")
+        logger.warning("Install with: pip install RandomX")
 
 # RandomX mode configurations
 RANDOMX_MODES = {

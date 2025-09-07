@@ -175,7 +175,15 @@ echo ""
 echo "Building base image (this may take 10-15 minutes)..."
 echo "Building: ${FULL_IMAGE}"
 
+# Add Docker v2 manifest format for Podman (GitLab registry compatibility)
+if [[ "$CONTAINER_CMD" == "podman" ]]; then
+    BUILD_ARGS="--format docker"
+else
+    BUILD_ARGS=""
+fi
+
 ${CONTAINER_CMD} build \
+    ${BUILD_ARGS} \
     --file docker/Dockerfile.base \
     --tag "${FULL_IMAGE}" \
     --tag "${FULL_IMAGE%:*}:latest" \
@@ -211,10 +219,17 @@ echo "✓ Image test passed!"
 # Push all tags to registry
 echo ""
 echo "Pushing images to GitLab Container Registry..."
-${CONTAINER_CMD} push "${FULL_IMAGE}"
-${CONTAINER_CMD} push "${FULL_IMAGE%:*}:latest"
-${CONTAINER_CMD} push "${FULL_IMAGE%:*}:python${PYTHON_VERSION}-liboqs${LIBOQS_VERSION}"
-${CONTAINER_CMD} push "${FULL_IMAGE%:*}:$(date +%Y%m%d)"
+# Add Docker v2 manifest format for Podman (GitLab registry compatibility)
+if [[ "$CONTAINER_CMD" == "podman" ]]; then
+    PUSH_ARGS="--format v2s2"
+else
+    PUSH_ARGS=""
+fi
+
+${CONTAINER_CMD} push ${PUSH_ARGS} "${FULL_IMAGE}"
+${CONTAINER_CMD} push ${PUSH_ARGS} "${FULL_IMAGE%:*}:latest"
+${CONTAINER_CMD} push ${PUSH_ARGS} "${FULL_IMAGE%:*}:python${PYTHON_VERSION}-liboqs${LIBOQS_VERSION}"
+${CONTAINER_CMD} push ${PUSH_ARGS} "${FULL_IMAGE%:*}:$(date +%Y%m%d)"
 
 echo ""
 echo "========================================="
