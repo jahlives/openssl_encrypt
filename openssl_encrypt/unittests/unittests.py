@@ -10627,8 +10627,19 @@ class TestRandomXIntegration(unittest.TestCase):
         """Clean up test fixtures."""
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
+    def _check_randomx_available(self):
+        """Helper method to skip tests if RandomX is not available."""
+        try:
+            from ..modules.randomx import RANDOMX_AVAILABLE
+            if not RANDOMX_AVAILABLE:
+                self.skipTest("RandomX library not available (CPU incompatibility or missing dependency)")
+        except ImportError:
+            self.skipTest("RandomX module not available")
+
     def test_randomx_availability(self):
         """Test that RandomX module is available and can be loaded."""
+        self._check_randomx_available()
+        
         try:
             from ..modules.randomx import RANDOMX_AVAILABLE, check_randomx_support, get_randomx_info
             
@@ -10651,6 +10662,8 @@ class TestRandomXIntegration(unittest.TestCase):
 
     def test_randomx_encryption_decryption(self):
         """Test that RandomX is properly used in encryption and decryption."""
+        self._check_randomx_available()
+        
         from ..modules.crypt_core import encrypt_file, decrypt_file, EncryptionAlgorithm
         
         encrypted_file = self.test_file + ".enc"
@@ -10696,6 +10709,8 @@ class TestRandomXIntegration(unittest.TestCase):
 
     def test_randomx_metadata_presence(self):
         """Test that RandomX configuration is properly stored in metadata."""
+        self._check_randomx_available()
+        
         from ..modules.crypt_core import encrypt_file, extract_file_metadata, EncryptionAlgorithm
         
         encrypted_file = self.test_file + ".enc"
@@ -10744,6 +10759,8 @@ class TestRandomXIntegration(unittest.TestCase):
     @unittest.mock.patch('sys.exit')
     def test_security_warning_randomx_no_hashing(self, mock_exit, mock_input):
         """Test that security warning appears when RandomX is used without prior hashing."""
+        self._check_randomx_available()
+        
         from ..modules.crypt_core import encrypt_file
         
         encrypted_file = self.test_file + ".enc"
@@ -10774,6 +10791,8 @@ class TestRandomXIntegration(unittest.TestCase):
     @unittest.mock.patch('builtins.input', return_value='y')
     def test_security_warning_randomx_user_accepts(self, mock_input):
         """Test that encryption proceeds when user accepts security warning."""
+        self._check_randomx_available()
+        
         from ..modules.crypt_core import encrypt_file, EncryptionAlgorithm
         
         encrypted_file = self.test_file + ".enc"
@@ -10804,6 +10823,8 @@ class TestRandomXIntegration(unittest.TestCase):
 
     def test_no_security_warning_with_prior_hashing(self):
         """Test that no security warning appears when RandomX is used with prior hashing."""
+        self._check_randomx_available()
+        
         from ..modules.crypt_core import encrypt_file, EncryptionAlgorithm
         
         encrypted_file = self.test_file + ".enc"
