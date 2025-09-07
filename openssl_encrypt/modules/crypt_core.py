@@ -1686,6 +1686,11 @@ def generate_key(
         password = multi_hash_password(
             password, salt, hash_config, quiet, progress=progress, debug=debug
         )
+    else:
+        # Even when no hash iterations are configured, we need to combine password with salt
+        # for consistency with the original key derivation behavior
+        password = password + salt
+    
     # Check if Argon2 is available on the system
     argon2_available = ARGON2_AVAILABLE
 
@@ -2814,7 +2819,9 @@ def encrypt_file(
             raise ValidationError(f"Failed to generate signature keypair: {e}")
 
     # Handle default configuration when hash_config is None
-    if hash_config is None:
+    # Only apply defaults during encryption, not decryption
+    is_decryption = hash_config and hash_config.get("_is_from_decryption_metadata", False)
+    if hash_config is None and not is_decryption:
         # Apply standard security template as default
         try:
             from .crypt_cli import get_template_config, SecurityTemplate
