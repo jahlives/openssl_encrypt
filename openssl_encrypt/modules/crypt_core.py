@@ -2328,6 +2328,11 @@ def generate_key(
         ))
     )
     
+    # Debug logging for fallback logic (always log for debugging)
+    logger.debug(f"KDF fallback check - any_kdf_requested: {any_kdf_requested}, KeyStretch.key_stretch: {KeyStretch.key_stretch}")
+    if any_kdf_requested:
+        logger.debug(f"KDF request details - hash_config keys: {list(hash_config.keys()) if hash_config else 'None'}")
+    
     # If KDFs were requested but none succeeded, apply default PBKDF2 as fallback
     if any_kdf_requested and not KeyStretch.key_stretch:
         if not quiet:
