@@ -5,7 +5,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+cd "$SCRIPT_DIR/.."
 
 # Configuration
 PYTHON_VERSION="3.13"
@@ -102,7 +102,7 @@ fi
 
 # Create Dockerfile for base image
 echo "Creating Dockerfile for python-liboqs base image..."
-cat > Dockerfile.base << EOF
+cat > docker/Dockerfile.base << EOF
 # Build stage
 FROM python:${PYTHON_VERSION}-alpine AS builder
 
@@ -131,17 +131,23 @@ RUN export LD_LIBRARY_PATH="/usr/local/lib" && \\
     export OQS_INSTALL_PATH="/usr/local" && \\
     pip install --no-cache-dir git+https://github.com/open-quantum-safe/liboqs-python.git@${LIBOQS_VERSION}
 
+# Copy and install project requirements in builder (with build tools available)
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt --break-system-packages
+
 # Runtime stage
 FROM python:${PYTHON_VERSION}-alpine
 
-# Install minimal runtime dependencies and build tools needed for Python packages
-RUN apk add --no-cache git cmake pkgconfig gcc g++ musl-dev python3-dev
+# Install minimal runtime dependencies (no build tools!)
+RUN apk add --no-cache openssl libstdc++ libgcc
 
 # Copy liboqs libraries and Python bindings from builder
 COPY --from=builder /usr/local/lib/liboqs.so* /usr/local/lib/
 COPY --from=builder /usr/local/lib/pkgconfig/liboqs.pc /usr/local/lib/pkgconfig/
 COPY --from=builder /usr/local/include/oqs/ /usr/local/include/oqs/
-COPY --from=builder /usr/local/lib/python*/site-packages/*oqs* /usr/local/lib/python${PYTHON_VERSION}/site-packages/
+
+# Copy ALL Python packages from builder (compiled with build tools)
+COPY --from=builder /usr/local/lib/python${PYTHON_VERSION}/site-packages/ /usr/local/lib/python${PYTHON_VERSION}/site-packages/
 
 # Set environment variables for liboqs discovery
 ENV LD_LIBRARY_PATH="/usr/local/lib"
@@ -170,7 +176,7 @@ echo "Building base image (this may take 10-15 minutes)..."
 echo "Building: ${FULL_IMAGE}"
 
 ${CONTAINER_CMD} build \
-    --file Dockerfile.base \
+    --file docker/Dockerfile.base \
     --tag "${FULL_IMAGE}" \
     --tag "${FULL_IMAGE%:*}:latest" \
     --tag "${FULL_IMAGE%:*}:python${PYTHON_VERSION}-liboqs${LIBOQS_VERSION}" \
@@ -224,5 +230,5 @@ echo "Your CI pipelines can now use this fresh base image."
 echo "The image will be available for about 2-3 minutes after pushing."
 
 # Cleanup
-rm -f Dockerfile.base
+rm -f docker/Dockerfile.base
 echo "✓ Cleanup completed"

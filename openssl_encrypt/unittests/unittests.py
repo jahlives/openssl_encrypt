@@ -3895,11 +3895,26 @@ class TestPostQuantumCrypto(unittest.TestCase):
                 encrypt_file_with_keystore,
             )
 
+            # Use a simple hash config to avoid relying on complex default template
+            hash_config = {
+                "sha512": 100,  # Simple config like the other tests
+                "sha256": 0,
+                "sha3_256": 0,
+                "sha3_512": 0,
+                "blake2b": 0,
+                "shake256": 0,
+                "whirlpool": 0,
+                "scrypt": {"enabled": False, "n": 1024, "r": 8, "p": 1},
+                "argon2": {"enabled": False},
+                "pbkdf2_iterations": 1000,
+            }
+
             # Encrypt the file with dual encryption
             result = encrypt_file_with_keystore(
                 input_file=self.test_file,
                 output_file=encrypted_file,
                 password=file_password,
+                hash_config=hash_config,
                 keystore_file=keystore_file,
                 keystore_password=keystore_password,
                 key_id=key_id,
@@ -3928,9 +3943,12 @@ class TestPostQuantumCrypto(unittest.TestCase):
             self.assertTrue(result)
             self.assertTrue(os.path.exists(decrypted_file))
 
-            # Verify the content
-            with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
-                self.assertEqual(original.read(), decrypted.read())
+            # Verify the content (read as binary to avoid Unicode issues)
+            with open(self.test_file, "rb") as original, open(decrypted_file, "rb") as decrypted:
+                original_content = original.read()
+                decrypted_content = decrypted.read()
+                
+                self.assertEqual(original_content, decrypted_content)
 
         except ImportError as e:
             self.skipTest(f"Keystore wrapper functions not available: {e}")
@@ -4137,9 +4155,12 @@ class TestPostQuantumCrypto(unittest.TestCase):
         self.assertTrue(result)
         self.assertTrue(os.path.exists(decrypted_file))
 
-        # Verify the content
-        with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
-            self.assertEqual(original.read(), decrypted.read())
+        # Verify the content (read as binary to avoid Unicode issues)
+        with open(self.test_file, "rb") as original, open(decrypted_file, "rb") as decrypted:
+            original_content = original.read()
+            decrypted_content = decrypted.read()
+            
+            self.assertEqual(original_content, decrypted_content)
 
     def test_pqc_dual_encryption_auto_key(self):
         """Test PQC auto-generated key with dual encryption."""
@@ -4242,9 +4263,12 @@ class TestPostQuantumCrypto(unittest.TestCase):
         self.assertTrue(result)
         self.assertTrue(os.path.exists(decrypted_file))
 
-        # Verify the content
-        with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
-            self.assertEqual(original.read(), decrypted.read())
+        # Verify the content (read as binary to avoid Unicode issues)
+        with open(self.test_file, "rb") as original, open(decrypted_file, "rb") as decrypted:
+            original_content = original.read()
+            decrypted_content = decrypted.read()
+            
+            self.assertEqual(original_content, decrypted_content)
 
 
 # Generate dynamic pytest tests for each test file
