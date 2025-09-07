@@ -139,7 +139,7 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt --break-system-packages
 FROM python:${PYTHON_VERSION}-alpine
 
 # Install minimal runtime dependencies (no build tools!)
-RUN apk add --no-cache openssl
+RUN apk add --no-cache openssl libstdc++ libgcc
 
 # Copy liboqs libraries and Python bindings from builder
 COPY --from=builder /usr/local/lib/liboqs.so* /usr/local/lib/

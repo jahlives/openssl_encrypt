@@ -48,5 +48,7 @@ podman run --rm -it \
         
         echo ''
         echo 'Running unittests...'
+        # Ensure PYTEST_CURRENT_TEST is set for test mode detection
+        export PYTEST_CURRENT_TEST=1
         python -m pytest openssl_encrypt/unittests/unittests.py -v --tb=short $PYTEST_ARGS
     "
