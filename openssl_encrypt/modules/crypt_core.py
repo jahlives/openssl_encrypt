@@ -2311,6 +2311,51 @@ def generate_key(
             KeyStretch.key_stretch = True
             show_progress("PBKDF2", i + 1, use_pbkdf2)
 
+    # Check if any KDF was requested but none were successful
+    # This handles cases where KDFs like RandomX fail due to unavailability
+    any_kdf_requested = (
+        (hash_config and hash_config.get("randomx", {}).get("enabled", False)) or
+        (hash_config and hash_config.get("argon2", {}).get("enabled", False)) or
+        (hash_config and hash_config.get("scrypt", {}).get("enabled", False)) or
+        (hash_config and hash_config.get("balloon", {}).get("enabled", False)) or
+        (hash_config and hash_config.get("hkdf", {}).get("enabled", False)) or
+        (hash_config and (
+            hash_config.get("derivation_config", {}).get("kdf_config", {}).get("randomx", {}).get("enabled", False) or
+            hash_config.get("derivation_config", {}).get("kdf_config", {}).get("argon2", {}).get("enabled", False) or
+            hash_config.get("derivation_config", {}).get("kdf_config", {}).get("scrypt", {}).get("enabled", False) or
+            hash_config.get("derivation_config", {}).get("kdf_config", {}).get("balloon", {}).get("enabled", False) or
+            hash_config.get("derivation_config", {}).get("kdf_config", {}).get("hkdf", {}).get("enabled", False)
+        ))
+    )
+    
+    # If KDFs were requested but none succeeded, apply default PBKDF2 as fallback
+    if any_kdf_requested and not KeyStretch.key_stretch:
+        if not quiet:
+            print("⚠️ Requested KDFs failed, applying default PBKDF2 fallback")
+        
+        # Apply default PBKDF2 with 100000 iterations
+        default_pbkdf2_iterations = 100000
+        base_salt = salt
+        
+        for i in range(default_pbkdf2_iterations):
+            iteration_specific_salt = hashlib.sha256(base_salt + str(i).encode("utf-8")).digest()
+            password = PBKDF2HMAC(
+                algorithm=hashes.SHA256(),
+                length=key_length,
+                salt=iteration_specific_salt,
+                iterations=1,
+                backend=default_backend(),
+            ).derive(password)
+            
+            # Update progress every 10000 iterations for default PBKDF2
+            if not quiet and i > 0 and i % 10000 == 0 and not progress:
+                print(".", end="", flush=True)
+        
+        if not quiet and not progress:
+            print(" ✅")
+        KeyStretch.key_stretch = True
+        show_progress("PBKDF2 (fallback)", default_pbkdf2_iterations, default_pbkdf2_iterations)
+
     if not KeyStretch.key_stretch and not KeyStretch.hash_stretch:
         if algorithm in [
             EncryptionAlgorithm.AES_GCM.value,
