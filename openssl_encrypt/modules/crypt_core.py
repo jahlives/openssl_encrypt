@@ -2627,8 +2627,10 @@ def create_metadata_v5(
             metadata["derivation_config"]["hash_config"][algo] = {"rounds": hash_config[algo]}
 
     # Add PBKDF2 config if used
-    if pbkdf2_iterations > 0:
-        metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {"rounds": pbkdf2_iterations}
+    # Use the effective pbkdf2_iterations from hash_config if available (for default template compatibility)
+    effective_pbkdf2_iterations = hash_config.get("pbkdf2_iterations", pbkdf2_iterations)
+    if effective_pbkdf2_iterations > 0:
+        metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {"rounds": effective_pbkdf2_iterations}
 
     # Move KDF configurations from hash_config if present
     kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf", "randomx"]
@@ -3696,26 +3698,16 @@ def decrypt_file(
         pbkdf2_config = kdf_config.get("pbkdf2", {})
         pbkdf2_iterations = pbkdf2_config.get("rounds", 0)
 
-        # Check if other KDFs are enabled to determine if PBKDF2 should be used
-        has_other_kdfs = any(
-            kdf_config.get(kdf, {}).get("enabled", False) 
-            for kdf in ["scrypt", "argon2", "balloon", "hkdf", "randomx"]
-        )
-
         # Merge KDF configurations into hash_config for compatibility with generate_key
         for kdf_name, kdf_params in kdf_config.items():
             if kdf_name in ["scrypt", "argon2", "balloon", "hkdf", "randomx"]:
                 hash_config[kdf_name] = kdf_params
             elif kdf_name == "pbkdf2" and isinstance(kdf_params, dict) and "rounds" in kdf_params:
-                # Only add pbkdf2 config if no other KDFs are enabled (same logic as default template)
-                if not has_other_kdfs:
-                    hash_config["pbkdf2"] = kdf_params
+                # Store pbkdf2 config from metadata
+                hash_config["pbkdf2"] = kdf_params
 
         # Add pbkdf2_iterations for consistency with generate_key expectations
-        if has_other_kdfs:
-            hash_config["pbkdf2_iterations"] = 0
-        else:
-            hash_config["pbkdf2_iterations"] = pbkdf2_iterations
+        hash_config["pbkdf2_iterations"] = pbkdf2_iterations
         # Mark this hash_config as coming from decryption metadata
         hash_config["_is_from_decryption_metadata"] = True
 

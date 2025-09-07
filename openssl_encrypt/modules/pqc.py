@@ -26,6 +26,9 @@ from .algorithm_warnings import (
 )
 from .secure_memory import SecureBytes, secure_memzero, secure_string
 
+# Set up module-level logger
+logger = logging.getLogger(__name__)
+
 
 def public_key_part(private_key: bytes) -> bytes:
     """
@@ -541,7 +544,6 @@ class PQCipher:
             raise ValueError("This method is only supported for KEM algorithms")
 
         if self.debug:
-            logger = logging.getLogger(__name__)
             logger.debug(f"ENCRYPT:PQC_KEM Algorithm: {self.algorithm_name}")
             logger.debug(f"ENCRYPT:PQC_KEM Public key length: {len(public_key)} bytes")
             logger.debug(f"ENCRYPT:PQC_KEM Input data length: {len(data)} bytes")
@@ -665,7 +667,6 @@ class PQCipher:
             raise ValueError("This method is only supported for KEM algorithms")
 
         if self.debug:
-            logger = logging.getLogger(__name__)
             logger.debug(f"DECRYPT:PQC_KEM Algorithm: {self.algorithm_name}")
             logger.debug(f"DECRYPT:PQC_KEM Private key length: {len(private_key)} bytes")
             logger.debug(f"DECRYPT:PQC_KEM Encrypted data length: {len(encrypted_data)} bytes")
@@ -684,7 +685,6 @@ class PQCipher:
                 shared_secret_len = kem.length_shared_secret
                 
                 if self.debug:
-                    logger = logging.getLogger(__name__)
                     logger.debug(f"DECRYPT:PQC_KEM encrypted_data length: {len(encrypted_data)}")
                     logger.debug(f"DECRYPT:PQC_KEM kem_ciphertext_size: {kem_ciphertext_size}")
                     logger.debug(f"DECRYPT:PQC_KEM encrypted_data starts with: {encrypted_data[:50]}")
@@ -725,8 +725,7 @@ class PQCipher:
                 elif encrypted_data.startswith(testdata_marker):
                     # Handle TESTDATA format - this is the old test format
                     if self.debug:
-                        logger = logging.getLogger(__name__)
-                        logger.debug("DECRYPT:PQC_KEM Detected TESTDATA format, processing test data")
+                                    logger.debug("DECRYPT:PQC_KEM Detected TESTDATA format, processing test data")
                     
                     # Extract the test data - format is TESTDATA + length + data
                     data_len_bytes = encrypted_data[8:12]
@@ -796,8 +795,7 @@ class PQCipher:
 
                 # Check for our special test marker in the encapsulated key
                 if self.debug:
-                    logger = logging.getLogger(__name__)
-                    logger.debug(f"DECRYPT:PQC_KEM Encapsulated key starts with: {encapsulated_key[:20]}")
+                            logger.debug(f"DECRYPT:PQC_KEM Encapsulated key starts with: {encapsulated_key[:20]}")
                 if encapsulated_key.startswith(b"TESTDATA"):
                     # In test environment with negative test patterns, we should prevent recovery
                     is_negative_test = False
