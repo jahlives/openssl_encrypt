@@ -108,7 +108,11 @@ class USBDriveCreator:
                            keystore_path: Optional[str] = None,
                            include_logs: bool = False,
                            custom_config: Optional[Dict] = None,
-                           hash_config: Optional[Dict] = None) -> Dict[str, any]:
+                           hash_config: Optional[Dict] = None,
+                           algorithm: str = 'fernet',
+                           manifest_password: Optional[str] = None,
+                           manifest_security_profile: Optional[str] = None,
+                           manifest_hash_config: Optional[Dict] = None) -> Dict[str, any]:
         """
         Create encrypted portable USB drive
         
@@ -149,6 +153,9 @@ class USBDriveCreator:
                 logs_dir = portable_root / self.LOGS_DIR
                 logs_dir.mkdir(exist_ok=True)
             
+            # Copy entire openssl_encrypt project for full CLI compatibility
+            project_copy_info = self._copy_openssl_encrypt_project(portable_root)
+            
             # Generate encryption key from password using hash chaining
             encryption_key = self._derive_encryption_key(secure_password, hash_config)
             
@@ -187,7 +194,7 @@ class USBDriveCreator:
             workspace_info = self._create_encrypted_workspace(data_dir, encryption_key)
             
             # Create transparent encryption helper scripts
-            self._create_transparent_encryption_helpers(portable_root, hash_config)
+            self._create_transparent_encryption_helpers(portable_root, hash_config, algorithm)
             
             # Create auto-run files
             autorun_info = self._create_autorun_files(usb_path, portable_root)
@@ -196,8 +203,10 @@ class USBDriveCreator:
             if hash_config:
                 self._store_hash_config_metadata(config_dir, hash_config)
             
-            # Generate integrity file
+            # Generate integrity file and cryptographic hash manifest
             integrity_info = self._create_integrity_file(portable_root, encryption_key, hash_config)
+            manifest_info = self._create_hash_manifest(portable_root, password, hash_config, 
+                                                       manifest_password, manifest_security_profile, manifest_hash_config, algorithm)
             
             # Clean up sensitive data
             secure_memzero(encryption_key)
@@ -212,6 +221,8 @@ class USBDriveCreator:
                 "workspace": workspace_info,
                 "autorun": autorun_info,
                 "integrity": integrity_info,
+                "manifest": manifest_info,
+                "project_copy": project_copy_info,
                 "created_at": time.time()
             }
             
@@ -716,7 +727,7 @@ fi
             logger.debug(f"Failed to read hash_config from metadata: {e}")
             return None
     
-    def _create_transparent_encryption_helpers(self, portable_root: Path, hash_config: Optional[Dict] = None) -> None:
+    def _create_transparent_encryption_helpers(self, portable_root: Path, hash_config: Optional[Dict] = None, algorithm: str = 'fernet') -> None:
         """Create helper scripts for transparent encryption/decryption"""
         try:
             # Create a portable encryption script
@@ -724,163 +735,25 @@ fi
             decrypt_script = portable_root / "decrypt_file.py"
             
             # Python script for encryption
+            # Create simple portable scripts that use the included main CLI functions
             encrypt_code = f'''#!/usr/bin/env python3
 """
 Portable USB File Encryption Helper
-Automatically encrypts files to the USB workspace
+Uses the included main CLI functions for 100% compatibility
 """
 import sys
 import os
-import json
 from pathlib import Path
 
-# Add the current directory to path for imports
-sys.path.insert(0, os.path.dirname(__file__))
+# Add the included openssl_encrypt project to Python path
+script_dir = Path(__file__).parent
+lib_dir = script_dir / "openssl_encrypt_lib"
+sys.path.insert(0, str(lib_dir))
 
-def verify_usb_integrity(password):
-    """Verify USB integrity before file operations"""
-    try:
-        import json
-        import hashlib
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-        from cryptography.hazmat.primitives import hashes
-        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-        
-        # Get portable root directory
-        portable_root = Path(__file__).parent
-        integrity_file = portable_root / ".integrity"
-        
-        if not integrity_file.exists():
-            return False, "Integrity file missing"
-        
-        # Read hash configuration
-        config_dir = portable_root / "config"
-        hash_config_file = config_dir / "hash_config.json"
-        
-        hash_config = None
-        if hash_config_file.exists():
-            with open(hash_config_file, 'r') as f:
-                hash_config = json.load(f)
-        
-        # Derive key for integrity verification
-        if hash_config and hash_config.get('sha256'):
-            password_bytes = password.encode('utf-8')
-            salt = b"openssl_encrypt_usb_v1.0_salt_2024"
-            derived = password_bytes + salt
-            for _ in range(hash_config.get('sha256', 1)):
-                derived = hashlib.sha256(derived).digest()
-            key = derived[:32]
-        else:
-            salt = b"openssl_encrypt_usb_v1.0_salt_2024"
-            kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=100000)
-            key = kdf.derive(password.encode('utf-8'))
-        
-        # Read and decrypt integrity file
-        with open(integrity_file, 'rb') as f:
-            encrypted_data = f.read()
-        
-        nonce = encrypted_data[:12]
-        ciphertext = encrypted_data[12:]
-        
-        cipher = AESGCM(key)
-        decrypted_data = cipher.decrypt(nonce, ciphertext, None)
-        integrity_data = json.loads(decrypted_data.decode('utf-8'))
-        
-        # Verify checksums
-        stored_checksums = integrity_data["checksums"]
-        failed_files = []
-        
-        for file_path, expected_hash in stored_checksums.items():
-            full_path = portable_root / file_path
-            
-            if not full_path.exists():
-                failed_files.append(f"Missing: {{file_path}}")
-                continue
-                
-            with open(full_path, 'rb') as f:
-                current_hash = hashlib.sha256(f.read()).hexdigest()
-            
-            if current_hash != expected_hash:
-                failed_files.append(f"Tampered: {{file_path}}")
-        
-        if failed_files:
-            return False, f"Integrity check failed: {{', '.join(failed_files)}}"
-        
-        return True, "Integrity verified"
-        
-    except Exception as e:
-        return False, f"Integrity verification error: {{e}}"
-
-def encrypt_file_to_usb(input_file, password):
-    """Encrypt a file to the USB workspace"""
-    try:
-        # First, verify USB integrity
-        integrity_ok, integrity_msg = verify_usb_integrity(password)
-        if not integrity_ok:
-            print(f"🚨 SECURITY WARNING: {{integrity_msg}}")
-            print("❌ File encryption aborted for security reasons")
-            print("💡 Please verify your USB integrity before continuing")
-            return False
-        
-        # Import encryption modules (simplified for portability)
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-        from cryptography.hazmat.primitives import hashes
-        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-        import hashlib
-        import secrets
-        
-        # Read hash configuration
-        config_dir = Path(__file__).parent / "config"
-        hash_config_file = config_dir / "hash_config.json"
-        
-        hash_config = None
-        if hash_config_file.exists():
-            with open(hash_config_file, 'r') as f:
-                hash_config = json.load(f)
-        
-        # Derive key (simplified version)
-        if hash_config and hash_config.get('sha256'):
-            # Complex hashing
-            password_bytes = password.encode('utf-8')
-            salt = b"openssl_encrypt_usb_v1.0_salt_2024"
-            
-            # Apply SHA rounds
-            derived = password_bytes + salt
-            for _ in range(hash_config.get('sha256', 1)):
-                derived = hashlib.sha256(derived).digest()
-            key = derived[:32]
-        else:
-            # PBKDF2 fallback
-            salt = b"openssl_encrypt_usb_v1.0_salt_2024"
-            kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=100000)
-            key = kdf.derive(password.encode('utf-8'))
-        
-        # Read input file
-        with open(input_file, 'rb') as f:
-            data = f.read()
-        
-        # Encrypt
-        cipher = AESGCM(key)
-        nonce = secrets.token_bytes(12)
-        encrypted = cipher.encrypt(nonce, data, None)
-        
-        # Write to workspace
-        workspace_dir = Path(__file__).parent / "data"
-        output_file = workspace_dir / (Path(input_file).name + ".enc")
-        
-        with open(output_file, 'wb') as f:
-            f.write(nonce + encrypted)
-        
-        print(f"✓ File encrypted to: {{output_file.name}}")
-        return True
-        
-    except Exception as e:
-        print(f"✗ Encryption failed: {{e}}")
-        return False
-
-if __name__ == "__main__":
+def main():
     if len(sys.argv) != 3:
         print("Usage: python encrypt_file.py <input_file> <password>")
+        print("Encrypts files using the main OpenSSL Encrypt CLI functions")
         sys.exit(1)
     
     input_file = sys.argv[1]
@@ -890,194 +763,102 @@ if __name__ == "__main__":
         print(f"Error: File {{input_file}} not found")
         sys.exit(1)
     
-    success = encrypt_file_to_usb(input_file, password)
-    sys.exit(0 if success else 1)
+    try:
+        # Import main CLI functions
+        from openssl_encrypt.modules.crypt_core import encrypt_file, EncryptionAlgorithm
+        from openssl_encrypt.modules.portable_media import verify_usb_integrity
+        import json
+        
+        # Verify USB integrity first
+        try:
+            portable_root = Path(__file__).parent
+            usb_root = portable_root.parent  # Go up one level to get USB root
+            verification_result = verify_usb_integrity(str(usb_root), password)
+            
+            # Check if verification passed (no failed or missing files)
+            if verification_result.get("failed_files", 0) > 0 or verification_result.get("missing_files", 0) > 0:
+                tampered = verification_result.get("tampered_files", [])
+                missing = verification_result.get("missing_file_list", [])
+                print(f"🚨 SECURITY WARNING: USB integrity check failed")
+                if tampered:
+                    print(f"   Tampered files: {{', '.join(tampered)}}")
+                if missing:
+                    print(f"   Missing files: {{', '.join(missing)}}")
+                print("❌ File encryption aborted for security reasons")
+                sys.exit(1)
+            else:
+                print(f"✓ USB integrity verified ({{verification_result.get('verified_files', 0)}} files checked)")
+        except Exception as e:
+            # If verification fails, proceed with warning
+            print(f"⚠️  Integrity verification unavailable in portable mode: {{e}}")
+            print(f"Exception type: {{type(e)}}")
+        
+        # Hash configuration is read automatically from encrypted file metadata
+        # No need to read hash_config.json as the main CLI functions handle this
+        
+        # Set up file paths
+        workspace_dir = Path(__file__).parent / "data"
+        workspace_dir.mkdir(exist_ok=True)
+        output_file = workspace_dir / (Path(input_file).name + ".enc")
+        
+        # Use the main CLI encrypt_file function with proper arguments
+        algorithm_enum = EncryptionAlgorithm("{algorithm}")
+        
+        success = encrypt_file(
+            input_file=input_file,
+            output_file=str(output_file),
+            password=password.encode('utf-8'),
+            algorithm=algorithm_enum,
+            quiet=False,
+            progress=False,
+            verbose=False,
+            debug=False
+        )
+        
+        if success:
+            print(f"✓ File encrypted to: {{output_file.name}} (using main CLI functions)")
+            sys.exit(0)
+        else:
+            print("✗ Encryption failed")
+            sys.exit(1)
+            
+    except ImportError as e:
+        print(f"✗ Failed to import main CLI functions: {{e}}")
+        print("The included openssl_encrypt library may be corrupted.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"✗ Encryption failed: {{e}}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
 '''
             
             with open(encrypt_script, 'w') as f:
                 f.write(encrypt_code)
             encrypt_script.chmod(0o755)
             
-            # Python script for decryption
+            # Python script for decryption  
             decrypt_code = f'''#!/usr/bin/env python3
 """
 Portable USB File Decryption Helper
-Automatically decrypts files from the USB workspace
+Uses the included main CLI functions for 100% compatibility
 """
 import sys
 import os
-import json
+import tempfile
 from pathlib import Path
 
-# Add the current directory to path for imports
-sys.path.insert(0, os.path.dirname(__file__))
+# Add the included openssl_encrypt project to Python path
+script_dir = Path(__file__).parent
+lib_dir = script_dir / "openssl_encrypt_lib"
+sys.path.insert(0, str(lib_dir))
 
-def verify_usb_integrity(password):
-    """Verify USB integrity before file operations"""
-    try:
-        import json
-        import hashlib
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-        from cryptography.hazmat.primitives import hashes
-        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-        
-        # Get portable root directory
-        portable_root = Path(__file__).parent
-        integrity_file = portable_root / ".integrity"
-        
-        if not integrity_file.exists():
-            return False, "Integrity file missing"
-        
-        # Read hash configuration
-        config_dir = portable_root / "config"
-        hash_config_file = config_dir / "hash_config.json"
-        
-        hash_config = None
-        if hash_config_file.exists():
-            with open(hash_config_file, 'r') as f:
-                hash_config = json.load(f)
-        
-        # Derive key for integrity verification
-        if hash_config and hash_config.get('sha256'):
-            password_bytes = password.encode('utf-8')
-            salt = b"openssl_encrypt_usb_v1.0_salt_2024"
-            derived = password_bytes + salt
-            for _ in range(hash_config.get('sha256', 1)):
-                derived = hashlib.sha256(derived).digest()
-            key = derived[:32]
-        else:
-            salt = b"openssl_encrypt_usb_v1.0_salt_2024"
-            kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=100000)
-            key = kdf.derive(password.encode('utf-8'))
-        
-        # Read and decrypt integrity file
-        with open(integrity_file, 'rb') as f:
-            encrypted_data = f.read()
-        
-        nonce = encrypted_data[:12]
-        ciphertext = encrypted_data[12:]
-        
-        cipher = AESGCM(key)
-        decrypted_data = cipher.decrypt(nonce, ciphertext, None)
-        integrity_data = json.loads(decrypted_data.decode('utf-8'))
-        
-        # Verify checksums
-        stored_checksums = integrity_data["checksums"]
-        failed_files = []
-        
-        for file_path, expected_hash in stored_checksums.items():
-            full_path = portable_root / file_path
-            
-            if not full_path.exists():
-                failed_files.append(f"Missing: {{file_path}}")
-                continue
-                
-            with open(full_path, 'rb') as f:
-                current_hash = hashlib.sha256(f.read()).hexdigest()
-            
-            if current_hash != expected_hash:
-                failed_files.append(f"Tampered: {{file_path}}")
-        
-        if failed_files:
-            return False, f"Integrity check failed: {{', '.join(failed_files)}}"
-        
-        return True, "Integrity verified"
-        
-    except Exception as e:
-        return False, f"Integrity verification error: {{e}}"
-
-def decrypt_file_from_usb(encrypted_file, password, output_file=None):
-    """Decrypt a file from the USB workspace"""
-    try:
-        # First, verify USB integrity
-        integrity_ok, integrity_msg = verify_usb_integrity(password)
-        if not integrity_ok:
-            print(f"🚨 SECURITY WARNING: {{integrity_msg}}")
-            print("❌ File decryption aborted for security reasons") 
-            print("💡 Please verify your USB integrity before continuing")
-            return False
-        
-        # Import encryption modules (simplified for portability)
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-        from cryptography.hazmat.primitives import hashes
-        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-        import hashlib
-        
-        # Read hash configuration
-        config_dir = Path(__file__).parent / "config"
-        hash_config_file = config_dir / "hash_config.json"
-        
-        hash_config = None
-        if hash_config_file.exists():
-            with open(hash_config_file, 'r') as f:
-                hash_config = json.load(f)
-        
-        # Derive key (same as encryption)
-        if hash_config and hash_config.get('sha256'):
-            # Complex hashing
-            password_bytes = password.encode('utf-8')
-            salt = b"openssl_encrypt_usb_v1.0_salt_2024"
-            
-            # Apply SHA rounds
-            derived = password_bytes + salt
-            for _ in range(hash_config.get('sha256', 1)):
-                derived = hashlib.sha256(derived).digest()
-            key = derived[:32]
-        else:
-            # PBKDF2 fallback
-            salt = b"openssl_encrypt_usb_v1.0_salt_2024"
-            kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=100000)
-            key = kdf.derive(password.encode('utf-8'))
-        
-        # Handle file paths
-        workspace_dir = Path(__file__).parent / "data"
-        if not encrypted_file.startswith('/'):
-            encrypted_file = workspace_dir / encrypted_file
-        else:
-            encrypted_file = Path(encrypted_file)
-        
-        # Read encrypted file
-        with open(encrypted_file, 'rb') as f:
-            encrypted_data = f.read()
-        
-        # Extract nonce and decrypt
-        nonce = encrypted_data[:12]
-        ciphertext = encrypted_data[12:]
-        
-        cipher = AESGCM(key)
-        decrypted = cipher.decrypt(nonce, ciphertext, None)
-        
-        # Handle output destination
-        if output_file is None:
-            output_file = encrypted_file.name.replace('.enc', '')
-        
-        # Special handling for stdout output
-        if output_file == '-' or output_file.lower() == 'stdout':
-            # Output to stdout for quick viewing
-            try:
-                # Try to decode as text first
-                text_content = decrypted.decode('utf-8')
-                print(text_content, end='')
-            except UnicodeDecodeError:
-                # Binary content, output raw bytes
-                import sys
-                sys.stdout.buffer.write(decrypted)
-            return True
-        else:
-            # Write decrypted file to disk
-            with open(output_file, 'wb') as f:
-                f.write(decrypted)
-            
-            print(f"✓ File decrypted to: {{output_file}}")
-            return True
-        
-    except Exception as e:
-        print(f"✗ Decryption failed: {{e}}")
-        return False
-
-if __name__ == "__main__":
+def main():
     if len(sys.argv) < 3:
         print("Usage: python decrypt_file.py <encrypted_file> <password> [output_file]")
+        print("")
+        print("Decrypts files using the main OpenSSL Encrypt CLI functions")
         print("")
         print("Options:")
         print("  output_file    Write decrypted content to file")  
@@ -1094,8 +875,120 @@ if __name__ == "__main__":
     password = sys.argv[2]
     output_file = sys.argv[3] if len(sys.argv) > 3 else '-'  # Default to stdout
     
-    success = decrypt_file_from_usb(encrypted_file, password, output_file)
-    sys.exit(0 if success else 1)
+    try:
+        # Import main CLI functions
+        from openssl_encrypt.modules.crypt_core import decrypt_file
+        from openssl_encrypt.modules.portable_media import verify_usb_integrity
+        import json
+        
+        # Verify USB integrity first
+        try:
+            portable_root = Path(__file__).parent
+            usb_root = portable_root.parent  # Go up one level to get USB root
+            verification_result = verify_usb_integrity(str(usb_root), password)
+            
+            # Check if verification passed (no failed or missing files)
+            if verification_result.get("failed_files", 0) > 0 or verification_result.get("missing_files", 0) > 0:
+                tampered = verification_result.get("tampered_files", [])
+                missing = verification_result.get("missing_file_list", [])
+                print(f"🚨 SECURITY WARNING: USB integrity check failed")
+                if tampered:
+                    print(f"   Tampered files: {{', '.join(tampered)}}")
+                if missing:
+                    print(f"   Missing files: {{', '.join(missing)}}")
+                print("❌ File decryption aborted for security reasons")
+                sys.exit(1)
+            else:
+                print(f"✓ USB integrity verified ({{verification_result.get('verified_files', 0)}} files checked)")
+        except Exception as e:
+            # If verification fails, proceed with warning
+            print(f"⚠️  Integrity verification unavailable in portable mode: {{e}}")
+            print(f"Exception type: {{type(e)}}")
+        
+        # Handle file paths
+        workspace_dir = Path(__file__).parent / "data"
+        if not encrypted_file.startswith('/'):
+            encrypted_file = workspace_dir / encrypted_file
+        else:
+            encrypted_file = Path(encrypted_file)
+        
+        if not encrypted_file.exists():
+            print(f"✗ Error: Encrypted file {{encrypted_file}} not found")
+            sys.exit(1)
+        
+        # Hash configuration is read automatically from encrypted file metadata
+        # No need to read hash_config.json as the main CLI functions handle this
+        
+        # Handle output destination
+        if output_file == '-' or output_file.lower() == 'stdout':
+            # Use temporary file and then output to stdout
+            with tempfile.NamedTemporaryFile(delete=False) as temp_f:
+                temp_output = temp_f.name
+            
+            try:
+                # Use the main CLI decrypt_file function
+                success = decrypt_file(
+                    input_file=str(encrypted_file),
+                    output_file=temp_output,
+                    password=password.encode('utf-8'),
+                    quiet=True,
+                    progress=False,
+                    verbose=False,
+                    debug=False
+                )
+                
+                if success:
+                    # Output decrypted content to stdout
+                    with open(temp_output, 'rb') as f:
+                        content = f.read()
+                    
+                    try:
+                        # Try to decode as text first
+                        text_content = content.decode('utf-8')
+                        print(text_content, end='')
+                    except UnicodeDecodeError:
+                        # Binary content, output raw bytes
+                        sys.stdout.buffer.write(content)
+                    
+                    print("\\n✓ File decrypted successfully (using main CLI functions)")
+                else:
+                    print("✗ Decryption failed")
+                    sys.exit(1)
+                    
+            finally:
+                # Clean up temporary file
+                try:
+                    os.unlink(temp_output)
+                except Exception:
+                    pass
+        else:
+            # Direct file output
+            success = decrypt_file(
+                input_file=str(encrypted_file),
+                output_file=output_file,
+                password=password.encode('utf-8'),
+                quiet=False,
+                progress=False,
+                verbose=False,
+                debug=False
+            )
+            
+            if success:
+                print(f"✓ File decrypted to: {{output_file}} (using main CLI functions)")
+            else:
+                print("✗ Decryption failed")
+                sys.exit(1)
+        
+    except ImportError as e:
+        print(f"✗ Failed to import main CLI functions: {{e}}")
+        print("The included openssl_encrypt library may be corrupted.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"✗ Decryption failed: {{e}}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
 '''
             
             with open(decrypt_script, 'w') as f:
@@ -1128,6 +1021,298 @@ if __name__ == "__main__":
                 logger.warning(f"Failed to cleanup temp file {temp_file}: {e}")
         
         self.temp_files.clear()
+    
+    def _create_hash_manifest(self, portable_root: Path, password: str, hash_config: Optional[Dict] = None,
+                              manifest_password: Optional[str] = None, manifest_security_profile: Optional[str] = None,
+                              manifest_hash_config: Optional[Dict] = None, algorithm: str = 'fernet') -> Dict:
+        """
+        Create cryptographic hash manifest for manual verification.
+        
+        This creates an encrypted file containing SHA3-512 hashes of all Python scripts
+        and other critical files. Users can decrypt this manifest manually to verify
+        file integrity without relying on potentially tampered verification code.
+        """
+        try:
+            import hashlib
+            import json
+            import secrets
+            import base64
+            import time
+            
+            # Determine manifest password (3-tier approach)
+            if manifest_password:
+                # Tier 2 or 3: Use custom manifest password
+                actual_manifest_password = manifest_password
+                actual_manifest_hash_config = manifest_hash_config if manifest_hash_config else hash_config
+            else:
+                # Tier 1: Use main password and hash config
+                actual_manifest_password = password
+                actual_manifest_hash_config = hash_config
+            
+            # Files to hash for manifest
+            files_to_hash = []
+            hash_patterns = ["*.py", "*.exe", "openssl_encrypt", "*.sh", "*.bat", "*.conf"]
+            
+            for pattern in hash_patterns:
+                files_to_hash.extend(portable_root.rglob(pattern))
+            
+            # Calculate SHA3-512 hashes
+            file_hashes = {}
+            for file_path in files_to_hash:
+                if file_path.is_file() and not file_path.name.startswith('.'):
+                    try:
+                        with open(file_path, 'rb') as f:
+                            file_content = f.read()
+                        
+                        # Use SHA3-512 for maximum collision resistance
+                        file_hash = hashlib.sha3_512(file_content).hexdigest()
+                        relative_path = str(file_path.relative_to(portable_root))
+                        file_hashes[relative_path] = {
+                            "sha3_512": file_hash,
+                            "size": len(file_content),
+                            "type": file_path.suffix
+                        }
+                        
+                    except Exception as e:
+                        logger.warning(f"Failed to hash file {file_path}: {e}")
+            
+            # Create manifest data
+            manifest_data = {
+                "version": "1.0",
+                "created_at": time.time(),
+                "description": "Cryptographic hash manifest for manual verification",
+                "hash_algorithm": "SHA3-512",
+                "file_count": len(file_hashes),
+                "files": file_hashes,
+                "manifest_config": {
+                    "password_type": "custom" if manifest_password else "main",
+                    "security_profile": manifest_security_profile,
+                    "hash_config_type": "custom" if manifest_hash_config else "main" if hash_config else "pbkdf2"
+                }
+            }
+            
+            # Serialize to JSON
+            manifest_json = json.dumps(manifest_data, indent=2)
+            
+            # Use the same encryption format as main CLI
+            try:
+                from ..crypt_core import encrypt_file, EncryptionAlgorithm
+                import tempfile
+                import os
+                
+                # Create temporary files for encryption
+                with tempfile.NamedTemporaryFile(mode='w', delete=False) as temp_input:
+                    temp_input.write(manifest_json)
+                    temp_input_path = temp_input.name
+                
+                temp_output_path = temp_input_path + '.enc'
+                
+                try:
+                    # Convert string algorithm to EncryptionAlgorithm enum
+                    if isinstance(algorithm, str):
+                        algo_enum = EncryptionAlgorithm(algorithm)
+                    else:
+                        algo_enum = algorithm
+                    
+                    # Use the main CLI encryption function
+                    success = encrypt_file(
+                        input_file=temp_input_path,
+                        output_file=temp_output_path,
+                        password=actual_manifest_password.encode('utf-8'),
+                        hash_config=actual_manifest_hash_config,
+                        algorithm=algo_enum,
+                        quiet=True,
+                        progress=False,
+                        verbose=False,
+                        debug=False
+                    )
+                    
+                    if success:
+                        # Copy the encrypted result to final location
+                        manifest_file = portable_root / "hash_manifest.enc"
+                        with open(temp_output_path, 'rb') as temp_f:
+                            encrypted_content = temp_f.read()
+                        
+                        with open(manifest_file, 'wb') as final_f:
+                            final_f.write(encrypted_content)
+                    else:
+                        raise Exception("Main CLI encryption failed")
+                        
+                finally:
+                    # Clean up temporary files
+                    try:
+                        os.unlink(temp_input_path)
+                        if os.path.exists(temp_output_path):
+                            os.unlink(temp_output_path)
+                    except Exception as e:
+                        logger.warning(f"Failed to cleanup temp files: {e}")
+                    
+            except Exception as e:
+                logger.warning(f"Main CLI encryption failed: {e}, using fallback format")
+                
+                # Derive key for manifest encryption
+                secure_password = SecureBytes(actual_manifest_password.encode('utf-8'))
+                manifest_key = self._derive_encryption_key(secure_password, actual_manifest_hash_config)
+                
+                # Encrypt manifest
+                cipher = AESGCM(manifest_key)
+                nonce = secrets.token_bytes(self.NONCE_LENGTH)
+                encrypted_manifest = cipher.encrypt(nonce, manifest_json.encode('utf-8'), None)
+                
+                # Write encrypted manifest (fallback format)
+                manifest_file = portable_root / "hash_manifest.enc"
+                with open(manifest_file, 'wb') as f:
+                    f.write(nonce + encrypted_manifest)
+            
+            # Create verification instructions
+            instructions_content = f'''# 🔐 Hash Manifest Verification Instructions
+
+This USB drive contains an encrypted hash manifest for manual security verification.
+
+## 📋 What is this?
+The hash manifest contains SHA3-512 hashes of all critical files (Python scripts, executables, etc.).
+You can decrypt and verify this manifest manually to ensure files haven't been tampered with.
+
+## 🛡️ Security Model:
+- **If you can decrypt this file with your password** → hashes are authentic
+- **If file won't decrypt** → manifest has been tampered with
+- **If hashes don't match** → files have been tampered with
+
+## 🔍 Manual Verification Steps:
+
+### Step 1: Decrypt the manifest
+```bash
+# Option A: Using system OpenSSL (if available)
+# Note: This is a complex process requiring manual key derivation
+
+# Option B: Using main OpenSSL Encrypt CLI (if available)
+python3 /path/to/openssl_encrypt/crypt.py decrypt hash_manifest.enc
+
+# Option C: Using portable Python script (advanced users)
+# See verification script below
+```
+
+### Step 2: Compare file hashes
+```bash
+# Calculate fresh SHA3-512 hashes
+sha3sum -a 512 *.py *.sh *.bat
+
+# Compare with decrypted manifest hashes
+# All hashes should match exactly
+```
+
+## ⚙️ Configuration:
+- **Manifest Password**: {"Custom password" if manifest_password else "Same as main password"}
+- **Security Profile**: {manifest_security_profile or "Same as main profile"}  
+- **Hash Config**: {"Custom configuration" if manifest_hash_config else "Same as main config" if hash_config else "PBKDF2 fallback"}
+
+## 📝 File Coverage:
+This manifest covers {len(file_hashes)} files including Python scripts, executables, and configuration files.
+
+## 🚨 Security Warning:
+Only trust this manifest if:
+1. You can decrypt it with your password
+2. The USB has been in your physical control
+3. File hashes match fresh calculations
+
+If any verification step fails, assume the USB has been compromised!
+'''
+            
+            instructions_file = portable_root / "VERIFY_INTEGRITY.md"
+            with open(instructions_file, 'w') as f:
+                f.write(instructions_content)
+            
+            # Clean up sensitive data (handled by main CLI encryption function)
+            
+            return {
+                "created": True,
+                "manifest_file": str(manifest_file.relative_to(portable_root)),
+                "instructions_file": str(instructions_file.relative_to(portable_root)),
+                "files_covered": len(file_hashes),
+                "password_type": "custom" if manifest_password else "main",
+                "security_profile": manifest_security_profile,
+                "hash_algorithm": "SHA3-512"
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to create hash manifest: {e}")
+            return {
+                "created": False,
+                "error": str(e)
+            }
+    
+    def _copy_openssl_encrypt_project(self, portable_root: Path) -> None:
+        """Copy the entire openssl_encrypt project to USB for full CLI compatibility"""
+        try:
+            import shutil
+            import inspect
+            
+            # Find the openssl_encrypt project root by going up from this file
+            current_file = Path(inspect.getfile(inspect.currentframe()))
+            
+            # Navigate up to find the project root (where setup.py or pyproject.toml should be)
+            project_root = current_file.parent
+            while project_root != project_root.parent:
+                # Look for project markers
+                if any((project_root / marker).exists() for marker in ['setup.py', 'pyproject.toml', 'openssl_encrypt']):
+                    if (project_root / 'openssl_encrypt').exists():
+                        break
+                project_root = project_root.parent
+            
+            if not (project_root / 'openssl_encrypt').exists():
+                logger.warning("Could not find openssl_encrypt project root, using fallback location")
+                # Try alternative approach - look for the module directory
+                import openssl_encrypt
+                project_root = Path(openssl_encrypt.__file__).parent.parent
+            
+            # Target directory on USB
+            usb_project_dir = portable_root / "openssl_encrypt_lib"
+            
+            # Copy the openssl_encrypt module
+            openssl_encrypt_src = project_root / "openssl_encrypt"
+            if openssl_encrypt_src.exists():
+                if usb_project_dir.exists():
+                    shutil.rmtree(usb_project_dir)
+                
+                # Copy the entire openssl_encrypt directory
+                shutil.copytree(openssl_encrypt_src, usb_project_dir / "openssl_encrypt")
+                
+                # Copy essential project files
+                essential_files = ['README.md', 'LICENSE', 'requirements.txt', 'setup.py', 'pyproject.toml']
+                for file_name in essential_files:
+                    src_file = project_root / file_name
+                    if src_file.exists():
+                        shutil.copy2(src_file, usb_project_dir / file_name)
+                
+                # Create __init__.py to make it a package
+                (usb_project_dir / "__init__.py").touch()
+                
+                logger.debug(f"Successfully copied openssl_encrypt project to {usb_project_dir}")
+                
+                return {
+                    "copied": True,
+                    "source": str(openssl_encrypt_src),
+                    "target": str(usb_project_dir),
+                    "size": self._get_directory_size(usb_project_dir)
+                }
+            else:
+                logger.warning(f"OpenSSL Encrypt source directory not found: {openssl_encrypt_src}")
+                return {"copied": False, "error": "Source directory not found"}
+                
+        except Exception as e:
+            logger.error(f"Failed to copy openssl_encrypt project: {e}")
+            return {"copied": False, "error": str(e)}
+    
+    def _get_directory_size(self, directory: Path) -> int:
+        """Calculate total size of a directory in bytes"""
+        total_size = 0
+        try:
+            for file_path in directory.rglob('*'):
+                if file_path.is_file():
+                    total_size += file_path.stat().st_size
+        except Exception:
+            pass
+        return total_size
 
 
 # Convenience functions

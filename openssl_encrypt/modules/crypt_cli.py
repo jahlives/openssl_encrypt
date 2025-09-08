@@ -1401,6 +1401,15 @@ def main_with_args(args=None):
         action="store_true",
         help="Enable logging on USB drive"
     )
+    usb_group.add_argument(
+        "--manifest-password",
+        help="Separate password for integrity manifest (enhances security by separating file access from integrity verification)"
+    )
+    usb_group.add_argument(
+        "--manifest-security-profile", 
+        choices=["standard", "high-security", "paranoid"],
+        help="Security profile for manifest encryption (uses main profile if not specified)"
+    )
 
     # Don't parse args again if they're already provided from subparser
     # This avoids the "unrecognized arguments" error for steganography options  
@@ -1572,6 +1581,41 @@ def main_with_args(args=None):
             if hasattr(args, 'pbkdf2_iterations') and args.pbkdf2_iterations:
                 hash_config['pbkdf2_iterations'] = args.pbkdf2_iterations
             
+            # Build manifest hash config if manifest security profile specified
+            manifest_hash_config = None
+            if getattr(args, 'manifest_security_profile', None):
+                # Build separate hash config for manifest based on manifest security profile
+                manifest_hash_config = {}
+                # Use same hash rounds as main config, but apply to manifest profile
+                if hasattr(args, 'sha512_rounds') and args.sha512_rounds:
+                    manifest_hash_config['sha512'] = args.sha512_rounds
+                if hasattr(args, 'sha384_rounds') and args.sha384_rounds:
+                    manifest_hash_config['sha384'] = args.sha384_rounds
+                if hasattr(args, 'sha256_rounds') and args.sha256_rounds:
+                    manifest_hash_config['sha256'] = args.sha256_rounds
+                if hasattr(args, 'sha224_rounds') and args.sha224_rounds:
+                    manifest_hash_config['sha224'] = args.sha224_rounds
+                if hasattr(args, 'sha3_512_rounds') and args.sha3_512_rounds:
+                    manifest_hash_config['sha3_512'] = args.sha3_512_rounds
+                if hasattr(args, 'sha3_384_rounds') and args.sha3_384_rounds:
+                    manifest_hash_config['sha3_384'] = args.sha3_384_rounds
+                if hasattr(args, 'sha3_256_rounds') and args.sha3_256_rounds:
+                    manifest_hash_config['sha3_256'] = args.sha3_256_rounds
+                if hasattr(args, 'sha3_224_rounds') and args.sha3_224_rounds:
+                    manifest_hash_config['sha3_224'] = args.sha3_224_rounds
+                if hasattr(args, 'blake2b_rounds') and args.blake2b_rounds:
+                    manifest_hash_config['blake2b'] = args.blake2b_rounds
+                if hasattr(args, 'blake3_rounds') and args.blake3_rounds:
+                    manifest_hash_config['blake3'] = args.blake3_rounds
+                if hasattr(args, 'shake256_rounds') and args.shake256_rounds:
+                    manifest_hash_config['shake256'] = args.shake256_rounds
+                if hasattr(args, 'shake128_rounds') and args.shake128_rounds:
+                    manifest_hash_config['shake128'] = args.shake128_rounds
+                if hasattr(args, 'whirlpool_rounds') and args.whirlpool_rounds:
+                    manifest_hash_config['whirlpool'] = args.whirlpool_rounds
+                if hasattr(args, 'pbkdf2_iterations') and args.pbkdf2_iterations:
+                    manifest_hash_config['pbkdf2_iterations'] = args.pbkdf2_iterations
+            
             # Create USB
             security_profile = getattr(args, 'security_profile', 'standard')
             result = create_portable_usb(
@@ -1581,7 +1625,11 @@ def main_with_args(args=None):
                 executable_path=getattr(args, 'executable_path', None),
                 keystore_path=getattr(args, 'keystore_to_include', None),
                 include_logs=getattr(args, 'include_logs', False),
-                hash_config=hash_config if hash_config else None
+                hash_config=hash_config if hash_config else None,
+                algorithm=args.algorithm,  # Pass algorithm from CLI
+                manifest_password=getattr(args, 'manifest_password', None),
+                manifest_security_profile=getattr(args, 'manifest_security_profile', None),
+                manifest_hash_config=manifest_hash_config
             )
             
             if result.get('success'):
@@ -1593,6 +1641,11 @@ def main_with_args(args=None):
                 if result['keystore']['included']:
                     print(f"  Keystore: Encrypted and included")
                 print(f"  Auto-run files: {', '.join(result['autorun']['files_created'])}")
+                if result.get('manifest', {}).get('created'):
+                    manifest_info = result['manifest']
+                    print(f"  Hash Manifest: {manifest_info['files_covered']} files, {manifest_info['hash_algorithm']}")
+                    print(f"    Password: {manifest_info['password_type']}, Profile: {manifest_info.get('security_profile', 'default')}")
+                    print(f"    Manual verification: VERIFY_INTEGRITY.md")
                 return 0
             else:
                 print("✗ Failed to create portable USB")
