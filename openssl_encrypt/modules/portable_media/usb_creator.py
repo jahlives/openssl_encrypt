@@ -728,272 +728,217 @@ fi
             return None
     
     def _create_transparent_encryption_helpers(self, portable_root: Path, hash_config: Optional[Dict] = None, algorithm: str = 'fernet') -> None:
-        """Create helper scripts for transparent encryption/decryption"""
+        """Create unified helper script for encryption/decryption"""
         try:
-            # Create a portable encryption script
-            encrypt_script = portable_root / "encrypt_file.py"
-            decrypt_script = portable_root / "decrypt_file.py"
+            # Create a single unified portable script
+            crypt_script = portable_root / "crypt.py"
             
-            # Python script for encryption
-            # Create simple portable scripts that use the included main CLI functions
-            encrypt_code = f'''#!/usr/bin/env python3
+            # Python script - unified CLI wrapper
+            crypt_code = f'''#!/usr/bin/env python3
 """
-Portable USB File Encryption Helper
-Uses the included main CLI functions for 100% compatibility
+Portable USB Crypto Helper
+Unified wrapper around the main CLI with USB workspace integration
 """
 import sys
 import os
-from pathlib import Path
-
-# Add the included openssl_encrypt project to Python path
-script_dir = Path(__file__).parent
-lib_dir = script_dir / "openssl_encrypt_lib"
-sys.path.insert(0, str(lib_dir))
-
-def main():
-    if len(sys.argv) != 3:
-        print("Usage: python encrypt_file.py <input_file> <password>")
-        print("Encrypts files using the main OpenSSL Encrypt CLI functions")
-        sys.exit(1)
-    
-    input_file = sys.argv[1]
-    password = sys.argv[2]
-    
-    if not os.path.exists(input_file):
-        print(f"Error: File {{input_file}} not found")
-        sys.exit(1)
-    
-    try:
-        # Import main CLI functions
-        from openssl_encrypt.modules.crypt_core import encrypt_file, EncryptionAlgorithm
-        from openssl_encrypt.modules.portable_media import verify_usb_integrity
-        import json
-        
-        # Verify USB integrity first
-        try:
-            portable_root = Path(__file__).parent
-            usb_root = portable_root.parent  # Go up one level to get USB root
-            verification_result = verify_usb_integrity(str(usb_root), password)
-            
-            # Check if verification passed (no failed or missing files)
-            if verification_result.get("failed_files", 0) > 0 or verification_result.get("missing_files", 0) > 0:
-                tampered = verification_result.get("tampered_files", [])
-                missing = verification_result.get("missing_file_list", [])
-                print(f"🚨 SECURITY WARNING: USB integrity check failed")
-                if tampered:
-                    print(f"   Tampered files: {{', '.join(tampered)}}")
-                if missing:
-                    print(f"   Missing files: {{', '.join(missing)}}")
-                print("❌ File encryption aborted for security reasons")
-                sys.exit(1)
-            else:
-                print(f"✓ USB integrity verified ({{verification_result.get('verified_files', 0)}} files checked)")
-        except Exception as e:
-            # If verification fails, proceed with warning
-            print(f"⚠️  Integrity verification unavailable in portable mode: {{e}}")
-            print(f"Exception type: {{type(e)}}")
-        
-        # Hash configuration is read automatically from encrypted file metadata
-        # No need to read hash_config.json as the main CLI functions handle this
-        
-        # Set up file paths
-        workspace_dir = Path(__file__).parent / "data"
-        workspace_dir.mkdir(exist_ok=True)
-        output_file = workspace_dir / (Path(input_file).name + ".enc")
-        
-        # Use the main CLI encrypt_file function with proper arguments
-        algorithm_enum = EncryptionAlgorithm("{algorithm}")
-        
-        success = encrypt_file(
-            input_file=input_file,
-            output_file=str(output_file),
-            password=password.encode('utf-8'),
-            algorithm=algorithm_enum,
-            quiet=False,
-            progress=False,
-            verbose=False,
-            debug=False
-        )
-        
-        if success:
-            print(f"✓ File encrypted to: {{output_file.name}} (using main CLI functions)")
-            sys.exit(0)
-        else:
-            print("✗ Encryption failed")
-            sys.exit(1)
-            
-    except ImportError as e:
-        print(f"✗ Failed to import main CLI functions: {{e}}")
-        print("The included openssl_encrypt library may be corrupted.")
-        sys.exit(1)
-    except Exception as e:
-        print(f"✗ Encryption failed: {{e}}")
-        sys.exit(1)
-
-if __name__ == "__main__":
-    main()
-'''
-            
-            with open(encrypt_script, 'w') as f:
-                f.write(encrypt_code)
-            encrypt_script.chmod(0o755)
-            
-            # Python script for decryption  
-            decrypt_code = f'''#!/usr/bin/env python3
-"""
-Portable USB File Decryption Helper
-Uses the included main CLI functions for 100% compatibility
-"""
-import sys
-import os
+import subprocess
 import tempfile
 from pathlib import Path
 
-# Add the included openssl_encrypt project to Python path
-script_dir = Path(__file__).parent
-lib_dir = script_dir / "openssl_encrypt_lib"
-sys.path.insert(0, str(lib_dir))
+def show_help():
+    print("Usage: python crypt.py <encrypt|decrypt> [options...]")
+    print("")
+    print("Unified crypto wrapper with automatic USB workspace handling")
+    print("Supports all OpenSSL Encrypt CLI arguments")
+    print("")
+    print("ENCRYPT:")
+    print("  python crypt.py encrypt -i <file> --password <pass> [options...]")
+    print("  → Automatically saves to USB workspace as <file>.enc")
+    print("")
+    print("DECRYPT:")  
+    print("  python crypt.py decrypt -i <file> --password <pass> [options...]")
+    print("  → Smart workspace file resolution, outputs to stdout by default")
+    print("  → Use -o <file> to save to data/decrypted/ (relative paths)")
+    print("  → Use -o /absolute/path to save anywhere")
+    print("")
+    print("Examples:")
+    print("  python crypt.py encrypt -i document.pdf --password mypass")
+    print("  python crypt.py encrypt -i document.pdf --password mypass --algorithm aes-gcm-siv")
+    print("  python crypt.py decrypt -i document.pdf.enc --password mypass")
+    print("  python crypt.py decrypt -i document.pdf.enc --password mypass -o recovered.pdf")
+    print("    → Saves to: data/decrypted/recovered.pdf")
+    print("  python crypt.py decrypt -i document.pdf.enc --password mypass --verbose")
 
 def main():
-    if len(sys.argv) < 3:
-        print("Usage: python decrypt_file.py <encrypted_file> <password> [output_file]")
-        print("")
-        print("Decrypts files using the main OpenSSL Encrypt CLI functions")
-        print("")
-        print("Options:")
-        print("  output_file    Write decrypted content to file")  
-        print("  -              Output decrypted content to stdout (default)")
-        print("  stdout         Output decrypted content to stdout")
-        print("")
-        print("Examples:")
-        print("  python decrypt_file.py secret.txt.enc mypass")
-        print("  python decrypt_file.py secret.txt.enc mypass -")
-        print("  python decrypt_file.py secret.txt.enc mypass /path/output.txt")
+    if len(sys.argv) < 2 or sys.argv[1] not in ['encrypt', 'decrypt']:
+        show_help()
         sys.exit(1)
     
-    encrypted_file = sys.argv[1]
-    password = sys.argv[2]
-    output_file = sys.argv[3] if len(sys.argv) > 3 else '-'  # Default to stdout
+    operation = sys.argv[1]
+    args = sys.argv[2:]  # All remaining arguments
     
     try:
-        # Import main CLI functions
-        from openssl_encrypt.modules.crypt_core import decrypt_file
-        from openssl_encrypt.modules.portable_media import verify_usb_integrity
-        import json
+        # Set up paths
+        script_dir = Path(__file__).parent
+        lib_dir = script_dir / "openssl_encrypt_lib"
+        workspace_dir = script_dir / "data"
+        workspace_dir.mkdir(exist_ok=True)
         
-        # Verify USB integrity first
-        try:
-            portable_root = Path(__file__).parent
-            usb_root = portable_root.parent  # Go up one level to get USB root
-            verification_result = verify_usb_integrity(str(usb_root), password)
+        # Build base CLI command
+        cli_path = lib_dir / "openssl_encrypt" / "crypt.py"
+        cmd = [sys.executable, str(cli_path), operation]
+        
+        if operation == "encrypt":
+            # For encryption, handle workspace output automatically
+            # Parse args to find -i and potentially modify -o
+            modified_args = []
+            i = 0
+            input_file = None
+            output_specified = False
             
-            # Check if verification passed (no failed or missing files)
-            if verification_result.get("failed_files", 0) > 0 or verification_result.get("missing_files", 0) > 0:
-                tampered = verification_result.get("tampered_files", [])
-                missing = verification_result.get("missing_file_list", [])
-                print(f"🚨 SECURITY WARNING: USB integrity check failed")
-                if tampered:
-                    print(f"   Tampered files: {{', '.join(tampered)}}")
-                if missing:
-                    print(f"   Missing files: {{', '.join(missing)}}")
-                print("❌ File decryption aborted for security reasons")
-                sys.exit(1)
-            else:
-                print(f"✓ USB integrity verified ({{verification_result.get('verified_files', 0)}} files checked)")
-        except Exception as e:
-            # If verification fails, proceed with warning
-            print(f"⚠️  Integrity verification unavailable in portable mode: {{e}}")
-            print(f"Exception type: {{type(e)}}")
-        
-        # Handle file paths
-        workspace_dir = Path(__file__).parent / "data"
-        if not encrypted_file.startswith('/'):
-            encrypted_file = workspace_dir / encrypted_file
-        else:
-            encrypted_file = Path(encrypted_file)
-        
-        if not encrypted_file.exists():
-            print(f"✗ Error: Encrypted file {{encrypted_file}} not found")
-            sys.exit(1)
-        
-        # Hash configuration is read automatically from encrypted file metadata
-        # No need to read hash_config.json as the main CLI functions handle this
-        
-        # Handle output destination
-        if output_file == '-' or output_file.lower() == 'stdout':
-            # Use temporary file and then output to stdout
-            with tempfile.NamedTemporaryFile(delete=False) as temp_f:
-                temp_output = temp_f.name
-            
-            try:
-                # Use the main CLI decrypt_file function
-                success = decrypt_file(
-                    input_file=str(encrypted_file),
-                    output_file=temp_output,
-                    password=password.encode('utf-8'),
-                    quiet=True,
-                    progress=False,
-                    verbose=False,
-                    debug=False
-                )
-                
-                if success:
-                    # Output decrypted content to stdout
-                    with open(temp_output, 'rb') as f:
-                        content = f.read()
-                    
-                    try:
-                        # Try to decode as text first
-                        text_content = content.decode('utf-8')
-                        print(text_content, end='')
-                    except UnicodeDecodeError:
-                        # Binary content, output raw bytes
-                        sys.stdout.buffer.write(content)
-                    
-                    print("\\n✓ File decrypted successfully (using main CLI functions)")
+            while i < len(args):
+                if args[i] == "-i" and i + 1 < len(args):
+                    input_file = args[i + 1]
+                    modified_args.extend([args[i], args[i + 1]])
+                    i += 2
+                elif args[i] == "-o" and i + 1 < len(args):
+                    # User specified output, keep it
+                    modified_args.extend([args[i], args[i + 1]])
+                    output_specified = True
+                    i += 2
                 else:
-                    print("✗ Decryption failed")
-                    sys.exit(1)
-                    
-            finally:
-                # Clean up temporary file
-                try:
-                    os.unlink(temp_output)
-                except Exception:
-                    pass
-        else:
-            # Direct file output
-            success = decrypt_file(
-                input_file=str(encrypted_file),
-                output_file=output_file,
-                password=password.encode('utf-8'),
-                quiet=False,
-                progress=False,
-                verbose=False,
-                debug=False
-            )
+                    modified_args.append(args[i])
+                    i += 1
             
-            if success:
-                print(f"✓ File decrypted to: {{output_file}} (using main CLI functions)")
+            # If no output specified, auto-generate workspace output
+            if not output_specified and input_file:
+                output_file = workspace_dir / (Path(input_file).name + ".enc")
+                modified_args.extend(["-o", str(output_file)])
+                print(f"🔒 Encrypting {{Path(input_file).name}} to USB workspace...")
+            
+            cmd.extend(modified_args)
+            
+        elif operation == "decrypt":
+            # For decryption, handle smart workspace file resolution and output paths
+            modified_args = []
+            i = 0
+            input_file = None
+            output_to_stdout = True
+            output_file = None
+            
+            while i < len(args):
+                if args[i] == "-i" and i + 1 < len(args):
+                    input_file = args[i + 1]
+                    
+                    # Smart workspace file resolution
+                    if not input_file.startswith('/') and not Path(input_file).is_absolute():
+                        workspace_file = workspace_dir / input_file
+                        if workspace_file.exists():
+                            input_file = str(workspace_file)
+                            print(f"📁 Using file from USB workspace: {{input_file}}")
+                    
+                    modified_args.extend([args[i], input_file])
+                    i += 2
+                elif args[i] == "-o":
+                    output_to_stdout = False
+                    if i + 1 < len(args):
+                        output_file = args[i + 1]
+                        
+                        # Handle output path - if relative, put in data/decrypted/
+                        if not output_file.startswith('/') and not Path(output_file).is_absolute():
+                            decrypted_dir = workspace_dir / "decrypted"
+                            decrypted_dir.mkdir(exist_ok=True)
+                            output_file = str(decrypted_dir / output_file)
+                            print(f"💾 Saving decrypted file to: {{Path(output_file).relative_to(script_dir)}}")
+                        
+                        modified_args.extend([args[i], output_file])
+                        i += 2
+                    else:
+                        modified_args.append(args[i])
+                        i += 1
+                else:
+                    modified_args.append(args[i])
+                    i += 1
+            
+            # If outputting to stdout, use temp file
+            if output_to_stdout:
+                temp_f = tempfile.NamedTemporaryFile(mode='w+b', delete=False)
+                temp_output = temp_f.name
+                temp_f.close()
+                modified_args.extend(["-o", temp_output])
+                
+                print(f"🔓 Decrypting {{Path(input_file).name if input_file else 'file'}}...")
+                
+                cmd.extend(modified_args)
+                result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(lib_dir))
+                
+                try:
+                    if result.returncode == 0:
+                        # Output decrypted content to stdout
+                        with open(temp_output, 'rb') as f:
+                            content = f.read()
+                        
+                        try:
+                            # Try to decode as text first
+                            text_content = content.decode('utf-8')
+                            print(text_content, end='')
+                        except UnicodeDecodeError:
+                            # Binary content, output raw bytes
+                            sys.stdout.buffer.write(content)
+                        
+                        print("\\n✓ File decrypted successfully")
+                    else:
+                        print("✗ Decryption failed")
+                        if result.stderr.strip():
+                            print(result.stderr)
+                        sys.exit(1)
+                finally:
+                    # Clean up temporary file
+                    try:
+                        os.unlink(temp_output)
+                    except Exception:
+                        pass
+                return
             else:
-                print("✗ Decryption failed")
-                sys.exit(1)
+                if input_file:
+                    print(f"🔓 Decrypting {{Path(input_file).name}}...")
+                cmd.extend(modified_args)
         
-    except ImportError as e:
-        print(f"✗ Failed to import main CLI functions: {{e}}")
-        print("The included openssl_encrypt library may be corrupted.")
-        sys.exit(1)
+        # Run the CLI command
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(lib_dir))
+        
+        if result.returncode == 0:
+            if operation == "encrypt":
+                # Extract output filename from CLI output if possible
+                output_name = "encrypted file"
+                if "Writing encrypted file:" in result.stdout:
+                    try:
+                        output_name = Path(result.stdout.split("Writing encrypted file: ")[1].split("\\n")[0]).name
+                    except:
+                        pass
+                print(f"✓ File encrypted to: {{output_name}}")
+            elif operation == "decrypt":
+                print("✓ File decrypted successfully")
+            
+            if result.stdout.strip():
+                print(result.stdout)
+        else:
+            print(f"✗ {{operation.title()}} failed")
+            if result.stderr.strip():
+                print(result.stderr)
+            sys.exit(1)
+            
     except Exception as e:
-        print(f"✗ Decryption failed: {{e}}")
+        print(f"✗ {{operation.title()}} failed: {{e}}")
         sys.exit(1)
 
 if __name__ == "__main__":
     main()
 '''
             
-            with open(decrypt_script, 'w') as f:
-                f.write(decrypt_code)
-            decrypt_script.chmod(0o755)
+            with open(crypt_script, 'w') as f:
+                f.write(crypt_code)
+            crypt_script.chmod(0o755)
             
             # Create convenience batch files for Windows
             if platform.system() == "Windows":
@@ -1001,10 +946,10 @@ if __name__ == "__main__":
                 decrypt_bat = portable_root / "decrypt_file.bat"
                 
                 with open(encrypt_bat, 'w') as f:
-                    f.write('@echo off\\npython encrypt_file.py %1 %2\\npause\\n')
+                    f.write('@echo off\\npython crypt.py encrypt -i %1 --password %2 %3 %4 %5 %6 %7 %8 %9\\npause\\n')
                 
                 with open(decrypt_bat, 'w') as f:
-                    f.write('@echo off\\npython decrypt_file.py %1 %2 %3\\npause\\n')
+                    f.write('@echo off\\npython crypt.py decrypt -i %1 --password %2 %3 %4 %5 %6 %7 %8 %9\\npause\\n')
             
             logger.debug("Created transparent encryption helper scripts")
             
