@@ -591,7 +591,8 @@ def preprocess_global_args(argv):
     # Find the command position
     commands = {
         'encrypt', 'decrypt', 'shred', 'generate-password', 
-        'security-info', 'check-argon2', 'check-pqc', 'version', 'show-version-file'
+        'security-info', 'check-argon2', 'check-pqc', 'version', 'show-version-file',
+        'create-usb', 'verify-usb'
     }
     
     command_pos = None
@@ -764,9 +765,12 @@ def main_with_args(args=None):
             "check-pqc",
             "version",
             "show-version-file",
+            "create-usb",
+            "verify-usb",
         ],
         help="Action to perform: encrypt/decrypt files, shred data, generate passwords, "
-        "show security recommendations, check Argon2 support, check post-quantum cryptography support",
+        "show security recommendations, check Argon2 support, check post-quantum cryptography support, "
+        "create/verify portable USB drives",
     )
 
     # Get all available algorithms, marking deprecated ones
@@ -1371,6 +1375,32 @@ def main_with_args(args=None):
     policy_group.add_argument(
         "--custom-password-list", help="Path to custom common password list file"
     )
+    
+    # USB/Portable Media Options
+    usb_group = parser.add_argument_group("USB/Portable Media Options")
+    usb_group.add_argument(
+        "--usb-path",
+        help="Path to USB drive for create-usb/verify-usb operations"
+    )
+    usb_group.add_argument(
+        "--security-profile",
+        choices=["standard", "high-security", "paranoid"],
+        default="standard",
+        help="Security profile for USB drive (default: standard)"
+    )
+    usb_group.add_argument(
+        "--executable-path",
+        help="Path to OpenSSL Encrypt executable to include on USB"
+    )
+    usb_group.add_argument(
+        "--keystore-to-include",
+        help="Path to keystore file to include on USB"
+    )
+    usb_group.add_argument(
+        "--include-logs",
+        action="store_true",
+        help="Enable logging on USB drive"
+    )
 
     # Don't parse args again if they're already provided from subparser
     # This avoids the "unrecognized arguments" error for steganography options  
@@ -1498,6 +1528,154 @@ def main_with_args(args=None):
             print("Version module not found. Run 'pip install -e .' to generate the version file.")
             return 1
 
+    # Handle USB operations
+    if args.action == "create-usb":
+        try:
+            from .portable_media import create_portable_usb, USBSecurityProfile
+            
+            # Validate required arguments
+            if not getattr(args, 'usb_path', None):
+                print("Error: --usb-path is required for create-usb operation")
+                return 1
+            
+            if not args.password:
+                args.password = getpass.getpass("Enter master password for USB encryption: ")
+            
+            # Build hash config from current args (using correct key format for create)
+            hash_config = {}
+            if hasattr(args, 'sha512_rounds') and args.sha512_rounds:
+                hash_config['sha512'] = args.sha512_rounds
+            if hasattr(args, 'sha384_rounds') and args.sha384_rounds:
+                hash_config['sha384'] = args.sha384_rounds
+            if hasattr(args, 'sha256_rounds') and args.sha256_rounds:
+                hash_config['sha256'] = args.sha256_rounds
+            if hasattr(args, 'sha224_rounds') and args.sha224_rounds:
+                hash_config['sha224'] = args.sha224_rounds
+            if hasattr(args, 'sha3_512_rounds') and args.sha3_512_rounds:
+                hash_config['sha3_512'] = args.sha3_512_rounds
+            if hasattr(args, 'sha3_384_rounds') and args.sha3_384_rounds:
+                hash_config['sha3_384'] = args.sha3_384_rounds
+            if hasattr(args, 'sha3_256_rounds') and args.sha3_256_rounds:
+                hash_config['sha3_256'] = args.sha3_256_rounds
+            if hasattr(args, 'sha3_224_rounds') and args.sha3_224_rounds:
+                hash_config['sha3_224'] = args.sha3_224_rounds
+            if hasattr(args, 'blake2b_rounds') and args.blake2b_rounds:
+                hash_config['blake2b'] = args.blake2b_rounds
+            if hasattr(args, 'blake3_rounds') and args.blake3_rounds:
+                hash_config['blake3'] = args.blake3_rounds
+            if hasattr(args, 'shake256_rounds') and args.shake256_rounds:
+                hash_config['shake256'] = args.shake256_rounds
+            if hasattr(args, 'shake128_rounds') and args.shake128_rounds:
+                hash_config['shake128'] = args.shake128_rounds
+            if hasattr(args, 'whirlpool_rounds') and args.whirlpool_rounds:
+                hash_config['whirlpool'] = args.whirlpool_rounds
+            if hasattr(args, 'pbkdf2_iterations') and args.pbkdf2_iterations:
+                hash_config['pbkdf2_iterations'] = args.pbkdf2_iterations
+            
+            # Create USB
+            security_profile = getattr(args, 'security_profile', 'standard')
+            result = create_portable_usb(
+                usb_path=args.usb_path,
+                password=args.password,
+                security_profile=security_profile,
+                executable_path=getattr(args, 'executable_path', None),
+                keystore_path=getattr(args, 'keystore_to_include', None),
+                include_logs=getattr(args, 'include_logs', False),
+                hash_config=hash_config if hash_config else None
+            )
+            
+            if result.get('success'):
+                print(f"✓ Successfully created portable USB at: {result['usb_path']}")
+                print(f"  Security Profile: {result['security_profile']}")
+                print(f"  Portable Root: {result['portable_root']}")
+                if result['executable']['included']:
+                    print(f"  Executable: {result['executable']['path']}")
+                if result['keystore']['included']:
+                    print(f"  Keystore: Encrypted and included")
+                print(f"  Auto-run files: {', '.join(result['autorun']['files_created'])}")
+                return 0
+            else:
+                print("✗ Failed to create portable USB")
+                return 1
+                
+        except ImportError:
+            print("Error: Portable media module not available")
+            return 1
+        except Exception as e:
+            print(f"Error creating USB: {e}")
+            return 1
+    
+    elif args.action == "verify-usb":
+        try:
+            from .portable_media import verify_usb_integrity
+            
+            # Validate required arguments
+            if not getattr(args, 'usb_path', None):
+                print("Error: --usb-path is required for verify-usb operation")
+                return 1
+            
+            if not args.password:
+                args.password = getpass.getpass("Enter master password for USB verification: ")
+            
+            # Build hash config from current args (using correct key format for verify)
+            hash_config = {}
+            if hasattr(args, 'sha512_rounds') and args.sha512_rounds:
+                hash_config['sha512'] = args.sha512_rounds
+            if hasattr(args, 'sha384_rounds') and args.sha384_rounds:
+                hash_config['sha384'] = args.sha384_rounds
+            if hasattr(args, 'sha256_rounds') and args.sha256_rounds:
+                hash_config['sha256'] = args.sha256_rounds
+            if hasattr(args, 'sha224_rounds') and args.sha224_rounds:
+                hash_config['sha224'] = args.sha224_rounds
+            if hasattr(args, 'sha3_512_rounds') and args.sha3_512_rounds:
+                hash_config['sha3_512'] = args.sha3_512_rounds
+            if hasattr(args, 'sha3_384_rounds') and args.sha3_384_rounds:
+                hash_config['sha3_384'] = args.sha3_384_rounds
+            if hasattr(args, 'sha3_256_rounds') and args.sha3_256_rounds:
+                hash_config['sha3_256'] = args.sha3_256_rounds
+            if hasattr(args, 'sha3_224_rounds') and args.sha3_224_rounds:
+                hash_config['sha3_224'] = args.sha3_224_rounds
+            if hasattr(args, 'blake2b_rounds') and args.blake2b_rounds:
+                hash_config['blake2b'] = args.blake2b_rounds
+            if hasattr(args, 'blake3_rounds') and args.blake3_rounds:
+                hash_config['blake3'] = args.blake3_rounds
+            if hasattr(args, 'shake256_rounds') and args.shake256_rounds:
+                hash_config['shake256'] = args.shake256_rounds
+            if hasattr(args, 'shake128_rounds') and args.shake128_rounds:
+                hash_config['shake128'] = args.shake128_rounds
+            if hasattr(args, 'whirlpool_rounds') and args.whirlpool_rounds:
+                hash_config['whirlpool'] = args.whirlpool_rounds
+            if hasattr(args, 'pbkdf2_iterations') and args.pbkdf2_iterations:
+                hash_config['pbkdf2_iterations'] = args.pbkdf2_iterations
+            
+            result = verify_usb_integrity(
+                usb_path=args.usb_path,
+                password=args.password,
+                hash_config=hash_config if hash_config else None
+            )
+            
+            if result.get('integrity_ok'):
+                print(f"✓ USB integrity verification PASSED")
+                print(f"  Files verified: {result['verified_files']}")
+                print(f"  Created at: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(result['created_at']))}")
+                return 0
+            else:
+                print(f"✗ USB integrity verification FAILED")
+                print(f"  Files verified: {result['verified_files']}")
+                print(f"  Failed files: {result['failed_files']}")
+                print(f"  Missing files: {result['missing_files']}")
+                if result['tampered_files']:
+                    print(f"  Tampered files: {', '.join(result['tampered_files'])}")
+                if result['missing_file_list']:
+                    print(f"  Missing files: {', '.join(result['missing_file_list'])}")
+                return 1
+                
+        except ImportError:
+            print("Error: Portable media module not available")
+            return 1
+        except Exception as e:
+            print(f"Error verifying USB: {e}")
+            return 1
 
     # Handle scrypt_cost conversion to scrypt_n
     scrypt_cost = getattr(args, 'scrypt_cost', 0)
