@@ -451,13 +451,22 @@ def setup_encrypt_parser(subparser):
     stego_group.add_argument(
         "--stego-hide",
         metavar="COVER_MEDIA",
-        help="Hide encrypted data in cover media instead of writing to file (supports PNG, BMP, JPEG, TIFF, WAV, FLAC, MP3 formats)",
+        help="Hide encrypted data in cover media instead of writing to file (supports PNG, BMP, JPEG, TIFF, WAV, FLAC, MP3, MP4 formats)",
     )
     stego_group.add_argument(
         "--stego-method",
-        choices=["lsb", "adaptive", "f5", "outguess", "basic"],
+        choices=[
+            "lsb",
+            "adaptive",
+            "f5",
+            "outguess",
+            "basic",
+            "uniform",
+            "distortion_comp",
+            "multi_level",
+        ],
         default="lsb",
-        help="Steganographic method to use (default: lsb). For JPEG: f5, outguess, or basic. For images (TIFF/PNG/BMP): lsb or adaptive. For audio (WAV/FLAC/MP3): lsb",
+        help="Steganographic method to use (default: lsb). For JPEG: f5, outguess, or basic. For images (TIFF/PNG/BMP): lsb or adaptive. For audio (WAV/FLAC/MP3): lsb. For video (MP4): uniform, adaptive, distortion_comp, or multi_level (DCT-based)",
     )
     stego_group.add_argument(
         "--stego-bits-per-channel",
@@ -485,6 +494,48 @@ def setup_encrypt_parser(subparser):
         metavar="70-100",
         default=85,
         help="JPEG quality factor for steganography (default: 85)",
+    )
+
+    # Video-specific steganography options
+    video_stego_group = subparser.add_argument_group("Video steganography options (MP4)")
+    video_stego_group.add_argument(
+        "--video-quantization-step",
+        type=float,
+        default=8.0,
+        help="DCT quantization step for video steganography (default: 8.0, lower = higher quality but less capacity)",
+    )
+    video_stego_group.add_argument(
+        "--video-adaptation-factor",
+        type=float,
+        default=1.2,
+        help="Adaptation factor for adaptive QIM algorithm (default: 1.2)",
+    )
+    video_stego_group.add_argument(
+        "--video-compensation-factor",
+        type=float,
+        default=0.5,
+        help="Compensation factor for distortion-compensated QIM algorithm (default: 0.5)",
+    )
+    video_stego_group.add_argument(
+        "--video-bits-per-coefficient",
+        type=int,
+        choices=[1, 2, 3, 4],
+        default=2,
+        help="Bits per DCT coefficient for multi-level QIM algorithm (default: 2)",
+    )
+    video_stego_group.add_argument(
+        "--video-temporal-spread",
+        action="store_true",
+        default=True,
+        help="Spread data across multiple frames for redundancy (default: enabled)",
+    )
+    video_stego_group.add_argument(
+        "--video-quality-preservation",
+        type=int,
+        choices=range(1, 11),
+        metavar="1-10",
+        default=8,
+        help="Video quality preservation level (1=max capacity, 10=max quality, default: 8)",
     )
 
 
@@ -549,13 +600,22 @@ def setup_decrypt_parser(subparser):
     stego_group.add_argument(
         "--stego-extract",
         action="store_true",
-        help="Extract encrypted data from steganographic image (input must be stego image)",
+        help="Extract encrypted data from steganographic media (input must be stego image, audio, or video file)",
     )
     stego_group.add_argument(
         "--stego-method",
-        choices=["lsb", "adaptive", "f5", "outguess", "basic"],
+        choices=[
+            "lsb",
+            "adaptive",
+            "f5",
+            "outguess",
+            "basic",
+            "uniform",
+            "distortion_comp",
+            "multi_level",
+        ],
         default="lsb",
-        help="Steganographic method used for hiding (default: lsb). For JPEG: f5, outguess, or basic. For TIFF/PNG/BMP/WEBP: lsb or adaptive",
+        help="Steganographic method used for hiding (default: lsb). For JPEG: f5, outguess, or basic. For TIFF/PNG/BMP/WEBP: lsb or adaptive. For video (MP4): uniform, adaptive, distortion_comp, or multi_level (DCT-based)",
     )
     stego_group.add_argument(
         "--stego-bits-per-channel",
@@ -575,6 +635,48 @@ def setup_decrypt_parser(subparser):
         metavar="70-100",
         default=85,
         help="JPEG quality factor used for steganography (default: 85)",
+    )
+
+    # Video-specific steganography options (for extraction)
+    video_stego_group = subparser.add_argument_group("Video steganography options (MP4)")
+    video_stego_group.add_argument(
+        "--video-quantization-step",
+        type=float,
+        default=8.0,
+        help="DCT quantization step used for video steganography (default: 8.0)",
+    )
+    video_stego_group.add_argument(
+        "--video-adaptation-factor",
+        type=float,
+        default=1.2,
+        help="Adaptation factor used for adaptive QIM algorithm (default: 1.2)",
+    )
+    video_stego_group.add_argument(
+        "--video-compensation-factor",
+        type=float,
+        default=0.5,
+        help="Compensation factor used for distortion-compensated QIM algorithm (default: 0.5)",
+    )
+    video_stego_group.add_argument(
+        "--video-bits-per-coefficient",
+        type=int,
+        choices=[1, 2, 3, 4],
+        default=2,
+        help="Bits per DCT coefficient used for multi-level QIM algorithm (default: 2)",
+    )
+    video_stego_group.add_argument(
+        "--video-temporal-spread",
+        action="store_true",
+        default=True,
+        help="Data was spread across multiple frames during hiding (default: enabled)",
+    )
+    video_stego_group.add_argument(
+        "--video-quality-preservation",
+        type=int,
+        choices=range(1, 11),
+        metavar="1-10",
+        default=8,
+        help="Video quality preservation level used during hiding (default: 8)",
     )
 
 
