@@ -248,7 +248,6 @@ def setup_encrypt_parser(subparser):
         help="Number of SHAKE-128 iterations (default: 1,000,000 if flag provided without value)",
     )
 
-
     # Scrypt options for encryption
     scrypt_group = subparser.add_argument_group("Scrypt options")
     scrypt_group.add_argument(
@@ -451,35 +450,33 @@ def setup_encrypt_parser(subparser):
     stego_group = subparser.add_argument_group("Steganography options")
     stego_group.add_argument(
         "--stego-hide",
-        metavar="COVER_IMAGE",
-        help="Hide encrypted data in cover image instead of writing to file (supports PNG, BMP, JPEG, TIFF, WEBP formats)"
+        metavar="COVER_MEDIA",
+        help="Hide encrypted data in cover media instead of writing to file (supports PNG, BMP, JPEG, TIFF, WAV, FLAC, MP3 formats)",
     )
     stego_group.add_argument(
         "--stego-method",
         choices=["lsb", "adaptive", "f5", "outguess", "basic"],
         default="lsb",
-        help="Steganographic method to use (default: lsb). For JPEG: f5, outguess, or basic. For TIFF/PNG/BMP/WEBP: lsb or adaptive"
+        help="Steganographic method to use (default: lsb). For JPEG: f5, outguess, or basic. For images (TIFF/PNG/BMP): lsb or adaptive. For audio (WAV/FLAC/MP3): lsb",
     )
     stego_group.add_argument(
         "--stego-bits-per-channel",
         type=int,
         choices=[1, 2, 3],
         default=1,
-        help="LSB bits per color channel (default: 1)"
+        help="LSB bits per color channel for images or per sample for audio (default: 1)",
     )
     stego_group.add_argument(
         "--stego-password",
-        help="Password for steganographic security (separate from encryption password)"
+        help="Password for steganographic security (separate from encryption password)",
     )
     stego_group.add_argument(
         "--stego-randomize-pixels",
         action="store_true",
-        help="Randomize pixel selection order (requires --stego-password)"
+        help="Randomize pixel selection order (requires --stego-password)",
     )
     stego_group.add_argument(
-        "--stego-decoy-data",
-        action="store_true",
-        help="Fill unused capacity with decoy data"
+        "--stego-decoy-data", action="store_true", help="Fill unused capacity with decoy data"
     )
     stego_group.add_argument(
         "--jpeg-quality",
@@ -487,7 +484,7 @@ def setup_encrypt_parser(subparser):
         choices=range(70, 101),
         metavar="70-100",
         default=85,
-        help="JPEG quality factor for steganography (default: 85)"
+        help="JPEG quality factor for steganography (default: 85)",
     )
 
 
@@ -547,29 +544,29 @@ def setup_decrypt_parser(subparser):
         help="Password for the keystore (will prompt if not provided)",
     )
 
-    # Steganography options  
+    # Steganography options
     stego_group = subparser.add_argument_group("Steganography options")
     stego_group.add_argument(
         "--stego-extract",
         action="store_true",
-        help="Extract encrypted data from steganographic image (input must be stego image)"
+        help="Extract encrypted data from steganographic image (input must be stego image)",
     )
     stego_group.add_argument(
         "--stego-method",
         choices=["lsb", "adaptive", "f5", "outguess", "basic"],
         default="lsb",
-        help="Steganographic method used for hiding (default: lsb). For JPEG: f5, outguess, or basic. For TIFF/PNG/BMP/WEBP: lsb or adaptive"
+        help="Steganographic method used for hiding (default: lsb). For JPEG: f5, outguess, or basic. For TIFF/PNG/BMP/WEBP: lsb or adaptive",
     )
     stego_group.add_argument(
         "--stego-bits-per-channel",
         type=int,
         choices=[1, 2, 3],
         default=1,
-        help="LSB bits per color channel used (default: 1) - ignored for JPEG methods"
+        help="LSB bits per color channel used (default: 1) - ignored for JPEG methods",
     )
     stego_group.add_argument(
         "--stego-password",
-        help="Password for steganographic security (separate from encryption password)"
+        help="Password for steganographic security (separate from encryption password)",
     )
     stego_group.add_argument(
         "--jpeg-quality",
@@ -577,7 +574,7 @@ def setup_decrypt_parser(subparser):
         choices=range(70, 101),
         metavar="70-100",
         default=85,
-        help="JPEG quality factor used for steganography (default: 85)"
+        help="JPEG quality factor used for steganography (default: 85)",
     )
 
 

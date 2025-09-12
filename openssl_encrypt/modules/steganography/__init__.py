@@ -31,69 +31,58 @@ Security Architecture:
 - Statistical analysis resistance
 """
 
-from .stego_core import (
-    SteganographyBase,
-    SteganographyError,
-    CapacityError,
-    ExtractionError,
-    CoverMediaError,
-    SteganographyConfig,
-    SteganographyUtils,
-)
-from .stego_image import (
-    ImageSteganography,
-    LSBImageStego,
-    AdaptiveLSBStego,
-)
-from .stego_jpeg import (
-    JPEGSteganography,
-    JPEGSteganalysisResistance,
-)
 from .jpeg_utils import (
-    JPEGAnalyzer,
     DCTUtils,
+    JPEGAnalyzer,
     create_jpeg_test_image,
     is_jpeg_steganography_available,
 )
-from .stego_tiff import (
-    TIFFSteganography,
-    TIFFAnalyzer,
-    create_tiff_test_image,
-    is_tiff_steganography_available,
-)
-from .stego_webp import (
-    WEBPSteganography,
-    WEBPAnalyzer,
-    create_webp_test_image,
-    is_webp_steganography_available,
-)
-from .stego_wav import (
-    WAVSteganography,
-    WAVAnalyzer,
-    create_wav_test_audio,
-    is_wav_steganography_available,
+from .stego_analysis import CapacityAnalyzer, SecurityAnalyzer, SteganalysisResistance
+from .stego_core import (
+    CapacityError,
+    CoverMediaError,
+    ExtractionError,
+    SteganographyBase,
+    SteganographyConfig,
+    SteganographyError,
+    SteganographyUtils,
 )
 from .stego_flac import (
-    FLACSteganography,
     FLACAnalyzer,
+    FLACSteganography,
     create_flac_test_audio,
     is_flac_steganography_available,
 )
+from .stego_image import AdaptiveLSBStego, ImageSteganography, LSBImageStego
+from .stego_jpeg import JPEGSteganalysisResistance, JPEGSteganography
 from .stego_mp3 import (
-    MP3Steganography,
     MP3Analyzer,
+    MP3Steganography,
     create_mp3_test_audio,
     is_mp3_steganography_available,
 )
-from .stego_analysis import (
-    CapacityAnalyzer,
-    SecurityAnalyzer,
-    SteganalysisResistance,
+from .stego_tiff import (
+    TIFFAnalyzer,
+    TIFFSteganography,
+    create_tiff_test_image,
+    is_tiff_steganography_available,
 )
 from .stego_transport import (
     SteganographyTransport,
     create_steganography_transport,
     is_steganography_available,
+)
+from .stego_wav import (
+    WAVAnalyzer,
+    WAVSteganography,
+    create_wav_test_audio,
+    is_wav_steganography_available,
+)
+from .stego_webp import (
+    WEBPAnalyzer,
+    WEBPSteganography,
+    create_webp_test_image,
+    is_webp_steganography_available,
 )
 
 __version__ = "1.3.0"
@@ -102,66 +91,62 @@ __author__ = "OpenSSL Encrypt Team"
 # Export main classes and functions
 __all__ = [
     # Core classes
-    'SteganographyBase',
-    'ImageSteganography',
-    'LSBImageStego',
-    'AdaptiveLSBStego',
-    'JPEGSteganography',
-    'TIFFSteganography',
-    'WEBPSteganography',
-    'WAVSteganography',
-    'FLACSteganography',
-    'MP3Steganography',
-    
+    "SteganographyBase",
+    "ImageSteganography",
+    "LSBImageStego",
+    "AdaptiveLSBStego",
+    "JPEGSteganography",
+    "TIFFSteganography",
+    "WEBPSteganography",
+    "WAVSteganography",
+    "FLACSteganography",
+    "MP3Steganography",
     # Transport layer
-    'SteganographyTransport',
-    'create_steganography_transport',
-    'is_steganography_available',
-    'is_jpeg_steganography_available',
-    'is_tiff_steganography_available',
-    'is_webp_steganography_available',
-    'is_wav_steganography_available',
-    'is_flac_steganography_available',
-    'is_mp3_steganography_available',
-    
+    "SteganographyTransport",
+    "create_steganography_transport",
+    "is_steganography_available",
+    "is_jpeg_steganography_available",
+    "is_tiff_steganography_available",
+    "is_webp_steganography_available",
+    "is_wav_steganography_available",
+    "is_flac_steganography_available",
+    "is_mp3_steganography_available",
     # Analysis tools
-    'CapacityAnalyzer',
-    'SecurityAnalyzer',
-    'SteganalysisResistance',
-    'JPEGSteganalysisResistance',
-    'JPEGAnalyzer',
-    'DCTUtils',
-    'TIFFAnalyzer',
-    'WEBPAnalyzer',
-    'WAVAnalyzer',
-    'FLACAnalyzer',
-    'MP3Analyzer',
-    
+    "CapacityAnalyzer",
+    "SecurityAnalyzer",
+    "SteganalysisResistance",
+    "JPEGSteganalysisResistance",
+    "JPEGAnalyzer",
+    "DCTUtils",
+    "TIFFAnalyzer",
+    "WEBPAnalyzer",
+    "WAVAnalyzer",
+    "FLACAnalyzer",
+    "MP3Analyzer",
     # Utilities
-    'SteganographyConfig',
-    'SteganographyUtils',
-    'create_jpeg_test_image',
-    'create_tiff_test_image',
-    'create_webp_test_image',
-    'create_wav_test_audio',
-    'create_flac_test_audio',
-    'create_mp3_test_audio',
-    
+    "SteganographyConfig",
+    "SteganographyUtils",
+    "create_jpeg_test_image",
+    "create_tiff_test_image",
+    "create_webp_test_image",
+    "create_wav_test_audio",
+    "create_flac_test_audio",
+    "create_mp3_test_audio",
     # Exceptions
-    'SteganographyError',
-    'CapacityError',
-    'ExtractionError',
-    'CoverMediaError',
+    "SteganographyError",
+    "CapacityError",
+    "ExtractionError",
+    "CoverMediaError",
 ]
 
 # Module-level constants
-# Working formats only - WEBP and MP3 are disabled due to algorithmic issues
-SUPPORTED_IMAGE_FORMATS = ['PNG', 'BMP', 'JPEG', 'JPG', 'TIFF', 'TIF']
-SUPPORTED_AUDIO_FORMATS = ['WAV', 'FLAC']
+# All formats are now working - WEBP and MP3 issues have been fixed
+SUPPORTED_IMAGE_FORMATS = ["PNG", "BMP", "JPEG", "JPG", "TIFF", "TIF", "WEBP"]
+SUPPORTED_AUDIO_FORMATS = ["WAV", "FLAC", "MP3"]
 
-# Disabled formats (code preserved but non-functional)
-DISABLED_IMAGE_FORMATS = ['WEBP']  # Hide/extract cycle fails, bit-level extraction flaws
-DISABLED_AUDIO_FORMATS = ['MP3']   # Length mismatch errors, randomization sync failures
-FUTURE_FORMATS = ['GIF']  # Planned formats for future development
-EOF_MARKER = b'\xFF\xFF\xFF\xFE'  # Steganography end-of-file marker
+# Disabled formats (none currently)
+DISABLED_IMAGE_FORMATS = []  # All image formats are working
+DISABLED_AUDIO_FORMATS = []  # All audio formats are working
+FUTURE_FORMATS = ["GIF"]  # Planned formats for future development
+EOF_MARKER = b"\xFF\xFF\xFF\xFE"  # Steganography end-of-file marker
 MIN_COVER_SIZE = 1024  # Minimum pixels required for hiding
