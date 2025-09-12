@@ -9129,7 +9129,9 @@ class TestWEBPSteganography(unittest.TestCase):
         test_data = b"WEBP lossy steganography test!"
 
         # Initialize WEBP steganography with force_lossless for lossy format reliability
-        webp_stego = WEBPSteganography(bits_per_channel=1, password="webp_lossy_test", force_lossless=True)
+        webp_stego = WEBPSteganography(
+            bits_per_channel=1, password="webp_lossy_test", force_lossless=True
+        )
 
         # Check capacity
         capacity = webp_stego.calculate_capacity(webp_data)

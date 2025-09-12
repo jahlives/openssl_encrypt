@@ -25,7 +25,7 @@ export GITLAB_TOKEN='glpat-your-token-here'
 
 ```bash
 export GITLAB_USER='your-username'
-export GITLAB_PASSWORD='your-token-or-password'  
+export GITLAB_PASSWORD='your-token-or-password'
 ./docker/build-base-image.sh
 ```
 
@@ -72,7 +72,7 @@ The script creates several tags for flexibility:
 The base image rarely needs rebuilding. Consider rebuilding when:
 
 - **New liboqs version** - Update `LIBOQS_VERSION` in the script
-- **New Python version** - Update `PYTHON_VERSION` in the script  
+- **New Python version** - Update `PYTHON_VERSION` in the script
 - **Security updates** - Rebuild monthly for Alpine security patches
 - **CI failures** - If the base image becomes corrupted or unavailable
 
