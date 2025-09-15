@@ -67,6 +67,14 @@ from cryptography.fernet import InvalidToken
 # Add the parent directory to the path to allow imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from modules.config_wizard import (
+    ConfigurationWizard,
+    UseCase,
+    UserExpertise,
+    generate_cli_arguments,
+    run_configuration_wizard,
+)
+
 # Import the modules to test
 from modules.crypt_core import (
     ARGON2_AVAILABLE,
@@ -12417,6 +12425,286 @@ class TestSecurityScorer(unittest.TestCase):
         self.assertIn("hash_analysis", result)
         self.assertIn("kdf_analysis", result)
         self.assertIn("cipher_analysis", result)
+
+
+class TestConfigurationWizard(unittest.TestCase):
+    """Test cases for the ConfigurationWizard system."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.wizard = ConfigurationWizard()
+
+    def test_user_expertise_enum(self):
+        """Test UserExpertise enum values."""
+        self.assertEqual(UserExpertise.BEGINNER.value, "beginner")
+        self.assertEqual(UserExpertise.INTERMEDIATE.value, "intermediate")
+        self.assertEqual(UserExpertise.ADVANCED.value, "advanced")
+        self.assertEqual(UserExpertise.EXPERT.value, "expert")
+
+    def test_use_case_enum(self):
+        """Test UseCase enum values."""
+        self.assertEqual(UseCase.PERSONAL_FILES.value, "personal")
+        self.assertEqual(UseCase.BUSINESS_DOCUMENTS.value, "business")
+        self.assertEqual(UseCase.SENSITIVE_DATA.value, "sensitive")
+        self.assertEqual(UseCase.ARCHIVAL_STORAGE.value, "archival")
+        self.assertEqual(UseCase.HIGH_SECURITY.value, "high_security")
+        self.assertEqual(UseCase.COMPLIANCE.value, "compliance")
+
+    def test_wizard_initialization(self):
+        """Test wizard initialization."""
+        self.assertIsNotNone(self.wizard.scorer)
+        self.assertEqual(self.wizard.config, {})
+        self.assertIsNone(self.wizard.user_expertise)
+        self.assertIsNone(self.wizard.use_case)
+
+    def test_quiet_mode_wizard(self):
+        """Test wizard running in quiet mode."""
+        config = self.wizard.run_wizard(quiet=True)
+
+        # Should have default values
+        self.assertEqual(self.wizard.user_expertise, UserExpertise.INTERMEDIATE)
+        self.assertEqual(self.wizard.use_case, UseCase.PERSONAL_FILES)
+
+        # Should return a valid configuration
+        self.assertIsInstance(config, dict)
+        self.assertIn("hash_algorithms", config)
+        self.assertIn("kdf_settings", config)
+        self.assertIn("encryption", config)
+        self.assertIn("post_quantum", config)
+
+    def test_base_config_generation_personal_files(self):
+        """Test base configuration generation for personal files."""
+        self.wizard.user_expertise = UserExpertise.INTERMEDIATE
+        self.wizard.use_case = UseCase.PERSONAL_FILES
+
+        config = self.wizard._generate_base_config()
+
+        # Should have balanced security/performance settings
+        self.assertIn("sha256", config["hash_algorithms"])
+        self.assertEqual(config["hash_algorithms"]["sha256"]["rounds"], 1000000)
+
+        self.assertIn("argon2", config["kdf_settings"])
+        self.assertTrue(config["kdf_settings"]["argon2"]["enabled"])
+        self.assertEqual(config["kdf_settings"]["argon2"]["memory_cost"], 65536)  # 64MB
+
+        self.assertEqual(config["encryption"]["algorithm"], "aes-gcm")
+
+    def test_base_config_generation_sensitive_data(self):
+        """Test base configuration generation for sensitive data."""
+        self.wizard.user_expertise = UserExpertise.ADVANCED
+        self.wizard.use_case = UseCase.SENSITIVE_DATA
+
+        config = self.wizard._generate_base_config()
+
+        # Should have higher security
+        self.assertIn("sha256", config["hash_algorithms"])
+        self.assertIn("blake2b", config["hash_algorithms"])
+        self.assertEqual(config["hash_algorithms"]["sha256"]["rounds"], 2000000)
+
+        self.assertIn("argon2", config["kdf_settings"])
+        self.assertIn("scrypt", config["kdf_settings"])
+        self.assertEqual(config["kdf_settings"]["argon2"]["memory_cost"], 131072)  # 128MB
+
+        self.assertEqual(config["encryption"]["algorithm"], "xchacha20-poly1305")
+
+    def test_base_config_generation_archival_storage(self):
+        """Test base configuration generation for archival storage."""
+        self.wizard.user_expertise = UserExpertise.EXPERT
+        self.wizard.use_case = UseCase.ARCHIVAL_STORAGE
+
+        config = self.wizard._generate_base_config()
+
+        # Should emphasize future-proofing
+        self.assertIn("sha3_512", config["hash_algorithms"])
+        self.assertIn("blake3", config["hash_algorithms"])
+
+        self.assertEqual(config["kdf_settings"]["argon2"]["memory_cost"], 262144)  # 256MB
+        self.assertEqual(config["encryption"]["algorithm"], "aes-gcm-siv")
+
+        # Should enable post-quantum by default
+        self.assertTrue(config["post_quantum"]["enabled"])
+        self.assertEqual(config["post_quantum"]["algorithm"], "ml-kem-768")
+
+    def test_base_config_generation_high_security(self):
+        """Test base configuration generation for high security."""
+        self.wizard.user_expertise = UserExpertise.EXPERT
+        self.wizard.use_case = UseCase.HIGH_SECURITY
+
+        config = self.wizard._generate_base_config()
+
+        # Should have maximum security
+        self.assertIn("sha256", config["hash_algorithms"])
+        self.assertIn("sha3_512", config["hash_algorithms"])
+        self.assertIn("blake3", config["hash_algorithms"])
+        self.assertEqual(config["hash_algorithms"]["sha256"]["rounds"], 5000000)
+
+        self.assertIn("argon2", config["kdf_settings"])
+        self.assertIn("scrypt", config["kdf_settings"])
+        self.assertEqual(config["kdf_settings"]["argon2"]["memory_cost"], 524288)  # 512MB
+
+        self.assertEqual(config["encryption"]["algorithm"], "xchacha20-poly1305")
+        self.assertTrue(config["post_quantum"]["enabled"])
+        self.assertEqual(config["post_quantum"]["algorithm"], "ml-kem-1024")
+
+    def test_generate_cli_arguments_basic(self):
+        """Test CLI argument generation for basic configuration."""
+        config = {
+            "hash_algorithms": {"sha256": {"rounds": 1000000}},
+            "kdf_settings": {
+                "argon2": {"enabled": True, "memory_cost": 65536, "time_cost": 3, "parallelism": 4}
+            },
+            "encryption": {"algorithm": "aes-gcm"},
+            "post_quantum": {},
+        }
+
+        args = generate_cli_arguments(config)
+
+        expected_args = [
+            "--sha256-rounds",
+            "1000000",
+            "--argon2-memory-cost",
+            "65536",
+            "--argon2-time-cost",
+            "3",
+            "--argon2-parallelism",
+            "4",
+            "--encryption-data-algorithm",
+            "aes-gcm",
+        ]
+
+        for arg in expected_args:
+            self.assertIn(arg, args)
+
+    def test_generate_cli_arguments_advanced(self):
+        """Test CLI argument generation for advanced configuration."""
+        config = {
+            "hash_algorithms": {"sha256": {"rounds": 2000000}, "blake3": {"rounds": 1000000}},
+            "kdf_settings": {
+                "argon2": {
+                    "enabled": True,
+                    "memory_cost": 131072,
+                    "time_cost": 4,
+                    "parallelism": 8,
+                },
+                "scrypt": {"enabled": True, "n": 32768, "r": 8, "p": 1},
+            },
+            "encryption": {"algorithm": "xchacha20-poly1305"},
+            "post_quantum": {"enabled": True, "algorithm": "ml-kem-768"},
+        }
+
+        args = generate_cli_arguments(config)
+
+        # Should have all hash algorithms
+        self.assertIn("--sha256-rounds", args)
+        self.assertIn("2000000", args)
+        self.assertIn("--blake3-rounds", args)
+        self.assertIn("1000000", args)
+
+        # Should have both KDFs
+        self.assertIn("--argon2-memory-cost", args)
+        self.assertIn("131072", args)
+        self.assertIn("--scrypt-n", args)
+        self.assertIn("32768", args)
+
+        # Should have encryption algorithm
+        self.assertIn("--encryption-data-algorithm", args)
+        self.assertIn("xchacha20-poly1305", args)
+
+        # Should have post-quantum
+        self.assertIn("--pqc-algorithm", args)
+        self.assertIn("ml-kem-768", args)
+
+    def test_generate_cli_arguments_with_underscores(self):
+        """Test CLI argument generation handles underscores correctly."""
+        config = {
+            "hash_algorithms": {"sha3_256": {"rounds": 1500000}, "sha3_512": {"rounds": 800000}},
+            "kdf_settings": {},
+            "encryption": {"algorithm": "aes-gcm"},
+            "post_quantum": {},
+        }
+
+        args = generate_cli_arguments(config)
+
+        # Should convert underscores to hyphens in CLI arguments
+        self.assertIn("--sha3-256-rounds", args)
+        self.assertIn("1500000", args)
+        self.assertIn("--sha3-512-rounds", args)
+        self.assertIn("800000", args)
+
+    def test_generate_cli_arguments_empty_config(self):
+        """Test CLI argument generation with empty configuration."""
+        config = {"hash_algorithms": {}, "kdf_settings": {}, "encryption": {}, "post_quantum": {}}
+
+        args = generate_cli_arguments(config)
+
+        # Should return empty or minimal args
+        self.assertIsInstance(args, list)
+
+    def test_convenience_function(self):
+        """Test the convenience function run_configuration_wizard."""
+        config = run_configuration_wizard(quiet=True)
+
+        self.assertIsInstance(config, dict)
+        self.assertIn("hash_algorithms", config)
+        self.assertIn("kdf_settings", config)
+        self.assertIn("encryption", config)
+        self.assertIn("post_quantum", config)
+
+    def test_wizard_config_completeness(self):
+        """Test that wizard generates complete configurations."""
+        test_cases = [
+            (UserExpertise.BEGINNER, UseCase.PERSONAL_FILES),
+            (UserExpertise.INTERMEDIATE, UseCase.BUSINESS_DOCUMENTS),
+            (UserExpertise.ADVANCED, UseCase.SENSITIVE_DATA),
+            (UserExpertise.EXPERT, UseCase.HIGH_SECURITY),
+        ]
+
+        for expertise, use_case in test_cases:
+            with self.subTest(expertise=expertise, use_case=use_case):
+                self.wizard.user_expertise = expertise
+                self.wizard.use_case = use_case
+
+                config = self.wizard._generate_base_config()
+
+                # All configurations should have these basic components
+                self.assertIn("hash_algorithms", config)
+                self.assertIn("kdf_settings", config)
+                self.assertIn("encryption", config)
+                self.assertIn("post_quantum", config)
+
+                # Should have at least one hash algorithm
+                self.assertGreater(len(config["hash_algorithms"]), 0)
+
+                # Should have at least one KDF
+                enabled_kdfs = [k for k, v in config["kdf_settings"].items() if v.get("enabled")]
+                self.assertGreater(len(enabled_kdfs), 0)
+
+                # Should have encryption algorithm
+                self.assertIn("algorithm", config["encryption"])
+                self.assertIsInstance(config["encryption"]["algorithm"], str)
+
+    def test_cli_argument_round_trip(self):
+        """Test that generated CLI arguments would produce equivalent security scores."""
+        # Generate a configuration
+        self.wizard.user_expertise = UserExpertise.ADVANCED
+        self.wizard.use_case = UseCase.SENSITIVE_DATA
+        config = self.wizard._generate_base_config()
+
+        # Generate CLI arguments
+        cli_args = generate_cli_arguments(config)
+
+        # Verify that the arguments are valid format
+        self.assertIsInstance(cli_args, list)
+
+        # Arguments should come in pairs (flag, value) mostly
+        # Count arguments that start with '--'
+        flags = [arg for arg in cli_args if arg.startswith("--")]
+        self.assertGreater(len(flags), 0)
+
+        # Each flag should have valid format
+        for flag in flags:
+            self.assertTrue(flag.startswith("--"))
+            self.assertNotIn("_", flag)  # Should use hyphens, not underscores
 
 
 if __name__ == "__main__":

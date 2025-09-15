@@ -74,6 +74,7 @@ except ImportError:
 
 
 from . import crypt_errors
+from .config_wizard import generate_cli_arguments, run_configuration_wizard
 from .keystore_utils import (
     auto_generate_pqc_key,
     extract_key_id_from_metadata,
@@ -595,6 +596,7 @@ def preprocess_global_args(argv):
         "generate-password",
         "security-info",
         "analyze-security",
+        "config-wizard",
         "check-argon2",
         "check-pqc",
         "version",
@@ -787,6 +789,43 @@ def analyze_current_security_configuration(args):
         print("Please check your configuration parameters.")
 
 
+def run_config_wizard(args):
+    """
+    Run the configuration wizard and display results.
+
+    Args:
+        args: Parsed command line arguments
+    """
+    try:
+        quiet = getattr(args, "quiet", False)
+
+        if not quiet:
+            print("Starting Configuration Wizard...")
+            print("This will help you create secure encryption settings.\n")
+
+        # Run the wizard
+        config = run_configuration_wizard(quiet=quiet)
+
+        if not quiet:
+            # Generate CLI arguments for the configuration
+            cli_args = generate_cli_arguments(config)
+
+            print("\nTo use this configuration, run:")
+            print("─" * 40)
+            print(f"crypt_cli encrypt --input <file> {' '.join(cli_args)}")
+            print("\nOr save these settings to a template file for reuse.")
+
+        return config
+
+    except KeyboardInterrupt:
+        if not quiet:
+            print("\n\nConfiguration wizard cancelled.")
+        return None
+    except Exception as e:
+        print(f"Error running configuration wizard: {e}")
+        return None
+
+
 def main():
     """
     Main function that handles the command-line interface.
@@ -803,6 +842,7 @@ def main():
         "generate-password",
         "security-info",
         "analyze-security",
+        "config-wizard",
         "check-argon2",
         "check-pqc",
         "version",
@@ -876,7 +916,7 @@ def main_with_args(args=None):
         "COMMAND-SPECIFIC FLAGS:\n"
         "  --template, --quick, --standard, --paranoid (encryption only)\n\n"
         "COMMANDS:\n"
-        "  encrypt, decrypt, shred, generate-password, security-info, analyze-security, check-argon2, check-pqc, version\n\n"
+        "  encrypt, decrypt, shred, generate-password, security-info, analyze-security, config-wizard, check-argon2, check-pqc, version\n\n"
         "EXAMPLES:\n"
         "  %(prog)s encrypt --input file.txt --debug --output file.enc\n"
         "  %(prog)s --quiet decrypt --input file.enc --progress --output file.txt\n"
@@ -931,6 +971,7 @@ def main_with_args(args=None):
             "generate-password",
             "security-info",
             "analyze-security",
+            "config-wizard",
             "check-argon2",
             "check-pqc",
             "version",
@@ -944,7 +985,7 @@ def main_with_args(args=None):
             "reload-plugin",
         ],
         help="Action to perform: encrypt/decrypt files, shred data, generate passwords, "
-        "show security recommendations, analyze security configuration, check Argon2 support, check post-quantum cryptography support, "
+        "show security recommendations, analyze security configuration, configuration wizard, check Argon2 support, check post-quantum cryptography support, "
         "create/verify portable USB drives, manage plugins",
     )
 
@@ -1991,6 +2032,10 @@ def main_with_args(args=None):
         analyze_current_security_configuration(args)
         sys.exit(0)
 
+    elif args.action == "config-wizard":
+        run_config_wizard(args)
+        sys.exit(0)
+
     elif args.action == "check-argon2":
         argon2_available, version, supported_types = check_argon2_support()
         print("\nARGON2 SUPPORT CHECK")
@@ -2367,6 +2412,7 @@ def main_with_args(args=None):
         "generate-password",
         "security-info",
         "analyze-security",
+        "config-wizard",
         "check-argon2",
         "check-pqc",
         "version",

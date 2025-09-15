@@ -969,6 +969,13 @@ def create_subparser_main():
     )
     setup_analyze_security_parser(analyze_security_parser)
 
+    config_wizard_parser = subparsers.add_parser(
+        "config-wizard",
+        help="Interactive configuration wizard for security settings",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_simple_parser(config_wizard_parser)
+
     check_argon2_parser = subparsers.add_parser(
         "check-argon2",
         help="Verify Argon2 implementation",
