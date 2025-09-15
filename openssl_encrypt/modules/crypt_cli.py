@@ -89,6 +89,7 @@ from .password_policy import (
     validate_password,
     validate_password_or_raise,
 )
+from .security_scorer import SecurityScorer
 
 
 class ReconstructedStdinStream:
@@ -593,6 +594,7 @@ def preprocess_global_args(argv):
         "shred",
         "generate-password",
         "security-info",
+        "analyze-security",
         "check-argon2",
         "check-pqc",
         "version",
@@ -636,6 +638,155 @@ def preprocess_global_args(argv):
     return [argv[0]] + global_args + other_args[1:]
 
 
+def analyze_current_security_configuration(args):
+    """
+    Analyze the current security configuration and display a security score.
+
+    Args:
+        args: Parsed command line arguments containing security configuration
+    """
+    print("\nSECURITY CONFIGURATION ANALYSIS")
+    print("===============================")
+
+    try:
+        # Extract hash configuration
+        hash_config = {}
+
+        # Process all available hash algorithms
+        hash_algorithms = [
+            "sha256",
+            "sha512",
+            "sha224",
+            "sha384",
+            "sha3_256",
+            "sha3_512",
+            "sha3_224",
+            "sha3_384",
+            "blake2b",
+            "blake3",
+            "shake256",
+            "shake128",
+            "whirlpool",
+        ]
+
+        for hash_name in hash_algorithms:
+            rounds = getattr(args, f"{hash_name}_rounds", 0) or 0
+            if rounds > 0:
+                hash_config[hash_name] = {"rounds": rounds}
+
+        # Extract KDF configuration
+        kdf_config = {}
+
+        # Argon2 configuration
+        argon2_memory_cost = getattr(args, "argon2_memory_cost", 0) or 0
+        if argon2_memory_cost > 0:
+            kdf_config["argon2"] = {
+                "enabled": True,
+                "memory_cost": argon2_memory_cost,
+                "time_cost": getattr(args, "argon2_time_cost", 3) or 3,
+                "parallelism": getattr(args, "argon2_parallelism", 4) or 4,
+            }
+
+        # Scrypt configuration
+        scrypt_n = getattr(args, "scrypt_n", 0) or 0
+        if scrypt_n > 0:
+            kdf_config["scrypt"] = {
+                "enabled": True,
+                "n": scrypt_n,
+                "r": getattr(args, "scrypt_r", 8) or 8,
+                "p": getattr(args, "scrypt_p", 1) or 1,
+            }
+
+        # PBKDF2 configuration
+        pbkdf2_rounds = getattr(args, "pbkdf2_rounds", 0) or 0
+        if pbkdf2_rounds > 0:
+            kdf_config["pbkdf2"] = {
+                "enabled": True,
+                "rounds": pbkdf2_rounds,
+            }
+
+        # Balloon configuration
+        balloon_space_cost = getattr(args, "balloon_space_cost", 0) or 0
+        if balloon_space_cost > 0:
+            kdf_config["balloon"] = {
+                "enabled": True,
+                "space_cost": balloon_space_cost,
+                "time_cost": getattr(args, "balloon_time_cost", 20) or 20,
+            }
+
+        # HKDF configuration
+        hkdf_rounds = getattr(args, "hkdf_rounds", 0) or 0
+        if hkdf_rounds > 0:
+            kdf_config["hkdf"] = {
+                "enabled": True,
+                "rounds": hkdf_rounds,
+                "hash_algorithm": getattr(args, "hkdf_hash_algorithm", "sha256") or "sha256",
+            }
+
+        # Extract encryption algorithm information
+        encryption_data_algorithm = getattr(args, "encryption_data_algorithm", "aes-gcm")
+        cipher_info = {"algorithm": encryption_data_algorithm}
+
+        # Extract post-quantum configuration
+        pqc_info = None
+        pqc_algorithm = getattr(args, "pqc_algorithm", None)
+        if pqc_algorithm and pqc_algorithm.lower() != "none":
+            pqc_info = {"enabled": True, "algorithm": pqc_algorithm}
+
+        # Initialize security scorer and analyze
+        scorer = SecurityScorer()
+        analysis = scorer.score_configuration(hash_config, kdf_config, cipher_info, pqc_info)
+
+        # Display analysis results
+        print(f"\nOVERALL SECURITY SCORE: {analysis['overall']['score']}/10")
+        print(f"Security Level: {analysis['overall']['level'].name}")
+        print(f"Description: {analysis['overall']['description']}")
+
+        print(f"\nCOMPONENT ANALYSIS:")
+        print(f"─────────────────────")
+        print(
+            f"Hash Security: {analysis['hash_analysis']['score']:.1f}/10 ({analysis['hash_analysis']['description']})"
+        )
+        if analysis["hash_analysis"]["algorithms"]:
+            print(f"  Active algorithms: {', '.join(analysis['hash_analysis']['algorithms'])}")
+            print(f"  Total rounds: {analysis['hash_analysis']['total_rounds']:,}")
+
+        print(
+            f"KDF Security: {analysis['kdf_analysis']['score']:.1f}/10 ({analysis['kdf_analysis']['description']})"
+        )
+        if analysis["kdf_analysis"]["algorithms"]:
+            print(f"  Active algorithms: {', '.join(analysis['kdf_analysis']['algorithms'])}")
+
+        print(
+            f"Encryption: {analysis['cipher_analysis']['score']:.1f}/10 ({analysis['cipher_analysis']['description']})"
+        )
+        print(f"  Algorithm: {analysis['cipher_analysis']['algorithm']}")
+        print(f"  Authenticated: {'Yes' if analysis['cipher_analysis']['authenticated'] else 'No'}")
+
+        if analysis["pqc_analysis"]["enabled"]:
+            print(f"Post-Quantum: {analysis['pqc_analysis']['score']:.1f}/10 (Quantum-resistant)")
+        else:
+            print(f"Post-Quantum: Not enabled")
+
+        print(f"\nSECURITY ESTIMATES:")
+        print(f"─────────────────────")
+        print(f"Estimated brute-force time: {analysis['estimates']['brute_force_time']}")
+        print(f"Note: {analysis['estimates']['note']}")
+        print(f"Disclaimer: {analysis['estimates']['disclaimer']}")
+
+        if analysis["suggestions"]:
+            print(f"\nRECOMMENDATIONS:")
+            print(f"─────────────────")
+            for i, suggestion in enumerate(analysis["suggestions"], 1):
+                print(f"{i}. {suggestion}")
+
+        print()
+
+    except Exception as e:
+        print(f"Error analyzing security configuration: {e}")
+        print("Please check your configuration parameters.")
+
+
 def main():
     """
     Main function that handles the command-line interface.
@@ -651,6 +802,7 @@ def main():
         "shred",
         "generate-password",
         "security-info",
+        "analyze-security",
         "check-argon2",
         "check-pqc",
         "version",
@@ -724,7 +876,7 @@ def main_with_args(args=None):
         "COMMAND-SPECIFIC FLAGS:\n"
         "  --template, --quick, --standard, --paranoid (encryption only)\n\n"
         "COMMANDS:\n"
-        "  encrypt, decrypt, shred, generate-password, security-info, check-argon2, check-pqc, version\n\n"
+        "  encrypt, decrypt, shred, generate-password, security-info, analyze-security, check-argon2, check-pqc, version\n\n"
         "EXAMPLES:\n"
         "  %(prog)s encrypt --input file.txt --debug --output file.enc\n"
         "  %(prog)s --quiet decrypt --input file.enc --progress --output file.txt\n"
@@ -778,6 +930,7 @@ def main_with_args(args=None):
             "shred",
             "generate-password",
             "security-info",
+            "analyze-security",
             "check-argon2",
             "check-pqc",
             "version",
@@ -791,7 +944,7 @@ def main_with_args(args=None):
             "reload-plugin",
         ],
         help="Action to perform: encrypt/decrypt files, shred data, generate passwords, "
-        "show security recommendations, check Argon2 support, check post-quantum cryptography support, "
+        "show security recommendations, analyze security configuration, check Argon2 support, check post-quantum cryptography support, "
         "create/verify portable USB drives, manage plugins",
     )
 
@@ -1834,6 +1987,10 @@ def main_with_args(args=None):
         show_security_recommendations()
         sys.exit(0)
 
+    elif args.action == "analyze-security":
+        analyze_current_security_configuration(args)
+        sys.exit(0)
+
     elif args.action == "check-argon2":
         argon2_available, version, supported_types = check_argon2_support()
         print("\nARGON2 SUPPORT CHECK")
@@ -2209,6 +2366,7 @@ def main_with_args(args=None):
     if getattr(args, "input", None) is None and args.action not in [
         "generate-password",
         "security-info",
+        "analyze-security",
         "check-argon2",
         "check-pqc",
         "version",

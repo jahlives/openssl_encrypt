@@ -95,6 +95,7 @@ from modules.secure_ops import (
     constant_time_pkcs7_unpad,
     secure_memzero,
 )
+from modules.security_scorer import SecurityLevel, SecurityScorer
 
 try:
     from modules.steganography.error_correction import (
@@ -12074,6 +12075,348 @@ class TestPluginIntegration(unittest.TestCase):
 
         except ImportError:
             self.skipTest("Plugin system not available")
+
+
+class TestSecurityScorer(unittest.TestCase):
+    """Test cases for the SecurityScorer system."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.scorer = SecurityScorer()
+
+    def test_security_level_enum(self):
+        """Test SecurityLevel enum values."""
+        self.assertEqual(SecurityLevel.MINIMAL.value, 1)
+        self.assertEqual(SecurityLevel.LOW.value, 2)
+        self.assertEqual(SecurityLevel.MODERATE.value, 3)
+        self.assertEqual(SecurityLevel.GOOD.value, 4)
+        self.assertEqual(SecurityLevel.HIGH.value, 5)
+        self.assertEqual(SecurityLevel.VERY_HIGH.value, 6)
+        self.assertEqual(SecurityLevel.MAXIMUM.value, 7)
+        self.assertEqual(SecurityLevel.OVERKILL.value, 8)
+        self.assertEqual(SecurityLevel.THEORETICAL.value, 9)
+        self.assertEqual(SecurityLevel.EXTREME.value, 10)
+
+    def test_hash_strength_ratings(self):
+        """Test hash algorithm strength ratings."""
+        # Test that all expected algorithms have ratings
+        expected_hashes = ["sha256", "sha512", "sha3_256", "sha3_512", "blake2b", "blake3"]
+        for hash_alg in expected_hashes:
+            self.assertIn(hash_alg, SecurityScorer.HASH_STRENGTH)
+            self.assertIsInstance(SecurityScorer.HASH_STRENGTH[hash_alg], (int, float))
+            self.assertGreater(SecurityScorer.HASH_STRENGTH[hash_alg], 0)
+
+    def test_kdf_strength_ratings(self):
+        """Test KDF algorithm strength ratings."""
+        expected_kdfs = ["argon2", "scrypt", "pbkdf2", "balloon", "hkdf"]
+        for kdf in expected_kdfs:
+            self.assertIn(kdf, SecurityScorer.KDF_STRENGTH)
+            self.assertIsInstance(SecurityScorer.KDF_STRENGTH[kdf], (int, float))
+            self.assertGreater(SecurityScorer.KDF_STRENGTH[kdf], 0)
+
+    def test_cipher_strength_ratings(self):
+        """Test encryption algorithm strength ratings."""
+        expected_ciphers = ["aes-gcm", "aes-gcm-siv", "chacha20-poly1305", "xchacha20-poly1305"]
+        for cipher in expected_ciphers:
+            self.assertIn(cipher, SecurityScorer.CIPHER_STRENGTH)
+            self.assertIsInstance(SecurityScorer.CIPHER_STRENGTH[cipher], (int, float))
+            self.assertGreater(SecurityScorer.CIPHER_STRENGTH[cipher], 0)
+
+    def test_pqc_bonus_ratings(self):
+        """Test post-quantum cryptography bonus ratings."""
+        expected_pqc = ["ml-kem", "kyber", "hqc"]
+        for pqc in expected_pqc:
+            self.assertIn(pqc, SecurityScorer.PQC_BONUS)
+            self.assertIsInstance(SecurityScorer.PQC_BONUS[pqc], (int, float))
+            self.assertGreater(SecurityScorer.PQC_BONUS[pqc], 0)
+
+    def test_score_hash_config_empty(self):
+        """Test hash scoring with empty configuration."""
+        hash_config = {}
+        result = self.scorer._score_hash_config(hash_config)
+
+        self.assertIsInstance(result, dict)
+        self.assertIn("score", result)
+        self.assertIn("algorithms", result)
+        self.assertIn("total_rounds", result)
+        self.assertIn("description", result)
+        self.assertEqual(result["score"], 0.0)
+        self.assertEqual(result["algorithms"], [])
+        self.assertEqual(result["total_rounds"], 0)
+
+    def test_score_hash_config_single(self):
+        """Test hash scoring with single algorithm."""
+        hash_config = {"sha256": {"rounds": 1000000}}
+        result = self.scorer._score_hash_config(hash_config)
+
+        self.assertGreater(result["score"], 0)
+        self.assertEqual(result["algorithms"], ["sha256"])
+        self.assertEqual(result["total_rounds"], 1000000)
+        self.assertIsInstance(result["description"], str)
+
+    def test_score_hash_config_multiple(self):
+        """Test hash scoring with multiple algorithms."""
+        hash_config = {
+            "sha256": {"rounds": 1000000},
+            "blake2b": {"rounds": 500000},
+            "sha3_512": {"rounds": 200000},
+        }
+        result = self.scorer._score_hash_config(hash_config)
+
+        self.assertGreater(result["score"], 0)
+        self.assertEqual(len(result["algorithms"]), 3)
+        self.assertIn("sha256", result["algorithms"])
+        self.assertIn("blake2b", result["algorithms"])
+        self.assertIn("sha3_512", result["algorithms"])
+        self.assertEqual(result["total_rounds"], 1700000)
+
+    def test_score_kdf_config_empty(self):
+        """Test KDF scoring with empty configuration."""
+        kdf_config = {}
+        result = self.scorer._score_kdf_config(kdf_config)
+
+        self.assertEqual(result["score"], 0.0)
+        self.assertEqual(result["algorithms"], [])
+
+    def test_score_kdf_config_argon2(self):
+        """Test KDF scoring with Argon2 configuration."""
+        kdf_config = {
+            "argon2": {"enabled": True, "memory_cost": 65536, "time_cost": 3, "parallelism": 4}
+        }
+        result = self.scorer._score_kdf_config(kdf_config)
+
+        self.assertGreater(result["score"], 0)
+        self.assertEqual(result["algorithms"], ["argon2"])
+        self.assertIsInstance(result["description"], str)
+
+    def test_score_kdf_config_scrypt(self):
+        """Test KDF scoring with Scrypt configuration."""
+        kdf_config = {"scrypt": {"enabled": True, "n": 16384, "r": 8, "p": 1}}
+        result = self.scorer._score_kdf_config(kdf_config)
+
+        self.assertGreater(result["score"], 0)
+        self.assertEqual(result["algorithms"], ["scrypt"])
+
+    def test_score_kdf_config_pbkdf2(self):
+        """Test KDF scoring with PBKDF2 configuration."""
+        kdf_config = {"pbkdf2": {"enabled": True, "rounds": 100000}}
+        result = self.scorer._score_kdf_config(kdf_config)
+
+        self.assertGreater(result["score"], 0)
+        self.assertEqual(result["algorithms"], ["pbkdf2"])
+
+    def test_score_cipher_config(self):
+        """Test cipher scoring with different algorithms."""
+        # Test AES-GCM
+        cipher_info = {"algorithm": "aes-gcm"}
+        result = self.scorer._score_cipher_config(cipher_info)
+
+        self.assertGreater(result["score"], 0)
+        self.assertEqual(result["algorithm"], "aes-gcm")
+        self.assertTrue(result["authenticated"])
+
+        # Test ChaCha20-Poly1305
+        cipher_info = {"algorithm": "chacha20-poly1305"}
+        result = self.scorer._score_cipher_config(cipher_info)
+
+        self.assertGreater(result["score"], 0)
+        self.assertEqual(result["algorithm"], "chacha20-poly1305")
+        self.assertTrue(result["authenticated"])
+
+        # Test unknown algorithm
+        cipher_info = {"algorithm": "unknown-cipher"}
+        result = self.scorer._score_cipher_config(cipher_info)
+
+        self.assertEqual(result["score"], 2.0)  # Default score
+        self.assertEqual(result["algorithm"], "unknown-cipher")
+
+    def test_score_pqc_config_disabled(self):
+        """Test PQC scoring when disabled."""
+        result = self.scorer._score_pqc_config(None)
+        self.assertEqual(result, 0.0)
+
+        result = self.scorer._score_pqc_config({"enabled": False})
+        self.assertEqual(result, 0.0)
+
+    def test_score_pqc_config_enabled(self):
+        """Test PQC scoring with different algorithms."""
+        # Test ML-KEM
+        pqc_info = {"enabled": True, "algorithm": "ml-kem-768"}
+        result = self.scorer._score_pqc_config(pqc_info)
+        self.assertGreater(result, 0)
+
+        # Test Kyber
+        pqc_info = {"enabled": True, "algorithm": "kyber-768"}
+        result = self.scorer._score_pqc_config(pqc_info)
+        self.assertGreater(result, 0)
+
+        # Test HQC
+        pqc_info = {"enabled": True, "algorithm": "hqc-192"}
+        result = self.scorer._score_pqc_config(pqc_info)
+        self.assertGreater(result, 0)
+
+        # Test unknown PQC algorithm
+        pqc_info = {"enabled": True, "algorithm": "unknown-pqc"}
+        result = self.scorer._score_pqc_config(pqc_info)
+        self.assertEqual(result, 1.0)  # Basic bonus for unknown PQC
+
+    def test_score_to_level(self):
+        """Test score to security level conversion."""
+        test_cases = [
+            (1.5, SecurityLevel.MINIMAL),
+            (2.5, SecurityLevel.LOW),
+            (3.5, SecurityLevel.MODERATE),
+            (4.5, SecurityLevel.GOOD),
+            (5.5, SecurityLevel.HIGH),
+            (6.5, SecurityLevel.VERY_HIGH),
+            (7.5, SecurityLevel.MAXIMUM),
+            (8.5, SecurityLevel.OVERKILL),
+            (9.2, SecurityLevel.THEORETICAL),
+            (9.8, SecurityLevel.EXTREME),
+        ]
+
+        for score, expected_level in test_cases:
+            result = self.scorer._score_to_level(score)
+            self.assertEqual(
+                result, expected_level, f"Score {score} should map to {expected_level}"
+            )
+
+    def test_get_security_description(self):
+        """Test security description generation."""
+        descriptions = [
+            (1.5, "Basic protection suitable for low-value data"),
+            (3.5, "Adequate security for everyday use"),
+            (5.5, "Strong protection for sensitive information"),
+            (7.5, "Highest practical security level"),
+            (9.8, "Maximum possible security settings"),
+        ]
+
+        for score, expected_desc in descriptions:
+            result = self.scorer._get_security_description(score)
+            self.assertEqual(result, expected_desc)
+
+    def test_complete_configuration_scoring_minimal(self):
+        """Test complete configuration scoring with minimal setup."""
+        hash_config = {"sha256": {"rounds": 100000}}
+        kdf_config = {"pbkdf2": {"enabled": True, "rounds": 100000}}
+        cipher_info = {"algorithm": "aes-gcm"}
+
+        result = self.scorer.score_configuration(hash_config, kdf_config, cipher_info)
+
+        # Validate structure
+        self.assertIn("overall", result)
+        self.assertIn("hash_analysis", result)
+        self.assertIn("kdf_analysis", result)
+        self.assertIn("cipher_analysis", result)
+        self.assertIn("pqc_analysis", result)
+        self.assertIn("estimates", result)
+        self.assertIn("suggestions", result)
+
+        # Validate overall score
+        self.assertIsInstance(result["overall"]["score"], (int, float))
+        self.assertGreaterEqual(result["overall"]["score"], 1.0)
+        self.assertLessEqual(result["overall"]["score"], 10.0)
+        self.assertIsInstance(result["overall"]["level"], SecurityLevel)
+        self.assertIsInstance(result["overall"]["description"], str)
+
+        # Validate PQC analysis
+        self.assertFalse(result["pqc_analysis"]["enabled"])
+        self.assertEqual(result["pqc_analysis"]["score"], 0)
+
+    def test_complete_configuration_scoring_maximum(self):
+        """Test complete configuration scoring with maximum security setup."""
+        hash_config = {
+            "sha256": {"rounds": 10000000},
+            "blake3": {"rounds": 5000000},
+            "sha3_512": {"rounds": 2000000},
+        }
+        kdf_config = {
+            "argon2": {
+                "enabled": True,
+                "memory_cost": 1048576,  # 1GB
+                "time_cost": 10,
+                "parallelism": 8,
+            },
+            "scrypt": {"enabled": True, "n": 1048576, "r": 8, "p": 1},
+        }
+        cipher_info = {"algorithm": "xchacha20-poly1305"}
+        pqc_info = {"enabled": True, "algorithm": "ml-kem-1024"}
+
+        result = self.scorer.score_configuration(hash_config, kdf_config, cipher_info, pqc_info)
+
+        # Should have higher overall score
+        self.assertGreaterEqual(result["overall"]["score"], 5.0)
+
+        # Should detect multiple algorithms
+        self.assertGreater(len(result["hash_analysis"]["algorithms"]), 1)
+        self.assertGreater(len(result["kdf_analysis"]["algorithms"]), 1)
+
+        # Should detect PQC
+        self.assertTrue(result["pqc_analysis"]["enabled"])
+        self.assertGreater(result["pqc_analysis"]["score"], 0)
+
+        # Should have authenticated encryption
+        self.assertTrue(result["cipher_analysis"]["authenticated"])
+
+    def test_security_estimates(self):
+        """Test security time estimates generation."""
+        hash_score = {"total_rounds": 1000000}
+        kdf_score = {"algorithms": ["argon2"]}
+        cipher_score = {"algorithm": "aes-gcm"}
+
+        result = self.scorer._calculate_security_estimates(hash_score, kdf_score, cipher_score)
+
+        self.assertIn("brute_force_time", result)
+        self.assertIn("note", result)
+        self.assertIn("disclaimer", result)
+        self.assertIsInstance(result["brute_force_time"], str)
+        self.assertIsInstance(result["note"], str)
+        self.assertIsInstance(result["disclaimer"], str)
+
+    def test_generate_suggestions(self):
+        """Test suggestion generation."""
+        # Test low-security configuration
+        low_scores = {
+            "overall": {"score": 2.0},
+            "hash_analysis": {"score": 2.0},
+            "kdf_analysis": {"score": 2.0},
+            "cipher_analysis": {"score": 2.0},
+            "pqc_analysis": {"enabled": False, "score": 0},
+        }
+
+        suggestions = self.scorer._generate_suggestions(low_scores)
+        self.assertIsInstance(suggestions, list)
+        self.assertGreater(len(suggestions), 0)
+        self.assertTrue(any("stronger algorithm" in s for s in suggestions))
+        self.assertTrue(any("post-quantum" in s for s in suggestions))
+
+        # Test high-security configuration
+        high_scores = {
+            "overall": {"score": 9.0},
+            "hash_analysis": {"score": 8.0},
+            "kdf_analysis": {"score": 8.0},
+            "cipher_analysis": {"score": 8.0},
+            "pqc_analysis": {"enabled": True, "score": 2.0},
+        }
+
+        suggestions = self.scorer._generate_suggestions(high_scores)
+        self.assertIsInstance(suggestions, list)
+        self.assertTrue(any("stronger than necessary" in s for s in suggestions))
+
+    def test_convenience_function(self):
+        """Test the convenience function analyze_security_config."""
+        from modules.security_scorer import analyze_security_config
+
+        hash_config = {"sha256": {"rounds": 1000000}}
+        kdf_config = {"argon2": {"enabled": True, "memory_cost": 65536}}
+        cipher_info = {"algorithm": "aes-gcm"}
+
+        result = analyze_security_config(hash_config, kdf_config, cipher_info)
+
+        self.assertIn("overall", result)
+        self.assertIn("hash_analysis", result)
+        self.assertIn("kdf_analysis", result)
+        self.assertIn("cipher_analysis", result)
 
 
 if __name__ == "__main__":

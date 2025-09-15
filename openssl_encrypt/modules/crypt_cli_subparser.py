@@ -739,6 +739,164 @@ def setup_simple_parser(subparser):
     pass
 
 
+def setup_analyze_security_parser(subparser):
+    """Set up arguments for analyze-security command."""
+    # Add only security-related arguments (no file I/O required)
+
+    # Hash options
+    hash_group = subparser.add_argument_group("Hash options")
+
+    # SHA family arguments
+    hash_group.add_argument(
+        "--sha256-rounds",
+        type=int,
+        nargs="?",
+        const=1000000,
+        default=0,
+        help="Number of SHA-256 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--sha512-rounds",
+        type=int,
+        nargs="?",
+        const=1000000,
+        default=0,
+        help="Number of SHA-512 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--blake2b-rounds",
+        type=int,
+        nargs="?",
+        const=1000000,
+        default=0,
+        help="Number of BLAKE2b iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--blake3-rounds",
+        type=int,
+        nargs="?",
+        const=1000000,
+        default=0,
+        help="Number of BLAKE3 iterations (default: 1,000,000 if flag provided without value)",
+    )
+
+    # KDF options
+    kdf_group = subparser.add_argument_group("Key Derivation Function options")
+
+    # Argon2 options
+    kdf_group.add_argument(
+        "--argon2-memory-cost",
+        type=int,
+        default=0,
+        help="Argon2 memory cost in KB (default: 1048576 = 1GB)",
+    )
+    kdf_group.add_argument(
+        "--argon2-time-cost",
+        type=int,
+        default=0,
+        help="Argon2 time cost (iterations, default: 3)",
+    )
+    kdf_group.add_argument(
+        "--argon2-parallelism",
+        type=int,
+        default=0,
+        help="Argon2 parallelism (default: 4)",
+    )
+
+    # Scrypt options
+    kdf_group.add_argument(
+        "--scrypt-n",
+        type=int,
+        default=0,
+        help="Scrypt N parameter (default: 16384)",
+    )
+    kdf_group.add_argument(
+        "--scrypt-r",
+        type=int,
+        default=8,
+        help="Scrypt r parameter (default: 8)",
+    )
+    kdf_group.add_argument(
+        "--scrypt-p",
+        type=int,
+        default=1,
+        help="Scrypt p parameter (default: 1)",
+    )
+
+    # PBKDF2 options
+    kdf_group.add_argument(
+        "--pbkdf2-rounds",
+        type=int,
+        default=0,
+        help="PBKDF2 rounds (default: 100000)",
+    )
+
+    # Balloon options
+    kdf_group.add_argument(
+        "--balloon-space-cost",
+        type=int,
+        default=0,
+        help="Balloon space cost (default: 16)",
+    )
+    kdf_group.add_argument(
+        "--balloon-time-cost",
+        type=int,
+        default=0,
+        help="Balloon time cost (default: 20)",
+    )
+
+    # HKDF options
+    kdf_group.add_argument(
+        "--hkdf-rounds",
+        type=int,
+        default=0,
+        help="HKDF rounds (default: 1)",
+    )
+    kdf_group.add_argument(
+        "--hkdf-hash-algorithm",
+        choices=["sha256", "sha512", "sha224", "sha384"],
+        default="sha256",
+        help="Hash algorithm for HKDF (default: sha256)",
+    )
+
+    # Encryption algorithm options
+    algo_group = subparser.add_argument_group("Encryption algorithm options")
+    algo_group.add_argument(
+        "--encryption-data-algorithm",
+        choices=[
+            "aes-gcm",
+            "aes-gcm-siv",
+            "chacha20-poly1305",
+            "xchacha20-poly1305",
+            "aes-siv",
+            "aes-ocb3",
+            "fernet",
+        ],
+        default="aes-gcm",
+        help="Data encryption algorithm (default: aes-gcm)",
+    )
+
+    # Post-quantum options
+    pqc_group = subparser.add_argument_group("Post-quantum cryptography options")
+    pqc_group.add_argument(
+        "--pqc-algorithm",
+        choices=[
+            "none",
+            "ml-kem-512",
+            "ml-kem-768",
+            "ml-kem-1024",
+            "kyber-512",
+            "kyber-768",
+            "kyber-1024",
+            "hqc-128",
+            "hqc-192",
+            "hqc-256",
+        ],
+        default="none",
+        help="Post-quantum encryption algorithm (default: none)",
+    )
+
+
 def create_subparser_main():
     """
     Create a main function that uses subparsers instead of the monolithic approach.
@@ -803,6 +961,13 @@ def create_subparser_main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_simple_parser(security_info_parser)
+
+    analyze_security_parser = subparsers.add_parser(
+        "analyze-security",
+        help="Analyze current security configuration and display security score",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_analyze_security_parser(analyze_security_parser)
 
     check_argon2_parser = subparsers.add_parser(
         "check-argon2",
