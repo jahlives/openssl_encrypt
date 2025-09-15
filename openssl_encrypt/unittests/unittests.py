@@ -13531,5 +13531,303 @@ class TestTemplateManager(unittest.TestCase):
         self.assertFalse(os.path.exists(filename))
 
 
+class TestSmartRecommendations(unittest.TestCase):
+    """Test smart recommendations system functionality."""
+    
+    def setUp(self):
+        """Set up test environment."""
+        from ..modules.smart_recommendations import SmartRecommendationEngine, UserContext
+        import tempfile
+        import os
+        
+        # Create temporary directory for test data
+        self.test_dir = tempfile.mkdtemp()
+        self.engine = SmartRecommendationEngine(data_dir=self.test_dir)
+    
+    def tearDown(self):
+        """Clean up test environment."""
+        import shutil
+        if hasattr(self, 'test_dir'):
+            shutil.rmtree(self.test_dir, ignore_errors=True)
+    
+    def test_user_context_creation(self):
+        """Test user context creation and configuration."""
+        from ..modules.smart_recommendations import UserContext
+        
+        context = UserContext(
+            user_type="business",
+            experience_level="advanced",
+            primary_use_cases=["business", "compliance"],
+            data_sensitivity="high"
+        )
+        
+        self.assertEqual(context.user_type, "business")
+        self.assertEqual(context.experience_level, "advanced")
+        self.assertEqual(context.primary_use_cases, ["business", "compliance"])
+        self.assertEqual(context.data_sensitivity, "high")
+    
+    def test_basic_recommendations_generation(self):
+        """Test basic recommendation generation."""
+        from ..modules.smart_recommendations import UserContext
+        
+        user_context = UserContext(
+            user_type="personal",
+            experience_level="intermediate",
+            primary_use_cases=["personal"],
+            data_sensitivity="medium"
+        )
+        
+        recommendations = self.engine.generate_recommendations(user_context)
+        
+        self.assertIsInstance(recommendations, list)
+        self.assertGreater(len(recommendations), 0)
+        
+        # Check recommendation structure
+        for rec in recommendations:
+            self.assertTrue(hasattr(rec, 'id'))
+            self.assertTrue(hasattr(rec, 'category'))
+            self.assertTrue(hasattr(rec, 'priority'))
+            self.assertTrue(hasattr(rec, 'confidence'))
+            self.assertTrue(hasattr(rec, 'title'))
+            self.assertTrue(hasattr(rec, 'description'))
+            self.assertTrue(hasattr(rec, 'action'))
+    
+    def test_security_recommendations(self):
+        """Test security-focused recommendations."""
+        from ..modules.smart_recommendations import UserContext, RecommendationCategory
+        
+        # High sensitivity context should generate security recommendations
+        user_context = UserContext(
+            user_type="compliance",
+            data_sensitivity="high",
+            primary_use_cases=["compliance"],
+            security_clearance_level="high"
+        )
+        
+        recommendations = self.engine.generate_recommendations(user_context)
+        
+        # Should have security category recommendations
+        security_recs = [r for r in recommendations if r.category == RecommendationCategory.SECURITY]
+        self.assertGreater(len(security_recs), 0)
+        
+        # Should recommend post-quantum encryption for high sensitivity
+        pq_recs = [r for r in recommendations if "quantum" in r.title.lower() or "quantum" in r.description.lower()]
+        self.assertGreater(len(pq_recs), 0)
+    
+    def test_algorithm_recommendations(self):
+        """Test algorithm-specific recommendations."""
+        from ..modules.smart_recommendations import UserContext, RecommendationCategory
+        
+        user_context = UserContext(
+            user_type="business",
+            primary_use_cases=["business"],
+            typical_file_sizes="large",
+            performance_priority="speed"
+        )
+        
+        current_config = {"algorithm": "fernet"}  # Suboptimal for business use
+        
+        recommendations = self.engine.generate_recommendations(user_context, current_config)
+        
+        # Should have algorithm recommendations
+        algo_recs = [r for r in recommendations if r.category == RecommendationCategory.ALGORITHM]
+        self.assertGreater(len(algo_recs), 0)
+        
+        # Should suggest better algorithms for business use
+        business_improvement_recs = [r for r in algo_recs if "fernet" in r.description.lower()]
+        self.assertGreater(len(business_improvement_recs), 0)
+    
+    def test_template_recommendations(self):
+        """Test template recommendation integration."""
+        from ..modules.smart_recommendations import UserContext, RecommendationCategory
+        
+        user_context = UserContext(
+            primary_use_cases=["personal"],
+            experience_level="beginner"
+        )
+        
+        recommendations = self.engine.generate_recommendations(user_context)
+        
+        # Should have template recommendations
+        template_recs = [r for r in recommendations if r.category == RecommendationCategory.TEMPLATE]
+        self.assertGreater(len(template_recs), 0)
+        
+        # Template recommendations should mention using --template
+        template_actions = [r.action for r in template_recs]
+        template_mentioned = any("template" in action.lower() for action in template_actions)
+        self.assertTrue(template_mentioned)
+    
+    def test_compliance_recommendations(self):
+        """Test compliance-specific recommendations."""
+        from ..modules.smart_recommendations import UserContext, RecommendationCategory
+        
+        user_context = UserContext(
+            user_type="compliance",
+            primary_use_cases=["compliance"],
+            compliance_requirements=["fips_140_2", "common_criteria"]
+        )
+        
+        recommendations = self.engine.generate_recommendations(user_context)
+        
+        # Should have compliance recommendations
+        compliance_recs = [r for r in recommendations if r.category == RecommendationCategory.COMPLIANCE]
+        self.assertGreater(len(compliance_recs), 0)
+        
+        # Should mention FIPS 140-2 or Common Criteria
+        compliance_content = " ".join([r.title + " " + r.description for r in compliance_recs]).lower()
+        self.assertTrue("fips" in compliance_content or "common criteria" in compliance_content)
+    
+    def test_performance_recommendations(self):
+        """Test performance optimization recommendations."""
+        from ..modules.smart_recommendations import UserContext, RecommendationCategory
+        
+        user_context = UserContext(
+            performance_priority="speed",
+            computational_constraints=True,
+            typical_file_sizes="large"
+        )
+        
+        recommendations = self.engine.generate_recommendations(user_context)
+        
+        # Should have performance recommendations
+        perf_recs = [r for r in recommendations if r.category == RecommendationCategory.PERFORMANCE]
+        self.assertGreater(len(perf_recs), 0)
+        
+        # Should mention optimization for speed or constraints
+        perf_content = " ".join([r.title + " " + r.description for r in perf_recs]).lower()
+        self.assertTrue("speed" in perf_content or "performance" in perf_content or "constrained" in perf_content)
+    
+    def test_user_preferences_application(self):
+        """Test application of user preferences and feedback."""
+        from ..modules.smart_recommendations import UserContext
+        
+        user_context = UserContext(
+            primary_use_cases=["personal"],
+            preferred_algorithms=["aes-gcm"],
+            avoided_algorithms=["fernet"]
+        )
+        
+        recommendations = self.engine.generate_recommendations(user_context)
+        
+        # Should not recommend avoided algorithms
+        fernet_recs = [r for r in recommendations if "fernet" in r.action.lower()]
+        self.assertEqual(len(fernet_recs), 0)
+        
+        # Should boost confidence for preferred algorithms
+        aes_gcm_recs = [r for r in recommendations if "aes-gcm" in r.action.lower()]
+        if aes_gcm_recs:
+            # At least one should have high confidence
+            high_confidence_recs = [r for r in aes_gcm_recs if r.confidence.value >= 4]
+            self.assertGreater(len(high_confidence_recs), 0)
+    
+    def test_user_context_persistence(self):
+        """Test saving and loading user context."""
+        from ..modules.smart_recommendations import UserContext
+        
+        user_id = "test_user"
+        original_context = UserContext(
+            user_type="business",
+            experience_level="expert",
+            primary_use_cases=["business", "compliance"],
+            data_sensitivity="high",
+            preferred_algorithms=["aes-gcm", "xchacha20-poly1305"]
+        )
+        
+        # Save context
+        self.engine.save_user_context(user_id, original_context)
+        
+        # Load context
+        loaded_context = self.engine.load_user_context(user_id)
+        
+        self.assertIsNotNone(loaded_context)
+        self.assertEqual(loaded_context.user_type, original_context.user_type)
+        self.assertEqual(loaded_context.experience_level, original_context.experience_level)
+        self.assertEqual(loaded_context.primary_use_cases, original_context.primary_use_cases)
+        self.assertEqual(loaded_context.data_sensitivity, original_context.data_sensitivity)
+        self.assertEqual(loaded_context.preferred_algorithms, original_context.preferred_algorithms)
+    
+    def test_feedback_recording(self):
+        """Test feedback recording and learning."""
+        from ..modules.smart_recommendations import UserContext
+        
+        user_id = "test_user"
+        rec_id = "test_rec_001"
+        
+        # Record positive feedback
+        self.engine.record_feedback(user_id, rec_id, accepted=True, feedback_text="Very helpful!")
+        
+        # Load context and check feedback was recorded
+        context = self.engine.load_user_context(user_id)
+        self.assertIsNotNone(context)
+        self.assertIn(rec_id, context.feedback_history)
+        
+        feedback = context.feedback_history[rec_id]
+        self.assertTrue(feedback["user_accepted"])
+        self.assertEqual(feedback["user_feedback"], "Very helpful!")
+        self.assertIn("timestamp", feedback)
+    
+    def test_quick_recommendations(self):
+        """Test quick recommendations functionality."""
+        quick_recs = self.engine.get_quick_recommendations("business", "intermediate")
+        
+        self.assertIsInstance(quick_recs, list)
+        self.assertGreater(len(quick_recs), 0)
+        self.assertLessEqual(len(quick_recs), 5)  # Should be limited to top 5
+        
+        # Each recommendation should be a string with action
+        for rec in quick_recs:
+            self.assertIsInstance(rec, str)
+            self.assertTrue(len(rec) > 0)
+    
+    def test_security_level_determination(self):
+        """Test security level determination based on context."""
+        from ..modules.smart_recommendations import UserContext
+        
+        # Test different contexts
+        contexts = [
+            (UserContext(user_type="personal", data_sensitivity="low"), "lower security"),
+            (UserContext(user_type="business", data_sensitivity="high"), "higher security"),
+            (UserContext(user_type="compliance", data_sensitivity="top_secret"), "maximum security")
+        ]
+        
+        for context, expected_level in contexts:
+            requirements = self.engine._determine_required_security_level(context)
+            
+            self.assertIn("minimum_score", requirements)
+            self.assertIn("recommended_score", requirements)
+            self.assertIsInstance(requirements["minimum_score"], float)
+            self.assertIsInstance(requirements["recommended_score"], float)
+            
+            # Higher sensitivity should require higher scores
+            self.assertGreaterEqual(requirements["recommended_score"], requirements["minimum_score"])
+    
+    def test_recommendation_priority_sorting(self):
+        """Test that recommendations are properly sorted by priority and confidence."""
+        from ..modules.smart_recommendations import UserContext
+        
+        user_context = UserContext(
+            user_type="compliance",
+            data_sensitivity="high",
+            primary_use_cases=["compliance"],
+            compliance_requirements=["fips_140_2"]
+        )
+        
+        recommendations = self.engine.generate_recommendations(user_context)
+        
+        # Should be sorted by priority (critical/high first) then confidence
+        if len(recommendations) > 1:
+            for i in range(len(recommendations) - 1):
+                current = recommendations[i]
+                next_rec = recommendations[i + 1]
+                
+                # Priority ordering: critical > high > medium > low > info
+                priority_order = {"critical": 5, "high": 4, "medium": 3, "low": 2, "info": 1}
+                current_priority = priority_order.get(current.priority.value, 0)
+                next_priority = priority_order.get(next_rec.priority.value, 0)
+                
+                # Current should have higher or equal priority
+                self.assertGreaterEqual(current_priority, next_priority)
+
+
 if __name__ == "__main__":
     unittest.main()

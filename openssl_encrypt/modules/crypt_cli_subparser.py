@@ -1020,6 +1020,127 @@ def setup_template_parser(subparser):
     )
 
 
+def setup_smart_recommendations_parser(subparser):
+    """Set up arguments specific to the smart-recommendations command."""
+    # Create subparsers for smart recommendations operations
+    recs_subparsers = subparser.add_subparsers(
+        dest="recommendations_action",
+        help="Smart recommendations operations",
+        metavar="operation"
+    )
+    
+    # Get recommendations
+    get_parser = recs_subparsers.add_parser(
+        "get",
+        help="Get personalized recommendations"
+    )
+    get_parser.add_argument(
+        "--user-id",
+        default="default",
+        help="User ID for personalized recommendations (default: default)"
+    )
+    get_parser.add_argument(
+        "--user-type",
+        choices=["personal", "business", "developer", "compliance"],
+        help="Type of user for context-aware recommendations"
+    )
+    get_parser.add_argument(
+        "--experience-level",
+        choices=["beginner", "intermediate", "advanced", "expert"],
+        help="Experience level for appropriate recommendations"
+    )
+    get_parser.add_argument(
+        "--use-cases",
+        nargs="*",
+        choices=["personal", "business", "compliance", "archival"],
+        help="Primary use cases for targeted recommendations"
+    )
+    get_parser.add_argument(
+        "--data-sensitivity",
+        choices=["low", "medium", "high", "top_secret"],
+        help="Data sensitivity level"
+    )
+    get_parser.add_argument(
+        "--performance-priority",
+        choices=["speed", "security", "balanced"],
+        help="Performance priority for optimization recommendations"
+    )
+    get_parser.add_argument(
+        "--compliance-requirements",
+        nargs="*", 
+        choices=["fips_140_2", "common_criteria", "nist_guidelines"],
+        help="Compliance frameworks to consider"
+    )
+    get_parser.add_argument(
+        "--analyze-current",
+        action="store_true",
+        help="Analyze current configuration and provide improvement recommendations"
+    )
+    
+    # Profile management
+    profile_parser = recs_subparsers.add_parser(
+        "profile",
+        help="Manage user profiles for personalized recommendations"
+    )
+    profile_parser.add_argument(
+        "--user-id", 
+        default="default",
+        help="User ID for profile operations (default: default)"
+    )
+    profile_group = profile_parser.add_mutually_exclusive_group(required=True)
+    profile_group.add_argument(
+        "--create",
+        action="store_true",
+        help="Create new user profile interactively"
+    )
+    profile_group.add_argument(
+        "--show",
+        action="store_true", 
+        help="Show existing user profile"
+    )
+    
+    # Feedback system
+    feedback_parser = recs_subparsers.add_parser(
+        "feedback",
+        help="Provide feedback on recommendations for learning"
+    )
+    feedback_parser.add_argument(
+        "recommendation_id",
+        help="ID of the recommendation to provide feedback on"
+    )
+    feedback_parser.add_argument(
+        "accepted",
+        type=bool,
+        help="Whether the recommendation was accepted (True/False)"
+    )
+    feedback_parser.add_argument(
+        "--user-id",
+        default="default", 
+        help="User ID for feedback (default: default)"
+    )
+    feedback_parser.add_argument(
+        "--comment",
+        help="Optional comment about the recommendation"
+    )
+    
+    # Quick recommendations
+    quick_parser = recs_subparsers.add_parser(
+        "quick",
+        help="Get quick recommendations for immediate use"
+    )
+    quick_parser.add_argument(
+        "use_case",
+        choices=["personal", "business", "compliance", "archival"],
+        help="Use case for quick recommendations"
+    )
+    quick_parser.add_argument(
+        "--experience-level",
+        choices=["beginner", "intermediate", "advanced", "expert"],
+        default="intermediate",
+        help="Experience level (default: intermediate)"
+    )
+
+
 def create_subparser_main():
     """
     Create a main function that uses subparsers instead of the monolithic approach.
@@ -1112,6 +1233,13 @@ def create_subparser_main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_template_parser(template_parser)
+
+    smart_recommendations_parser = subparsers.add_parser(
+        "smart-recommendations",
+        help="AI-powered security recommendations",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_smart_recommendations_parser(smart_recommendations_parser)
 
     check_argon2_parser = subparsers.add_parser(
         "check-argon2",

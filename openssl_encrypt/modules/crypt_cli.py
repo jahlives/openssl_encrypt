@@ -607,6 +607,7 @@ def preprocess_global_args(argv):
         "config-wizard",
         "analyze-config",
         "template",
+        "smart-recommendations",
         "check-argon2",
         "check-pqc",
         "version",
@@ -1072,6 +1073,231 @@ def run_template_manager(args):
         sys.exit(1)
 
 
+def run_smart_recommendations(args):
+    """Run smart recommendations system."""
+    try:
+        from .smart_recommendations import SmartRecommendationEngine, UserContext, ConfidenceLevel, RecommendationPriority
+        
+        engine = SmartRecommendationEngine()
+        subcommand = getattr(args, 'recommendations_action', None)
+        
+        if subcommand == 'get':
+            _handle_recommendations_get(engine, args)
+        elif subcommand == 'profile':
+            _handle_recommendations_profile(engine, args)
+        elif subcommand == 'feedback':
+            _handle_recommendations_feedback(engine, args)
+        elif subcommand == 'quick':
+            _handle_recommendations_quick(engine, args)
+        else:
+            print("Invalid smart recommendations subcommand. Use --help for available options.")
+            
+    except Exception as e:
+        print(f"Error in smart recommendations: {e}")
+        sys.exit(1)
+
+
+def _handle_recommendations_get(engine, args):
+    """Handle get recommendations command."""
+    from .smart_recommendations import UserContext
+    
+    # Build user context from arguments
+    user_context = UserContext()
+    
+    # Apply provided arguments
+    if hasattr(args, 'user_type') and args.user_type:
+        user_context.user_type = args.user_type
+    if hasattr(args, 'experience_level') and args.experience_level:
+        user_context.experience_level = args.experience_level
+    if hasattr(args, 'use_cases') and args.use_cases:
+        user_context.primary_use_cases = args.use_cases
+    if hasattr(args, 'data_sensitivity') and args.data_sensitivity:
+        user_context.data_sensitivity = args.data_sensitivity
+    if hasattr(args, 'performance_priority') and args.performance_priority:
+        user_context.performance_priority = args.performance_priority
+    if hasattr(args, 'compliance_requirements') and args.compliance_requirements:
+        user_context.compliance_requirements = args.compliance_requirements
+        
+    # Load existing user profile if available
+    user_id = getattr(args, 'user_id', 'default')
+    saved_context = engine.load_user_context(user_id)
+    if saved_context:
+        # Merge saved context with provided arguments
+        if not hasattr(args, 'user_type') or not args.user_type:
+            user_context.user_type = saved_context.user_type
+        if not hasattr(args, 'experience_level') or not args.experience_level:
+            user_context.experience_level = saved_context.experience_level
+        if not hasattr(args, 'use_cases') or not args.use_cases:
+            user_context.primary_use_cases = saved_context.primary_use_cases
+        user_context.preferred_algorithms = saved_context.preferred_algorithms
+        user_context.avoided_algorithms = saved_context.avoided_algorithms
+        user_context.feedback_history = saved_context.feedback_history
+        
+    # Get current configuration if available
+    current_config = None
+    if hasattr(args, 'analyze_current') and args.analyze_current:
+        # Try to analyze current configuration from args
+        try:
+            from .config_analyzer import analyze_configuration_from_args
+            current_config = vars(args)
+        except Exception:
+            pass
+            
+    # Generate recommendations
+    recommendations = engine.generate_recommendations(user_context, current_config)
+    
+    # Display recommendations
+    print("🧠 SMART RECOMMENDATIONS")
+    print("=" * 50)
+    print()
+    
+    if not recommendations:
+        print("No specific recommendations at this time.")
+        print("Your current configuration appears to be well-optimized!")
+        return
+        
+    for i, rec in enumerate(recommendations, 1):
+        _display_recommendation(rec, i)
+        
+    # Save updated context
+    engine.save_user_context(user_id, user_context)
+
+
+def _handle_recommendations_profile(engine, args):
+    """Handle profile management command."""
+    from .smart_recommendations import UserContext
+    
+    user_id = getattr(args, 'user_id', 'default')
+    
+    if hasattr(args, 'create') and args.create:
+        # Create new profile
+        user_context = UserContext()
+        
+        print("Creating new user profile...")
+        print("Please answer the following questions to personalize your recommendations:")
+        print()
+        
+        # Interactive profile creation
+        user_context.user_type = input("User type [personal/business/developer/compliance]: ").strip() or "personal"
+        user_context.experience_level = input("Experience level [beginner/intermediate/advanced/expert]: ").strip() or "intermediate"
+        
+        use_cases_str = input("Primary use cases (comma-separated) [personal/business/compliance/archival]: ").strip()
+        if use_cases_str:
+            user_context.primary_use_cases = [uc.strip() for uc in use_cases_str.split(',')]
+        else:
+            user_context.primary_use_cases = ["personal"]
+            
+        user_context.data_sensitivity = input("Data sensitivity [low/medium/high/top_secret]: ").strip() or "medium"
+        user_context.performance_priority = input("Performance priority [speed/security/balanced]: ").strip() or "balanced"
+        
+        compliance_str = input("Compliance requirements (comma-separated) [fips_140_2/common_criteria/nist_guidelines]: ").strip()
+        if compliance_str:
+            user_context.compliance_requirements = [req.strip() for req in compliance_str.split(',')]
+            
+        engine.save_user_context(user_id, user_context)
+        print(f"\n✅ Profile '{user_id}' created successfully!")
+        
+    elif hasattr(args, 'show') and args.show:
+        # Show existing profile
+        user_context = engine.load_user_context(user_id)
+        if not user_context:
+            print(f"❌ No profile found for user '{user_id}'")
+            return
+            
+        print(f"👤 USER PROFILE: {user_id}")
+        print("=" * 40)
+        print(f"User Type: {user_context.user_type}")
+        print(f"Experience Level: {user_context.experience_level}")
+        print(f"Primary Use Cases: {', '.join(user_context.primary_use_cases)}")
+        print(f"Data Sensitivity: {user_context.data_sensitivity}")
+        print(f"Performance Priority: {user_context.performance_priority}")
+        if user_context.compliance_requirements:
+            print(f"Compliance Requirements: {', '.join(user_context.compliance_requirements)}")
+        if user_context.preferred_algorithms:
+            print(f"Preferred Algorithms: {', '.join(user_context.preferred_algorithms)}")
+        if user_context.avoided_algorithms:
+            print(f"Avoided Algorithms: {', '.join(user_context.avoided_algorithms)}")
+        print()
+
+
+def _handle_recommendations_feedback(engine, args):
+    """Handle feedback submission."""
+    user_id = getattr(args, 'user_id', 'default')
+    rec_id = args.recommendation_id
+    accepted = args.accepted
+    feedback_text = getattr(args, 'comment', None)
+    
+    engine.record_feedback(user_id, rec_id, accepted, feedback_text)
+    
+    status = "accepted" if accepted else "rejected"
+    print(f"✅ Feedback recorded: Recommendation {rec_id} was {status}")
+    if feedback_text:
+        print(f"Comment: {feedback_text}")
+
+
+def _handle_recommendations_quick(engine, args):
+    """Handle quick recommendations command."""
+    use_case = args.use_case
+    experience_level = getattr(args, 'experience_level', 'intermediate')
+    
+    quick_recs = engine.get_quick_recommendations(use_case, experience_level)
+    
+    print(f"⚡ QUICK RECOMMENDATIONS FOR {use_case.upper()}")
+    print("=" * 50)
+    print()
+    
+    for rec in quick_recs:
+        print(rec)
+        print()
+        
+    print("💬 For detailed recommendations with explanations, use 'smart-recommendations get'")
+
+
+def _display_recommendation(rec, number: int):
+    """Display a single recommendation with formatting."""
+    # Priority icon
+    priority_icons = {
+        "info": "ℹ️",
+        "low": "🔷", 
+        "medium": "🔶",
+        "high": "🔺",
+        "critical": "🚨"
+    }
+    
+    # Confidence indicator
+    confidence_indicators = {
+        1: "⭐",
+        2: "⭐⭐", 
+        3: "⭐⭐⭐",
+        4: "⭐⭐⭐⭐",
+        5: "⭐⭐⭐⭐⭐"
+    }
+    
+    priority_icon = priority_icons.get(rec.priority.value, "🔷")
+    confidence_stars = confidence_indicators.get(rec.confidence.value, "⭐⭐⭐")
+    
+    print(f"{number}. {priority_icon} {rec.title}")
+    print(f"   📝 {rec.description}")
+    print(f"   💡 Action: {rec.action}")
+    print(f"   🎯 Confidence: {confidence_stars} | Difficulty: {rec.implementation_difficulty} | Impact: {rec.estimated_impact}")
+    
+    if rec.reasoning:
+        print(f"   🤔 Reasoning: {rec.reasoning}")
+        
+    if rec.evidence:
+        print(f"   📊 Evidence:")
+        for evidence in rec.evidence:
+            print(f"      • {evidence}")
+            
+    if rec.trade_offs:
+        print(f"   ⚖️  Trade-offs:")
+        for aspect, impact in rec.trade_offs.items():
+            print(f"      • {aspect.title()}: {impact}")
+            
+    print(f"   🏷️  Category: {rec.category.value} | ID: {rec.id}")
+    print()
+
+
 def _handle_template_list(template_mgr: TemplateManager, args):
     """Handle template list command."""
     category = getattr(args, "category", None)
@@ -1364,6 +1590,7 @@ def main():
         "config-wizard",
         "analyze-config",
         "template",
+        "smart-recommendations",
         "check-argon2",
         "check-pqc",
         "version",
@@ -1442,7 +1669,7 @@ def main_with_args(args=None):
         "  --quantum-safe pq-standard|pq-high|pq-alternative (post-quantum)\n"
         "  --for-personal|business|archival|compliance (use cases)\n\n"
         "COMMANDS:\n"
-        "  encrypt, decrypt, shred, generate-password, security-info, analyze-security, config-wizard, analyze-config, template, check-argon2, check-pqc, version\n\n"
+        "  encrypt, decrypt, shred, generate-password, security-info, analyze-security, config-wizard, analyze-config, template, smart-recommendations, check-argon2, check-pqc, version\n\n"
         "EXAMPLES:\n"
         "  %(prog)s encrypt --input file.txt --debug --output file.enc\n"
         "  %(prog)s --quiet decrypt --input file.enc --progress --output file.txt\n"
@@ -2597,6 +2824,10 @@ def main_with_args(args=None):
         run_template_manager(args)
         sys.exit(0)
 
+    elif args.action == "smart-recommendations":
+        run_smart_recommendations(args)
+        sys.exit(0)
+
     elif args.action == "check-argon2":
         argon2_available, version, supported_types = check_argon2_support()
         print("\nARGON2 SUPPORT CHECK")
@@ -2976,6 +3207,7 @@ def main_with_args(args=None):
         "config-wizard",
         "analyze-config",
         "template",
+        "smart-recommendations",
         "check-argon2",
         "check-pqc",
         "version",
