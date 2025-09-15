@@ -1024,121 +1024,158 @@ def setup_smart_recommendations_parser(subparser):
     """Set up arguments specific to the smart-recommendations command."""
     # Create subparsers for smart recommendations operations
     recs_subparsers = subparser.add_subparsers(
-        dest="recommendations_action",
-        help="Smart recommendations operations",
-        metavar="operation"
+        dest="recommendations_action", help="Smart recommendations operations", metavar="operation"
     )
-    
+
     # Get recommendations
-    get_parser = recs_subparsers.add_parser(
-        "get",
-        help="Get personalized recommendations"
-    )
+    get_parser = recs_subparsers.add_parser("get", help="Get personalized recommendations")
     get_parser.add_argument(
         "--user-id",
         default="default",
-        help="User ID for personalized recommendations (default: default)"
+        help="User ID for personalized recommendations (default: default)",
     )
     get_parser.add_argument(
         "--user-type",
         choices=["personal", "business", "developer", "compliance"],
-        help="Type of user for context-aware recommendations"
+        help="Type of user for context-aware recommendations",
     )
     get_parser.add_argument(
         "--experience-level",
         choices=["beginner", "intermediate", "advanced", "expert"],
-        help="Experience level for appropriate recommendations"
+        help="Experience level for appropriate recommendations",
     )
     get_parser.add_argument(
         "--use-cases",
         nargs="*",
         choices=["personal", "business", "compliance", "archival"],
-        help="Primary use cases for targeted recommendations"
+        help="Primary use cases for targeted recommendations",
     )
     get_parser.add_argument(
         "--data-sensitivity",
         choices=["low", "medium", "high", "top_secret"],
-        help="Data sensitivity level"
+        help="Data sensitivity level",
     )
     get_parser.add_argument(
         "--performance-priority",
         choices=["speed", "security", "balanced"],
-        help="Performance priority for optimization recommendations"
+        help="Performance priority for optimization recommendations",
     )
     get_parser.add_argument(
         "--compliance-requirements",
-        nargs="*", 
+        nargs="*",
         choices=["fips_140_2", "common_criteria", "nist_guidelines"],
-        help="Compliance frameworks to consider"
+        help="Compliance frameworks to consider",
     )
     get_parser.add_argument(
         "--analyze-current",
         action="store_true",
-        help="Analyze current configuration and provide improvement recommendations"
+        help="Analyze current configuration and provide improvement recommendations",
     )
-    
+
     # Profile management
     profile_parser = recs_subparsers.add_parser(
-        "profile",
-        help="Manage user profiles for personalized recommendations"
+        "profile", help="Manage user profiles for personalized recommendations"
     )
     profile_parser.add_argument(
-        "--user-id", 
-        default="default",
-        help="User ID for profile operations (default: default)"
+        "--user-id", default="default", help="User ID for profile operations (default: default)"
     )
     profile_group = profile_parser.add_mutually_exclusive_group(required=True)
     profile_group.add_argument(
-        "--create",
-        action="store_true",
-        help="Create new user profile interactively"
+        "--create", action="store_true", help="Create new user profile interactively"
     )
-    profile_group.add_argument(
-        "--show",
-        action="store_true", 
-        help="Show existing user profile"
-    )
-    
+    profile_group.add_argument("--show", action="store_true", help="Show existing user profile")
+
     # Feedback system
     feedback_parser = recs_subparsers.add_parser(
-        "feedback",
-        help="Provide feedback on recommendations for learning"
+        "feedback", help="Provide feedback on recommendations for learning"
     )
     feedback_parser.add_argument(
-        "recommendation_id",
-        help="ID of the recommendation to provide feedback on"
+        "recommendation_id", help="ID of the recommendation to provide feedback on"
     )
     feedback_parser.add_argument(
-        "accepted",
-        type=bool,
-        help="Whether the recommendation was accepted (True/False)"
+        "accepted", type=bool, help="Whether the recommendation was accepted (True/False)"
     )
     feedback_parser.add_argument(
-        "--user-id",
-        default="default", 
-        help="User ID for feedback (default: default)"
+        "--user-id", default="default", help="User ID for feedback (default: default)"
     )
-    feedback_parser.add_argument(
-        "--comment",
-        help="Optional comment about the recommendation"
-    )
-    
+    feedback_parser.add_argument("--comment", help="Optional comment about the recommendation")
+
     # Quick recommendations
     quick_parser = recs_subparsers.add_parser(
-        "quick",
-        help="Get quick recommendations for immediate use"
+        "quick", help="Get quick recommendations for immediate use"
     )
     quick_parser.add_argument(
         "use_case",
         choices=["personal", "business", "compliance", "archival"],
-        help="Use case for quick recommendations"
+        help="Use case for quick recommendations",
     )
     quick_parser.add_argument(
         "--experience-level",
         choices=["beginner", "intermediate", "advanced", "expert"],
         default="intermediate",
-        help="Experience level (default: intermediate)"
+        help="Experience level (default: intermediate)",
     )
+
+
+def setup_test_parser(subparser):
+    """Set up arguments for the test command."""
+    # Create subparsers for test subcommands
+    test_subparsers = subparser.add_subparsers(
+        dest="test_action",
+        help="Test suite to run",
+        metavar="test_type"
+    )
+    
+    # Fuzz testing
+    fuzz_parser = test_subparsers.add_parser("fuzz", help="Run fuzzing tests")
+    fuzz_parser.add_argument("--iterations", type=int, default=5, help="Number of test iterations")
+    fuzz_parser.add_argument("--algorithm", help="Test specific algorithm")
+    fuzz_parser.add_argument("--seed", type=int, help="Random seed for reproducible tests")
+    
+    # Side-channel testing
+    sidechannel_parser = test_subparsers.add_parser("side-channel", help="Run side-channel resistance tests")
+    sidechannel_parser.add_argument("--algorithm", help="Test specific algorithm")
+    sidechannel_parser.add_argument("--timing-threshold", type=float, default=20.0, 
+                                   help="Timing difference threshold percentage (default: 20.0)")
+    
+    # Known-Answer Tests
+    kat_parser = test_subparsers.add_parser("kat", help="Run Known-Answer Tests")
+    kat_parser.add_argument("--test-category", choices=["hash", "hmac", "kdf", "encryption", "all"],
+                           default="all", help="Category of tests to run")
+    
+    # Benchmark testing
+    benchmark_parser = test_subparsers.add_parser("benchmark", help="Run performance benchmarks")
+    benchmark_parser.add_argument("--algorithms", nargs="+", help="Algorithms to benchmark")
+    benchmark_parser.add_argument("--file-sizes", nargs="+", type=int, 
+                                 help="File sizes to test (in bytes)")
+    benchmark_parser.add_argument("--iterations", type=int, default=3,
+                                 help="Number of benchmark iterations")
+    benchmark_parser.add_argument("--save-baseline", action="store_true",
+                                 help="Save results as baseline for regression detection")
+    
+    # Memory testing
+    memory_parser = test_subparsers.add_parser("memory", help="Run memory safety tests")
+    memory_parser.add_argument("--test-iterations", type=int, default=10,
+                              help="Number of memory test iterations")
+    memory_parser.add_argument("--leak-threshold", type=float, default=1.0,
+                              help="Memory leak threshold in MB")
+    
+    # Run all tests
+    all_parser = test_subparsers.add_parser("all", help="Run all test suites")
+    all_parser.add_argument("--parallel", action="store_true", 
+                           help="Run test suites in parallel")
+    all_parser.add_argument("--max-workers", type=int, default=3,
+                           help="Maximum parallel workers")
+    
+    # Common test arguments
+    for parser in [fuzz_parser, sidechannel_parser, kat_parser, benchmark_parser, memory_parser, all_parser]:
+        parser.add_argument("--output-dir", help="Directory for test reports (default: test_reports)")
+        parser.add_argument("--output-format", nargs="+", 
+                           choices=["json", "html", "text"], 
+                           default=["json", "html"],
+                           help="Output format(s) for test reports")
+        parser.add_argument("--quiet", action="store_true",
+                           help="Suppress test progress output")
 
 
 def create_subparser_main():
@@ -1240,6 +1277,13 @@ def create_subparser_main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_smart_recommendations_parser(smart_recommendations_parser)
+
+    test_parser = subparsers.add_parser(
+        "test",
+        help="Run security test suites (fuzz, side-channel, KAT, benchmark, memory)",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_test_parser(test_parser)
 
     check_argon2_parser = subparsers.add_parser(
         "check-argon2",

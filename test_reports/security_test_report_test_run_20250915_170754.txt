@@ -1,0 +1,36 @@
+================================================================================
+OpenSSL Encrypt Security Test Report
+================================================================================
+
+Run ID: test_run_20250915_170754
+Generated: 2025-09-15 17:08:28
+Duration: 33.3 seconds
+
+OVERALL SUMMARY
+----------------------------------------
+Total Tests: 102
+Passed: 11
+Failed: 84
+Success Rate: 10.8%
+
+TEST SUITE RESULTS
+----------------------------------------
+FuzzTestSuite (8.75s)
+  Status: PASSED
+  Tests: 58
+
+SideChannelTestSuite (12.47s)
+  Status: PASSED
+  Tests: 5
+
+KATTestSuite (0.54s)
+  Status: PASSED
+  Tests: 14
+
+BenchmarkTestSuite (9.86s)
+  Status: PASSED
+  Tests: 19
+
+MemoryTestSuite (1.71s)
+  Status: PASSED
+  Tests: 6

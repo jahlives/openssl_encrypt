@@ -1,0 +1,277 @@
+{
+  "run_id": "test_run_20250915_170533",
+  "start_time": "2025-09-15T17:05:33.489732",
+  "end_time": "2025-09-15T17:05:34.478928",
+  "total_duration": 0.989196,
+  "suite_results": [
+    {
+      "suite_name": "KATTestSuite",
+      "suite_type": "kat",
+      "execution_time": 0.9891300201416016,
+      "success": true,
+      "error_message": null,
+      "summary": {
+        "test_suite": "KATTestSuite",
+        "description": "Known-Answer Tests to verify cryptographic algorithm correctness",
+        "total_tests": 14,
+        "passed": 10,
+        "warnings": 0,
+        "errors": 4,
+        "success_rate": 71.42857142857143,
+        "total_duration": 0.9884989261627197,
+        "average_duration": 0.07060706615447998
+      },
+      "test_results": [
+        {
+          "test_name": "hash_SHA256_empty_string",
+          "level": "pass",
+          "message": "SHA256 test vector passed: SHA-256 of empty string",
+          "details": {
+            "input_size": 0,
+            "output_size": 32,
+            "expected_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "computed_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "duration": 2.1696090698242188e-05,
+          "timestamp": "2025-09-15T17:05:33.489828"
+        },
+        {
+          "test_name": "hash_SHA256_single_byte",
+          "level": "pass",
+          "message": "SHA256 test vector passed: SHA-256 of single byte 'a'",
+          "details": {
+            "input_size": 1,
+            "output_size": 32,
+            "expected_hash": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+            "computed_hash": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb"
+          },
+          "duration": 4.5299530029296875e-06,
+          "timestamp": "2025-09-15T17:05:33.489838"
+        },
+        {
+          "test_name": "hash_SHA256_abc_string",
+          "level": "pass",
+          "message": "SHA256 test vector passed: SHA-256 of 'abc'",
+          "details": {
+            "input_size": 3,
+            "output_size": 32,
+            "expected_hash": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            "computed_hash": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+          },
+          "duration": 2.384185791015625e-06,
+          "timestamp": "2025-09-15T17:05:33.489843"
+        },
+        {
+          "test_name": "hash_SHA256_longer_string",
+          "level": "pass",
+          "message": "SHA256 test vector passed: SHA-256 of longer test string",
+          "details": {
+            "input_size": 56,
+            "output_size": 32,
+            "expected_hash": "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1",
+            "computed_hash": "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
+          },
+          "duration": 1.430511474609375e-06,
+          "timestamp": "2025-09-15T17:05:33.489846"
+        },
+        {
+          "test_name": "hash_SHA512_empty_string",
+          "level": "pass",
+          "message": "SHA512 test vector passed: SHA-512 of empty string",
+          "details": {
+            "input_size": 0,
+            "output_size": 64,
+            "expected_hash": "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e",
+            "computed_hash": "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"
+          },
+          "duration": 6.67572021484375e-06,
+          "timestamp": "2025-09-15T17:05:33.489860"
+        },
+        {
+          "test_name": "hash_SHA512_abc_string",
+          "level": "pass",
+          "message": "SHA512 test vector passed: SHA-512 of 'abc'",
+          "details": {
+            "input_size": 3,
+            "output_size": 64,
+            "expected_hash": "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f",
+            "computed_hash": "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"
+          },
+          "duration": 1.9073486328125e-06,
+          "timestamp": "2025-09-15T17:05:33.489863"
+        },
+        {
+          "test_name": "hmac_rfc4231_test1",
+          "level": "pass",
+          "message": "HMAC test vector passed: HMAC-SHA256 RFC 4231 Test Case 1",
+          "details": {
+            "key_size": 20,
+            "input_size": 8,
+            "hmac_size": 32
+          },
+          "duration": 1.239776611328125e-05,
+          "timestamp": "2025-09-15T17:05:33.489880"
+        },
+        {
+          "test_name": "hmac_rfc4231_test2",
+          "level": "pass",
+          "message": "HMAC test vector passed: HMAC-SHA256 RFC 4231 Test Case 2",
+          "details": {
+            "key_size": 4,
+            "input_size": 28,
+            "hmac_size": 32
+          },
+          "duration": 5.9604644775390625e-06,
+          "timestamp": "2025-09-15T17:05:33.489887"
+        },
+        {
+          "test_name": "kdf_rfc6070_test1",
+          "level": "pass",
+          "message": "KDF test vector passed: PBKDF2-HMAC-SHA256 RFC 6070 Test 1",
+          "details": {
+            "iterations": 1,
+            "key_length": 32,
+            "salt_size": 4,
+            "password_size": 8
+          },
+          "duration": 4.3392181396484375e-05,
+          "timestamp": "2025-09-15T17:05:33.489934"
+        },
+        {
+          "test_name": "kdf_rfc6070_test2",
+          "level": "pass",
+          "message": "KDF test vector passed: PBKDF2-HMAC-SHA256 RFC 6070 Test 2",
+          "details": {
+            "iterations": 2,
+            "key_length": 32,
+            "salt_size": 4,
+            "password_size": 8
+          },
+          "duration": 4.0531158447265625e-06,
+          "timestamp": "2025-09-15T17:05:33.489940"
+        },
+        {
+          "test_name": "file_encrypt_small_file_fernet",
+          "level": "error",
+          "message": "Exception during file encryption test: Security decryption operation failed",
+          "details": {},
+          "duration": 0.6240067481994629,
+          "timestamp": "2025-09-15T17:05:34.113950",
+          "exception": {
+            "type": "DecryptionError",
+            "message": "Security decryption operation failed",
+            "traceback": [
+              "Traceback (most recent call last):\n",
+              "  File \"/home/tobster/.local/lib/python3.13/site-packages/cryptography/fernet.py\", line 130, in _verify_signature\n    h.verify(data[-32:])\n    ~~~~~~~~^^^^^^^^^^^^\n",
+              "cryptography.exceptions.InvalidSignature: Signature did not match digest.\n",
+              "\nDuring handling of the above exception, another exception occurred:\n\n",
+              "Traceback (most recent call last):\n",
+              "  File \"/home/work/private/git/openssl_encrypt/openssl_encrypt/modules/crypt_errors.py\", line 334, in wrapper\n    result = f(*args, **kwargs)\n",
+              "  File \"/home/work/private/git/openssl_encrypt/openssl_encrypt/modules/crypt_core.py\", line 4709, in decrypt_file\n    decrypted_data = do_decrypt()\n",
+              "  File \"/home/work/private/git/openssl_encrypt/openssl_encrypt/modules/crypt_core.py\", line 4283, in do_decrypt\n    decrypted_data = f.decrypt(encrypted_data)\n",
+              "  File \"/home/tobster/.local/lib/python3.13/site-packages/cryptography/fernet.py\", line 89, in decrypt\n    return self._decrypt_data(data, timestamp, time_info)\n           ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+              "  File \"/home/tobster/.local/lib/python3.13/site-packages/cryptography/fernet.py\", line 148, in _decrypt_data\n    self._verify_signature(data)\n    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^\n",
+              "  File \"/home/tobster/.local/lib/python3.13/site-packages/cryptography/fernet.py\", line 132, in _verify_signature\n    raise InvalidToken\n",
+              "cryptography.fernet.InvalidToken\n",
+              "\nDuring handling of the above exception, another exception occurred:\n\n",
+              "Traceback (most recent call last):\n",
+              "  File \"/home/work/private/git/openssl_encrypt/openssl_encrypt/modules/testing/kat_tests.py\", line 488, in _test_file_encryption_vector\n    decrypt_file(encrypted_file, decrypted_file, password)\n    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+              "  File \"/home/work/private/git/openssl_encrypt/openssl_encrypt/modules/crypt_errors.py\", line 422, in wrapper\n    raise DecryptionError(details=details, original_exception=e)\n",
+              "openssl_encrypt.modules.crypt_errors.DecryptionError: Security decryption operation failed\n"
+            ]
+          }
+        },
+        {
+          "test_name": "file_encrypt_binary_data_aes_gcm",
+          "level": "error",
+          "message": "Exception during file encryption test: Security validation check failed",
+          "details": {},
+          "duration": 0.061795711517333984,
+          "timestamp": "2025-09-15T17:05:34.175801",
+          "exception": {
+            "type": "ValidationError",
+            "message": "Security validation check failed",
+            "traceback": [
+              "Traceback (most recent call last):\n",
+              "  File \"/home/work/private/git/openssl_encrypt/openssl_encrypt/modules/crypt_errors.py\", line 334, in wrapper\n    result = f(*args, **kwargs)\n",
+              "  File \"/home/work/private/git/openssl_encrypt/openssl_encrypt/modules/crypt_core.py\", line 3473, in encrypt_file\n    encrypted_data = do_encrypt()\n",
+              "  File \"/home/work/private/git/openssl_encrypt/openssl_encrypt/modules/crypt_core.py\", line 3138, in do_encrypt\n    f = Fernet(key)\n",
+              "  File \"/home/tobster/.local/lib/python3.13/site-packages/cryptography/fernet.py\", line 40, in __init__\n    raise ValueError(\n        \"Fernet key must be 32 url-safe base64-encoded bytes.\"\n    )\n",
+              "ValueError: Fernet key must be 32 url-safe base64-encoded bytes.\n",
+              "\nDuring handling of the above exception, another exception occurred:\n\n",
+              "Traceback (most recent call last):\n",
+              "  File \"/home/work/private/git/openssl_encrypt/openssl_encrypt/modules/testing/kat_tests.py\", line 478, in _test_file_encryption_vector\n    encrypt_file(input_file, encrypted_file, password, config_dict)\n    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+              "  File \"/home/work/private/git/openssl_encrypt/openssl_encrypt/modules/crypt_errors.py\", line 379, in wrapper\n    raise ValidationError(details=details, original_exception=e)\n",
+              "openssl_encrypt.modules.crypt_errors.ValidationError: Security validation check failed\n"
+            ]
+          }
+        },
+        {
+          "test_name": "file_encrypt_unicode_chacha20",
+          "level": "error",
+          "message": "Exception during file encryption test: Security validation check failed",
+          "details": {},
+          "duration": 0.05997061729431152,
+          "timestamp": "2025-09-15T17:05:34.235864",
+          "exception": {
+            "type": "ValidationError",
+            "message": "Security validation check failed",
+            "traceback": [
+              "Traceback (most recent call last):\n",
+              "  File \"/home/work/private/git/openssl_encrypt/openssl_encrypt/modules/crypt_errors.py\", line 334, in wrapper\n    result = f(*args, **kwargs)\n",
+              "  File \"/home/work/private/git/openssl_encrypt/openssl_encrypt/modules/crypt_core.py\", line 3473, in encrypt_file\n    encrypted_data = do_encrypt()\n",
+              "  File \"/home/work/private/git/openssl_encrypt/openssl_encrypt/modules/crypt_core.py\", line 3138, in do_encrypt\n    f = Fernet(key)\n",
+              "  File \"/home/tobster/.local/lib/python3.13/site-packages/cryptography/fernet.py\", line 40, in __init__\n    raise ValueError(\n        \"Fernet key must be 32 url-safe base64-encoded bytes.\"\n    )\n",
+              "ValueError: Fernet key must be 32 url-safe base64-encoded bytes.\n",
+              "\nDuring handling of the above exception, another exception occurred:\n\n",
+              "Traceback (most recent call last):\n",
+              "  File \"/home/work/private/git/openssl_encrypt/openssl_encrypt/modules/testing/kat_tests.py\", line 478, in _test_file_encryption_vector\n    encrypt_file(input_file, encrypted_file, password, config_dict)\n    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+              "  File \"/home/work/private/git/openssl_encrypt/openssl_encrypt/modules/crypt_errors.py\", line 379, in wrapper\n    raise ValidationError(details=details, original_exception=e)\n",
+              "openssl_encrypt.modules.crypt_errors.ValidationError: Security validation check failed\n"
+            ]
+          }
+        },
+        {
+          "test_name": "cross_platform_compatibility",
+          "level": "error",
+          "message": "No algorithms passed cross-platform compatibility test",
+          "details": {
+            "algorithms_tested": [
+              "fernet",
+              "aes-gcm",
+              "chacha20-poly1305"
+            ],
+            "success_count": 0,
+            "total_tests": 3
+          },
+          "duration": 0.24262142181396484,
+          "timestamp": "2025-09-15T17:05:34.478664"
+        }
+      ]
+    }
+  ],
+  "overall_summary": {
+    "total_suites": 1,
+    "successful_suites": 1,
+    "suite_success_rate": 100.0,
+    "total_tests": 14,
+    "passed_tests": 10,
+    "warning_tests": 0,
+    "error_tests": 4,
+    "test_success_rate": 71.42857142857143
+  },
+  "system_info": {
+    "platform": "Linux-6.16.5-200.fc42.x86_64-x86_64-with-glibc2.41",
+    "python_version": "3.13.7",
+    "architecture": "64bit",
+    "processor": "Unknown",
+    "hostname": "tobster-work",
+    "total_memory_gb": 62.55,
+    "available_memory_gb": 43.58,
+    "cpu_count": 20,
+    "cpu_count_logical": 20
+  },
+  "configuration": {
+    "test_category": "hash"
+  }
+}

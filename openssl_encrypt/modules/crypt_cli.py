@@ -1076,22 +1076,27 @@ def run_template_manager(args):
 def run_smart_recommendations(args):
     """Run smart recommendations system."""
     try:
-        from .smart_recommendations import SmartRecommendationEngine, UserContext, ConfidenceLevel, RecommendationPriority
-        
+        from .smart_recommendations import (
+            ConfidenceLevel,
+            RecommendationPriority,
+            SmartRecommendationEngine,
+            UserContext,
+        )
+
         engine = SmartRecommendationEngine()
-        subcommand = getattr(args, 'recommendations_action', None)
-        
-        if subcommand == 'get':
+        subcommand = getattr(args, "recommendations_action", None)
+
+        if subcommand == "get":
             _handle_recommendations_get(engine, args)
-        elif subcommand == 'profile':
+        elif subcommand == "profile":
             _handle_recommendations_profile(engine, args)
-        elif subcommand == 'feedback':
+        elif subcommand == "feedback":
             _handle_recommendations_feedback(engine, args)
-        elif subcommand == 'quick':
+        elif subcommand == "quick":
             _handle_recommendations_quick(engine, args)
         else:
             print("Invalid smart recommendations subcommand. Use --help for available options.")
-            
+
     except Exception as e:
         print(f"Error in smart recommendations: {e}")
         sys.exit(1)
@@ -1100,65 +1105,66 @@ def run_smart_recommendations(args):
 def _handle_recommendations_get(engine, args):
     """Handle get recommendations command."""
     from .smart_recommendations import UserContext
-    
+
     # Build user context from arguments
     user_context = UserContext()
-    
+
     # Apply provided arguments
-    if hasattr(args, 'user_type') and args.user_type:
+    if hasattr(args, "user_type") and args.user_type:
         user_context.user_type = args.user_type
-    if hasattr(args, 'experience_level') and args.experience_level:
+    if hasattr(args, "experience_level") and args.experience_level:
         user_context.experience_level = args.experience_level
-    if hasattr(args, 'use_cases') and args.use_cases:
+    if hasattr(args, "use_cases") and args.use_cases:
         user_context.primary_use_cases = args.use_cases
-    if hasattr(args, 'data_sensitivity') and args.data_sensitivity:
+    if hasattr(args, "data_sensitivity") and args.data_sensitivity:
         user_context.data_sensitivity = args.data_sensitivity
-    if hasattr(args, 'performance_priority') and args.performance_priority:
+    if hasattr(args, "performance_priority") and args.performance_priority:
         user_context.performance_priority = args.performance_priority
-    if hasattr(args, 'compliance_requirements') and args.compliance_requirements:
+    if hasattr(args, "compliance_requirements") and args.compliance_requirements:
         user_context.compliance_requirements = args.compliance_requirements
-        
+
     # Load existing user profile if available
-    user_id = getattr(args, 'user_id', 'default')
+    user_id = getattr(args, "user_id", "default")
     saved_context = engine.load_user_context(user_id)
     if saved_context:
         # Merge saved context with provided arguments
-        if not hasattr(args, 'user_type') or not args.user_type:
+        if not hasattr(args, "user_type") or not args.user_type:
             user_context.user_type = saved_context.user_type
-        if not hasattr(args, 'experience_level') or not args.experience_level:
+        if not hasattr(args, "experience_level") or not args.experience_level:
             user_context.experience_level = saved_context.experience_level
-        if not hasattr(args, 'use_cases') or not args.use_cases:
+        if not hasattr(args, "use_cases") or not args.use_cases:
             user_context.primary_use_cases = saved_context.primary_use_cases
         user_context.preferred_algorithms = saved_context.preferred_algorithms
         user_context.avoided_algorithms = saved_context.avoided_algorithms
         user_context.feedback_history = saved_context.feedback_history
-        
+
     # Get current configuration if available
     current_config = None
-    if hasattr(args, 'analyze_current') and args.analyze_current:
+    if hasattr(args, "analyze_current") and args.analyze_current:
         # Try to analyze current configuration from args
         try:
             from .config_analyzer import analyze_configuration_from_args
+
             current_config = vars(args)
         except Exception:
             pass
-            
+
     # Generate recommendations
     recommendations = engine.generate_recommendations(user_context, current_config)
-    
+
     # Display recommendations
     print("🧠 SMART RECOMMENDATIONS")
     print("=" * 50)
     print()
-    
+
     if not recommendations:
         print("No specific recommendations at this time.")
         print("Your current configuration appears to be well-optimized!")
         return
-        
+
     for i, rec in enumerate(recommendations, 1):
         _display_recommendation(rec, i)
-        
+
     # Save updated context
     engine.save_user_context(user_id, user_context)
 
@@ -1166,44 +1172,59 @@ def _handle_recommendations_get(engine, args):
 def _handle_recommendations_profile(engine, args):
     """Handle profile management command."""
     from .smart_recommendations import UserContext
-    
-    user_id = getattr(args, 'user_id', 'default')
-    
-    if hasattr(args, 'create') and args.create:
+
+    user_id = getattr(args, "user_id", "default")
+
+    if hasattr(args, "create") and args.create:
         # Create new profile
         user_context = UserContext()
-        
+
         print("Creating new user profile...")
         print("Please answer the following questions to personalize your recommendations:")
         print()
-        
+
         # Interactive profile creation
-        user_context.user_type = input("User type [personal/business/developer/compliance]: ").strip() or "personal"
-        user_context.experience_level = input("Experience level [beginner/intermediate/advanced/expert]: ").strip() or "intermediate"
-        
-        use_cases_str = input("Primary use cases (comma-separated) [personal/business/compliance/archival]: ").strip()
+        user_context.user_type = (
+            input("User type [personal/business/developer/compliance]: ").strip() or "personal"
+        )
+        user_context.experience_level = (
+            input("Experience level [beginner/intermediate/advanced/expert]: ").strip()
+            or "intermediate"
+        )
+
+        use_cases_str = input(
+            "Primary use cases (comma-separated) [personal/business/compliance/archival]: "
+        ).strip()
         if use_cases_str:
-            user_context.primary_use_cases = [uc.strip() for uc in use_cases_str.split(',')]
+            user_context.primary_use_cases = [uc.strip() for uc in use_cases_str.split(",")]
         else:
             user_context.primary_use_cases = ["personal"]
-            
-        user_context.data_sensitivity = input("Data sensitivity [low/medium/high/top_secret]: ").strip() or "medium"
-        user_context.performance_priority = input("Performance priority [speed/security/balanced]: ").strip() or "balanced"
-        
-        compliance_str = input("Compliance requirements (comma-separated) [fips_140_2/common_criteria/nist_guidelines]: ").strip()
+
+        user_context.data_sensitivity = (
+            input("Data sensitivity [low/medium/high/top_secret]: ").strip() or "medium"
+        )
+        user_context.performance_priority = (
+            input("Performance priority [speed/security/balanced]: ").strip() or "balanced"
+        )
+
+        compliance_str = input(
+            "Compliance requirements (comma-separated) [fips_140_2/common_criteria/nist_guidelines]: "
+        ).strip()
         if compliance_str:
-            user_context.compliance_requirements = [req.strip() for req in compliance_str.split(',')]
-            
+            user_context.compliance_requirements = [
+                req.strip() for req in compliance_str.split(",")
+            ]
+
         engine.save_user_context(user_id, user_context)
         print(f"\n✅ Profile '{user_id}' created successfully!")
-        
-    elif hasattr(args, 'show') and args.show:
+
+    elif hasattr(args, "show") and args.show:
         # Show existing profile
         user_context = engine.load_user_context(user_id)
         if not user_context:
             print(f"❌ No profile found for user '{user_id}'")
             return
-            
+
         print(f"👤 USER PROFILE: {user_id}")
         print("=" * 40)
         print(f"User Type: {user_context.user_type}")
@@ -1222,13 +1243,13 @@ def _handle_recommendations_profile(engine, args):
 
 def _handle_recommendations_feedback(engine, args):
     """Handle feedback submission."""
-    user_id = getattr(args, 'user_id', 'default')
+    user_id = getattr(args, "user_id", "default")
     rec_id = args.recommendation_id
     accepted = args.accepted
-    feedback_text = getattr(args, 'comment', None)
-    
+    feedback_text = getattr(args, "comment", None)
+
     engine.record_feedback(user_id, rec_id, accepted, feedback_text)
-    
+
     status = "accepted" if accepted else "rejected"
     print(f"✅ Feedback recorded: Recommendation {rec_id} was {status}")
     if feedback_text:
@@ -1238,64 +1259,188 @@ def _handle_recommendations_feedback(engine, args):
 def _handle_recommendations_quick(engine, args):
     """Handle quick recommendations command."""
     use_case = args.use_case
-    experience_level = getattr(args, 'experience_level', 'intermediate')
-    
+    experience_level = getattr(args, "experience_level", "intermediate")
+
     quick_recs = engine.get_quick_recommendations(use_case, experience_level)
-    
+
     print(f"⚡ QUICK RECOMMENDATIONS FOR {use_case.upper()}")
     print("=" * 50)
     print()
-    
+
     for rec in quick_recs:
         print(rec)
         print()
-        
+
     print("💬 For detailed recommendations with explanations, use 'smart-recommendations get'")
 
 
 def _display_recommendation(rec, number: int):
     """Display a single recommendation with formatting."""
     # Priority icon
-    priority_icons = {
-        "info": "ℹ️",
-        "low": "🔷", 
-        "medium": "🔶",
-        "high": "🔺",
-        "critical": "🚨"
-    }
-    
+    priority_icons = {"info": "ℹ️", "low": "🔷", "medium": "🔶", "high": "🔺", "critical": "🚨"}
+
     # Confidence indicator
-    confidence_indicators = {
-        1: "⭐",
-        2: "⭐⭐", 
-        3: "⭐⭐⭐",
-        4: "⭐⭐⭐⭐",
-        5: "⭐⭐⭐⭐⭐"
-    }
-    
+    confidence_indicators = {1: "⭐", 2: "⭐⭐", 3: "⭐⭐⭐", 4: "⭐⭐⭐⭐", 5: "⭐⭐⭐⭐⭐"}
+
     priority_icon = priority_icons.get(rec.priority.value, "🔷")
     confidence_stars = confidence_indicators.get(rec.confidence.value, "⭐⭐⭐")
-    
+
     print(f"{number}. {priority_icon} {rec.title}")
     print(f"   📝 {rec.description}")
     print(f"   💡 Action: {rec.action}")
-    print(f"   🎯 Confidence: {confidence_stars} | Difficulty: {rec.implementation_difficulty} | Impact: {rec.estimated_impact}")
-    
+    print(
+        f"   🎯 Confidence: {confidence_stars} | Difficulty: {rec.implementation_difficulty} | Impact: {rec.estimated_impact}"
+    )
+
     if rec.reasoning:
         print(f"   🤔 Reasoning: {rec.reasoning}")
-        
+
     if rec.evidence:
         print(f"   📊 Evidence:")
         for evidence in rec.evidence:
             print(f"      • {evidence}")
-            
+
     if rec.trade_offs:
         print(f"   ⚖️  Trade-offs:")
         for aspect, impact in rec.trade_offs.items():
             print(f"      • {aspect.title()}: {impact}")
-            
+
     print(f"   🏷️  Category: {rec.category.value} | ID: {rec.id}")
     print()
+
+
+def run_security_tests(args):
+    """Run security test suites."""
+    try:
+        from .testing import SecurityTestRunner, TestExecutionPlan, TestSuiteType
+        
+        # Create test runner
+        runner = SecurityTestRunner()
+        
+        # Get test action
+        test_action = getattr(args, "test_action", None)
+        
+        if not test_action:
+            print("No test action specified. Use --help for available options.")
+            return
+        
+        # Build execution plan
+        suite_types = []
+        
+        if test_action == "fuzz":
+            suite_types = [TestSuiteType.FUZZ]
+        elif test_action == "side-channel":
+            suite_types = [TestSuiteType.SIDE_CHANNEL]
+        elif test_action == "kat":
+            suite_types = [TestSuiteType.KAT]
+        elif test_action == "benchmark":
+            suite_types = [TestSuiteType.BENCHMARK]
+        elif test_action == "memory":
+            suite_types = [TestSuiteType.MEMORY]
+        elif test_action == "all":
+            suite_types = [TestSuiteType.ALL]
+        else:
+            print(f"Unknown test action: {test_action}")
+            return
+        
+        # Build configuration from arguments
+        config = {}
+        
+        # Common configuration
+        if hasattr(args, "algorithm") and args.algorithm:
+            config["algorithm"] = args.algorithm
+        
+        if hasattr(args, "iterations") and args.iterations:
+            config["benchmark_iterations"] = args.iterations
+            
+        if hasattr(args, "seed") and args.seed:
+            config["seed"] = args.seed
+            
+        if hasattr(args, "timing_threshold") and args.timing_threshold:
+            config["timing_threshold"] = args.timing_threshold
+            
+        if hasattr(args, "test_iterations") and args.test_iterations:
+            config["memory_test_iterations"] = args.test_iterations
+            
+        if hasattr(args, "leak_threshold") and args.leak_threshold:
+            config["leak_threshold"] = args.leak_threshold
+            
+        if hasattr(args, "test_category") and args.test_category:
+            config["test_category"] = args.test_category
+            
+        if hasattr(args, "algorithms") and args.algorithms:
+            config["algorithms"] = args.algorithms
+            
+        if hasattr(args, "file_sizes") and args.file_sizes:
+            config["file_sizes"] = args.file_sizes
+            
+        if hasattr(args, "save_baseline") and args.save_baseline:
+            config["save_baseline"] = True
+        
+        # Output configuration
+        output_formats = getattr(args, "output_format", ["json", "html"])
+        output_dir = getattr(args, "output_dir", None)
+        
+        # Parallel execution for "all" tests
+        parallel = getattr(args, "parallel", False) if test_action == "all" else False
+        max_workers = getattr(args, "max_workers", 3)
+        
+        # Create execution plan
+        execution_plan = TestExecutionPlan(
+            suite_types=suite_types,
+            parallel_execution=parallel,
+            max_workers=max_workers,
+            config=config,
+            output_formats=output_formats,
+            output_directory=output_dir
+        )
+        
+        # Set up logging
+        if not getattr(args, "quiet", False):
+            import logging
+            logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+        
+        # Run tests
+        print(f"🔒 Starting OpenSSL Encrypt Security Tests - {test_action.upper()}")
+        print("=" * 60)
+        print()
+        
+        report = runner.run_tests(execution_plan)
+        
+        # Display summary
+        print("\n" + "=" * 60)
+        print("📊 TEST SUMMARY")
+        print("=" * 60)
+        
+        summary = report.overall_summary
+        print(f"Total Suites: {summary['total_suites']}")
+        print(f"Successful Suites: {summary['successful_suites']}")
+        print(f"Suite Success Rate: {summary['suite_success_rate']:.1f}%")
+        print(f"Total Tests: {summary['total_tests']}")
+        print(f"Passed Tests: {summary['passed_tests']}")
+        print(f"Warning Tests: {summary['warning_tests']}")
+        print(f"Failed Tests: {summary['error_tests']}")
+        print(f"Test Success Rate: {summary['test_success_rate']:.1f}%")
+        print(f"Total Duration: {report.total_duration:.1f} seconds")
+        
+        # Show report locations
+        if output_dir:
+            print(f"\n📁 Reports saved to: {output_dir}")
+            for fmt in output_formats:
+                filename = f"security_test_report_{report.run_id}.{fmt}"
+                print(f"   • {fmt.upper()}: {filename}")
+        
+        print("\n✅ Testing completed!")
+        
+    except ImportError as e:
+        print(f"Error: Testing framework not available: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error running security tests: {e}")
+        if hasattr(args, 'debug') and args.debug:
+            import traceback
+            traceback.print_exc()
+        sys.exit(1)
 
 
 def _handle_template_list(template_mgr: TemplateManager, args):
@@ -1591,6 +1736,7 @@ def main():
         "analyze-config",
         "template",
         "smart-recommendations",
+        "test",
         "check-argon2",
         "check-pqc",
         "version",
@@ -2826,6 +2972,10 @@ def main_with_args(args=None):
 
     elif args.action == "smart-recommendations":
         run_smart_recommendations(args)
+        sys.exit(0)
+
+    elif args.action == "test":
+        run_security_tests(args)
         sys.exit(0)
 
     elif args.action == "check-argon2":

@@ -13533,300 +13533,732 @@ class TestTemplateManager(unittest.TestCase):
 
 class TestSmartRecommendations(unittest.TestCase):
     """Test smart recommendations system functionality."""
-    
+
     def setUp(self):
         """Set up test environment."""
-        from ..modules.smart_recommendations import SmartRecommendationEngine, UserContext
-        import tempfile
         import os
-        
+        import tempfile
+
+        from ..modules.smart_recommendations import SmartRecommendationEngine, UserContext
+
         # Create temporary directory for test data
         self.test_dir = tempfile.mkdtemp()
         self.engine = SmartRecommendationEngine(data_dir=self.test_dir)
-    
+
     def tearDown(self):
         """Clean up test environment."""
         import shutil
-        if hasattr(self, 'test_dir'):
+
+        if hasattr(self, "test_dir"):
             shutil.rmtree(self.test_dir, ignore_errors=True)
-    
+
     def test_user_context_creation(self):
         """Test user context creation and configuration."""
         from ..modules.smart_recommendations import UserContext
-        
+
         context = UserContext(
             user_type="business",
             experience_level="advanced",
             primary_use_cases=["business", "compliance"],
-            data_sensitivity="high"
+            data_sensitivity="high",
         )
-        
+
         self.assertEqual(context.user_type, "business")
         self.assertEqual(context.experience_level, "advanced")
         self.assertEqual(context.primary_use_cases, ["business", "compliance"])
         self.assertEqual(context.data_sensitivity, "high")
-    
+
     def test_basic_recommendations_generation(self):
         """Test basic recommendation generation."""
         from ..modules.smart_recommendations import UserContext
-        
+
         user_context = UserContext(
             user_type="personal",
             experience_level="intermediate",
             primary_use_cases=["personal"],
-            data_sensitivity="medium"
+            data_sensitivity="medium",
         )
-        
+
         recommendations = self.engine.generate_recommendations(user_context)
-        
+
         self.assertIsInstance(recommendations, list)
         self.assertGreater(len(recommendations), 0)
-        
+
         # Check recommendation structure
         for rec in recommendations:
-            self.assertTrue(hasattr(rec, 'id'))
-            self.assertTrue(hasattr(rec, 'category'))
-            self.assertTrue(hasattr(rec, 'priority'))
-            self.assertTrue(hasattr(rec, 'confidence'))
-            self.assertTrue(hasattr(rec, 'title'))
-            self.assertTrue(hasattr(rec, 'description'))
-            self.assertTrue(hasattr(rec, 'action'))
-    
+            self.assertTrue(hasattr(rec, "id"))
+            self.assertTrue(hasattr(rec, "category"))
+            self.assertTrue(hasattr(rec, "priority"))
+            self.assertTrue(hasattr(rec, "confidence"))
+            self.assertTrue(hasattr(rec, "title"))
+            self.assertTrue(hasattr(rec, "description"))
+            self.assertTrue(hasattr(rec, "action"))
+
     def test_security_recommendations(self):
         """Test security-focused recommendations."""
-        from ..modules.smart_recommendations import UserContext, RecommendationCategory
-        
+        from ..modules.smart_recommendations import RecommendationCategory, UserContext
+
         # High sensitivity context should generate security recommendations
         user_context = UserContext(
             user_type="compliance",
             data_sensitivity="high",
             primary_use_cases=["compliance"],
-            security_clearance_level="high"
+            security_clearance_level="high",
         )
-        
+
         recommendations = self.engine.generate_recommendations(user_context)
-        
+
         # Should have security category recommendations
-        security_recs = [r for r in recommendations if r.category == RecommendationCategory.SECURITY]
+        security_recs = [
+            r for r in recommendations if r.category == RecommendationCategory.SECURITY
+        ]
         self.assertGreater(len(security_recs), 0)
-        
+
         # Should recommend post-quantum encryption for high sensitivity
-        pq_recs = [r for r in recommendations if "quantum" in r.title.lower() or "quantum" in r.description.lower()]
+        pq_recs = [
+            r
+            for r in recommendations
+            if "quantum" in r.title.lower() or "quantum" in r.description.lower()
+        ]
         self.assertGreater(len(pq_recs), 0)
-    
+
     def test_algorithm_recommendations(self):
         """Test algorithm-specific recommendations."""
-        from ..modules.smart_recommendations import UserContext, RecommendationCategory
-        
+        from ..modules.smart_recommendations import RecommendationCategory, UserContext
+
         user_context = UserContext(
             user_type="business",
             primary_use_cases=["business"],
             typical_file_sizes="large",
-            performance_priority="speed"
+            performance_priority="speed",
         )
-        
+
         current_config = {"algorithm": "fernet"}  # Suboptimal for business use
-        
+
         recommendations = self.engine.generate_recommendations(user_context, current_config)
-        
+
         # Should have algorithm recommendations
         algo_recs = [r for r in recommendations if r.category == RecommendationCategory.ALGORITHM]
         self.assertGreater(len(algo_recs), 0)
-        
+
         # Should suggest better algorithms for business use
         business_improvement_recs = [r for r in algo_recs if "fernet" in r.description.lower()]
         self.assertGreater(len(business_improvement_recs), 0)
-    
+
     def test_template_recommendations(self):
         """Test template recommendation integration."""
-        from ..modules.smart_recommendations import UserContext, RecommendationCategory
-        
-        user_context = UserContext(
-            primary_use_cases=["personal"],
-            experience_level="beginner"
-        )
-        
+        from ..modules.smart_recommendations import RecommendationCategory, UserContext
+
+        user_context = UserContext(primary_use_cases=["personal"], experience_level="beginner")
+
         recommendations = self.engine.generate_recommendations(user_context)
-        
+
         # Should have template recommendations
-        template_recs = [r for r in recommendations if r.category == RecommendationCategory.TEMPLATE]
+        template_recs = [
+            r for r in recommendations if r.category == RecommendationCategory.TEMPLATE
+        ]
         self.assertGreater(len(template_recs), 0)
-        
+
         # Template recommendations should mention using --template
         template_actions = [r.action for r in template_recs]
         template_mentioned = any("template" in action.lower() for action in template_actions)
         self.assertTrue(template_mentioned)
-    
+
     def test_compliance_recommendations(self):
         """Test compliance-specific recommendations."""
-        from ..modules.smart_recommendations import UserContext, RecommendationCategory
-        
+        from ..modules.smart_recommendations import RecommendationCategory, UserContext
+
         user_context = UserContext(
             user_type="compliance",
             primary_use_cases=["compliance"],
-            compliance_requirements=["fips_140_2", "common_criteria"]
+            compliance_requirements=["fips_140_2", "common_criteria"],
         )
-        
+
         recommendations = self.engine.generate_recommendations(user_context)
-        
+
         # Should have compliance recommendations
-        compliance_recs = [r for r in recommendations if r.category == RecommendationCategory.COMPLIANCE]
+        compliance_recs = [
+            r for r in recommendations if r.category == RecommendationCategory.COMPLIANCE
+        ]
         self.assertGreater(len(compliance_recs), 0)
-        
+
         # Should mention FIPS 140-2 or Common Criteria
-        compliance_content = " ".join([r.title + " " + r.description for r in compliance_recs]).lower()
+        compliance_content = " ".join(
+            [r.title + " " + r.description for r in compliance_recs]
+        ).lower()
         self.assertTrue("fips" in compliance_content or "common criteria" in compliance_content)
-    
+
     def test_performance_recommendations(self):
         """Test performance optimization recommendations."""
-        from ..modules.smart_recommendations import UserContext, RecommendationCategory
-        
+        from ..modules.smart_recommendations import RecommendationCategory, UserContext
+
         user_context = UserContext(
-            performance_priority="speed",
-            computational_constraints=True,
-            typical_file_sizes="large"
+            performance_priority="speed", computational_constraints=True, typical_file_sizes="large"
         )
-        
+
         recommendations = self.engine.generate_recommendations(user_context)
-        
+
         # Should have performance recommendations
         perf_recs = [r for r in recommendations if r.category == RecommendationCategory.PERFORMANCE]
         self.assertGreater(len(perf_recs), 0)
-        
+
         # Should mention optimization for speed or constraints
         perf_content = " ".join([r.title + " " + r.description for r in perf_recs]).lower()
-        self.assertTrue("speed" in perf_content or "performance" in perf_content or "constrained" in perf_content)
-    
+        self.assertTrue(
+            "speed" in perf_content
+            or "performance" in perf_content
+            or "constrained" in perf_content
+        )
+
     def test_user_preferences_application(self):
         """Test application of user preferences and feedback."""
         from ..modules.smart_recommendations import UserContext
-        
+
         user_context = UserContext(
             primary_use_cases=["personal"],
             preferred_algorithms=["aes-gcm"],
-            avoided_algorithms=["fernet"]
+            avoided_algorithms=["fernet"],
         )
-        
+
         recommendations = self.engine.generate_recommendations(user_context)
-        
+
         # Should not recommend avoided algorithms
         fernet_recs = [r for r in recommendations if "fernet" in r.action.lower()]
         self.assertEqual(len(fernet_recs), 0)
-        
+
         # Should boost confidence for preferred algorithms
         aes_gcm_recs = [r for r in recommendations if "aes-gcm" in r.action.lower()]
         if aes_gcm_recs:
             # At least one should have high confidence
             high_confidence_recs = [r for r in aes_gcm_recs if r.confidence.value >= 4]
             self.assertGreater(len(high_confidence_recs), 0)
-    
+
     def test_user_context_persistence(self):
         """Test saving and loading user context."""
         from ..modules.smart_recommendations import UserContext
-        
+
         user_id = "test_user"
         original_context = UserContext(
             user_type="business",
             experience_level="expert",
             primary_use_cases=["business", "compliance"],
             data_sensitivity="high",
-            preferred_algorithms=["aes-gcm", "xchacha20-poly1305"]
+            preferred_algorithms=["aes-gcm", "xchacha20-poly1305"],
         )
-        
+
         # Save context
         self.engine.save_user_context(user_id, original_context)
-        
+
         # Load context
         loaded_context = self.engine.load_user_context(user_id)
-        
+
         self.assertIsNotNone(loaded_context)
         self.assertEqual(loaded_context.user_type, original_context.user_type)
         self.assertEqual(loaded_context.experience_level, original_context.experience_level)
         self.assertEqual(loaded_context.primary_use_cases, original_context.primary_use_cases)
         self.assertEqual(loaded_context.data_sensitivity, original_context.data_sensitivity)
         self.assertEqual(loaded_context.preferred_algorithms, original_context.preferred_algorithms)
-    
+
     def test_feedback_recording(self):
         """Test feedback recording and learning."""
         from ..modules.smart_recommendations import UserContext
-        
+
         user_id = "test_user"
         rec_id = "test_rec_001"
-        
+
         # Record positive feedback
         self.engine.record_feedback(user_id, rec_id, accepted=True, feedback_text="Very helpful!")
-        
+
         # Load context and check feedback was recorded
         context = self.engine.load_user_context(user_id)
         self.assertIsNotNone(context)
         self.assertIn(rec_id, context.feedback_history)
-        
+
         feedback = context.feedback_history[rec_id]
         self.assertTrue(feedback["user_accepted"])
         self.assertEqual(feedback["user_feedback"], "Very helpful!")
         self.assertIn("timestamp", feedback)
-    
+
     def test_quick_recommendations(self):
         """Test quick recommendations functionality."""
         quick_recs = self.engine.get_quick_recommendations("business", "intermediate")
-        
+
         self.assertIsInstance(quick_recs, list)
         self.assertGreater(len(quick_recs), 0)
         self.assertLessEqual(len(quick_recs), 5)  # Should be limited to top 5
-        
+
         # Each recommendation should be a string with action
         for rec in quick_recs:
             self.assertIsInstance(rec, str)
             self.assertTrue(len(rec) > 0)
-    
+
     def test_security_level_determination(self):
         """Test security level determination based on context."""
         from ..modules.smart_recommendations import UserContext
-        
+
         # Test different contexts
         contexts = [
             (UserContext(user_type="personal", data_sensitivity="low"), "lower security"),
             (UserContext(user_type="business", data_sensitivity="high"), "higher security"),
-            (UserContext(user_type="compliance", data_sensitivity="top_secret"), "maximum security")
+            (
+                UserContext(user_type="compliance", data_sensitivity="top_secret"),
+                "maximum security",
+            ),
         ]
-        
+
         for context, expected_level in contexts:
             requirements = self.engine._determine_required_security_level(context)
-            
+
             self.assertIn("minimum_score", requirements)
             self.assertIn("recommended_score", requirements)
             self.assertIsInstance(requirements["minimum_score"], float)
             self.assertIsInstance(requirements["recommended_score"], float)
-            
+
             # Higher sensitivity should require higher scores
-            self.assertGreaterEqual(requirements["recommended_score"], requirements["minimum_score"])
-    
+            self.assertGreaterEqual(
+                requirements["recommended_score"], requirements["minimum_score"]
+            )
+
     def test_recommendation_priority_sorting(self):
         """Test that recommendations are properly sorted by priority and confidence."""
         from ..modules.smart_recommendations import UserContext
-        
+
         user_context = UserContext(
             user_type="compliance",
             data_sensitivity="high",
             primary_use_cases=["compliance"],
-            compliance_requirements=["fips_140_2"]
+            compliance_requirements=["fips_140_2"],
         )
-        
+
         recommendations = self.engine.generate_recommendations(user_context)
-        
+
         # Should be sorted by priority (critical/high first) then confidence
         if len(recommendations) > 1:
             for i in range(len(recommendations) - 1):
                 current = recommendations[i]
                 next_rec = recommendations[i + 1]
-                
+
                 # Priority ordering: critical > high > medium > low > info
                 priority_order = {"critical": 5, "high": 4, "medium": 3, "low": 2, "info": 1}
                 current_priority = priority_order.get(current.priority.value, 0)
                 next_priority = priority_order.get(next_rec.priority.value, 0)
-                
+
                 # Current should have higher or equal priority
                 self.assertGreaterEqual(current_priority, next_priority)
+
+
+class TestAdvancedTestingFramework(unittest.TestCase):
+    """Test cases for the Advanced Testing Framework."""
+
+    def setUp(self):
+        """Set up test environment."""
+        self.test_dir = tempfile.mkdtemp()
+        self.test_files = []
+
+    def tearDown(self):
+        """Clean up test files."""
+        for file_path in self.test_files:
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except:
+                    pass
+
+        if os.path.exists(self.test_dir):
+            shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_base_test_classes(self):
+        """Test base testing framework classes."""
+        from modules.testing.base_test import BaseSecurityTest, TestResult, TestResultLevel
+
+        # Test TestResult creation
+        result = TestResult(
+            test_name="test_example",
+            level=TestResultLevel.PASS,
+            message="Test passed successfully"
+        )
+        
+        self.assertEqual(result.test_name, "test_example")
+        self.assertEqual(result.level, TestResultLevel.PASS)
+        self.assertTrue(result.is_success())
+        self.assertFalse(result.is_failure())
+
+        # Test TestResult dictionary conversion
+        result_dict = result.to_dict()
+        self.assertIn("test_name", result_dict)
+        self.assertIn("level", result_dict)
+        self.assertIn("message", result_dict)
+        self.assertEqual(result_dict["level"], "pass")
+
+        # Test failure result
+        error_result = TestResult(
+            test_name="test_error",
+            level=TestResultLevel.ERROR,
+            message="Test failed with error"
+        )
+        
+        self.assertFalse(error_result.is_success())
+        self.assertTrue(error_result.is_failure())
+
+    def test_fuzz_testing_input_generator(self):
+        """Test fuzzing framework input generator."""
+        from modules.testing.fuzz_testing import InputGenerator
+
+        generator = InputGenerator(seed=42)  # Use fixed seed for reproducibility
+
+        # Test boundary sizes generation
+        boundary_sizes = generator.generate_boundary_sizes()
+        self.assertIsInstance(boundary_sizes, list)
+        self.assertGreater(len(boundary_sizes), 10)
+        self.assertIn(0, boundary_sizes)  # Empty size
+        self.assertIn(1024, boundary_sizes)  # Common size
+
+        # Test special patterns generation
+        patterns = generator.generate_special_patterns()
+        self.assertIsInstance(patterns, list)
+        self.assertGreater(len(patterns), 5)
+        
+        for pattern_data, pattern_name in patterns:
+            self.assertIsInstance(pattern_data, bytes)
+            self.assertIsInstance(pattern_name, str)
+            self.assertGreater(len(pattern_name), 0)
+
+        # Test malformed configs generation
+        bad_configs = generator.generate_malformed_configs()
+        self.assertIsInstance(bad_configs, list)
+        self.assertGreater(len(bad_configs), 5)
+
+    def test_side_channel_statistical_analyzer(self):
+        """Test side-channel statistical analyzer."""
+        from modules.testing.side_channel_tests import StatisticalAnalyzer
+
+        analyzer = StatisticalAnalyzer()
+
+        # Test timing consistency analysis
+        consistent_timings = [1.0, 1.1, 0.9, 1.05, 0.95]  # Low variation
+        analysis = analyzer.analyze_timing_consistency(consistent_timings, "test_op")
+        
+        self.assertIn("operation", analysis)
+        self.assertIn("timing_consistent", analysis)
+        self.assertIn("coefficient_of_variation", analysis)
+        self.assertEqual(analysis["operation"], "test_op")
+        self.assertTrue(analysis["timing_consistent"])  # Should be consistent
+
+        # Test inconsistent timings
+        inconsistent_timings = [1.0, 5.0, 0.5, 3.0, 0.2]  # High variation
+        bad_analysis = analyzer.analyze_timing_consistency(inconsistent_timings, "bad_op")
+        self.assertFalse(bad_analysis["timing_consistent"])  # Should be inconsistent
+
+        # Test timing distribution comparison
+        group1 = [1.0, 1.1, 0.9, 1.05, 0.95]
+        group2 = [2.0, 2.2, 1.8, 2.1, 1.9]  # Different timing group
+        
+        comparison = analyzer.compare_timing_distributions(group1, group2)
+        self.assertIn("potentially_vulnerable", comparison)
+        self.assertIn("mean_difference_percentage", comparison)
+        self.assertTrue(comparison["potentially_vulnerable"])  # Should detect difference
+
+    def test_kat_test_vectors(self):
+        """Test KAT test vectors."""
+        from modules.testing.kat_tests import NISTTestVectors, CustomTestVectors
+
+        # Test NIST vectors
+        sha256_vectors = NISTTestVectors.get_sha256_vectors()
+        self.assertGreater(len(sha256_vectors), 3)
+        
+        for vector in sha256_vectors:
+            self.assertEqual(vector.algorithm, "SHA256")
+            self.assertIsInstance(vector.input_data, bytes)
+            self.assertIsInstance(vector.expected_output, bytes)
+            self.assertEqual(len(vector.expected_output), 32)  # SHA-256 output size
+
+        # Test HMAC vectors
+        hmac_vectors = NISTTestVectors.get_hmac_vectors()
+        self.assertGreater(len(hmac_vectors), 1)
+        
+        for vector in hmac_vectors:
+            self.assertEqual(vector.algorithm, "HMAC-SHA256")
+            self.assertIsInstance(vector.key, bytes)
+            self.assertIsInstance(vector.input_data, bytes)
+
+        # Test custom vectors
+        file_vectors = CustomTestVectors.get_file_encryption_vectors()
+        self.assertGreater(len(file_vectors), 2)
+        
+        # Should include various algorithms
+        algorithms = [v.algorithm for v in file_vectors]
+        self.assertIn("fernet", algorithms)
+        self.assertIn("aes-gcm", algorithms)
+        
+        for vector in file_vectors:
+            self.assertIsInstance(vector.input_data, bytes)
+
+    def test_benchmark_performance_analyzer(self):
+        """Test benchmark performance analyzer."""
+        from modules.testing.benchmark_suite import PerformanceAnalyzer, BenchmarkResult
+
+        analyzer = PerformanceAnalyzer()
+
+        # Test throughput calculation
+        data_size = 1024 * 1024  # 1 MB
+        time_taken = 1.0  # 1 second
+        throughput = analyzer.calculate_throughput(data_size, time_taken)
+        self.assertEqual(throughput, 1.0)  # 1 MB/s
+
+        # Test zero time handling
+        zero_throughput = analyzer.calculate_throughput(data_size, 0.0)
+        self.assertEqual(zero_throughput, 0.0)
+
+        # Test timing consistency analysis
+        good_timings = [1.0, 1.1, 0.9, 1.05, 0.95]
+        consistency = analyzer.analyze_timing_consistency(good_timings)
+        
+        self.assertIn("timing_consistent", consistency)
+        self.assertIn("coefficient_of_variation", consistency)
+        self.assertIn("performance_stable", consistency)
+
+    def test_memory_profiler(self):
+        """Test memory profiler functionality."""
+        from modules.testing.memory_tests import MemoryProfiler
+
+        profiler = MemoryProfiler()
+
+        # Test availability check
+        availability = profiler.is_available()
+        self.assertIsInstance(availability, bool)
+
+        if availability:
+            # Test snapshot taking
+            snapshot = profiler.take_snapshot("test_operation")
+            
+            if snapshot:  # Only test if snapshot was successful
+                self.assertEqual(snapshot.operation, "test_operation")
+                self.assertGreater(snapshot.rss_bytes, 0)
+                self.assertGreater(snapshot.timestamp, 0)
+
+                # Test delta calculation with another snapshot
+                snapshot2 = profiler.take_snapshot("test_operation_2")
+                
+                if snapshot2:
+                    delta = profiler.calculate_memory_delta(snapshot, snapshot2)
+                    self.assertIn("time_delta", delta)
+                    self.assertIn("rss_delta", delta)
+                    self.assertIn("rss_delta_mb", delta)
+
+    def test_test_runner_execution_plan(self):
+        """Test test runner execution plan."""
+        from modules.testing.test_runner import TestExecutionPlan, TestSuiteType
+
+        # Test execution plan creation
+        plan = TestExecutionPlan(
+            suite_types=[TestSuiteType.FUZZ, TestSuiteType.KAT],
+            parallel_execution=True,
+            max_workers=2,
+            config={"algorithm": "fernet"},
+            output_formats=["json", "html"]
+        )
+
+        self.assertEqual(len(plan.suite_types), 2)
+        self.assertIn(TestSuiteType.FUZZ, plan.suite_types)
+        self.assertIn(TestSuiteType.KAT, plan.suite_types)
+        self.assertTrue(plan.parallel_execution)
+        self.assertEqual(plan.max_workers, 2)
+        self.assertEqual(plan.config["algorithm"], "fernet")
+
+    def test_test_suite_enumeration(self):
+        """Test test suite type enumeration."""
+        from modules.testing.test_runner import TestSuiteType
+
+        # Test all expected suite types exist
+        expected_types = ["fuzz", "side_channel", "kat", "benchmark", "memory", "all"]
+        
+        for expected_type in expected_types:
+            suite_type = TestSuiteType(expected_type)
+            self.assertEqual(suite_type.value, expected_type)
+
+    def test_report_generation_data_structures(self):
+        """Test report generation data structures."""
+        from modules.testing.test_runner import TestRunReport, TestSuiteResult
+        from modules.testing.base_test import TestResult, TestResultLevel
+        from datetime import datetime
+
+        # Create mock test results
+        test_result = TestResult(
+            test_name="mock_test",
+            level=TestResultLevel.PASS,
+            message="Mock test passed",
+            duration=0.5
+        )
+
+        # Create mock suite result
+        suite_result = TestSuiteResult(
+            suite_name="MockSuite",
+            suite_type="fuzz",  # Use string instead of enum for simplicity
+            execution_time=1.0,
+            test_results=[test_result],
+            summary={"total_tests": 1, "passed": 1},
+            success=True
+        )
+
+        # Create mock run report
+        start_time = datetime.now()
+        end_time = datetime.now()
+        
+        report = TestRunReport(
+            run_id="test_run_123",
+            start_time=start_time,
+            end_time=end_time,
+            total_duration=1.0,
+            suite_results=[suite_result],
+            overall_summary={"total_tests": 1, "passed_tests": 1},
+            system_info={"platform": "test"},
+            configuration={"test_mode": True}
+        )
+
+        self.assertEqual(report.run_id, "test_run_123")
+        self.assertEqual(len(report.suite_results), 1)
+        self.assertEqual(report.overall_summary["total_tests"], 1)
+
+    def test_fuzz_testing_integration(self):
+        """Test fuzzing framework integration."""
+        from modules.testing.fuzz_testing import FuzzTestSuite
+        from modules.testing.base_test import TestConfig
+
+        # Create a fuzzing test suite
+        fuzz_suite = FuzzTestSuite()
+        
+        self.assertEqual(fuzz_suite.name, "FuzzTestSuite")
+        self.assertIn("fuzz", fuzz_suite.description.lower())
+
+        # Test with minimal config (avoiding actual file operations)
+        config = TestConfig(algorithm="fernet", test_mode=True)
+        
+        # Just test that the suite can be instantiated and configured
+        self.assertIsNotNone(fuzz_suite.input_generator)
+
+    def test_side_channel_testing_integration(self):
+        """Test side-channel testing integration.""" 
+        from modules.testing.side_channel_tests import SideChannelTestSuite
+
+        # Create a side-channel test suite
+        side_channel_suite = SideChannelTestSuite()
+        
+        self.assertEqual(side_channel_suite.name, "SideChannelTestSuite")
+        self.assertIn("side", side_channel_suite.description.lower())
+        
+        # Test analyzer availability
+        self.assertIsNotNone(side_channel_suite.analyzer)
+
+    def test_kat_testing_integration(self):
+        """Test KAT testing integration."""
+        from modules.testing.kat_tests import KATTestSuite
+
+        # Create a KAT test suite
+        kat_suite = KATTestSuite()
+        
+        self.assertEqual(kat_suite.name, "KATTestSuite")
+        self.assertIn("kat", kat_suite.description.lower())
+
+    def test_benchmark_testing_integration(self):
+        """Test benchmark testing integration."""
+        from modules.testing.benchmark_suite import BenchmarkTestSuite
+
+        # Create a benchmark test suite
+        benchmark_suite = BenchmarkTestSuite()
+        
+        self.assertEqual(benchmark_suite.name, "BenchmarkTestSuite")
+        self.assertIn("benchmark", benchmark_suite.description.lower())
+        
+        # Test analyzer availability
+        self.assertIsNotNone(benchmark_suite.analyzer)
+
+    def test_memory_testing_integration(self):
+        """Test memory testing integration."""
+        from modules.testing.memory_tests import MemoryTestSuite
+
+        # Create a memory test suite
+        memory_suite = MemoryTestSuite()
+        
+        self.assertEqual(memory_suite.name, "MemoryTestSuite")
+        self.assertIn("memory", memory_suite.description.lower())
+        
+        # Test profiler availability
+        self.assertIsNotNone(memory_suite.profiler)
+
+    def test_security_test_runner_integration(self):
+        """Test security test runner integration."""
+        from modules.testing.test_runner import SecurityTestRunner, TestSuiteType
+
+        # Create a security test runner
+        runner = SecurityTestRunner()
+        
+        # Test suite listing
+        available_suites = runner.list_available_suites()
+        self.assertIsInstance(available_suites, list)
+        self.assertGreater(len(available_suites), 4)  # Should have at least 5 suites
+        
+        # Test suite info retrieval
+        for suite_type in TestSuiteType:
+            if suite_type != TestSuiteType.ALL:  # Skip ALL as it's not a real suite
+                suite_info = runner.get_suite_info(suite_type)
+                self.assertIn("name", suite_info)
+                self.assertIn("description", suite_info)
+                self.assertIn("type", suite_info)
+
+    def test_testing_framework_imports(self):
+        """Test that all testing framework modules can be imported."""
+        # Test base module imports
+        try:
+            from modules.testing.base_test import BaseSecurityTest, TestResult, TestResultLevel
+            from modules.testing.fuzz_testing import FuzzTestSuite, InputGenerator
+            from modules.testing.side_channel_tests import SideChannelTestSuite, StatisticalAnalyzer
+            from modules.testing.kat_tests import KATTestSuite, NISTTestVectors
+            from modules.testing.benchmark_suite import BenchmarkTestSuite, PerformanceAnalyzer
+            from modules.testing.memory_tests import MemoryTestSuite, MemoryProfiler
+            from modules.testing.test_runner import SecurityTestRunner, TestExecutionPlan
+            
+            # If we get here, all imports succeeded
+            self.assertTrue(True)
+            
+        except ImportError as e:
+            self.fail(f"Failed to import testing framework modules: {e}")
+
+    def test_testing_framework_cli_integration(self):
+        """Test CLI integration for testing framework."""
+        # Test that the CLI function exists and can be imported
+        try:
+            from modules.crypt_cli import run_security_tests
+            
+            # Test function exists
+            self.assertTrue(callable(run_security_tests))
+            
+        except ImportError as e:
+            self.fail(f"Failed to import CLI integration: {e}")
+
+    def test_testing_config_handling(self):
+        """Test configuration handling in testing framework."""
+        from modules.testing.base_test import TestConfig
+
+        # Test config creation and access
+        config = TestConfig(
+            algorithm="fernet",
+            iterations=5,
+            output_format="json"
+        )
+
+        self.assertEqual(config.get("algorithm"), "fernet")
+        self.assertEqual(config.get("iterations"), 5)
+        self.assertEqual(config.get("output_format"), "json")
+        self.assertIsNone(config.get("nonexistent_key"))
+        self.assertEqual(config.get("nonexistent_key", "default"), "default")
+
+        # Test config updates
+        config.set("new_key", "new_value")
+        self.assertEqual(config.get("new_key"), "new_value")
+
+        config.update(batch_key1="value1", batch_key2="value2")
+        self.assertEqual(config.get("batch_key1"), "value1")
+        self.assertEqual(config.get("batch_key2"), "value2")
 
 
 if __name__ == "__main__":
