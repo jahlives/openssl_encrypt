@@ -12709,473 +12709,826 @@ class TestConfigurationWizard(unittest.TestCase):
 
 class TestConfigurationAnalyzer(unittest.TestCase):
     """Test configuration analysis functionality."""
-    
+
     def setUp(self):
         """Set up test environment."""
-        from ..modules.config_analyzer import ConfigurationAnalyzer, AnalysisCategory, RecommendationPriority
+        from ..modules.config_analyzer import (
+            AnalysisCategory,
+            ConfigurationAnalyzer,
+            RecommendationPriority,
+        )
+
         self.analyzer = ConfigurationAnalyzer()
-    
+
     def test_basic_configuration_analysis(self):
         """Test basic configuration analysis."""
         config = {
-            'algorithm': 'aes-gcm',
-            'sha256_rounds': 1000,
-            'pbkdf2_iterations': 100000,
-            'enable_argon2': False,
-            'enable_scrypt': False
+            "algorithm": "aes-gcm",
+            "sha256_rounds": 1000,
+            "pbkdf2_iterations": 100000,
+            "enable_argon2": False,
+            "enable_scrypt": False,
         }
-        
+
         analysis = self.analyzer.analyze_configuration(config)
-        
+
         self.assertIsInstance(analysis.overall_score, float)
         self.assertTrue(1.0 <= analysis.overall_score <= 10.0)
         self.assertIsNotNone(analysis.security_level)
         self.assertIsInstance(analysis.recommendations, list)
         self.assertIsInstance(analysis.configuration_summary, dict)
-    
+
     def test_performance_assessment(self):
         """Test performance assessment functionality."""
         config = {
-            'algorithm': 'aes-gcm',
-            'sha256_rounds': 100000,
-            'enable_argon2': True,
-            'argon2_memory': 1048576,  # 1GB
-            'argon2_time': 3
+            "algorithm": "aes-gcm",
+            "sha256_rounds": 100000,
+            "enable_argon2": True,
+            "argon2_memory": 1048576,  # 1GB
+            "argon2_time": 3,
         }
-        
+
         analysis = self.analyzer.analyze_configuration(config)
         perf = analysis.performance_assessment
-        
-        self.assertIn('overall_score', perf)
-        self.assertIn('estimated_relative_speed', perf)
-        self.assertIn('memory_requirements', perf)
-        self.assertIn('cpu_intensity', perf)
-        
+
+        self.assertIn("overall_score", perf)
+        self.assertIn("estimated_relative_speed", perf)
+        self.assertIn("memory_requirements", perf)
+        self.assertIn("cpu_intensity", perf)
+
         # High memory usage should be reflected
-        self.assertGreater(perf['memory_requirements']['estimated_peak_mb'], 1000)
-    
+        self.assertGreater(perf["memory_requirements"]["estimated_peak_mb"], 1000)
+
     def test_compatibility_analysis(self):
         """Test compatibility analysis across platforms."""
-        config = {
-            'algorithm': 'xchacha20-poly1305',
-            'sha256_rounds': 1000
-        }
-        
+        config = {"algorithm": "xchacha20-poly1305", "sha256_rounds": 1000}
+
         analysis = self.analyzer.analyze_configuration(config)
         compat = analysis.compatibility_matrix
-        
-        self.assertIn('platform_compatibility', compat)
-        self.assertIn('library_compatibility', compat)
-        self.assertIn('overall_compatibility_score', compat)
-        self.assertTrue(0.0 <= compat['overall_compatibility_score'] <= 10.0)
-    
+
+        self.assertIn("platform_compatibility", compat)
+        self.assertIn("library_compatibility", compat)
+        self.assertIn("overall_compatibility_score", compat)
+        self.assertTrue(0.0 <= compat["overall_compatibility_score"] <= 10.0)
+
     def test_security_recommendations(self):
         """Test security-focused recommendations."""
         # Weak configuration to trigger recommendations
         config = {
-            'algorithm': 'fernet',
-            'sha256_rounds': 100,  # Very low
-            'pbkdf2_iterations': 1000,  # Low
-            'enable_argon2': False
+            "algorithm": "fernet",
+            "sha256_rounds": 100,  # Very low
+            "pbkdf2_iterations": 1000,  # Low
+            "enable_argon2": False,
         }
-        
+
         analysis = self.analyzer.analyze_configuration(config)
-        
+
         # Should generate multiple recommendations for this weak config
         self.assertGreater(len(analysis.recommendations), 0)
-        
+
         # Check that we have security-related recommendations
-        security_recs = [r for r in analysis.recommendations 
-                        if r.category.value == 'security']
+        security_recs = [r for r in analysis.recommendations if r.category.value == "security"]
         self.assertGreater(len(security_recs), 0)
-    
+
     def test_use_case_analysis(self):
         """Test use case specific analysis."""
-        config = {
-            'algorithm': 'aes-gcm',
-            'sha256_rounds': 1000,
-            'pbkdf2_iterations': 100000
-        }
-        
+        config = {"algorithm": "aes-gcm", "sha256_rounds": 1000, "pbkdf2_iterations": 100000}
+
         # Test different use cases
-        for use_case in ['personal', 'business', 'compliance', 'archival']:
+        for use_case in ["personal", "business", "compliance", "archival"]:
             analysis = self.analyzer.analyze_configuration(config, use_case)
             self.assertIsInstance(analysis.recommendations, list)
-            
+
             # Archival should recommend post-quantum
-            if use_case == 'archival':
-                pq_recs = [r for r in analysis.recommendations 
-                          if 'quantum' in r.title.lower()]
+            if use_case == "archival":
+                pq_recs = [r for r in analysis.recommendations if "quantum" in r.title.lower()]
                 self.assertGreater(len(pq_recs), 0)
-    
+
     def test_compliance_checking(self):
         """Test compliance framework checking."""
         # FIPS-compliant config
-        config = {
-            'algorithm': 'aes-gcm',
-            'pbkdf2_iterations': 100000,
-            'enable_argon2': False
-        }
-        
+        config = {"algorithm": "aes-gcm", "pbkdf2_iterations": 100000, "enable_argon2": False}
+
         analysis = self.analyzer.analyze_configuration(
-            config, compliance_requirements=['fips_140_2']
+            config, compliance_requirements=["fips_140_2"]
         )
-        
-        self.assertIn('fips_140_2', analysis.compliance_status)
-        fips_status = analysis.compliance_status['fips_140_2']
-        self.assertIn('compliant', fips_status)
-    
+
+        self.assertIn("fips_140_2", analysis.compliance_status)
+        fips_status = analysis.compliance_status["fips_140_2"]
+        self.assertIn("compliant", fips_status)
+
     def test_future_proofing_assessment(self):
         """Test future-proofing assessment."""
         config = {
-            'algorithm': 'aes-gcm',
-            'sha256_rounds': 1000,
-            'pqc_algorithm': 'ml-kem-768-hybrid'  # With PQC
+            "algorithm": "aes-gcm",
+            "sha256_rounds": 1000,
+            "pqc_algorithm": "ml-kem-768-hybrid",  # With PQC
         }
-        
+
         analysis = self.analyzer.analyze_configuration(config)
         future = analysis.future_proofing
-        
-        self.assertIn('algorithm_longevity_score', future)
-        self.assertIn('post_quantum_ready', future)
-        self.assertIn('estimated_secure_years', future)
-        
+
+        self.assertIn("algorithm_longevity_score", future)
+        self.assertIn("post_quantum_ready", future)
+        self.assertIn("estimated_secure_years", future)
+
         # With PQC enabled, should be quantum ready
-        self.assertTrue(future['post_quantum_ready'])
-    
+        self.assertTrue(future["post_quantum_ready"])
+
     def test_configuration_summary(self):
         """Test configuration summary generation."""
         config = {
-            'algorithm': 'xchacha20-poly1305',
-            'sha256_rounds': 10000,
-            'blake2b_rounds': 5000,
-            'enable_argon2': True,
-            'enable_scrypt': True,
-            'pqc_algorithm': 'ml-kem-1024-hybrid'
+            "algorithm": "xchacha20-poly1305",
+            "sha256_rounds": 10000,
+            "blake2b_rounds": 5000,
+            "enable_argon2": True,
+            "enable_scrypt": True,
+            "pqc_algorithm": "ml-kem-1024-hybrid",
         }
-        
+
         analysis = self.analyzer.analyze_configuration(config)
         summary = analysis.configuration_summary
-        
-        self.assertEqual(summary['algorithm'], 'xchacha20-poly1305')
-        self.assertIn('sha256', summary['active_hash_functions'])
-        self.assertIn('blake2b', summary['active_hash_functions'])
-        self.assertIn('Argon2', summary['active_kdfs'])
-        self.assertIn('Scrypt', summary['active_kdfs'])
-        self.assertTrue(summary['post_quantum_enabled'])
-        self.assertIn('configuration_complexity', summary)
-    
+
+        self.assertEqual(summary["algorithm"], "xchacha20-poly1305")
+        self.assertIn("sha256", summary["active_hash_functions"])
+        self.assertIn("blake2b", summary["active_hash_functions"])
+        self.assertIn("Argon2", summary["active_kdfs"])
+        self.assertIn("Scrypt", summary["active_kdfs"])
+        self.assertTrue(summary["post_quantum_enabled"])
+        self.assertIn("configuration_complexity", summary)
+
     def test_recommendation_priorities(self):
         """Test that recommendations are properly prioritized."""
         # Create a configuration with critical issues
         config = {
-            'algorithm': 'fernet',
-            'sha256_rounds': 1,  # Extremely low
-            'pbkdf2_iterations': 1,  # Extremely low
+            "algorithm": "fernet",
+            "sha256_rounds": 1,  # Extremely low
+            "pbkdf2_iterations": 1,  # Extremely low
         }
-        
-        analysis = self.analyzer.analyze_configuration(config, 'compliance')
-        
+
+        analysis = self.analyzer.analyze_configuration(config, "compliance")
+
         # Should have critical recommendations
-        critical_recs = [r for r in analysis.recommendations 
-                        if r.priority.value == 'critical']
+        critical_recs = [r for r in analysis.recommendations if r.priority.value == "critical"]
         self.assertGreater(len(critical_recs), 0)
-        
+
         # Recommendations should be sorted by priority
         priorities = [r.priority.value for r in analysis.recommendations]
-        priority_order = ['critical', 'high', 'medium', 'low', 'info']
-        
+        priority_order = ["critical", "high", "medium", "low", "info"]
+
         # Check that priorities are in correct order
         last_priority_index = -1
         for priority in priorities:
             current_index = priority_order.index(priority)
             self.assertGreaterEqual(current_index, last_priority_index)
             last_priority_index = current_index
-    
+
     def test_analyze_configuration_from_args(self):
         """Test the convenience function for analyzing from CLI args."""
         import argparse
+
         from ..modules.config_analyzer import analyze_configuration_from_args
-        
+
         # Create mock args
         args = argparse.Namespace(
-            algorithm='aes-gcm',
+            algorithm="aes-gcm",
             sha256_rounds=10000,
             pbkdf2_iterations=100000,
             enable_argon2=True,
             argon2_memory=524288,
             enable_scrypt=False,
-            pqc_algorithm=None
+            pqc_algorithm=None,
         )
-        
-        analysis = analyze_configuration_from_args(args, 'business')
-        
+
+        analysis = analyze_configuration_from_args(args, "business")
+
         self.assertIsInstance(analysis.overall_score, float)
         self.assertIsInstance(analysis.recommendations, list)
 
 
 class TestCLIAliases(unittest.TestCase):
     """Test CLI alias system functionality."""
-    
+
     def setUp(self):
         """Set up test environment."""
-        from ..modules.cli_aliases import CLIAliasProcessor, CLIAliasConfig
+        from ..modules.cli_aliases import CLIAliasConfig, CLIAliasProcessor
+
         self.processor = CLIAliasProcessor()
         self.config = CLIAliasConfig()
-    
+
     def test_cli_alias_config_constants(self):
         """Test that CLI alias configuration constants are properly defined."""
         # Test security aliases
-        self.assertIn('fast', self.config.SECURITY_ALIASES)
-        self.assertIn('secure', self.config.SECURITY_ALIASES)
-        self.assertIn('max-security', self.config.SECURITY_ALIASES)
-        
+        self.assertIn("fast", self.config.SECURITY_ALIASES)
+        self.assertIn("secure", self.config.SECURITY_ALIASES)
+        self.assertIn("max-security", self.config.SECURITY_ALIASES)
+
         # Test algorithm aliases
-        self.assertIn('aes', self.config.ALGORITHM_ALIASES)
-        self.assertIn('chacha', self.config.ALGORITHM_ALIASES)
-        self.assertIn('xchacha', self.config.ALGORITHM_ALIASES)
-        
+        self.assertIn("aes", self.config.ALGORITHM_ALIASES)
+        self.assertIn("chacha", self.config.ALGORITHM_ALIASES)
+        self.assertIn("xchacha", self.config.ALGORITHM_ALIASES)
+
         # Test PQC aliases
-        self.assertIn('pq-standard', self.config.PQC_ALIASES)
-        self.assertIn('pq-high', self.config.PQC_ALIASES)
-        
+        self.assertIn("pq-standard", self.config.PQC_ALIASES)
+        self.assertIn("pq-high", self.config.PQC_ALIASES)
+
         # Test use case aliases
-        self.assertIn('personal', self.config.USE_CASE_ALIASES)
-        self.assertIn('business', self.config.USE_CASE_ALIASES)
-        self.assertIn('archival', self.config.USE_CASE_ALIASES)
-    
+        self.assertIn("personal", self.config.USE_CASE_ALIASES)
+        self.assertIn("business", self.config.USE_CASE_ALIASES)
+        self.assertIn("archival", self.config.USE_CASE_ALIASES)
+
     def test_security_alias_processing(self):
         """Test processing of security level aliases."""
         import argparse
-        
+
         # Create mock args for --fast
-        args = argparse.Namespace(fast=True, secure=False, max_security=False, 
-                                crypto_family=None, quantum_safe=None,
-                                for_personal=False, for_business=False, 
-                                for_archival=False, for_compliance=False)
-        
+        args = argparse.Namespace(
+            fast=True,
+            secure=False,
+            max_security=False,
+            crypto_family=None,
+            quantum_safe=None,
+            for_personal=False,
+            for_business=False,
+            for_archival=False,
+            for_compliance=False,
+        )
+
         overrides = self.processor.process_aliases(args)
-        self.assertEqual(overrides['template'], 'quick')
-        self.assertEqual(overrides['algorithm'], 'aes-gcm')
-        
+        self.assertEqual(overrides["template"], "quick")
+        self.assertEqual(overrides["algorithm"], "aes-gcm")
+
         # Test --secure
         args.fast = False
         args.secure = True
         overrides = self.processor.process_aliases(args)
-        self.assertEqual(overrides['template'], 'standard')
-        self.assertEqual(overrides['algorithm'], 'aes-gcm')
-        
+        self.assertEqual(overrides["template"], "standard")
+        self.assertEqual(overrides["algorithm"], "aes-gcm")
+
         # Test --max-security
         args.secure = False
         args.max_security = True
         overrides = self.processor.process_aliases(args)
-        self.assertEqual(overrides['template'], 'paranoid')
-        self.assertEqual(overrides['algorithm'], 'xchacha20-poly1305')
-    
+        self.assertEqual(overrides["template"], "paranoid")
+        self.assertEqual(overrides["algorithm"], "xchacha20-poly1305")
+
     def test_algorithm_alias_processing(self):
         """Test processing of algorithm family aliases."""
         import argparse
-        
+
         # Test algorithm family mapping
         test_cases = [
-            ('aes', 'aes-gcm'),
-            ('chacha', 'chacha20-poly1305'),
-            ('xchacha', 'xchacha20-poly1305'),
-            ('fernet', 'fernet')
+            ("aes", "aes-gcm"),
+            ("chacha", "chacha20-poly1305"),
+            ("xchacha", "xchacha20-poly1305"),
+            ("fernet", "fernet"),
         ]
-        
+
         for alias, expected in test_cases:
-            args = argparse.Namespace(fast=False, secure=False, max_security=False,
-                                    crypto_family=alias, quantum_safe=None,
-                                    for_personal=False, for_business=False,
-                                    for_archival=False, for_compliance=False)
-            
+            args = argparse.Namespace(
+                fast=False,
+                secure=False,
+                max_security=False,
+                crypto_family=alias,
+                quantum_safe=None,
+                for_personal=False,
+                for_business=False,
+                for_archival=False,
+                for_compliance=False,
+            )
+
             overrides = self.processor.process_aliases(args)
-            self.assertEqual(overrides['algorithm'], expected)
-    
+            self.assertEqual(overrides["algorithm"], expected)
+
     def test_pqc_alias_processing(self):
         """Test processing of post-quantum cryptography aliases."""
         import argparse
-        
+
         # Test PQC alias mapping
         test_cases = [
-            ('pq-standard', 'ml-kem-768-hybrid'),
-            ('pq-high', 'ml-kem-1024-hybrid'),
-            ('pq-alternative', 'hqc-192-hybrid')
+            ("pq-standard", "ml-kem-768-hybrid"),
+            ("pq-high", "ml-kem-1024-hybrid"),
+            ("pq-alternative", "hqc-192-hybrid"),
         ]
-        
+
         for alias, expected in test_cases:
-            args = argparse.Namespace(fast=False, secure=False, max_security=False,
-                                    crypto_family=None, quantum_safe=alias,
-                                    for_personal=False, for_business=False,
-                                    for_archival=False, for_compliance=False)
-            
+            args = argparse.Namespace(
+                fast=False,
+                secure=False,
+                max_security=False,
+                crypto_family=None,
+                quantum_safe=alias,
+                for_personal=False,
+                for_business=False,
+                for_archival=False,
+                for_compliance=False,
+            )
+
             overrides = self.processor.process_aliases(args)
-            self.assertEqual(overrides['pqc_algorithm'], expected)
-    
+            self.assertEqual(overrides["pqc_algorithm"], expected)
+
     def test_use_case_alias_processing(self):
         """Test processing of use case aliases."""
         import argparse
-        
+
         # Test personal use case
-        args = argparse.Namespace(fast=False, secure=False, max_security=False,
-                                crypto_family=None, quantum_safe=None,
-                                for_personal=True, for_business=False,
-                                for_archival=False, for_compliance=False)
-        
+        args = argparse.Namespace(
+            fast=False,
+            secure=False,
+            max_security=False,
+            crypto_family=None,
+            quantum_safe=None,
+            for_personal=True,
+            for_business=False,
+            for_archival=False,
+            for_compliance=False,
+        )
+
         overrides = self.processor.process_aliases(args)
-        self.assertEqual(overrides['template'], 'standard')
-        self.assertEqual(overrides['algorithm'], 'aes-gcm')
-        
+        self.assertEqual(overrides["template"], "standard")
+        self.assertEqual(overrides["algorithm"], "aes-gcm")
+
         # Test archival use case
         args.for_personal = False
         args.for_archival = True
         overrides = self.processor.process_aliases(args)
-        self.assertEqual(overrides['template'], 'paranoid')
-        self.assertEqual(overrides['algorithm'], 'xchacha20-poly1305')
-        self.assertEqual(overrides['pqc_algorithm'], 'ml-kem-1024-hybrid')
-        
+        self.assertEqual(overrides["template"], "paranoid")
+        self.assertEqual(overrides["algorithm"], "xchacha20-poly1305")
+        self.assertEqual(overrides["pqc_algorithm"], "ml-kem-1024-hybrid")
+
         # Test compliance use case
         args.for_archival = False
         args.for_compliance = True
         overrides = self.processor.process_aliases(args)
-        self.assertEqual(overrides['template'], 'paranoid')
-        self.assertEqual(overrides['algorithm'], 'aes-gcm')
-        self.assertTrue(overrides.get('require_keystore', False))
-    
+        self.assertEqual(overrides["template"], "paranoid")
+        self.assertEqual(overrides["algorithm"], "aes-gcm")
+        self.assertTrue(overrides.get("require_keystore", False))
+
     def test_alias_validation(self):
         """Test validation of alias combinations."""
         import argparse
-        
+
         # Test conflicting security aliases
-        args = argparse.Namespace(fast=True, secure=True, max_security=False,
-                                crypto_family=None, quantum_safe=None,
-                                for_personal=False, for_business=False,
-                                for_archival=False, for_compliance=False)
-        
+        args = argparse.Namespace(
+            fast=True,
+            secure=True,
+            max_security=False,
+            crypto_family=None,
+            quantum_safe=None,
+            for_personal=False,
+            for_business=False,
+            for_archival=False,
+            for_compliance=False,
+        )
+
         errors = self.processor.validate_alias_combinations(args)
         self.assertGreater(len(errors), 0)
-        self.assertIn('fast', errors[0])
-        self.assertIn('secure', errors[0])
-        
+        self.assertIn("fast", errors[0])
+        self.assertIn("secure", errors[0])
+
         # Test conflicting use case aliases
-        args = argparse.Namespace(fast=False, secure=False, max_security=False,
-                                crypto_family=None, quantum_safe=None,
-                                for_personal=True, for_business=True,
-                                for_archival=False, for_compliance=False)
-        
+        args = argparse.Namespace(
+            fast=False,
+            secure=False,
+            max_security=False,
+            crypto_family=None,
+            quantum_safe=None,
+            for_personal=True,
+            for_business=True,
+            for_archival=False,
+            for_compliance=False,
+        )
+
         errors = self.processor.validate_alias_combinations(args)
         self.assertGreater(len(errors), 0)
-        self.assertIn('personal', errors[0])
-        self.assertIn('business', errors[0])
-        
+        self.assertIn("personal", errors[0])
+        self.assertIn("business", errors[0])
+
         # Test incompatible PQC + Fernet combination
-        args = argparse.Namespace(fast=False, secure=False, max_security=False,
-                                crypto_family='fernet', quantum_safe='pq-standard',
-                                for_personal=False, for_business=False,
-                                for_archival=False, for_compliance=False)
-        
+        args = argparse.Namespace(
+            fast=False,
+            secure=False,
+            max_security=False,
+            crypto_family="fernet",
+            quantum_safe="pq-standard",
+            for_personal=False,
+            for_business=False,
+            for_archival=False,
+            for_compliance=False,
+        )
+
         errors = self.processor.validate_alias_combinations(args)
         self.assertGreater(len(errors), 0)
-        self.assertIn('Post-quantum', errors[0])
-        self.assertIn('Fernet', errors[0])
-    
+        self.assertIn("Post-quantum", errors[0])
+        self.assertIn("Fernet", errors[0])
+
     def test_alias_override_application(self):
         """Test application of alias overrides to parsed arguments."""
         import argparse
+
         from ..modules.cli_aliases import apply_alias_overrides
-        
+
         # Create original args
-        original_args = argparse.Namespace(algorithm=None, template=None, 
-                                         pqc_algorithm=None, custom_flag='test')
-        
+        original_args = argparse.Namespace(
+            algorithm=None, template=None, pqc_algorithm=None, custom_flag="test"
+        )
+
         # Create overrides
-        overrides = {
-            'algorithm': 'aes-gcm',
-            'template': 'standard',
-            'new_attr': 'new_value'
-        }
-        
+        overrides = {"algorithm": "aes-gcm", "template": "standard", "new_attr": "new_value"}
+
         # Apply overrides
         modified_args = apply_alias_overrides(original_args, overrides)
-        
+
         # Test that overrides were applied
-        self.assertEqual(modified_args.algorithm, 'aes-gcm')
-        self.assertEqual(modified_args.template, 'standard')
-        self.assertEqual(modified_args.new_attr, 'new_value')
-        
+        self.assertEqual(modified_args.algorithm, "aes-gcm")
+        self.assertEqual(modified_args.template, "standard")
+        self.assertEqual(modified_args.new_attr, "new_value")
+
         # Test that original attributes were preserved
-        self.assertEqual(modified_args.custom_flag, 'test')
-        
+        self.assertEqual(modified_args.custom_flag, "test")
+
         # Test that explicit user settings aren't overridden
-        original_args.algorithm = 'user-specified'
+        original_args.algorithm = "user-specified"
         modified_args = apply_alias_overrides(original_args, overrides)
-        self.assertEqual(modified_args.algorithm, 'user-specified')
-    
+        self.assertEqual(modified_args.algorithm, "user-specified")
+
     def test_help_text_generation(self):
         """Test generation of alias help text."""
         help_text = self.processor.get_alias_help_text()
-        
+
         # Test that help text contains expected sections
-        self.assertIn('CLI ALIASES', help_text)
-        self.assertIn('SECURITY LEVEL ALIASES', help_text)
-        self.assertIn('ALGORITHM FAMILY ALIASES', help_text)
-        self.assertIn('POST-QUANTUM ALIASES', help_text)
-        self.assertIn('USE CASE ALIASES', help_text)
-        self.assertIn('EXAMPLES', help_text)
-        
+        self.assertIn("CLI ALIASES", help_text)
+        self.assertIn("SECURITY LEVEL ALIASES", help_text)
+        self.assertIn("ALGORITHM FAMILY ALIASES", help_text)
+        self.assertIn("POST-QUANTUM ALIASES", help_text)
+        self.assertIn("USE CASE ALIASES", help_text)
+        self.assertIn("EXAMPLES", help_text)
+
         # Test that specific aliases are documented
-        self.assertIn('--fast', help_text)
-        self.assertIn('--secure', help_text)
-        self.assertIn('--crypto-family', help_text)
-        self.assertIn('--quantum-safe', help_text)
-        self.assertIn('--for-personal', help_text)
-    
+        self.assertIn("--fast", help_text)
+        self.assertIn("--secure", help_text)
+        self.assertIn("--crypto-family", help_text)
+        self.assertIn("--quantum-safe", help_text)
+        self.assertIn("--for-personal", help_text)
+
     def test_empty_alias_processing(self):
         """Test processing when no aliases are specified."""
         import argparse
-        
-        args = argparse.Namespace(fast=False, secure=False, max_security=False,
-                                crypto_family=None, quantum_safe=None,
-                                for_personal=False, for_business=False,
-                                for_archival=False, for_compliance=False)
-        
+
+        args = argparse.Namespace(
+            fast=False,
+            secure=False,
+            max_security=False,
+            crypto_family=None,
+            quantum_safe=None,
+            for_personal=False,
+            for_business=False,
+            for_archival=False,
+            for_compliance=False,
+        )
+
         overrides = self.processor.process_aliases(args)
         self.assertEqual(len(overrides), 0)
-    
+
     def test_multiple_compatible_aliases(self):
         """Test processing multiple compatible aliases together."""
         import argparse
-        
+
         # Test security level + algorithm family + PQC
-        args = argparse.Namespace(fast=False, secure=True, max_security=False,
-                                crypto_family='xchacha', quantum_safe='pq-high',
-                                for_personal=False, for_business=False,
-                                for_archival=False, for_compliance=False)
-        
+        args = argparse.Namespace(
+            fast=False,
+            secure=True,
+            max_security=False,
+            crypto_family="xchacha",
+            quantum_safe="pq-high",
+            for_personal=False,
+            for_business=False,
+            for_archival=False,
+            for_compliance=False,
+        )
+
         overrides = self.processor.process_aliases(args)
-        self.assertEqual(overrides['template'], 'standard')  # from --secure
-        self.assertEqual(overrides['algorithm'], 'xchacha20-poly1305')  # from --crypto-family
-        self.assertEqual(overrides['pqc_algorithm'], 'ml-kem-1024-hybrid')  # from --quantum-safe
-        
+        self.assertEqual(overrides["template"], "standard")  # from --secure
+        self.assertEqual(overrides["algorithm"], "xchacha20-poly1305")  # from --crypto-family
+        self.assertEqual(overrides["pqc_algorithm"], "ml-kem-1024-hybrid")  # from --quantum-safe
+
         # Validation should pass
         errors = self.processor.validate_alias_combinations(args)
         self.assertEqual(len(errors), 0)
-    
+
     def test_alias_precedence(self):
         """Test that later aliases override earlier ones appropriately."""
         import argparse
-        
+
         # Test that use case aliases override security aliases
-        args = argparse.Namespace(fast=True, secure=False, max_security=False,
-                                crypto_family=None, quantum_safe=None,
-                                for_personal=False, for_business=False,
-                                for_archival=True, for_compliance=False)
-        
+        args = argparse.Namespace(
+            fast=True,
+            secure=False,
+            max_security=False,
+            crypto_family=None,
+            quantum_safe=None,
+            for_personal=False,
+            for_business=False,
+            for_archival=True,
+            for_compliance=False,
+        )
+
         overrides = self.processor.process_aliases(args)
         # Archival should override fast template
-        self.assertEqual(overrides['template'], 'paranoid')
-        self.assertEqual(overrides['algorithm'], 'xchacha20-poly1305')
+        self.assertEqual(overrides["template"], "paranoid")
+        self.assertEqual(overrides["algorithm"], "xchacha20-poly1305")
+
+
+class TestTemplateManager(unittest.TestCase):
+    """Test template management system functionality."""
+
+    def setUp(self):
+        """Set up test environment."""
+        import os
+        import tempfile
+
+        from ..modules.template_manager import EnhancedTemplate, TemplateManager, TemplateMetadata
+
+        self.manager = TemplateManager()
+        # Create temporary directory for test templates
+        self.test_dir = tempfile.mkdtemp()
+        self.manager.template_dir = self.test_dir
+
+    def tearDown(self):
+        """Clean up test environment."""
+        import shutil
+
+        if hasattr(self, "test_dir"):
+            shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_template_creation_from_wizard(self):
+        """Test creating template from wizard configuration."""
+        from ..modules.template_manager import EnhancedTemplate
+
+        wizard_config = {
+            "algorithm": "aes-gcm",
+            "kdf_algorithm": "argon2id",
+            "argon2_time_cost": 4,
+            "argon2_memory_cost": 65536,
+            "argon2_parallelism": 4,
+            "compression": True,
+            "metadata_embedded": True,
+            "secure_deletion": True,
+        }
+
+        template = self.manager.create_template_from_wizard(
+            wizard_config,
+            name="test-template",
+            description="Test template from wizard",
+            use_cases=["personal", "business"],
+        )
+
+        self.assertIsInstance(template, EnhancedTemplate)
+        self.assertEqual(template.metadata.name, "test-template")
+        self.assertEqual(template.metadata.description, "Test template from wizard")
+        self.assertEqual(template.metadata.use_cases, ["personal", "business"])
+        self.assertEqual(template.config["hash_config"]["algorithm"], "aes-gcm")
+
+    def test_template_saving_and_loading(self):
+        """Test template saving and loading functionality."""
+        import json
+
+        from ..modules.template_manager import EnhancedTemplate, TemplateFormat, TemplateMetadata
+
+        # Create test template
+        config = {
+            "hash_config": {
+                "algorithm": "xchacha20-poly1305",
+                "sha256": 1000,
+                "argon2": {"enabled": True},
+            }
+        }
+        metadata = TemplateMetadata(
+            name="test-save",
+            description="Test save/load",
+            use_cases=["personal"],
+            security_level="MODERATE",
+        )
+        template = EnhancedTemplate(config=config, metadata=metadata)
+
+        # Save template
+        filename = self.manager.save_template(template, format=TemplateFormat.JSON)
+        self.assertTrue(filename.endswith(".json"))
+
+        # Load template
+        loaded_template = self.manager.load_template(filename)
+        self.assertEqual(loaded_template.metadata.name, "test-save")
+        self.assertEqual(loaded_template.config["hash_config"]["algorithm"], "xchacha20-poly1305")
+
+    def test_template_comparison(self):
+        """Test template comparison functionality."""
+        from ..modules.template_manager import EnhancedTemplate, TemplateMetadata
+
+        # Create two templates
+        template1 = EnhancedTemplate(
+            config={
+                "hash_config": {"algorithm": "aes-gcm", "sha256": 1000, "argon2": {"enabled": True}}
+            },
+            metadata=TemplateMetadata(name="template1", security_level="MODERATE"),
+        )
+        template2 = EnhancedTemplate(
+            config={
+                "hash_config": {
+                    "algorithm": "xchacha20-poly1305",
+                    "sha512": 2000,
+                    "scrypt": {"enabled": True},
+                }
+            },
+            metadata=TemplateMetadata(name="template2", security_level="HIGH"),
+        )
+
+        comparison = self.manager.compare_templates(template1, template2)
+
+        self.assertIn("templates", comparison)
+        self.assertIn("security_comparison", comparison)
+        self.assertIn("performance_comparison", comparison)
+        self.assertIn("recommendations", comparison)
+
+        # Check that template info is included
+        templates = comparison["templates"]
+        self.assertIn("template1", templates)
+        self.assertIn("template2", templates)
+
+    def test_template_recommendations(self):
+        """Test template recommendation system."""
+        import os
+
+        from ..modules.template_manager import EnhancedTemplate, TemplateMetadata
+
+        # Create test templates for different use cases
+        personal_template = EnhancedTemplate(
+            config={
+                "hash_config": {"algorithm": "fernet", "sha256": 500, "pbkdf2_iterations": 5000}
+            },
+            metadata=TemplateMetadata(
+                name="personal-template", use_cases=["personal"], security_level="MINIMAL"
+            ),
+        )
+        business_template = EnhancedTemplate(
+            config={
+                "hash_config": {"algorithm": "aes-gcm", "sha256": 1000, "argon2": {"enabled": True}}
+            },
+            metadata=TemplateMetadata(
+                name="business-template", use_cases=["business"], security_level="MODERATE"
+            ),
+        )
+
+        # Save templates
+        self.manager.save_template(personal_template)
+        self.manager.save_template(business_template)
+
+        # Get recommendations for business use case
+        recommendations = self.manager.recommend_templates("business", max_results=2)
+
+        self.assertIsInstance(recommendations, list)
+        self.assertTrue(len(recommendations) >= 1)
+
+        # Check that business template is recommended for business use case
+        template_names = [rec[0].metadata.name for rec in recommendations]
+        self.assertIn("business-template", template_names)
+
+    def test_template_analysis_integration(self):
+        """Test template analysis integration with configuration analyzer."""
+        from ..modules.config_analyzer import ConfigurationAnalyzer
+        from ..modules.template_manager import EnhancedTemplate, TemplateMetadata
+
+        # Create template with analyzable configuration
+        config = {
+            "hash_config": {
+                "algorithm": "aes-gcm",
+                "sha256": 1000,
+                "argon2": {"enabled": True, "time_cost": 4, "memory_cost": 65536},
+            }
+        }
+        template = EnhancedTemplate(
+            config=config,
+            metadata=TemplateMetadata(name="analysis-test", security_level="MODERATE"),
+        )
+
+        # Analyze template
+        analysis = self.manager.analyze_template(template, use_case="business")
+
+        self.assertIsNotNone(analysis)
+        self.assertIn("overall_score", analysis.__dict__)
+        self.assertIn("performance_assessment", analysis.__dict__)
+        self.assertIn("recommendations", analysis.__dict__)
+
+    def test_template_validation(self):
+        """Test template validation functionality."""
+        from ..modules.template_manager import EnhancedTemplate, TemplateMetadata
+
+        # Test valid template
+        valid_config = {
+            "hash_config": {
+                "algorithm": "aes-gcm",
+                "sha256": 1000,  # Hash function with iterations
+                "argon2": {"enabled": True},  # KDF configuration
+            }
+        }
+        valid_template = EnhancedTemplate(
+            config=valid_config, metadata=TemplateMetadata(name="valid", security_level="MODERATE")
+        )
+
+        is_valid, errors = self.manager.validate_template(valid_template)
+        if not is_valid:
+            print(f"Validation errors: {errors}")
+        self.assertTrue(is_valid)
+        self.assertEqual(len(errors), 0)
+
+        # Test invalid template (missing required field)
+        invalid_config = {
+            "hash_config": {"kdf_algorithm": "argon2id"}
+        }  # missing algorithm and hash functions
+        invalid_template = EnhancedTemplate(
+            config=invalid_config,
+            metadata=TemplateMetadata(name="invalid", security_level="MINIMAL"),
+        )
+
+        is_valid, errors = self.manager.validate_template(invalid_template)
+        self.assertFalse(is_valid)
+        self.assertGreater(len(errors), 0)
+
+    def test_template_listing_with_filters(self):
+        """Test template listing with use case filters."""
+        from ..modules.template_manager import EnhancedTemplate, TemplateMetadata
+
+        # Create templates for different use cases
+        personal_template = EnhancedTemplate(
+            config={
+                "hash_config": {"algorithm": "fernet", "sha256": 500, "pbkdf2_iterations": 5000}
+            },
+            metadata=TemplateMetadata(name="personal", use_cases=["personal"]),
+        )
+        business_template = EnhancedTemplate(
+            config={
+                "hash_config": {"algorithm": "aes-gcm", "sha256": 1000, "argon2": {"enabled": True}}
+            },
+            metadata=TemplateMetadata(name="business", use_cases=["business"]),
+        )
+        mixed_template = EnhancedTemplate(
+            config={
+                "hash_config": {
+                    "algorithm": "xchacha20-poly1305",
+                    "sha512": 2000,
+                    "argon2": {"enabled": True},
+                }
+            },
+            metadata=TemplateMetadata(name="mixed", use_cases=["personal", "business"]),
+        )
+
+        # Save templates
+        self.manager.save_template(personal_template)
+        self.manager.save_template(business_template)
+        self.manager.save_template(mixed_template)
+
+        # List all templates
+        all_templates = self.manager.list_templates()
+        self.assertGreaterEqual(len(all_templates), 3)
+
+        # Filter templates manually by use case since the method doesn't support this filter
+        all_templates = self.manager.list_templates()
+
+        # Filter by personal use case
+        personal_templates = [t for t in all_templates if "personal" in t.metadata.use_cases]
+        personal_names = [t.metadata.name for t in personal_templates]
+        self.assertIn("personal", personal_names)
+        self.assertIn("mixed", personal_names)  # Mixed should be included
+
+        # Filter by business use case
+        business_templates = [t for t in all_templates if "business" in t.metadata.use_cases]
+        business_names = [t.metadata.name for t in business_templates]
+        self.assertIn("business", business_names)
+        self.assertIn("mixed", business_names)  # Mixed should be included
+
+    def test_template_deletion(self):
+        """Test template deletion functionality."""
+        import os
+
+        from ..modules.template_manager import EnhancedTemplate, TemplateMetadata
+
+        # Create and save template
+        template = EnhancedTemplate(
+            config={
+                "hash_config": {"algorithm": "aes-gcm", "sha256": 1000, "argon2": {"enabled": True}}
+            },
+            metadata=TemplateMetadata(name="delete-test", security_level="MODERATE"),
+        )
+        filename = self.manager.save_template(template)
+
+        # Verify template exists
+        self.assertTrue(os.path.exists(filename))
+
+        # Delete template
+        result = self.manager.delete_template(template)
+        self.assertTrue(result)
+
+        # Verify template is deleted
+        self.assertFalse(os.path.exists(filename))
 
 
 if __name__ == "__main__":

@@ -75,7 +75,12 @@ except ImportError:
 
 from . import crypt_errors
 from .cli_aliases import add_cli_aliases, process_cli_aliases
-from .config_analyzer import ConfigurationAnalyzer, AnalysisCategory, RecommendationPriority, analyze_configuration_from_args
+from .config_analyzer import (
+    AnalysisCategory,
+    ConfigurationAnalyzer,
+    RecommendationPriority,
+    analyze_configuration_from_args,
+)
 from .config_wizard import generate_cli_arguments, run_configuration_wizard
 from .keystore_utils import (
     auto_generate_pqc_key,
@@ -93,6 +98,7 @@ from .password_policy import (
     validate_password_or_raise,
 )
 from .security_scorer import SecurityScorer
+from .template_manager import EnhancedTemplate, TemplateCategory, TemplateFormat, TemplateManager
 
 
 class ReconstructedStdinStream:
@@ -600,6 +606,7 @@ def preprocess_global_args(argv):
         "analyze-security",
         "config-wizard",
         "analyze-config",
+        "template",
         "check-argon2",
         "check-pqc",
         "version",
@@ -832,7 +839,7 @@ def run_config_wizard(args):
 def run_config_analyzer(args):
     """
     Run configuration analysis and display detailed results.
-    
+
     Args:
         args: Parsed command line arguments
     """
@@ -841,29 +848,29 @@ def run_config_analyzer(args):
         use_case = getattr(args, "use_case", None)
         output_format = getattr(args, "output_format", "text")
         compliance_frameworks = getattr(args, "compliance_frameworks", None)
-        
+
         if not quiet and output_format == "text":
             print("Analyzing Configuration...")
             print("Performing comprehensive security and performance analysis.\n")
-        
+
         # Convert args to configuration dictionary
         config = vars(args)
-        
+
         # Add compliance requirements if specified
         if compliance_frameworks:
             config["compliance_requirements"] = compliance_frameworks
-        
+
         # Run the analysis
         analyzer = ConfigurationAnalyzer()
         analysis = analyzer.analyze_configuration(config, use_case, compliance_frameworks)
-        
+
         if output_format == "json":
             _display_json_results(analysis)
         elif not quiet:
             _display_analysis_results(analysis)
-        
+
         return analysis
-        
+
     except Exception as e:
         print(f"Error analyzing configuration: {e}")
         sys.exit(1)
@@ -871,12 +878,12 @@ def run_config_analyzer(args):
 
 def _display_analysis_results(analysis):
     """Display formatted analysis results."""
-    
+
     print("=" * 60)
     print("CONFIGURATION ANALYSIS RESULTS")
     print("=" * 60)
     print()
-    
+
     # Overall Summary
     print("📊 OVERALL ASSESSMENT")
     print("─" * 30)
@@ -884,7 +891,7 @@ def _display_analysis_results(analysis):
     print(f"Security Level: {analysis.security_level.name}")
     print(f"Analysis Time: {analysis.analysis_timestamp}")
     print()
-    
+
     # Configuration Summary
     print("⚙️  CONFIGURATION SUMMARY")
     print("─" * 30)
@@ -896,36 +903,38 @@ def _display_analysis_results(analysis):
     print(f"Complexity: {summary['configuration_complexity'].title()}")
     print(f"Suitable For: {', '.join(summary['suitable_for'])}")
     print()
-    
+
     # Performance Assessment
     print("🚀 PERFORMANCE ASSESSMENT")
     print("─" * 30)
     perf = analysis.performance_assessment
     print(f"Overall Score: {perf['overall_score']:.1f}/10.0")
     print(f"Speed Rating: {perf['estimated_relative_speed'].replace('_', ' ').title()}")
-    print(f"Memory Usage: {perf['memory_requirements']['estimated_peak_mb']}MB ({perf['memory_requirements']['classification']})")
+    print(
+        f"Memory Usage: {perf['memory_requirements']['estimated_peak_mb']}MB ({perf['memory_requirements']['classification']})"
+    )
     print(f"CPU Intensity: {perf['cpu_intensity'].replace('_', ' ').title()}")
     print()
-    
+
     # Compatibility
     print("🔗 COMPATIBILITY")
     print("─" * 30)
     compat = analysis.compatibility_matrix
     print(f"Overall Score: {compat['overall_compatibility_score']:.1f}/10.0")
-    
-    platform_issues = [p for p, status in compat['platform_compatibility'].items() if not status]
+
+    platform_issues = [p for p, status in compat["platform_compatibility"].items() if not status]
     if platform_issues:
         print(f"Platform Limitations: {', '.join(platform_issues)}")
     else:
         print("Platform Support: Universal")
-    
-    library_issues = [lib for lib, status in compat['library_compatibility'].items() if not status]
+
+    library_issues = [lib for lib, status in compat["library_compatibility"].items() if not status]
     if library_issues:
         print(f"Library Limitations: {', '.join(library_issues)}")
     else:
         print("Library Support: Excellent")
     print()
-    
+
     # Future Proofing
     print("🔮 FUTURE PROOFING")
     print("─" * 30)
@@ -935,26 +944,26 @@ def _display_analysis_results(analysis):
     print(f"Quantum Resistant: {'Yes' if future['post_quantum_ready'] else 'No'}")
     print(f"Estimated Secure: {future['estimated_secure_years']}")
     print()
-    
+
     # Compliance Status
     if analysis.compliance_status:
         print("📋 COMPLIANCE STATUS")
         print("─" * 30)
         for framework, status in analysis.compliance_status.items():
-            framework_name = framework.replace('_', ' ').title()
-            compliance_status = "✅ Compliant" if status['compliant'] else "❌ Non-Compliant"
+            framework_name = framework.replace("_", " ").title()
+            compliance_status = "✅ Compliant" if status["compliant"] else "❌ Non-Compliant"
             print(f"{framework_name}: {compliance_status}")
-            
-            if status.get('issues'):
-                for issue in status['issues']:
+
+            if status.get("issues"):
+                for issue in status["issues"]:
                     print(f"  • {issue}")
         print()
-    
+
     # Recommendations
     if analysis.recommendations:
         print("💡 RECOMMENDATIONS")
         print("─" * 30)
-        
+
         # Group recommendations by priority
         by_priority = {}
         for rec in analysis.recommendations:
@@ -962,35 +971,29 @@ def _display_analysis_results(analysis):
             if priority not in by_priority:
                 by_priority[priority] = []
             by_priority[priority].append(rec)
-        
+
         # Display by priority
-        priority_icons = {
-            'critical': '🚨',
-            'high': '⚠️',
-            'medium': '💡',
-            'low': 'ℹ️',
-            'info': '📝'
-        }
-        
-        for priority in ['critical', 'high', 'medium', 'low', 'info']:
+        priority_icons = {"critical": "🚨", "high": "⚠️", "medium": "💡", "low": "ℹ️", "info": "📝"}
+
+        for priority in ["critical", "high", "medium", "low", "info"]:
             if priority in by_priority:
                 recommendations = by_priority[priority]
                 print(f"\n{priority_icons[priority]} {priority.upper()} PRIORITY:")
-                
+
                 for i, rec in enumerate(recommendations, 1):
                     print(f"\n{i}. {rec.title}")
                     print(f"   Category: {rec.category.value.replace('_', ' ').title()}")
                     print(f"   Issue: {rec.description}")
                     print(f"   Action: {rec.action}")
                     print(f"   Impact: {rec.impact}")
-                    
-                    if rec.applies_to and rec.applies_to != ['all']:
+
+                    if rec.applies_to and rec.applies_to != ["all"]:
                         print(f"   Applies To: {', '.join(rec.applies_to)}")
     else:
         print("💡 RECOMMENDATIONS")
         print("─" * 30)
         print("✅ No specific recommendations - configuration looks good!")
-    
+
     print()
     print("=" * 60)
     print("Analysis complete. Use recommendations above to enhance your configuration.")
@@ -1001,46 +1004,345 @@ def _display_json_results(analysis):
     """Display analysis results in JSON format."""
     import json
     from dataclasses import asdict
-    
+
     # Convert analysis to dictionary, handling enum values
     def convert_analysis(obj):
-        if hasattr(obj, '__dataclass_fields__'):
+        if hasattr(obj, "__dataclass_fields__"):
             return asdict(obj)
-        elif hasattr(obj, 'value'):  # Enum
+        elif hasattr(obj, "value"):  # Enum
             return obj.value
-        elif hasattr(obj, 'name'):  # Enum
+        elif hasattr(obj, "name"):  # Enum
             return obj.name
         return obj
-    
+
     # Convert the analysis object to a dictionary
     result_dict = {
-        'overall_score': analysis.overall_score,
-        'security_level': analysis.security_level.name,
-        'analysis_timestamp': analysis.analysis_timestamp,
-        'configuration_summary': analysis.configuration_summary,
-        'performance_assessment': analysis.performance_assessment,
-        'compatibility_matrix': analysis.compatibility_matrix,
-        'compliance_status': analysis.compliance_status,
-        'future_proofing': analysis.future_proofing,
-        'recommendations': []
+        "overall_score": analysis.overall_score,
+        "security_level": analysis.security_level.name,
+        "analysis_timestamp": analysis.analysis_timestamp,
+        "configuration_summary": analysis.configuration_summary,
+        "performance_assessment": analysis.performance_assessment,
+        "compatibility_matrix": analysis.compatibility_matrix,
+        "compliance_status": analysis.compliance_status,
+        "future_proofing": analysis.future_proofing,
+        "recommendations": [],
     }
-    
+
     # Convert recommendations
     for rec in analysis.recommendations:
         rec_dict = {
-            'category': rec.category.value,
-            'priority': rec.priority.value,
-            'title': rec.title,
-            'description': rec.description,
-            'action': rec.action,
-            'impact': rec.impact,
-            'rationale': rec.rationale,
-            'applies_to': rec.applies_to
+            "category": rec.category.value,
+            "priority": rec.priority.value,
+            "title": rec.title,
+            "description": rec.description,
+            "action": rec.action,
+            "impact": rec.impact,
+            "rationale": rec.rationale,
+            "applies_to": rec.applies_to,
         }
-        result_dict['recommendations'].append(rec_dict)
-    
+        result_dict["recommendations"].append(rec_dict)
+
     # Output JSON
     print(json.dumps(result_dict, indent=2, ensure_ascii=False))
+
+
+def run_template_manager(args):
+    """Run template management operations."""
+    try:
+        template_mgr = TemplateManager()
+        subcommand = getattr(args, "template_action", None)
+
+        if subcommand == "list":
+            _handle_template_list(template_mgr, args)
+        elif subcommand == "create":
+            _handle_template_create(template_mgr, args)
+        elif subcommand == "analyze":
+            _handle_template_analyze(template_mgr, args)
+        elif subcommand == "compare":
+            _handle_template_compare(template_mgr, args)
+        elif subcommand == "recommend":
+            _handle_template_recommend(template_mgr, args)
+        elif subcommand == "delete":
+            _handle_template_delete(template_mgr, args)
+        else:
+            print("Invalid template subcommand. Use --help for available options.")
+
+    except Exception as e:
+        print(f"Error in template management: {e}")
+        sys.exit(1)
+
+
+def _handle_template_list(template_mgr: TemplateManager, args):
+    """Handle template list command."""
+    category = getattr(args, "category", None)
+    if category:
+        category = TemplateCategory(category)
+
+    templates = template_mgr.list_templates(category)
+
+    if not templates:
+        print("No templates found.")
+        return
+
+    print("📋 AVAILABLE TEMPLATES")
+    print("=" * 50)
+    print()
+
+    current_category = None
+    for template in templates:
+        # Group by category
+        if template.metadata.category != current_category:
+            current_category = template.metadata.category
+            print(f"\n🏷️  {current_category.value.upper().replace('_', ' ')}")
+            print("-" * 30)
+
+        # Display template info
+        security_icon = _get_security_icon(template.metadata.security_level)
+        print(f"\n{security_icon} {template.metadata.name}")
+        print(f"   Description: {template.metadata.description}")
+        print(
+            f"   Security: {template.metadata.security_level} ({template.metadata.security_score:.1f}/10)"
+        )
+        if template.metadata.use_cases:
+            print(f"   Use Cases: {', '.join(template.metadata.use_cases)}")
+        if template.metadata.tags:
+            print(f"   Tags: {', '.join(template.metadata.tags)}")
+
+        if hasattr(args, "verbose") and args.verbose:
+            print(f"   Author: {template.metadata.author}")
+            print(f"   Created: {template.metadata.created_date}")
+            if not template.is_built_in and template.file_path:
+                print(f"   File: {template.file_path}")
+
+
+def _handle_template_create(template_mgr: TemplateManager, args):
+    """Handle template creation from current configuration."""
+    name = getattr(args, "template_name", None)
+    if not name:
+        print("Error: Template name is required for creation.")
+        sys.exit(1)
+
+    description = getattr(args, "description", "")
+    use_cases = getattr(args, "use_cases", [])
+
+    # Create template from current CLI args
+    template = template_mgr.create_template_from_args(args, name, description, use_cases)
+
+    # Validate template
+    is_valid, errors = template_mgr.validate_template(template)
+    if not is_valid:
+        print("❌ Template validation failed:")
+        for error in errors:
+            print(f"   • {error}")
+        sys.exit(1)
+
+    # Save template
+    try:
+        output_format = TemplateFormat(getattr(args, "format", "json"))
+        filepath = template_mgr.save_template(template, format=output_format)
+
+        print("✅ Template created successfully!")
+        print(f"📁 Saved to: {filepath}")
+        print(
+            f"🔒 Security Level: {template.metadata.security_level} ({template.metadata.security_score:.1f}/10)"
+        )
+
+        if use_cases:
+            print(f"🎯 Use Cases: {', '.join(use_cases)}")
+
+    except FileExistsError as e:
+        print(f"❌ {e}")
+        print("Use --overwrite to replace existing template.")
+        sys.exit(1)
+
+
+def _handle_template_analyze(template_mgr: TemplateManager, args):
+    """Handle template analysis command."""
+    template_name = getattr(args, "template_name", None)
+    if not template_name:
+        print("Error: Template name is required for analysis.")
+        sys.exit(1)
+
+    template = template_mgr.get_template_by_name(template_name)
+    if not template:
+        print(f"❌ Template '{template_name}' not found.")
+        sys.exit(1)
+
+    report = template_mgr.generate_template_report(template)
+
+    print("🔍 TEMPLATE ANALYSIS REPORT")
+    print("=" * 50)
+    print(f"\n📋 Template: {template.metadata.name}")
+    print(f"📝 Description: {template.metadata.description}")
+    print(f"👤 Author: {template.metadata.author}")
+    print(f"📅 Created: {template.metadata.created_date}")
+
+    # Validation status
+    validation = report["validation"]
+    if validation["is_valid"]:
+        print("\n✅ VALIDATION: PASSED")
+    else:
+        print("\n❌ VALIDATION: FAILED")
+        for error in validation["errors"]:
+            print(f"   • {error}")
+
+    # Analysis results
+    if "analysis" in report and "overall_score" in report["analysis"]:
+        analysis = report["analysis"]
+        security_icon = _get_security_icon(analysis["security_level"])
+
+        print(f"\n🔒 SECURITY ANALYSIS")
+        print(f"   {security_icon} Overall Score: {analysis['overall_score']:.1f}/10")
+        print(f"   🛡️  Security Level: {analysis['security_level']}")
+
+        if "performance" in analysis:
+            perf = analysis["performance"]
+            print(f"\n🚀 PERFORMANCE ANALYSIS")
+            print(
+                f"   ⚡ Speed Rating: {perf['estimated_relative_speed'].replace('_', ' ').title()}"
+            )
+            print(f"   💾 Memory Usage: {perf['memory_requirements']['estimated_peak_mb']}MB")
+            print(f"   🖥️  CPU Intensity: {perf['cpu_intensity'].replace('_', ' ').title()}")
+
+        if "recommendations" in analysis and analysis["recommendations"]:
+            print(f"\n💡 RECOMMENDATIONS:")
+            for i, rec in enumerate(analysis["recommendations"][:3], 1):  # Show top 3
+                priority_icon = (
+                    "🚨"
+                    if rec["priority"] == "critical"
+                    else "⚠️"
+                    if rec["priority"] == "high"
+                    else "💡"
+                )
+                print(f"   {i}. {priority_icon} {rec['title']}")
+                print(f"      {rec['description']}")
+                print(f"      Action: {rec['action']}")
+
+
+def _handle_template_compare(template_mgr: TemplateManager, args):
+    """Handle template comparison command."""
+    template1_name = getattr(args, "template1", None)
+    template2_name = getattr(args, "template2", None)
+
+    if not template1_name or not template2_name:
+        print("Error: Both template names are required for comparison.")
+        sys.exit(1)
+
+    template1 = template_mgr.get_template_by_name(template1_name)
+    template2 = template_mgr.get_template_by_name(template2_name)
+
+    if not template1:
+        print(f"❌ Template '{template1_name}' not found.")
+        sys.exit(1)
+    if not template2:
+        print(f"❌ Template '{template2_name}' not found.")
+        sys.exit(1)
+
+    comparison = template_mgr.compare_templates(template1, template2)
+
+    print("🔄 TEMPLATE COMPARISON")
+    print("=" * 50)
+
+    t1_data = comparison["templates"]["template1"]
+    t2_data = comparison["templates"]["template2"]
+
+    print(f"\n📊 OVERVIEW")
+    print(
+        f"   Template 1: {t1_data['name']} ({t1_data['security_level']}, {t1_data['security_score']:.1f}/10)"
+    )
+    print(
+        f"   Template 2: {t2_data['name']} ({t2_data['security_level']}, {t2_data['security_score']:.1f}/10)"
+    )
+
+    print(f"\n🔒 SECURITY COMPARISON")
+    print(f"   {comparison['security_comparison']['verdict']}")
+
+    if "performance_comparison" in comparison:
+        print(f"\n🚀 PERFORMANCE COMPARISON")
+        print(f"   {comparison['performance_comparison']['verdict']}")
+
+    # Use case comparison
+    common_use_cases = set(t1_data["use_cases"]) & set(t2_data["use_cases"])
+    if common_use_cases:
+        print(f"\n🎯 COMMON USE CASES: {', '.join(common_use_cases)}")
+
+
+def _handle_template_recommend(template_mgr: TemplateManager, args):
+    """Handle template recommendation command."""
+    use_case = getattr(args, "use_case", None)
+    if not use_case:
+        print("Error: Use case is required for recommendations.")
+        sys.exit(1)
+
+    recommendations = template_mgr.recommend_templates(use_case)
+
+    if not recommendations:
+        print(f"No template recommendations found for use case: {use_case}")
+        return
+
+    print(f"💡 TEMPLATE RECOMMENDATIONS FOR '{use_case.upper()}'")
+    print("=" * 50)
+
+    for i, (template, reason) in enumerate(recommendations, 1):
+        security_icon = _get_security_icon(template.metadata.security_level)
+        print(f"\n{i}. {security_icon} {template.metadata.name}")
+        print(f"   📝 {template.metadata.description}")
+        print(
+            f"   🔒 Security: {template.metadata.security_level} ({template.metadata.security_score:.1f}/10)"
+        )
+        print(f"   ✨ Reason: {reason}")
+
+        if template.is_built_in:
+            print(f"   📦 Type: Built-in template")
+        else:
+            print(f"   📁 Type: {template.metadata.category.value.replace('_', ' ').title()}")
+
+
+def _handle_template_delete(template_mgr: TemplateManager, args):
+    """Handle template deletion command."""
+    template_name = getattr(args, "template_name", None)
+    if not template_name:
+        print("Error: Template name is required for deletion.")
+        sys.exit(1)
+
+    template = template_mgr.get_template_by_name(template_name)
+    if not template:
+        print(f"❌ Template '{template_name}' not found.")
+        sys.exit(1)
+
+    if template.is_built_in:
+        print(f"❌ Cannot delete built-in template '{template_name}'.")
+        sys.exit(1)
+
+    # Confirm deletion unless forced
+    if not getattr(args, "force", False):
+        confirm = input(f"⚠️  Are you sure you want to delete template '{template_name}'? [y/N]: ")
+        if confirm.lower() != "y":
+            print("Deletion cancelled.")
+            return
+
+    if template_mgr.delete_template(template):
+        print(f"✅ Template '{template_name}' deleted successfully.")
+    else:
+        print(f"❌ Failed to delete template '{template_name}'.")
+        sys.exit(1)
+
+
+def _get_security_icon(security_level: str) -> str:
+    """Get icon for security level."""
+    icons = {
+        "MINIMAL": "🟡",
+        "LOW": "🟠",
+        "MODERATE": "🟢",
+        "GOOD": "🔵",
+        "HIGH": "🟣",
+        "VERY_HIGH": "🔴",
+        "MAXIMUM": "⚫",
+        "OVERKILL": "⚪",
+        "THEORETICAL": "🌟",
+        "EXTREME": "💎",
+    }
+    return icons.get(security_level, "🔒")
 
 
 def main():
@@ -1061,6 +1363,7 @@ def main():
         "analyze-security",
         "config-wizard",
         "analyze-config",
+        "template",
         "check-argon2",
         "check-pqc",
         "version",
@@ -1139,7 +1442,7 @@ def main_with_args(args=None):
         "  --quantum-safe pq-standard|pq-high|pq-alternative (post-quantum)\n"
         "  --for-personal|business|archival|compliance (use cases)\n\n"
         "COMMANDS:\n"
-        "  encrypt, decrypt, shred, generate-password, security-info, analyze-security, config-wizard, analyze-config, check-argon2, check-pqc, version\n\n"
+        "  encrypt, decrypt, shred, generate-password, security-info, analyze-security, config-wizard, analyze-config, template, check-argon2, check-pqc, version\n\n"
         "EXAMPLES:\n"
         "  %(prog)s encrypt --input file.txt --debug --output file.enc\n"
         "  %(prog)s --quiet decrypt --input file.enc --progress --output file.txt\n"
@@ -1868,7 +2171,7 @@ def main_with_args(args=None):
     # This avoids the "unrecognized arguments" error for steganography options
     if args is None:
         args = parser.parse_args()
-        
+
         # Process CLI aliases and apply overrides
         args, alias_errors = process_cli_aliases(args, alias_processor)
         if alias_errors:
@@ -2290,6 +2593,10 @@ def main_with_args(args=None):
         run_config_analyzer(args)
         sys.exit(0)
 
+    elif args.action == "template":
+        run_template_manager(args)
+        sys.exit(0)
+
     elif args.action == "check-argon2":
         argon2_available, version, supported_types = check_argon2_support()
         print("\nARGON2 SUPPORT CHECK")
@@ -2668,6 +2975,7 @@ def main_with_args(args=None):
         "analyze-security",
         "config-wizard",
         "analyze-config",
+        "template",
         "check-argon2",
         "check-pqc",
         "version",

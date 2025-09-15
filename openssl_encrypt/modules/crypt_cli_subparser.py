@@ -901,7 +901,7 @@ def setup_analyze_config_parser(subparser):
     """Set up arguments specific to the analyze-config command"""
     # Add basic options but also add encryption/security options for analysis
     setup_analyze_security_parser(subparser)
-    
+
     # Add analyze-config specific options
     subparser.add_argument(
         "--use-case",
@@ -910,9 +910,9 @@ def setup_analyze_config_parser(subparser):
         "  personal   - Personal files and documents\n"
         "  business   - Business documents and sensitive data\n"
         "  compliance - Regulatory compliance requirements\n"
-        "  archival   - Long-term storage with future-proofing"
+        "  archival   - Long-term storage with future-proofing",
     )
-    
+
     subparser.add_argument(
         "--compliance-frameworks",
         nargs="*",
@@ -920,14 +920,103 @@ def setup_analyze_config_parser(subparser):
         help="Check compliance with specific frameworks:\n"
         "  fips_140_2      - FIPS 140-2 requirements\n"
         "  common_criteria - Common Criteria standards\n"
-        "  nist_guidelines - NIST cryptographic guidelines"
+        "  nist_guidelines - NIST cryptographic guidelines",
     )
-    
+
     subparser.add_argument(
         "--output-format",
         choices=["text", "json"],
         default="text",
-        help="Output format for analysis results (default: text)"
+        help="Output format for analysis results (default: text)",
+    )
+
+
+def setup_template_parser(subparser):
+    """Set up arguments specific to the template command"""
+    # Create subparsers for template operations
+    template_subparsers = subparser.add_subparsers(
+        dest="template_action", help="Template management operations", metavar="operation"
+    )
+
+    # List templates
+    list_parser = template_subparsers.add_parser("list", help="List available templates")
+    list_parser.add_argument(
+        "--use-case",
+        choices=["personal", "business", "compliance", "archival"],
+        help="Filter templates by use case",
+    )
+    list_parser.add_argument(
+        "--format",
+        choices=["table", "json"],
+        default="table",
+        help="Output format (default: table)",
+    )
+
+    # Create template
+    create_parser = template_subparsers.add_parser(
+        "create", help="Create new template from wizard configuration"
+    )
+    create_parser.add_argument("name", help="Template name")
+    create_parser.add_argument("--description", default="", help="Template description")
+    create_parser.add_argument(
+        "--use-cases",
+        nargs="*",
+        choices=["personal", "business", "compliance", "archival"],
+        help="Use cases this template is suitable for",
+    )
+    create_parser.add_argument(
+        "--format", choices=["json", "yaml"], default="json", help="Template format (default: json)"
+    )
+    create_parser.add_argument(
+        "--overwrite", action="store_true", help="Overwrite existing template"
+    )
+
+    # Analyze template
+    analyze_parser = template_subparsers.add_parser(
+        "analyze", help="Analyze template security and compatibility"
+    )
+    analyze_parser.add_argument("template", help="Template name or file path")
+    analyze_parser.add_argument(
+        "--use-case",
+        choices=["personal", "business", "compliance", "archival"],
+        help="Analyze for specific use case",
+    )
+    analyze_parser.add_argument(
+        "--compliance-frameworks",
+        nargs="*",
+        choices=["fips_140_2", "common_criteria", "nist_guidelines"],
+        help="Check compliance with frameworks",
+    )
+
+    # Compare templates
+    compare_parser = template_subparsers.add_parser("compare", help="Compare two templates")
+    compare_parser.add_argument("template1", help="First template name or file path")
+    compare_parser.add_argument("template2", help="Second template name or file path")
+    compare_parser.add_argument(
+        "--format",
+        choices=["table", "json"],
+        default="table",
+        help="Output format (default: table)",
+    )
+
+    # Recommend templates
+    recommend_parser = template_subparsers.add_parser(
+        "recommend", help="Get template recommendations for use case"
+    )
+    recommend_parser.add_argument(
+        "use_case",
+        choices=["personal", "business", "compliance", "archival"],
+        help="Use case to recommend templates for",
+    )
+    recommend_parser.add_argument(
+        "--max-results", type=int, default=3, help="Maximum number of recommendations (default: 3)"
+    )
+
+    # Delete template
+    delete_parser = template_subparsers.add_parser("delete", help="Delete a template")
+    delete_parser.add_argument("template", help="Template name or file path to delete")
+    delete_parser.add_argument(
+        "--force", action="store_true", help="Force deletion without confirmation"
     )
 
 
@@ -1016,6 +1105,13 @@ def create_subparser_main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_analyze_config_parser(analyze_config_parser)
+
+    template_parser = subparsers.add_parser(
+        "template",
+        help="Template management operations",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_template_parser(template_parser)
 
     check_argon2_parser = subparsers.add_parser(
         "check-argon2",
