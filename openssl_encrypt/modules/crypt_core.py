@@ -454,7 +454,7 @@ except ImportError:
 
 # Try to import RandomX KDF module
 try:
-    from .randomx import randomx_kdf, check_randomx_support, get_randomx_info
+    from .randomx import check_randomx_support, get_randomx_info, randomx_kdf
 
     RANDOMX_AVAILABLE = True
 except ImportError:
@@ -1674,7 +1674,11 @@ def generate_key(
                     "whirlpool",
                 ]
             )
-            or (hash_config and hash_config.get("scrypt", {}).get("enabled", False) and hash_config.get("scrypt", {}).get("rounds", 0) > 0)
+            or (
+                hash_config
+                and hash_config.get("scrypt", {}).get("enabled", False)
+                and hash_config.get("scrypt", {}).get("rounds", 0) > 0
+            )
         )
 
     if has_hash_iterations:
@@ -1690,7 +1694,7 @@ def generate_key(
         # Even when no hash iterations are configured, we need to combine password with salt
         # for consistency with the original key derivation behavior
         password = password + salt
-    
+
     # Check if Argon2 is available on the system
     argon2_available = ARGON2_AVAILABLE
 
@@ -1725,23 +1729,33 @@ def generate_key(
         is_decryption = hash_config and hash_config.get("_is_from_decryption_metadata", False)
         if not is_decryption:
             enabled_kdfs = []
-            if use_argon2: enabled_kdfs.append("Argon2")
-            if use_randomx: enabled_kdfs.append("RandomX") 
-            if use_balloon: enabled_kdfs.append("Balloon")
-            if use_hkdf: enabled_kdfs.append("HKDF")
-            if use_scrypt: enabled_kdfs.append("Scrypt")
-            
+            if use_argon2:
+                enabled_kdfs.append("Argon2")
+            if use_randomx:
+                enabled_kdfs.append("RandomX")
+            if use_balloon:
+                enabled_kdfs.append("Balloon")
+            if use_hkdf:
+                enabled_kdfs.append("HKDF")
+            if use_scrypt:
+                enabled_kdfs.append("Scrypt")
+
             print(f"\n⚠️  WARNING: Security Risk Detected")
-            print(f"KDFs ({', '.join(enabled_kdfs)}) will operate directly on your password without prior hashing.")
+            print(
+                f"KDFs ({', '.join(enabled_kdfs)}) will operate directly on your password without prior hashing."
+            )
             print(f"This may be insecure if your password is short or has low entropy.")
-            print(f"Consider adding hash rounds (--sha256-rounds, --blake2b-rounds, etc.) for better security.")
+            print(
+                f"Consider adding hash rounds (--sha256-rounds, --blake2b-rounds, etc.) for better security."
+            )
             print(f"Continue anyway? [y/N]: ", end="", flush=True)
-            
+
             # Get user confirmation
             import sys
+
             try:
                 response = input().strip().lower()
-                if response not in ['y', 'yes']:
+                if response not in ["y", "yes"]:
                     print("Operation cancelled by user.")
                     sys.exit(1)
                 print()  # Add blank line after confirmation
@@ -2185,10 +2199,10 @@ def generate_key(
             password_for_salt = bytes(password)
         else:
             password_for_salt = bytes(password)
-        
+
         # Create unique salt for RandomX by combining original salt with current password state
         # This prevents salt reuse while maintaining deterministic behavior
-        randomx_salt_material = salt + password_for_salt[:16] + b'randomx_salt'
+        randomx_salt_material = salt + password_for_salt[:16] + b"randomx_salt"
         base_salt = hashlib.sha256(randomx_salt_material).digest()[:16]
         if not quiet and not progress:
             print("Using RandomX for key derivation", end=" ")
@@ -2247,7 +2261,7 @@ def generate_key(
 
                 # Securely overwrite the previous password value
                 secure_memzero(password_bytes)
-                
+
                 # Securely clean up the salt bytes
                 secure_memzero(salt_bytes)
 
@@ -2314,34 +2328,56 @@ def generate_key(
     # Check if any KDF was requested but none were successful
     # This handles cases where KDFs like RandomX fail due to unavailability
     any_kdf_requested = (
-        (hash_config and hash_config.get("randomx", {}).get("enabled", False)) or
-        (hash_config and hash_config.get("argon2", {}).get("enabled", False)) or
-        (hash_config and hash_config.get("scrypt", {}).get("enabled", False)) or
-        (hash_config and hash_config.get("balloon", {}).get("enabled", False)) or
-        (hash_config and hash_config.get("hkdf", {}).get("enabled", False)) or
-        (hash_config and (
-            hash_config.get("derivation_config", {}).get("kdf_config", {}).get("randomx", {}).get("enabled", False) or
-            hash_config.get("derivation_config", {}).get("kdf_config", {}).get("argon2", {}).get("enabled", False) or
-            hash_config.get("derivation_config", {}).get("kdf_config", {}).get("scrypt", {}).get("enabled", False) or
-            hash_config.get("derivation_config", {}).get("kdf_config", {}).get("balloon", {}).get("enabled", False) or
-            hash_config.get("derivation_config", {}).get("kdf_config", {}).get("hkdf", {}).get("enabled", False)
-        ))
+        (hash_config and hash_config.get("randomx", {}).get("enabled", False))
+        or (hash_config and hash_config.get("argon2", {}).get("enabled", False))
+        or (hash_config and hash_config.get("scrypt", {}).get("enabled", False))
+        or (hash_config and hash_config.get("balloon", {}).get("enabled", False))
+        or (hash_config and hash_config.get("hkdf", {}).get("enabled", False))
+        or (
+            hash_config
+            and (
+                hash_config.get("derivation_config", {})
+                .get("kdf_config", {})
+                .get("randomx", {})
+                .get("enabled", False)
+                or hash_config.get("derivation_config", {})
+                .get("kdf_config", {})
+                .get("argon2", {})
+                .get("enabled", False)
+                or hash_config.get("derivation_config", {})
+                .get("kdf_config", {})
+                .get("scrypt", {})
+                .get("enabled", False)
+                or hash_config.get("derivation_config", {})
+                .get("kdf_config", {})
+                .get("balloon", {})
+                .get("enabled", False)
+                or hash_config.get("derivation_config", {})
+                .get("kdf_config", {})
+                .get("hkdf", {})
+                .get("enabled", False)
+            )
+        )
     )
-    
+
     # Debug logging for fallback logic (always log for debugging)
-    logger.debug(f"KDF fallback check - any_kdf_requested: {any_kdf_requested}, KeyStretch.key_stretch: {KeyStretch.key_stretch}")
+    logger.debug(
+        f"KDF fallback check - any_kdf_requested: {any_kdf_requested}, KeyStretch.key_stretch: {KeyStretch.key_stretch}"
+    )
     if any_kdf_requested:
-        logger.debug(f"KDF request details - hash_config keys: {list(hash_config.keys()) if hash_config else 'None'}")
-    
+        logger.debug(
+            f"KDF request details - hash_config keys: {list(hash_config.keys()) if hash_config else 'None'}"
+        )
+
     # If KDFs were requested but none succeeded, apply default PBKDF2 as fallback
     if any_kdf_requested and not KeyStretch.key_stretch:
         if not quiet:
             print("⚠️ Requested KDFs failed, applying default PBKDF2 fallback")
-        
+
         # Apply default PBKDF2 with 100000 iterations
         default_pbkdf2_iterations = 100000
         base_salt = salt
-        
+
         for i in range(default_pbkdf2_iterations):
             iteration_specific_salt = hashlib.sha256(base_salt + str(i).encode("utf-8")).digest()
             password = PBKDF2HMAC(
@@ -2351,11 +2387,11 @@ def generate_key(
                 iterations=1,
                 backend=default_backend(),
             ).derive(password)
-            
+
             # Update progress every 10000 iterations for default PBKDF2
             if not quiet and i > 0 and i % 10000 == 0 and not progress:
                 print(".", end="", flush=True)
-        
+
         if not quiet and not progress:
             print(" ✅")
         KeyStretch.key_stretch = True
@@ -2680,7 +2716,9 @@ def create_metadata_v5(
     # Use the effective pbkdf2_iterations from hash_config if available (for default template compatibility)
     effective_pbkdf2_iterations = hash_config.get("pbkdf2_iterations", pbkdf2_iterations)
     if effective_pbkdf2_iterations > 0:
-        metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {"rounds": effective_pbkdf2_iterations}
+        metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {
+            "rounds": effective_pbkdf2_iterations
+        }
 
     # Move KDF configurations from hash_config if present
     kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf", "randomx"]
@@ -2767,6 +2805,8 @@ def encrypt_file(
     pqc_store_private_key=False,
     pqc_dual_encrypt_key=False,
     encryption_data="aes-gcm",
+    enable_plugins=True,
+    plugin_manager=None,
 ):
     """
     Encrypt a file with a password using the specified algorithm.
@@ -2785,8 +2825,8 @@ def encrypt_file(
         pqc_dual_encrypt_key (bool): Whether to encrypt the key with both password and keystore
         encryption_data (str): Symmetric algorithm to use for data encryption with PQC algorithms
         algorithm (EncryptionAlgorithm): Encryption algorithm to use (default: Fernet)
-        pqc_keypair (tuple, optional): Post-quantum keypair (public_key, private_key) for hybrid encryption
-        pqc_store_private_key (bool): Whether to store the private key in the metadata for self-decryption
+        enable_plugins (bool): Whether to enable plugin execution (default: True)
+        plugin_manager (PluginManager, optional): Plugin manager instance for plugin execution
 
     Returns:
         bool: True if encryption was successful
@@ -2828,8 +2868,66 @@ def encrypt_file(
     if isinstance(password, str):
         password = password.encode("utf-8")
 
+    # Initialize plugin system if enabled
+    plugin_context = None
+    if enable_plugins and plugin_manager:
+        try:
+            from .plugin_system import PluginCapability, PluginSecurityContext, PluginType
+
+            # Create security context for plugins (no sensitive data exposed)
+            plugin_context = PluginSecurityContext(
+                "encryption_pipeline",
+                {
+                    PluginCapability.READ_FILES,
+                    PluginCapability.MODIFY_METADATA,
+                    PluginCapability.WRITE_LOGS,
+                },
+            )
+            plugin_context.file_paths = [input_file]  # Only input file path
+            plugin_context.add_metadata("operation", "encrypt")
+            plugin_context.add_metadata(
+                "algorithm", str(algorithm.value if hasattr(algorithm, "value") else algorithm)
+            )
+            plugin_context.add_metadata("output_path", output_file)
+
+            if not quiet and verbose:
+                print("🔌 Plugin system initialized")
+
+        except ImportError:
+            if not quiet and verbose:
+                print("⚠️  Plugin system not available")
+            plugin_context = None
+
     if isinstance(algorithm, str):
         algorithm = EncryptionAlgorithm(algorithm)
+
+    # Execute pre-processing plugins
+    if plugin_context and plugin_manager:
+        try:
+            from .plugin_system import PluginType
+
+            pre_processors = plugin_manager.get_plugins_by_type(PluginType.PRE_PROCESSOR)
+            for plugin_reg in pre_processors:
+                if plugin_reg.enabled:
+                    try:
+                        if not quiet and verbose:
+                            print(f"🔌 Executing pre-processor: {plugin_reg.plugin.name}")
+
+                        result = plugin_manager.execute_plugin(
+                            plugin_reg.plugin.plugin_id, plugin_context
+                        )
+                        if not result.success:
+                            if not quiet:
+                                print(
+                                    f"⚠️  Pre-processor plugin {plugin_reg.plugin.name} failed: {result.message}"
+                                )
+                            # Continue with encryption even if plugin fails
+                    except Exception as e:
+                        if not quiet:
+                            print(f"⚠️  Pre-processor plugin error: {e}")
+                        # Continue with encryption even if plugin fails
+        except ImportError:
+            pass  # Plugin system not available
 
     # Enforce deprecation policy: Block encryption with deprecated algorithms in version 1.2.0
     algorithm_value = algorithm.value if isinstance(algorithm, EncryptionAlgorithm) else algorithm
@@ -2876,7 +2974,8 @@ def encrypt_file(
     if hash_config is None and not is_decryption:
         # Apply standard security template as default
         try:
-            from .crypt_cli import get_template_config, SecurityTemplate
+            from .crypt_cli import SecurityTemplate, get_template_config
+
             template_config = get_template_config(SecurityTemplate.STANDARD)
             # Use flattened structure expected by generate_key
             hash_config = {}
@@ -2884,7 +2983,7 @@ def encrypt_file(
             for hash_algo, rounds in template_config["hash_config"].items():
                 if hash_algo not in ["type", "algorithm"]:
                     hash_config[hash_algo] = rounds
-            # Add KDF configurations  
+            # Add KDF configurations
             if "scrypt" in template_config["hash_config"]:
                 hash_config["scrypt"] = template_config["hash_config"]["scrypt"]
             if "argon2" in template_config["hash_config"]:
@@ -2906,8 +3005,15 @@ def encrypt_file(
                 "shake256": 0,
                 "whirlpool": 0,
                 "scrypt": {"enabled": True, "n": 128, "r": 8, "p": 1, "rounds": 5},
-                "argon2": {"enabled": True, "time_cost": 3, "memory_cost": 65536, 
-                          "parallelism": 4, "hash_len": 32, "type": 2, "rounds": 5},
+                "argon2": {
+                    "enabled": True,
+                    "time_cost": 3,
+                    "memory_cost": 65536,
+                    "parallelism": 4,
+                    "hash_len": 32,
+                    "type": 2,
+                    "rounds": 5,
+                },
                 "pbkdf2_iterations": 0,
             }
 
@@ -3524,6 +3630,38 @@ def encrypt_file(
     if not quiet:
         print("✅")
 
+    # Execute post-processing plugins
+    if plugin_context and plugin_manager:
+        try:
+            from .plugin_system import PluginType
+
+            # Update context with encrypted file path
+            plugin_context.file_paths = [output_file]  # Now the encrypted file
+            plugin_context.add_metadata("encrypted_file_size", os.path.getsize(output_file))
+
+            post_processors = plugin_manager.get_plugins_by_type(PluginType.POST_PROCESSOR)
+            for plugin_reg in post_processors:
+                if plugin_reg.enabled:
+                    try:
+                        if not quiet and verbose:
+                            print(f"🔌 Executing post-processor: {plugin_reg.plugin.name}")
+
+                        result = plugin_manager.execute_plugin(
+                            plugin_reg.plugin.plugin_id, plugin_context
+                        )
+                        if not result.success:
+                            if not quiet:
+                                print(
+                                    f"⚠️  Post-processor plugin {plugin_reg.plugin.name} failed: {result.message}"
+                                )
+                            # Continue even if plugin fails
+                    except Exception as e:
+                        if not quiet:
+                            print(f"⚠️  Post-processor plugin error: {e}")
+                        # Continue even if plugin fails
+        except ImportError:
+            pass  # Plugin system not available
+
     # Clean up sensitive data properly
     try:
         return True
@@ -3616,6 +3754,8 @@ def decrypt_file(
     debug=False,
     pqc_private_key=None,
     encryption_data="aes-gcm",
+    enable_plugins=True,
+    plugin_manager=None,
 ):
     """
     Decrypt a file with a password.
@@ -3629,6 +3769,8 @@ def decrypt_file(
         verbose (bool): Whether to show verbose output
         pqc_private_key (bytes, optional): Post-quantum private key for hybrid decryption
         encryption_data (str): Encryption data algorithm to use for hybrid encryption (default: 'aes-gcm')
+        enable_plugins (bool): Whether to enable plugin execution (default: True)
+        plugin_manager (PluginManager, optional): Plugin manager instance for plugin execution
 
     Returns:
         Union[bool, bytes]: True if decryption was successful and output_file is specified,
@@ -3670,6 +3812,62 @@ def decrypt_file(
     # Ensure password is in bytes format with correct encoding
     if isinstance(password, str):
         password = password.encode("utf-8")
+
+    # Initialize plugin system if enabled
+    plugin_context = None
+    if enable_plugins and plugin_manager:
+        try:
+            from .plugin_system import PluginCapability, PluginSecurityContext, PluginType
+
+            # Create security context for plugins (no sensitive data exposed)
+            plugin_context = PluginSecurityContext(
+                "decryption_pipeline",
+                {
+                    PluginCapability.READ_FILES,
+                    PluginCapability.MODIFY_METADATA,
+                    PluginCapability.WRITE_LOGS,
+                },
+            )
+            plugin_context.file_paths = [input_file]  # Only encrypted file path
+            plugin_context.add_metadata("operation", "decrypt")
+            if output_file:
+                plugin_context.add_metadata("output_path", output_file)
+
+            if not quiet and verbose:
+                print("🔌 Plugin system initialized for decryption")
+
+        except ImportError:
+            if not quiet and verbose:
+                print("⚠️  Plugin system not available")
+            plugin_context = None
+
+    # Execute pre-processing plugins (work with encrypted file)
+    if plugin_context and plugin_manager:
+        try:
+            from .plugin_system import PluginType
+
+            pre_processors = plugin_manager.get_plugins_by_type(PluginType.PRE_PROCESSOR)
+            for plugin_reg in pre_processors:
+                if plugin_reg.enabled:
+                    try:
+                        if not quiet and verbose:
+                            print(f"🔌 Executing pre-processor: {plugin_reg.plugin.name}")
+
+                        result = plugin_manager.execute_plugin(
+                            plugin_reg.plugin.plugin_id, plugin_context
+                        )
+                        if not result.success:
+                            if not quiet:
+                                print(
+                                    f"⚠️  Pre-processor plugin {plugin_reg.plugin.name} failed: {result.message}"
+                                )
+                            # Continue with decryption even if plugin fails
+                    except Exception as e:
+                        if not quiet:
+                            print(f"⚠️  Pre-processor plugin error: {e}")
+                        # Continue with decryption even if plugin fails
+        except ImportError:
+            pass  # Plugin system not available
 
     KeyStretch.kind_action = "decrypt"
     # Read the encrypted file
@@ -4552,15 +4750,19 @@ def decrypt_file(
                 test_name = os.environ.get("PYTEST_CURRENT_TEST", "")
                 is_pqc_dual_test = "pqc_dual_encryption" in test_name.lower()
                 is_pqc_algorithm = "kyber" in algorithm.lower() or "ml-kem" in algorithm.lower()
-                
-                if is_pqc_algorithm and (os.environ.get("PYTEST_CURRENT_TEST") is None or is_pqc_dual_test):
+
+                if is_pqc_algorithm and (
+                    os.environ.get("PYTEST_CURRENT_TEST") is None or is_pqc_dual_test
+                ):
                     # For PQC in development, show warning but continue
                     if not quiet:
                         print("⚠️ Warning: Bypassing integrity check for PQC development")
                     # For PQC dual encryption tests, bypass integrity check and proceed with decrypted data
                     if is_pqc_dual_test:
                         if not quiet:
-                            print("✅ (PQC test mode - integrity check bypassed)")  # Show success despite bypass
+                            print(
+                                "✅ (PQC test mode - integrity check bypassed)"
+                            )  # Show success despite bypass
                     else:
                         # Return empty content as fallback for non-test PQC operations
                         return b""
@@ -4587,6 +4789,38 @@ def decrypt_file(
 
     # Set secure permissions on the output file
     set_secure_permissions(output_file)
+
+    # Execute post-processing plugins (work with decrypted file)
+    if plugin_context and plugin_manager and output_file:
+        try:
+            from .plugin_system import PluginType
+
+            # Update context with decrypted file path
+            plugin_context.file_paths = [output_file]  # Now the decrypted file
+            plugin_context.add_metadata("decrypted_file_size", os.path.getsize(output_file))
+
+            post_processors = plugin_manager.get_plugins_by_type(PluginType.POST_PROCESSOR)
+            for plugin_reg in post_processors:
+                if plugin_reg.enabled:
+                    try:
+                        if not quiet and verbose:
+                            print(f"🔌 Executing post-processor: {plugin_reg.plugin.name}")
+
+                        result = plugin_manager.execute_plugin(
+                            plugin_reg.plugin.plugin_id, plugin_context
+                        )
+                        if not result.success:
+                            if not quiet:
+                                print(
+                                    f"⚠️  Post-processor plugin {plugin_reg.plugin.name} failed: {result.message}"
+                                )
+                            # Continue even if plugin fails
+                    except Exception as e:
+                        if not quiet:
+                            print(f"⚠️  Post-processor plugin error: {e}")
+                        # Continue even if plugin fails
+        except ImportError:
+            pass  # Plugin system not available
 
     # Clean up sensitive data properly
     try:

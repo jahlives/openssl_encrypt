@@ -584,44 +584,54 @@ def preprocess_global_args(argv):
     anywhere in the command line, maintaining backward compatibility with v1.2.1 behavior.
     """
     # Flags that are truly global and can appear anywhere
-    TRULY_GLOBAL_FLAGS = {
-        '--debug', '--verbose', '--quiet', '-q', '--progress'
-    }
-    
+    TRULY_GLOBAL_FLAGS = {"--debug", "--verbose", "--quiet", "-q", "--progress"}
+
     # Find the command position
     commands = {
-        'encrypt', 'decrypt', 'shred', 'generate-password', 
-        'security-info', 'check-argon2', 'check-pqc', 'version', 'show-version-file',
-        'create-usb', 'verify-usb'
+        "encrypt",
+        "decrypt",
+        "shred",
+        "generate-password",
+        "security-info",
+        "check-argon2",
+        "check-pqc",
+        "version",
+        "show-version-file",
+        "create-usb",
+        "verify-usb",
     }
-    
+
     command_pos = None
     for i, arg in enumerate(argv[1:], 1):  # Skip argv[0] (script name)
         if arg in commands:
             command_pos = i
             break
-    
+
     if command_pos is None:
         return argv  # No command found, return as-is
-    
+
     # Extract global flags and their values from anywhere in the command line
     global_args = []
     other_args = [argv[0]]  # Keep script name
     i = 1
-    
+
     while i < len(argv):
         arg = argv[i]
-        
+
         if arg in TRULY_GLOBAL_FLAGS:
             global_args.append(arg)
             # Check if this flag takes a value (currently none of our global flags do, but future-proof)
-            if arg in ['--template', '-t'] and i + 1 < len(argv) and not argv[i + 1].startswith('-'):
+            if (
+                arg in ["--template", "-t"]
+                and i + 1 < len(argv)
+                and not argv[i + 1].startswith("-")
+            ):
                 i += 1
                 global_args.append(argv[i])
         else:
             other_args.append(arg)
         i += 1
-    
+
     # Rebuild argv: script_name + global_args + other_args
     return [argv[0]] + global_args + other_args[1:]
 
@@ -632,38 +642,36 @@ def main():
     """
     # Preprocess arguments to move global flags to the front
     import sys
+
     sys.argv = preprocess_global_args(sys.argv)
 
-    if (
-        len(sys.argv) > 1
-        and sys.argv[1]
-        in [
-            "encrypt",
-            "decrypt",
-            "shred",
-            "generate-password",
-            "security-info",
-            "check-argon2",
-            "check-pqc",
-            "version",
-            "show-version-file",
-        ]
-    ):
+    if len(sys.argv) > 1 and sys.argv[1] in [
+        "encrypt",
+        "decrypt",
+        "shred",
+        "generate-password",
+        "security-info",
+        "check-argon2",
+        "check-pqc",
+        "version",
+        "show-version-file",
+    ]:
         # Use subparser for all command-specific operations
         from .crypt_cli_subparser import create_subparser_main
 
         parser, args = create_subparser_main()
-        
+
         # If it's just help, return after displaying help
         if "--help" in sys.argv or "-h" in sys.argv:
             return
-        
-        # Otherwise, continue with the parsed args from subparser  
+
+        # Otherwise, continue with the parsed args from subparser
         # We need to call the main logic with the subparser args
         return main_with_args(args)
     else:
         # Use original argument parsing for non-command operations
         return main_with_args()
+
 
 def main_with_args(args=None):
     """Main logic with pre-parsed arguments (or None to parse from command line)"""
@@ -708,30 +716,39 @@ def main_with_args(args=None):
     # Set up argument parser
     parser = argparse.ArgumentParser(
         description="Encrypt or decrypt a file with a password\n\n"
-                   "USAGE PATTERN:\n"
-                   "  %(prog)s COMMAND [OPTIONS] [GLOBAL_FLAGS]\n"
-                   "  %(prog)s [GLOBAL_FLAGS] COMMAND [OPTIONS]\n\n"
-                   "GLOBAL FLAGS (can be placed anywhere):\n"
-                   "  --progress, --verbose, --debug, --quiet\n\n"
-                   "COMMAND-SPECIFIC FLAGS:\n"
-                   "  --template, --quick, --standard, --paranoid (encryption only)\n\n"
-                   "COMMANDS:\n"
-                   "  encrypt, decrypt, shred, generate-password, security-info, check-argon2, check-pqc, version\n\n"
-                   "EXAMPLES:\n"
-                   "  %(prog)s encrypt --input file.txt --debug --output file.enc\n"
-                   "  %(prog)s --quiet decrypt --input file.enc --progress --output file.txt\n"
-                   "  %(prog)s encrypt --verbose --input file.txt --paranoid --algorithm aes-gcm\n\n"
-                   "Environment Variables:\n"
-                   "  CRYPT_PASSWORD    Password for encryption/decryption (alternative to -p)",
+        "USAGE PATTERN:\n"
+        "  %(prog)s COMMAND [OPTIONS] [GLOBAL_FLAGS]\n"
+        "  %(prog)s [GLOBAL_FLAGS] COMMAND [OPTIONS]\n\n"
+        "GLOBAL FLAGS (can be placed anywhere):\n"
+        "  --progress, --verbose, --debug, --quiet\n\n"
+        "COMMAND-SPECIFIC FLAGS:\n"
+        "  --template, --quick, --standard, --paranoid (encryption only)\n\n"
+        "COMMANDS:\n"
+        "  encrypt, decrypt, shred, generate-password, security-info, check-argon2, check-pqc, version\n\n"
+        "EXAMPLES:\n"
+        "  %(prog)s encrypt --input file.txt --debug --output file.enc\n"
+        "  %(prog)s --quiet decrypt --input file.enc --progress --output file.txt\n"
+        "  %(prog)s encrypt --verbose --input file.txt --paranoid --algorithm aes-gcm\n\n"
+        "Environment Variables:\n"
+        "  CRYPT_PASSWORD    Password for encryption/decryption (alternative to -p)",
         formatter_class=argparse.RawTextHelpFormatter,
     )
 
     # Global options group
-    global_group = parser.add_argument_group('Global Options (can be specified anywhere in command line)')
+    global_group = parser.add_argument_group(
+        "Global Options (can be specified anywhere in command line)"
+    )
     global_group.add_argument("--progress", action="store_true", help="Show progress bar")
     global_group.add_argument("--verbose", action="store_true", help="Show hash/kdf details")
-    global_group.add_argument("--debug", action="store_true", help="Show detailed debug information")
-    global_group.add_argument("--quiet", "-q", action="store_true", help="Suppress all output except decrypted content and exit code")
+    global_group.add_argument(
+        "--debug", action="store_true", help="Show detailed debug information"
+    )
+    global_group.add_argument(
+        "--quiet",
+        "-q",
+        action="store_true",
+        help="Suppress all output except decrypted content and exit code",
+    )
     global_group.add_argument(
         "-t",
         "--template",
@@ -767,10 +784,15 @@ def main_with_args(args=None):
             "show-version-file",
             "create-usb",
             "verify-usb",
+            "list-plugins",
+            "plugin-info",
+            "enable-plugin",
+            "disable-plugin",
+            "reload-plugin",
         ],
         help="Action to perform: encrypt/decrypt files, shred data, generate passwords, "
         "show security recommendations, check Argon2 support, check post-quantum cryptography support, "
-        "create/verify portable USB drives",
+        "create/verify portable USB drives, manage plugins",
     )
 
     # Get all available algorithms, marking deprecated ones
@@ -1375,77 +1397,140 @@ def main_with_args(args=None):
     policy_group.add_argument(
         "--custom-password-list", help="Path to custom common password list file"
     )
-    
+
     # USB/Portable Media Options
     usb_group = parser.add_argument_group("USB/Portable Media Options")
     usb_group.add_argument(
-        "--usb-path",
-        help="Path to USB drive for create-usb/verify-usb operations"
+        "--usb-path", help="Path to USB drive for create-usb/verify-usb operations"
     )
     usb_group.add_argument(
         "--security-profile",
         choices=["standard", "high-security", "paranoid"],
         default="standard",
-        help="Security profile for USB drive (default: standard)"
+        help="Security profile for USB drive (default: standard)",
     )
     usb_group.add_argument(
-        "--executable-path",
-        help="Path to OpenSSL Encrypt executable to include on USB"
+        "--executable-path", help="Path to OpenSSL Encrypt executable to include on USB"
     )
+    usb_group.add_argument("--keystore-to-include", help="Path to keystore file to include on USB")
     usb_group.add_argument(
-        "--keystore-to-include",
-        help="Path to keystore file to include on USB"
-    )
-    usb_group.add_argument(
-        "--include-logs",
-        action="store_true",
-        help="Enable logging on USB drive"
+        "--include-logs", action="store_true", help="Enable logging on USB drive"
     )
     usb_group.add_argument(
         "--manifest-password",
-        help="Separate password for integrity manifest (enhances security by separating file access from integrity verification)"
+        help="Separate password for integrity manifest (enhances security by separating file access from integrity verification)",
     )
     usb_group.add_argument(
-        "--manifest-security-profile", 
+        "--manifest-security-profile",
         choices=["standard", "high-security", "paranoid"],
-        help="Security profile for manifest encryption (uses main profile if not specified)"
+        help="Security profile for manifest encryption (uses main profile if not specified)",
     )
 
+    # Plugin system options group
+    plugin_group = parser.add_argument_group("Plugin Options", "Configure plugin system behavior")
+    plugin_group.add_argument(
+        "--enable-plugins",
+        action="store_true",
+        default=True,
+        help="Enable plugin system (default: True)",
+    )
+    plugin_group.add_argument(
+        "--disable-plugins", action="store_true", help="Disable plugin system"
+    )
+    plugin_group.add_argument("--plugin-dir", help="Directory to scan for plugins")
+    plugin_group.add_argument("--plugin-config-dir", help="Directory for plugin configurations")
+    plugin_group.add_argument("--plugin-id", help="Plugin ID for plugin-specific operations")
+
     # Don't parse args again if they're already provided from subparser
-    # This avoids the "unrecognized arguments" error for steganography options  
+    # This avoids the "unrecognized arguments" error for steganography options
     if args is None:
         args = parser.parse_args()
-    
+
     # Add compatibility layer for subparser args - set missing attributes to defaults
     default_attrs = {
-        'password_policy': 'none', 'argon2_preset': None,
-        'sha512': None, 'sha256': None, 'sha3_256': None, 'sha3_512': None,
-        'blake2b': None, 'shake256': None, 'pbkdf2': 100000,
-        'use_argon2': False, 'enable_balloon': False, 'use_balloon': False,
-        'scrypt_cost': 0, 'scrypt_n': 0, 'scrypt_r': 8, 'scrypt_p': 1,
-        'whirlpool_rounds': 0, 'tiger_rounds': 0, 'ripemd160_rounds': 0,
-        'sha1_rounds': 0, 'md5_rounds': 0, 'md4_rounds': 0,
-        'custom_password_list': None, 'password_length': 64,
-        'password_charset': None, 'password_file': None,
-        'show_password_policy': False, 'balloon_cost': 14,
-        'sha512_rounds': None, 'sha256_rounds': None, 'sha3_256_rounds': None,
-        'sha3_512_rounds': None, 'blake2b_rounds': None, 'shake256_rounds': None,
-        'sha384_rounds': None, 'sha224_rounds': None, 'sha3_384_rounds': None, 'sha3_224_rounds': None,
-        'blake3_rounds': None, 'shake128_rounds': None,
-        'pbkdf2_iterations': 0, 'enable_argon2': False,
-        'argon2_type': 'id', 'argon2_memory': 65536, 'argon2_time': 3, 'argon2_parallelism': 1,
-        'argon2_hash_len': 32, 'argon2_rounds': 1, 'balloon_time_cost': 1, 'balloon_space_cost': 1024,
-        'balloon_parallelism': 1, 'balloon_hash_len': 32, 'hkdf_rounds': 1, 'hkdf_algorithm': 'sha256',
-        'hkdf_info': 'openssl_encrypt_hkdf', 'enable_hkdf': False,
-        'algorithm': None, 'random': None, 'overwrite': False, 'shred': False,
-        'shred_passes': 3, 'pqc_keyfile': None, 'pqc_store_key': False,
-        'kdf_rounds': 0, 'enable_scrypt': False, 'scrypt_rounds': 0,
-        'balloon_rounds': 0, 'keystore_path': None, 'keystore_password': None,
-        'dual_encrypt_key': None, 'encryption_data': None,
-        'quick': False, 'standard': False, 'paranoid': False, 'template': None,
-        'force_password': False,
+        "password_policy": "none",
+        "argon2_preset": None,
+        "sha512": None,
+        "sha256": None,
+        "sha3_256": None,
+        "sha3_512": None,
+        "blake2b": None,
+        "shake256": None,
+        "pbkdf2": 100000,
+        "use_argon2": False,
+        "enable_balloon": False,
+        "use_balloon": False,
+        "scrypt_cost": 0,
+        "scrypt_n": 0,
+        "scrypt_r": 8,
+        "scrypt_p": 1,
+        "whirlpool_rounds": 0,
+        "tiger_rounds": 0,
+        "ripemd160_rounds": 0,
+        "sha1_rounds": 0,
+        "md5_rounds": 0,
+        "md4_rounds": 0,
+        "custom_password_list": None,
+        "password_length": 64,
+        "password_charset": None,
+        "password_file": None,
+        "show_password_policy": False,
+        "balloon_cost": 14,
+        "sha512_rounds": None,
+        "sha256_rounds": None,
+        "sha3_256_rounds": None,
+        "sha3_512_rounds": None,
+        "blake2b_rounds": None,
+        "shake256_rounds": None,
+        "sha384_rounds": None,
+        "sha224_rounds": None,
+        "sha3_384_rounds": None,
+        "sha3_224_rounds": None,
+        "blake3_rounds": None,
+        "shake128_rounds": None,
+        "pbkdf2_iterations": 0,
+        "enable_argon2": False,
+        "argon2_type": "id",
+        "argon2_memory": 65536,
+        "argon2_time": 3,
+        "argon2_parallelism": 1,
+        "argon2_hash_len": 32,
+        "argon2_rounds": 1,
+        "balloon_time_cost": 1,
+        "balloon_space_cost": 1024,
+        "balloon_parallelism": 1,
+        "balloon_hash_len": 32,
+        "hkdf_rounds": 1,
+        "hkdf_algorithm": "sha256",
+        "hkdf_info": "openssl_encrypt_hkdf",
+        "enable_hkdf": False,
+        "algorithm": None,
+        "random": None,
+        "overwrite": False,
+        "shred": False,
+        "shred_passes": 3,
+        "pqc_keyfile": None,
+        "pqc_store_key": False,
+        "kdf_rounds": 0,
+        "enable_scrypt": False,
+        "scrypt_rounds": 0,
+        "balloon_rounds": 0,
+        "keystore_path": None,
+        "keystore_password": None,
+        "dual_encrypt_key": None,
+        "encryption_data": None,
+        "enable_plugins": True,
+        "disable_plugins": False,
+        "plugin_dir": None,
+        "plugin_config_dir": None,
+        "plugin_id": None,
+        "quick": False,
+        "standard": False,
+        "paranoid": False,
+        "template": None,
+        "force_password": False,
     }
-    
+
     for attr, default_val in default_attrs.items():
         if not hasattr(args, attr):
             setattr(args, attr, default_val)
@@ -1466,16 +1551,18 @@ def main_with_args(args=None):
         # Configure the root logger to DEBUG level
         root_logger = logging.getLogger()
         root_logger.setLevel(logging.DEBUG)
-        
+
         # Also configure this module's logger explicitly
         logger.setLevel(logging.DEBUG)
-        
+
         # Try to configure basic config for new handlers, but don't fail if handlers exist
         try:
-            logging.basicConfig(level=logging.DEBUG, format="%(levelname)s - %(name)s - %(message)s")
+            logging.basicConfig(
+                level=logging.DEBUG, format="%(levelname)s - %(name)s - %(message)s"
+            )
         except:
             pass
-        
+
         print(f"DEBUG: sys.argv = {sys.argv}")
 
     # Enhance the args with better defaults for extended algorithms
@@ -1486,29 +1573,29 @@ def main_with_args(args=None):
 
     # Handle legacy options and map to new names
     # SHA family mappings - use getattr for safety with subparser args
-    if not getattr(args, 'sha512_rounds', None) and getattr(args, 'sha512', None):
+    if not getattr(args, "sha512_rounds", None) and getattr(args, "sha512", None):
         args.sha512_rounds = args.sha512
-    if not getattr(args, 'sha256_rounds', None) and getattr(args, 'sha256', None):
+    if not getattr(args, "sha256_rounds", None) and getattr(args, "sha256", None):
         args.sha256_rounds = args.sha256
-    if not getattr(args, 'sha3_256_rounds', None) and getattr(args, 'sha3_256', None):
+    if not getattr(args, "sha3_256_rounds", None) and getattr(args, "sha3_256", None):
         args.sha3_256_rounds = args.sha3_256
-    if not getattr(args, 'sha3_512_rounds', None) and getattr(args, 'sha3_512', None):
+    if not getattr(args, "sha3_512_rounds", None) and getattr(args, "sha3_512", None):
         args.sha3_512_rounds = args.sha3_512
-    if not getattr(args, 'blake2b_rounds', None) and getattr(args, 'blake2b', None):
+    if not getattr(args, "blake2b_rounds", None) and getattr(args, "blake2b", None):
         args.blake2b_rounds = args.blake2b
-    if not getattr(args, 'shake256_rounds', None) and getattr(args, 'shake256', None):
+    if not getattr(args, "shake256_rounds", None) and getattr(args, "shake256", None):
         args.shake256_rounds = args.shake256
 
     # PBKDF2 mapping
-    pbkdf2_val = getattr(args, 'pbkdf2', 100000)
+    pbkdf2_val = getattr(args, "pbkdf2", 100000)
     if pbkdf2_val != 100000:  # Only override if not the default
         args.pbkdf2_iterations = pbkdf2_val
 
     # Argon2 mapping
-    if getattr(args, 'use_argon2', False):
+    if getattr(args, "use_argon2", False):
         args.enable_argon2 = True
 
-    if getattr(args, 'enable_balloon', False):
+    if getattr(args, "enable_balloon", False):
         args.use_balloon = True
 
     if args.action == "version":
@@ -1540,189 +1627,195 @@ def main_with_args(args=None):
     # Handle USB operations
     if args.action == "create-usb":
         try:
-            from .portable_media import create_portable_usb, USBSecurityProfile
-            
+            from .portable_media import USBSecurityProfile, create_portable_usb
+
             # Validate required arguments
-            if not getattr(args, 'usb_path', None):
+            if not getattr(args, "usb_path", None):
                 print("Error: --usb-path is required for create-usb operation")
                 return 1
-            
+
             if not args.password:
                 args.password = getpass.getpass("Enter master password for USB encryption: ")
-            
+
             # Build hash config from current args (using correct key format for create)
             hash_config = {}
-            if hasattr(args, 'sha512_rounds') and args.sha512_rounds:
-                hash_config['sha512'] = args.sha512_rounds
-            if hasattr(args, 'sha384_rounds') and args.sha384_rounds:
-                hash_config['sha384'] = args.sha384_rounds
-            if hasattr(args, 'sha256_rounds') and args.sha256_rounds:
-                hash_config['sha256'] = args.sha256_rounds
-            if hasattr(args, 'sha224_rounds') and args.sha224_rounds:
-                hash_config['sha224'] = args.sha224_rounds
-            if hasattr(args, 'sha3_512_rounds') and args.sha3_512_rounds:
-                hash_config['sha3_512'] = args.sha3_512_rounds
-            if hasattr(args, 'sha3_384_rounds') and args.sha3_384_rounds:
-                hash_config['sha3_384'] = args.sha3_384_rounds
-            if hasattr(args, 'sha3_256_rounds') and args.sha3_256_rounds:
-                hash_config['sha3_256'] = args.sha3_256_rounds
-            if hasattr(args, 'sha3_224_rounds') and args.sha3_224_rounds:
-                hash_config['sha3_224'] = args.sha3_224_rounds
-            if hasattr(args, 'blake2b_rounds') and args.blake2b_rounds:
-                hash_config['blake2b'] = args.blake2b_rounds
-            if hasattr(args, 'blake3_rounds') and args.blake3_rounds:
-                hash_config['blake3'] = args.blake3_rounds
-            if hasattr(args, 'shake256_rounds') and args.shake256_rounds:
-                hash_config['shake256'] = args.shake256_rounds
-            if hasattr(args, 'shake128_rounds') and args.shake128_rounds:
-                hash_config['shake128'] = args.shake128_rounds
-            if hasattr(args, 'whirlpool_rounds') and args.whirlpool_rounds:
-                hash_config['whirlpool'] = args.whirlpool_rounds
-            if hasattr(args, 'pbkdf2_iterations') and args.pbkdf2_iterations:
-                hash_config['pbkdf2_iterations'] = args.pbkdf2_iterations
-            
+            if hasattr(args, "sha512_rounds") and args.sha512_rounds:
+                hash_config["sha512"] = args.sha512_rounds
+            if hasattr(args, "sha384_rounds") and args.sha384_rounds:
+                hash_config["sha384"] = args.sha384_rounds
+            if hasattr(args, "sha256_rounds") and args.sha256_rounds:
+                hash_config["sha256"] = args.sha256_rounds
+            if hasattr(args, "sha224_rounds") and args.sha224_rounds:
+                hash_config["sha224"] = args.sha224_rounds
+            if hasattr(args, "sha3_512_rounds") and args.sha3_512_rounds:
+                hash_config["sha3_512"] = args.sha3_512_rounds
+            if hasattr(args, "sha3_384_rounds") and args.sha3_384_rounds:
+                hash_config["sha3_384"] = args.sha3_384_rounds
+            if hasattr(args, "sha3_256_rounds") and args.sha3_256_rounds:
+                hash_config["sha3_256"] = args.sha3_256_rounds
+            if hasattr(args, "sha3_224_rounds") and args.sha3_224_rounds:
+                hash_config["sha3_224"] = args.sha3_224_rounds
+            if hasattr(args, "blake2b_rounds") and args.blake2b_rounds:
+                hash_config["blake2b"] = args.blake2b_rounds
+            if hasattr(args, "blake3_rounds") and args.blake3_rounds:
+                hash_config["blake3"] = args.blake3_rounds
+            if hasattr(args, "shake256_rounds") and args.shake256_rounds:
+                hash_config["shake256"] = args.shake256_rounds
+            if hasattr(args, "shake128_rounds") and args.shake128_rounds:
+                hash_config["shake128"] = args.shake128_rounds
+            if hasattr(args, "whirlpool_rounds") and args.whirlpool_rounds:
+                hash_config["whirlpool"] = args.whirlpool_rounds
+            if hasattr(args, "pbkdf2_iterations") and args.pbkdf2_iterations:
+                hash_config["pbkdf2_iterations"] = args.pbkdf2_iterations
+
             # Build manifest hash config if manifest security profile specified
             manifest_hash_config = None
-            if getattr(args, 'manifest_security_profile', None):
+            if getattr(args, "manifest_security_profile", None):
                 # Build separate hash config for manifest based on manifest security profile
                 manifest_hash_config = {}
                 # Use same hash rounds as main config, but apply to manifest profile
-                if hasattr(args, 'sha512_rounds') and args.sha512_rounds:
-                    manifest_hash_config['sha512'] = args.sha512_rounds
-                if hasattr(args, 'sha384_rounds') and args.sha384_rounds:
-                    manifest_hash_config['sha384'] = args.sha384_rounds
-                if hasattr(args, 'sha256_rounds') and args.sha256_rounds:
-                    manifest_hash_config['sha256'] = args.sha256_rounds
-                if hasattr(args, 'sha224_rounds') and args.sha224_rounds:
-                    manifest_hash_config['sha224'] = args.sha224_rounds
-                if hasattr(args, 'sha3_512_rounds') and args.sha3_512_rounds:
-                    manifest_hash_config['sha3_512'] = args.sha3_512_rounds
-                if hasattr(args, 'sha3_384_rounds') and args.sha3_384_rounds:
-                    manifest_hash_config['sha3_384'] = args.sha3_384_rounds
-                if hasattr(args, 'sha3_256_rounds') and args.sha3_256_rounds:
-                    manifest_hash_config['sha3_256'] = args.sha3_256_rounds
-                if hasattr(args, 'sha3_224_rounds') and args.sha3_224_rounds:
-                    manifest_hash_config['sha3_224'] = args.sha3_224_rounds
-                if hasattr(args, 'blake2b_rounds') and args.blake2b_rounds:
-                    manifest_hash_config['blake2b'] = args.blake2b_rounds
-                if hasattr(args, 'blake3_rounds') and args.blake3_rounds:
-                    manifest_hash_config['blake3'] = args.blake3_rounds
-                if hasattr(args, 'shake256_rounds') and args.shake256_rounds:
-                    manifest_hash_config['shake256'] = args.shake256_rounds
-                if hasattr(args, 'shake128_rounds') and args.shake128_rounds:
-                    manifest_hash_config['shake128'] = args.shake128_rounds
-                if hasattr(args, 'whirlpool_rounds') and args.whirlpool_rounds:
-                    manifest_hash_config['whirlpool'] = args.whirlpool_rounds
-                if hasattr(args, 'pbkdf2_iterations') and args.pbkdf2_iterations:
-                    manifest_hash_config['pbkdf2_iterations'] = args.pbkdf2_iterations
-            
+                if hasattr(args, "sha512_rounds") and args.sha512_rounds:
+                    manifest_hash_config["sha512"] = args.sha512_rounds
+                if hasattr(args, "sha384_rounds") and args.sha384_rounds:
+                    manifest_hash_config["sha384"] = args.sha384_rounds
+                if hasattr(args, "sha256_rounds") and args.sha256_rounds:
+                    manifest_hash_config["sha256"] = args.sha256_rounds
+                if hasattr(args, "sha224_rounds") and args.sha224_rounds:
+                    manifest_hash_config["sha224"] = args.sha224_rounds
+                if hasattr(args, "sha3_512_rounds") and args.sha3_512_rounds:
+                    manifest_hash_config["sha3_512"] = args.sha3_512_rounds
+                if hasattr(args, "sha3_384_rounds") and args.sha3_384_rounds:
+                    manifest_hash_config["sha3_384"] = args.sha3_384_rounds
+                if hasattr(args, "sha3_256_rounds") and args.sha3_256_rounds:
+                    manifest_hash_config["sha3_256"] = args.sha3_256_rounds
+                if hasattr(args, "sha3_224_rounds") and args.sha3_224_rounds:
+                    manifest_hash_config["sha3_224"] = args.sha3_224_rounds
+                if hasattr(args, "blake2b_rounds") and args.blake2b_rounds:
+                    manifest_hash_config["blake2b"] = args.blake2b_rounds
+                if hasattr(args, "blake3_rounds") and args.blake3_rounds:
+                    manifest_hash_config["blake3"] = args.blake3_rounds
+                if hasattr(args, "shake256_rounds") and args.shake256_rounds:
+                    manifest_hash_config["shake256"] = args.shake256_rounds
+                if hasattr(args, "shake128_rounds") and args.shake128_rounds:
+                    manifest_hash_config["shake128"] = args.shake128_rounds
+                if hasattr(args, "whirlpool_rounds") and args.whirlpool_rounds:
+                    manifest_hash_config["whirlpool"] = args.whirlpool_rounds
+                if hasattr(args, "pbkdf2_iterations") and args.pbkdf2_iterations:
+                    manifest_hash_config["pbkdf2_iterations"] = args.pbkdf2_iterations
+
             # Create USB
-            security_profile = getattr(args, 'security_profile', 'standard')
+            security_profile = getattr(args, "security_profile", "standard")
             result = create_portable_usb(
                 usb_path=args.usb_path,
                 password=args.password,
                 security_profile=security_profile,
-                executable_path=getattr(args, 'executable_path', None),
-                keystore_path=getattr(args, 'keystore_to_include', None),
-                include_logs=getattr(args, 'include_logs', False),
+                executable_path=getattr(args, "executable_path", None),
+                keystore_path=getattr(args, "keystore_to_include", None),
+                include_logs=getattr(args, "include_logs", False),
                 hash_config=hash_config if hash_config else None,
                 algorithm=args.algorithm,  # Pass algorithm from CLI
-                manifest_password=getattr(args, 'manifest_password', None),
-                manifest_security_profile=getattr(args, 'manifest_security_profile', None),
-                manifest_hash_config=manifest_hash_config
+                manifest_password=getattr(args, "manifest_password", None),
+                manifest_security_profile=getattr(args, "manifest_security_profile", None),
+                manifest_hash_config=manifest_hash_config,
             )
-            
-            if result.get('success'):
+
+            if result.get("success"):
                 print(f"✓ Successfully created portable USB at: {result['usb_path']}")
                 print(f"  Security Profile: {result['security_profile']}")
                 print(f"  Portable Root: {result['portable_root']}")
-                if result['executable']['included']:
+                if result["executable"]["included"]:
                     print(f"  Executable: {result['executable']['path']}")
-                if result['keystore']['included']:
+                if result["keystore"]["included"]:
                     print(f"  Keystore: Encrypted and included")
                 print(f"  Auto-run files: {', '.join(result['autorun']['files_created'])}")
-                if result.get('manifest', {}).get('created'):
-                    manifest_info = result['manifest']
-                    print(f"  Hash Manifest: {manifest_info['files_covered']} files, {manifest_info['hash_algorithm']}")
-                    print(f"    Password: {manifest_info['password_type']}, Profile: {manifest_info.get('security_profile', 'default')}")
+                if result.get("manifest", {}).get("created"):
+                    manifest_info = result["manifest"]
+                    print(
+                        f"  Hash Manifest: {manifest_info['files_covered']} files, {manifest_info['hash_algorithm']}"
+                    )
+                    print(
+                        f"    Password: {manifest_info['password_type']}, Profile: {manifest_info.get('security_profile', 'default')}"
+                    )
                     print(f"    Manual verification: VERIFY_INTEGRITY.md")
                 return 0
             else:
                 print("✗ Failed to create portable USB")
                 return 1
-                
+
         except ImportError:
             print("Error: Portable media module not available")
             return 1
         except Exception as e:
             print(f"Error creating USB: {e}")
             return 1
-    
+
     elif args.action == "verify-usb":
         try:
             from .portable_media import verify_usb_integrity
-            
+
             # Validate required arguments
-            if not getattr(args, 'usb_path', None):
+            if not getattr(args, "usb_path", None):
                 print("Error: --usb-path is required for verify-usb operation")
                 return 1
-            
+
             if not args.password:
                 args.password = getpass.getpass("Enter master password for USB verification: ")
-            
+
             # Build hash config from current args (using correct key format for verify)
             hash_config = {}
-            if hasattr(args, 'sha512_rounds') and args.sha512_rounds:
-                hash_config['sha512'] = args.sha512_rounds
-            if hasattr(args, 'sha384_rounds') and args.sha384_rounds:
-                hash_config['sha384'] = args.sha384_rounds
-            if hasattr(args, 'sha256_rounds') and args.sha256_rounds:
-                hash_config['sha256'] = args.sha256_rounds
-            if hasattr(args, 'sha224_rounds') and args.sha224_rounds:
-                hash_config['sha224'] = args.sha224_rounds
-            if hasattr(args, 'sha3_512_rounds') and args.sha3_512_rounds:
-                hash_config['sha3_512'] = args.sha3_512_rounds
-            if hasattr(args, 'sha3_384_rounds') and args.sha3_384_rounds:
-                hash_config['sha3_384'] = args.sha3_384_rounds
-            if hasattr(args, 'sha3_256_rounds') and args.sha3_256_rounds:
-                hash_config['sha3_256'] = args.sha3_256_rounds
-            if hasattr(args, 'sha3_224_rounds') and args.sha3_224_rounds:
-                hash_config['sha3_224'] = args.sha3_224_rounds
-            if hasattr(args, 'blake2b_rounds') and args.blake2b_rounds:
-                hash_config['blake2b'] = args.blake2b_rounds
-            if hasattr(args, 'blake3_rounds') and args.blake3_rounds:
-                hash_config['blake3'] = args.blake3_rounds
-            if hasattr(args, 'shake256_rounds') and args.shake256_rounds:
-                hash_config['shake256'] = args.shake256_rounds
-            if hasattr(args, 'shake128_rounds') and args.shake128_rounds:
-                hash_config['shake128'] = args.shake128_rounds
-            if hasattr(args, 'whirlpool_rounds') and args.whirlpool_rounds:
-                hash_config['whirlpool'] = args.whirlpool_rounds
-            if hasattr(args, 'pbkdf2_iterations') and args.pbkdf2_iterations:
-                hash_config['pbkdf2_iterations'] = args.pbkdf2_iterations
-            
+            if hasattr(args, "sha512_rounds") and args.sha512_rounds:
+                hash_config["sha512"] = args.sha512_rounds
+            if hasattr(args, "sha384_rounds") and args.sha384_rounds:
+                hash_config["sha384"] = args.sha384_rounds
+            if hasattr(args, "sha256_rounds") and args.sha256_rounds:
+                hash_config["sha256"] = args.sha256_rounds
+            if hasattr(args, "sha224_rounds") and args.sha224_rounds:
+                hash_config["sha224"] = args.sha224_rounds
+            if hasattr(args, "sha3_512_rounds") and args.sha3_512_rounds:
+                hash_config["sha3_512"] = args.sha3_512_rounds
+            if hasattr(args, "sha3_384_rounds") and args.sha3_384_rounds:
+                hash_config["sha3_384"] = args.sha3_384_rounds
+            if hasattr(args, "sha3_256_rounds") and args.sha3_256_rounds:
+                hash_config["sha3_256"] = args.sha3_256_rounds
+            if hasattr(args, "sha3_224_rounds") and args.sha3_224_rounds:
+                hash_config["sha3_224"] = args.sha3_224_rounds
+            if hasattr(args, "blake2b_rounds") and args.blake2b_rounds:
+                hash_config["blake2b"] = args.blake2b_rounds
+            if hasattr(args, "blake3_rounds") and args.blake3_rounds:
+                hash_config["blake3"] = args.blake3_rounds
+            if hasattr(args, "shake256_rounds") and args.shake256_rounds:
+                hash_config["shake256"] = args.shake256_rounds
+            if hasattr(args, "shake128_rounds") and args.shake128_rounds:
+                hash_config["shake128"] = args.shake128_rounds
+            if hasattr(args, "whirlpool_rounds") and args.whirlpool_rounds:
+                hash_config["whirlpool"] = args.whirlpool_rounds
+            if hasattr(args, "pbkdf2_iterations") and args.pbkdf2_iterations:
+                hash_config["pbkdf2_iterations"] = args.pbkdf2_iterations
+
             result = verify_usb_integrity(
                 usb_path=args.usb_path,
                 password=args.password,
-                hash_config=hash_config if hash_config else None
+                hash_config=hash_config if hash_config else None,
             )
-            
-            if result.get('integrity_ok'):
+
+            if result.get("integrity_ok"):
                 print(f"✓ USB integrity verification PASSED")
                 print(f"  Files verified: {result['verified_files']}")
-                print(f"  Created at: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(result['created_at']))}")
+                print(
+                    f"  Created at: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(result['created_at']))}"
+                )
                 return 0
             else:
                 print(f"✗ USB integrity verification FAILED")
                 print(f"  Files verified: {result['verified_files']}")
                 print(f"  Failed files: {result['failed_files']}")
                 print(f"  Missing files: {result['missing_files']}")
-                if result['tampered_files']:
+                if result["tampered_files"]:
                     print(f"  Tampered files: {', '.join(result['tampered_files'])}")
-                if result['missing_file_list']:
+                if result["missing_file_list"]:
                     print(f"  Missing files: {', '.join(result['missing_file_list'])}")
                 return 1
-                
+
         except ImportError:
             print("Error: Portable media module not available")
             return 1
@@ -1731,8 +1824,8 @@ def main_with_args(args=None):
             return 1
 
     # Handle scrypt_cost conversion to scrypt_n
-    scrypt_cost = getattr(args, 'scrypt_cost', 0)
-    scrypt_n = getattr(args, 'scrypt_n', 0)
+    scrypt_cost = getattr(args, "scrypt_cost", 0)
+    scrypt_n = getattr(args, "scrypt_n", 0)
     if scrypt_cost > 0 and scrypt_n == 0:
         args.scrypt_n = 2**scrypt_cost
 
@@ -1840,6 +1933,214 @@ def main_with_args(args=None):
 
         sys.exit(0)
 
+    # Plugin management commands
+    elif args.action == "list-plugins":
+        try:
+            from .plugin_system import create_default_plugin_manager
+
+            plugin_manager = create_default_plugin_manager(args.plugin_config_dir)
+            if args.plugin_dir:
+                plugin_manager.add_plugin_directory(args.plugin_dir)
+
+            # Discover and load plugins
+            discovered = plugin_manager.discover_plugins()
+            if not args.quiet:
+                print(f"Discovered {len(discovered)} plugin files")
+
+            # Load plugins
+            for plugin_file in discovered:
+                load_result = plugin_manager.load_plugin(plugin_file)
+                if not load_result.success and not args.quiet:
+                    print(f"⚠️  Failed to load {plugin_file}: {load_result.message}")
+
+            # List loaded plugins
+            plugins = plugin_manager.list_plugins()
+            if not plugins:
+                print("No plugins loaded")
+            else:
+                print("\nLoaded Plugins:")
+                print("=" * 50)
+                for plugin in plugins:
+                    status = "🟢 Enabled" if plugin["enabled"] else "🔴 Disabled"
+                    print(f"{status} {plugin['name']} (v{plugin['version']})")
+                    print(f"    ID: {plugin['id']}")
+                    print(f"    Type: {plugin['type']}")
+                    print(f"    Description: {plugin['description']}")
+                    print(f"    Capabilities: {', '.join(plugin['capabilities'])}")
+                    if plugin.get("usage_count", 0) > 0:
+                        print(
+                            f"    Usage: {plugin['usage_count']} executions, {plugin.get('error_count', 0)} errors"
+                        )
+                    print()
+
+            sys.exit(0)
+
+        except ImportError:
+            print("❌ Plugin system not available")
+            sys.exit(1)
+        except Exception as e:
+            print(f"❌ Error listing plugins: {e}")
+            sys.exit(1)
+
+    elif args.action == "plugin-info":
+        if not args.plugin_id:
+            print("❌ Plugin ID required for plugin-info command (use --plugin-id)")
+            sys.exit(1)
+
+        try:
+            from .plugin_system import create_default_plugin_manager
+
+            plugin_manager = create_default_plugin_manager(args.plugin_config_dir)
+            if args.plugin_dir:
+                plugin_manager.add_plugin_directory(args.plugin_dir)
+
+            # Discover and load plugins
+            discovered = plugin_manager.discover_plugins()
+            for plugin_file in discovered:
+                load_result = plugin_manager.load_plugin(plugin_file)
+
+            plugin_info = plugin_manager.get_plugin_info(args.plugin_id)
+            if not plugin_info:
+                print(f"❌ Plugin not found: {args.plugin_id}")
+                sys.exit(1)
+
+            # Show detailed plugin information
+            print(f"\nPlugin Information: {args.plugin_id}")
+            print("=" * 50)
+            print(f"Name: {plugin_info['name']}")
+            print(f"Version: {plugin_info['version']}")
+            print(f"Type: {plugin_info['type']}")
+            print(f"Description: {plugin_info['description']}")
+            print(f"Status: {'🟢 Enabled' if plugin_info['enabled'] else '🔴 Disabled'}")
+            print(f"File: {plugin_info['file_path']}")
+            print(f"Capabilities: {', '.join(plugin_info['capabilities'])}")
+            print(
+                f"Load Time: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(plugin_info['load_time']))}"
+            )
+
+            if plugin_info.get("last_used"):
+                print(
+                    f"Last Used: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(plugin_info['last_used']))}"
+                )
+
+            if plugin_info.get("usage_count", 0) > 0:
+                print(f"Usage Statistics:")
+                print(f"  - Total executions: {plugin_info['usage_count']}")
+                print(f"  - Errors: {plugin_info.get('error_count', 0)}")
+                success_rate = (
+                    (plugin_info["usage_count"] - plugin_info.get("error_count", 0))
+                    / plugin_info["usage_count"]
+                ) * 100
+                print(f"  - Success rate: {success_rate:.1f}%")
+
+            sys.exit(0)
+
+        except ImportError:
+            print("❌ Plugin system not available")
+            sys.exit(1)
+        except Exception as e:
+            print(f"❌ Error getting plugin info: {e}")
+            sys.exit(1)
+
+    elif args.action == "enable-plugin":
+        if not args.plugin_id:
+            print("❌ Plugin ID required for enable-plugin command (use --plugin-id)")
+            sys.exit(1)
+
+        try:
+            from .plugin_system import create_default_plugin_manager
+
+            plugin_manager = create_default_plugin_manager(args.plugin_config_dir)
+            if args.plugin_dir:
+                plugin_manager.add_plugin_directory(args.plugin_dir)
+
+            # Discover and load plugins
+            discovered = plugin_manager.discover_plugins()
+            for plugin_file in discovered:
+                load_result = plugin_manager.load_plugin(plugin_file)
+
+            result = plugin_manager.enable_plugin(args.plugin_id)
+            if result.success:
+                print(f"✅ Plugin {args.plugin_id} enabled successfully")
+            else:
+                print(f"❌ Failed to enable plugin: {result.message}")
+                sys.exit(1)
+
+            sys.exit(0)
+
+        except ImportError:
+            print("❌ Plugin system not available")
+            sys.exit(1)
+        except Exception as e:
+            print(f"❌ Error enabling plugin: {e}")
+            sys.exit(1)
+
+    elif args.action == "disable-plugin":
+        if not args.plugin_id:
+            print("❌ Plugin ID required for disable-plugin command (use --plugin-id)")
+            sys.exit(1)
+
+        try:
+            from .plugin_system import create_default_plugin_manager
+
+            plugin_manager = create_default_plugin_manager(args.plugin_config_dir)
+            if args.plugin_dir:
+                plugin_manager.add_plugin_directory(args.plugin_dir)
+
+            # Discover and load plugins
+            discovered = plugin_manager.discover_plugins()
+            for plugin_file in discovered:
+                load_result = plugin_manager.load_plugin(plugin_file)
+
+            result = plugin_manager.disable_plugin(args.plugin_id)
+            if result.success:
+                print(f"✅ Plugin {args.plugin_id} disabled successfully")
+            else:
+                print(f"❌ Failed to disable plugin: {result.message}")
+                sys.exit(1)
+
+            sys.exit(0)
+
+        except ImportError:
+            print("❌ Plugin system not available")
+            sys.exit(1)
+        except Exception as e:
+            print(f"❌ Error disabling plugin: {e}")
+            sys.exit(1)
+
+    elif args.action == "reload-plugin":
+        if not args.plugin_id:
+            print("❌ Plugin ID required for reload-plugin command (use --plugin-id)")
+            sys.exit(1)
+
+        try:
+            from .plugin_system import create_default_plugin_manager
+
+            plugin_manager = create_default_plugin_manager(args.plugin_config_dir)
+            if args.plugin_dir:
+                plugin_manager.add_plugin_directory(args.plugin_dir)
+
+            # Discover and load plugins
+            discovered = plugin_manager.discover_plugins()
+            for plugin_file in discovered:
+                load_result = plugin_manager.load_plugin(plugin_file)
+
+            result = plugin_manager.reload_plugin(args.plugin_id)
+            if result.success:
+                print(f"✅ Plugin {args.plugin_id} reloaded successfully")
+            else:
+                print(f"❌ Failed to reload plugin: {result.message}")
+                sys.exit(1)
+
+            sys.exit(0)
+
+        except ImportError:
+            print("❌ Plugin system not available")
+            sys.exit(1)
+        except Exception as e:
+            print(f"❌ Error reloading plugin: {e}")
+            sys.exit(1)
+
     elif args.action == "generate-password":
         # If no character sets are explicitly selected, use all by default
         if not (args.use_lowercase or args.use_uppercase or args.use_digits or args.use_special):
@@ -1905,7 +2206,7 @@ def main_with_args(args=None):
         sys.exit(0)
 
     # For other actions, input file is required
-    if getattr(args, 'input', None) is None and args.action not in [
+    if getattr(args, "input", None) is None and args.action not in [
         "generate-password",
         "security-info",
         "check-argon2",
@@ -2441,29 +2742,29 @@ def main_with_args(args=None):
     else:
         # Check if all values are at their defaults (no arguments provided)
         all_hash_rounds_zero = (
-            args.sha512_rounds == 0 and
-            args.sha384_rounds == 0 and
-            args.sha256_rounds == 0 and
-            args.sha224_rounds == 0 and
-            args.sha3_512_rounds == 0 and
-            args.sha3_384_rounds == 0 and
-            args.sha3_256_rounds == 0 and
-            args.sha3_224_rounds == 0 and
-            args.blake2b_rounds == 0 and
-            args.blake3_rounds == 0 and
-            args.shake256_rounds == 0 and
-            args.shake128_rounds == 0 and
-            getattr(args, "whirlpool_rounds", 0) == 0
+            args.sha512_rounds == 0
+            and args.sha384_rounds == 0
+            and args.sha256_rounds == 0
+            and args.sha224_rounds == 0
+            and args.sha3_512_rounds == 0
+            and args.sha3_384_rounds == 0
+            and args.sha3_256_rounds == 0
+            and args.sha3_224_rounds == 0
+            and args.blake2b_rounds == 0
+            and args.blake3_rounds == 0
+            and args.shake256_rounds == 0
+            and args.shake128_rounds == 0
+            and getattr(args, "whirlpool_rounds", 0) == 0
         )
-        
+
         all_kdfs_disabled = (
-            not args.enable_scrypt and
-            not args.enable_argon2 and
-            not args.enable_balloon and
-            not args.enable_hkdf and
-            not getattr(args, "enable_randomx", False)
+            not args.enable_scrypt
+            and not args.enable_argon2
+            and not args.enable_balloon
+            and not args.enable_hkdf
+            and not getattr(args, "enable_randomx", False)
         )
-        
+
         # If no arguments are provided, use the standard template as default
         if all_hash_rounds_zero and all_kdfs_disabled:
             hash_config = get_template_config(SecurityTemplate.STANDARD)
@@ -2500,7 +2801,9 @@ def main_with_args(args=None):
                     "parallelism": args.argon2_parallelism,
                     "hash_len": args.argon2_hash_len,
                     # Store integer value for JSON serialization
-                    "type": ARGON2_TYPE_INT_MAP.get(args.argon2_type, 2),  # Default to 'id' type (2)
+                    "type": ARGON2_TYPE_INT_MAP.get(
+                        args.argon2_type, 2
+                    ),  # Default to 'id' type (2)
                     "rounds": args.argon2_rounds,
                 },
                 "balloon": {
@@ -2521,10 +2824,10 @@ def main_with_args(args=None):
                     "rounds": getattr(args, "randomx_rounds", 1),
                     "mode": getattr(args, "randomx_mode", "light"),
                     "height": getattr(args, "randomx_height", 1),
-                "hash_len": getattr(args, "randomx_hash_len", 32),
-            },
-            "pbkdf2_iterations": getattr(args, "pbkdf2_iterations", 0),
-        }
+                    "hash_len": getattr(args, "randomx_hash_len", 32),
+                },
+                "pbkdf2_iterations": getattr(args, "pbkdf2_iterations", 0),
+            }
 
     # Debug the hash configuration if debug mode is enabled
     if args.debug:
@@ -2532,6 +2835,40 @@ def main_with_args(args=None):
 
     exit_code = 0
     try:
+        # Initialize plugin system if not disabled
+        plugin_manager = None
+        enable_plugins = args.enable_plugins and not args.disable_plugins
+        if enable_plugins:
+            try:
+                from .plugin_system import create_default_plugin_manager
+
+                plugin_manager = create_default_plugin_manager(args.plugin_config_dir)
+                if args.plugin_dir:
+                    plugin_manager.add_plugin_directory(args.plugin_dir)
+
+                # Discover and load plugins quietly
+                discovered = plugin_manager.discover_plugins()
+                for plugin_file in discovered:
+                    load_result = plugin_manager.load_plugin(plugin_file)
+                    if not load_result.success and args.verbose and not args.quiet:
+                        print(f"⚠️  Failed to load plugin {plugin_file}: {load_result.message}")
+
+                if args.verbose and not args.quiet:
+                    loaded_count = len(plugin_manager.list_plugins())
+                    if loaded_count > 0:
+                        print(f"🔌 Plugin system initialized with {loaded_count} plugins")
+
+            except ImportError:
+                if args.verbose and not args.quiet:
+                    print("⚠️  Plugin system not available")
+                plugin_manager = None
+                enable_plugins = False
+            except Exception as e:
+                if not args.quiet:
+                    print(f"⚠️  Plugin system error: {e}")
+                plugin_manager = None
+                enable_plugins = False
+
         if args.action == "encrypt":
             # DEPRECATED: Whirlpool is no longer supported for new encryptions
             if hasattr(args, "whirlpool_rounds") and getattr(args, "whirlpool_rounds", 0) > 0:
@@ -3030,44 +3367,48 @@ def main_with_args(args=None):
                     else:
                         # Use standard encryption
                         success = encrypt_file(
-                                args.input,
-                                temp_output,
-                                password,
-                                hash_config,
-                                args.pbkdf2_iterations,
-                                args.quiet,
-                                algorithm=args.algorithm,
-                                progress=args.progress,
-                                verbose=args.verbose,
-                                debug=args.debug,
-                                pqc_keypair=(pqc_keypair if "pqc_keypair" in locals() else None),
-                                pqc_store_private_key=args.pqc_store_key,
-                                encryption_data=args.encryption_data,
-                            )
+                            args.input,
+                            temp_output,
+                            password,
+                            hash_config,
+                            args.pbkdf2_iterations,
+                            args.quiet,
+                            algorithm=args.algorithm,
+                            progress=args.progress,
+                            verbose=args.verbose,
+                            debug=args.debug,
+                            pqc_keypair=(pqc_keypair if "pqc_keypair" in locals() else None),
+                            pqc_store_private_key=args.pqc_store_key,
+                            encryption_data=args.encryption_data,
+                            enable_plugins=enable_plugins,
+                            plugin_manager=plugin_manager,
+                        )
 
                     if success:
                         # Apply the original permissions to the temp file
                         os.chmod(temp_output, original_permissions)
 
                         # Handle steganography if requested
-                        if hasattr(args, 'stego_hide') and args.stego_hide:
+                        if hasattr(args, "stego_hide") and args.stego_hide:
                             try:
-                                from .steganography.stego_transport import create_steganography_transport
-                                
+                                from .steganography.stego_transport import (
+                                    create_steganography_transport,
+                                )
+
                                 # Create steganography transport with dedicated password
                                 stego_transport = create_steganography_transport(args)
                                 if stego_transport:
                                     # Read encrypted data from temp file
-                                    with open(temp_output, 'rb') as f:
+                                    with open(temp_output, "rb") as f:
                                         encrypted_data = f.read()
-                                    
+
                                     # Hide in cover image and save to output file
                                     stego_transport.hide_data_in_image(
-                                        encrypted_data, 
+                                        encrypted_data,
                                         args.stego_hide,  # cover image path
-                                        output_file       # output path
+                                        output_file,  # output path
                                     )
-                                    
+
                                     if not args.quiet:
                                         print(f"Data successfully hidden in image: {output_file}")
                                 else:
@@ -3135,6 +3476,8 @@ def main_with_args(args=None):
                     verbose=False,  # No verbose output for stdout
                     debug=args.debug,
                     encryption_data=args.encryption_data,
+                    enable_plugins=enable_plugins,
+                    plugin_manager=plugin_manager,
                 )
 
                 if success:
@@ -3607,27 +3950,29 @@ def main_with_args(args=None):
                         pqc_keypair=pqc_keypair if "pqc_keypair" in locals() else None,
                         pqc_store_private_key=args.pqc_store_key,
                         encryption_data=args.encryption_data,
+                        enable_plugins=enable_plugins,
+                        plugin_manager=plugin_manager,
                     )
-                
+
                 # Handle steganography if requested
-                if success and hasattr(args, 'stego_hide') and args.stego_hide:
+                if success and hasattr(args, "stego_hide") and args.stego_hide:
                     try:
                         from .steganography.stego_transport import create_steganography_transport
-                        
+
                         # Create steganography transport
                         stego_transport = create_steganography_transport(args)
                         if stego_transport:
                             # Read encrypted data from output file
-                            with open(output_file, 'rb') as f:
+                            with open(output_file, "rb") as f:
                                 encrypted_data = f.read()
-                            
+
                             # Hide in cover image and overwrite output file
                             stego_transport.hide_data_in_image(
-                                encrypted_data, 
+                                encrypted_data,
                                 args.stego_hide,  # cover image path
-                                output_file       # output path (will be overwritten with stego image)
+                                output_file,  # output path (will be overwritten with stego image)
                             )
-                            
+
                             if not args.quiet:
                                 print(f"Data successfully hidden in image: {output_file}")
                     except ImportError:
@@ -3849,30 +4194,35 @@ def main_with_args(args=None):
                     # Handle steganography extraction if requested
                     actual_input_file = args.input
                     temp_extracted_file = None
-                    
-                    if hasattr(args, 'stego_extract') and args.stego_extract:
+
+                    if hasattr(args, "stego_extract") and args.stego_extract:
                         try:
-                            from .steganography.stego_transport import create_steganography_transport
                             import tempfile
-                            
+
+                            from .steganography.stego_transport import (
+                                create_steganography_transport,
+                            )
+
                             if not args.quiet:
                                 print("Extracting encrypted data from steganographic image...")
-                            
+
                             # Create steganography transport
                             stego_transport = create_steganography_transport(args)
                             if stego_transport:
                                 # Extract encrypted data from image
                                 encrypted_data = stego_transport.extract_data_from_image(args.input)
-                                
+
                                 # Create temporary file for extracted data
-                                with tempfile.NamedTemporaryFile(delete=False, suffix='.enc') as temp_file:
+                                with tempfile.NamedTemporaryFile(
+                                    delete=False, suffix=".enc"
+                                ) as temp_file:
                                     temp_extracted_file = temp_file.name
                                     temp_file.write(encrypted_data)
-                                
+
                                 # Use extracted file as input for decryption
                                 actual_input_file = temp_extracted_file
                                 temp_files_to_cleanup.append(temp_extracted_file)
-                                
+
                                 if not args.quiet:
                                     print(f"Extracted {len(encrypted_data)} bytes from image")
                         except ImportError:
@@ -4036,6 +4386,8 @@ def main_with_args(args=None):
                             verbose=args.verbose,
                             debug=args.debug,
                             pqc_private_key=pqc_private_key,
+                            enable_plugins=enable_plugins,
+                            plugin_manager=plugin_manager,
                         )
                     if success:
                         # Apply the original permissions to the temp file
@@ -4149,33 +4501,36 @@ def main_with_args(args=None):
                         if not args.quiet:
                             print(f"Warning: Failed to load PQC key file: {e}")
 
-                # Handle steganography extraction if requested  
+                # Handle steganography extraction if requested
                 actual_input_file = args.input
                 temp_extracted_file = None
-                
-                if hasattr(args, 'stego_extract') and args.stego_extract:
+
+                if hasattr(args, "stego_extract") and args.stego_extract:
                     try:
-                        from .steganography.stego_transport import create_steganography_transport
                         import tempfile
-                        
+
+                        from .steganography.stego_transport import create_steganography_transport
+
                         if not args.quiet:
                             print("Extracting encrypted data from steganographic image...")
-                        
+
                         # Create steganography transport
                         stego_transport = create_steganography_transport(args)
                         if stego_transport:
                             # Extract encrypted data from image
                             encrypted_data = stego_transport.extract_data_from_image(args.input)
-                            
+
                             # Create temporary file for extracted data
-                            with tempfile.NamedTemporaryFile(delete=False, suffix='.enc') as temp_file:
+                            with tempfile.NamedTemporaryFile(
+                                delete=False, suffix=".enc"
+                            ) as temp_file:
                                 temp_extracted_file = temp_file.name
                                 temp_file.write(encrypted_data)
-                            
+
                             # Use extracted file as input for decryption
                             actual_input_file = temp_extracted_file
                             temp_files_to_cleanup.append(temp_extracted_file)
-                            
+
                             if not args.quiet:
                                 print(f"Extracted {len(encrypted_data)} bytes from image")
                     except ImportError:
@@ -4234,6 +4589,8 @@ def main_with_args(args=None):
                         verbose=args.verbose,
                         debug=args.debug,
                         pqc_private_key=pqc_private_key,
+                        enable_plugins=enable_plugins,
+                        plugin_manager=plugin_manager,
                     )
                 if success and not args.quiet:
                     print(f"\nFile decrypted successfully: {args.output}")
@@ -4384,6 +4741,8 @@ def main_with_args(args=None):
                         verbose=args.verbose,
                         debug=args.debug,
                         pqc_private_key=pqc_private_key,
+                        enable_plugins=enable_plugins,
+                        plugin_manager=plugin_manager,
                     )
                 try:
                     # Try to decode as text

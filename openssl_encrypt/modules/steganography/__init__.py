@@ -145,7 +145,7 @@ __all__ = [
     "VIDEO_STEGANOGRAPHY_AVAILABLE",
     # Format constants
     "SUPPORTED_IMAGE_FORMATS",
-    "SUPPORTED_AUDIO_FORMATS", 
+    "SUPPORTED_AUDIO_FORMATS",
     "SUPPORTED_VIDEO_FORMATS",
     "DISABLED_VIDEO_FORMATS",
 ]
@@ -161,7 +161,7 @@ DISABLED_IMAGE_FORMATS = []  # All image formats are working
 DISABLED_AUDIO_FORMATS = []  # All audio formats are working
 DISABLED_VIDEO_FORMATS = [
     "MP4",
-    "WEBM", 
+    "WEBM",
     "AVI",
     "MKV",
 ]  # Video steganography removed due to reliability issues

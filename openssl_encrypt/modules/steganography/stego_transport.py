@@ -27,8 +27,6 @@ from .stego_tiff import TIFFSteganography
 from .stego_wav import WAVSteganography
 from .stego_webp import WEBPSteganography
 
-
-
 # Set up module logger
 logger = logging.getLogger(__name__)
 
@@ -75,7 +73,6 @@ class SteganographyTransport:
 
     def _detect_media_format(self, media_data: bytes) -> str:
         """Detect media format from data (images and audio)"""
-
 
         # Image formats
         if media_data.startswith(b"\xFF\xD8\xFF"):
