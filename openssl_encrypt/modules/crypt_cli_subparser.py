@@ -897,6 +897,40 @@ def setup_analyze_security_parser(subparser):
     )
 
 
+def setup_analyze_config_parser(subparser):
+    """Set up arguments specific to the analyze-config command"""
+    # Add basic options but also add encryption/security options for analysis
+    setup_analyze_security_parser(subparser)
+    
+    # Add analyze-config specific options
+    subparser.add_argument(
+        "--use-case",
+        choices=["personal", "business", "compliance", "archival"],
+        help="Specify use case for context-aware analysis:\n"
+        "  personal   - Personal files and documents\n"
+        "  business   - Business documents and sensitive data\n"
+        "  compliance - Regulatory compliance requirements\n"
+        "  archival   - Long-term storage with future-proofing"
+    )
+    
+    subparser.add_argument(
+        "--compliance-frameworks",
+        nargs="*",
+        choices=["fips_140_2", "common_criteria", "nist_guidelines"],
+        help="Check compliance with specific frameworks:\n"
+        "  fips_140_2      - FIPS 140-2 requirements\n"
+        "  common_criteria - Common Criteria standards\n"
+        "  nist_guidelines - NIST cryptographic guidelines"
+    )
+    
+    subparser.add_argument(
+        "--output-format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format for analysis results (default: text)"
+    )
+
+
 def create_subparser_main():
     """
     Create a main function that uses subparsers instead of the monolithic approach.
@@ -975,6 +1009,13 @@ def create_subparser_main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_simple_parser(config_wizard_parser)
+
+    analyze_config_parser = subparsers.add_parser(
+        "analyze-config",
+        help="Analyze configuration for security, performance, and compatibility",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_analyze_config_parser(analyze_config_parser)
 
     check_argon2_parser = subparsers.add_parser(
         "check-argon2",

@@ -75,6 +75,7 @@ except ImportError:
 
 from . import crypt_errors
 from .cli_aliases import add_cli_aliases, process_cli_aliases
+from .config_analyzer import ConfigurationAnalyzer, AnalysisCategory, RecommendationPriority, analyze_configuration_from_args
 from .config_wizard import generate_cli_arguments, run_configuration_wizard
 from .keystore_utils import (
     auto_generate_pqc_key,
@@ -598,6 +599,7 @@ def preprocess_global_args(argv):
         "security-info",
         "analyze-security",
         "config-wizard",
+        "analyze-config",
         "check-argon2",
         "check-pqc",
         "version",
@@ -827,6 +829,220 @@ def run_config_wizard(args):
         return None
 
 
+def run_config_analyzer(args):
+    """
+    Run configuration analysis and display detailed results.
+    
+    Args:
+        args: Parsed command line arguments
+    """
+    try:
+        quiet = getattr(args, "quiet", False)
+        use_case = getattr(args, "use_case", None)
+        output_format = getattr(args, "output_format", "text")
+        compliance_frameworks = getattr(args, "compliance_frameworks", None)
+        
+        if not quiet and output_format == "text":
+            print("Analyzing Configuration...")
+            print("Performing comprehensive security and performance analysis.\n")
+        
+        # Convert args to configuration dictionary
+        config = vars(args)
+        
+        # Add compliance requirements if specified
+        if compliance_frameworks:
+            config["compliance_requirements"] = compliance_frameworks
+        
+        # Run the analysis
+        analyzer = ConfigurationAnalyzer()
+        analysis = analyzer.analyze_configuration(config, use_case, compliance_frameworks)
+        
+        if output_format == "json":
+            _display_json_results(analysis)
+        elif not quiet:
+            _display_analysis_results(analysis)
+        
+        return analysis
+        
+    except Exception as e:
+        print(f"Error analyzing configuration: {e}")
+        sys.exit(1)
+
+
+def _display_analysis_results(analysis):
+    """Display formatted analysis results."""
+    
+    print("=" * 60)
+    print("CONFIGURATION ANALYSIS RESULTS")
+    print("=" * 60)
+    print()
+    
+    # Overall Summary
+    print("📊 OVERALL ASSESSMENT")
+    print("─" * 30)
+    print(f"Security Score: {analysis.overall_score:.1f}/10.0")
+    print(f"Security Level: {analysis.security_level.name}")
+    print(f"Analysis Time: {analysis.analysis_timestamp}")
+    print()
+    
+    # Configuration Summary
+    print("⚙️  CONFIGURATION SUMMARY")
+    print("─" * 30)
+    summary = analysis.configuration_summary
+    print(f"Algorithm: {summary['algorithm']}")
+    print(f"Hash Functions: {', '.join(summary['active_hash_functions']) or 'None'}")
+    print(f"Key Derivation: {', '.join(summary['active_kdfs']) or 'None'}")
+    print(f"Post-Quantum: {'Yes' if summary['post_quantum_enabled'] else 'No'}")
+    print(f"Complexity: {summary['configuration_complexity'].title()}")
+    print(f"Suitable For: {', '.join(summary['suitable_for'])}")
+    print()
+    
+    # Performance Assessment
+    print("🚀 PERFORMANCE ASSESSMENT")
+    print("─" * 30)
+    perf = analysis.performance_assessment
+    print(f"Overall Score: {perf['overall_score']:.1f}/10.0")
+    print(f"Speed Rating: {perf['estimated_relative_speed'].replace('_', ' ').title()}")
+    print(f"Memory Usage: {perf['memory_requirements']['estimated_peak_mb']}MB ({perf['memory_requirements']['classification']})")
+    print(f"CPU Intensity: {perf['cpu_intensity'].replace('_', ' ').title()}")
+    print()
+    
+    # Compatibility
+    print("🔗 COMPATIBILITY")
+    print("─" * 30)
+    compat = analysis.compatibility_matrix
+    print(f"Overall Score: {compat['overall_compatibility_score']:.1f}/10.0")
+    
+    platform_issues = [p for p, status in compat['platform_compatibility'].items() if not status]
+    if platform_issues:
+        print(f"Platform Limitations: {', '.join(platform_issues)}")
+    else:
+        print("Platform Support: Universal")
+    
+    library_issues = [lib for lib, status in compat['library_compatibility'].items() if not status]
+    if library_issues:
+        print(f"Library Limitations: {', '.join(library_issues)}")
+    else:
+        print("Library Support: Excellent")
+    print()
+    
+    # Future Proofing
+    print("🔮 FUTURE PROOFING")
+    print("─" * 30)
+    future = analysis.future_proofing
+    print(f"Algorithm Longevity: {future['algorithm_longevity_score']:.1f}/10.0")
+    print(f"Key Size Adequacy: {future['key_size_adequacy_score']:.1f}/10.0")
+    print(f"Quantum Resistant: {'Yes' if future['post_quantum_ready'] else 'No'}")
+    print(f"Estimated Secure: {future['estimated_secure_years']}")
+    print()
+    
+    # Compliance Status
+    if analysis.compliance_status:
+        print("📋 COMPLIANCE STATUS")
+        print("─" * 30)
+        for framework, status in analysis.compliance_status.items():
+            framework_name = framework.replace('_', ' ').title()
+            compliance_status = "✅ Compliant" if status['compliant'] else "❌ Non-Compliant"
+            print(f"{framework_name}: {compliance_status}")
+            
+            if status.get('issues'):
+                for issue in status['issues']:
+                    print(f"  • {issue}")
+        print()
+    
+    # Recommendations
+    if analysis.recommendations:
+        print("💡 RECOMMENDATIONS")
+        print("─" * 30)
+        
+        # Group recommendations by priority
+        by_priority = {}
+        for rec in analysis.recommendations:
+            priority = rec.priority.value
+            if priority not in by_priority:
+                by_priority[priority] = []
+            by_priority[priority].append(rec)
+        
+        # Display by priority
+        priority_icons = {
+            'critical': '🚨',
+            'high': '⚠️',
+            'medium': '💡',
+            'low': 'ℹ️',
+            'info': '📝'
+        }
+        
+        for priority in ['critical', 'high', 'medium', 'low', 'info']:
+            if priority in by_priority:
+                recommendations = by_priority[priority]
+                print(f"\n{priority_icons[priority]} {priority.upper()} PRIORITY:")
+                
+                for i, rec in enumerate(recommendations, 1):
+                    print(f"\n{i}. {rec.title}")
+                    print(f"   Category: {rec.category.value.replace('_', ' ').title()}")
+                    print(f"   Issue: {rec.description}")
+                    print(f"   Action: {rec.action}")
+                    print(f"   Impact: {rec.impact}")
+                    
+                    if rec.applies_to and rec.applies_to != ['all']:
+                        print(f"   Applies To: {', '.join(rec.applies_to)}")
+    else:
+        print("💡 RECOMMENDATIONS")
+        print("─" * 30)
+        print("✅ No specific recommendations - configuration looks good!")
+    
+    print()
+    print("=" * 60)
+    print("Analysis complete. Use recommendations above to enhance your configuration.")
+    print("=" * 60)
+
+
+def _display_json_results(analysis):
+    """Display analysis results in JSON format."""
+    import json
+    from dataclasses import asdict
+    
+    # Convert analysis to dictionary, handling enum values
+    def convert_analysis(obj):
+        if hasattr(obj, '__dataclass_fields__'):
+            return asdict(obj)
+        elif hasattr(obj, 'value'):  # Enum
+            return obj.value
+        elif hasattr(obj, 'name'):  # Enum
+            return obj.name
+        return obj
+    
+    # Convert the analysis object to a dictionary
+    result_dict = {
+        'overall_score': analysis.overall_score,
+        'security_level': analysis.security_level.name,
+        'analysis_timestamp': analysis.analysis_timestamp,
+        'configuration_summary': analysis.configuration_summary,
+        'performance_assessment': analysis.performance_assessment,
+        'compatibility_matrix': analysis.compatibility_matrix,
+        'compliance_status': analysis.compliance_status,
+        'future_proofing': analysis.future_proofing,
+        'recommendations': []
+    }
+    
+    # Convert recommendations
+    for rec in analysis.recommendations:
+        rec_dict = {
+            'category': rec.category.value,
+            'priority': rec.priority.value,
+            'title': rec.title,
+            'description': rec.description,
+            'action': rec.action,
+            'impact': rec.impact,
+            'rationale': rec.rationale,
+            'applies_to': rec.applies_to
+        }
+        result_dict['recommendations'].append(rec_dict)
+    
+    # Output JSON
+    print(json.dumps(result_dict, indent=2, ensure_ascii=False))
+
+
 def main():
     """
     Main function that handles the command-line interface.
@@ -844,6 +1060,7 @@ def main():
         "security-info",
         "analyze-security",
         "config-wizard",
+        "analyze-config",
         "check-argon2",
         "check-pqc",
         "version",
@@ -922,7 +1139,7 @@ def main_with_args(args=None):
         "  --quantum-safe pq-standard|pq-high|pq-alternative (post-quantum)\n"
         "  --for-personal|business|archival|compliance (use cases)\n\n"
         "COMMANDS:\n"
-        "  encrypt, decrypt, shred, generate-password, security-info, analyze-security, config-wizard, check-argon2, check-pqc, version\n\n"
+        "  encrypt, decrypt, shred, generate-password, security-info, analyze-security, config-wizard, analyze-config, check-argon2, check-pqc, version\n\n"
         "EXAMPLES:\n"
         "  %(prog)s encrypt --input file.txt --debug --output file.enc\n"
         "  %(prog)s --quiet decrypt --input file.enc --progress --output file.txt\n"
@@ -994,7 +1211,7 @@ def main_with_args(args=None):
             "reload-plugin",
         ],
         help="Action to perform: encrypt/decrypt files, shred data, generate passwords, "
-        "show security recommendations, analyze security configuration, configuration wizard, check Argon2 support, check post-quantum cryptography support, "
+        "show security recommendations, analyze security configuration, configuration wizard, analyze configuration details, check Argon2 support, check post-quantum cryptography support, "
         "create/verify portable USB drives, manage plugins",
     )
 
@@ -1752,6 +1969,10 @@ def main_with_args(args=None):
         "for_business": False,
         "for_archival": False,
         "for_compliance": False,
+        # Analyze-config specific defaults
+        "use_case": None,
+        "compliance_frameworks": None,
+        "output_format": "text",
     }
 
     for attr, default_val in default_attrs.items():
@@ -2063,6 +2284,10 @@ def main_with_args(args=None):
 
     elif args.action == "config-wizard":
         run_config_wizard(args)
+        sys.exit(0)
+
+    elif args.action == "analyze-config":
+        run_config_analyzer(args)
         sys.exit(0)
 
     elif args.action == "check-argon2":
@@ -2442,6 +2667,7 @@ def main_with_args(args=None):
         "security-info",
         "analyze-security",
         "config-wizard",
+        "analyze-config",
         "check-argon2",
         "check-pqc",
         "version",

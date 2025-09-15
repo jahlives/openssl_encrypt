@@ -12707,6 +12707,213 @@ class TestConfigurationWizard(unittest.TestCase):
             self.assertNotIn("_", flag)  # Should use hyphens, not underscores
 
 
+class TestConfigurationAnalyzer(unittest.TestCase):
+    """Test configuration analysis functionality."""
+    
+    def setUp(self):
+        """Set up test environment."""
+        from ..modules.config_analyzer import ConfigurationAnalyzer, AnalysisCategory, RecommendationPriority
+        self.analyzer = ConfigurationAnalyzer()
+    
+    def test_basic_configuration_analysis(self):
+        """Test basic configuration analysis."""
+        config = {
+            'algorithm': 'aes-gcm',
+            'sha256_rounds': 1000,
+            'pbkdf2_iterations': 100000,
+            'enable_argon2': False,
+            'enable_scrypt': False
+        }
+        
+        analysis = self.analyzer.analyze_configuration(config)
+        
+        self.assertIsInstance(analysis.overall_score, float)
+        self.assertTrue(1.0 <= analysis.overall_score <= 10.0)
+        self.assertIsNotNone(analysis.security_level)
+        self.assertIsInstance(analysis.recommendations, list)
+        self.assertIsInstance(analysis.configuration_summary, dict)
+    
+    def test_performance_assessment(self):
+        """Test performance assessment functionality."""
+        config = {
+            'algorithm': 'aes-gcm',
+            'sha256_rounds': 100000,
+            'enable_argon2': True,
+            'argon2_memory': 1048576,  # 1GB
+            'argon2_time': 3
+        }
+        
+        analysis = self.analyzer.analyze_configuration(config)
+        perf = analysis.performance_assessment
+        
+        self.assertIn('overall_score', perf)
+        self.assertIn('estimated_relative_speed', perf)
+        self.assertIn('memory_requirements', perf)
+        self.assertIn('cpu_intensity', perf)
+        
+        # High memory usage should be reflected
+        self.assertGreater(perf['memory_requirements']['estimated_peak_mb'], 1000)
+    
+    def test_compatibility_analysis(self):
+        """Test compatibility analysis across platforms."""
+        config = {
+            'algorithm': 'xchacha20-poly1305',
+            'sha256_rounds': 1000
+        }
+        
+        analysis = self.analyzer.analyze_configuration(config)
+        compat = analysis.compatibility_matrix
+        
+        self.assertIn('platform_compatibility', compat)
+        self.assertIn('library_compatibility', compat)
+        self.assertIn('overall_compatibility_score', compat)
+        self.assertTrue(0.0 <= compat['overall_compatibility_score'] <= 10.0)
+    
+    def test_security_recommendations(self):
+        """Test security-focused recommendations."""
+        # Weak configuration to trigger recommendations
+        config = {
+            'algorithm': 'fernet',
+            'sha256_rounds': 100,  # Very low
+            'pbkdf2_iterations': 1000,  # Low
+            'enable_argon2': False
+        }
+        
+        analysis = self.analyzer.analyze_configuration(config)
+        
+        # Should generate multiple recommendations for this weak config
+        self.assertGreater(len(analysis.recommendations), 0)
+        
+        # Check that we have security-related recommendations
+        security_recs = [r for r in analysis.recommendations 
+                        if r.category.value == 'security']
+        self.assertGreater(len(security_recs), 0)
+    
+    def test_use_case_analysis(self):
+        """Test use case specific analysis."""
+        config = {
+            'algorithm': 'aes-gcm',
+            'sha256_rounds': 1000,
+            'pbkdf2_iterations': 100000
+        }
+        
+        # Test different use cases
+        for use_case in ['personal', 'business', 'compliance', 'archival']:
+            analysis = self.analyzer.analyze_configuration(config, use_case)
+            self.assertIsInstance(analysis.recommendations, list)
+            
+            # Archival should recommend post-quantum
+            if use_case == 'archival':
+                pq_recs = [r for r in analysis.recommendations 
+                          if 'quantum' in r.title.lower()]
+                self.assertGreater(len(pq_recs), 0)
+    
+    def test_compliance_checking(self):
+        """Test compliance framework checking."""
+        # FIPS-compliant config
+        config = {
+            'algorithm': 'aes-gcm',
+            'pbkdf2_iterations': 100000,
+            'enable_argon2': False
+        }
+        
+        analysis = self.analyzer.analyze_configuration(
+            config, compliance_requirements=['fips_140_2']
+        )
+        
+        self.assertIn('fips_140_2', analysis.compliance_status)
+        fips_status = analysis.compliance_status['fips_140_2']
+        self.assertIn('compliant', fips_status)
+    
+    def test_future_proofing_assessment(self):
+        """Test future-proofing assessment."""
+        config = {
+            'algorithm': 'aes-gcm',
+            'sha256_rounds': 1000,
+            'pqc_algorithm': 'ml-kem-768-hybrid'  # With PQC
+        }
+        
+        analysis = self.analyzer.analyze_configuration(config)
+        future = analysis.future_proofing
+        
+        self.assertIn('algorithm_longevity_score', future)
+        self.assertIn('post_quantum_ready', future)
+        self.assertIn('estimated_secure_years', future)
+        
+        # With PQC enabled, should be quantum ready
+        self.assertTrue(future['post_quantum_ready'])
+    
+    def test_configuration_summary(self):
+        """Test configuration summary generation."""
+        config = {
+            'algorithm': 'xchacha20-poly1305',
+            'sha256_rounds': 10000,
+            'blake2b_rounds': 5000,
+            'enable_argon2': True,
+            'enable_scrypt': True,
+            'pqc_algorithm': 'ml-kem-1024-hybrid'
+        }
+        
+        analysis = self.analyzer.analyze_configuration(config)
+        summary = analysis.configuration_summary
+        
+        self.assertEqual(summary['algorithm'], 'xchacha20-poly1305')
+        self.assertIn('sha256', summary['active_hash_functions'])
+        self.assertIn('blake2b', summary['active_hash_functions'])
+        self.assertIn('Argon2', summary['active_kdfs'])
+        self.assertIn('Scrypt', summary['active_kdfs'])
+        self.assertTrue(summary['post_quantum_enabled'])
+        self.assertIn('configuration_complexity', summary)
+    
+    def test_recommendation_priorities(self):
+        """Test that recommendations are properly prioritized."""
+        # Create a configuration with critical issues
+        config = {
+            'algorithm': 'fernet',
+            'sha256_rounds': 1,  # Extremely low
+            'pbkdf2_iterations': 1,  # Extremely low
+        }
+        
+        analysis = self.analyzer.analyze_configuration(config, 'compliance')
+        
+        # Should have critical recommendations
+        critical_recs = [r for r in analysis.recommendations 
+                        if r.priority.value == 'critical']
+        self.assertGreater(len(critical_recs), 0)
+        
+        # Recommendations should be sorted by priority
+        priorities = [r.priority.value for r in analysis.recommendations]
+        priority_order = ['critical', 'high', 'medium', 'low', 'info']
+        
+        # Check that priorities are in correct order
+        last_priority_index = -1
+        for priority in priorities:
+            current_index = priority_order.index(priority)
+            self.assertGreaterEqual(current_index, last_priority_index)
+            last_priority_index = current_index
+    
+    def test_analyze_configuration_from_args(self):
+        """Test the convenience function for analyzing from CLI args."""
+        import argparse
+        from ..modules.config_analyzer import analyze_configuration_from_args
+        
+        # Create mock args
+        args = argparse.Namespace(
+            algorithm='aes-gcm',
+            sha256_rounds=10000,
+            pbkdf2_iterations=100000,
+            enable_argon2=True,
+            argon2_memory=524288,
+            enable_scrypt=False,
+            pqc_algorithm=None
+        )
+        
+        analysis = analyze_configuration_from_args(args, 'business')
+        
+        self.assertIsInstance(analysis.overall_score, float)
+        self.assertIsInstance(analysis.recommendations, list)
+
+
 class TestCLIAliases(unittest.TestCase):
     """Test CLI alias system functionality."""
     
