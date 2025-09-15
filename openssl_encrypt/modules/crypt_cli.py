@@ -74,6 +74,7 @@ except ImportError:
 
 
 from . import crypt_errors
+from .cli_aliases import add_cli_aliases, process_cli_aliases
 from .config_wizard import generate_cli_arguments, run_configuration_wizard
 from .keystore_utils import (
     auto_generate_pqc_key,
@@ -915,12 +916,20 @@ def main_with_args(args=None):
         "  --progress, --verbose, --debug, --quiet\n\n"
         "COMMAND-SPECIFIC FLAGS:\n"
         "  --template, --quick, --standard, --paranoid (encryption only)\n\n"
+        "SIMPLIFIED ALIASES:\n"
+        "  --fast, --secure, --max-security (security levels)\n"
+        "  --crypto-family aes|chacha|xchacha|fernet (algorithms)\n"
+        "  --quantum-safe pq-standard|pq-high|pq-alternative (post-quantum)\n"
+        "  --for-personal|business|archival|compliance (use cases)\n\n"
         "COMMANDS:\n"
         "  encrypt, decrypt, shred, generate-password, security-info, analyze-security, config-wizard, check-argon2, check-pqc, version\n\n"
         "EXAMPLES:\n"
         "  %(prog)s encrypt --input file.txt --debug --output file.enc\n"
         "  %(prog)s --quiet decrypt --input file.enc --progress --output file.txt\n"
-        "  %(prog)s encrypt --verbose --input file.txt --paranoid --algorithm aes-gcm\n\n"
+        "  %(prog)s encrypt --verbose --input file.txt --paranoid --algorithm aes-gcm\n"
+        "  %(prog)s encrypt --input file.txt --fast (quick encryption)\n"
+        "  %(prog)s encrypt --input file.txt --secure --crypto-family xchacha\n"
+        "  %(prog)s encrypt --input file.txt --for-archival --quantum-safe pq-high\n\n"
         "Environment Variables:\n"
         "  CRYPT_PASSWORD    Password for encryption/decryption (alternative to -p)",
         formatter_class=argparse.RawTextHelpFormatter,
@@ -1635,10 +1644,20 @@ def main_with_args(args=None):
     plugin_group.add_argument("--plugin-config-dir", help="Directory for plugin configurations")
     plugin_group.add_argument("--plugin-id", help="Plugin ID for plugin-specific operations")
 
+    # Add CLI aliases for simplified user experience
+    alias_processor = add_cli_aliases(parser)
+
     # Don't parse args again if they're already provided from subparser
     # This avoids the "unrecognized arguments" error for steganography options
     if args is None:
         args = parser.parse_args()
+        
+        # Process CLI aliases and apply overrides
+        args, alias_errors = process_cli_aliases(args, alias_processor)
+        if alias_errors:
+            for error in alias_errors:
+                print(f"Error: {error}", file=sys.stderr)
+            sys.exit(1)
 
     # Add compatibility layer for subparser args - set missing attributes to defaults
     default_attrs = {
@@ -1723,6 +1742,16 @@ def main_with_args(args=None):
         "paranoid": False,
         "template": None,
         "force_password": False,
+        # CLI alias defaults
+        "fast": False,
+        "secure": False,
+        "max_security": False,
+        "crypto_family": None,
+        "quantum_safe": None,
+        "for_personal": False,
+        "for_business": False,
+        "for_archival": False,
+        "for_compliance": False,
     }
 
     for attr, default_val in default_attrs.items():

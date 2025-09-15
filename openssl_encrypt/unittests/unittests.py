@@ -12707,5 +12707,269 @@ class TestConfigurationWizard(unittest.TestCase):
             self.assertNotIn("_", flag)  # Should use hyphens, not underscores
 
 
+class TestCLIAliases(unittest.TestCase):
+    """Test CLI alias system functionality."""
+    
+    def setUp(self):
+        """Set up test environment."""
+        from ..modules.cli_aliases import CLIAliasProcessor, CLIAliasConfig
+        self.processor = CLIAliasProcessor()
+        self.config = CLIAliasConfig()
+    
+    def test_cli_alias_config_constants(self):
+        """Test that CLI alias configuration constants are properly defined."""
+        # Test security aliases
+        self.assertIn('fast', self.config.SECURITY_ALIASES)
+        self.assertIn('secure', self.config.SECURITY_ALIASES)
+        self.assertIn('max-security', self.config.SECURITY_ALIASES)
+        
+        # Test algorithm aliases
+        self.assertIn('aes', self.config.ALGORITHM_ALIASES)
+        self.assertIn('chacha', self.config.ALGORITHM_ALIASES)
+        self.assertIn('xchacha', self.config.ALGORITHM_ALIASES)
+        
+        # Test PQC aliases
+        self.assertIn('pq-standard', self.config.PQC_ALIASES)
+        self.assertIn('pq-high', self.config.PQC_ALIASES)
+        
+        # Test use case aliases
+        self.assertIn('personal', self.config.USE_CASE_ALIASES)
+        self.assertIn('business', self.config.USE_CASE_ALIASES)
+        self.assertIn('archival', self.config.USE_CASE_ALIASES)
+    
+    def test_security_alias_processing(self):
+        """Test processing of security level aliases."""
+        import argparse
+        
+        # Create mock args for --fast
+        args = argparse.Namespace(fast=True, secure=False, max_security=False, 
+                                crypto_family=None, quantum_safe=None,
+                                for_personal=False, for_business=False, 
+                                for_archival=False, for_compliance=False)
+        
+        overrides = self.processor.process_aliases(args)
+        self.assertEqual(overrides['template'], 'quick')
+        self.assertEqual(overrides['algorithm'], 'aes-gcm')
+        
+        # Test --secure
+        args.fast = False
+        args.secure = True
+        overrides = self.processor.process_aliases(args)
+        self.assertEqual(overrides['template'], 'standard')
+        self.assertEqual(overrides['algorithm'], 'aes-gcm')
+        
+        # Test --max-security
+        args.secure = False
+        args.max_security = True
+        overrides = self.processor.process_aliases(args)
+        self.assertEqual(overrides['template'], 'paranoid')
+        self.assertEqual(overrides['algorithm'], 'xchacha20-poly1305')
+    
+    def test_algorithm_alias_processing(self):
+        """Test processing of algorithm family aliases."""
+        import argparse
+        
+        # Test algorithm family mapping
+        test_cases = [
+            ('aes', 'aes-gcm'),
+            ('chacha', 'chacha20-poly1305'),
+            ('xchacha', 'xchacha20-poly1305'),
+            ('fernet', 'fernet')
+        ]
+        
+        for alias, expected in test_cases:
+            args = argparse.Namespace(fast=False, secure=False, max_security=False,
+                                    crypto_family=alias, quantum_safe=None,
+                                    for_personal=False, for_business=False,
+                                    for_archival=False, for_compliance=False)
+            
+            overrides = self.processor.process_aliases(args)
+            self.assertEqual(overrides['algorithm'], expected)
+    
+    def test_pqc_alias_processing(self):
+        """Test processing of post-quantum cryptography aliases."""
+        import argparse
+        
+        # Test PQC alias mapping
+        test_cases = [
+            ('pq-standard', 'ml-kem-768-hybrid'),
+            ('pq-high', 'ml-kem-1024-hybrid'),
+            ('pq-alternative', 'hqc-192-hybrid')
+        ]
+        
+        for alias, expected in test_cases:
+            args = argparse.Namespace(fast=False, secure=False, max_security=False,
+                                    crypto_family=None, quantum_safe=alias,
+                                    for_personal=False, for_business=False,
+                                    for_archival=False, for_compliance=False)
+            
+            overrides = self.processor.process_aliases(args)
+            self.assertEqual(overrides['pqc_algorithm'], expected)
+    
+    def test_use_case_alias_processing(self):
+        """Test processing of use case aliases."""
+        import argparse
+        
+        # Test personal use case
+        args = argparse.Namespace(fast=False, secure=False, max_security=False,
+                                crypto_family=None, quantum_safe=None,
+                                for_personal=True, for_business=False,
+                                for_archival=False, for_compliance=False)
+        
+        overrides = self.processor.process_aliases(args)
+        self.assertEqual(overrides['template'], 'standard')
+        self.assertEqual(overrides['algorithm'], 'aes-gcm')
+        
+        # Test archival use case
+        args.for_personal = False
+        args.for_archival = True
+        overrides = self.processor.process_aliases(args)
+        self.assertEqual(overrides['template'], 'paranoid')
+        self.assertEqual(overrides['algorithm'], 'xchacha20-poly1305')
+        self.assertEqual(overrides['pqc_algorithm'], 'ml-kem-1024-hybrid')
+        
+        # Test compliance use case
+        args.for_archival = False
+        args.for_compliance = True
+        overrides = self.processor.process_aliases(args)
+        self.assertEqual(overrides['template'], 'paranoid')
+        self.assertEqual(overrides['algorithm'], 'aes-gcm')
+        self.assertTrue(overrides.get('require_keystore', False))
+    
+    def test_alias_validation(self):
+        """Test validation of alias combinations."""
+        import argparse
+        
+        # Test conflicting security aliases
+        args = argparse.Namespace(fast=True, secure=True, max_security=False,
+                                crypto_family=None, quantum_safe=None,
+                                for_personal=False, for_business=False,
+                                for_archival=False, for_compliance=False)
+        
+        errors = self.processor.validate_alias_combinations(args)
+        self.assertGreater(len(errors), 0)
+        self.assertIn('fast', errors[0])
+        self.assertIn('secure', errors[0])
+        
+        # Test conflicting use case aliases
+        args = argparse.Namespace(fast=False, secure=False, max_security=False,
+                                crypto_family=None, quantum_safe=None,
+                                for_personal=True, for_business=True,
+                                for_archival=False, for_compliance=False)
+        
+        errors = self.processor.validate_alias_combinations(args)
+        self.assertGreater(len(errors), 0)
+        self.assertIn('personal', errors[0])
+        self.assertIn('business', errors[0])
+        
+        # Test incompatible PQC + Fernet combination
+        args = argparse.Namespace(fast=False, secure=False, max_security=False,
+                                crypto_family='fernet', quantum_safe='pq-standard',
+                                for_personal=False, for_business=False,
+                                for_archival=False, for_compliance=False)
+        
+        errors = self.processor.validate_alias_combinations(args)
+        self.assertGreater(len(errors), 0)
+        self.assertIn('Post-quantum', errors[0])
+        self.assertIn('Fernet', errors[0])
+    
+    def test_alias_override_application(self):
+        """Test application of alias overrides to parsed arguments."""
+        import argparse
+        from ..modules.cli_aliases import apply_alias_overrides
+        
+        # Create original args
+        original_args = argparse.Namespace(algorithm=None, template=None, 
+                                         pqc_algorithm=None, custom_flag='test')
+        
+        # Create overrides
+        overrides = {
+            'algorithm': 'aes-gcm',
+            'template': 'standard',
+            'new_attr': 'new_value'
+        }
+        
+        # Apply overrides
+        modified_args = apply_alias_overrides(original_args, overrides)
+        
+        # Test that overrides were applied
+        self.assertEqual(modified_args.algorithm, 'aes-gcm')
+        self.assertEqual(modified_args.template, 'standard')
+        self.assertEqual(modified_args.new_attr, 'new_value')
+        
+        # Test that original attributes were preserved
+        self.assertEqual(modified_args.custom_flag, 'test')
+        
+        # Test that explicit user settings aren't overridden
+        original_args.algorithm = 'user-specified'
+        modified_args = apply_alias_overrides(original_args, overrides)
+        self.assertEqual(modified_args.algorithm, 'user-specified')
+    
+    def test_help_text_generation(self):
+        """Test generation of alias help text."""
+        help_text = self.processor.get_alias_help_text()
+        
+        # Test that help text contains expected sections
+        self.assertIn('CLI ALIASES', help_text)
+        self.assertIn('SECURITY LEVEL ALIASES', help_text)
+        self.assertIn('ALGORITHM FAMILY ALIASES', help_text)
+        self.assertIn('POST-QUANTUM ALIASES', help_text)
+        self.assertIn('USE CASE ALIASES', help_text)
+        self.assertIn('EXAMPLES', help_text)
+        
+        # Test that specific aliases are documented
+        self.assertIn('--fast', help_text)
+        self.assertIn('--secure', help_text)
+        self.assertIn('--crypto-family', help_text)
+        self.assertIn('--quantum-safe', help_text)
+        self.assertIn('--for-personal', help_text)
+    
+    def test_empty_alias_processing(self):
+        """Test processing when no aliases are specified."""
+        import argparse
+        
+        args = argparse.Namespace(fast=False, secure=False, max_security=False,
+                                crypto_family=None, quantum_safe=None,
+                                for_personal=False, for_business=False,
+                                for_archival=False, for_compliance=False)
+        
+        overrides = self.processor.process_aliases(args)
+        self.assertEqual(len(overrides), 0)
+    
+    def test_multiple_compatible_aliases(self):
+        """Test processing multiple compatible aliases together."""
+        import argparse
+        
+        # Test security level + algorithm family + PQC
+        args = argparse.Namespace(fast=False, secure=True, max_security=False,
+                                crypto_family='xchacha', quantum_safe='pq-high',
+                                for_personal=False, for_business=False,
+                                for_archival=False, for_compliance=False)
+        
+        overrides = self.processor.process_aliases(args)
+        self.assertEqual(overrides['template'], 'standard')  # from --secure
+        self.assertEqual(overrides['algorithm'], 'xchacha20-poly1305')  # from --crypto-family
+        self.assertEqual(overrides['pqc_algorithm'], 'ml-kem-1024-hybrid')  # from --quantum-safe
+        
+        # Validation should pass
+        errors = self.processor.validate_alias_combinations(args)
+        self.assertEqual(len(errors), 0)
+    
+    def test_alias_precedence(self):
+        """Test that later aliases override earlier ones appropriately."""
+        import argparse
+        
+        # Test that use case aliases override security aliases
+        args = argparse.Namespace(fast=True, secure=False, max_security=False,
+                                crypto_family=None, quantum_safe=None,
+                                for_personal=False, for_business=False,
+                                for_archival=True, for_compliance=False)
+        
+        overrides = self.processor.process_aliases(args)
+        # Archival should override fast template
+        self.assertEqual(overrides['template'], 'paranoid')
+        self.assertEqual(overrides['algorithm'], 'xchacha20-poly1305')
+
+
 if __name__ == "__main__":
     unittest.main()
