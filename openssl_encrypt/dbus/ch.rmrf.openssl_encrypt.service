@@ -1,4 +1,0 @@
-[D-BUS Service]
-Name=ch.rmrf.openssl_encrypt
-Exec=python3 -m openssl_encrypt.modules.dbus_service
-SystemdService=openssl-encrypt-dbus.service
