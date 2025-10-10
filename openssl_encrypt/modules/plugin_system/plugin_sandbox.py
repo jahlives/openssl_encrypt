@@ -397,7 +397,7 @@ class PluginSandbox:
             process.start()
             process.join(timeout=max_execution_time)
 
-            # Handle timeout
+            # Handle timeout - process is still running
             if process.is_alive():
                 logger.warning(
                     f"Plugin {plugin.plugin_id} timed out after {max_execution_time}s, terminating..."
@@ -416,19 +416,37 @@ class PluginSandbox:
                     f"Plugin execution timed out after {max_execution_time} seconds"
                 )
 
-            # Get result from queue with timeout to avoid deadlock
+            # Check if process crashed or failed
+            if process.exitcode != 0:
+                logger.error(
+                    f"Plugin {plugin.plugin_id} process failed with exit code {process.exitcode}"
+                )
+                return PluginResult.error_result(
+                    f"Plugin process crashed or failed (exit code: {process.exitcode})"
+                )
+
+            # Process completed normally (exitcode == 0), get result from queue
             try:
                 # Use timeout to avoid hanging if queue has issues
+                import queue
                 status, data = result_queue.get(timeout=1.0)
                 if status == "success":
                     return data
                 else:
                     return PluginResult.error_result(f"Plugin error: {data}")
-            except Exception as e:
-                # Queue is empty or had an error
-                logger.warning(f"Failed to get result from queue: {e}")
+            except queue.Empty:
+                # Queue is empty even though process completed successfully
+                logger.error(
+                    f"Plugin {plugin.plugin_id} completed but returned no result (queue empty)"
+                )
                 return PluginResult.error_result(
-                    f"Plugin did not return a result (queue error: {str(e)})"
+                    "Plugin completed but did not return a result (internal error)"
+                )
+            except Exception as e:
+                # Other queue errors
+                logger.error(f"Failed to get result from queue for {plugin.plugin_id}: {e}")
+                return PluginResult.error_result(
+                    f"Plugin queue error: {type(e).__name__}: {str(e)}"
                 )
 
         except Exception as e:
