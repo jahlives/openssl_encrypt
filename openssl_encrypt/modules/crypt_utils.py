@@ -177,12 +177,10 @@ def display_password_with_timeout(password, timeout_seconds=10):
         else:
             print("\n\nClearing password from screen...")
 
-        # Use system command to clear the screen - this is the most reliable
-        # method
-        if sys.platform == "win32":
-            os.system("cls")  # Windows
-        else:
-            os.system("clear")  # Unix/Linux/MacOS
+        # Clear screen using ANSI escape sequences (safer than os.system)
+        # \033[2J clears the entire screen, \033[H moves cursor to home position
+        sys.stdout.write('\033[2J\033[H')
+        sys.stdout.flush()
 
         print("Password has been cleared from screen.")
         print("For additional security, consider clearing your terminal history.")

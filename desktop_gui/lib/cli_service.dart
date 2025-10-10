@@ -189,21 +189,43 @@ class CLIService {
     try {
       onStatus?.call('Initializing encryption...');
 
-      // Create temporary input file
+      // Create temporary directory with restrictive permissions
       tempDir = await Directory.systemTemp.createTemp('openssl_encrypt_');
+
+      // Security: Set restrictive permissions on temp directory first (prevents race condition)
+      if (!Platform.isWindows) {
+        try {
+          await Process.run('chmod', ['700', tempDir.path]);
+        } catch (e) {
+          _outputDebugLog('Warning: Could not set restrictive permissions on temp directory: $e');
+        }
+      }
+
       final inputFile = File('${tempDir.path}/input.txt');
       final outputFile = File('${tempDir.path}/output.txt');
 
-      await inputFile.writeAsString(text);
-
-      // Security: Set restrictive permissions on temporary files (0o600 equivalent)
-      try {
-        await Process.run('chmod', ['600', inputFile.path]);
-        await Process.run('chmod', ['600', outputFile.path]);
-      } catch (e) {
-        // Fallback for systems without chmod command (Windows)
-        _outputDebugLog('Warning: Could not set restrictive permissions on temp files: $e');
+      // Create files atomically with secure permissions (Unix-like systems)
+      if (!Platform.isWindows) {
+        try {
+          // Use install command to atomically create files with 0o600 permissions
+          await Process.run('install', ['-m', '600', '/dev/null', inputFile.path]);
+          await Process.run('install', ['-m', '600', '/dev/null', outputFile.path]);
+        } catch (e) {
+          _outputDebugLog('Warning: install command not available, falling back to write+chmod: $e');
+          // Fallback: create empty files, chmod will be applied after write
+          await inputFile.create();
+          await outputFile.create();
+          await Process.run('chmod', ['600', inputFile.path]);
+          await Process.run('chmod', ['600', outputFile.path]);
+        }
+      } else {
+        // Windows: create files normally (Windows has different permission model)
+        await inputFile.create();
+        await outputFile.create();
       }
+
+      // Write data to the already-protected input file
+      await inputFile.writeAsString(text);
 
       onStatus?.call('Prepared temporary files');
 
@@ -399,21 +421,43 @@ class CLIService {
     try {
       onStatus?.call('Initializing decryption...');
 
-      // Create temporary input file
+      // Create temporary directory with restrictive permissions
       tempDir = await Directory.systemTemp.createTemp('openssl_encrypt_');
+
+      // Security: Set restrictive permissions on temp directory first (prevents race condition)
+      if (!Platform.isWindows) {
+        try {
+          await Process.run('chmod', ['700', tempDir.path]);
+        } catch (e) {
+          _outputDebugLog('Warning: Could not set restrictive permissions on temp directory: $e');
+        }
+      }
+
       final inputFile = File('${tempDir.path}/input.txt');
       final outputFile = File('${tempDir.path}/output.txt');
 
-      await inputFile.writeAsString(encryptedData);
-
-      // Security: Set restrictive permissions on temporary files (0o600 equivalent)
-      try {
-        await Process.run('chmod', ['600', inputFile.path]);
-        await Process.run('chmod', ['600', outputFile.path]);
-      } catch (e) {
-        // Fallback for systems without chmod command (Windows)
-        _outputDebugLog('Warning: Could not set restrictive permissions on temp files: $e');
+      // Create files atomically with secure permissions (Unix-like systems)
+      if (!Platform.isWindows) {
+        try {
+          // Use install command to atomically create files with 0o600 permissions
+          await Process.run('install', ['-m', '600', '/dev/null', inputFile.path]);
+          await Process.run('install', ['-m', '600', '/dev/null', outputFile.path]);
+        } catch (e) {
+          _outputDebugLog('Warning: install command not available, falling back to write+chmod: $e');
+          // Fallback: create empty files, chmod will be applied after write
+          await inputFile.create();
+          await outputFile.create();
+          await Process.run('chmod', ['600', inputFile.path]);
+          await Process.run('chmod', ['600', outputFile.path]);
+        }
+      } else {
+        // Windows: create files normally (Windows has different permission model)
+        await inputFile.create();
+        await outputFile.create();
       }
+
+      // Write data to the already-protected input file
+      await inputFile.writeAsString(encryptedData);
 
       onStatus?.call('Prepared temporary files');
 

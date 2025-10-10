@@ -5196,11 +5196,10 @@ def main_with_args(args=None):
                             else:
                                 print("\n\nClearing password from screen...")
 
-                            # Use system command to clear the screen
-                            if sys.platform == "win32":
-                                os.system("cls")  # Windows
-                            else:
-                                os.system("clear")  # Unix/Linux/MacOS
+                            # Clear screen using ANSI escape sequences (safer than os.system)
+                            # \033[2J clears the entire screen, \033[H moves cursor to home position
+                            sys.stdout.write('\033[2J\033[H')
+                            sys.stdout.flush()
 
                             print("Password has been cleared from screen.")
                             print(
