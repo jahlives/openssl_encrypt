@@ -11791,7 +11791,7 @@ class TestPluginIntegration(unittest.TestCase):
             analyzer = FileMetadataAnalyzer()
             context = PluginSecurityContext(
                 "test_operation",
-                allowed_capabilities={PluginCapability.READ_FILES, PluginCapability.WRITE_LOGS},
+                capabilities={PluginCapability.READ_FILES, PluginCapability.WRITE_LOGS},
             )
 
             # Test analyzing text file
@@ -11831,7 +11831,7 @@ class TestPluginIntegration(unittest.TestCase):
 
             context = PluginSecurityContext(
                 "test_backup",
-                allowed_capabilities={PluginCapability.READ_FILES, PluginCapability.WRITE_LOGS},
+                capabilities={PluginCapability.READ_FILES, PluginCapability.WRITE_LOGS},
             )
 
             # Initialize backup plugin
@@ -11878,7 +11878,7 @@ class TestPluginIntegration(unittest.TestCase):
 
             context = PluginSecurityContext(
                 "test_conversion",
-                allowed_capabilities={
+                capabilities={
                     PluginCapability.READ_FILES,
                     PluginCapability.WRITE_LOGS,
                     PluginCapability.MODIFY_METADATA,
@@ -11933,7 +11933,7 @@ class TestPluginIntegration(unittest.TestCase):
 
             context = PluginSecurityContext(
                 "test_audit",
-                allowed_capabilities={
+                capabilities={
                     PluginCapability.READ_FILES,
                     PluginCapability.WRITE_LOGS,
                     PluginCapability.MODIFY_METADATA,
@@ -11970,7 +11970,7 @@ class TestPluginIntegration(unittest.TestCase):
             self.assertTrue(result.success)
 
             # Test security monitoring
-            result = security_monitor.process_metadata(context)
+            result = security_monitor.execute(context)
             self.assertTrue(result.success)
 
         except ImportError:
@@ -12021,7 +12021,7 @@ class TestPluginIntegration(unittest.TestCase):
 
             context = PluginSecurityContext(
                 "test_integration",
-                allowed_capabilities={PluginCapability.READ_FILES, PluginCapability.WRITE_LOGS},
+                capabilities={PluginCapability.READ_FILES, PluginCapability.WRITE_LOGS},
             )
 
             # Add metadata that would normally be set during encryption
@@ -12068,7 +12068,7 @@ class TestPluginIntegration(unittest.TestCase):
 
             context = PluginSecurityContext(
                 "test_errors",
-                allowed_capabilities={PluginCapability.READ_FILES, PluginCapability.WRITE_LOGS},
+                capabilities={PluginCapability.READ_FILES, PluginCapability.WRITE_LOGS},
             )
 
             # Test with non-existent file
@@ -12084,7 +12084,7 @@ class TestPluginIntegration(unittest.TestCase):
             # Test with insufficient capabilities
             limited_context = PluginSecurityContext(
                 "test_limited",
-                allowed_capabilities={PluginCapability.READ_FILES},  # Missing WRITE_LOGS
+                capabilities={PluginCapability.READ_FILES},  # Missing WRITE_LOGS
             )
 
             # This should work as WRITE_LOGS is checked by sandbox, not plugin directly
