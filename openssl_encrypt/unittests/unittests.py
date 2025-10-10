@@ -11490,13 +11490,9 @@ class SimpleTestPlugin(PreProcessorPlugin):
                 plugin, context, max_execution_time=0.5, use_process_isolation=True
             )
 
-            # Should timeout or crash (in full suite, process may crash due to resource exhaustion)
+            # Should timeout (now runs early in suite, so no resource exhaustion)
             self.assertFalse(result.success)
-            # Accept either timeout or process crash as valid failure modes
-            self.assertTrue(
-                "timed out" in result.message.lower() or "crashed" in result.message.lower(),
-                f"Expected timeout or crash, got: {result.message}"
-            )
+            self.assertIn("timed out", result.message.lower())
 
         except ImportError:
             self.skipTest("Plugin system not available")
