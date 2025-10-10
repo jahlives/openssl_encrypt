@@ -70,7 +70,11 @@ class PluginManager:
     - Audit trail is maintained for all operations
     """
 
-    def __init__(self, config_manager: Optional["PluginConfigManager"] = None):
+    def __init__(
+        self,
+        config_manager: Optional["PluginConfigManager"] = None,
+        strict_security_mode: bool = True,
+    ):
         self.plugins: Dict[str, PluginRegistration] = {}
         self.plugin_directories: Set[str] = set()
         self.sandbox = PluginSandbox()
@@ -82,6 +86,10 @@ class PluginManager:
         self.max_memory_mb = 100
         self.allowed_capabilities = set(PluginCapability)
         self.audit_log = []
+
+        # Plugin validation security settings
+        self.strict_security_mode = strict_security_mode  # Default: block dangerous patterns
+        self.allowed_unsafe_plugins: Set[str] = set()  # Whitelist for trusted plugins
 
     def add_plugin_directory(self, directory: str) -> None:
         """Add directory to scan for plugins."""
@@ -345,8 +353,91 @@ class PluginManager:
         self.audit_log.clear()
         logger.info("Plugin audit log cleared")
 
+    def set_strict_mode(self, enabled: bool) -> None:
+        """
+        Enable or disable strict security mode for plugin validation.
+
+        In strict mode (default), plugins with dangerous patterns are blocked.
+        In permissive mode, dangerous patterns generate warnings but are allowed.
+
+        Args:
+            enabled: True to enable strict mode, False for permissive mode
+
+        Security Note:
+            Disabling strict mode should only be done in controlled development
+            environments. Never disable strict mode in production.
+        """
+        old_mode = self.strict_security_mode
+        self.strict_security_mode = enabled
+        logger.warning(
+            f"Plugin security mode changed: {'strict' if enabled else 'permissive'} "
+            f"(was: {'strict' if old_mode else 'permissive'})"
+        )
+        self._audit_log(
+            f"Security mode changed to {'strict' if enabled else 'permissive'}"
+        )
+
+    def allow_unsafe_plugin(self, plugin_id: str) -> None:
+        """
+        Add plugin to whitelist, allowing it to bypass dangerous pattern checks.
+
+        This should only be used for plugins from trusted sources that have been
+        manually reviewed and deemed safe despite containing dangerous patterns.
+
+        Args:
+            plugin_id: ID of plugin to whitelist
+
+        Security Note:
+            Only whitelist plugins from trusted sources after manual code review.
+            Whitelisted plugins can execute arbitrary code and access system resources.
+        """
+        self.allowed_unsafe_plugins.add(plugin_id)
+        logger.warning(f"Plugin '{plugin_id}' added to unsafe plugin whitelist")
+        self._audit_log(f"Plugin whitelisted: {plugin_id}")
+
+    def remove_unsafe_plugin_allowance(self, plugin_id: str) -> None:
+        """
+        Remove plugin from unsafe whitelist.
+
+        Args:
+            plugin_id: ID of plugin to remove from whitelist
+        """
+        if plugin_id in self.allowed_unsafe_plugins:
+            self.allowed_unsafe_plugins.remove(plugin_id)
+            logger.info(f"Plugin '{plugin_id}' removed from unsafe plugin whitelist")
+            self._audit_log(f"Plugin whitelist removed: {plugin_id}")
+        else:
+            logger.warning(f"Plugin '{plugin_id}' was not in whitelist")
+
+    def get_security_status(self) -> Dict[str, Any]:
+        """
+        Get current security configuration status.
+
+        Returns:
+            Dictionary with security settings and statistics
+        """
+        return {
+            "strict_security_mode": self.strict_security_mode,
+            "whitelisted_plugins": list(self.allowed_unsafe_plugins),
+            "total_plugins": len(self.plugins),
+            "enabled_plugins": sum(1 for r in self.plugins.values() if r.enabled),
+            "max_execution_time": self.max_execution_time,
+            "max_memory_mb": self.max_memory_mb,
+        }
+
     def _validate_plugin_file(self, file_path: str) -> bool:
-        """Validate plugin file for security issues."""
+        """
+        Validate plugin file for security issues.
+
+        In strict security mode (default), dangerous patterns are blocked.
+        Plugins can be whitelisted using allow_unsafe_plugin() method.
+
+        Args:
+            file_path: Path to plugin file to validate
+
+        Returns:
+            True if plugin passes validation, False otherwise
+        """
         try:
             # Check file size (prevent huge files)
             file_size = os.path.getsize(file_path)
@@ -367,14 +458,38 @@ class PluginManager:
                     "open(",  # Should use context-provided safe paths
                     "subprocess",
                     "ctypes",
+                    "compile(",
                 ]
 
+                found_dangerous = False
                 for pattern in dangerous_patterns:
                     if pattern in content:
-                        logger.warning(
-                            f"Plugin file contains potentially dangerous pattern '{pattern}': {file_path}"
-                        )
-                        # Note: This is a warning, not a blocker, as legitimate plugins might need some of these
+                        found_dangerous = True
+                        if self.strict_security_mode:
+                            # In strict mode, block dangerous patterns
+                            logger.error(
+                                f"SECURITY BLOCKED: Plugin contains dangerous pattern '{pattern}': {file_path}"
+                            )
+                            logger.error(
+                                "Plugin rejected in strict security mode. "
+                                "Use allow_unsafe_plugin() to whitelist if trusted."
+                            )
+                            return False
+                        else:
+                            # In permissive mode, only warn
+                            logger.warning(
+                                f"Plugin file contains potentially dangerous pattern '{pattern}': {file_path}"
+                            )
+                            logger.warning(
+                                "Dangerous pattern allowed (strict_security_mode=False). "
+                                "Use with caution!"
+                            )
+
+                # Audit log for dangerous patterns (even if allowed)
+                if found_dangerous:
+                    self._audit_log(
+                        f"Plugin with dangerous patterns {'blocked' if self.strict_security_mode else 'allowed'}: {file_path}"
+                    )
 
             return True
 
