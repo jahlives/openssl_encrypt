@@ -60,6 +60,27 @@ from .crypt_errors import (
 # Set up logging
 logger = logging.getLogger(__name__)
 
+# Security: Define allowed base directories for file operations
+# This prevents path traversal attacks by restricting file access to safe locations
+ALLOWED_BASE_DIRECTORIES = [
+    Path.home(),  # User's home directory
+    Path("/tmp"),  # Temporary files
+    Path("/var/tmp"),  # Alternative temporary files
+]
+
+# Security: Block access to sensitive system files explicitly
+BLOCKED_PATHS = [
+    "/etc/shadow",
+    "/etc/sudoers",
+    "/etc/passwd",
+    "/etc/gshadow",
+    "/proc",
+    "/sys",
+    "/dev",
+    "/boot",
+    "/root",  # Root user home (unless we're root)
+]
+
 
 class CryptoOperation:
     """Tracks a long-running cryptographic operation"""
@@ -146,7 +167,12 @@ class CryptoService(dbus.service.Object):
 
     def _validate_file_path(self, path: str, must_exist: bool = False) -> Tuple[bool, str]:
         """
-        Validate file path for security
+        Validate file path for security with directory whitelisting.
+
+        This method prevents path traversal attacks by:
+        1. Resolving symlinks and relative paths
+        2. Checking against allowed directory whitelist
+        3. Blocking sensitive system paths explicitly
 
         Args:
             path: File path to validate
@@ -154,19 +180,49 @@ class CryptoService(dbus.service.Object):
 
         Returns:
             (valid, error_message): Tuple of validation result and error message
+
+        Security:
+            Uses directory whitelisting approach - only paths within allowed
+            directories are permitted. This prevents symlink-based attacks and
+            traversal attempts that resolve to valid absolute paths.
         """
         if not path:
             return False, "Empty path"
 
-        # Convert to absolute path and resolve
+        # Convert to absolute path and resolve symlinks
         try:
-            abs_path = Path(path).resolve()
+            abs_path = Path(path).resolve(strict=False)
         except (ValueError, OSError) as e:
             return False, f"Invalid path: {e}"
 
-        # Check for directory traversal
-        if ".." in str(abs_path):
-            return False, "Path contains directory traversal"
+        # Check if path is within allowed directories
+        path_allowed = False
+        for allowed_dir in ALLOWED_BASE_DIRECTORIES:
+            try:
+                # resolve() the allowed directory to handle symlinks consistently
+                resolved_allowed = allowed_dir.resolve(strict=False)
+                # Check if abs_path is relative to (within) allowed directory
+                abs_path.relative_to(resolved_allowed)
+                path_allowed = True
+                break
+            except ValueError:
+                # Not within this allowed directory, try next
+                continue
+
+        if not path_allowed:
+            logger.warning(
+                f"D-Bus path validation: Path outside allowed directories: {abs_path}"
+            )
+            return False, f"Path outside allowed directories: {abs_path}"
+
+        # Check against explicitly blocked paths
+        abs_path_str = str(abs_path)
+        for blocked in BLOCKED_PATHS:
+            if abs_path_str == blocked or abs_path_str.startswith(blocked + "/"):
+                logger.error(
+                    f"D-Bus path validation: Access to blocked system path denied: {abs_path}"
+                )
+                return False, "Access to system files denied"
 
         # Check existence if required
         if must_exist and not abs_path.exists():
