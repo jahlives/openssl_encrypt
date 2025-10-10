@@ -416,16 +416,20 @@ class PluginSandbox:
                     f"Plugin execution timed out after {max_execution_time} seconds"
                 )
 
-            # Get result from queue
-            if not result_queue.empty():
-                status, data = result_queue.get()
+            # Get result from queue with timeout to avoid deadlock
+            try:
+                # Use timeout to avoid hanging if queue has issues
+                status, data = result_queue.get(timeout=1.0)
                 if status == "success":
                     return data
                 else:
                     return PluginResult.error_result(f"Plugin error: {data}")
-
-            # No result returned
-            return PluginResult.error_result("Plugin did not return a result")
+            except Exception as e:
+                # Queue is empty or had an error
+                logger.warning(f"Failed to get result from queue: {e}")
+                return PluginResult.error_result(
+                    f"Plugin did not return a result (queue error: {str(e)})"
+                )
 
         except Exception as e:
             # Cleanup process if still running
