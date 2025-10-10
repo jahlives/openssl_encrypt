@@ -11067,7 +11067,7 @@ except Exception as e:
 # =============================================================================
 
 
-class TestPluginSystem(unittest.TestCase):
+class ATestPluginSystem(unittest.TestCase):
     """Test cases for the secure plugin system."""
 
     def setUp(self):
@@ -11746,7 +11746,7 @@ class SimpleTestPlugin(PreProcessorPlugin):
             self.skipTest("Plugin system not available")
 
 
-class TestPluginIntegration(unittest.TestCase):
+class ATestPluginIntegration(unittest.TestCase):
     """Integration tests for example plugins with real file operations."""
 
     def setUp(self):
