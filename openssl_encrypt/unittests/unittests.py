@@ -11492,7 +11492,7 @@ class SimpleTestPlugin(PreProcessorPlugin):
 
             # Should timeout
             self.assertFalse(result.success)
-            self.assertIn("timeout", result.message.lower())
+            self.assertIn("timed out", result.message.lower())
 
         except ImportError:
             self.skipTest("Plugin system not available")

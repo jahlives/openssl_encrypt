@@ -499,6 +499,8 @@ class PluginManager:
 
     def _find_plugin_class(self, module) -> Optional[Type[BasePlugin]]:
         """Find BasePlugin subclass in module."""
+        import inspect
+
         for name in dir(module):
             obj = getattr(module, name)
             if (
@@ -506,6 +508,7 @@ class PluginManager:
                 and issubclass(obj, BasePlugin)
                 and obj is not BasePlugin
                 and not obj.__name__.startswith("Base")
+                and not inspect.isabstract(obj)  # Skip abstract classes
             ):
                 return obj
         return None
