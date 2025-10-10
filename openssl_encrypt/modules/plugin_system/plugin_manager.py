@@ -33,6 +33,13 @@ from .plugin_base import (
 from .plugin_config import PluginConfigManager
 from .plugin_sandbox import PluginSandbox
 
+# Import security logger
+try:
+    from ..security_logger import get_security_logger
+    security_logger = get_security_logger()
+except ImportError:
+    security_logger = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -178,6 +185,19 @@ class PluginManager:
             self._audit_log(f"Loaded plugin: {plugin.plugin_id} from {file_path}")
             logger.info(f"Successfully loaded plugin: {plugin.plugin_id}")
 
+            # Security audit log
+            if security_logger:
+                security_logger.log_event(
+                    "plugin_loaded",
+                    "info",
+                    {
+                        "plugin_id": plugin.plugin_id,
+                        "plugin_type": plugin.get_plugin_type().value,
+                        "file_path": file_path,
+                        "capabilities": [cap.value for cap in plugin.get_required_capabilities()],
+                    }
+                )
+
             return PluginResult.success_result(
                 f"Plugin {plugin.plugin_id} loaded successfully",
                 {"plugin_id": plugin.plugin_id, "type": plugin.get_plugin_type().value},
@@ -186,6 +206,19 @@ class PluginManager:
         except Exception as e:
             error_msg = f"Error loading plugin from {file_path}: {str(e)}"
             logger.error(error_msg)
+
+            # Security audit log for failed plugin load
+            if security_logger:
+                security_logger.log_event(
+                    "plugin_load_failed",
+                    "warning",
+                    {
+                        "file_path": file_path,
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                    }
+                )
+
             return PluginResult.error_result(error_msg)
 
     def unload_plugin(self, plugin_id: str) -> PluginResult:
@@ -245,6 +278,18 @@ class PluginManager:
         if not plugin.validate_security_context(context):
             error_msg = f"Security context validation failed for plugin: {plugin_id}"
             self._audit_log(f"SECURITY: {error_msg}")
+
+            # Security audit log
+            if security_logger:
+                security_logger.log_event(
+                    "security_context_validation_failed",
+                    "warning",
+                    {
+                        "plugin_id": plugin_id,
+                        "reason": "invalid_security_context",
+                    }
+                )
+
             return PluginResult.error_result(error_msg)
 
         # Check capabilities
@@ -253,6 +298,18 @@ class PluginManager:
             self._audit_log(
                 f"SECURITY: Capability check failed for plugin {plugin_id}: {capability_check.message}"
             )
+
+            # Security audit log for capability violation
+            if security_logger:
+                security_logger.log_event(
+                    "capability_violation",
+                    "warning",
+                    {
+                        "plugin_id": plugin_id,
+                        "error": capability_check.message,
+                    }
+                )
+
             return capability_check
 
         # Execute in sandbox
@@ -474,6 +531,19 @@ class PluginManager:
                                 "Plugin rejected in strict security mode. "
                                 "Use allow_unsafe_plugin() to whitelist if trusted."
                             )
+
+                            # Security audit log for blocked plugin
+                            if security_logger:
+                                security_logger.log_event(
+                                    "plugin_blocked",
+                                    "critical",
+                                    {
+                                        "file_path": file_path,
+                                        "dangerous_pattern": pattern,
+                                        "reason": "strict_security_mode",
+                                    }
+                                )
+
                             return False
                         else:
                             # In permissive mode, only warn
@@ -484,6 +554,18 @@ class PluginManager:
                                 "Dangerous pattern allowed (strict_security_mode=False). "
                                 "Use with caution!"
                             )
+
+                            # Security audit log for dangerous pattern warning
+                            if security_logger:
+                                security_logger.log_event(
+                                    "dangerous_pattern_detected",
+                                    "warning",
+                                    {
+                                        "file_path": file_path,
+                                        "dangerous_pattern": pattern,
+                                        "action": "allowed_permissive_mode",
+                                    }
+                                )
 
                 # Audit log for dangerous patterns (even if allowed)
                 if found_dangerous:

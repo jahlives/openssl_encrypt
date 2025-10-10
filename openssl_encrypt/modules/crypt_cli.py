@@ -98,6 +98,13 @@ from .password_policy import (
     validate_password_or_raise,
 )
 from .security_scorer import SecurityScorer
+
+# Import security audit logger
+try:
+    from .security_logger import get_security_logger
+    security_logger = get_security_logger()
+except ImportError:
+    security_logger = None
 from .template_manager import EnhancedTemplate, TemplateCategory, TemplateFormat, TemplateManager
 
 
@@ -5133,6 +5140,19 @@ def main_with_args(args=None):
                         return 1
 
             if success:
+                # Security audit log for successful encryption
+                if security_logger:
+                    security_logger.log_event(
+                        "encryption_completed",
+                        "info",
+                        {
+                            "input_file": str(args.input),
+                            "output_file": str(output_file),
+                            "algorithm": args.algorithm.value if hasattr(args.algorithm, 'value') else str(args.algorithm),
+                            "service": "cli",
+                        }
+                    )
+
                 if not args.quiet:
                     print(f"\nFile encrypted successfully: {output_file}")
 
@@ -5740,8 +5760,21 @@ def main_with_args(args=None):
                         enable_plugins=enable_plugins,
                         plugin_manager=plugin_manager,
                     )
-                if success and not args.quiet:
-                    print(f"\nFile decrypted successfully: {args.output}")
+                if success:
+                    # Security audit log for successful decryption
+                    if security_logger:
+                        security_logger.log_event(
+                            "decryption_completed",
+                            "info",
+                            {
+                                "input_file": str(args.input),
+                                "output_file": str(args.output),
+                                "service": "cli",
+                            }
+                        )
+
+                    if not args.quiet:
+                        print(f"\nFile decrypted successfully: {args.output}")
 
                 # If shredding was requested and decryption was successful
                 if args.shred and success:

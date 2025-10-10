@@ -42,6 +42,13 @@ from . import crypt_utils
 from . import keystore_utils
 from . import password_policy
 from .secure_memory import SecureBytes
+
+# Import security logger
+try:
+    from .security_logger import get_security_logger
+    security_logger = get_security_logger()
+except ImportError:
+    security_logger = None
 from .crypt_core import (
     encrypt_file,
     decrypt_file,
@@ -213,6 +220,20 @@ class CryptoService(dbus.service.Object):
             logger.warning(
                 f"D-Bus path validation: Path outside allowed directories: {abs_path}"
             )
+
+            # Security audit log for path traversal attempt
+            if security_logger:
+                security_logger.log_event(
+                    "path_traversal_attempt",
+                    "critical",
+                    {
+                        "requested_path": str(path),
+                        "resolved_path": str(abs_path),
+                        "reason": "outside_allowed_directories",
+                        "service": "dbus",
+                    }
+                )
+
             return False, f"Path outside allowed directories: {abs_path}"
 
         # Check against explicitly blocked paths
@@ -222,6 +243,20 @@ class CryptoService(dbus.service.Object):
                 logger.error(
                     f"D-Bus path validation: Access to blocked system path denied: {abs_path}"
                 )
+
+                # Security audit log for blocked system path access
+                if security_logger:
+                    security_logger.log_event(
+                        "blocked_system_path_access",
+                        "critical",
+                        {
+                            "requested_path": str(path),
+                            "resolved_path": str(abs_path),
+                            "blocked_path": blocked,
+                            "service": "dbus",
+                        }
+                    )
+
                 return False, "Access to system files denied"
 
         # Check existence if required
@@ -251,6 +286,19 @@ class CryptoService(dbus.service.Object):
             # Check concurrent operation limit
             active_ops = sum(1 for op in self.operations.values() if not op.completed)
             if active_ops >= self.max_concurrent_ops:
+                # Security audit log for rate limiting
+                if security_logger:
+                    security_logger.log_event(
+                        "rate_limit_exceeded",
+                        "warning",
+                        {
+                            "operation_type": operation_type,
+                            "active_operations": active_ops,
+                            "max_operations": self.max_concurrent_ops,
+                            "service": "dbus",
+                        }
+                    )
+
                 raise RuntimeError(
                     f"Too many concurrent operations ({active_ops}/{self.max_concurrent_ops})"
                 )
@@ -442,11 +490,39 @@ class CryptoService(dbus.service.Object):
                     operation.update_progress(100.0, "Encryption complete")
                     self._emit_progress(operation_id, 100.0, "Encryption complete")
 
+                    # Security audit log for successful encryption
+                    if security_logger:
+                        security_logger.log_event(
+                            "encryption_completed",
+                            "info",
+                            {
+                                "input_file": input_path,
+                                "output_file": output_path,
+                                "algorithm": algorithm,
+                                "service": "dbus",
+                                "operation_id": operation_id,
+                            }
+                        )
+
                     operation.complete(True)
                     self._emit_operation_complete(operation_id, True)
                     reply_handler((True, "", operation_id))
                 else:
                     error_msg = "Encryption failed"
+
+                    # Security audit log for encryption failure
+                    if security_logger:
+                        security_logger.log_event(
+                            "encryption_failed",
+                            "warning",
+                            {
+                                "input_file": input_path,
+                                "algorithm": algorithm,
+                                "service": "dbus",
+                                "operation_id": operation_id,
+                            }
+                        )
+
                     operation.complete(False, error_msg)
                     self._emit_operation_complete(operation_id, False, error_msg)
                     reply_handler((False, error_msg, operation_id))
@@ -584,11 +660,37 @@ class CryptoService(dbus.service.Object):
                     operation.update_progress(100.0, "Decryption complete")
                     self._emit_progress(operation_id, 100.0, "Decryption complete")
 
+                    # Security audit log for successful decryption
+                    if security_logger:
+                        security_logger.log_event(
+                            "decryption_completed",
+                            "info",
+                            {
+                                "input_file": input_path,
+                                "output_file": output_path,
+                                "service": "dbus",
+                                "operation_id": operation_id,
+                            }
+                        )
+
                     operation.complete(True)
                     self._emit_operation_complete(operation_id, True)
                     reply_handler((True, "", operation_id))
                 else:
                     error_msg = "Decryption failed"
+
+                    # Security audit log for decryption failure
+                    if security_logger:
+                        security_logger.log_event(
+                            "decryption_failed",
+                            "warning",
+                            {
+                                "input_file": input_path,
+                                "service": "dbus",
+                                "operation_id": operation_id,
+                            }
+                        )
+
                     operation.complete(False, error_msg)
                     self._emit_operation_complete(operation_id, False, error_msg)
                     reply_handler((False, error_msg, operation_id))
@@ -614,6 +716,19 @@ class CryptoService(dbus.service.Object):
             except AuthenticationError as e:
                 error_msg = f"Authentication error: {e}"
                 logger.error(error_msg)
+
+                # Security audit log for authentication failure (wrong password)
+                if security_logger:
+                    security_logger.log_event(
+                        "decryption_auth_failed",
+                        "warning",
+                        {
+                            "input_file": input_path,
+                            "service": "dbus",
+                            "reason": "invalid_password",
+                        }
+                    )
+
                 if operation_id:
                     operation = self._get_operation(operation_id)
                     if operation:
