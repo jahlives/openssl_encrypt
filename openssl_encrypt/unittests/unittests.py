@@ -448,7 +448,9 @@ def generate_cli_argument_tests():
 
             # Use the module path since crypt.py might not exist
             result = subprocess.run(
-                "python -m openssl_encrypt.crypt --help", shell=True, capture_output=True, text=True
+                ["python", "-m", "openssl_encrypt.crypt", "--help"],
+                capture_output=True,
+                text=True,
             )
 
             help_text = result.stdout or result.stderr
