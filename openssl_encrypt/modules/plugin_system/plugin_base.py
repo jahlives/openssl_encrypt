@@ -107,23 +107,60 @@ class PluginSecurityContext:
 
     @staticmethod
     def _is_sensitive_key(key: str) -> bool:
-        """Check if metadata key contains sensitive information."""
-        sensitive_keywords = [
+        """
+        Check if metadata key contains sensitive information.
+
+        Uses word boundary matching to avoid false positives like "safe_key"
+        triggering on the word "key".
+        """
+        import re
+
+        key_lower = key.lower()
+
+        # Check for exact matches of common sensitive keys
+        exact_sensitive = {
             "password",
-            "key",
+            "passphrase",
             "secret",
             "token",
             "auth",
             "credential",
             "private",
-            "passphrase",
+            "api_key",
+            "private_key",
+            "secret_key",
+            "access_key",
+            "auth_token",
             "salt",
             "iv",
             "nonce",
             "seed",
+        }
+
+        if key_lower in exact_sensitive:
+            return True
+
+        # Check for sensitive patterns with word boundaries
+        # This prevents "safe_key" from matching "key"
+        sensitive_patterns = [
+            r"\bpassword\b",
+            r"\bsecret\b",
+            r"\btoken\b",
+            r"\bauth\b",
+            r"\bcredential\b",
+            r"\bprivate_key\b",
+            r"\bapi_key\b",
+            r"\baccess_key\b",
+            r"\bsecret_key\b",
+            r"\bsalt\b",
+            r"\b(iv|nonce|seed)\b",
         ]
-        key_lower = key.lower()
-        return any(keyword in key_lower for keyword in sensitive_keywords)
+
+        for pattern in sensitive_patterns:
+            if re.search(pattern, key_lower):
+                return True
+
+        return False
 
 
 class PluginResult:

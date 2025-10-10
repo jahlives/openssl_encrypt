@@ -11475,12 +11475,20 @@ class SimpleTestPlugin(PreProcessorPlugin):
                     time.sleep(2)  # Sleep longer than timeout
                     return PluginResult.success_result("Should not reach here")
 
+                def execute(self, context):
+                    """Override execute to actually run the blocking sleep."""
+                    time.sleep(2)  # Sleep longer than timeout
+                    return PluginResult.success_result("Should not reach here")
+
             plugin = SlowPlugin()
             context = PluginSecurityContext("slow_test", {PluginCapability.READ_FILES})
+            # No need to add file paths since we're overriding execute()
             sandbox = PluginSandbox()
 
-            # Execute with short timeout
-            result = sandbox.execute_plugin(plugin, context, max_execution_time=0.5)
+            # Execute with short timeout and process isolation
+            result = sandbox.execute_plugin(
+                plugin, context, max_execution_time=0.5, use_process_isolation=True
+            )
 
             # Should timeout
             self.assertFalse(result.success)
