@@ -180,6 +180,28 @@ class BasePlugin(abc.ABC):
         self.enabled = True
         self.logger = logging.getLogger(f"plugin.{plugin_id}")
 
+    def __getstate__(self):
+        """
+        Support pickling for multiprocessing.
+
+        Logger objects cannot be pickled, so we exclude them from the state.
+        The logger will be recreated when unpickling.
+        """
+        state = self.__dict__.copy()
+        # Remove the unpicklable logger
+        state.pop("logger", None)
+        return state
+
+    def __setstate__(self, state):
+        """
+        Support unpickling for multiprocessing.
+
+        Recreate the logger after unpickling.
+        """
+        self.__dict__.update(state)
+        # Recreate logger
+        self.logger = logging.getLogger(f"plugin.{self.plugin_id}")
+
     @abc.abstractmethod
     def get_plugin_type(self) -> PluginType:
         """Return the type of this plugin."""

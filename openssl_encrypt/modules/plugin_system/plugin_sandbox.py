@@ -121,6 +121,7 @@ class PluginSandbox:
         context: PluginSecurityContext,
         max_execution_time: float = 30.0,
         max_memory_mb: int = 100,
+        use_process_isolation: bool = True,
     ) -> PluginResult:
         """
         Execute plugin within security sandbox.
@@ -130,39 +131,52 @@ class PluginSandbox:
             context: Security context for execution
             max_execution_time: Maximum execution time in seconds
             max_memory_mb: Maximum memory usage in MB
+            use_process_isolation: Use process isolation for reliable timeout (default: True)
 
         Returns:
             PluginResult with execution results
+
+        Note:
+            Process isolation is more reliable for timeout enforcement but has
+            slightly more overhead. It's recommended for all plugins that may
+            perform blocking operations.
         """
         try:
-            # Setup sandbox environment
-            with self._create_sandbox_environment(context, max_memory_mb):
-                # Start monitoring
-                self.monitor.start()
+            if use_process_isolation:
+                # Use multiprocessing for reliable timeout (recommended)
+                return self._execute_in_process(
+                    plugin, context, max_execution_time, max_memory_mb
+                )
+            else:
+                # Use threading (legacy, less reliable for blocking operations)
+                # Setup sandbox environment
+                with self._create_sandbox_environment(context, max_memory_mb):
+                    # Start monitoring
+                    self.monitor.start()
 
-                # Setup timeout
-                timeout_triggered = threading.Event()
-                timer = threading.Timer(max_execution_time, timeout_triggered.set)
-                timer.start()
+                    # Setup timeout
+                    timeout_triggered = threading.Event()
+                    timer = threading.Timer(max_execution_time, timeout_triggered.set)
+                    timer.start()
 
-                try:
-                    # Execute plugin with monitoring
-                    result = self._execute_with_monitoring(
-                        plugin, context, timeout_triggered, max_memory_mb
-                    )
+                    try:
+                        # Execute plugin with monitoring
+                        result = self._execute_with_threading(
+                            plugin, context, timeout_triggered, max_memory_mb
+                        )
 
-                    # Add resource usage to result
-                    stats = self.monitor.get_stats()
-                    if result.success:
-                        result.add_data("resource_usage", stats)
+                        # Add resource usage to result
+                        stats = self.monitor.get_stats()
+                        if result.success:
+                            result.add_data("resource_usage", stats)
 
-                    logger.debug(f"Plugin {plugin.plugin_id} resource usage: {stats}")
+                        logger.debug(f"Plugin {plugin.plugin_id} resource usage: {stats}")
 
-                    return result
+                        return result
 
-                finally:
-                    timer.cancel()
-                    self.monitor.stop()
+                    finally:
+                        timer.cancel()
+                        self.monitor.stop()
 
         except Exception as e:
             error_msg = f"Sandbox execution error: {str(e)}"
@@ -291,14 +305,19 @@ class PluginSandbox:
         # Deny access to everything else
         return False
 
-    def _execute_with_monitoring(
+    def _execute_with_threading(
         self,
         plugin: BasePlugin,
         context: PluginSecurityContext,
         timeout_event: threading.Event,
         max_memory_mb: int,
     ) -> PluginResult:
-        """Execute plugin with resource monitoring."""
+        """
+        Execute plugin with resource monitoring using threading (legacy).
+
+        Note: This approach cannot interrupt blocking operations reliably.
+        Use _execute_in_process() for reliable timeout enforcement.
+        """
 
         def monitor_resources():
             """Monitor resource usage in background thread."""
@@ -332,6 +351,91 @@ class PluginSandbox:
             return PluginResult.error_result(f"Sandbox violation: {str(e)}")
         except Exception as e:
             return PluginResult.error_result(f"Plugin execution error: {str(e)}")
+
+    def _execute_in_process(
+        self,
+        plugin: BasePlugin,
+        context: PluginSecurityContext,
+        max_execution_time: float,
+        max_memory_mb: int,
+    ) -> PluginResult:
+        """
+        Execute plugin in separate process with reliable timeout.
+
+        This uses multiprocessing to run the plugin in a completely separate
+        process, which allows for reliable timeout enforcement even when the
+        plugin performs blocking operations (like time.sleep).
+
+        Args:
+            plugin: Plugin to execute
+            context: Security context for execution
+            max_execution_time: Maximum execution time in seconds
+            max_memory_mb: Maximum memory usage in MB (not enforced in process yet)
+
+        Returns:
+            PluginResult with execution results or timeout error
+        """
+
+        def worker(plugin, context, result_queue):
+            """Worker function for process execution."""
+            try:
+                # Execute plugin
+                result = plugin.execute(context)
+                result_queue.put(("success", result))
+            except Exception as e:
+                result_queue.put(("error", str(e)))
+
+        # Create communication queue
+        result_queue = multiprocessing.Queue()
+
+        # Create and start process
+        process = multiprocessing.Process(
+            target=worker, args=(plugin, context, result_queue), daemon=True
+        )
+
+        try:
+            process.start()
+            process.join(timeout=max_execution_time)
+
+            # Handle timeout
+            if process.is_alive():
+                logger.warning(
+                    f"Plugin {plugin.plugin_id} timed out after {max_execution_time}s, terminating..."
+                )
+                process.terminate()
+                process.join(timeout=1.0)
+
+                if process.is_alive():
+                    logger.error(
+                        f"Plugin {plugin.plugin_id} did not terminate, force killing..."
+                    )
+                    process.kill()
+                    process.join()
+
+                return PluginResult.error_result(
+                    f"Plugin execution timed out after {max_execution_time} seconds"
+                )
+
+            # Get result from queue
+            if not result_queue.empty():
+                status, data = result_queue.get()
+                if status == "success":
+                    return data
+                else:
+                    return PluginResult.error_result(f"Plugin error: {data}")
+
+            # No result returned
+            return PluginResult.error_result("Plugin did not return a result")
+
+        except Exception as e:
+            # Cleanup process if still running
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=1.0)
+                if process.is_alive():
+                    process.kill()
+                    process.join()
+            return PluginResult.error_result(f"Process execution error: {str(e)}")
 
     def _cleanup_temp_directory(self, temp_dir: str):
         """Safely cleanup temporary directory."""
