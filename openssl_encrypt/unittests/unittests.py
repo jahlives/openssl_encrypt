@@ -14167,7 +14167,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
         kat_suite = KATTestSuite()
         
         self.assertEqual(kat_suite.name, "KATTestSuite")
-        self.assertIn("kat", kat_suite.description.lower())
+        self.assertIn("known-answer", kat_suite.description.lower())
 
     def test_benchmark_testing_integration(self):
         """Test benchmark testing integration."""
