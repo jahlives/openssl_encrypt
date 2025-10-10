@@ -314,7 +314,7 @@ REQUIRED_ARGUMENT_GROUPS = {
 }
 
 
-@pytest.mark.order(0)
+@pytest.mark.order(1)
 class TestCryptCliArguments(unittest.TestCase):
     """
     Test cases for CLI arguments in crypt_cli.py.
@@ -11067,7 +11067,8 @@ except Exception as e:
 # =============================================================================
 
 
-class ATestPluginSystem(unittest.TestCase):
+@pytest.mark.order(0)
+class TestPluginSystem(unittest.TestCase):
     """Test cases for the secure plugin system."""
 
     def setUp(self):
@@ -11742,7 +11743,8 @@ class SimpleTestPlugin(PreProcessorPlugin):
             self.skipTest("Plugin system not available")
 
 
-class ATestPluginIntegration(unittest.TestCase):
+@pytest.mark.order(0)
+class TestPluginIntegration(unittest.TestCase):
     """Integration tests for example plugins with real file operations."""
 
     def setUp(self):
