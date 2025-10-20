@@ -39,6 +39,25 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.3.0" date="2025-10-20" type="stable">
+      <description>
+        <p>Cryptographic enhancement and bug fixes release</p>
+        <ul>
+          <li>Added RandomX proof-of-work key derivation function with light (256MB) and fast (2GB) modes</li>
+          <li>Fixed critical default configuration decryption failure</li>
+          <li>Enhanced Docker build optimization reducing image size to 140MB</li>
+          <li>Implemented comprehensive debug logging system</li>
+          <li>Added security warnings for KDF configuration</li>
+          <li>Full backward compatibility for all existing encrypted files</li>
+          <li>Enhanced Flutter desktop GUI with configuration profiles</li>
+        </ul>
+      </description>
+    </release>
+    <release version="1.2.1" date="2025-01-15" type="stable">
+      <description>
+        <p>Documentation maintenance release</p>
+      </description>
+    </release>
     <release version="1.1.1" date="2025-08-16" type="stable">
       <description>
         <p>Version 1.1.1 build</p>
