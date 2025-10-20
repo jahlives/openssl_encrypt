@@ -82,12 +82,20 @@
         ]
       },
       "build-commands": [
-        "pip3 install --prefix=${FLATPAK_DEST} 'cryptography>=44.0.1,<45.0.0'",
-        "pip3 install --prefix=${FLATPAK_DEST} 'argon2-cffi>=23.1.0,<24.0.0'",
+        "pip3 install --prefix=${FLATPAK_DEST} 'cffi==1.17.1'",
+        "pip3 install --prefix=${FLATPAK_DEST} 'pycparser==2.22'",
+        "pip3 install --prefix=${FLATPAK_DEST} 'cryptography==44.0.3'",
+        "pip3 install --prefix=${FLATPAK_DEST} 'argon2-cffi==23.1.0'",
         "pip3 install --prefix=${FLATPAK_DEST} 'argon2-cffi-bindings==21.2.0'",
-        "pip3 install --prefix=${FLATPAK_DEST} 'PyYAML>=6.0.2,<7.0.0'",
-        "pip3 install --prefix=${FLATPAK_DEST} 'whirlpool-py311>=1.0.0,<2.0.0; python_version >= \"3.11\"'",
-        "pip3 install --prefix=${FLATPAK_DEST} 'blake3>=1.0.0,<2.0.0'",
+        "pip3 install --prefix=${FLATPAK_DEST} 'PyYAML==6.0.2'",
+        "pip3 install --prefix=${FLATPAK_DEST} 'whirlpool-py311==1'",
+        "pip3 install --prefix=${FLATPAK_DEST} 'blake3==1.0.5'",
+        "pip3 install --prefix=${FLATPAK_DEST} 'Pillow==10.4.0'",
+        "pip3 install --prefix=${FLATPAK_DEST} 'numpy==2.3.2'",
+        "pip3 install --prefix=${FLATPAK_DEST} 'qrcode[pil]==8.2'",
+        "pip3 install --prefix=${FLATPAK_DEST} 'pyzbar==0.1.9'",
+        "pip3 install --prefix=${FLATPAK_DEST} 'RandomX==1.1.10.post3'",
+        "pip3 install --prefix=${FLATPAK_DEST} 'jsonschema>=4.0.0,<5.0.0'",
         "pip3 install --prefix=${FLATPAK_DEST} 'git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0'"
       ],
       "sources": []
