@@ -890,6 +890,34 @@ def add_timing_jitter(func):
     return wrapper
 
 
+def get_hash_rounds(hash_config, algo):
+    """
+    Extract rounds value from hash config, supporting both flat and nested structures.
+
+    Supports two formats:
+    - Flat: {"sha256": 100000}
+    - Nested: {"sha256": {"rounds": 100000}}
+
+    Args:
+        hash_config (dict): Hash configuration dictionary
+        algo (str): Algorithm name (e.g., "sha256", "sha512")
+
+    Returns:
+        int: Number of rounds, or 0 if not found
+    """
+    if not hash_config:
+        return 0
+
+    val = hash_config.get(algo, 0)
+
+    # Handle nested structure: {"rounds": N}
+    if isinstance(val, dict):
+        return val.get("rounds", 0)
+
+    # Handle flat structure: direct integer value
+    return val if isinstance(val, int) else 0
+
+
 def check_argon2_support():
     """
     Check if Argon2 is available and which variants are supported.
@@ -1218,6 +1246,12 @@ def multi_hash_password(password, salt, hash_config, quiet=False, progress=False
 
             # Apply each hash algorithm in sequence (only if iterations > 0)
             for algorithm, params in hash_params.items():
+                # Normalize params to handle both flat and nested structures
+                # Flat: {"sha512": 100000}
+                # Nested: {"sha512": {"rounds": 100000}}
+                if isinstance(params, dict):
+                    params = params.get("rounds", 0)
+
                 if algorithm == "sha512" and params > 0:
                     if not quiet and not progress:
                         print(f"Applying {params} rounds of SHA-512", end=" ")
@@ -1647,7 +1681,7 @@ def generate_key(
     ):
         derived_hash_config = hash_config["derivation_config"]["hash_config"]
         has_hash_iterations = any(
-            derived_hash_config.get(algo, 0) > 0
+            get_hash_rounds(derived_hash_config, algo) > 0
             for algo in [
                 "sha256",
                 "sha512",
@@ -1663,7 +1697,7 @@ def generate_key(
         has_hash_iterations = (
             hash_config
             and any(
-                hash_config.get(algo, 0) > 0
+                get_hash_rounds(hash_config, algo) > 0
                 for algo in [
                     "sha256",
                     "sha512",
