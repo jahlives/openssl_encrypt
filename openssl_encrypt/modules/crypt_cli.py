@@ -37,7 +37,6 @@ from .algorithm_warnings import (
     is_encryption_blocked_for_algorithm,
     warn_deprecated_algorithm,
 )
-from .crypt_errors import set_debug_mode
 
 # Import from local modules
 from .crypt_core import (
@@ -53,6 +52,7 @@ from .crypt_core import (
     get_file_permissions,
     string_entropy,
 )
+from .crypt_errors import set_debug_mode
 from .crypt_utils import (
     display_password_with_timeout,
     expand_glob_patterns,
@@ -103,6 +103,7 @@ from .security_scorer import SecurityScorer
 # Import security audit logger
 try:
     from .security_logger import get_security_logger
+
     security_logger = get_security_logger()
 except ImportError:
     security_logger = None
@@ -1321,20 +1322,20 @@ def run_security_tests(args):
     """Run security test suites."""
     try:
         from .testing import SecurityTestRunner, TestExecutionPlan, TestSuiteType
-        
+
         # Create test runner
         runner = SecurityTestRunner()
-        
+
         # Get test action
         test_action = getattr(args, "test_action", None)
-        
+
         if not test_action:
             print("No test action specified. Use --help for available options.")
             return
-        
+
         # Build execution plan
         suite_types = []
-        
+
         if test_action == "fuzz":
             suite_types = [TestSuiteType.FUZZ]
         elif test_action == "side-channel":
@@ -1350,49 +1351,49 @@ def run_security_tests(args):
         else:
             print(f"Unknown test action: {test_action}")
             return
-        
+
         # Build configuration from arguments
         config = {}
-        
+
         # Common configuration
         if hasattr(args, "algorithm") and args.algorithm:
             config["algorithm"] = args.algorithm
-        
+
         if hasattr(args, "iterations") and args.iterations:
             config["benchmark_iterations"] = args.iterations
-            
+
         if hasattr(args, "seed") and args.seed:
             config["seed"] = args.seed
-            
+
         if hasattr(args, "timing_threshold") and args.timing_threshold:
             config["timing_threshold"] = args.timing_threshold
-            
+
         if hasattr(args, "test_iterations") and args.test_iterations:
             config["memory_test_iterations"] = args.test_iterations
-            
+
         if hasattr(args, "leak_threshold") and args.leak_threshold:
             config["leak_threshold"] = args.leak_threshold
-            
+
         if hasattr(args, "test_category") and args.test_category:
             config["test_category"] = args.test_category
-            
+
         if hasattr(args, "algorithms") and args.algorithms:
             config["algorithms"] = args.algorithms
-            
+
         if hasattr(args, "file_sizes") and args.file_sizes:
             config["file_sizes"] = args.file_sizes
-            
+
         if hasattr(args, "save_baseline") and args.save_baseline:
             config["save_baseline"] = True
-        
+
         # Output configuration
         output_formats = getattr(args, "output_format", ["json", "html"])
         output_dir = getattr(args, "output_dir", None)
-        
+
         # Parallel execution for "all" tests
         parallel = getattr(args, "parallel", False) if test_action == "all" else False
         max_workers = getattr(args, "max_workers", 3)
-        
+
         # Create execution plan
         execution_plan = TestExecutionPlan(
             suite_types=suite_types,
@@ -1400,26 +1401,27 @@ def run_security_tests(args):
             max_workers=max_workers,
             config=config,
             output_formats=output_formats,
-            output_directory=output_dir
+            output_directory=output_dir,
         )
-        
+
         # Set up logging
         if not getattr(args, "quiet", False):
             import logging
-            logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
-        
+
+            logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
         # Run tests
         print(f"🔒 Starting OpenSSL Encrypt Security Tests - {test_action.upper()}")
         print("=" * 60)
         print()
-        
+
         report = runner.run_tests(execution_plan)
-        
+
         # Display summary
         print("\n" + "=" * 60)
         print("📊 TEST SUMMARY")
         print("=" * 60)
-        
+
         summary = report.overall_summary
         print(f"Total Suites: {summary['total_suites']}")
         print(f"Successful Suites: {summary['successful_suites']}")
@@ -1430,23 +1432,24 @@ def run_security_tests(args):
         print(f"Failed Tests: {summary['error_tests']}")
         print(f"Test Success Rate: {summary['test_success_rate']:.1f}%")
         print(f"Total Duration: {report.total_duration:.1f} seconds")
-        
+
         # Show report locations
         if output_dir:
             print(f"\n📁 Reports saved to: {output_dir}")
             for fmt in output_formats:
                 filename = f"security_test_report_{report.run_id}.{fmt}"
                 print(f"   • {fmt.upper()}: {filename}")
-        
+
         print("\n✅ Testing completed!")
-        
+
     except ImportError as e:
         print(f"Error: Testing framework not available: {e}")
         sys.exit(1)
     except Exception as e:
         print(f"Error running security tests: {e}")
-        if hasattr(args, 'debug') and args.debug:
+        if hasattr(args, "debug") and args.debug:
             import traceback
+
             traceback.print_exc()
         sys.exit(1)
 
@@ -5153,9 +5156,11 @@ def main_with_args(args=None):
                         {
                             "input_file": str(args.input),
                             "output_file": str(output_file),
-                            "algorithm": args.algorithm.value if hasattr(args.algorithm, 'value') else str(args.algorithm),
+                            "algorithm": args.algorithm.value
+                            if hasattr(args.algorithm, "value")
+                            else str(args.algorithm),
                             "service": "cli",
-                        }
+                        },
                     )
 
                 if not args.quiet:
@@ -5223,7 +5228,7 @@ def main_with_args(args=None):
 
                             # Clear screen using ANSI escape sequences (safer than os.system)
                             # \033[2J clears the entire screen, \033[H moves cursor to home position
-                            sys.stdout.write('\033[2J\033[H')
+                            sys.stdout.write("\033[2J\033[H")
                             sys.stdout.flush()
 
                             print("Password has been cleared from screen.")
@@ -5775,7 +5780,7 @@ def main_with_args(args=None):
                                 "input_file": str(args.input),
                                 "output_file": str(args.output),
                                 "service": "cli",
-                            }
+                            },
                         )
 
                     if not args.quiet:
