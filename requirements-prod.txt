@@ -18,7 +18,7 @@ cryptography==44.0.3
     # via -r requirements-prod.in
 numpy==2.3.2
     # via -r requirements-prod.in
-pillow==10.4.0
+pillow==11.3.0
     # via
     #   -r requirements-prod.in
     #   qrcode
