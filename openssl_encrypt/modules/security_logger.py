@@ -47,7 +47,7 @@ class SecurityAuditLogger:
     """
 
     # Singleton instance
-    _instance: Optional['SecurityAuditLogger'] = None
+    _instance: Optional["SecurityAuditLogger"] = None
     _lock = threading.Lock()
 
     # Event severity levels
@@ -72,14 +72,14 @@ class SecurityAuditLogger:
             enabled: Enable/disable logging (can be controlled via env var)
         """
         # Only initialize once
-        if hasattr(self, '_initialized'):
+        if hasattr(self, "_initialized"):
             return
 
         self._initialized = True
         self._write_lock = threading.Lock()
 
         # Check if logging is disabled via environment variable
-        self.enabled = enabled and os.getenv('OPENSSL_ENCRYPT_DISABLE_AUDIT_LOG') != '1'
+        self.enabled = enabled and os.getenv("OPENSSL_ENCRYPT_DISABLE_AUDIT_LOG") != "1"
 
         if not self.enabled:
             logger.info("Security audit logging is disabled")
@@ -90,12 +90,12 @@ class SecurityAuditLogger:
             self.log_dir = Path(log_dir)
         else:
             # Check environment variable first
-            env_log_dir = os.getenv('OPENSSL_ENCRYPT_AUDIT_LOG_DIR')
+            env_log_dir = os.getenv("OPENSSL_ENCRYPT_AUDIT_LOG_DIR")
             if env_log_dir:
                 self.log_dir = Path(env_log_dir)
             else:
                 # Default to user's home directory
-                self.log_dir = Path.home() / '.openssl_encrypt'
+                self.log_dir = Path.home() / ".openssl_encrypt"
 
         # Create log directory if it doesn't exist
         try:
@@ -105,16 +105,17 @@ class SecurityAuditLogger:
             self.enabled = False
             return
 
-        self.log_file = self.log_dir / 'security-audit.log'
+        self.log_file = self.log_dir / "security-audit.log"
 
         # Initialize syslog if requested
-        self.syslog_enabled = os.getenv('OPENSSL_ENCRYPT_SYSLOG') == '1'
+        self.syslog_enabled = os.getenv("OPENSSL_ENCRYPT_SYSLOG") == "1"
         self.syslog_handler = None
 
         if self.syslog_enabled:
             try:
                 import logging.handlers
-                self.syslog_handler = logging.handlers.SysLogHandler(address='/dev/log')
+
+                self.syslog_handler = logging.handlers.SysLogHandler(address="/dev/log")
                 logger.info("Syslog integration enabled")
             except Exception as e:
                 logger.warning(f"Failed to initialize syslog: {e}")
@@ -127,7 +128,7 @@ class SecurityAuditLogger:
         event_type: str,
         severity: str,
         details: Optional[Dict[str, Any]] = None,
-        sensitive_fields: Optional[list] = None
+        sensitive_fields: Optional[list] = None,
     ) -> None:
         """
         Log a security event.
@@ -153,30 +154,30 @@ class SecurityAuditLogger:
 
         # Default sensitive fields to anonymize
         if sensitive_fields is None:
-            sensitive_fields = ['password', 'key', 'passphrase', 'secret']
+            sensitive_fields = ["password", "key", "passphrase", "secret"]
 
         # Create event structure
         event = {
-            'timestamp': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
-            'event_type': event_type,
-            'severity': severity,
-            'pid': os.getpid(),
-            'user': os.getenv('USER', 'unknown'),
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "event_type": event_type,
+            "severity": severity,
+            "pid": os.getpid(),
+            "user": os.getenv("USER", "unknown"),
         }
 
         # Add details, filtering sensitive fields
         filtered_details = {}
         for key, value in details.items():
             if any(sensitive in key.lower() for sensitive in sensitive_fields):
-                filtered_details[key] = '***REDACTED***'
+                filtered_details[key] = "***REDACTED***"
             else:
                 # Truncate long values
                 if isinstance(value, str) and len(value) > 256:
-                    filtered_details[key] = value[:256] + '...[truncated]'
+                    filtered_details[key] = value[:256] + "...[truncated]"
                 else:
                     filtered_details[key] = value
 
-        event['details'] = filtered_details
+        event["details"] = filtered_details
 
         # Write to log file
         self._write_to_log(event)
@@ -193,8 +194,8 @@ class SecurityAuditLogger:
                 self._rotate_log_if_needed()
 
                 # Write event as JSON line
-                with open(self.log_file, 'a', encoding='utf-8') as f:
-                    f.write(json.dumps(event) + '\n')
+                with open(self.log_file, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(event) + "\n")
             except Exception as e:
                 logger.error(f"Failed to write to audit log: {e}")
 
@@ -207,13 +208,13 @@ class SecurityAuditLogger:
                 # Rotate: security-audit.log -> security-audit.log.1
                 # Keep last 5 rotated logs
                 for i in range(4, 0, -1):
-                    old_file = self.log_dir / f'security-audit.log.{i}'
-                    new_file = self.log_dir / f'security-audit.log.{i+1}'
+                    old_file = self.log_dir / f"security-audit.log.{i}"
+                    new_file = self.log_dir / f"security-audit.log.{i+1}"
                     if old_file.exists():
                         old_file.rename(new_file)
 
                 # Move current log to .1
-                self.log_file.rename(self.log_dir / 'security-audit.log.1')
+                self.log_file.rename(self.log_dir / "security-audit.log.1")
                 logger.info("Security audit log rotated")
         except Exception as e:
             logger.error(f"Failed to rotate log: {e}")
@@ -230,20 +231,20 @@ class SecurityAuditLogger:
                 self.SEVERITY_WARNING: logging.WARNING,
                 self.SEVERITY_CRITICAL: logging.CRITICAL,
             }
-            level = severity_map.get(event['severity'], logging.INFO)
+            level = severity_map.get(event["severity"], logging.INFO)
 
             # Format message
             message = f"openssl_encrypt[{event['pid']}]: {event['event_type']} - {json.dumps(event['details'])}"
 
             # Create log record
             record = logging.LogRecord(
-                name='openssl_encrypt.security',
+                name="openssl_encrypt.security",
                 level=level,
-                pathname='',
+                pathname="",
                 lineno=0,
                 msg=message,
                 args=(),
-                exc_info=None
+                exc_info=None,
             )
 
             self.syslog_handler.emit(record)
@@ -251,10 +252,7 @@ class SecurityAuditLogger:
             logger.error(f"Failed to send to syslog: {e}")
 
     def get_recent_events(
-        self,
-        hours: int = 24,
-        event_type: Optional[str] = None,
-        severity: Optional[str] = None
+        self, hours: int = 24, event_type: Optional[str] = None, severity: Optional[str] = None
     ) -> list:
         """
         Retrieve recent security events from log.
@@ -274,20 +272,22 @@ class SecurityAuditLogger:
         events = []
 
         try:
-            with open(self.log_file, 'r', encoding='utf-8') as f:
+            with open(self.log_file, "r", encoding="utf-8") as f:
                 for line in f:
                     try:
                         event = json.loads(line.strip())
 
                         # Parse timestamp
-                        event_time = datetime.fromisoformat(event['timestamp'].replace('Z', '+00:00'))
+                        event_time = datetime.fromisoformat(
+                            event["timestamp"].replace("Z", "+00:00")
+                        )
                         if event_time.timestamp() < cutoff_time:
                             continue
 
                         # Apply filters
-                        if event_type and event['event_type'] != event_type:
+                        if event_type and event["event_type"] != event_type:
                             continue
-                        if severity and event['severity'] != severity:
+                        if severity and event["severity"] != severity:
                             continue
 
                         events.append(event)
@@ -314,7 +314,7 @@ class SecurityAuditLogger:
 
             # Remove rotated logs
             for i in range(1, 6):
-                rotated = self.log_dir / f'security-audit.log.{i}'
+                rotated = self.log_dir / f"security-audit.log.{i}"
                 if rotated.exists():
                     rotated.unlink()
 

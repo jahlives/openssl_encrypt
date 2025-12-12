@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Secure File Encryption Tool - Command Line Interface
+"""Secure File Encryption Tool - Command Line Interface.
 
 This module provides the command-line interface for the encryption tool,
 handling user input, parsing arguments, and calling the appropriate
@@ -12,18 +11,14 @@ import atexit
 import base64
 import getpass
 import hashlib
+import json
 import logging
 import os
+import secrets
 import signal
 import sys
-import tempfile
 import time
 import uuid
-
-# Set up module-level logger
-logger = logging.getLogger(__name__)
-import json
-import secrets
 from enum import Enum
 from typing import Any, Dict, Optional
 
@@ -42,7 +37,6 @@ from .algorithm_warnings import (
 from .crypt_core import (
     ARGON2_AVAILABLE,
     ARGON2_TYPE_INT_MAP,
-    PQC_AVAILABLE,
     WHIRLPOOL_AVAILABLE,
     EncryptionAlgorithm,
     check_argon2_support,
@@ -50,7 +44,6 @@ from .crypt_core import (
     encrypt_file,
     extract_file_metadata,
     get_file_permissions,
-    string_entropy,
 )
 from .crypt_errors import set_debug_mode
 from .crypt_utils import (
@@ -68,36 +61,23 @@ try:
 except ImportError:
     # Dummy implementations if the helper is not available
     def enhance_cli_args(args):
+        """Stub implementation that returns args unchanged."""
         return args
 
     def add_extended_algorithm_help(parser):
+        """Stub implementation that does nothing."""
         pass
 
 
 from . import crypt_errors
 from .cli_aliases import add_cli_aliases, process_cli_aliases
-from .config_analyzer import (
-    AnalysisCategory,
-    ConfigurationAnalyzer,
-    RecommendationPriority,
-    analyze_configuration_from_args,
-)
+from .config_analyzer import ConfigurationAnalyzer
 from .config_wizard import generate_cli_arguments, run_configuration_wizard
-from .keystore_utils import (
-    auto_generate_pqc_key,
-    extract_key_id_from_metadata,
-    get_keystore_password,
-    get_pqc_key_for_decryption,
-)
+from .keystore_utils import auto_generate_pqc_key
 
 # Import keystore-related modules
 from .keystore_wrapper import decrypt_file_with_keystore, encrypt_file_with_keystore
-from .password_policy import (
-    PasswordPolicy,
-    get_password_strength,
-    validate_password,
-    validate_password_or_raise,
-)
+from .password_policy import PasswordPolicy, get_password_strength
 from .security_scorer import SecurityScorer
 
 # Import security audit logger
@@ -107,7 +87,10 @@ try:
     security_logger = get_security_logger()
 except ImportError:
     security_logger = None
-from .template_manager import EnhancedTemplate, TemplateCategory, TemplateFormat, TemplateManager
+from .template_manager import TemplateCategory, TemplateFormat, TemplateManager
+
+# Set up module-level logger
+logger = logging.getLogger(__name__)
 
 
 class ReconstructedStdinStream:
@@ -164,9 +147,11 @@ class ReconstructedStdinStream:
             return self.original_stream.read(size)
 
     def __enter__(self):
+        """Enter the context manager."""
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit the context manager without closing the original stream."""
         # Don't close the original stream as it might be sys.stdin
         pass
 
@@ -268,7 +253,7 @@ class StdinMetadataExtractor:
 
 
 def clear_password_environment():
-    """Securely clear password from environment variables with multiple overwrites"""
+    """Securely clear password from environment variables with multiple overwrites."""
     try:
         if "CRYPT_PASSWORD" in os.environ:
             # Get the original length to overwrite with same size
@@ -299,7 +284,7 @@ def clear_password_environment():
 
 
 def debug_hash_config(args, hash_config, message="Hash configuration"):
-    """Debug output for hash configuration"""
+    """Debug output for hash configuration."""
     logger.debug(f"\n{message}:")
     logger.debug(
         f"SHA3-512: args={args.sha3_512_rounds}, hash_config={hash_config.get('sha3_512', 'Not set')}"
@@ -331,6 +316,8 @@ def debug_hash_config(args, hash_config, message="Hash configuration"):
 
 
 class SecurityTemplate(Enum):
+    """Security template presets for encryption configuration."""
+
     STANDARD = "standard"
     PARANOID = "paranoid"
     QUICK = "quick"
@@ -597,8 +584,8 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
 
 
 def preprocess_global_args(argv):
-    """
-    Preprocess sys.argv to move truly global flags to the front for subparser compatibility.
+    """Preprocess sys.argv to move truly global flags to the front for subparser compatibility.
+
     This allows global flags like --debug, --verbose, --quiet, --progress to be specified
     anywhere in the command line, maintaining backward compatibility with v1.2.1 behavior.
     """
@@ -1085,12 +1072,7 @@ def run_template_manager(args):
 def run_smart_recommendations(args):
     """Run smart recommendations system."""
     try:
-        from .smart_recommendations import (
-            ConfidenceLevel,
-            RecommendationPriority,
-            SmartRecommendationEngine,
-            UserContext,
-        )
+        from .smart_recommendations import SmartRecommendationEngine
 
         engine = SmartRecommendationEngine()
         subcommand = getattr(args, "recommendations_action", None)
@@ -1152,8 +1134,6 @@ def _handle_recommendations_get(engine, args):
     if hasattr(args, "analyze_current") and args.analyze_current:
         # Try to analyze current configuration from args
         try:
-            from .config_analyzer import analyze_configuration_from_args
-
             current_config = vars(args)
         except Exception:
             pass
@@ -2691,7 +2671,7 @@ def main_with_args(args=None):
             logging.basicConfig(
                 level=logging.DEBUG, format="%(levelname)s - %(name)s - %(message)s"
             )
-        except:
+        except Exception:
             pass
 
         print(f"DEBUG: sys.argv = {sys.argv}")
@@ -4658,7 +4638,7 @@ def main_with_args(args=None):
                         # Clean up temporary file
                         try:
                             os.unlink(temp_output_file)
-                        except:
+                        except OSError:
                             pass
 
                 # Skip the normal encryption logic
@@ -5164,7 +5144,9 @@ def main_with_args(args=None):
                     )
 
                 if not args.quiet:
-                    print(f"\nFile encrypted successfully: {output_file}")
+                    # Skip leading newline for stdout/stderr to avoid blank line
+                    prefix = "" if output_file in ("/dev/stdout", "/dev/stderr") else "\n"
+                    print(f"{prefix}File encrypted successfully: {output_file}")
 
                     # If we used a generated password, display it with a
                     # warning
@@ -5784,7 +5766,9 @@ def main_with_args(args=None):
                         )
 
                     if not args.quiet:
-                        print(f"\nFile decrypted successfully: {args.output}")
+                        # Skip leading newline for stdout/stderr to avoid blank line
+                        prefix = "" if args.output in ("/dev/stdout", "/dev/stderr") else "\n"
+                        print(f"{prefix}File decrypted successfully: {args.output}")
 
                 # If shredding was requested and decryption was successful
                 if args.shred and success:

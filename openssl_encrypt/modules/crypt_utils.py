@@ -179,7 +179,7 @@ def display_password_with_timeout(password, timeout_seconds=10):
 
         # Clear screen using ANSI escape sequences (safer than os.system)
         # \033[2J clears the entire screen, \033[H moves cursor to home position
-        sys.stdout.write('\033[2J\033[H')
+        sys.stdout.write("\033[2J\033[H")
         sys.stdout.flush()
 
         print("Password has been cleared from screen.")
@@ -192,7 +192,9 @@ def secure_shred_file(file_path, passes=3, quiet=False):
     before unlinking it from the filesystem.
     """
     # Skip special device files (stdin, stdout, stderr, pipes, etc.)
-    if file_path in ('/dev/stdin', '/dev/stdout', '/dev/stderr') or file_path.startswith('/dev/fd/'):
+    if file_path in ("/dev/stdin", "/dev/stdout", "/dev/stderr") or file_path.startswith(
+        "/dev/fd/"
+    ):
         if not quiet:
             print(f"Skipping shred for special device file: {file_path}")
         return False

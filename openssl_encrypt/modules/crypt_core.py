@@ -1,6 +1,5 @@
 # \!/usr/bin/env python3
-"""
-Secure File Encryption Tool - Core Module
+"""Secure File Encryption Tool - Core Module.
 
 This module provides the core functionality for secure file encryption, decryption,
 and secure deletion. It contains the cryptographic operations and key derivation
@@ -13,16 +12,13 @@ dependencies. See the setup_whirlpool.py module for details on compatibility.
 """
 
 import base64
+import functools
 import hashlib
 import hmac
 import json
 import logging
 import math
 import os
-
-# Set up a module-level logger
-logger = logging.getLogger(__name__)
-import functools
 import secrets
 import stat
 import sys
@@ -72,6 +68,9 @@ from .crypt_errors import (  # Error handling imports are at the top of file
 
 # Define type variable for generic function
 F = TypeVar("F", bound=Callable[..., Any])
+
+# Set up a module-level logger
+logger = logging.getLogger(__name__)
 
 
 def deprecated_algorithm(algorithm: str, context: Optional[str] = None) -> Callable[[F], F]:
@@ -297,7 +296,6 @@ class XChaCha20Poly1305:
             raise DecryptionError(original_exception=e)
 
 
-import cryptography.exceptions
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 try:
@@ -968,7 +966,9 @@ def set_secure_permissions(file_path):
         file_path (str): Path to the file
     """
     # Skip special device files (stdin, stdout, stderr, pipes, etc.)
-    if file_path in ('/dev/stdin', '/dev/stdout', '/dev/stderr') or file_path.startswith('/dev/fd/'):
+    if file_path in ("/dev/stdin", "/dev/stdout", "/dev/stderr") or file_path.startswith(
+        "/dev/fd/"
+    ):
         return
 
     # Security: Canonicalize path to prevent symlink attacks
@@ -996,7 +996,9 @@ def get_file_permissions(file_path):
         int: File permissions mode
     """
     # Skip special device files (stdin, stdout, stderr, pipes, etc.)
-    if file_path in ('/dev/stdin', '/dev/stdout', '/dev/stderr') or file_path.startswith('/dev/fd/'):
+    if file_path in ("/dev/stdin", "/dev/stdout", "/dev/stderr") or file_path.startswith(
+        "/dev/fd/"
+    ):
         return 0o600  # Return default secure permissions for special files
 
     # Security: Canonicalize path to prevent symlink attacks
@@ -3667,7 +3669,7 @@ def encrypt_file(
     with open(output_file, "wb") as file:
         file.write(metadata_base64 + b":" + encrypted_data)
         # Add two newlines after encrypted data when writing to stdout/stderr
-        if output_file in ('/dev/stdout', '/dev/stderr'):
+        if output_file in ("/dev/stdout", "/dev/stderr"):
             file.write(b"\n\n")
 
     # Set secure permissions on the output file
@@ -4210,7 +4212,7 @@ def decrypt_file(
                     if "pqc_key_salt" not in metadata["encryption"]:
                         if not quiet:
                             print("Failed to decrypt post-quantum private key - wrong format")
-                        return decrypt_algorithm_object, pqc_private_key_from_metadata
+                        raise DecryptionError("Missing PQC key salt in metadata")
                     else:
                         # Decode the salt from v4/v5 structure
                         private_key_salt = base64.b64decode(metadata["encryption"]["pqc_key_salt"])
@@ -4218,7 +4220,7 @@ def decrypt_file(
                     if "pqc_key_salt" not in metadata:
                         if not quiet:
                             print("Failed to decrypt post-quantum private key - wrong format")
-                        return decrypt_algorithm_object, pqc_private_key_from_metadata
+                        raise DecryptionError("Missing PQC key salt in metadata")
                     else:
                         # Decode the salt from v3 structure
                         private_key_salt = base64.b64decode(metadata["pqc_key_salt"])
@@ -4832,7 +4834,7 @@ def decrypt_file(
     with open(output_file, "wb") as file:
         file.write(decrypted_data)
         # Add two newlines after decrypted data when writing to stdout/stderr
-        if output_file in ('/dev/stdout', '/dev/stderr'):
+        if output_file in ("/dev/stdout", "/dev/stderr"):
             file.write(b"\n\n")
 
     # Set secure permissions on the output file
