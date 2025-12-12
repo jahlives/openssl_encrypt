@@ -3666,6 +3666,9 @@ def encrypt_file(
 
     with open(output_file, "wb") as file:
         file.write(metadata_base64 + b":" + encrypted_data)
+        # Add two newlines after encrypted data when writing to stdout/stderr
+        if output_file in ('/dev/stdout', '/dev/stderr'):
+            file.write(b"\n\n")
 
     # Set secure permissions on the output file
     set_secure_permissions(output_file)
@@ -4828,6 +4831,9 @@ def decrypt_file(
 
     with open(output_file, "wb") as file:
         file.write(decrypted_data)
+        # Add two newlines after decrypted data when writing to stdout/stderr
+        if output_file in ('/dev/stdout', '/dev/stderr'):
+            file.write(b"\n\n")
 
     # Set secure permissions on the output file
     set_secure_permissions(output_file)
