@@ -39,18 +39,19 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
-    <release version="1.3.0" date="2025-10-20" type="stable">
+    <release version="1.3.0-dev" date="2025-12-12" type="development">
       <description>
-        <p>Cryptographic enhancement and bug fixes release</p>
+        <p>Development version 1.3.0 with latest experimental features</p>
         <ul>
-          <li>Added RandomX proof-of-work key derivation function with light (256MB) and fast (2GB) modes</li>
-          <li>Fixed critical default configuration decryption failure</li>
-          <li>Enhanced Docker build optimization reducing image size to 140MB</li>
-          <li>Implemented comprehensive debug logging system</li>
-          <li>Added security warnings for KDF configuration</li>
-          <li>Full backward compatibility for all existing encrypted files</li>
-          <li>Enhanced Flutter desktop GUI with configuration profiles</li>
+          <li>Steganography support - hide encrypted data in images using LSB encoding</li>
+          <li>QR code key distribution - generate and scan QR codes for secure key exchange</li>
+          <li>Enhanced debug mode with raw exception passthrough for easier troubleshooting</li>
+          <li>Support for Pillow 11.x image processing library</li>
+          <li>Backward compatibility fixes for files encrypted during format transitions</li>
+          <li>RandomX proof-of-work key derivation function (light and fast modes)</li>
+          <li>Docker optimization - reduced image size to 140MB</li>
         </ul>
+        <p>Note: This is a development branch. Install with: flatpak install com.opensslencrypt.OpenSSLEncrypt//development</p>
       </description>
     </release>
     <release version="1.2.1" date="2025-01-15" type="stable">
