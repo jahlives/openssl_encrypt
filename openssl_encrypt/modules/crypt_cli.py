@@ -37,6 +37,7 @@ from .algorithm_warnings import (
     is_encryption_blocked_for_algorithm,
     warn_deprecated_algorithm,
 )
+from .crypt_errors import set_debug_mode
 
 # Import from local modules
 from .crypt_core import (
@@ -2691,6 +2692,10 @@ def main_with_args(args=None):
             pass
 
         print(f"DEBUG: sys.argv = {sys.argv}")
+
+        # Enable raw exception passthrough in debug mode
+        set_debug_mode(True)
+        print("DEBUG: Raw exception passthrough enabled")
 
     # Enhance the args with better defaults for extended algorithms
     args = enhance_cli_args(args)
