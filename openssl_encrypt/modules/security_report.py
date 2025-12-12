@@ -23,7 +23,7 @@ import argparse
 import json
 import sys
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -87,7 +87,7 @@ class SecurityReportGenerator:
         lines.append("")
 
         # Report metadata
-        lines.append(f"Report Generated: {datetime.now(datetime.UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        lines.append(f"Report Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
         lines.append(f"Time Period: Last {hours} hours")
         if severity:
             lines.append(f"Severity Filter: {severity}")
@@ -233,7 +233,7 @@ class SecurityReportGenerator:
         user_counts = Counter(e.get('user', 'unknown') for e in events)
 
         report = {
-            "generated_at": datetime.now(datetime.UTC).isoformat().replace('+00:00', 'Z'),
+            "generated_at": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "total_events": len(events),
             "statistics": {
                 "by_event_type": dict(event_counts),

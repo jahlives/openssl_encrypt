@@ -27,7 +27,7 @@ import logging
 import os
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -157,7 +157,7 @@ class SecurityAuditLogger:
 
         # Create event structure
         event = {
-            'timestamp': datetime.now(datetime.UTC).isoformat().replace('+00:00', 'Z'),
+            'timestamp': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             'event_type': event_type,
             'severity': severity,
             'pid': os.getpid(),

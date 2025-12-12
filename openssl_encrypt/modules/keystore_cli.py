@@ -16,10 +16,6 @@ import uuid
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
-# Add UTC constant for Python < 3.11
-if not hasattr(datetime, "UTC"):
-    datetime.UTC = datetime.timezone.utc
-
 from .crypt_errors import (
     KeyNotFoundError,
     KeystoreCorruptedError,
@@ -135,8 +131,8 @@ class PQCKeystore:
         # Create keystore structure
         self.keystore_data = {
             "version": self.KEYSTORE_VERSION,
-            "created": datetime.datetime.now(datetime.UTC).isoformat() + "Z",
-            "last_modified": datetime.datetime.now(datetime.UTC).isoformat() + "Z",
+            "created": datetime.datetime.now(datetime.timezone.utc).isoformat() + "Z",
+            "last_modified": datetime.datetime.now(datetime.timezone.utc).isoformat() + "Z",
             "security_level": security_level.value,
             "encryption": {
                 "salt": base64.b64encode(salt).decode("utf-8"),
@@ -242,7 +238,7 @@ class PQCKeystore:
             raise KeystoreError("No keystore data to save")
 
         # Update modification timestamp
-        self.keystore_data["last_modified"] = datetime.datetime.now(datetime.UTC).isoformat() + "Z"
+        self.keystore_data["last_modified"] = datetime.datetime.now(datetime.timezone.utc).isoformat() + "Z"
 
         # Add a test key for password verification if it doesn't exist
         if "test_key" not in self.keystore_data and self.master_key:
@@ -404,7 +400,7 @@ class PQCKeystore:
         self.keystore_data.setdefault("keys", {})
         self.keystore_data["keys"][key_id] = {
             "algorithm": algorithm,
-            "created": datetime.datetime.now(datetime.UTC).isoformat() + "Z",
+            "created": datetime.datetime.now(datetime.timezone.utc).isoformat() + "Z",
             "description": description,
             "tags": tags or [],
             "use_master_password": use_master_password,
