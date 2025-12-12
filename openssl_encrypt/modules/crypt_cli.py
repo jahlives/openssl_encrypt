@@ -325,7 +325,6 @@ class SecurityTemplate(Enum):
 
 def show_version_info():
     """Display version information including git commit hash, Python version and dependencies."""
-    import os
     import platform
     import sys
     from importlib.metadata import version as pkg_version
@@ -333,12 +332,9 @@ def show_version_info():
     # Import version information from version.py
     try:
         from openssl_encrypt.version import __git_commit__, __version__
-
-        version_module_path = sys.modules["openssl_encrypt.version"].__file__
     except ImportError:
         __version__ = "unknown"
         __git_commit__ = "unknown"
-        version_module_path = None
 
     # Get Python version
     python_version = sys.version.split()[0]
@@ -576,7 +572,7 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                 if "hash_config" in custom_template:
                     return custom_template
                 else:
-                    print(f"Invalid template format: missing 'hash_config' key")
+                    print("Invalid template format: missing 'hash_config' key")
                     sys.exit(1)
         except Exception as e:
             print(f"Error loading template file: {e}")
@@ -751,8 +747,8 @@ def analyze_current_security_configuration(args):
         print(f"Security Level: {analysis['overall']['level'].name}")
         print(f"Description: {analysis['overall']['description']}")
 
-        print(f"\nCOMPONENT ANALYSIS:")
-        print(f"─────────────────────")
+        print("\nCOMPONENT ANALYSIS:")
+        print("─────────────────────")
         print(
             f"Hash Security: {analysis['hash_analysis']['score']:.1f}/10 ({analysis['hash_analysis']['description']})"
         )
@@ -775,17 +771,17 @@ def analyze_current_security_configuration(args):
         if analysis["pqc_analysis"]["enabled"]:
             print(f"Post-Quantum: {analysis['pqc_analysis']['score']:.1f}/10 (Quantum-resistant)")
         else:
-            print(f"Post-Quantum: Not enabled")
+            print("Post-Quantum: Not enabled")
 
-        print(f"\nSECURITY ESTIMATES:")
-        print(f"─────────────────────")
+        print("\nSECURITY ESTIMATES:")
+        print("─────────────────────")
         print(f"Estimated brute-force time: {analysis['estimates']['brute_force_time']}")
         print(f"Note: {analysis['estimates']['note']}")
         print(f"Disclaimer: {analysis['estimates']['disclaimer']}")
 
         if analysis["suggestions"]:
-            print(f"\nRECOMMENDATIONS:")
-            print(f"─────────────────")
+            print("\nRECOMMENDATIONS:")
+            print("─────────────────")
             for i, suggestion in enumerate(analysis["suggestions"], 1):
                 print(f"{i}. {suggestion}")
 
@@ -1285,12 +1281,12 @@ def _display_recommendation(rec, number: int):
         print(f"   🤔 Reasoning: {rec.reasoning}")
 
     if rec.evidence:
-        print(f"   📊 Evidence:")
+        print("   📊 Evidence:")
         for evidence in rec.evidence:
             print(f"      • {evidence}")
 
     if rec.trade_offs:
-        print(f"   ⚖️  Trade-offs:")
+        print("   ⚖️  Trade-offs:")
         for aspect, impact in rec.trade_offs.items():
             print(f"      • {aspect.title()}: {impact}")
 
@@ -1553,13 +1549,13 @@ def _handle_template_analyze(template_mgr: TemplateManager, args):
         analysis = report["analysis"]
         security_icon = _get_security_icon(analysis["security_level"])
 
-        print(f"\n🔒 SECURITY ANALYSIS")
+        print("\n🔒 SECURITY ANALYSIS")
         print(f"   {security_icon} Overall Score: {analysis['overall_score']:.1f}/10")
         print(f"   🛡️  Security Level: {analysis['security_level']}")
 
         if "performance" in analysis:
             perf = analysis["performance"]
-            print(f"\n🚀 PERFORMANCE ANALYSIS")
+            print("\n🚀 PERFORMANCE ANALYSIS")
             print(
                 f"   ⚡ Speed Rating: {perf['estimated_relative_speed'].replace('_', ' ').title()}"
             )
@@ -1567,7 +1563,7 @@ def _handle_template_analyze(template_mgr: TemplateManager, args):
             print(f"   🖥️  CPU Intensity: {perf['cpu_intensity'].replace('_', ' ').title()}")
 
         if "recommendations" in analysis and analysis["recommendations"]:
-            print(f"\n💡 RECOMMENDATIONS:")
+            print("\n💡 RECOMMENDATIONS:")
             for i, rec in enumerate(analysis["recommendations"][:3], 1):  # Show top 3
                 priority_icon = (
                     "🚨"
@@ -1608,7 +1604,7 @@ def _handle_template_compare(template_mgr: TemplateManager, args):
     t1_data = comparison["templates"]["template1"]
     t2_data = comparison["templates"]["template2"]
 
-    print(f"\n📊 OVERVIEW")
+    print("\n📊 OVERVIEW")
     print(
         f"   Template 1: {t1_data['name']} ({t1_data['security_level']}, {t1_data['security_score']:.1f}/10)"
     )
@@ -1616,11 +1612,11 @@ def _handle_template_compare(template_mgr: TemplateManager, args):
         f"   Template 2: {t2_data['name']} ({t2_data['security_level']}, {t2_data['security_score']:.1f}/10)"
     )
 
-    print(f"\n🔒 SECURITY COMPARISON")
+    print("\n🔒 SECURITY COMPARISON")
     print(f"   {comparison['security_comparison']['verdict']}")
 
     if "performance_comparison" in comparison:
-        print(f"\n🚀 PERFORMANCE COMPARISON")
+        print("\n🚀 PERFORMANCE COMPARISON")
         print(f"   {comparison['performance_comparison']['verdict']}")
 
     # Use case comparison
@@ -1655,7 +1651,7 @@ def _handle_template_recommend(template_mgr: TemplateManager, args):
         print(f"   ✨ Reason: {reason}")
 
         if template.is_built_in:
-            print(f"   📦 Type: Built-in template")
+            print("   📦 Type: Built-in template")
         else:
             print(f"   📁 Type: {template.metadata.category.value.replace('_', ' ').title()}")
 
@@ -2742,7 +2738,7 @@ def main_with_args(args=None):
     # Handle USB operations
     if args.action == "create-usb":
         try:
-            from .portable_media import USBSecurityProfile, create_portable_usb
+            from .portable_media import create_portable_usb
 
             # Validate required arguments
             if not getattr(args, "usb_path", None):
@@ -2841,7 +2837,7 @@ def main_with_args(args=None):
                 if result["executable"]["included"]:
                     print(f"  Executable: {result['executable']['path']}")
                 if result["keystore"]["included"]:
-                    print(f"  Keystore: Encrypted and included")
+                    print("  Keystore: Encrypted and included")
                 print(f"  Auto-run files: {', '.join(result['autorun']['files_created'])}")
                 if result.get("manifest", {}).get("created"):
                     manifest_info = result["manifest"]
@@ -2851,7 +2847,7 @@ def main_with_args(args=None):
                     print(
                         f"    Password: {manifest_info['password_type']}, Profile: {manifest_info.get('security_profile', 'default')}"
                     )
-                    print(f"    Manual verification: VERIFY_INTEGRITY.md")
+                    print("    Manual verification: VERIFY_INTEGRITY.md")
                 return 0
             else:
                 print("✗ Failed to create portable USB")
@@ -2914,14 +2910,14 @@ def main_with_args(args=None):
             )
 
             if result.get("integrity_ok"):
-                print(f"✓ USB integrity verification PASSED")
+                print("✓ USB integrity verification PASSED")
                 print(f"  Files verified: {result['verified_files']}")
                 print(
                     f"  Created at: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(result['created_at']))}"
                 )
                 return 0
             else:
-                print(f"✗ USB integrity verification FAILED")
+                print("✗ USB integrity verification FAILED")
                 print(f"  Files verified: {result['verified_files']}")
                 print(f"  Failed files: {result['failed_files']}")
                 print(f"  Missing files: {result['missing_files']}")
@@ -3163,7 +3159,7 @@ def main_with_args(args=None):
                 )
 
             if plugin_info.get("usage_count", 0) > 0:
-                print(f"Usage Statistics:")
+                print("Usage Statistics:")
                 print(f"  - Total executions: {plugin_info['usage_count']}")
                 print(f"  - Errors: {plugin_info.get('error_count', 0)}")
                 success_rate = (
@@ -3366,7 +3362,7 @@ def main_with_args(args=None):
         generated_password = None
 
         try:
-            from .secure_memory import SecureBytes, secure_input, secure_string
+            from .secure_memory import secure_string
 
             # Initialize a secure string to hold the password
             with secure_string() as password_secure:
@@ -3656,7 +3652,7 @@ def main_with_args(args=None):
     if args.algorithm in ["kyber512-hybrid", "kyber768-hybrid", "kyber1024-hybrid"]:
         try:
             # Attempt direct import to ensure module is truly available
-            import oqs
+            import oqs  # noqa: F401
 
             pqc_available = True
         except ImportError:
@@ -3679,7 +3675,7 @@ def main_with_args(args=None):
             parser.error("--password and --random cannot be used together")
         if args.random < 12:
             if not args.quiet:
-                print(f"Warning: Random password length increased to 12 (minimum secure length)")
+                print("Warning: Random password length increased to 12 (minimum secure length)")
             args.random = 12
 
     # Set default iterations if SHA algorithms are requested but no iterations
@@ -4868,8 +4864,6 @@ def main_with_args(args=None):
                             print(f"Loaded post-quantum key pair from {args.pqc_keyfile}")
                 else:
                     # No keyfile specified - generate an ephemeral keypair for this encryption
-                    import random
-
                     from .pqc import PQCipher, check_pqc_support
 
                     # Map algorithm name to available algorithms

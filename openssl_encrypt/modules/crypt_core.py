@@ -539,7 +539,6 @@ class EncryptionAlgorithm(Enum):
         """
         # Check if the algorithm is deprecated and issue warning if so
         if is_deprecated(algorithm_str):
-            replacement = get_recommended_replacement(algorithm_str)
             context = f"algorithm selection '{algorithm_str}'"
             warn_deprecated_algorithm(algorithm_str, context)
 
@@ -2229,7 +2228,7 @@ def generate_key(
             if isinstance(hash_config, dict) and "hkdf" in hash_config:
                 hash_config["hkdf"]["rounds"] = hkdf_config.get("rounds", 1)
 
-        except Exception as e:
+        except Exception:
             if not quiet:
                 print("❌ HKDF failed, falling back to PBKDF2")
             # Don't set use_hkdf to False here, as we want to record the attempt
@@ -4247,7 +4246,7 @@ def decrypt_file(
                             pqc_private_key_from_metadata = cipher.decrypt(
                                 nonce, encrypted_key_data, None
                             )
-                        except Exception as e1:
+                        except Exception:
                             # Try with 16-byte nonce (some implementations use 16 bytes)
                             if len(encrypted_private_key) >= 16:
                                 try:
