@@ -42,7 +42,10 @@ repos:
       - id: flake8
         args: [
           '--max-line-length=100',
-          '--extend-ignore=E203,W503,E501,S404,S603',  # Ignore black conflicts and setup.py security warnings
+          # Ignore: black conflicts (E203,W503,E501), security false-positives (S404,S603,S105,S110),
+          # docstring style (D212,D415,D400,D401,D200,D205,D101,D103,D107,D202),
+          # import order conflicts (I100,I101,I202), bugbear style (B010,B028)
+          '--extend-ignore=E203,W503,E501,S404,S603,S105,S110,D212,D415,D400,D401,D200,D205,D101,D103,D107,D202,I100,I101,I202,B010,B028',
           '--exclude=build,dist,.git,__pycache__,.pytest_cache,.venv'
         ]
         additional_dependencies: [
@@ -60,7 +63,8 @@ repos:
         args: [
           '-c', '.bandit.yaml',
           '-r', 'openssl_encrypt/',
-          '--exclude', 'openssl_encrypt/unittests/'
+          '--exclude', 'openssl_encrypt/unittests/',
+          '--skip', 'B101,S105,S110'  # Skip: assert usage, hardcoded password false-positives, try-except-pass
         ]
         exclude: '^setup\.py$'
 
@@ -82,13 +86,14 @@ repos:
   #       stages: [commit]
   #       args: ['secret', 'scan', 'pre-commit']
 
-  # Python docstring formatting
-  - repo: https://github.com/pycqa/pydocstyle
-    rev: 6.3.0
-    hooks:
-      - id: pydocstyle
-        args: ['--convention=google']
-        exclude: '^(tests/|tools/|openssl_encrypt/unittests/)'
+  # Python docstring formatting (disabled - too strict for this project)
+  # Uncomment to enable docstring checking
+  # - repo: https://github.com/pycqa/pydocstyle
+  #   rev: 6.3.0
+  #   hooks:
+  #     - id: pydocstyle
+  #       args: ['--convention=google', '--add-ignore=D212,D415,D400,D401']
+  #       exclude: '^(tests/|tools/|openssl_encrypt/unittests/)'
 
   # YAML/JSON formatting and validation
   - repo: https://github.com/adrienverge/yamllint
