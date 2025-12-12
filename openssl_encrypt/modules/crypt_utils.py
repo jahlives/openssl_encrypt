@@ -191,6 +191,12 @@ def secure_shred_file(file_path, passes=3, quiet=False):
     Securely delete a file by overwriting its contents multiple times with random data
     before unlinking it from the filesystem.
     """
+    # Skip special device files (stdin, stdout, stderr, pipes, etc.)
+    if file_path in ('/dev/stdin', '/dev/stdout', '/dev/stderr') or file_path.startswith('/dev/fd/'):
+        if not quiet:
+            print(f"Skipping shred for special device file: {file_path}")
+        return False
+
     # Security: Canonicalize path to prevent symlink attacks
     try:
         canonical_path = os.path.realpath(os.path.abspath(file_path))

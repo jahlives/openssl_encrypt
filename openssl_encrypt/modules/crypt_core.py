@@ -967,6 +967,10 @@ def set_secure_permissions(file_path):
     Args:
         file_path (str): Path to the file
     """
+    # Skip special device files (stdin, stdout, stderr, pipes, etc.)
+    if file_path in ('/dev/stdin', '/dev/stdout', '/dev/stderr') or file_path.startswith('/dev/fd/'):
+        return
+
     # Security: Canonicalize path to prevent symlink attacks
     try:
         canonical_path = os.path.realpath(os.path.abspath(file_path))
@@ -991,6 +995,10 @@ def get_file_permissions(file_path):
     Returns:
         int: File permissions mode
     """
+    # Skip special device files (stdin, stdout, stderr, pipes, etc.)
+    if file_path in ('/dev/stdin', '/dev/stdout', '/dev/stderr') or file_path.startswith('/dev/fd/'):
+        return 0o600  # Return default secure permissions for special files
+
     # Security: Canonicalize path to prevent symlink attacks
     try:
         canonical_path = os.path.realpath(os.path.abspath(file_path))
