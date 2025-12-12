@@ -1585,7 +1585,7 @@ def generate_key(
     """
     # Debug trace to check if debug parameter is reaching generate_key
     if debug:
-        logger.debug(f"KEY-DEBUG: generate_key called with debug=True")
+        logger.debug("KEY-DEBUG: generate_key called with debug=True")
 
     # Validate input parameters
     if password is None:
@@ -1783,15 +1783,15 @@ def generate_key(
             if use_scrypt:
                 enabled_kdfs.append("Scrypt")
 
-            print(f"\n⚠️  WARNING: Security Risk Detected")
+            print("\n⚠️  WARNING: Security Risk Detected")
             print(
                 f"KDFs ({', '.join(enabled_kdfs)}) will operate directly on your password without prior hashing."
             )
-            print(f"This may be insecure if your password is short or has low entropy.")
+            print("This may be insecure if your password is short or has low entropy.")
             print(
-                f"Consider adding hash rounds (--sha256-rounds, --blake2b-rounds, etc.) for better security."
+                "Consider adding hash rounds (--sha256-rounds, --blake2b-rounds, etc.) for better security."
             )
-            print(f"Continue anyway? [y/N]: ", end="", flush=True)
+            print("Continue anyway? [y/N]: ", end="", flush=True)
 
             # Get user confirmation
             import sys
