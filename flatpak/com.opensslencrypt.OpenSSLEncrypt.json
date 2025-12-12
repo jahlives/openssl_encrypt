@@ -90,7 +90,7 @@
         "pip3 install --prefix=${FLATPAK_DEST} 'PyYAML==6.0.2'",
         "pip3 install --prefix=${FLATPAK_DEST} 'whirlpool-py311==1'",
         "pip3 install --prefix=${FLATPAK_DEST} 'blake3==1.0.5'",
-        "pip3 install --prefix=${FLATPAK_DEST} 'Pillow==10.4.0'",
+        "pip3 install --prefix=${FLATPAK_DEST} 'Pillow==11.3.0'",
         "pip3 install --prefix=${FLATPAK_DEST} 'numpy==2.3.2'",
         "pip3 install --prefix=${FLATPAK_DEST} 'qrcode[pil]==8.2'",
         "pip3 install --prefix=${FLATPAK_DEST} 'pyzbar==0.1.9'",
