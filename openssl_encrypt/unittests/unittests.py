@@ -1437,10 +1437,10 @@ class TestCLIInterface(unittest.TestCase):
         # generation directly
 
         # Mock the password generation and display functions
-        with mock.patch("modules.crypt_utils.generate_strong_password") as mock_gen_password:
+        with mock.patch("openssl_encrypt.modules.crypt_utils.generate_strong_password") as mock_gen_password:
             mock_gen_password.return_value = "MockedStrongPassword123!"
 
-            with mock.patch("modules.crypt_utils.display_password_with_timeout") as mock_display:
+            with mock.patch("openssl_encrypt.modules.crypt_utils.display_password_with_timeout") as mock_display:
                 # Call the functions directly
                 password = mock_gen_password(16, True, True, True, True)
                 mock_display(password)
