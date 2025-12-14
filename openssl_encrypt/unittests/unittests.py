@@ -1587,7 +1587,8 @@ class TestCLIInterface(unittest.TestCase):
             combined_output = stdout_output + log_output
 
             # Check output for implicit rounds messages
-            self.assertIn("Setting --argon2-rounds=10 (default of 10)", combined_output)
+            if ARGON2_AVAILABLE:
+                self.assertIn("Setting --argon2-rounds=10 (default of 10)", combined_output)
             self.assertIn("Setting --scrypt-rounds=10 (default of 10)", combined_output)
             self.assertIn("Setting --balloon-rounds=10 (default of 10)", combined_output)
             self.assertIn("Setting --randomx-rounds=10 (default of 10)", combined_output)

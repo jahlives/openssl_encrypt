@@ -2230,8 +2230,8 @@ def main_with_args(args=None):
     randomx_group.add_argument(
         "--randomx-rounds",
         type=int,
-        default=1,
-        help="Number of RandomX rounds (default: 1)",
+        default=0,  # Changed from 1 to 0 to make the implicit setting work
+        help="Number of RandomX rounds (default when enabled: 10)",
     )
     randomx_group.add_argument(
         "--randomx-mode",
@@ -3767,13 +3767,13 @@ def main_with_args(args=None):
 
     # Argon2
     if args.argon2_rounds > 0 and not args.enable_argon2:
-        if not args.quiet and ARGON2_AVAILABLE:
+        if not args.quiet:
             logger.debug(
                 f"Setting --enable-argon2 since --argon2-rounds={args.argon2_rounds} was provided"
             )
         args.enable_argon2 = True
     elif args.enable_argon2 and args.argon2_rounds <= 0:
-        if not args.quiet and ARGON2_AVAILABLE:
+        if not args.quiet:
             rounds_src = (
                 f"--kdf-rounds={default_rounds}" if args.kdf_rounds > 0 else "default of 10"
             )
@@ -3800,7 +3800,7 @@ def main_with_args(args=None):
         args.balloon_rounds = default_rounds
 
     # RandomX implicit enable from parameters
-    if (getattr(args, "randomx_rounds", 1) != 1 or
+    if (getattr(args, "randomx_rounds", 0) > 0 or
         getattr(args, "randomx_mode", "light") != "light" or
         getattr(args, "randomx_height", 1) != 1 or
         getattr(args, "randomx_hash_len", 32) != 32) and not getattr(args, "enable_randomx", False):
@@ -3809,7 +3809,7 @@ def main_with_args(args=None):
                 f"Setting --enable-randomx since RandomX parameters were provided"
             )
         args.enable_randomx = True
-    elif getattr(args, "enable_randomx", False) and getattr(args, "randomx_rounds", 1) <= 0:
+    elif getattr(args, "enable_randomx", False) and getattr(args, "randomx_rounds", 0) <= 0:
         if not args.quiet:
             rounds_src = (
                 f"--kdf-rounds={default_rounds}" if args.kdf_rounds > 0 else "default of 10"
