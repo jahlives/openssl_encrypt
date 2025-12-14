@@ -2650,8 +2650,8 @@ class TestSecureErrorHandling(unittest.TestCase):
 
     def setUp(self):
         """Set up test environment."""
-        # Enable debug mode for detailed error messages in tests
-        os.environ["DEBUG"] = "1"
+        # Don't enable DEBUG mode - we need to test error wrapping behavior
+        # Setting DEBUG=1 would bypass error wrapping due to raw passthrough
 
         # Create a temporary directory for test files
         self.test_dir = tempfile.mkdtemp()
