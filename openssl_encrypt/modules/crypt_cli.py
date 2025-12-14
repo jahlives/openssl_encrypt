@@ -3799,12 +3799,33 @@ def main_with_args(args=None):
             )
         args.balloon_rounds = default_rounds
 
+    # RandomX implicit enable from parameters
+    if (getattr(args, "randomx_rounds", 1) != 1 or
+        getattr(args, "randomx_mode", "light") != "light" or
+        getattr(args, "randomx_height", 1) != 1 or
+        getattr(args, "randomx_hash_len", 32) != 32) and not getattr(args, "enable_randomx", False):
+        if not args.quiet:
+            logger.debug(
+                f"Setting --enable-randomx since RandomX parameters were provided"
+            )
+        args.enable_randomx = True
+    elif getattr(args, "enable_randomx", False) and getattr(args, "randomx_rounds", 1) <= 0:
+        if not args.quiet:
+            rounds_src = (
+                f"--kdf-rounds={default_rounds}" if args.kdf_rounds > 0 else "default of 10"
+            )
+            logger.debug(
+                f"Setting --randomx-rounds={default_rounds} ({rounds_src}) since --enable-randomx was provided without rounds"
+            )
+        args.randomx_rounds = default_rounds
+
     # Debug output to verify parameter values (uncomment for debugging)
     # if args.verbose:
     #     print(f"DEBUG - Parameter values after implicit settings:")
     #     print(f"DEBUG - Scrypt: enabled={args.enable_scrypt}, rounds={args.scrypt_rounds}")
     #     print(f"DEBUG - Argon2: enabled={args.enable_argon2}, rounds={args.argon2_rounds}")
     #     print(f"DEBUG - Balloon: enabled={args.enable_balloon}, rounds={args.balloon_rounds}")
+    #     print(f"DEBUG - RandomX: enabled={getattr(args, 'enable_randomx', False)}, rounds={getattr(args, 'randomx_rounds', 1)}")
 
     # Handle Argon2 presets if specified
     if args.argon2_preset and ARGON2_AVAILABLE:
@@ -3913,14 +3934,6 @@ def main_with_args(args=None):
             hash_config = hash_config["hash_config"]
         else:
             # User provided specific arguments, build custom configuration
-
-            # Implicitly enable RandomX if any RandomX parameter has non-default value
-            if (getattr(args, "randomx_rounds", 1) != 1 or
-                getattr(args, "randomx_mode", "light") != "light" or
-                getattr(args, "randomx_height", 1) != 1 or
-                getattr(args, "randomx_hash_len", 32) != 32):
-                args.enable_randomx = True
-
             hash_config = {
                 "sha512": args.sha512_rounds,
                 "sha384": args.sha384_rounds,

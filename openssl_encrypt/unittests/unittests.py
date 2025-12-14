@@ -1516,6 +1516,8 @@ class TestCLIInterface(unittest.TestCase):
                 "2",  # Should implicitly enable Scrypt
                 "--balloon-rounds",
                 "1",  # Should implicitly enable Balloon
+                "--randomx-rounds",
+                "2",  # Should implicitly enable RandomX
             ]
 
             with mock.patch("sys.exit") as mock_exit:
@@ -1532,6 +1534,7 @@ class TestCLIInterface(unittest.TestCase):
             self.assertIn("Setting --enable-argon2", combined_output)
             self.assertIn("Setting --enable-scrypt", combined_output)
             self.assertIn("Setting --enable-balloon", combined_output)
+            self.assertIn("Setting --enable-randomx", combined_output)
 
             # Verify the encrypted file was created
             self.assertTrue(os.path.exists(encrypted_file))
@@ -1570,6 +1573,7 @@ class TestCLIInterface(unittest.TestCase):
                 "--enable-argon2",  # Should get default rounds=10
                 "--enable-scrypt",  # Should get default rounds=10
                 "--enable-balloon",  # Should get default rounds=10
+                "--enable-randomx",  # Should get default rounds=10
             ]
 
             with mock.patch("sys.exit") as mock_exit:
@@ -1586,6 +1590,7 @@ class TestCLIInterface(unittest.TestCase):
             self.assertIn("Setting --argon2-rounds=10 (default of 10)", combined_output)
             self.assertIn("Setting --scrypt-rounds=10 (default of 10)", combined_output)
             self.assertIn("Setting --balloon-rounds=10 (default of 10)", combined_output)
+            self.assertIn("Setting --randomx-rounds=10 (default of 10)", combined_output)
 
             # Verify the encrypted file was created
             self.assertTrue(os.path.exists(encrypted_file))
