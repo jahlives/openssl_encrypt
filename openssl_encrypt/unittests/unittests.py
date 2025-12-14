@@ -64,10 +64,7 @@ import pytest
 import yaml
 from cryptography.fernet import InvalidToken
 
-# Add the parent directory to the path to allow imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-from modules.config_wizard import (
+from openssl_encrypt.modules.config_wizard import (
     ConfigurationWizard,
     UseCase,
     UserExpertise,
@@ -76,7 +73,7 @@ from modules.config_wizard import (
 )
 
 # Import the modules to test
-from modules.crypt_core import (
+from openssl_encrypt.modules.crypt_core import (
     ARGON2_AVAILABLE,
     WHIRLPOOL_AVAILABLE,
     CamelliaCipher,
@@ -87,23 +84,23 @@ from modules.crypt_core import (
     generate_key,
     multi_hash_password,
 )
-from modules.crypt_errors import add_timing_jitter, get_jitter_stats
-from modules.crypt_utils import expand_glob_patterns, generate_strong_password, secure_shred_file
-from modules.secure_memory import (
+from openssl_encrypt.modules.crypt_errors import add_timing_jitter, get_jitter_stats
+from openssl_encrypt.modules.crypt_utils import expand_glob_patterns, generate_strong_password, secure_shred_file
+from openssl_encrypt.modules.secure_memory import (
     SecureBytes,
     SecureMemoryAllocator,
     allocate_secure_buffer,
     free_secure_buffer,
 )
-from modules.secure_memory import secure_memzero as memory_secure_memzero
-from modules.secure_memory import verify_memory_zeroed
-from modules.secure_ops import (
+from openssl_encrypt.modules.secure_memory import secure_memzero as memory_secure_memzero
+from openssl_encrypt.modules.secure_memory import verify_memory_zeroed
+from openssl_encrypt.modules.secure_ops import (
     SecureContainer,
     constant_time_compare,
     constant_time_pkcs7_unpad,
     secure_memzero,
 )
-from modules.security_scorer import SecurityLevel, SecurityScorer
+from openssl_encrypt.modules.security_scorer import SecurityLevel, SecurityScorer
 
 try:
     from modules.steganography.error_correction import (
@@ -163,8 +160,8 @@ class LogCapture(logging.Handler):
         self.output = StringIO()
 
 
-from modules.crypt_cli import main as cli_main
-from modules.crypt_errors import (
+from openssl_encrypt.modules.crypt_cli import main as cli_main
+from openssl_encrypt.modules.crypt_errors import (
     AuthenticationError,
     DecryptionError,
     EncryptionError,
@@ -186,10 +183,10 @@ from modules.crypt_errors import (
     secure_key_derivation_error_handler,
     secure_keystore_error_handler,
 )
-from modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
-from modules.pqc import LIBOQS_AVAILABLE, PQCAlgorithm, PQCipher, check_pqc_support
-from modules.secure_memory import verify_memory_zeroed
-from modules.secure_ops import (
+from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
+from openssl_encrypt.modules.pqc import LIBOQS_AVAILABLE, PQCAlgorithm, PQCipher, check_pqc_support
+from openssl_encrypt.modules.secure_memory import verify_memory_zeroed
+from openssl_encrypt.modules.secure_ops import (
     SecureContainer,
     constant_time_compare,
     constant_time_pkcs7_unpad,
