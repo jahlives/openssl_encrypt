@@ -259,9 +259,10 @@ sbom-generation:
 test:
   stage: test
   image: $DOCKER_IMAGE
+  tags:
+    - amd64
   variables:
     PQC_QUIET: "true"  # Suppress PQC module initialization messages
-    DOCKER_DEFAULT_PLATFORM: linux/amd64
   before_script:
     - pip install -r requirements.txt --break-system-packages
     - pip install setuptools --break-system-packages  # Provides pkg_resources
@@ -291,6 +292,8 @@ test:
 test-fallback:
   stage: test
   image: python:3.13-alpine
+  tags:
+    - amd64
   variables:
     PQC_QUIET: "true"  # Suppress PQC module initialization messages
   before_script:
