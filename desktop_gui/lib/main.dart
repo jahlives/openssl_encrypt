@@ -2866,6 +2866,15 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   bool _showHashConfig = false;
   bool _showKdfConfig = false;
 
+  // Steganography state
+  bool _enableSteganography = false;
+  FileInfo? _coverImageFile;
+  final TextEditingController _stegoPasswordController = TextEditingController();
+  int _bitsPerChannel = 1;
+  bool _randomizePixels = false;
+  bool _addDecoyData = false;
+  bool _stegoExtractMode = false;  // For decrypt mode
+
   @override
   void initState() {
     super.initState();
@@ -2923,6 +2932,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   @override
   void dispose() {
     _passwordController.dispose();
+    _stegoPasswordController.dispose();
     super.dispose();
   }
 
@@ -3112,68 +3122,120 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     await Future.delayed(const Duration(milliseconds: 50));
 
     try {
-      // Read file content
-      final fileContent = await widget.fileManager.readFileText(_selectedFile!.path);
-      if (fileContent == null) {
-        throw Exception('Could not read file');
-      }
-
-      // Encrypt file content using CLI service with selected configurations
-      final encrypted = await CLIService.encryptTextWithProgress(
-        fileContent,
-        _passwordController.text,
-        _selectedAlgorithm, // Use selected algorithm
-        _hashConfig,        // Use hash configuration from UI
-        _kdfConfig,         // Use KDF configuration from UI
-        encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
-        onProgress: (progress) {
-          setState(() {
-            _operationStatus = 'Encrypting with $_selectedAlgorithm...';
-            _operationProgress = progress;
-            _progressValue = progress.contains('%')
-              ? (double.tryParse(progress.split('%')[0]) ?? 0.0) / 100.0
-              : 0.5;
-          });
-        },
-      );
-
-      if (encrypted.startsWith('ERROR:')) {
-        throw Exception(encrypted.substring(7));
-      }
-
-      // Generate output filename - use original path if force overwrite is enabled
-      final outputPath = _forceOverwrite
-          ? _selectedFile!.path
-          : widget.fileManager.getEncryptedFileName(_selectedFile!.path);
-
-      // Save encrypted file
-      final success = await widget.fileManager.writeFileText(outputPath, encrypted);
-
-      if (success) {
+      // Check if steganography is enabled
+      if (_enableSteganography && _coverImageFile != null) {
+        // Steganography mode: Encrypt and hide in cover image
         setState(() {
-          if (_forceOverwrite) {
-            result = 'File encrypted successfully (source overwritten)!\n\n'
+          _operationStatus = 'Encrypting and hiding in cover image...';
+          _progressValue = 0.3;
+        });
+
+        // Generate output filename for stego image
+        final outputPath = _forceOverwrite
+            ? _coverImageFile!.path
+            : widget.fileManager.getEncryptedFileName(_coverImageFile!.path);
+
+        // Encrypt with steganography
+        final cliResult = await CLIService.encryptWithSteganography(
+          inputPath: _selectedFile!.path,
+          coverImagePath: _coverImageFile!.path,
+          outputPath: outputPath,
+          password: _passwordController.text,
+          stegoPassword: _stegoPasswordController.text.isNotEmpty ? _stegoPasswordController.text : null,
+          algorithm: _selectedAlgorithm,
+          bitsPerChannel: _bitsPerChannel,
+          randomizePixels: _randomizePixels,
+          addDecoyData: _addDecoyData,
+          hashConfig: _hashConfig,
+          kdfConfig: _kdfConfig,
+        );
+
+        setState(() {
+          _progressValue = 0.9;
+        });
+
+        if (cliResult.exitCode == 0) {
+          setState(() {
+            result = 'File encrypted and hidden successfully!\n\n'
                 'Original: ${_selectedFile!.name}\n'
                 'Size: ${_selectedFile!.sizeFormatted}\n'
-                'Status: Source file replaced with encrypted content\n'
-                'Path: $outputPath\n\n'
-                'Algorithm: $_selectedAlgorithm\n'
-                'CLI Compatible: Yes\n'
-                'Format: OpenSSL Encrypt Desktop GUI';
-          } else {
-            result = 'File encrypted successfully!\n\n'
-                'Original: ${_selectedFile!.name}\n'
-                'Size: ${_selectedFile!.sizeFormatted}\n'
-                'Encrypted: ${outputPath.split('/').last}\n'
+                'Cover Image: ${_coverImageFile!.name}\n'
+                'Stego Image: ${outputPath.split('/').last}\n'
                 'Saved to: $outputPath\n\n'
                 'Algorithm: $_selectedAlgorithm\n'
-                'CLI Compatible: Yes\n'
-                'Format: OpenSSL Encrypt Desktop GUI';
-          }
-          _isLoading = false;
-        });
+                'Steganography: LSB (${_bitsPerChannel} bit${_bitsPerChannel > 1 ? "s" : ""}/channel)\n'
+                'Format: OpenSSL Encrypt with Steganography';
+            _isLoading = false;
+          });
+        } else {
+          final errorMsg = cliResult.stderr.toString().trim();
+          throw Exception(errorMsg.isNotEmpty ? errorMsg : 'Steganography encryption failed');
+        }
       } else {
-        throw Exception('Failed to save encrypted file');
+        // Normal encryption mode
+        // Read file content
+        final fileContent = await widget.fileManager.readFileText(_selectedFile!.path);
+        if (fileContent == null) {
+          throw Exception('Could not read file');
+        }
+
+        // Encrypt file content using CLI service with selected configurations
+        final encrypted = await CLIService.encryptTextWithProgress(
+          fileContent,
+          _passwordController.text,
+          _selectedAlgorithm, // Use selected algorithm
+          _hashConfig,        // Use hash configuration from UI
+          _kdfConfig,         // Use KDF configuration from UI
+          encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
+          onProgress: (progress) {
+            setState(() {
+              _operationStatus = 'Encrypting with $_selectedAlgorithm...';
+              _operationProgress = progress;
+              _progressValue = progress.contains('%')
+                ? (double.tryParse(progress.split('%')[0]) ?? 0.0) / 100.0
+                : 0.5;
+            });
+          },
+        );
+
+        if (encrypted.startsWith('ERROR:')) {
+          throw Exception(encrypted.substring(7));
+        }
+
+        // Generate output filename - use original path if force overwrite is enabled
+        final outputPath = _forceOverwrite
+            ? _selectedFile!.path
+            : widget.fileManager.getEncryptedFileName(_selectedFile!.path);
+
+        // Save encrypted file
+        final success = await widget.fileManager.writeFileText(outputPath, encrypted);
+
+        if (success) {
+          setState(() {
+            if (_forceOverwrite) {
+              result = 'File encrypted successfully (source overwritten)!\n\n'
+                  'Original: ${_selectedFile!.name}\n'
+                  'Size: ${_selectedFile!.sizeFormatted}\n'
+                  'Status: Source file replaced with encrypted content\n'
+                  'Path: $outputPath\n\n'
+                  'Algorithm: $_selectedAlgorithm\n'
+                  'CLI Compatible: Yes\n'
+                  'Format: OpenSSL Encrypt Desktop GUI';
+            } else {
+              result = 'File encrypted successfully!\n\n'
+                  'Original: ${_selectedFile!.name}\n'
+                  'Size: ${_selectedFile!.sizeFormatted}\n'
+                  'Encrypted: ${outputPath.split('/').last}\n'
+                  'Saved to: $outputPath\n\n'
+                  'Algorithm: $_selectedAlgorithm\n'
+                  'CLI Compatible: Yes\n'
+                  'Format: OpenSSL Encrypt Desktop GUI';
+            }
+            _isLoading = false;
+          });
+        } else {
+          throw Exception('Failed to save encrypted file');
+        }
       }
     } catch (e) {
       setState(() {
@@ -3191,21 +3253,10 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
       return;
     }
 
-    // Check if file is encrypted by reading metadata
-    bool fileIsEncrypted = await _selectedFile!.isEncrypted;
-    if (!fileIsEncrypted) {
-      setState(() {
-        result = 'Selected file does not appear to be encrypted.\n'
-            'Expected: CLI format (base64_metadata:base64_data) or JSON format with encrypted_data and metadata fields.\n'
-            'File: ${_selectedFile!.name}';
-      });
-      return;
-    }
-
     setState(() {
       _isLoading = true;
-      result = 'Decrypting file...';
-      _operationStatus = 'Starting decryption...';
+      result = _stegoExtractMode ? 'Extracting and decrypting from stego image...' : 'Decrypting file...';
+      _operationStatus = _stegoExtractMode ? 'Starting steganography extraction...' : 'Starting decryption...';
       _operationProgress = '';
       _progressValue = 0.0;
     });
@@ -3214,88 +3265,150 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     await Future.delayed(const Duration(milliseconds: 50));
 
     try {
-      // Read the encrypted file
-      setState(() {
-        _operationStatus = 'Reading encrypted file...';
-        _progressValue = 0.2;
-      });
+      // Check if steganography extraction mode is enabled
+      if (_stegoExtractMode) {
+        // Steganography extraction mode: Extract and decrypt from stego image
+        setState(() {
+          _operationStatus = 'Extracting encrypted data from image...';
+          _progressValue = 0.3;
+        });
 
-      final fileContent = await widget.fileManager.readFileText(_selectedFile!.path);
-      if (fileContent == null) {
-        throw Exception('Could not read file');
-      }
+        // Generate output filename for decrypted file
+        final outputPath = _forceOverwrite
+            ? _selectedFile!.path
+            : widget.fileManager.getEncryptedFileName(_selectedFile!.path).replaceAll('.enc', '.dec');
 
-      setState(() {
-        _operationStatus = 'File loaded, starting decryption...';
-        _progressValue = 0.3;
-      });
+        // Extract and decrypt from steganography
+        final cliResult = await CLIService.decryptFromSteganography(
+          stegoImagePath: _selectedFile!.path,
+          outputPath: outputPath,
+          password: _passwordController.text,
+          stegoPassword: _stegoPasswordController.text.isNotEmpty ? _stegoPasswordController.text : null,
+          bitsPerChannel: _bitsPerChannel,
+        );
 
-      // Decrypt using CLI service with progress callbacks
-      final decrypted = await CLIService.decryptTextWithProgress(
-        fileContent,  // Pass raw file content
-        _passwordController.text,
-        onProgress: (progress) {
-          setState(() {
-            _operationProgress = progress;
-          });
-        },
-        onStatus: (status) {
-          setState(() {
-            _operationStatus = status;
-            // Update progress based on status
-            if (status.contains('Initializing')) {
-              _progressValue = 0.4;
-            } else if (status.contains('Prepared')) {
-              _progressValue = 0.5;
-            } else if (status.contains('Executing')) {
-              _progressValue = 0.7;
-            } else if (status.contains('Reading')) {
-              _progressValue = 0.9;
-            } else if (status.contains('completed')) {
-              _progressValue = 1.0;
-            }
-          });
-        },
-      );
+        setState(() {
+          _progressValue = 0.9;
+        });
 
-      if (decrypted.startsWith('ERROR:')) {
-        throw Exception(decrypted.substring(7));
-      }
+        if (cliResult.exitCode == 0) {
+          // Read the decrypted content
+          final decrypted = await widget.fileManager.readFileText(outputPath);
 
-      // Store decrypted content and optionally save directly if force overwrite is enabled
-      if (_forceOverwrite) {
-        // Save decrypted content directly to source file
-        final success = await widget.fileManager.writeFileText(_selectedFile!.path, decrypted);
-
-        if (success) {
           setState(() {
             _decryptedContent = decrypted;
-            result = 'File decrypted successfully (source overwritten)!\n\n'
-                'Status: Source file replaced with decrypted content\n'
-                'Path: ${_selectedFile!.path}\n'
-                'File: ${_selectedFile!.name}\n\n'
+            result = 'File extracted and decrypted successfully!\n\n'
+                'Stego Image: ${_selectedFile!.name}\n'
+                'Size: ${_selectedFile!.sizeFormatted}\n'
+                'Decrypted File: ${outputPath.split('/').last}\n'
+                'Saved to: $outputPath\n\n'
+                'Steganography: LSB (${_bitsPerChannel} bit${_bitsPerChannel > 1 ? "s" : ""}/channel)\n'
+                'Format: OpenSSL Encrypt with Steganography\n\n'
                 'Decrypted Content Preview:\n'
-                '${decrypted.length > 200 ? '${decrypted.substring(0, 200)}...' : decrypted}';
+                '${(decrypted != null && decrypted.length > 200) ? '${decrypted.substring(0, 200)}...' : decrypted ?? 'Binary data'}';
             _isLoading = false;
             _operationStatus = '';
             _operationProgress = '';
             _progressValue = 0.0;
           });
         } else {
-          throw Exception('Failed to save decrypted file');
+          final errorMsg = cliResult.stderr.toString().trim();
+          throw Exception(errorMsg.isNotEmpty ? errorMsg : 'Steganography extraction failed');
         }
       } else {
-        // Store for optional saving (existing behavior)
-        setState(() {
-          _decryptedContent = decrypted; // Store for optional saving
-          result = decrypted; // Show only the decrypted content
-          _isLoading = false;
-          _operationStatus = '';
-          _operationProgress = '';
-          _progressValue = 0.0;
-        });
-      }
+        // Normal decryption mode - check if file is encrypted
+        bool fileIsEncrypted = await _selectedFile!.isEncrypted;
+        if (!fileIsEncrypted) {
+          setState(() {
+            result = 'Selected file does not appear to be encrypted.\n'
+                'Expected: CLI format (base64_metadata:base64_data) or JSON format with encrypted_data and metadata fields.\n'
+                'File: ${_selectedFile!.name}';
+          });
+          return;
+        }
 
+        // Read the encrypted file
+        setState(() {
+          _operationStatus = 'Reading encrypted file...';
+          _progressValue = 0.2;
+        });
+
+        final fileContent = await widget.fileManager.readFileText(_selectedFile!.path);
+        if (fileContent == null) {
+          throw Exception('Could not read file');
+        }
+
+        setState(() {
+          _operationStatus = 'File loaded, starting decryption...';
+          _progressValue = 0.3;
+        });
+
+        // Decrypt using CLI service with progress callbacks
+        final decrypted = await CLIService.decryptTextWithProgress(
+          fileContent,  // Pass raw file content
+          _passwordController.text,
+          onProgress: (progress) {
+            setState(() {
+              _operationProgress = progress;
+            });
+          },
+          onStatus: (status) {
+            setState(() {
+              _operationStatus = status;
+              // Update progress based on status
+              if (status.contains('Initializing')) {
+                _progressValue = 0.4;
+              } else if (status.contains('Prepared')) {
+                _progressValue = 0.5;
+              } else if (status.contains('Executing')) {
+                _progressValue = 0.7;
+              } else if (status.contains('Reading')) {
+                _progressValue = 0.9;
+              } else if (status.contains('completed')) {
+                _progressValue = 1.0;
+              }
+            });
+          },
+        );
+
+        if (decrypted.startsWith('ERROR:')) {
+          throw Exception(decrypted.substring(7));
+        }
+
+        // Store decrypted content and optionally save directly if force overwrite is enabled
+        if (_forceOverwrite) {
+          // Save decrypted content directly to source file
+          final success = await widget.fileManager.writeFileText(_selectedFile!.path, decrypted);
+
+          if (success) {
+            setState(() {
+              _decryptedContent = decrypted;
+              result = 'File decrypted successfully (source overwritten)!\n\n'
+                  'Status: Source file replaced with decrypted content\n'
+                  'Path: ${_selectedFile!.path}\n'
+                  'File: ${_selectedFile!.name}\n\n'
+                  'Decrypted Content Preview:\n'
+                  '${decrypted.length > 200 ? '${decrypted.substring(0, 200)}...' : decrypted}';
+              _isLoading = false;
+              _operationStatus = '';
+              _operationProgress = '';
+              _progressValue = 0.0;
+            });
+          } else {
+            throw Exception('Failed to save decrypted file');
+          }
+        } else {
+          // Store for optional saving (existing behavior)
+          setState(() {
+            _decryptedContent = decrypted; // Store for optional saving
+            result = decrypted; // Show only the decrypted content
+            _isLoading = false;
+            _operationStatus = '';
+            _operationProgress = '';
+            _progressValue = 0.0;
+          });
+        }
+      }
     } catch (e) {
       setState(() {
         result = 'File decryption failed: $e';
@@ -3932,6 +4045,12 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
             ),
             const SizedBox(height: 16),
           ],
+          // Steganography settings (Encrypt mode - Hide in cover image)
+          _buildSteganographySection(isEncryptMode: true),
+          const SizedBox(height: 8),
+          // Steganography settings (Decrypt mode - Extract from stego image)
+          _buildSteganographySection(isEncryptMode: false),
+          const SizedBox(height: 16),
           TextFormField(
             controller: _passwordController,
             decoration: const InputDecoration(
@@ -4697,6 +4816,201 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                   setState(() => _kdfConfig['randomx']!['height'] = v)),
                 _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 64, (v) =>
                   setState(() => _kdfConfig['randomx']!['hash_len'] = v)),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build steganography settings section
+  Widget _buildSteganographySection({required bool isEncryptMode}) {
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Checkbox(
+                  value: isEncryptMode ? _enableSteganography : _stegoExtractMode,
+                  onChanged: (value) {
+                    setState(() {
+                      if (isEncryptMode) {
+                        _enableSteganography = value ?? false;
+                        // Disable extract mode when enabling hide mode
+                        if (_enableSteganography) {
+                          _stegoExtractMode = false;
+                        }
+                      } else {
+                        _stegoExtractMode = value ?? false;
+                        // Disable hide mode when enabling extract mode
+                        if (_stegoExtractMode) {
+                          _enableSteganography = false;
+                        }
+                      }
+                    });
+                  },
+                ),
+                Text(
+                  isEncryptMode ? 'Enable Steganography' : 'Extract from Steganography',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: isEncryptMode
+                      ? 'Hide encrypted data in a cover image (PNG/BMP only)'
+                      : 'Extract and decrypt data from a stego image',
+                  child: Icon(Icons.info_outline, size: 16, color: Colors.grey),
+                ),
+              ],
+            ),
+            if ((isEncryptMode && _enableSteganography) || (!isEncryptMode && _stegoExtractMode)) ...[
+              const Divider(),
+              const SizedBox(height: 8),
+              // Cover image picker (only in encrypt mode)
+              if (isEncryptMode) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        readOnly: true,
+                        controller: TextEditingController(
+                          text: _coverImageFile?.name ?? 'No cover image selected',
+                        ),
+                        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
+                        decoration: InputDecoration(
+                          labelText: 'Cover Image (PNG/BMP)',
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        // Use file manager to pick cover image
+                        final file = await widget.fileManager.pickFile();
+                        if (file != null) {
+                          // Check if file is PNG or BMP
+                          final extension = file.name.toLowerCase().split('.').last;
+                          if (extension == 'png' || extension == 'bmp') {
+                            setState(() {
+                              _coverImageFile = file;
+                            });
+                          } else {
+                            // Show error if wrong file type
+                            setState(() {
+                              result = 'Error: Cover image must be PNG or BMP format.\nSelected: ${file.name}';
+                            });
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.image, size: 16),
+                      label: const Text('Pick Image', style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+              ],
+              // Stego password
+              TextField(
+                controller: _stegoPasswordController,
+                obscureText: true,
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
+                decoration: InputDecoration(
+                  labelText: 'Stego Password (optional)',
+                  hintText: isEncryptMode
+                      ? 'Separate password for steganography layer'
+                      : 'Enter if stego password was used',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  suffixIcon: Tooltip(
+                    message: 'Optional password for pixel randomization. Increases security.',
+                    child: Icon(Icons.info_outline, size: 16),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Bits per channel
+              Row(
+                children: [
+                  SizedBox(
+                    width: 150,
+                    child: Text(
+                      'Bits per Channel:',
+                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
+                    ),
+                  ),
+                  DropdownButton<int>(
+                    value: _bitsPerChannel,
+                    items: [1, 2, 3].map((bits) {
+                      return DropdownMenuItem(
+                        value: bits,
+                        child: Text('$bits bit${bits > 1 ? "s" : ""}', style: TextStyle(fontSize: 12)),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        _bitsPerChannel = value ?? 1;
+                      });
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  Tooltip(
+                    message: 'Higher values = more capacity but more visible. Must match during extraction.',
+                    child: Icon(Icons.info_outline, size: 16, color: Colors.grey),
+                  ),
+                ],
+              ),
+              // Encrypt-only options
+              if (isEncryptMode) ...[
+                const SizedBox(height: 8),
+                CheckboxListTile(
+                  value: _randomizePixels,
+                  onChanged: _stegoPasswordController.text.isNotEmpty
+                      ? (value) {
+                          setState(() {
+                            _randomizePixels = value ?? false;
+                          });
+                        }
+                      : null,
+                  title: Text(
+                    'Randomize Pixels',
+                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
+                  ),
+                  subtitle: Text(
+                    'Requires stego password. Spreads data randomly for better security.',
+                    style: TextStyle(fontSize: 10, color: Colors.grey),
+                  ),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                CheckboxListTile(
+                  value: _addDecoyData,
+                  onChanged: (value) {
+                    setState(() {
+                      _addDecoyData = value ?? false;
+                    });
+                  },
+                  title: Text(
+                    'Add Decoy Data',
+                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
+                  ),
+                  subtitle: Text(
+                    'Adds fake data to unused space for deniability.',
+                    style: TextStyle(fontSize: 10, color: Colors.grey),
+                  ),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
               ],
             ],
           ],
