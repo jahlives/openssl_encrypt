@@ -36,6 +36,7 @@ from .plugin_sandbox import PluginSandbox
 # Import security logger
 try:
     from ..security_logger import get_security_logger
+
     security_logger = get_security_logger()
 except ImportError:
     security_logger = None
@@ -195,7 +196,7 @@ class PluginManager:
                         "plugin_type": plugin.get_plugin_type().value,
                         "file_path": file_path,
                         "capabilities": [cap.value for cap in plugin.get_required_capabilities()],
-                    }
+                    },
                 )
 
             return PluginResult.success_result(
@@ -216,7 +217,7 @@ class PluginManager:
                         "file_path": file_path,
                         "error": str(e),
                         "error_type": type(e).__name__,
-                    }
+                    },
                 )
 
             return PluginResult.error_result(error_msg)
@@ -252,13 +253,19 @@ class PluginManager:
 
         return PluginResult.success_result(f"Plugin {plugin_id} unloaded successfully")
 
-    def execute_plugin(self, plugin_id: str, context: PluginSecurityContext) -> PluginResult:
+    def execute_plugin(
+        self,
+        plugin_id: str,
+        context: PluginSecurityContext,
+        use_process_isolation: bool = True,
+    ) -> PluginResult:
         """
         Execute plugin with security context.
 
         Args:
             plugin_id: ID of plugin to execute
             context: Security context for execution
+            use_process_isolation: Use process isolation (default: True)
 
         Returns:
             PluginResult with execution results
@@ -287,7 +294,7 @@ class PluginManager:
                     {
                         "plugin_id": plugin_id,
                         "reason": "invalid_security_context",
-                    }
+                    },
                 )
 
             return PluginResult.error_result(error_msg)
@@ -307,7 +314,7 @@ class PluginManager:
                     {
                         "plugin_id": plugin_id,
                         "error": capability_check.message,
-                    }
+                    },
                 )
 
             return capability_check
@@ -322,6 +329,7 @@ class PluginManager:
                 context,
                 max_execution_time=self.max_execution_time,
                 max_memory_mb=self.max_memory_mb,
+                use_process_isolation=use_process_isolation,
             )
 
             execution_time = time.time() - start_time
@@ -430,9 +438,7 @@ class PluginManager:
             f"Plugin security mode changed: {'strict' if enabled else 'permissive'} "
             f"(was: {'strict' if old_mode else 'permissive'})"
         )
-        self._audit_log(
-            f"Security mode changed to {'strict' if enabled else 'permissive'}"
-        )
+        self._audit_log(f"Security mode changed to {'strict' if enabled else 'permissive'}")
 
     def allow_unsafe_plugin(self, plugin_id: str) -> None:
         """
@@ -541,7 +547,7 @@ class PluginManager:
                                         "file_path": file_path,
                                         "dangerous_pattern": pattern,
                                         "reason": "strict_security_mode",
-                                    }
+                                    },
                                 )
 
                             return False
@@ -564,7 +570,7 @@ class PluginManager:
                                         "file_path": file_path,
                                         "dangerous_pattern": pattern,
                                         "action": "allowed_permissive_mode",
-                                    }
+                                    },
                                 )
 
                 # Audit log for dangerous patterns (even if allowed)

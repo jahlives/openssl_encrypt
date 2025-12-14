@@ -85,7 +85,11 @@ from openssl_encrypt.modules.crypt_core import (
     multi_hash_password,
 )
 from openssl_encrypt.modules.crypt_errors import add_timing_jitter, get_jitter_stats
-from openssl_encrypt.modules.crypt_utils import expand_glob_patterns, generate_strong_password, secure_shred_file
+from openssl_encrypt.modules.crypt_utils import (
+    expand_glob_patterns,
+    generate_strong_password,
+    secure_shred_file,
+)
 from openssl_encrypt.modules.secure_memory import (
     SecureBytes,
     SecureMemoryAllocator,
@@ -177,11 +181,11 @@ from openssl_encrypt.modules.crypt_errors import (
     constant_time_compare,
     constant_time_pkcs7_unpad,
     secure_decrypt_error_handler,
-    set_debug_mode,
     secure_encrypt_error_handler,
     secure_error_handler,
     secure_key_derivation_error_handler,
     secure_keystore_error_handler,
+    set_debug_mode,
 )
 from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
 from openssl_encrypt.modules.pqc import LIBOQS_AVAILABLE, PQCAlgorithm, PQCipher, check_pqc_support
@@ -1437,10 +1441,14 @@ class TestCLIInterface(unittest.TestCase):
         # generation directly
 
         # Mock the password generation and display functions
-        with mock.patch("openssl_encrypt.modules.crypt_utils.generate_strong_password") as mock_gen_password:
+        with mock.patch(
+            "openssl_encrypt.modules.crypt_utils.generate_strong_password"
+        ) as mock_gen_password:
             mock_gen_password.return_value = "MockedStrongPassword123!"
 
-            with mock.patch("openssl_encrypt.modules.crypt_utils.display_password_with_timeout") as mock_display:
+            with mock.patch(
+                "openssl_encrypt.modules.crypt_utils.display_password_with_timeout"
+            ) as mock_display:
                 # Call the functions directly
                 password = mock_gen_password(16, True, True, True, True)
                 mock_display(password)
@@ -3107,7 +3115,12 @@ class TestBufferOverflowProtection(unittest.TestCase):
 # Try to import PQC modules
 try:
     from openssl_encrypt.modules.crypt_core import PQC_AVAILABLE
-    from openssl_encrypt.modules.pqc import LIBOQS_AVAILABLE, PQCAlgorithm, PQCipher, check_pqc_support
+    from openssl_encrypt.modules.pqc import (
+        LIBOQS_AVAILABLE,
+        PQCAlgorithm,
+        PQCipher,
+        check_pqc_support,
+    )
 except ImportError:
     # Mock the PQC classes if not available
     LIBOQS_AVAILABLE = False
@@ -3392,7 +3405,10 @@ class TestPostQuantumCrypto(unittest.TestCase):
         try:
             from openssl_encrypt.modules.crypt_core import decrypt_file, encrypt_file
             from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
-            from openssl_encrypt.modules.keystore_utils import auto_generate_pqc_key, extract_key_id_from_metadata
+            from openssl_encrypt.modules.keystore_utils import (
+                auto_generate_pqc_key,
+                extract_key_id_from_metadata,
+            )
         except ImportError:
             self.skipTest("Keystore modules not available")
 
@@ -3590,7 +3606,10 @@ class TestPostQuantumCrypto(unittest.TestCase):
 
     def test_metadata_v4_v5_conversion(self):
         """Test conversion between metadata format version 4 and 5."""
-        from openssl_encrypt.modules.crypt_core import convert_metadata_v4_to_v5, convert_metadata_v5_to_v4
+        from openssl_encrypt.modules.crypt_core import (
+            convert_metadata_v4_to_v5,
+            convert_metadata_v5_to_v4,
+        )
 
         # Test v4 to v5 conversion
         # Create a sample v4 metadata structure
@@ -4219,7 +4238,10 @@ class TestPostQuantumCrypto(unittest.TestCase):
         # Skip if we can't import the necessary modules
         try:
             from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
-            from openssl_encrypt.modules.keystore_utils import auto_generate_pqc_key, extract_key_id_from_metadata
+            from openssl_encrypt.modules.keystore_utils import (
+                auto_generate_pqc_key,
+                extract_key_id_from_metadata,
+            )
             from openssl_encrypt.modules.keystore_wrapper import (
                 decrypt_file_with_keystore,
                 encrypt_file_with_keystore,
@@ -6498,7 +6520,11 @@ class TestAlgorithmWarnings(unittest.TestCase):
 
     def test_extract_file_metadata_integration(self):
         """Test that extract_file_metadata works for warning system."""
-        from openssl_encrypt.modules.crypt_core import EncryptionAlgorithm, encrypt_file, extract_file_metadata
+        from openssl_encrypt.modules.crypt_core import (
+            EncryptionAlgorithm,
+            encrypt_file,
+            extract_file_metadata,
+        )
 
         # Create a test file with a deprecated algorithm
         test_input = "Test content for metadata extraction"
@@ -8252,8 +8278,9 @@ class TestSteganographyCore(unittest.TestCase):
     def test_lsb_steganography_capacity(self):
         """Test LSB steganography capacity calculation."""
         import numpy as np
-        from openssl_encrypt.modules.steganography import LSBImageStego
         from PIL import Image
+
+        from openssl_encrypt.modules.steganography import LSBImageStego
 
         # Create test PNG image
         img_array = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
@@ -8277,8 +8304,9 @@ class TestSteganographyCore(unittest.TestCase):
     def test_lsb_steganography_hide_extract(self):
         """Test LSB steganography hide and extract functionality."""
         import numpy as np
-        from openssl_encrypt.modules.steganography import LSBImageStego
         from PIL import Image
+
+        from openssl_encrypt.modules.steganography import LSBImageStego
 
         # Create test PNG image
         img_array = np.random.randint(0, 255, (200, 200, 3), dtype=np.uint8)
@@ -8307,8 +8335,9 @@ class TestSteganographyCore(unittest.TestCase):
     def test_lsb_steganography_with_password(self):
         """Test LSB steganography with password-based pixel randomization."""
         import numpy as np
-        from openssl_encrypt.modules.steganography import LSBImageStego, SteganographyConfig
         from PIL import Image
+
+        from openssl_encrypt.modules.steganography import LSBImageStego, SteganographyConfig
 
         # Create test PNG image
         img_array = np.random.randint(0, 255, (200, 200, 3), dtype=np.uint8)
@@ -8383,7 +8412,10 @@ class TestJPEGSteganography(unittest.TestCase):
 
     def test_jpeg_analyzer(self):
         """Test JPEG format analyzer."""
-        from openssl_encrypt.modules.steganography.jpeg_utils import JPEGAnalyzer, create_jpeg_test_image
+        from openssl_encrypt.modules.steganography.jpeg_utils import (
+            JPEGAnalyzer,
+            create_jpeg_test_image,
+        )
 
         # Create test JPEG
         jpeg_data = create_jpeg_test_image(width=600, height=400, quality=80)
@@ -8474,9 +8506,13 @@ class TestSteganographyTransport(unittest.TestCase):
         # Import transport modules
         try:
             import numpy as np
-            from openssl_encrypt.modules.steganography import SteganographyTransport, create_steganography_transport
-            from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
             from PIL import Image
+
+            from openssl_encrypt.modules.steganography import (
+                SteganographyTransport,
+                create_steganography_transport,
+            )
+            from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
 
             self.transport_available = True
         except ImportError:
@@ -8490,9 +8526,10 @@ class TestSteganographyTransport(unittest.TestCase):
     def test_image_format_detection(self):
         """Test automatic image format detection."""
         import numpy as np
+        from PIL import Image
+
         from openssl_encrypt.modules.steganography import SteganographyTransport
         from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
-        from PIL import Image
 
         transport = SteganographyTransport()
 
@@ -8534,9 +8571,10 @@ class TestSteganographyTransport(unittest.TestCase):
     def test_capacity_calculation_through_transport(self):
         """Test capacity calculation through transport layer."""
         import numpy as np
+        from PIL import Image
+
         from openssl_encrypt.modules.steganography import SteganographyTransport
         from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
-        from PIL import Image
 
         # Test PNG capacity
         transport = SteganographyTransport(method="lsb", bits_per_channel=1)
@@ -8578,8 +8616,9 @@ class TestSteganographyCLIIntegration(unittest.TestCase):
         # Import CLI modules
         try:
             import numpy as np
-            from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
             from PIL import Image
+
+            from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
 
             self.cli_available = True
         except ImportError:
@@ -8758,8 +8797,9 @@ class TestSteganographyErrorHandling(unittest.TestCase):
     def test_capacity_error_handling(self):
         """Test capacity error handling."""
         import numpy as np
-        from openssl_encrypt.modules.steganography import CapacityError, LSBImageStego
         from PIL import Image
+
+        from openssl_encrypt.modules.steganography import CapacityError, LSBImageStego
 
         # Create small image (large enough to pass minimum size but small capacity)
         img_array = np.random.randint(0, 255, (50, 50, 3), dtype=np.uint8)
@@ -8834,7 +8874,10 @@ class TestTIFFSteganography(unittest.TestCase):
 
         # Check if TIFF steganography is available
         try:
-            from openssl_encrypt.modules.steganography import TIFFSteganography, is_tiff_steganography_available
+            from openssl_encrypt.modules.steganography import (
+                TIFFSteganography,
+                is_tiff_steganography_available,
+            )
 
             self.tiff_available = is_tiff_steganography_available()
         except ImportError:
@@ -8857,7 +8900,11 @@ class TestTIFFSteganography(unittest.TestCase):
         if not self.tiff_available:
             self.skipTest("TIFF steganography not available")
 
-        from openssl_encrypt.modules.steganography import TIFFAnalyzer, TIFFSteganography, create_tiff_test_image
+        from openssl_encrypt.modules.steganography import (
+            TIFFAnalyzer,
+            TIFFSteganography,
+            create_tiff_test_image,
+        )
 
         # Test creating TIFFSteganography instance
         tiff_stego = TIFFSteganography()
@@ -8872,7 +8919,10 @@ class TestTIFFSteganography(unittest.TestCase):
         if not self.tiff_available:
             self.skipTest("TIFF steganography not available")
 
-        from openssl_encrypt.modules.steganography import SteganographyTransport, create_tiff_test_image
+        from openssl_encrypt.modules.steganography import (
+            SteganographyTransport,
+            create_tiff_test_image,
+        )
 
         # Create a test TIFF image
         tiff_path = os.path.join(self.test_dir, "test_detection.tiff")
@@ -8965,7 +9015,10 @@ class TestTIFFSteganography(unittest.TestCase):
         if not self.tiff_available:
             self.skipTest("TIFF steganography not available")
 
-        from openssl_encrypt.modules.steganography import SteganographyTransport, create_tiff_test_image
+        from openssl_encrypt.modules.steganography import (
+            SteganographyTransport,
+            create_tiff_test_image,
+        )
 
         # Create test TIFF
         tiff_path = os.path.join(self.test_dir, "test_transport.tiff")
@@ -9060,7 +9113,10 @@ class TestWEBPSteganography(unittest.TestCase):
 
         # Check if WEBP steganography is available
         try:
-            from openssl_encrypt.modules.steganography import WEBPSteganography, is_webp_steganography_available
+            from openssl_encrypt.modules.steganography import (
+                WEBPSteganography,
+                is_webp_steganography_available,
+            )
 
             self.webp_available = is_webp_steganography_available()
         except ImportError:
@@ -9083,7 +9139,11 @@ class TestWEBPSteganography(unittest.TestCase):
         if not self.webp_available:
             self.skipTest("WEBP steganography not available")
 
-        from openssl_encrypt.modules.steganography import WEBPAnalyzer, WEBPSteganography, create_webp_test_image
+        from openssl_encrypt.modules.steganography import (
+            WEBPAnalyzer,
+            WEBPSteganography,
+            create_webp_test_image,
+        )
 
         # Test creating WEBPSteganography instance
         webp_stego = WEBPSteganography()
@@ -9098,7 +9158,10 @@ class TestWEBPSteganography(unittest.TestCase):
         if not self.webp_available:
             self.skipTest("WEBP steganography not available")
 
-        from openssl_encrypt.modules.steganography import SteganographyTransport, create_webp_test_image
+        from openssl_encrypt.modules.steganography import (
+            SteganographyTransport,
+            create_webp_test_image,
+        )
 
         # Create a test WEBP image
         webp_data = create_webp_test_image(width=50, height=50, lossless=True)
@@ -9202,7 +9265,10 @@ class TestWEBPSteganography(unittest.TestCase):
         if not self.webp_available:
             self.skipTest("WEBP steganography not available")
 
-        from openssl_encrypt.modules.steganography import SteganographyTransport, create_webp_test_image
+        from openssl_encrypt.modules.steganography import (
+            SteganographyTransport,
+            create_webp_test_image,
+        )
 
         # Create test WEBP files
         webp_path = os.path.join(self.test_dir, "test_transport.webp")
@@ -9316,7 +9382,10 @@ class TestWAVSteganography(unittest.TestCase):
 
         # Check if WAV steganography is available
         try:
-            from openssl_encrypt.modules.steganography import WAVSteganography, is_wav_steganography_available
+            from openssl_encrypt.modules.steganography import (
+                WAVSteganography,
+                is_wav_steganography_available,
+            )
 
             self.wav_available = is_wav_steganography_available()
         except ImportError:
@@ -9339,7 +9408,11 @@ class TestWAVSteganography(unittest.TestCase):
         if not self.wav_available:
             self.skipTest("WAV steganography not available")
 
-        from openssl_encrypt.modules.steganography import WAVAnalyzer, WAVSteganography, create_wav_test_audio
+        from openssl_encrypt.modules.steganography import (
+            WAVAnalyzer,
+            WAVSteganography,
+            create_wav_test_audio,
+        )
 
         # Test creating WAVSteganography instance
         wav_stego = WAVSteganography()
@@ -9543,7 +9616,10 @@ class TestFLACSteganography(unittest.TestCase):
 
         # Check if FLAC steganography is available
         try:
-            from openssl_encrypt.modules.steganography import FLACSteganography, is_flac_steganography_available
+            from openssl_encrypt.modules.steganography import (
+                FLACSteganography,
+                is_flac_steganography_available,
+            )
 
             self.flac_available = is_flac_steganography_available()
         except ImportError:
@@ -9566,7 +9642,11 @@ class TestFLACSteganography(unittest.TestCase):
         if not self.flac_available:
             self.skipTest("FLAC steganography not available")
 
-        from openssl_encrypt.modules.steganography import FLACAnalyzer, FLACSteganography, create_flac_test_audio
+        from openssl_encrypt.modules.steganography import (
+            FLACAnalyzer,
+            FLACSteganography,
+            create_flac_test_audio,
+        )
 
         # Test creating FLACSteganography instance
         flac_stego = FLACSteganography()
@@ -9797,7 +9877,10 @@ class TestMP3Steganography(unittest.TestCase):
 
         # Check if MP3 steganography is available
         try:
-            from openssl_encrypt.modules.steganography import MP3Steganography, is_mp3_steganography_available
+            from openssl_encrypt.modules.steganography import (
+                MP3Steganography,
+                is_mp3_steganography_available,
+            )
 
             self.mp3_available = is_mp3_steganography_available()
         except ImportError:
@@ -9820,7 +9903,11 @@ class TestMP3Steganography(unittest.TestCase):
         if not self.mp3_available:
             self.skipTest("MP3 steganography not available")
 
-        from openssl_encrypt.modules.steganography import MP3Analyzer, MP3Steganography, create_mp3_test_audio
+        from openssl_encrypt.modules.steganography import (
+            MP3Analyzer,
+            MP3Steganography,
+            create_mp3_test_audio,
+        )
 
         # Test creating MP3Steganography instance
         mp3_stego = MP3Steganography()
@@ -10097,7 +10184,11 @@ class TestQRCodeKeyDistribution(unittest.TestCase):
 
         # Check if QR dependencies are available
         try:
-            from openssl_encrypt.modules.portable_media import QRKeyDistribution, QRKeyError, QRKeyFormat
+            from openssl_encrypt.modules.portable_media import (
+                QRKeyDistribution,
+                QRKeyError,
+                QRKeyFormat,
+            )
 
             self.qr_available = True
             self.QRKeyDistribution = QRKeyDistribution
@@ -10275,7 +10366,11 @@ class TestUSBDriveEncryption(unittest.TestCase):
 
         # Check if USB dependencies are available
         try:
-            from openssl_encrypt.modules.portable_media import USBCreationError, USBDriveCreator, USBSecurityProfile
+            from openssl_encrypt.modules.portable_media import (
+                USBCreationError,
+                USBDriveCreator,
+                USBSecurityProfile,
+            )
 
             self.usb_available = True
             self.USBDriveCreator = USBDriveCreator
@@ -11072,6 +11167,45 @@ except Exception as e:
 # =============================================================================
 
 
+# Plugin classes for testing (defined at module level for picklability)
+try:
+    from openssl_encrypt.modules.plugin_system import (
+        PluginCapability,
+        PluginResult,
+        PluginSecurityContext,
+        PreProcessorPlugin,
+    )
+
+    class SlowPluginForTimeout(PreProcessorPlugin):
+        """A slow plugin for timeout testing (module-level for pickling)."""
+
+        def __init__(self):
+            super().__init__("slow_test", "Slow Test Plugin", "1.0.0")
+
+        def get_required_capabilities(self):
+            return {PluginCapability.READ_FILES}
+
+        def get_description(self):
+            return "A slow plugin for timeout testing"
+
+        def process_file(self, file_path, context):
+            import time
+
+            time.sleep(2)  # Sleep longer than timeout
+            return PluginResult.success_result("Should not reach here")
+
+        def execute(self, context):
+            """Override execute to actually run the blocking sleep."""
+            import time
+
+            time.sleep(2)  # Sleep longer than timeout
+            return PluginResult.success_result("Should not reach here")
+
+except ImportError:
+    # Plugin system not available
+    SlowPluginForTimeout = None
+
+
 @pytest.mark.order(0)
 class TestPluginSystem(unittest.TestCase):
     """Test cases for the secure plugin system."""
@@ -11387,7 +11521,10 @@ class SimpleTestPlugin(PreProcessorPlugin):
             context = PluginSecurityContext("simple_test", {PluginCapability.READ_FILES})
             context.file_paths = ["/tmp/test_file.txt"]
 
-            exec_result = plugin_manager.execute_plugin("simple_test", context)
+            # Use in-process execution to avoid pickling issues with dynamically loaded plugins
+            exec_result = plugin_manager.execute_plugin(
+                "simple_test", context, use_process_isolation=False
+            )
             self.assertTrue(exec_result.success)
 
         except ImportError:
@@ -11420,13 +11557,17 @@ class SimpleTestPlugin(PreProcessorPlugin):
             insufficient_context = PluginSecurityContext(
                 "simple_test", {PluginCapability.WRITE_LOGS}
             )
-            result = plugin_manager.execute_plugin("simple_test", insufficient_context)
+            result = plugin_manager.execute_plugin(
+                "simple_test", insufficient_context, use_process_isolation=False
+            )
             self.assertFalse(result.success)
 
             # Test with sufficient capabilities - should succeed
             sufficient_context = PluginSecurityContext("simple_test", {PluginCapability.READ_FILES})
             sufficient_context.file_paths = ["/tmp/test_file.txt"]
-            result = plugin_manager.execute_plugin("simple_test", sufficient_context)
+            result = plugin_manager.execute_plugin(
+                "simple_test", sufficient_context, use_process_isolation=False
+            )
             self.assertTrue(result.success)
 
         except ImportError:
@@ -11460,33 +11601,15 @@ class SimpleTestPlugin(PreProcessorPlugin):
         try:
             from ..modules.plugin_system import (
                 PluginCapability,
-                PluginResult,
                 PluginSandbox,
                 PluginSecurityContext,
-                PreProcessorPlugin,
             )
 
-            # Create a plugin that takes too long
-            class SlowPlugin(PreProcessorPlugin):
-                def __init__(self):
-                    super().__init__("slow_test", "Slow Test Plugin", "1.0.0")
+            # Use the module-level SlowPluginForTimeout class (defined outside for picklability)
+            if SlowPluginForTimeout is None:
+                self.skipTest("Plugin system not available")
 
-                def get_required_capabilities(self):
-                    return {PluginCapability.READ_FILES}
-
-                def get_description(self):
-                    return "A slow plugin for timeout testing"
-
-                def process_file(self, file_path, context):
-                    time.sleep(2)  # Sleep longer than timeout
-                    return PluginResult.success_result("Should not reach here")
-
-                def execute(self, context):
-                    """Override execute to actually run the blocking sleep."""
-                    time.sleep(2)  # Sleep longer than timeout
-                    return PluginResult.success_result("Should not reach here")
-
-            plugin = SlowPlugin()
+            plugin = SlowPluginForTimeout()
             context = PluginSecurityContext("slow_test", {PluginCapability.READ_FILES})
             # No need to add file paths since we're overriding execute()
             sandbox = PluginSandbox()
@@ -13886,15 +14009,17 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_base_test_classes(self):
         """Test base testing framework classes."""
-        from openssl_encrypt.modules.testing.base_test import BaseSecurityTest, TestResult, TestResultLevel
+        from openssl_encrypt.modules.testing.base_test import (
+            BaseSecurityTest,
+            TestResult,
+            TestResultLevel,
+        )
 
         # Test TestResult creation
         result = TestResult(
-            test_name="test_example",
-            level=TestResultLevel.PASS,
-            message="Test passed successfully"
+            test_name="test_example", level=TestResultLevel.PASS, message="Test passed successfully"
         )
-        
+
         self.assertEqual(result.test_name, "test_example")
         self.assertEqual(result.level, TestResultLevel.PASS)
         self.assertTrue(result.is_success())
@@ -13909,11 +14034,9 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
         # Test failure result
         error_result = TestResult(
-            test_name="test_error",
-            level=TestResultLevel.ERROR,
-            message="Test failed with error"
+            test_name="test_error", level=TestResultLevel.ERROR, message="Test failed with error"
         )
-        
+
         self.assertFalse(error_result.is_success())
         self.assertTrue(error_result.is_failure())
 
@@ -13934,7 +14057,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
         patterns = generator.generate_special_patterns()
         self.assertIsInstance(patterns, list)
         self.assertGreater(len(patterns), 5)
-        
+
         for pattern_data, pattern_name in patterns:
             self.assertIsInstance(pattern_data, bytes)
             self.assertIsInstance(pattern_name, str)
@@ -13954,7 +14077,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
         # Test timing consistency analysis
         consistent_timings = [1.0, 1.1, 0.9, 1.05, 0.95]  # Low variation
         analysis = analyzer.analyze_timing_consistency(consistent_timings, "test_op")
-        
+
         self.assertIn("operation", analysis)
         self.assertIn("timing_consistent", analysis)
         self.assertIn("coefficient_of_variation", analysis)
@@ -13969,7 +14092,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
         # Test timing distribution comparison
         group1 = [1.0, 1.1, 0.9, 1.05, 0.95]
         group2 = [2.0, 2.2, 1.8, 2.1, 1.9]  # Different timing group
-        
+
         comparison = analyzer.compare_timing_distributions(group1, group2)
         self.assertIn("potentially_vulnerable", comparison)
         self.assertIn("mean_difference_percentage", comparison)
@@ -13977,12 +14100,12 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_kat_test_vectors(self):
         """Test KAT test vectors."""
-        from openssl_encrypt.modules.testing.kat_tests import NISTTestVectors, CustomTestVectors
+        from openssl_encrypt.modules.testing.kat_tests import CustomTestVectors, NISTTestVectors
 
         # Test NIST vectors
         sha256_vectors = NISTTestVectors.get_sha256_vectors()
         self.assertGreater(len(sha256_vectors), 3)
-        
+
         for vector in sha256_vectors:
             self.assertEqual(vector.algorithm, "SHA256")
             self.assertIsInstance(vector.input_data, bytes)
@@ -13992,7 +14115,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
         # Test HMAC vectors
         hmac_vectors = NISTTestVectors.get_hmac_vectors()
         self.assertGreater(len(hmac_vectors), 1)
-        
+
         for vector in hmac_vectors:
             self.assertEqual(vector.algorithm, "HMAC-SHA256")
             self.assertIsInstance(vector.key, bytes)
@@ -14001,18 +14124,21 @@ class TestAdvancedTestingFramework(unittest.TestCase):
         # Test custom vectors
         file_vectors = CustomTestVectors.get_file_encryption_vectors()
         self.assertGreater(len(file_vectors), 2)
-        
+
         # Should include various algorithms
         algorithms = [v.algorithm for v in file_vectors]
         self.assertIn("fernet", algorithms)
         self.assertIn("aes-gcm", algorithms)
-        
+
         for vector in file_vectors:
             self.assertIsInstance(vector.input_data, bytes)
 
     def test_benchmark_performance_analyzer(self):
         """Test benchmark performance analyzer."""
-        from openssl_encrypt.modules.testing.benchmark_suite import PerformanceAnalyzer, BenchmarkResult
+        from openssl_encrypt.modules.testing.benchmark_suite import (
+            BenchmarkResult,
+            PerformanceAnalyzer,
+        )
 
         analyzer = PerformanceAnalyzer()
 
@@ -14029,7 +14155,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
         # Test timing consistency analysis
         good_timings = [1.0, 1.1, 0.9, 1.05, 0.95]
         consistency = analyzer.analyze_timing_consistency(good_timings)
-        
+
         self.assertIn("timing_consistent", consistency)
         self.assertIn("coefficient_of_variation", consistency)
         self.assertIn("performance_stable", consistency)
@@ -14047,7 +14173,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
         if availability:
             # Test snapshot taking
             snapshot = profiler.take_snapshot("test_operation")
-            
+
             if snapshot:  # Only test if snapshot was successful
                 self.assertEqual(snapshot.operation, "test_operation")
                 self.assertGreater(snapshot.rss_bytes, 0)
@@ -14055,7 +14181,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
                 # Test delta calculation with another snapshot
                 snapshot2 = profiler.take_snapshot("test_operation_2")
-                
+
                 if snapshot2:
                     delta = profiler.calculate_memory_delta(snapshot, snapshot2)
                     self.assertIn("time_delta", delta)
@@ -14072,7 +14198,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
             parallel_execution=True,
             max_workers=2,
             config={"algorithm": "fernet"},
-            output_formats=["json", "html"]
+            output_formats=["json", "html"],
         )
 
         self.assertEqual(len(plan.suite_types), 2)
@@ -14088,23 +14214,24 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
         # Test all expected suite types exist
         expected_types = ["fuzz", "side_channel", "kat", "benchmark", "memory", "all"]
-        
+
         for expected_type in expected_types:
             suite_type = TestSuiteType(expected_type)
             self.assertEqual(suite_type.value, expected_type)
 
     def test_report_generation_data_structures(self):
         """Test report generation data structures."""
-        from openssl_encrypt.modules.testing.test_runner import TestRunReport, TestSuiteResult
-        from openssl_encrypt.modules.testing.base_test import TestResult, TestResultLevel
         from datetime import datetime
+
+        from openssl_encrypt.modules.testing.base_test import TestResult, TestResultLevel
+        from openssl_encrypt.modules.testing.test_runner import TestRunReport, TestSuiteResult
 
         # Create mock test results
         test_result = TestResult(
             test_name="mock_test",
             level=TestResultLevel.PASS,
             message="Mock test passed",
-            duration=0.5
+            duration=0.5,
         )
 
         # Create mock suite result
@@ -14114,13 +14241,13 @@ class TestAdvancedTestingFramework(unittest.TestCase):
             execution_time=1.0,
             test_results=[test_result],
             summary={"total_tests": 1, "passed": 1},
-            success=True
+            success=True,
         )
 
         # Create mock run report
         start_time = datetime.now()
         end_time = datetime.now()
-        
+
         report = TestRunReport(
             run_id="test_run_123",
             start_time=start_time,
@@ -14129,7 +14256,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
             suite_results=[suite_result],
             overall_summary={"total_tests": 1, "passed_tests": 1},
             system_info={"platform": "test"},
-            configuration={"test_mode": True}
+            configuration={"test_mode": True},
         )
 
         self.assertEqual(report.run_id, "test_run_123")
@@ -14138,31 +14265,31 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_fuzz_testing_integration(self):
         """Test fuzzing framework integration."""
-        from openssl_encrypt.modules.testing.fuzz_testing import FuzzTestSuite
         from openssl_encrypt.modules.testing.base_test import TestConfig
+        from openssl_encrypt.modules.testing.fuzz_testing import FuzzTestSuite
 
         # Create a fuzzing test suite
         fuzz_suite = FuzzTestSuite()
-        
+
         self.assertEqual(fuzz_suite.name, "FuzzTestSuite")
         self.assertIn("fuzz", fuzz_suite.description.lower())
 
         # Test with minimal config (avoiding actual file operations)
         config = TestConfig(algorithm="fernet", test_mode=True)
-        
+
         # Just test that the suite can be instantiated and configured
         self.assertIsNotNone(fuzz_suite.input_generator)
 
     def test_side_channel_testing_integration(self):
-        """Test side-channel testing integration.""" 
+        """Test side-channel testing integration."""
         from openssl_encrypt.modules.testing.side_channel_tests import SideChannelTestSuite
 
         # Create a side-channel test suite
         side_channel_suite = SideChannelTestSuite()
-        
+
         self.assertEqual(side_channel_suite.name, "SideChannelTestSuite")
         self.assertIn("side", side_channel_suite.description.lower())
-        
+
         # Test analyzer availability
         self.assertIsNotNone(side_channel_suite.analyzer)
 
@@ -14172,7 +14299,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
         # Create a KAT test suite
         kat_suite = KATTestSuite()
-        
+
         self.assertEqual(kat_suite.name, "KATTestSuite")
         self.assertIn("known-answer", kat_suite.description.lower())
 
@@ -14182,10 +14309,10 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
         # Create a benchmark test suite
         benchmark_suite = BenchmarkTestSuite()
-        
+
         self.assertEqual(benchmark_suite.name, "BenchmarkTestSuite")
         self.assertIn("benchmark", benchmark_suite.description.lower())
-        
+
         # Test analyzer availability
         self.assertIsNotNone(benchmark_suite.analyzer)
 
@@ -14195,10 +14322,10 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
         # Create a memory test suite
         memory_suite = MemoryTestSuite()
-        
+
         self.assertEqual(memory_suite.name, "MemoryTestSuite")
         self.assertIn("memory", memory_suite.description.lower())
-        
+
         # Test profiler availability
         self.assertIsNotNone(memory_suite.profiler)
 
@@ -14208,12 +14335,12 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
         # Create a security test runner
         runner = SecurityTestRunner()
-        
+
         # Test suite listing
         available_suites = runner.list_available_suites()
         self.assertIsInstance(available_suites, list)
         self.assertGreater(len(available_suites), 4)  # Should have at least 5 suites
-        
+
         # Test suite info retrieval
         for suite_type in TestSuiteType:
             if suite_type != TestSuiteType.ALL:  # Skip ALL as it's not a real suite
@@ -14226,17 +14353,30 @@ class TestAdvancedTestingFramework(unittest.TestCase):
         """Test that all testing framework modules can be imported."""
         # Test base module imports
         try:
-            from openssl_encrypt.modules.testing.base_test import BaseSecurityTest, TestResult, TestResultLevel
+            from openssl_encrypt.modules.testing.base_test import (
+                BaseSecurityTest,
+                TestResult,
+                TestResultLevel,
+            )
+            from openssl_encrypt.modules.testing.benchmark_suite import (
+                BenchmarkTestSuite,
+                PerformanceAnalyzer,
+            )
             from openssl_encrypt.modules.testing.fuzz_testing import FuzzTestSuite, InputGenerator
-            from openssl_encrypt.modules.testing.side_channel_tests import SideChannelTestSuite, StatisticalAnalyzer
             from openssl_encrypt.modules.testing.kat_tests import KATTestSuite, NISTTestVectors
-            from openssl_encrypt.modules.testing.benchmark_suite import BenchmarkTestSuite, PerformanceAnalyzer
-            from openssl_encrypt.modules.testing.memory_tests import MemoryTestSuite, MemoryProfiler
-            from openssl_encrypt.modules.testing.test_runner import SecurityTestRunner, TestExecutionPlan
-            
+            from openssl_encrypt.modules.testing.memory_tests import MemoryProfiler, MemoryTestSuite
+            from openssl_encrypt.modules.testing.side_channel_tests import (
+                SideChannelTestSuite,
+                StatisticalAnalyzer,
+            )
+            from openssl_encrypt.modules.testing.test_runner import (
+                SecurityTestRunner,
+                TestExecutionPlan,
+            )
+
             # If we get here, all imports succeeded
             self.assertTrue(True)
-            
+
         except ImportError as e:
             self.fail(f"Failed to import testing framework modules: {e}")
 
@@ -14245,10 +14385,10 @@ class TestAdvancedTestingFramework(unittest.TestCase):
         # Test that the CLI function exists and can be imported
         try:
             from openssl_encrypt.modules.crypt_cli import run_security_tests
-            
+
             # Test function exists
             self.assertTrue(callable(run_security_tests))
-            
+
         except ImportError as e:
             self.fail(f"Failed to import CLI integration: {e}")
 
@@ -14257,11 +14397,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
         from openssl_encrypt.modules.testing.base_test import TestConfig
 
         # Test config creation and access
-        config = TestConfig(
-            algorithm="fernet",
-            iterations=5,
-            output_format="json"
-        )
+        config = TestConfig(algorithm="fernet", iterations=5, output_format="json")
 
         self.assertEqual(config.get("algorithm"), "fernet")
         self.assertEqual(config.get("iterations"), 5)
@@ -14284,6 +14420,7 @@ class TestSecurityLogger(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures"""
         import tempfile
+
         from openssl_encrypt.modules.security_logger import SecurityAuditLogger
 
         # Reset singleton instance for clean test
@@ -14296,13 +14433,14 @@ class TestSecurityLogger(unittest.TestCase):
     def tearDown(self):
         """Clean up test fixtures"""
         import shutil
+
         from openssl_encrypt.modules.security_logger import SecurityAuditLogger
 
         # Reset singleton instance
         SecurityAuditLogger._instance = None
 
         # Clean up temporary log directory
-        if hasattr(self, 'test_log_dir'):
+        if hasattr(self, "test_log_dir"):
             shutil.rmtree(self.test_log_dir, ignore_errors=True)
 
     def test_logger_initialization(self):
@@ -14317,13 +14455,11 @@ class TestSecurityLogger(unittest.TestCase):
     def test_log_event_basic(self):
         """Test basic event logging"""
         self.logger.log_event(
-            "test_event",
-            "info",
-            {"file_path": "/tmp/test.txt", "operation": "encrypt"}
+            "test_event", "info", {"file_path": "/tmp/test.txt", "operation": "encrypt"}
         )
 
         # Read log file and verify event was written
-        with open(self.logger.log_file, 'r') as f:
+        with open(self.logger.log_file, "r") as f:
             log_content = f.read()
             self.assertIn("test_event", log_content)
             self.assertIn("file_path", log_content)
@@ -14336,15 +14472,11 @@ class TestSecurityLogger(unittest.TestCase):
         self.logger.log_event(
             "encryption_started",
             "info",
-            {
-                "file": "test.txt",
-                "password": "SuperSecret123!",
-                "key": "0x1234567890abcdef"
-            }
+            {"file": "test.txt", "password": "SuperSecret123!", "key": "0x1234567890abcdef"},
         )
 
         # Read log file and verify sensitive fields are redacted
-        with open(self.logger.log_file, 'r') as f:
+        with open(self.logger.log_file, "r") as f:
             log_content = f.read()
             self.assertIn("test.txt", log_content)
             self.assertNotIn("SuperSecret123!", log_content)
@@ -14358,7 +14490,7 @@ class TestSecurityLogger(unittest.TestCase):
         self.logger.log_event("critical_event", "critical", {"detail": "critical"})
 
         # Read log and verify all events are present
-        with open(self.logger.log_file, 'r') as f:
+        with open(self.logger.log_file, "r") as f:
             log_content = f.read()
             self.assertIn("info_event", log_content)
             self.assertIn("warning_event", log_content)
@@ -14378,12 +14510,12 @@ class TestSecurityLogger(unittest.TestCase):
         # Retrieve only warning events
         warning_events = self.logger.get_recent_events(hours=24, severity="warning")
         self.assertEqual(len(warning_events), 1)
-        self.assertEqual(warning_events[0]['event_type'], "event2")
+        self.assertEqual(warning_events[0]["event_type"], "event2")
 
         # Retrieve specific event type
         event1_events = self.logger.get_recent_events(hours=24, event_type="event1")
         self.assertEqual(len(event1_events), 1)
-        self.assertEqual(event1_events[0]['event_type'], "event1")
+        self.assertEqual(event1_events[0]["event_type"], "event1")
 
     def test_log_rotation(self):
         """Test log rotation when size limit is exceeded"""
@@ -14393,7 +14525,7 @@ class TestSecurityLogger(unittest.TestCase):
             self.logger.log_event(f"event_{i}", "info", large_detail)
 
         # Check that log rotation occurred
-        rotated_log = Path(self.test_log_dir) / 'security-audit.log.1'
+        rotated_log = Path(self.test_log_dir) / "security-audit.log.1"
         # Note: Rotation may not occur in this test due to timing, so we just check
         # that the logger doesn't crash when writing large amounts of data
         self.assertTrue(self.logger.log_file.exists())
@@ -14417,6 +14549,7 @@ class TestSecurityLogger(unittest.TestCase):
     def test_disabled_logger(self):
         """Test that disabled logger doesn't write logs"""
         import tempfile
+
         from openssl_encrypt.modules.security_logger import SecurityAuditLogger
 
         # Create disabled logger
@@ -14428,13 +14561,14 @@ class TestSecurityLogger(unittest.TestCase):
             disabled_logger.log_event("test_event", "info", {"data": "test"})
 
             # Verify no log file was created (or is empty if created)
-            log_file = Path(disabled_dir) / 'security-audit.log'
+            log_file = Path(disabled_dir) / "security-audit.log"
             if log_file.exists():
-                with open(log_file, 'r') as f:
+                with open(log_file, "r") as f:
                     content = f.read()
                     self.assertEqual(content, "")
         finally:
             import shutil
+
             shutil.rmtree(disabled_dir, ignore_errors=True)
 
     def test_thread_safety(self):
@@ -14444,9 +14578,7 @@ class TestSecurityLogger(unittest.TestCase):
         def log_events(thread_id, count):
             for i in range(count):
                 self.logger.log_event(
-                    f"thread_{thread_id}_event_{i}",
-                    "info",
-                    {"thread": thread_id, "iteration": i}
+                    f"thread_{thread_id}_event_{i}", "info", {"thread": thread_id, "iteration": i}
                 )
 
         # Create multiple threads
@@ -14471,14 +14603,10 @@ class TestSecurityLogger(unittest.TestCase):
         """Test that long values are truncated"""
         long_value = "x" * 500  # Longer than 256 character limit
 
-        self.logger.log_event(
-            "test_event",
-            "info",
-            {"long_field": long_value}
-        )
+        self.logger.log_event("test_event", "info", {"long_field": long_value})
 
         # Read log and verify truncation
-        with open(self.logger.log_file, 'r') as f:
+        with open(self.logger.log_file, "r") as f:
             log_content = f.read()
             self.assertIn("[truncated]", log_content)
             self.assertNotIn("x" * 500, log_content)

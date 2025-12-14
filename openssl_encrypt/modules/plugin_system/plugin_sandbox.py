@@ -19,17 +19,35 @@ import logging
 import multiprocessing
 import os
 import resource
-import signal
 import sys
 import tempfile
 import threading
 import time
 from contextlib import contextmanager
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from .plugin_base import BasePlugin, PluginCapability, PluginResult, PluginSecurityContext
 
 logger = logging.getLogger(__name__)
+
+
+def _plugin_worker(plugin, context, result_queue):
+    """
+    Worker function for multiprocessing-based plugin execution.
+
+    This function must be at module level to be picklable.
+
+    Args:
+        plugin: Plugin instance to execute
+        context: Security context for execution
+        result_queue: Queue to return results
+    """
+    try:
+        # Execute plugin
+        result = plugin.execute(context)
+        result_queue.put(("success", result))
+    except Exception as e:
+        result_queue.put(("error", str(e)))
 
 
 class ResourceMonitor:
@@ -144,13 +162,13 @@ class PluginSandbox:
         try:
             if use_process_isolation:
                 # Use multiprocessing for reliable timeout (recommended)
-                return self._execute_in_process(
-                    plugin, context, max_execution_time, max_memory_mb
-                )
+                return self._execute_in_process(plugin, context, max_execution_time, max_memory_mb)
             else:
                 # Use threading (legacy, less reliable for blocking operations)
-                # Setup sandbox environment
-                with self._create_sandbox_environment(context, max_memory_mb):
+                # Setup sandbox environment without strict memory limits (threading needs more memory)
+                with self._create_sandbox_environment(
+                    context, max_memory_mb, use_process_isolation=False
+                ):
                     # Start monitoring
                     self.monitor.start()
 
@@ -184,34 +202,50 @@ class PluginSandbox:
             return PluginResult.error_result(error_msg)
 
     @contextmanager
-    def _create_sandbox_environment(self, context: PluginSecurityContext, max_memory_mb: int):
-        """Create sandboxed environment for plugin execution."""
+    def _create_sandbox_environment(
+        self, context: PluginSecurityContext, max_memory_mb: int, use_process_isolation: bool = True
+    ):
+        """Create sandboxed environment for plugin execution.
+
+        Args:
+            context: Security context for plugin
+            max_memory_mb: Maximum memory in MB
+            use_process_isolation: If False, skip strict memory limits (threading needs more memory)
+        """
         original_cwd = os.getcwd()
         temp_dir = None
+        memory_limit_set = False
+        # Store original functions to restore later
+        saved_state = {}
 
         try:
             # Create temporary directory for plugin operations
             temp_dir = tempfile.mkdtemp(prefix=f"plugin_{context.plugin_id}_")
             self.temp_dir = temp_dir
 
-            # Set memory limits (Unix only)
-            if hasattr(resource, "RLIMIT_AS"):
+            # Set memory limits only for process isolation (Unix only)
+            # Threading mode needs more memory for thread creation, so we skip strict limits
+            if use_process_isolation and hasattr(resource, "RLIMIT_AS"):
                 try:
                     # Set virtual memory limit
                     memory_limit = max_memory_mb * 1024 * 1024
                     resource.setrlimit(resource.RLIMIT_AS, (memory_limit, memory_limit))
+                    memory_limit_set = True
                 except (OSError, ValueError) as e:
                     logger.warning(f"Could not set memory limit: {e}")
 
             # Change to temp directory
             os.chdir(temp_dir)
 
-            # Setup restricted environment
-            self._setup_restricted_environment(context)
+            # Setup restricted environment and save original state
+            saved_state = self._setup_restricted_environment(context)
 
             yield temp_dir
 
         finally:
+            # Restore original functions FIRST (before any other cleanup)
+            self._restore_original_environment(saved_state)
+
             # Cleanup
             os.chdir(original_cwd)
 
@@ -221,33 +255,46 @@ class PluginSandbox:
                 except Exception as e:
                     logger.error(f"Error cleaning up temp directory: {e}")
 
-            # Reset memory limits
-            if hasattr(resource, "RLIMIT_AS"):
+            # Reset memory limits only if we set them
+            if memory_limit_set and hasattr(resource, "RLIMIT_AS"):
                 try:
                     resource.setrlimit(resource.RLIMIT_AS, (-1, -1))
                 except (OSError, ValueError):
                     pass
 
     def _setup_restricted_environment(self, context: PluginSecurityContext):
-        """Setup restricted environment based on plugin capabilities."""
+        """Setup restricted environment based on plugin capabilities.
+
+        Returns:
+            Dict with saved original state for restoration
+        """
+        saved_state = {}
 
         # Restrict file access based on capabilities
         if PluginCapability.READ_FILES not in context.capabilities:
             # Override file operations to restrict access
-            self._restrict_file_operations()
+            saved_state["file_ops"] = self._restrict_file_operations()
 
         # Restrict network access
         if PluginCapability.NETWORK_ACCESS not in context.capabilities:
-            self._restrict_network_operations()
+            self._restrict_network_operations(saved_state)
 
         # Restrict process execution
         if PluginCapability.EXECUTE_PROCESSES not in context.capabilities:
-            self._restrict_process_operations()
+            self._restrict_process_operations(saved_state)
+
+        return saved_state
 
     def _restrict_file_operations(self):
-        """Restrict file system operations."""
-        # Store original functions
-        original_open = builtins.open if "builtins" in globals() else open
+        """Restrict file system operations.
+
+        Returns:
+            Original open function for restoration
+        """
+        import builtins
+
+        # Store original function
+        original_open = builtins.open
 
         def restricted_open(file, mode="r", **kwargs):
             # Only allow access to temp directory and explicitly safe paths
@@ -258,17 +305,20 @@ class PluginSandbox:
 
             return original_open(file, mode, **kwargs)
 
-        # Replace open function (this is a simplified example)
-        # In production, you'd want more comprehensive restrictions
-        import builtins
-
+        # Replace open function
         builtins.open = restricted_open
+        return original_open
 
-    def _restrict_network_operations(self):
-        """Restrict network operations."""
+    def _restrict_network_operations(self, saved_state):
+        """Restrict network operations.
+
+        Args:
+            saved_state: Dict to store original functions for restoration
+        """
         import socket
 
-        original_socket = socket.socket
+        # Store original function
+        saved_state["socket"] = socket.socket
 
         def restricted_socket(*args, **kwargs):
             raise SandboxViolationError(
@@ -277,11 +327,16 @@ class PluginSandbox:
 
         socket.socket = restricted_socket
 
-    def _restrict_process_operations(self):
-        """Restrict process execution operations."""
+    def _restrict_process_operations(self, saved_state):
+        """Restrict process execution operations.
+
+        Args:
+            saved_state: Dict to store original functions for restoration
+        """
         import subprocess
 
-        original_popen = subprocess.Popen
+        # Store original function
+        saved_state["subprocess"] = subprocess.Popen
 
         def restricted_popen(*args, **kwargs):
             raise SandboxViolationError(
@@ -289,6 +344,33 @@ class PluginSandbox:
             )
 
         subprocess.Popen = restricted_popen
+
+    def _restore_original_environment(self, saved_state):
+        """Restore original functions after sandbox execution.
+
+        Args:
+            saved_state: Dict containing original functions to restore
+        """
+        if not saved_state:
+            return
+
+        # Restore file operations
+        if "file_ops" in saved_state:
+            import builtins
+
+            builtins.open = saved_state["file_ops"]
+
+        # Restore network operations
+        if "socket" in saved_state:
+            import socket
+
+            socket.socket = saved_state["socket"]
+
+        # Restore process operations
+        if "subprocess" in saved_state:
+            import subprocess
+
+            subprocess.Popen = saved_state["subprocess"]
 
     def _is_safe_path(self, path: str) -> bool:
         """Check if file path is safe for plugin access."""
@@ -375,22 +457,12 @@ class PluginSandbox:
         Returns:
             PluginResult with execution results or timeout error
         """
-
-        def worker(plugin, context, result_queue):
-            """Worker function for process execution."""
-            try:
-                # Execute plugin
-                result = plugin.execute(context)
-                result_queue.put(("success", result))
-            except Exception as e:
-                result_queue.put(("error", str(e)))
-
         # Create communication queue
         result_queue = multiprocessing.Queue()
 
-        # Create and start process
+        # Create and start process (using module-level _plugin_worker for picklability)
         process = multiprocessing.Process(
-            target=worker, args=(plugin, context, result_queue), daemon=True
+            target=_plugin_worker, args=(plugin, context, result_queue), daemon=True
         )
 
         try:
@@ -406,9 +478,7 @@ class PluginSandbox:
                 process.join(timeout=1.0)
 
                 if process.is_alive():
-                    logger.error(
-                        f"Plugin {plugin.plugin_id} did not terminate, force killing..."
-                    )
+                    logger.error(f"Plugin {plugin.plugin_id} did not terminate, force killing...")
                     process.kill()
                     process.join()
 
@@ -429,6 +499,7 @@ class PluginSandbox:
             try:
                 # Use timeout to avoid hanging if queue has issues
                 import queue
+
                 status, data = result_queue.get(timeout=1.0)
                 if status == "success":
                     return data
@@ -465,7 +536,7 @@ class PluginSandbox:
 
         if os.path.exists(temp_dir):
             # Secure deletion of temporary files
-            for root, dirs, files in os.walk(temp_dir):
+            for root, _dirs, files in os.walk(temp_dir):
                 for file in files:
                     file_path = os.path.join(root, file)
                     try:
@@ -528,8 +599,8 @@ class IsolatedPluginExecutor:
                     }
                 }
 
-                # Execute plugin code
-                exec(plugin_code, exec_globals)
+                # Execute plugin code (intentional for isolated execution)
+                exec(plugin_code, exec_globals)  # noqa: S102
 
                 # Get result (simplified)
                 result = PluginResult.success_result("Isolated execution completed")
