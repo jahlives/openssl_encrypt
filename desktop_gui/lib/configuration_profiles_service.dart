@@ -262,6 +262,7 @@ class ConfigurationProfilesService {
               'type': 2, // Argon2id
               'rounds': 1,
             },
+            'randomx': {'enabled': false, 'rounds': 1, 'mode': 'light', 'height': 1, 'hash_len': 32},
           },
           description: 'Maximum security with Argon2id and SHA-512',
         ),
@@ -277,6 +278,7 @@ class ConfigurationProfilesService {
               'algorithm': 'sha256',
               'info': 'pqc-encryption',
             },
+            'randomx': {'enabled': false, 'rounds': 1, 'mode': 'light', 'height': 1, 'hash_len': 32},
           },
           description: 'Future-proof encryption with ML-KEM',
         ),
@@ -293,6 +295,7 @@ class ConfigurationProfilesService {
               'p': 1,
               'rounds': 1,
             },
+            'randomx': {'enabled': false, 'rounds': 1, 'mode': 'light', 'height': 1, 'hash_len': 32},
           },
           description: 'Good balance of security and performance',
         ),

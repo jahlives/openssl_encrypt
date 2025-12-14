@@ -791,7 +791,8 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
           'scrypt': {'enabled': false, 'n': 16384, 'r': 8, 'p': 1, 'rounds': 1},
           'argon2': {'enabled': false, 'memory_cost': 65536, 'time_cost': 3, 'parallelism': 1, 'rounds': 1},
           'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1},
-          'balloon': {'enabled': false, 'space_cost': 8, 'time_cost': 1, 'parallel_cost': 1, 'rounds': 1}
+          'balloon': {'enabled': false, 'space_cost': 8, 'time_cost': 1, 'parallel_cost': 1, 'rounds': 1},
+          'randomx': {'enabled': false, 'rounds': 1, 'mode': 'light', 'height': 1, 'hash_len': 32}
         };
       });
 
@@ -807,7 +808,8 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
         _hashConfig = {'sha256': {'enabled': true, 'rounds': 1000}};
         _kdfConfig = {
           'pbkdf2': {'enabled': !CLIService.shouldHideLegacyAlgorithms(), 'rounds': 100000},
-          'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1}
+          'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1},
+          'randomx': {'enabled': false, 'rounds': 1, 'mode': 'light', 'height': 1, 'hash_len': 32}
         };
       });
     }
@@ -1371,6 +1373,10 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
 
                               // Balloon Panel
                               _buildBalloonPanel(),
+                              const SizedBox(height: 8),
+
+                              // RandomX Panel
+                              _buildRandomXPanel(),
                               const SizedBox(height: 8),
                               // Quick presets
                               Wrap(
@@ -2170,6 +2176,11 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
               Text('• Newer memory-hard function'),
               Text('• Configurable time/space tradeoffs'),
               Text('• Still under academic evaluation'),
+              SizedBox(height: 12),
+              Text('💎 RandomX (CPU-Hard):', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('• Memory-hard KDF based on cryptocurrency mining'),
+              Text('• Requires significant CPU and memory resources'),
+              Text('• Light mode (256MB) or Fast mode (2GB) available'),
             ],
           ),
         ),
@@ -2559,6 +2570,88 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     );
   }
 
+  /// Build RandomX configuration panel
+  Widget _buildRandomXPanel() {
+    final config = _kdfConfig['randomx'] ?? {
+      'enabled': false,
+      'rounds': 1,
+      'mode': 'light',
+      'height': 1,
+      'hash_len': 32,
+    };
+    final enabled = config['enabled'] ?? false;
+
+    return Card(
+      color: enabled ? Theme.of(context).colorScheme.errorContainer : Theme.of(context).colorScheme.surfaceContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CheckboxListTile(
+              title: Row(
+                children: [
+                  const Text('RandomX', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.purple,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('CPU-HARD', style: TextStyle(color: Colors.white, fontSize: 10)),
+                  ),
+                ],
+              ),
+              subtitle: const Text('Memory-hard KDF based on cryptocurrency mining algorithm (requires pyrx package)'),
+              value: enabled,
+              onChanged: (bool? value) {
+                setState(() {
+                  _kdfConfig['randomx'] = Map.from(config)..['enabled'] = value ?? false;
+                });
+              },
+            ),
+            if (enabled) ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                child: Row(
+                  children: [
+                    SizedBox(width: 120, child: Text('Mode:', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface))),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: DropdownButton<String>(
+                        value: config['mode'] ?? 'light',
+                        isExpanded: true,
+                        items: const [
+                          DropdownMenuItem(value: 'light', child: Text('Light (256MB RAM)')),
+                          DropdownMenuItem(value: 'fast', child: Text('Fast (2GB RAM)')),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _kdfConfig['randomx']!['mode'] = value ?? 'light';
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ...[
+                _buildKDFSlider('Rounds', config['rounds'] ?? 1, 1, 10, (v) =>
+                  setState(() => _kdfConfig['randomx']!['rounds'] = v)),
+                _buildKDFSlider('Block Height', config['height'] ?? 1, 1, 1000, (v) =>
+                  setState(() => _kdfConfig['randomx']!['height'] = v)),
+                _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 64, (v) =>
+                  setState(() => _kdfConfig['randomx']!['hash_len'] = v)),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Helper to build KDF slider
   Widget _buildKDFSlider(String label, int value, int min, int max, Function(int) onChanged) {
     return Padding(
@@ -2731,10 +2824,8 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       'aes-gcm',
       'aes-gcm-siv',
       'aes-siv',
-      'aes-ocb3',
       'chacha20-poly1305',
       'xchacha20-poly1305',
-      'camellia'
     ];
   }
 }
@@ -2811,6 +2902,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
           'argon2': {'enabled': false, 'memory_cost': 65536, 'time_cost': 3, 'parallelism': 1, 'rounds': 1},
           'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1},
           'balloon': {'enabled': false, 'space_cost': 65536, 'time_cost': 3, 'parallelism': 4, 'rounds': 2, 'hash_len': 32},
+          'randomx': {'enabled': false, 'rounds': 1, 'mode': 'light', 'height': 1, 'hash_len': 32},
         };
       });
     } catch (e) {
@@ -2821,7 +2913,8 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
         _hashConfig = {'sha256': {'enabled': true, 'rounds': 1000}};
         _kdfConfig = {
           'pbkdf2': {'enabled': !CLIService.shouldHideLegacyAlgorithms(), 'rounds': 100000},
-          'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1}
+          'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1},
+          'randomx': {'enabled': false, 'rounds': 1, 'mode': 'light', 'height': 1, 'hash_len': 32}
         };
       });
     }
@@ -3277,7 +3370,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     final algorithmCategories = {
       'Classical Symmetric': [
         'fernet', 'aes-gcm', 'chacha20-poly1305', 'xchacha20-poly1305',
-        'aes-siv', 'aes-gcm-siv', 'aes-ocb3', 'camellia'
+        'aes-siv', 'aes-gcm-siv'
       ].where((a) => _algorithms.contains(a)).toList(),
       'ML-KEM Post-Quantum': [
         'ml-kem-512-hybrid', 'ml-kem-768-hybrid', 'ml-kem-1024-hybrid',
@@ -3455,6 +3548,10 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
 
               // Balloon Panel
               _buildBalloonPanel(),
+              const SizedBox(height: 8),
+
+              // RandomX Panel
+              _buildRandomXPanel(),
               const SizedBox(height: 8),
             ],
           ],
@@ -4526,6 +4623,88 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     );
   }
 
+  /// Build RandomX configuration panel
+  Widget _buildRandomXPanel() {
+    final config = _kdfConfig['randomx'] ?? {
+      'enabled': false,
+      'rounds': 1,
+      'mode': 'light',
+      'height': 1,
+      'hash_len': 32,
+    };
+    final enabled = config['enabled'] ?? false;
+
+    return Card(
+      color: enabled ? Theme.of(context).colorScheme.errorContainer : Theme.of(context).colorScheme.surfaceContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CheckboxListTile(
+              title: Row(
+                children: [
+                  const Text('RandomX', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.purple,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('CPU-HARD', style: TextStyle(color: Colors.white, fontSize: 10)),
+                  ),
+                ],
+              ),
+              subtitle: const Text('Memory-hard KDF based on cryptocurrency mining algorithm (requires pyrx package)'),
+              value: enabled,
+              onChanged: (bool? value) {
+                setState(() {
+                  _kdfConfig['randomx'] = Map.from(config)..['enabled'] = value ?? false;
+                });
+              },
+            ),
+            if (enabled) ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                child: Row(
+                  children: [
+                    SizedBox(width: 120, child: Text('Mode:', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface))),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: DropdownButton<String>(
+                        value: config['mode'] ?? 'light',
+                        isExpanded: true,
+                        items: const [
+                          DropdownMenuItem(value: 'light', child: Text('Light (256MB RAM)')),
+                          DropdownMenuItem(value: 'fast', child: Text('Fast (2GB RAM)')),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _kdfConfig['randomx']!['mode'] = value ?? 'light';
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ...[
+                _buildKDFSlider('Rounds', config['rounds'] ?? 1, 1, 10, (v) =>
+                  setState(() => _kdfConfig['randomx']!['rounds'] = v)),
+                _buildKDFSlider('Block Height', config['height'] ?? 1, 1, 1000, (v) =>
+                  setState(() => _kdfConfig['randomx']!['height'] = v)),
+                _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 64, (v) =>
+                  setState(() => _kdfConfig['randomx']!['hash_len'] = v)),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Helper to build KDF slider
   Widget _buildKDFSlider(String label, int value, int min, int max, Function(int) onChanged) {
     return Padding(
@@ -4584,10 +4763,8 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
       'aes-gcm',
       'aes-gcm-siv',
       'aes-siv',
-      'aes-ocb3',
       'chacha20-poly1305',
       'xchacha20-poly1305',
-      'camellia'
     ];
   }
 }
@@ -4609,8 +4786,6 @@ class _InfoTabState extends State<InfoTab> {
     'xchacha20-poly1305': 'Extended ChaCha20-Poly1305 with 192-bit nonce',
     'aes-siv': 'AES-SIV synthetic IV mode',
     'aes-gcm-siv': 'AES-GCM-SIV misuse-resistant encryption',
-    'aes-ocb3': 'AES-OCB3 high-performance authenticated encryption',
-    'camellia': 'Camellia block cipher (International standard)',
   };
 
   /// Check if algorithm is available on current platform
@@ -5846,10 +6021,8 @@ class _SettingsScreenWrapperState extends State<SettingsScreenWrapper> {
       'aes-gcm',
       'aes-gcm-siv',
       'aes-siv',
-      'aes-ocb3',
       'chacha20-poly1305',
       'xchacha20-poly1305',
-      'camellia'
     ];
   }
 }
@@ -6126,8 +6299,6 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                                 'xchacha20-poly1305',
                                 'aes-siv',
                                 'aes-gcm-siv',
-                                'aes-ocb3',
-                                'camellia',
 
                                 // ML-KEM (NIST Post-Quantum) algorithms
                                 'ml-kem-512-hybrid',
@@ -6670,10 +6841,8 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
       'aes-gcm',
       'aes-gcm-siv',
       'aes-siv',
-      'aes-ocb3',
       'chacha20-poly1305',
       'xchacha20-poly1305',
-      'camellia'
     ];
   }
 }

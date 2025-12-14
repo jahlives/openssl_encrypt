@@ -74,8 +74,6 @@ class CLIService {
           'xchacha20-poly1305',
           'aes-siv',
           'aes-gcm-siv',
-          'aes-ocb3',
-          'camellia',
         ],
         'Post-Quantum Hybrid (ML-KEM)': [
           'ml-kem-512-hybrid',
@@ -315,6 +313,15 @@ class CLIService {
                   if (config['parallelism'] != null) args.addAll(['--balloon-parallelism', config['parallelism'].toString()]);
                   if (config['rounds'] != null) args.addAll(['--balloon-rounds', config['rounds'].toString()]);
                   if (config['hash_len'] != null) args.addAll(['--balloon-hash-len', config['hash_len'].toString()]);
+                }
+                break;
+              case 'randomx':
+                if (config['enabled'] == true) {
+                  args.add('--enable-randomx');
+                  if (config['rounds'] != null) args.addAll(['--randomx-rounds', config['rounds'].toString()]);
+                  if (config['mode'] != null) args.addAll(['--randomx-mode', config['mode']]);
+                  if (config['height'] != null) args.addAll(['--randomx-height', config['height'].toString()]);
+                  if (config['hash_len'] != null) args.addAll(['--randomx-hash-len', config['hash_len'].toString()]);
                 }
                 break;
             }
