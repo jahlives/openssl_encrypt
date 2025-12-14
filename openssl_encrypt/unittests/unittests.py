@@ -180,6 +180,7 @@ from modules.crypt_errors import (
     constant_time_compare,
     constant_time_pkcs7_unpad,
     secure_decrypt_error_handler,
+    set_debug_mode,
     secure_encrypt_error_handler,
     secure_error_handler,
     secure_key_derivation_error_handler,
@@ -2650,8 +2651,9 @@ class TestSecureErrorHandling(unittest.TestCase):
 
     def setUp(self):
         """Set up test environment."""
-        # Don't enable DEBUG mode - we need to test error wrapping behavior
-        # Setting DEBUG=1 would bypass error wrapping due to raw passthrough
+        # Explicitly disable DEBUG mode - we need to test error wrapping behavior
+        # Even if DEBUG=1 is set in environment, we override it for these tests
+        set_debug_mode(False)
 
         # Create a temporary directory for test files
         self.test_dir = tempfile.mkdtemp()

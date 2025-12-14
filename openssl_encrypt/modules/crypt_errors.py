@@ -105,7 +105,7 @@ def _init_thread_local_state():
 def _init_debug_state():
     """Initialize thread-local debug state if not already done."""
     if not hasattr(_debug_state, "initialized"):
-        _debug_state.debug_mode = False
+        _debug_state.debug_mode = None  # None means "not explicitly set"
         _debug_state.initialized = True
 
 
@@ -134,17 +134,24 @@ def get_debug_mode():
     Returns:
         bool: True if debug mode is enabled, False otherwise
 
-    Checks both thread-local state and environment variable for
-    backward compatibility.
+    Priority order:
+    1. Thread-local state (if explicitly set via set_debug_mode())
+    2. DEBUG environment variable (for backward compatibility)
+    3. Default to False
     """
-    # Check environment variable first for backward compatibility
+    # Check thread-local state first (takes priority over environment)
+    with _debug_mutex:
+        _init_debug_state()
+        # Check if debug_mode was explicitly set (not None)
+        if _debug_state.debug_mode is not None:
+            return _debug_state.debug_mode
+
+    # Fall back to environment variable for backward compatibility
     if os.environ.get("DEBUG") == "1":
         return True
 
-    # Check thread-local state
-    with _debug_mutex:
-        _init_debug_state()
-        return getattr(_debug_state, "debug_mode", False)
+    # Default to False
+    return False
 
 
 def is_debug_passthrough_enabled():
