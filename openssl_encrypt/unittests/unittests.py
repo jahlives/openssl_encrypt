@@ -103,7 +103,7 @@ from openssl_encrypt.modules.secure_ops import (
 from openssl_encrypt.modules.security_scorer import SecurityLevel, SecurityScorer
 
 try:
-    from modules.steganography.error_correction import (
+    from openssl_encrypt.modules.steganography.error_correction import (
         AdaptiveErrorCorrection,
         BlockEncoder,
         ReedSolomonDecoder,
@@ -115,7 +115,7 @@ except ImportError:
     ERROR_CORRECTION_AVAILABLE = False
 
 try:
-    from modules.steganography.qim_algorithm import (
+    from openssl_encrypt.modules.steganography.qim_algorithm import (
         AdaptiveQIM,
         DistortionCompensatedQIM,
         MultiLevelQIM,
@@ -128,7 +128,7 @@ except ImportError:
     QIM_ALGORITHM_AVAILABLE = False
 
 try:
-    from modules.steganography.steganalysis import (
+    from openssl_encrypt.modules.steganography.steganalysis import (
         AdvancedSteganalysis,
         ClassicalSteganalysis,
         InformationTheoreticSecurity,
@@ -1091,7 +1091,7 @@ class TestCryptCore(unittest.TestCase):
     def test_xchacha20poly1305_implementation(self):
         """Test XChaCha20Poly1305 implementation specifically focusing on nonce handling."""
         # Import the XChaCha20Poly1305 class directly to test it
-        from modules.crypt_core import XChaCha20Poly1305
+        from openssl_encrypt.modules.crypt_core import XChaCha20Poly1305
 
         # Create instance with test key (32 bytes for ChaCha20Poly1305)
         key = os.urandom(32)
@@ -2967,7 +2967,7 @@ class TestBufferOverflowProtection(unittest.TestCase):
         self.assertEqual(total_read, file_size)
 
         # Test that calculate_hash function can handle large files
-        from modules.crypt_core import calculate_hash
+        from openssl_encrypt.modules.crypt_core import calculate_hash
 
         with open(large_file, "rb") as f:
             file_data = f.read()
@@ -2977,7 +2977,7 @@ class TestBufferOverflowProtection(unittest.TestCase):
         self.assertTrue(len(hash_result) > 0)
 
         # Also test secure memory handling for large inputs
-        from modules.secure_memory import SecureBytes
+        from openssl_encrypt.modules.secure_memory import SecureBytes
 
         # Create a 1MB SecureBytes object (reduced to avoid memory issues)
         try:
@@ -3087,7 +3087,7 @@ class TestBufferOverflowProtection(unittest.TestCase):
 
             # Also test if the secure_memzero function can handle large inputs
             # Create a test buffer with random data
-            from modules.secure_memory import secure_memzero
+            from openssl_encrypt.modules.secure_memory import secure_memzero
 
             test_buffer = bytearray(os.urandom(1024 * 1024))  # 1MB buffer
 
@@ -3106,8 +3106,8 @@ class TestBufferOverflowProtection(unittest.TestCase):
 
 # Try to import PQC modules
 try:
-    from modules.crypt_core import PQC_AVAILABLE
-    from modules.pqc import LIBOQS_AVAILABLE, PQCAlgorithm, PQCipher, check_pqc_support
+    from openssl_encrypt.modules.crypt_core import PQC_AVAILABLE
+    from openssl_encrypt.modules.pqc import LIBOQS_AVAILABLE, PQCAlgorithm, PQCipher, check_pqc_support
 except ImportError:
     # Mock the PQC classes if not available
     LIBOQS_AVAILABLE = False
@@ -3390,9 +3390,9 @@ class TestPostQuantumCrypto(unittest.TestCase):
         """Test that keystore functionality works with different encryption_data options."""
         # Skip if we can't import the necessary modules
         try:
-            from modules.crypt_core import decrypt_file, encrypt_file
-            from modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
-            from modules.keystore_utils import auto_generate_pqc_key, extract_key_id_from_metadata
+            from openssl_encrypt.modules.crypt_core import decrypt_file, encrypt_file
+            from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
+            from openssl_encrypt.modules.keystore_utils import auto_generate_pqc_key, extract_key_id_from_metadata
         except ImportError:
             self.skipTest("Keystore modules not available")
 
@@ -3515,9 +3515,9 @@ class TestPostQuantumCrypto(unittest.TestCase):
         """Test wrong password failures with different encryption_data options."""
         # Skip if we can't import the necessary modules
         try:
-            from modules.crypt_core import decrypt_file, encrypt_file
-            from modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
-            from modules.keystore_utils import auto_generate_pqc_key
+            from openssl_encrypt.modules.crypt_core import decrypt_file, encrypt_file
+            from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
+            from openssl_encrypt.modules.keystore_utils import auto_generate_pqc_key
         except ImportError:
             self.skipTest("Keystore modules not available")
 
@@ -3590,7 +3590,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
 
     def test_metadata_v4_v5_conversion(self):
         """Test conversion between metadata format version 4 and 5."""
-        from modules.crypt_core import convert_metadata_v4_to_v5, convert_metadata_v5_to_v4
+        from openssl_encrypt.modules.crypt_core import convert_metadata_v4_to_v5, convert_metadata_v5_to_v4
 
         # Test v4 to v5 conversion
         # Create a sample v4 metadata structure
@@ -3899,8 +3899,8 @@ class TestPostQuantumCrypto(unittest.TestCase):
         """Test PQC key dual encryption with keystore integration."""
         # Skip if we can't import the necessary modules
         try:
-            from modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
-            from modules.keystore_utils import extract_key_id_from_metadata
+            from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
+            from openssl_encrypt.modules.keystore_utils import extract_key_id_from_metadata
         except ImportError:
             self.skipTest("Keystore modules not available")
 
@@ -3942,7 +3942,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         # Test dual encryption file operations
         try:
             # Import necessary function
-            from modules.keystore_wrapper import (
+            from openssl_encrypt.modules.keystore_wrapper import (
                 decrypt_file_with_keystore,
                 encrypt_file_with_keystore,
             )
@@ -4009,9 +4009,9 @@ class TestPostQuantumCrypto(unittest.TestCase):
         """Test PQC key dual encryption with incorrect password."""
         # Skip if we can't import the necessary modules
         try:
-            from modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
-            from modules.keystore_utils import extract_key_id_from_metadata
-            from modules.keystore_wrapper import (
+            from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
+            from openssl_encrypt.modules.keystore_utils import extract_key_id_from_metadata
+            from openssl_encrypt.modules.keystore_wrapper import (
                 decrypt_file_with_keystore,
                 encrypt_file_with_keystore,
             )
@@ -4105,9 +4105,9 @@ class TestPostQuantumCrypto(unittest.TestCase):
         try:
             import hashlib
 
-            from modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
-            from modules.keystore_utils import extract_key_id_from_metadata
-            from modules.keystore_wrapper import (
+            from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
+            from openssl_encrypt.modules.keystore_utils import extract_key_id_from_metadata
+            from openssl_encrypt.modules.keystore_wrapper import (
                 decrypt_file_with_keystore,
                 encrypt_file_with_keystore,
             )
@@ -4218,9 +4218,9 @@ class TestPostQuantumCrypto(unittest.TestCase):
         """Test PQC auto-generated key with dual encryption."""
         # Skip if we can't import the necessary modules
         try:
-            from modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
-            from modules.keystore_utils import auto_generate_pqc_key, extract_key_id_from_metadata
-            from modules.keystore_wrapper import (
+            from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
+            from openssl_encrypt.modules.keystore_utils import auto_generate_pqc_key, extract_key_id_from_metadata
+            from openssl_encrypt.modules.keystore_wrapper import (
                 decrypt_file_with_keystore,
                 encrypt_file_with_keystore,
             )
@@ -5714,7 +5714,7 @@ class TestCryptErrorsFixes(unittest.TestCase):
         """Test the optimized timing jitter function that handles sequences of calls."""
         import time
 
-        from modules.crypt_errors import _jitter_state, add_timing_jitter
+        from openssl_encrypt.modules.crypt_errors import _jitter_state, add_timing_jitter
 
         # Test the jitter function actually adds delays
         start_time = time.time()
@@ -5790,7 +5790,7 @@ class TestCryptErrorsFixes(unittest.TestCase):
             self.skipTest("Whirlpool not available")
 
         # Test the setup_whirlpool function with mocked Python version
-        from modules.setup_whirlpool import install_whirlpool
+        from openssl_encrypt.modules.setup_whirlpool import install_whirlpool
 
         # Mock Python version info to simulate Python 3.13
         original_version_info = sys.version_info
@@ -6252,7 +6252,7 @@ class TestAlgorithmWarnings(unittest.TestCase):
     def setUp(self):
         """Set up test environment."""
         # Import the warnings module
-        from modules.algorithm_warnings import (
+        from openssl_encrypt.modules.algorithm_warnings import (
             DEPRECATED_ALGORITHMS,
             AlgorithmWarningConfig,
             DeprecationLevel,
@@ -6478,7 +6478,7 @@ class TestAlgorithmWarnings(unittest.TestCase):
         # is tested through the specific warning functions above
 
         # Test that the warning functions are properly imported in CLI
-        from modules.crypt_cli import (
+        from openssl_encrypt.modules.crypt_cli import (
             get_recommended_replacement,
             is_deprecated,
             warn_deprecated_algorithm,
@@ -6498,7 +6498,7 @@ class TestAlgorithmWarnings(unittest.TestCase):
 
     def test_extract_file_metadata_integration(self):
         """Test that extract_file_metadata works for warning system."""
-        from modules.crypt_core import EncryptionAlgorithm, encrypt_file, extract_file_metadata
+        from openssl_encrypt.modules.crypt_core import EncryptionAlgorithm, encrypt_file, extract_file_metadata
 
         # Create a test file with a deprecated algorithm
         test_input = "Test content for metadata extraction"
@@ -7960,7 +7960,7 @@ class TestEnvironmentPasswordHandling(unittest.TestCase):
         self.assertEqual(os.environ.get("CRYPT_PASSWORD"), self.test_password)
 
         # Import and test the password retrieval logic
-        from modules.crypt_cli import clear_password_environment
+        from openssl_encrypt.modules.crypt_cli import clear_password_environment
 
         # Verify the password is accessible
         self.assertEqual(os.environ.get("CRYPT_PASSWORD"), self.test_password)
@@ -7985,7 +7985,7 @@ class TestEnvironmentPasswordHandling(unittest.TestCase):
 
     def test_secure_environment_clearing_function(self):
         """Test the secure environment clearing function."""
-        from modules.crypt_cli import clear_password_environment
+        from openssl_encrypt.modules.crypt_cli import clear_password_environment
 
         # Set a test password
         test_password = "SecureTestPassword456!"
@@ -8006,7 +8006,7 @@ class TestEnvironmentPasswordHandling(unittest.TestCase):
 
     def test_secure_clearing_with_different_password_lengths(self):
         """Test secure clearing works with passwords of different lengths."""
-        from modules.crypt_cli import clear_password_environment
+        from openssl_encrypt.modules.crypt_cli import clear_password_environment
 
         test_passwords = [
             "short",
@@ -8031,7 +8031,7 @@ class TestEnvironmentPasswordHandling(unittest.TestCase):
 
     def test_secure_clearing_nonexistent_variable(self):
         """Test that secure clearing handles nonexistent environment variable gracefully."""
-        from modules.crypt_cli import clear_password_environment
+        from openssl_encrypt.modules.crypt_cli import clear_password_environment
 
         # Ensure no CRYPT_PASSWORD exists
         if "CRYPT_PASSWORD" in os.environ:
@@ -8050,7 +8050,7 @@ class TestEnvironmentPasswordHandling(unittest.TestCase):
 
     def test_multiple_clearing_calls(self):
         """Test that multiple calls to clear function are safe."""
-        from modules.crypt_cli import clear_password_environment
+        from openssl_encrypt.modules.crypt_cli import clear_password_environment
 
         # Set initial password
         os.environ["CRYPT_PASSWORD"] = self.test_password
@@ -8065,7 +8065,7 @@ class TestEnvironmentPasswordHandling(unittest.TestCase):
 
     def test_environment_password_secure_clearing_behavior(self):
         """Test that secure clearing function behaves correctly and clears completely."""
-        from modules.crypt_cli import clear_password_environment
+        from openssl_encrypt.modules.crypt_cli import clear_password_environment
 
         # Set a known password
         test_password = "SecureClearingTest123!"
@@ -8088,7 +8088,7 @@ class TestEnvironmentPasswordHandling(unittest.TestCase):
 
     def test_environment_password_memory_patterns(self):
         """Test that different overwrite patterns are used during clearing."""
-        from modules.crypt_cli import clear_password_environment
+        from openssl_encrypt.modules.crypt_cli import clear_password_environment
 
         # Test with a specific password
         test_password = "PatternTestPassword!"
@@ -8105,7 +8105,7 @@ class TestEnvironmentPasswordHandling(unittest.TestCase):
     @patch("secrets.choice")
     def test_secure_clearing_uses_random_data(self, mock_choice):
         """Test that secure clearing uses random data for overwrites."""
-        from modules.crypt_cli import clear_password_environment
+        from openssl_encrypt.modules.crypt_cli import clear_password_environment
 
         # Configure mock to return predictable values
         mock_choice.return_value = "R"
@@ -8179,14 +8179,14 @@ class TestSteganographyCore(unittest.TestCase):
 
         # Import steganography modules
         try:
-            from modules.steganography import (
+            from openssl_encrypt.modules.steganography import (
                 JPEGSteganography,
                 LSBImageStego,
                 SteganographyConfig,
                 SteganographyUtils,
                 create_steganography_transport,
             )
-            from modules.steganography.jpeg_utils import create_jpeg_test_image
+            from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
 
             self.stego_available = True
         except ImportError:
@@ -8199,7 +8199,7 @@ class TestSteganographyCore(unittest.TestCase):
 
     def test_steganography_utils_binary_conversion(self):
         """Test binary data conversion utilities."""
-        from modules.steganography import SteganographyUtils
+        from openssl_encrypt.modules.steganography import SteganographyUtils
 
         # Test bytes to binary conversion
         test_bytes = b"Hello"
@@ -8216,7 +8216,7 @@ class TestSteganographyCore(unittest.TestCase):
 
     def test_steganography_entropy_analysis(self):
         """Test entropy analysis functionality."""
-        from modules.steganography import SteganographyUtils
+        from openssl_encrypt.modules.steganography import SteganographyUtils
 
         # Test with random data (should have high entropy)
         random_data = os.urandom(1000)
@@ -8230,7 +8230,7 @@ class TestSteganographyCore(unittest.TestCase):
 
     def test_steganography_config(self):
         """Test steganography configuration."""
-        from modules.steganography import SteganographyConfig
+        from openssl_encrypt.modules.steganography import SteganographyConfig
 
         config = SteganographyConfig()
 
@@ -8252,7 +8252,7 @@ class TestSteganographyCore(unittest.TestCase):
     def test_lsb_steganography_capacity(self):
         """Test LSB steganography capacity calculation."""
         import numpy as np
-        from modules.steganography import LSBImageStego
+        from openssl_encrypt.modules.steganography import LSBImageStego
         from PIL import Image
 
         # Create test PNG image
@@ -8277,7 +8277,7 @@ class TestSteganographyCore(unittest.TestCase):
     def test_lsb_steganography_hide_extract(self):
         """Test LSB steganography hide and extract functionality."""
         import numpy as np
-        from modules.steganography import LSBImageStego
+        from openssl_encrypt.modules.steganography import LSBImageStego
         from PIL import Image
 
         # Create test PNG image
@@ -8307,7 +8307,7 @@ class TestSteganographyCore(unittest.TestCase):
     def test_lsb_steganography_with_password(self):
         """Test LSB steganography with password-based pixel randomization."""
         import numpy as np
-        from modules.steganography import LSBImageStego, SteganographyConfig
+        from openssl_encrypt.modules.steganography import LSBImageStego, SteganographyConfig
         from PIL import Image
 
         # Create test PNG image
@@ -8351,8 +8351,8 @@ class TestJPEGSteganography(unittest.TestCase):
 
         # Import JPEG steganography modules
         try:
-            from modules.steganography import JPEGSteganography
-            from modules.steganography.jpeg_utils import (
+            from openssl_encrypt.modules.steganography import JPEGSteganography
+            from openssl_encrypt.modules.steganography.jpeg_utils import (
                 JPEGAnalyzer,
                 create_jpeg_test_image,
                 is_jpeg_steganography_available,
@@ -8371,7 +8371,7 @@ class TestJPEGSteganography(unittest.TestCase):
 
     def test_jpeg_test_image_creation(self):
         """Test JPEG test image creation utility."""
-        from modules.steganography.jpeg_utils import create_jpeg_test_image
+        from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
 
         # Create test JPEG
         jpeg_data = create_jpeg_test_image(width=400, height=300, quality=85)
@@ -8383,7 +8383,7 @@ class TestJPEGSteganography(unittest.TestCase):
 
     def test_jpeg_analyzer(self):
         """Test JPEG format analyzer."""
-        from modules.steganography.jpeg_utils import JPEGAnalyzer, create_jpeg_test_image
+        from openssl_encrypt.modules.steganography.jpeg_utils import JPEGAnalyzer, create_jpeg_test_image
 
         # Create test JPEG
         jpeg_data = create_jpeg_test_image(width=600, height=400, quality=80)
@@ -8405,8 +8405,8 @@ class TestJPEGSteganography(unittest.TestCase):
 
     def test_jpeg_steganography_capacity(self):
         """Test JPEG steganography capacity calculation."""
-        from modules.steganography import JPEGSteganography
-        from modules.steganography.jpeg_utils import create_jpeg_test_image
+        from openssl_encrypt.modules.steganography import JPEGSteganography
+        from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
 
         # Create test JPEG
         jpeg_data = create_jpeg_test_image(width=800, height=600, quality=85)
@@ -8421,8 +8421,8 @@ class TestJPEGSteganography(unittest.TestCase):
 
     def test_jpeg_steganography_basic_method(self):
         """Test JPEG steganography basic DCT method."""
-        from modules.steganography import JPEGSteganography
-        from modules.steganography.jpeg_utils import create_jpeg_test_image
+        from openssl_encrypt.modules.steganography import JPEGSteganography
+        from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
 
         # Create test JPEG
         jpeg_data = create_jpeg_test_image(width=800, height=600, quality=85)
@@ -8445,8 +8445,8 @@ class TestJPEGSteganography(unittest.TestCase):
 
     def test_jpeg_quality_factors(self):
         """Test JPEG steganography with different quality factors."""
-        from modules.steganography import JPEGSteganography
-        from modules.steganography.jpeg_utils import create_jpeg_test_image
+        from openssl_encrypt.modules.steganography import JPEGSteganography
+        from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
 
         # Test different quality levels
         quality_levels = [70, 80, 90, 95]
@@ -8474,8 +8474,8 @@ class TestSteganographyTransport(unittest.TestCase):
         # Import transport modules
         try:
             import numpy as np
-            from modules.steganography import SteganographyTransport, create_steganography_transport
-            from modules.steganography.jpeg_utils import create_jpeg_test_image
+            from openssl_encrypt.modules.steganography import SteganographyTransport, create_steganography_transport
+            from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
             from PIL import Image
 
             self.transport_available = True
@@ -8490,8 +8490,8 @@ class TestSteganographyTransport(unittest.TestCase):
     def test_image_format_detection(self):
         """Test automatic image format detection."""
         import numpy as np
-        from modules.steganography import SteganographyTransport
-        from modules.steganography.jpeg_utils import create_jpeg_test_image
+        from openssl_encrypt.modules.steganography import SteganographyTransport
+        from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
         from PIL import Image
 
         transport = SteganographyTransport()
@@ -8515,7 +8515,7 @@ class TestSteganographyTransport(unittest.TestCase):
 
     def test_transport_create_steganography_instance(self):
         """Test dynamic steganography instance creation."""
-        from modules.steganography import SteganographyTransport
+        from openssl_encrypt.modules.steganography import SteganographyTransport
 
         # Test PNG/LSB instance creation
         transport = SteganographyTransport(method="lsb", bits_per_channel=1)
@@ -8534,8 +8534,8 @@ class TestSteganographyTransport(unittest.TestCase):
     def test_capacity_calculation_through_transport(self):
         """Test capacity calculation through transport layer."""
         import numpy as np
-        from modules.steganography import SteganographyTransport
-        from modules.steganography.jpeg_utils import create_jpeg_test_image
+        from openssl_encrypt.modules.steganography import SteganographyTransport
+        from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
         from PIL import Image
 
         # Test PNG capacity
@@ -8578,7 +8578,7 @@ class TestSteganographyCLIIntegration(unittest.TestCase):
         # Import CLI modules
         try:
             import numpy as np
-            from modules.steganography.jpeg_utils import create_jpeg_test_image
+            from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
             from PIL import Image
 
             self.cli_available = True
@@ -8594,7 +8594,7 @@ class TestSteganographyCLIIntegration(unittest.TestCase):
         """Test steganography transport factory with CLI args."""
         from argparse import Namespace
 
-        from modules.steganography import create_steganography_transport
+        from openssl_encrypt.modules.steganography import create_steganography_transport
 
         # Test PNG/LSB transport creation
         args = Namespace(
@@ -8627,7 +8627,7 @@ class TestSteganographyCLIIntegration(unittest.TestCase):
         """Test dedicated password integration with steganography."""
         from argparse import Namespace
 
-        from modules.steganography import create_steganography_transport
+        from openssl_encrypt.modules.steganography import create_steganography_transport
 
         # Test with dedicated steganography password
         stego_password = "dedicated_stego_password_123"
@@ -8655,7 +8655,7 @@ class TestSteganographyCLIIntegration(unittest.TestCase):
 
     def test_steganography_parameters_validation(self):
         """Test steganography parameter validation."""
-        from modules.steganography import JPEGSteganography, SteganographyTransport
+        from openssl_encrypt.modules.steganography import JPEGSteganography, SteganographyTransport
 
         # Test valid parameters
         transport = SteganographyTransport(
@@ -8683,8 +8683,8 @@ class TestSteganographySecureMemory(unittest.TestCase):
         """Set up test fixtures."""
         # Import secure memory modules
         try:
-            from modules.secure_memory import SecureBytes, secure_memzero
-            from modules.steganography import SteganographyUtils
+            from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
+            from openssl_encrypt.modules.steganography import SteganographyUtils
 
             self.secure_available = True
         except ImportError:
@@ -8693,8 +8693,8 @@ class TestSteganographySecureMemory(unittest.TestCase):
 
     def test_secure_binary_conversion(self):
         """Test binary conversion with secure memory."""
-        from modules.secure_memory import SecureBytes, secure_memzero
-        from modules.steganography import SteganographyUtils
+        from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
+        from openssl_encrypt.modules.steganography import SteganographyUtils
 
         # Test with secure memory
         test_data = b"Secure memory test"
@@ -8713,8 +8713,8 @@ class TestSteganographySecureMemory(unittest.TestCase):
 
     def test_secure_entropy_analysis(self):
         """Test entropy analysis with secure memory."""
-        from modules.secure_memory import SecureBytes, secure_memzero
-        from modules.steganography import SteganographyUtils
+        from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
+        from openssl_encrypt.modules.steganography import SteganographyUtils
 
         # Test entropy analysis with secure memory
         test_data = os.urandom(1000)
@@ -8737,7 +8737,7 @@ class TestSteganographyErrorHandling(unittest.TestCase):
 
         # Import steganography modules
         try:
-            from modules.steganography import (
+            from openssl_encrypt.modules.steganography import (
                 CapacityError,
                 CoverMediaError,
                 JPEGSteganography,
@@ -8758,7 +8758,7 @@ class TestSteganographyErrorHandling(unittest.TestCase):
     def test_capacity_error_handling(self):
         """Test capacity error handling."""
         import numpy as np
-        from modules.steganography import CapacityError, LSBImageStego
+        from openssl_encrypt.modules.steganography import CapacityError, LSBImageStego
         from PIL import Image
 
         # Create small image (large enough to pass minimum size but small capacity)
@@ -8782,7 +8782,7 @@ class TestSteganographyErrorHandling(unittest.TestCase):
 
     def test_cover_media_error_handling(self):
         """Test cover media error handling."""
-        from modules.steganography import CoverMediaError, LSBImageStego
+        from openssl_encrypt.modules.steganography import CoverMediaError, LSBImageStego
 
         stego = LSBImageStego()
 
@@ -8796,7 +8796,7 @@ class TestSteganographyErrorHandling(unittest.TestCase):
 
     def test_transport_error_handling(self):
         """Test transport layer error handling."""
-        from modules.steganography import CoverMediaError, SteganographyTransport
+        from openssl_encrypt.modules.steganography import CoverMediaError, SteganographyTransport
 
         transport = SteganographyTransport()
 
@@ -8810,7 +8810,7 @@ class TestSteganographyErrorHandling(unittest.TestCase):
 
     def test_jpeg_parameter_validation(self):
         """Test JPEG parameter validation errors."""
-        from modules.steganography import JPEGSteganography
+        from openssl_encrypt.modules.steganography import JPEGSteganography
 
         # Test invalid quality factor
         with self.assertRaises(ValueError):
@@ -8834,7 +8834,7 @@ class TestTIFFSteganography(unittest.TestCase):
 
         # Check if TIFF steganography is available
         try:
-            from modules.steganography import TIFFSteganography, is_tiff_steganography_available
+            from openssl_encrypt.modules.steganography import TIFFSteganography, is_tiff_steganography_available
 
             self.tiff_available = is_tiff_steganography_available()
         except ImportError:
@@ -8857,7 +8857,7 @@ class TestTIFFSteganography(unittest.TestCase):
         if not self.tiff_available:
             self.skipTest("TIFF steganography not available")
 
-        from modules.steganography import TIFFAnalyzer, TIFFSteganography, create_tiff_test_image
+        from openssl_encrypt.modules.steganography import TIFFAnalyzer, TIFFSteganography, create_tiff_test_image
 
         # Test creating TIFFSteganography instance
         tiff_stego = TIFFSteganography()
@@ -8872,7 +8872,7 @@ class TestTIFFSteganography(unittest.TestCase):
         if not self.tiff_available:
             self.skipTest("TIFF steganography not available")
 
-        from modules.steganography import SteganographyTransport, create_tiff_test_image
+        from openssl_encrypt.modules.steganography import SteganographyTransport, create_tiff_test_image
 
         # Create a test TIFF image
         tiff_path = os.path.join(self.test_dir, "test_detection.tiff")
@@ -8895,7 +8895,7 @@ class TestTIFFSteganography(unittest.TestCase):
         if not self.tiff_available:
             self.skipTest("TIFF steganography not available")
 
-        from modules.steganography import TIFFSteganography, create_tiff_test_image
+        from openssl_encrypt.modules.steganography import TIFFSteganography, create_tiff_test_image
 
         compression_tests = ["raw", "lzw", "packbits"]
         capacities = {}
@@ -8928,7 +8928,7 @@ class TestTIFFSteganography(unittest.TestCase):
         if not self.tiff_available:
             self.skipTest("TIFF steganography not available")
 
-        from modules.steganography import TIFFSteganography, create_tiff_test_image
+        from openssl_encrypt.modules.steganography import TIFFSteganography, create_tiff_test_image
 
         # Create test TIFF (uncompressed for best results)
         tiff_path = os.path.join(self.test_dir, "test_workflow.tiff")
@@ -8965,7 +8965,7 @@ class TestTIFFSteganography(unittest.TestCase):
         if not self.tiff_available:
             self.skipTest("TIFF steganography not available")
 
-        from modules.steganography import SteganographyTransport, create_tiff_test_image
+        from openssl_encrypt.modules.steganography import SteganographyTransport, create_tiff_test_image
 
         # Create test TIFF
         tiff_path = os.path.join(self.test_dir, "test_transport.tiff")
@@ -9007,7 +9007,7 @@ class TestTIFFSteganography(unittest.TestCase):
         if not self.tiff_available:
             self.skipTest("TIFF steganography not available")
 
-        from modules.steganography import TIFFAnalyzer, create_tiff_test_image
+        from openssl_encrypt.modules.steganography import TIFFAnalyzer, create_tiff_test_image
 
         # Test different TIFF configurations
         test_configs = [
@@ -9060,7 +9060,7 @@ class TestWEBPSteganography(unittest.TestCase):
 
         # Check if WEBP steganography is available
         try:
-            from modules.steganography import WEBPSteganography, is_webp_steganography_available
+            from openssl_encrypt.modules.steganography import WEBPSteganography, is_webp_steganography_available
 
             self.webp_available = is_webp_steganography_available()
         except ImportError:
@@ -9083,7 +9083,7 @@ class TestWEBPSteganography(unittest.TestCase):
         if not self.webp_available:
             self.skipTest("WEBP steganography not available")
 
-        from modules.steganography import WEBPAnalyzer, WEBPSteganography, create_webp_test_image
+        from openssl_encrypt.modules.steganography import WEBPAnalyzer, WEBPSteganography, create_webp_test_image
 
         # Test creating WEBPSteganography instance
         webp_stego = WEBPSteganography()
@@ -9098,7 +9098,7 @@ class TestWEBPSteganography(unittest.TestCase):
         if not self.webp_available:
             self.skipTest("WEBP steganography not available")
 
-        from modules.steganography import SteganographyTransport, create_webp_test_image
+        from openssl_encrypt.modules.steganography import SteganographyTransport, create_webp_test_image
 
         # Create a test WEBP image
         webp_data = create_webp_test_image(width=50, height=50, lossless=True)
@@ -9118,7 +9118,7 @@ class TestWEBPSteganography(unittest.TestCase):
         if not self.webp_available:
             self.skipTest("WEBP steganography not available")
 
-        from modules.steganography import WEBPSteganography, create_webp_test_image
+        from openssl_encrypt.modules.steganography import WEBPSteganography, create_webp_test_image
 
         # Test lossless WEBP
         lossless_webp = create_webp_test_image(width=60, height=60, lossless=True)
@@ -9143,7 +9143,7 @@ class TestWEBPSteganography(unittest.TestCase):
         if not self.webp_available:
             self.skipTest("WEBP steganography not available")
 
-        from modules.steganography import WEBPSteganography, create_webp_test_image
+        from openssl_encrypt.modules.steganography import WEBPSteganography, create_webp_test_image
 
         # Create test lossless WEBP
         webp_data = create_webp_test_image(width=80, height=80, lossless=True)
@@ -9172,7 +9172,7 @@ class TestWEBPSteganography(unittest.TestCase):
         if not self.webp_available:
             self.skipTest("WEBP steganography not available")
 
-        from modules.steganography import WEBPSteganography, create_webp_test_image
+        from openssl_encrypt.modules.steganography import WEBPSteganography, create_webp_test_image
 
         # Create test lossy WEBP
         webp_data = create_webp_test_image(width=120, height=120, lossless=False, quality=85)
@@ -9202,7 +9202,7 @@ class TestWEBPSteganography(unittest.TestCase):
         if not self.webp_available:
             self.skipTest("WEBP steganography not available")
 
-        from modules.steganography import SteganographyTransport, create_webp_test_image
+        from openssl_encrypt.modules.steganography import SteganographyTransport, create_webp_test_image
 
         # Create test WEBP files
         webp_path = os.path.join(self.test_dir, "test_transport.webp")
@@ -9244,7 +9244,7 @@ class TestWEBPSteganography(unittest.TestCase):
         if not self.webp_available:
             self.skipTest("WEBP steganography not available")
 
-        from modules.steganography import WEBPAnalyzer, create_webp_test_image
+        from openssl_encrypt.modules.steganography import WEBPAnalyzer, create_webp_test_image
 
         # Test different WEBP configurations
         test_configs = [
@@ -9284,7 +9284,7 @@ class TestWEBPSteganography(unittest.TestCase):
         if not self.webp_available:
             self.skipTest("WEBP steganography not available")
 
-        from modules.steganography import WEBPSteganography, create_webp_test_image
+        from openssl_encrypt.modules.steganography import WEBPSteganography, create_webp_test_image
 
         # Create test WEBP
         webp_data = create_webp_test_image(width=50, height=50, lossless=True)
@@ -9316,7 +9316,7 @@ class TestWAVSteganography(unittest.TestCase):
 
         # Check if WAV steganography is available
         try:
-            from modules.steganography import WAVSteganography, is_wav_steganography_available
+            from openssl_encrypt.modules.steganography import WAVSteganography, is_wav_steganography_available
 
             self.wav_available = is_wav_steganography_available()
         except ImportError:
@@ -9339,7 +9339,7 @@ class TestWAVSteganography(unittest.TestCase):
         if not self.wav_available:
             self.skipTest("WAV steganography not available")
 
-        from modules.steganography import WAVAnalyzer, WAVSteganography, create_wav_test_audio
+        from openssl_encrypt.modules.steganography import WAVAnalyzer, WAVSteganography, create_wav_test_audio
 
         # Test creating WAVSteganography instance
         wav_stego = WAVSteganography()
@@ -9354,7 +9354,7 @@ class TestWAVSteganography(unittest.TestCase):
         if not self.wav_available:
             self.skipTest("WAV steganography not available")
 
-        from modules.steganography import create_wav_test_audio
+        from openssl_encrypt.modules.steganography import create_wav_test_audio
 
         # Test different audio configurations
         test_configs = [
@@ -9378,7 +9378,7 @@ class TestWAVSteganography(unittest.TestCase):
         if not self.wav_available:
             self.skipTest("WAV steganography not available")
 
-        from modules.steganography import WAVSteganography, create_wav_test_audio
+        from openssl_encrypt.modules.steganography import WAVSteganography, create_wav_test_audio
 
         # Test different configurations
         configs = [
@@ -9415,7 +9415,7 @@ class TestWAVSteganography(unittest.TestCase):
         if not self.wav_available:
             self.skipTest("WAV steganography not available")
 
-        from modules.steganography import WAVSteganography, create_wav_test_audio
+        from openssl_encrypt.modules.steganography import WAVSteganography, create_wav_test_audio
 
         # Create test WAV (longer duration for more capacity)
         wav_data = create_wav_test_audio(duration_seconds=3.0, sample_rate=44100, channels=2)
@@ -9449,7 +9449,7 @@ class TestWAVSteganography(unittest.TestCase):
         if not self.wav_available:
             self.skipTest("WAV steganography not available")
 
-        from modules.steganography import WAVAnalyzer, create_wav_test_audio
+        from openssl_encrypt.modules.steganography import WAVAnalyzer, create_wav_test_audio
 
         # Test different WAV configurations
         test_configs = [
@@ -9488,7 +9488,7 @@ class TestWAVSteganography(unittest.TestCase):
         if not self.wav_available:
             self.skipTest("WAV steganography not available")
 
-        from modules.steganography import WAVSteganography, create_wav_test_audio
+        from openssl_encrypt.modules.steganography import WAVSteganography, create_wav_test_audio
 
         # Create test WAV
         wav_data = create_wav_test_audio(duration_seconds=2.0, channels=1)
@@ -9516,7 +9516,7 @@ class TestWAVSteganography(unittest.TestCase):
         if not self.wav_available:
             self.skipTest("WAV steganography not available")
 
-        from modules.steganography import WAVSteganography, create_wav_test_audio
+        from openssl_encrypt.modules.steganography import WAVSteganography, create_wav_test_audio
 
         # Test 16-bit audio (most common)
         wav_16bit = create_wav_test_audio(duration_seconds=2.0, bits_per_sample=16)
@@ -9543,7 +9543,7 @@ class TestFLACSteganography(unittest.TestCase):
 
         # Check if FLAC steganography is available
         try:
-            from modules.steganography import FLACSteganography, is_flac_steganography_available
+            from openssl_encrypt.modules.steganography import FLACSteganography, is_flac_steganography_available
 
             self.flac_available = is_flac_steganography_available()
         except ImportError:
@@ -9566,7 +9566,7 @@ class TestFLACSteganography(unittest.TestCase):
         if not self.flac_available:
             self.skipTest("FLAC steganography not available")
 
-        from modules.steganography import FLACAnalyzer, FLACSteganography, create_flac_test_audio
+        from openssl_encrypt.modules.steganography import FLACAnalyzer, FLACSteganography, create_flac_test_audio
 
         # Test creating FLACSteganography instance
         flac_stego = FLACSteganography()
@@ -9581,7 +9581,7 @@ class TestFLACSteganography(unittest.TestCase):
         if not self.flac_available:
             self.skipTest("FLAC steganography not available")
 
-        from modules.steganography import create_flac_test_audio
+        from openssl_encrypt.modules.steganography import create_flac_test_audio
 
         # Test different audio configurations
         test_configs = [
@@ -9604,7 +9604,7 @@ class TestFLACSteganography(unittest.TestCase):
         if not self.flac_available:
             self.skipTest("FLAC steganography not available")
 
-        from modules.steganography import FLACSteganography, create_flac_test_audio
+        from openssl_encrypt.modules.steganography import FLACSteganography, create_flac_test_audio
 
         # Test different configurations
         configs = [
@@ -9641,7 +9641,7 @@ class TestFLACSteganography(unittest.TestCase):
         if not self.flac_available:
             self.skipTest("FLAC steganography not available")
 
-        from modules.steganography import FLACSteganography, create_flac_test_audio
+        from openssl_encrypt.modules.steganography import FLACSteganography, create_flac_test_audio
 
         # Create test FLAC (longer duration for more capacity)
         flac_data = create_flac_test_audio(duration_seconds=3.0, sample_rate=44100, channels=2)
@@ -9674,7 +9674,7 @@ class TestFLACSteganography(unittest.TestCase):
         if not self.flac_available:
             self.skipTest("FLAC steganography not available")
 
-        from modules.steganography import FLACAnalyzer, create_flac_test_audio
+        from openssl_encrypt.modules.steganography import FLACAnalyzer, create_flac_test_audio
 
         # Test different FLAC configurations
         test_configs = [
@@ -9712,7 +9712,7 @@ class TestFLACSteganography(unittest.TestCase):
         if not self.flac_available:
             self.skipTest("FLAC steganography not available")
 
-        from modules.steganography import FLACSteganography, create_flac_test_audio
+        from openssl_encrypt.modules.steganography import FLACSteganography, create_flac_test_audio
 
         # Create test FLAC
         flac_data = create_flac_test_audio(duration_seconds=2.0, channels=1)
@@ -9740,7 +9740,7 @@ class TestFLACSteganography(unittest.TestCase):
         if not self.flac_available:
             self.skipTest("FLAC steganography not available")
 
-        from modules.steganography import FLACSteganography, create_flac_test_audio
+        from openssl_encrypt.modules.steganography import FLACSteganography, create_flac_test_audio
 
         # Create test FLAC
         flac_data = create_flac_test_audio(duration_seconds=2.0, channels=2, bits_per_sample=16)
@@ -9766,7 +9766,7 @@ class TestFLACSteganography(unittest.TestCase):
         if not self.flac_available:
             self.skipTest("FLAC steganography not available")
 
-        from modules.steganography import FLACSteganography, create_flac_test_audio
+        from openssl_encrypt.modules.steganography import FLACSteganography, create_flac_test_audio
 
         # Create test FLAC
         flac_data = create_flac_test_audio(duration_seconds=1.0, sample_rate=44100, channels=1)
@@ -9797,7 +9797,7 @@ class TestMP3Steganography(unittest.TestCase):
 
         # Check if MP3 steganography is available
         try:
-            from modules.steganography import MP3Steganography, is_mp3_steganography_available
+            from openssl_encrypt.modules.steganography import MP3Steganography, is_mp3_steganography_available
 
             self.mp3_available = is_mp3_steganography_available()
         except ImportError:
@@ -9820,7 +9820,7 @@ class TestMP3Steganography(unittest.TestCase):
         if not self.mp3_available:
             self.skipTest("MP3 steganography not available")
 
-        from modules.steganography import MP3Analyzer, MP3Steganography, create_mp3_test_audio
+        from openssl_encrypt.modules.steganography import MP3Analyzer, MP3Steganography, create_mp3_test_audio
 
         # Test creating MP3Steganography instance
         mp3_stego = MP3Steganography()
@@ -9835,7 +9835,7 @@ class TestMP3Steganography(unittest.TestCase):
         if not self.mp3_available:
             self.skipTest("MP3 steganography not available")
 
-        from modules.steganography import create_mp3_test_audio
+        from openssl_encrypt.modules.steganography import create_mp3_test_audio
 
         # Test different MP3 configurations
         test_configs = [
@@ -9858,7 +9858,7 @@ class TestMP3Steganography(unittest.TestCase):
         if not self.mp3_available:
             self.skipTest("MP3 steganography not available")
 
-        from modules.steganography import MP3Steganography, create_mp3_test_audio
+        from openssl_encrypt.modules.steganography import MP3Steganography, create_mp3_test_audio
 
         # Test different configurations
         configs = [
@@ -9891,7 +9891,7 @@ class TestMP3Steganography(unittest.TestCase):
         if not self.mp3_available:
             self.skipTest("MP3 steganography not available")
 
-        from modules.steganography import MP3Steganography, create_mp3_test_audio
+        from openssl_encrypt.modules.steganography import MP3Steganography, create_mp3_test_audio
 
         # Create test MP3 (higher bitrate for better capacity)
         mp3_data = create_mp3_test_audio(duration_seconds=5.0, bitrate=192, sample_rate=44100)
@@ -9924,7 +9924,7 @@ class TestMP3Steganography(unittest.TestCase):
         if not self.mp3_available:
             self.skipTest("MP3 steganography not available")
 
-        from modules.steganography import MP3Analyzer, create_mp3_test_audio
+        from openssl_encrypt.modules.steganography import MP3Analyzer, create_mp3_test_audio
 
         # Test different MP3 configurations
         test_configs = [
@@ -9964,7 +9964,7 @@ class TestMP3Steganography(unittest.TestCase):
         if not self.mp3_available:
             self.skipTest("MP3 steganography not available")
 
-        from modules.steganography import MP3Steganography, create_mp3_test_audio
+        from openssl_encrypt.modules.steganography import MP3Steganography, create_mp3_test_audio
 
         # Create test MP3
         mp3_data = create_mp3_test_audio(duration_seconds=3.0, bitrate=128)
@@ -9992,7 +9992,7 @@ class TestMP3Steganography(unittest.TestCase):
         if not self.mp3_available:
             self.skipTest("MP3 steganography not available")
 
-        from modules.steganography import MP3Steganography, create_mp3_test_audio
+        from openssl_encrypt.modules.steganography import MP3Steganography, create_mp3_test_audio
 
         # Test different bitrates
         bitrates = [96, 128, 192, 256]
@@ -10017,7 +10017,7 @@ class TestMP3Steganography(unittest.TestCase):
         if not self.mp3_available:
             self.skipTest("MP3 steganography not available")
 
-        from modules.steganography import MP3Steganography, create_mp3_test_audio
+        from openssl_encrypt.modules.steganography import MP3Steganography, create_mp3_test_audio
 
         # Create high-quality MP3 for testing
         mp3_data = create_mp3_test_audio(duration_seconds=4.0, bitrate=256, sample_rate=44100)
@@ -10043,7 +10043,7 @@ class TestMP3Steganography(unittest.TestCase):
         if not self.mp3_available:
             self.skipTest("MP3 steganography not available")
 
-        from modules.steganography import MP3Steganography, create_mp3_test_audio
+        from openssl_encrypt.modules.steganography import MP3Steganography, create_mp3_test_audio
 
         # Create test MP3
         mp3_data = create_mp3_test_audio(duration_seconds=3.0, bitrate=192)
@@ -10067,7 +10067,7 @@ class TestMP3Steganography(unittest.TestCase):
         if not self.mp3_available:
             self.skipTest("MP3 steganography not available")
 
-        from modules.steganography import MP3Steganography, create_mp3_test_audio
+        from openssl_encrypt.modules.steganography import MP3Steganography, create_mp3_test_audio
 
         # Create test MP3
         mp3_data = create_mp3_test_audio(duration_seconds=2.0, bitrate=128)
@@ -10097,7 +10097,7 @@ class TestQRCodeKeyDistribution(unittest.TestCase):
 
         # Check if QR dependencies are available
         try:
-            from modules.portable_media import QRKeyDistribution, QRKeyError, QRKeyFormat
+            from openssl_encrypt.modules.portable_media import QRKeyDistribution, QRKeyError, QRKeyFormat
 
             self.qr_available = True
             self.QRKeyDistribution = QRKeyDistribution
@@ -10115,7 +10115,7 @@ class TestQRCodeKeyDistribution(unittest.TestCase):
         if not self.qr_available:
             self.skipTest("QR code dependencies not available")
 
-        from modules.portable_media import SecureBytes
+        from openssl_encrypt.modules.portable_media import SecureBytes
 
         qr_dist = self.QRKeyDistribution()
 
@@ -10149,7 +10149,7 @@ class TestQRCodeKeyDistribution(unittest.TestCase):
         if not self.qr_available:
             self.skipTest("QR code dependencies not available")
 
-        from modules.portable_media import create_key_qr, read_key_qr
+        from openssl_encrypt.modules.portable_media import create_key_qr, read_key_qr
 
         test_key = b"test_encryption_key_for_qr_roundtrip"
         key_name = "roundtrip_test_key"
@@ -10168,7 +10168,7 @@ class TestQRCodeKeyDistribution(unittest.TestCase):
         if not self.qr_available:
             self.skipTest("QR code dependencies not available")
 
-        from modules.portable_media import SecureBytes
+        from openssl_encrypt.modules.portable_media import SecureBytes
 
         qr_dist = self.QRKeyDistribution()
 
@@ -10218,7 +10218,7 @@ class TestQRCodeKeyDistribution(unittest.TestCase):
         if not self.qr_available:
             self.skipTest("QR code dependencies not available")
 
-        from modules.portable_media import SecureBytes
+        from openssl_encrypt.modules.portable_media import SecureBytes
 
         qr_dist = self.QRKeyDistribution()
 
@@ -10243,7 +10243,7 @@ class TestQRCodeKeyDistribution(unittest.TestCase):
         if not self.qr_available:
             self.skipTest("QR code dependencies not available")
 
-        from modules.portable_media import SecureBytes
+        from openssl_encrypt.modules.portable_media import SecureBytes
 
         qr_dist = self.QRKeyDistribution()
         test_key = b"security_test_key_data"
@@ -10275,7 +10275,7 @@ class TestUSBDriveEncryption(unittest.TestCase):
 
         # Check if USB dependencies are available
         try:
-            from modules.portable_media import USBCreationError, USBDriveCreator, USBSecurityProfile
+            from openssl_encrypt.modules.portable_media import USBCreationError, USBDriveCreator, USBSecurityProfile
 
             self.usb_available = True
             self.USBDriveCreator = USBDriveCreator
@@ -12430,7 +12430,7 @@ class TestSecurityScorer(unittest.TestCase):
 
     def test_convenience_function(self):
         """Test the convenience function analyze_security_config."""
-        from modules.security_scorer import analyze_security_config
+        from openssl_encrypt.modules.security_scorer import analyze_security_config
 
         hash_config = {"sha256": {"rounds": 1000000}}
         kdf_config = {"argon2": {"enabled": True, "memory_cost": 65536}}
@@ -13886,7 +13886,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_base_test_classes(self):
         """Test base testing framework classes."""
-        from modules.testing.base_test import BaseSecurityTest, TestResult, TestResultLevel
+        from openssl_encrypt.modules.testing.base_test import BaseSecurityTest, TestResult, TestResultLevel
 
         # Test TestResult creation
         result = TestResult(
@@ -13919,7 +13919,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_fuzz_testing_input_generator(self):
         """Test fuzzing framework input generator."""
-        from modules.testing.fuzz_testing import InputGenerator
+        from openssl_encrypt.modules.testing.fuzz_testing import InputGenerator
 
         generator = InputGenerator(seed=42)  # Use fixed seed for reproducibility
 
@@ -13947,7 +13947,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_side_channel_statistical_analyzer(self):
         """Test side-channel statistical analyzer."""
-        from modules.testing.side_channel_tests import StatisticalAnalyzer
+        from openssl_encrypt.modules.testing.side_channel_tests import StatisticalAnalyzer
 
         analyzer = StatisticalAnalyzer()
 
@@ -13977,7 +13977,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_kat_test_vectors(self):
         """Test KAT test vectors."""
-        from modules.testing.kat_tests import NISTTestVectors, CustomTestVectors
+        from openssl_encrypt.modules.testing.kat_tests import NISTTestVectors, CustomTestVectors
 
         # Test NIST vectors
         sha256_vectors = NISTTestVectors.get_sha256_vectors()
@@ -14012,7 +14012,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_benchmark_performance_analyzer(self):
         """Test benchmark performance analyzer."""
-        from modules.testing.benchmark_suite import PerformanceAnalyzer, BenchmarkResult
+        from openssl_encrypt.modules.testing.benchmark_suite import PerformanceAnalyzer, BenchmarkResult
 
         analyzer = PerformanceAnalyzer()
 
@@ -14036,7 +14036,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_memory_profiler(self):
         """Test memory profiler functionality."""
-        from modules.testing.memory_tests import MemoryProfiler
+        from openssl_encrypt.modules.testing.memory_tests import MemoryProfiler
 
         profiler = MemoryProfiler()
 
@@ -14064,7 +14064,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_test_runner_execution_plan(self):
         """Test test runner execution plan."""
-        from modules.testing.test_runner import TestExecutionPlan, TestSuiteType
+        from openssl_encrypt.modules.testing.test_runner import TestExecutionPlan, TestSuiteType
 
         # Test execution plan creation
         plan = TestExecutionPlan(
@@ -14084,7 +14084,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_test_suite_enumeration(self):
         """Test test suite type enumeration."""
-        from modules.testing.test_runner import TestSuiteType
+        from openssl_encrypt.modules.testing.test_runner import TestSuiteType
 
         # Test all expected suite types exist
         expected_types = ["fuzz", "side_channel", "kat", "benchmark", "memory", "all"]
@@ -14095,8 +14095,8 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_report_generation_data_structures(self):
         """Test report generation data structures."""
-        from modules.testing.test_runner import TestRunReport, TestSuiteResult
-        from modules.testing.base_test import TestResult, TestResultLevel
+        from openssl_encrypt.modules.testing.test_runner import TestRunReport, TestSuiteResult
+        from openssl_encrypt.modules.testing.base_test import TestResult, TestResultLevel
         from datetime import datetime
 
         # Create mock test results
@@ -14138,8 +14138,8 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_fuzz_testing_integration(self):
         """Test fuzzing framework integration."""
-        from modules.testing.fuzz_testing import FuzzTestSuite
-        from modules.testing.base_test import TestConfig
+        from openssl_encrypt.modules.testing.fuzz_testing import FuzzTestSuite
+        from openssl_encrypt.modules.testing.base_test import TestConfig
 
         # Create a fuzzing test suite
         fuzz_suite = FuzzTestSuite()
@@ -14155,7 +14155,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_side_channel_testing_integration(self):
         """Test side-channel testing integration.""" 
-        from modules.testing.side_channel_tests import SideChannelTestSuite
+        from openssl_encrypt.modules.testing.side_channel_tests import SideChannelTestSuite
 
         # Create a side-channel test suite
         side_channel_suite = SideChannelTestSuite()
@@ -14168,7 +14168,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_kat_testing_integration(self):
         """Test KAT testing integration."""
-        from modules.testing.kat_tests import KATTestSuite
+        from openssl_encrypt.modules.testing.kat_tests import KATTestSuite
 
         # Create a KAT test suite
         kat_suite = KATTestSuite()
@@ -14178,7 +14178,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_benchmark_testing_integration(self):
         """Test benchmark testing integration."""
-        from modules.testing.benchmark_suite import BenchmarkTestSuite
+        from openssl_encrypt.modules.testing.benchmark_suite import BenchmarkTestSuite
 
         # Create a benchmark test suite
         benchmark_suite = BenchmarkTestSuite()
@@ -14191,7 +14191,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_memory_testing_integration(self):
         """Test memory testing integration."""
-        from modules.testing.memory_tests import MemoryTestSuite
+        from openssl_encrypt.modules.testing.memory_tests import MemoryTestSuite
 
         # Create a memory test suite
         memory_suite = MemoryTestSuite()
@@ -14204,7 +14204,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_security_test_runner_integration(self):
         """Test security test runner integration."""
-        from modules.testing.test_runner import SecurityTestRunner, TestSuiteType
+        from openssl_encrypt.modules.testing.test_runner import SecurityTestRunner, TestSuiteType
 
         # Create a security test runner
         runner = SecurityTestRunner()
@@ -14226,13 +14226,13 @@ class TestAdvancedTestingFramework(unittest.TestCase):
         """Test that all testing framework modules can be imported."""
         # Test base module imports
         try:
-            from modules.testing.base_test import BaseSecurityTest, TestResult, TestResultLevel
-            from modules.testing.fuzz_testing import FuzzTestSuite, InputGenerator
-            from modules.testing.side_channel_tests import SideChannelTestSuite, StatisticalAnalyzer
-            from modules.testing.kat_tests import KATTestSuite, NISTTestVectors
-            from modules.testing.benchmark_suite import BenchmarkTestSuite, PerformanceAnalyzer
-            from modules.testing.memory_tests import MemoryTestSuite, MemoryProfiler
-            from modules.testing.test_runner import SecurityTestRunner, TestExecutionPlan
+            from openssl_encrypt.modules.testing.base_test import BaseSecurityTest, TestResult, TestResultLevel
+            from openssl_encrypt.modules.testing.fuzz_testing import FuzzTestSuite, InputGenerator
+            from openssl_encrypt.modules.testing.side_channel_tests import SideChannelTestSuite, StatisticalAnalyzer
+            from openssl_encrypt.modules.testing.kat_tests import KATTestSuite, NISTTestVectors
+            from openssl_encrypt.modules.testing.benchmark_suite import BenchmarkTestSuite, PerformanceAnalyzer
+            from openssl_encrypt.modules.testing.memory_tests import MemoryTestSuite, MemoryProfiler
+            from openssl_encrypt.modules.testing.test_runner import SecurityTestRunner, TestExecutionPlan
             
             # If we get here, all imports succeeded
             self.assertTrue(True)
@@ -14244,7 +14244,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
         """Test CLI integration for testing framework."""
         # Test that the CLI function exists and can be imported
         try:
-            from modules.crypt_cli import run_security_tests
+            from openssl_encrypt.modules.crypt_cli import run_security_tests
             
             # Test function exists
             self.assertTrue(callable(run_security_tests))
@@ -14254,7 +14254,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_testing_config_handling(self):
         """Test configuration handling in testing framework."""
-        from modules.testing.base_test import TestConfig
+        from openssl_encrypt.modules.testing.base_test import TestConfig
 
         # Test config creation and access
         config = TestConfig(
@@ -14284,7 +14284,7 @@ class TestSecurityLogger(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures"""
         import tempfile
-        from modules.security_logger import SecurityAuditLogger
+        from openssl_encrypt.modules.security_logger import SecurityAuditLogger
 
         # Reset singleton instance for clean test
         SecurityAuditLogger._instance = None
@@ -14296,7 +14296,7 @@ class TestSecurityLogger(unittest.TestCase):
     def tearDown(self):
         """Clean up test fixtures"""
         import shutil
-        from modules.security_logger import SecurityAuditLogger
+        from openssl_encrypt.modules.security_logger import SecurityAuditLogger
 
         # Reset singleton instance
         SecurityAuditLogger._instance = None
@@ -14417,7 +14417,7 @@ class TestSecurityLogger(unittest.TestCase):
     def test_disabled_logger(self):
         """Test that disabled logger doesn't write logs"""
         import tempfile
-        from modules.security_logger import SecurityAuditLogger
+        from openssl_encrypt.modules.security_logger import SecurityAuditLogger
 
         # Create disabled logger
         disabled_dir = tempfile.mkdtemp()
