@@ -3913,6 +3913,14 @@ def main_with_args(args=None):
             hash_config = hash_config["hash_config"]
         else:
             # User provided specific arguments, build custom configuration
+
+            # Implicitly enable RandomX if any RandomX parameter has non-default value
+            if (getattr(args, "randomx_rounds", 1) != 1 or
+                getattr(args, "randomx_mode", "light") != "light" or
+                getattr(args, "randomx_height", 1) != 1 or
+                getattr(args, "randomx_hash_len", 32) != 32):
+                args.enable_randomx = True
+
             hash_config = {
                 "sha512": args.sha512_rounds,
                 "sha384": args.sha384_rounds,
