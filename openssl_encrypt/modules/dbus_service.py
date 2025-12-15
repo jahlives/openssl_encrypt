@@ -484,6 +484,7 @@ class CryptoService(dbus.service.Object):
                     progress=False,
                     verbose=False,
                     debug=False,
+                    secure_mode=True,
                 )
 
                 if success:
@@ -654,6 +655,7 @@ class CryptoService(dbus.service.Object):
                     progress=False,
                     verbose=False,
                     debug=False,
+                    secure_mode=True,
                 )
 
                 if success:
@@ -834,7 +836,8 @@ class CryptoService(dbus.service.Object):
             success = secure_shred_file(
                 file_path=file_path,
                 passes=passes,
-                quiet=True
+                quiet=True,
+                secure_mode=True
             )
 
             if success:

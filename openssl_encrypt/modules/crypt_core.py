@@ -66,6 +66,9 @@ from .crypt_errors import (  # Error handling imports are at the top of file
     secure_key_derivation_error_handler,
 )
 
+# Import utility functions
+from .crypt_utils import safe_open_file
+
 # Define type variable for generic function
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -2850,6 +2853,7 @@ def encrypt_file(
     encryption_data="aes-gcm",
     enable_plugins=True,
     plugin_manager=None,
+    secure_mode=False,
 ):
     """
     Encrypt a file with a password using the specified algorithm.
@@ -2870,12 +2874,13 @@ def encrypt_file(
         algorithm (EncryptionAlgorithm): Encryption algorithm to use (default: Fernet)
         enable_plugins (bool): Whether to enable plugin execution (default: True)
         plugin_manager (PluginManager, optional): Plugin manager instance for plugin execution
+        secure_mode (bool): If True, use O_NOFOLLOW to reject symlinks (default: False)
 
     Returns:
         bool: True if encryption was successful
 
     Raises:
-        ValidationError: If input parameters are invalid
+        ValidationError: If input parameters are invalid or symlink detected in secure_mode
         EncryptionError: If the encryption operation fails
         KeyDerivationError: If key derivation fails
         AuthenticationError: If integrity verification fails
@@ -3089,7 +3094,7 @@ def encrypt_file(
     if not quiet:
         print(f"Reading file: {input_file}")
 
-    with open(input_file, "rb") as file:
+    with safe_open_file(input_file, "rb", secure_mode=secure_mode) as file:
         data = file.read()
 
     # Calculate hash of original data for integrity verification
@@ -3665,7 +3670,7 @@ def encrypt_file(
     if not quiet:
         print(f"Writing encrypted file: {output_file}", end=" ")
 
-    with open(output_file, "wb") as file:
+    with safe_open_file(output_file, "wb", secure_mode=secure_mode) as file:
         file.write(metadata_base64 + b":" + encrypted_data)
         # Add two newlines after encrypted data when writing to stdout/stderr
         if output_file in ("/dev/stdout", "/dev/stderr"):
@@ -3802,6 +3807,7 @@ def decrypt_file(
     encryption_data="aes-gcm",
     enable_plugins=True,
     plugin_manager=None,
+    secure_mode=False,
 ):
     """
     Decrypt a file with a password.
@@ -3817,13 +3823,14 @@ def decrypt_file(
         encryption_data (str): Encryption data algorithm to use for hybrid encryption (default: 'aes-gcm')
         enable_plugins (bool): Whether to enable plugin execution (default: True)
         plugin_manager (PluginManager, optional): Plugin manager instance for plugin execution
+        secure_mode (bool): If True, use O_NOFOLLOW to reject symlinks (default: False)
 
     Returns:
         Union[bool, bytes]: True if decryption was successful and output_file is specified,
                            or the decrypted data if output_file is None
 
     Raises:
-        ValidationError: If input parameters are invalid
+        ValidationError: If input parameters are invalid or symlink detected in secure_mode
         DecryptionError: If the decryption operation fails
         KeyDerivationError: If key derivation fails
         AuthenticationError: If integrity verification fails
@@ -3920,7 +3927,7 @@ def decrypt_file(
     if not quiet:
         print(f"\nReading encrypted file: {input_file}")
 
-    with open(input_file, "rb") as file:
+    with safe_open_file(input_file, "rb", secure_mode=secure_mode) as file:
         file_content = file.read()
 
     # Split metadata and encrypted data
@@ -4830,7 +4837,7 @@ def decrypt_file(
     if not quiet:
         print(f"Writing decrypted file: {output_file}")
 
-    with open(output_file, "wb") as file:
+    with safe_open_file(output_file, "wb", secure_mode=secure_mode) as file:
         file.write(decrypted_data)
         # Add two newlines after decrypted data when writing to stdout/stderr
         if output_file in ("/dev/stdout", "/dev/stderr"):

@@ -6,6 +6,7 @@ This module provides utility functions for the encryption tool, including
 secure file deletion, password generation, and other helper functions.
 """
 
+import errno
 import glob
 import json
 import os
@@ -186,10 +187,150 @@ def display_password_with_timeout(password, timeout_seconds=10):
         print("For additional security, consider clearing your terminal history.")
 
 
-def secure_shred_file(file_path, passes=3, quiet=False):
+def safe_open_file(file_path, mode, secure_mode=False, allow_special_files=True):
+    """
+    Safely open a file with optional symlink protection using O_NOFOLLOW.
+
+    This function provides protection against TOCTOU (Time-Of-Check-Time-Of-Use)
+    symlink attacks by using the O_NOFOLLOW flag on POSIX systems. When secure_mode
+    is enabled, the function will atomically reject symbolic links at the OS level,
+    preventing attackers from replacing legitimate files with symlinks between
+    validation and file access.
+
+    Args:
+        file_path (str): Path to the file to open
+        mode (str): File open mode ('r', 'w', 'rb', 'wb', 'r+b', 'a', etc.)
+        secure_mode (bool): If True, use O_NOFOLLOW to reject symlinks. Default: False
+        allow_special_files (bool): If True, allow special files like /dev/stdin. Default: True
+
+    Returns:
+        File object: Opened file handle
+
+    Raises:
+        ValidationError: If symlink encountered in secure_mode
+        OSError: If file cannot be opened
+
+    Security:
+        - Uses O_NOFOLLOW on POSIX systems (Linux, macOS, BSD) for atomic symlink rejection
+        - Falls back to os.path.islink() check on Windows (small TOCTOU window remains)
+        - Always uses O_CLOEXEC to prevent file descriptor leaks to child processes
+        - Bypasses symlink checks for special files (/dev/*, /proc/*, etc.) when allow_special_files=True
+
+    Example:
+        # D-Bus service (secure mode - reject symlinks)
+        with safe_open_file("/tmp/untrusted.txt", "rb", secure_mode=True) as f:
+            data = f.read()
+
+        # CLI usage (allow symlinks for backward compatibility)
+        with safe_open_file("myfile.txt", "rb", secure_mode=False) as f:
+            data = f.read()
+    """
+    from .crypt_errors import ValidationError
+
+    # List of special files/paths that should bypass symlink checks
+    # These are typically system-provided special files, pipes, or pseudo-filesystems
+    special_file_prefixes = (
+        "/dev/stdin", "/dev/stdout", "/dev/stderr",  # Standard streams
+        "/dev/fd/",  # File descriptor pseudo-files
+        "/dev/null", "/dev/zero", "/dev/random", "/dev/urandom",  # Special devices
+        "/proc/",  # Linux process filesystem
+        "/sys/",  # Linux system filesystem
+    )
+
+    # Check if this is a special file that should bypass security checks
+    is_special_file = allow_special_files and (
+        file_path in special_file_prefixes[:6] or
+        any(file_path.startswith(prefix) for prefix in special_file_prefixes)
+    )
+
+    # If not in secure mode or is a special file, use standard open()
+    if not secure_mode or is_special_file:
+        return open(file_path, mode)
+
+    # Secure mode: Use O_NOFOLLOW to atomically reject symlinks
+    # Convert mode string to os.open() flags
+    mode_flags = {
+        'r': os.O_RDONLY,
+        'rb': os.O_RDONLY,
+        'w': os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+        'wb': os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+        'a': os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+        'ab': os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+        'r+': os.O_RDWR,
+        'r+b': os.O_RDWR,
+        'w+': os.O_RDWR | os.O_CREAT | os.O_TRUNC,
+        'w+b': os.O_RDWR | os.O_CREAT | os.O_TRUNC,
+        'a+': os.O_RDWR | os.O_CREAT | os.O_APPEND,
+        'a+b': os.O_RDWR | os.O_CREAT | os.O_APPEND,
+    }
+
+    if mode not in mode_flags:
+        raise ValueError(f"Unsupported file mode: {mode}")
+
+    flags = mode_flags[mode]
+
+    # Add security flags
+    # O_NOFOLLOW: Fail if path is a symbolic link (POSIX systems)
+    # O_CLOEXEC: Close file descriptor on exec() to prevent leaks to child processes
+    if hasattr(os, 'O_NOFOLLOW'):
+        flags |= os.O_NOFOLLOW
+    if hasattr(os, 'O_CLOEXEC'):
+        flags |= os.O_CLOEXEC
+
+    # Attempt to open the file with O_NOFOLLOW protection
+    try:
+        # On POSIX systems, O_NOFOLLOW will cause open() to fail with ELOOP if path is a symlink
+        fd = os.open(file_path, flags, 0o600)  # Secure permissions: owner read/write only
+    except OSError as e:
+        # ELOOP (errno 40): Too many symbolic links (triggered by O_NOFOLLOW on symlink)
+        # ENOENT (errno 2): File not found (may occur on some systems for symlinks)
+        if e.errno == errno.ELOOP or (e.errno == errno.ENOENT and os.path.islink(file_path)):
+            raise ValidationError(
+                f"Symlink attack blocked: '{file_path}' is a symbolic link. "
+                f"D-Bus service does not follow symlinks for security reasons."
+            )
+        # Re-raise other OS errors (permissions, disk full, etc.)
+        raise
+
+    # Fallback check for systems without O_NOFOLLOW (e.g., older Windows)
+    # Note: This introduces a small TOCTOU window but provides defense-in-depth
+    if not hasattr(os, 'O_NOFOLLOW'):
+        try:
+            if os.path.islink(file_path):
+                os.close(fd)  # Clean up file descriptor
+                raise ValidationError(
+                    f"Symlink blocked: '{file_path}' is a symbolic link. "
+                    f"D-Bus service does not follow symlinks for security reasons."
+                )
+        except OSError:
+            # If islink() fails, assume it's not a symlink and continue
+            pass
+
+    # Convert file descriptor to file object
+    # Determine if binary or text mode based on 'b' in mode string
+    fdopen_mode = mode if 'b' in mode else mode + 't'
+
+    try:
+        return os.fdopen(fd, fdopen_mode)
+    except Exception:
+        # If fdopen fails, ensure we close the file descriptor to avoid leaks
+        os.close(fd)
+        raise
+
+
+def secure_shred_file(file_path, passes=3, quiet=False, secure_mode=False):
     """
     Securely delete a file by overwriting its contents multiple times with random data
     before unlinking it from the filesystem.
+
+    Args:
+        file_path: Path to the file to securely delete
+        passes: Number of overwrite passes (default: 3)
+        quiet: Suppress output messages (default: False)
+        secure_mode: If True, use O_NOFOLLOW to reject symlinks (default: False)
+
+    Returns:
+        bool: True if file was successfully shredded, False otherwise
     """
     # Skip special device files (stdin, stdout, stderr, pipes, etc.)
     if file_path in ("/dev/stdin", "/dev/stdout", "/dev/stderr") or file_path.startswith(
@@ -293,7 +434,7 @@ def secure_shred_file(file_path, passes=3, quiet=False):
 
         # Open the file for binary read/write without truncating
         try:
-            with open(file_path, "r+b") as f:
+            with safe_open_file(file_path, "r+b", secure_mode=secure_mode) as f:
                 # Use a 64KB buffer for efficient overwriting of large files
                 buffer_size = min(65536, file_size)
 
@@ -337,7 +478,7 @@ def secure_shred_file(file_path, passes=3, quiet=False):
                     os.fsync(f.fileno())
 
             # Truncate the file
-            with open(file_path, "wb") as f:
+            with safe_open_file(file_path, "wb", secure_mode=secure_mode) as f:
                 f.truncate(0)
 
         except Exception as e:
