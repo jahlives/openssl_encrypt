@@ -1192,7 +1192,11 @@ def create_subparser_main():
     # Global options
     parser.add_argument("--progress", action="store_true", help="Show progress bar")
     parser.add_argument("--verbose", action="store_true", help="Show hash/kdf details")
-    parser.add_argument("--debug", action="store_true", help="Show detailed debug information")
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Show detailed debug information (WARNING: logs passwords and sensitive data - test files only!)"
+    )
     parser.add_argument(
         "--quiet",
         "-q",

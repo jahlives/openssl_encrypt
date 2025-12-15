@@ -1822,7 +1822,9 @@ def main_with_args(args=None):
     global_group.add_argument("--progress", action="store_true", help="Show progress bar")
     global_group.add_argument("--verbose", action="store_true", help="Show hash/kdf details")
     global_group.add_argument(
-        "--debug", action="store_true", help="Show detailed debug information"
+        "--debug",
+        action="store_true",
+        help="Show detailed debug information (WARNING: logs passwords and sensitive data - test files only!)"
     )
     global_group.add_argument(
         "--quiet",
@@ -2669,6 +2671,21 @@ def main_with_args(args=None):
             )
         except Exception:
             pass
+
+        # Security warning for debug mode
+        print("\n" + "=" * 78)
+        print("⚠️  WARNING: DEBUG MODE ENABLED - SENSITIVE DATA LOGGING ACTIVE")
+        print("=" * 78)
+        print("Debug mode logs sensitive information including:")
+        print("  • Password hex dumps during key derivation")
+        print("  • Detailed cryptographic operation traces")
+        print("  • Internal state information")
+        print()
+        print("SECURITY NOTICE:")
+        print("  ❌ DO NOT use --debug with production data or real passwords")
+        print("  ✅ Only use for testing with dummy/test data")
+        print("  ⚠️  Debug logs may be stored in log files or terminal history")
+        print("=" * 78 + "\n")
 
         print(f"DEBUG: sys.argv = {sys.argv}")
 

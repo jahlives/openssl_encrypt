@@ -49,7 +49,11 @@ if __name__ == "__main__":
     # Parse just the verbose and debug flags to configure logging before main() runs
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--verbose", "-v", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--debug", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Show detailed debug information (WARNING: logs passwords and sensitive data - test files only!)"
+    )
     args, _ = parser.parse_known_args()
 
     # Configure logging based on verbose and debug flags

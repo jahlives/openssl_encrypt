@@ -9,9 +9,11 @@
 
 ## Executive Summary
 
-This security review evaluated the OpenSSL Encrypt codebase on the feature/v1.3.0-development branch, focusing on cryptographic security, plugin system isolation, input validation, authentication mechanisms, and sensitive data handling. The review identified **0 CRITICAL**, **0 HIGH**, **3 MEDIUM**, and **5 LOW** severity findings.
+This security review evaluated the OpenSSL Encrypt codebase on the feature/v1.3.0-development branch, focusing on cryptographic security, plugin system isolation, input validation, authentication mechanisms, and sensitive data handling. The review identified **0 CRITICAL**, **0 HIGH**, **3 MEDIUM**, and **4 LOW** severity findings.
 
-**Update (2025-12-15):** MED-2 has been resolved with O_NOFOLLOW implementation (commit f11453f).
+**Updates:**
+- **2025-12-15:** MED-2 resolved with O_NOFOLLOW implementation (commit f11453f)
+- **2025-12-15:** LOW-5 resolved with debug mode security warning implementation
 
 ### Overall Security Posture: **STRONG**
 
@@ -271,13 +273,14 @@ Use O_EXCL flag and secure permissions (0600) immediately.
 
 ---
 
-### LOW-5: Password Logging in Debug Mode (Intentional)
+### LOW-5: Password Logging in Debug Mode (Intentional) ✅ RESOLVED
 
-**Severity:** LOW
+**Severity:** LOW → **RESOLVED**
 **File:** `/openssl_encrypt/modules/crypt_core.py:1959,2062,2109`
 **Category:** Information Disclosure (By Design)
+**Resolution Date:** 2025-12-15
 
-**Description:**
+**Original Description:**
 Debug logging includes password hex dumps during key derivation when `--debug` flag is explicitly enabled:
 
 ```python
@@ -286,23 +289,42 @@ if debug:
     logger.debug(f"BALLOON:FINAL After {total_rounds} rounds: {password.hex()}")
 ```
 
-**Risk:**
+**Original Risk:**
 - Passwords/keys exposed in log files when `--debug` is explicitly enabled
 - Log files may have weak permissions or be backed up
 
-**Impact:**
+**Original Impact:**
 - **Intentional behavior** for debugging purposes
 - Only affects debug mode (disabled by default, must be explicitly enabled)
 - Debug mode is intended for use with test files only, not production data
 - Users enabling debug mode expect verbose output including sensitive data
-- Requires attacker to enable debug AND access log files
+- Required attacker to enable debug AND access log files
 
-**Recommendation:**
-1. Document in user guide: "Never use --debug with production data"
-2. Add warning when debug mode is enabled: "Debug mode logs sensitive data"
-3. Ensure debug mode is disabled by default (already implemented)
+**Implementation (COMPLETED):**
+✅ 1. Added prominent security warning when --debug is enabled (crypt_cli.py:2673-2686)
+   - Clear warning box with emoji indicators (78-character width)
+   - Explicit "DO NOT use with production data" message
+   - Lists what sensitive data is logged (password hex, crypto traces, state info)
+   - Security notice about log file persistence
+   - Displayed BEFORE any sensitive logging occurs
 
-**Status:** Acceptable - Working as intended for debugging purposes
+✅ 2. Enhanced --debug help text with security warning
+   - Updated in crypt_cli.py:1825
+   - Updated in crypt_cli_subparser.py:1195
+   - Updated in crypt.py:52
+   - Help text now shows: "(WARNING: logs passwords and sensitive data - test files only!)"
+
+✅ 3. Debug mode remains disabled by default (no changes needed)
+
+**Security Improvements:**
+- ✅ Users are clearly warned before any sensitive logging occurs
+- ✅ Warning is impossible to miss (prominent box format)
+- ✅ Clear guidance on safe usage (test files only)
+- ✅ Explains what sensitive data is logged
+- ✅ Reminds users about log file persistence
+- ✅ Warning visible in --help output
+
+**Status:** ✅ **RESOLVED** - Clear warning implemented and tested
 
 ---
 
@@ -395,11 +417,15 @@ if debug:
    - Implementation: O_NOFOLLOW protection with safe_open_file() utility
    - Commit: f11453f
 
+2. **✅ Add debug mode warning** (LOW-5) - **COMPLETED 2025-12-15**
+   - Priority: LOW
+   - Effort: 50-60 minutes (actual)
+   - Implementation: Prominent security warning box + help text updates
+   - Files modified: crypt_cli.py, crypt_cli_subparser.py, crypt.py
+
 ### Immediate (Before Production Release)
 
-2. **Add debug mode warning** (LOW-5)
-   - Priority: LOW
-   - Effort: 30 minutes
+*No immediate security items remaining*
 
 ### Short-term (Within 1 Month)
 
