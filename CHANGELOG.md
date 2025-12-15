@@ -5,6 +5,152 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2025-12-15
+
+### Added
+
+#### Cryptographic Features
+- **RandomX Proof-of-Work KDF**: CPU-optimized key derivation function with light mode (256MB memory) and fast mode (2GB memory) for enhanced security against GPU/ASIC attacks
+- **Implicit RandomX Activation**: Automatically enable RandomX when parameters are specified with intelligent default round configuration
+- **Steganography Support in Flutter GUI**: Complete integration of data hiding capabilities in desktop GUI
+- **Flexible Argument Parsing**: Global flags now support flexible argument parsing for improved CLI usability
+
+#### Testing & Quality Assurance
+- **Comprehensive Test Suite**: New `crypt test` command with fuzzing, side-channel analysis, Known-Answer Tests (KAT), performance benchmarking, and memory safety testing
+- **Security Audit Logging**: Comprehensive logging system for security events with security_logger and security_report modules
+- **Configuration Analysis Tool**: Smart recommendations system with security scoring and configuration validation
+
+#### Infrastructure & Deployment
+- **D-Bus Client Examples**: Python, Rust, and Shell client examples demonstrating cross-language compatibility
+- **Docker Build Infrastructure**: Local Docker/Podman build scripts with optimized 140MB runtime images
+- **QR Code Key Distribution**: Air-gapped keystore operations via portable media
+- **Portable USB Encryption**: Unified portable media encryption script with automated integrity verification
+- **CI/CD Updates**: Docker-based CI pipeline support with GitLab CI integration
+
+#### Documentation
+- **Security Review Documentation**: Comprehensive SECURITY_REVIEW_v1.3.0.md with detailed security audit
+- **Docker Build Documentation**: Complete Docker setup guide in docker/README.md
+- **D-Bus Integration Guide**: Comprehensive D-Bus service documentation
+- **Mobile Implementation Guides**: PQC mobile requirements and chained hash implementation docs
+
+### Changed
+
+#### Core Features
+- **RandomX KDF Integration**: Full integration with intelligent implicit enable when parameters detected
+- **Default Configuration Behavior**: Enhanced security requiring hash configuration for new encryptions
+- **Error Handling**: Improved error messages with comprehensive debug logging replacing print statements
+
+#### Plugin System
+- **Thread Safety**: Refactored threading resource management preventing global state pollution
+- **Timeout Implementation**: Replaced simple timeout with reliable multiprocessing-based mechanism
+- **Queue Handling**: Fixed multiprocessing queue deadlock through improved process management
+
+#### Build & Dependencies
+- **Flatpak Dependencies**: Updated manifest dependencies matching requirements-prod.txt
+- **Pillow Version**: Relaxed to allow 11.x releases (updated to 11.3.0)
+- **NumPy Compatibility**: Upgraded to 2.x for Alpine Linux compatibility
+
+#### Code Quality
+- **Path Canonicalization**: Fixed handling for special device files (/dev/stdin, /dev/null, /dev/stdout)
+- **Python 3.13 Compatibility**: Replaced datetime.UTC with timezone.utc
+- **String Formatting**: Fixed f-strings without placeholders and removed unnecessary imports
+- **CI Configuration**: Added amd64 runner tags preventing ARM64 execution
+
+### Fixed
+
+#### Critical Issues
+- **Default Configuration Decryption**: Resolved metadata generation inconsistency causing decryption failures
+- **PQC Dual Encryption Tests**: Fixed test failures through improved binary prefix handling
+- **Multiprocessing Segfaults**: Implemented proper 'spawn' method instead of default fork method
+- **Plugin Sandbox Deadlock**: Resolved multiprocessing queue deadlock preventing proper termination
+
+#### Test Infrastructure
+- **Import Path Corrections**: Fixed duplicate module imports in pytest
+- **Mock Patch Paths**: Corrected mock.patch module paths in test_generate_password_cli
+- **Flaky Tests**: Fixed two intermittent test failures
+- **API Compatibility**: Updated Advanced Testing Framework encrypt_file API calls
+
+#### Build System
+- **Docker Image Sizing**: Optimized build reducing image to 140MB with proper runtime dependencies
+- **Build Tool Dependencies**: Added necessary build tools for Python package compilation
+- **YAML Parsing**: Fixed YAML syntax errors and f-string issues in CI configuration
+
+#### Compatibility
+- **Keystore Schema**: Made schema more flexible for version compatibility
+- **Backward Compatibility**: Fixed v1.3.0 decryption compatibility without prior hashing
+- **PQC Validation**: Added missing PQC algorithms to metadata v5 schema
+- **Legacy Algorithms**: Added legacy algorithm names for keystore compatibility
+
+### Security
+
+#### Vulnerability Resolutions
+- **MED-2: D-Bus Symlink Attack Prevention (RESOLVED)**
+  - Implemented O_NOFOLLOW protection in safe_open_file() utility for atomic TOCTOU protection
+  - Added secure_mode parameter to encryption/decryption functions for D-Bus service security
+  - Created comprehensive symlink attack tests with 100% pass rate
+  - Eliminates symlink-based directory traversal attacks in D-Bus service
+  - Maintains CLI behavior compatibility (secure_mode=False allows symlinks)
+
+- **LOW-5: Debug Mode Security Warning (RESOLVED)**
+  - Added prominent security warning box when --debug flag is enabled
+  - Clear "DO NOT use with production data" messaging
+  - Updated --debug help text across crypt_cli.py, crypt_cli_subparser.py, and crypt.py
+  - Warning displayed before any sensitive logging occurs
+
+#### Security Enhancements
+- **Comprehensive Security Review**: SECURITY_REVIEW_v1.3.0.md with 0 CRITICAL, 0 HIGH, 3 MEDIUM, 4 LOW findings
+- **Security Audit Logging**: Comprehensive audit logging for security events throughout codebase
+- **D-Bus Path Validation**: Enhanced directory whitelisting for D-Bus file operations
+- **Plugin Validation**: Added strict mode with configurable bypass options
+- **Subprocess Safety**: Removed shell=True from subprocess calls with proper list-based arguments
+
+#### Security Metrics
+- **Overall Security Score**: 8.8/10 (improved from 8.5/10)
+- **Input Validation**: 9.5/10 (improved with O_NOFOLLOW protection)
+- **Cryptography**: 9.5/10
+- **Authentication**: 9.0/10
+- **Memory Safety**: 9.0/10
+- **Dependency Security**: 10/10 (zero vulnerable dependencies via pip-audit)
+- **Status**: APPROVED FOR PRODUCTION
+
+### Removed
+- **Video Steganography**: Removed implementation due to fundamental reliability issues
+- **Video Dependencies**: Removed video steganography dependencies from requirements
+- **Test Artifacts**: Cleaned up steganography test images and debug files
+
+### Dependencies
+- **Pillow**: Updated to 11.3.0 (relaxed constraint to allow 11.x releases)
+- **NumPy**: Upgraded to 2.x for Alpine Linux compatibility
+- **Cryptography**: Maintained at 44.0.3+
+- **Argon2-cffi**: Maintained at 23.1.0+
+- **pip-audit**: All dependencies verified with zero vulnerable packages
+
+### Documentation
+- Added SECURITY_REVIEW_v1.3.0.md with comprehensive security audit
+- Added docker/README.md for Docker build and deployment
+- Added examples/dbus_clients/ with Python, Rust, and Shell examples
+- Enhanced plugin development guides with security architecture details
+
+### Testing
+- 128+ encryption-related unit tests passing
+- Comprehensive plugin system tests with proper isolation
+- Full D-Bus service tests with symlink attack scenarios
+- Docker build tests with optimized 140MB image
+- RandomX integration tests with fallback handling
+- Post-quantum cryptography dual encryption tests
+
+### Breaking Changes
+**None** - Version 1.3.0 maintains full backward compatibility with all existing encrypted files and configurations.
+
+### Migration Guide
+No migration required. v1.3.0 is a drop-in replacement for v1.2.x installations.
+
+**Note**: Debug mode (--debug) now displays a prominent security warning. This is intentional to remind users that debug output contains sensitive information.
+
+### Contributors
+- **Tobi** - Lead developer, security enhancements, comprehensive testing
+- **Claude (Sonnet 4.5)** - Security review, documentation, testing framework
+
 ## [1.2.0] - 2025-08-16
 
 ### Added
@@ -17,7 +163,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Flatpak Desktop Integration**: Complete Flatpak packaging with desktop file, icons, and system integration
 
 ### Changed
-- **GUI Architecture**: Migrated from tkinter to Flutter for superior desktop experience and cross-platform compatibility  
+- **GUI Architecture**: Migrated from tkinter to Flutter for superior desktop experience and cross-platform compatibility
 - **Flatpak Launcher**: Simplified launcher focusing on Flutter GUI with tkinter support removed from release branches
 - **User Interface**: Desktop-optimized layout with NavigationRail, tabbed interface, and professional visual design
 - **File Operations**: Native desktop file dialogs with drag & drop support replacing basic file selection
@@ -33,7 +179,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Desktop Integration**: Proper desktop environment integration with system theming and accessibility support
 - **Performance**: Significant UI responsiveness improvements through native Flutter rendering
 
-### Security  
+### Security
 - **Reduced Attack Surface**: Elimination of complex X11/XWayland compatibility layers in Flatpak environment
 - **Native Desktop Security**: Flutter's native platform integration provides better sandboxing than X11-based solutions
 - **Streamlined Permissions**: Simplified Flatpak permissions removing unnecessary X11 fallback mechanisms
