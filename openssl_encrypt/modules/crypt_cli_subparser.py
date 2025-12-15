@@ -1121,61 +1121,85 @@ def setup_test_parser(subparser):
     """Set up arguments for the test command."""
     # Create subparsers for test subcommands
     test_subparsers = subparser.add_subparsers(
-        dest="test_action",
-        help="Test suite to run",
-        metavar="test_type"
+        dest="test_action", help="Test suite to run", metavar="test_type"
     )
-    
+
     # Fuzz testing
     fuzz_parser = test_subparsers.add_parser("fuzz", help="Run fuzzing tests")
     fuzz_parser.add_argument("--iterations", type=int, default=5, help="Number of test iterations")
     fuzz_parser.add_argument("--algorithm", help="Test specific algorithm")
     fuzz_parser.add_argument("--seed", type=int, help="Random seed for reproducible tests")
-    
+
     # Side-channel testing
-    sidechannel_parser = test_subparsers.add_parser("side-channel", help="Run side-channel resistance tests")
+    sidechannel_parser = test_subparsers.add_parser(
+        "side-channel", help="Run side-channel resistance tests"
+    )
     sidechannel_parser.add_argument("--algorithm", help="Test specific algorithm")
-    sidechannel_parser.add_argument("--timing-threshold", type=float, default=20.0, 
-                                   help="Timing difference threshold percentage (default: 20.0)")
-    
+    sidechannel_parser.add_argument(
+        "--timing-threshold",
+        type=float,
+        default=20.0,
+        help="Timing difference threshold percentage (default: 20.0)",
+    )
+
     # Known-Answer Tests
     kat_parser = test_subparsers.add_parser("kat", help="Run Known-Answer Tests")
-    kat_parser.add_argument("--test-category", choices=["hash", "hmac", "kdf", "encryption", "all"],
-                           default="all", help="Category of tests to run")
-    
+    kat_parser.add_argument(
+        "--test-category",
+        choices=["hash", "hmac", "kdf", "encryption", "all"],
+        default="all",
+        help="Category of tests to run",
+    )
+
     # Benchmark testing
     benchmark_parser = test_subparsers.add_parser("benchmark", help="Run performance benchmarks")
     benchmark_parser.add_argument("--algorithms", nargs="+", help="Algorithms to benchmark")
-    benchmark_parser.add_argument("--file-sizes", nargs="+", type=int, 
-                                 help="File sizes to test (in bytes)")
-    benchmark_parser.add_argument("--iterations", type=int, default=3,
-                                 help="Number of benchmark iterations")
-    benchmark_parser.add_argument("--save-baseline", action="store_true",
-                                 help="Save results as baseline for regression detection")
-    
+    benchmark_parser.add_argument(
+        "--file-sizes", nargs="+", type=int, help="File sizes to test (in bytes)"
+    )
+    benchmark_parser.add_argument(
+        "--iterations", type=int, default=3, help="Number of benchmark iterations"
+    )
+    benchmark_parser.add_argument(
+        "--save-baseline",
+        action="store_true",
+        help="Save results as baseline for regression detection",
+    )
+
     # Memory testing
     memory_parser = test_subparsers.add_parser("memory", help="Run memory safety tests")
-    memory_parser.add_argument("--test-iterations", type=int, default=10,
-                              help="Number of memory test iterations")
-    memory_parser.add_argument("--leak-threshold", type=float, default=1.0,
-                              help="Memory leak threshold in MB")
-    
+    memory_parser.add_argument(
+        "--test-iterations", type=int, default=10, help="Number of memory test iterations"
+    )
+    memory_parser.add_argument(
+        "--leak-threshold", type=float, default=1.0, help="Memory leak threshold in MB"
+    )
+
     # Run all tests
     all_parser = test_subparsers.add_parser("all", help="Run all test suites")
-    all_parser.add_argument("--parallel", action="store_true", 
-                           help="Run test suites in parallel")
-    all_parser.add_argument("--max-workers", type=int, default=3,
-                           help="Maximum parallel workers")
-    
+    all_parser.add_argument("--parallel", action="store_true", help="Run test suites in parallel")
+    all_parser.add_argument("--max-workers", type=int, default=3, help="Maximum parallel workers")
+
     # Common test arguments
-    for parser in [fuzz_parser, sidechannel_parser, kat_parser, benchmark_parser, memory_parser, all_parser]:
-        parser.add_argument("--output-dir", help="Directory for test reports (default: test_reports)")
-        parser.add_argument("--output-format", nargs="+", 
-                           choices=["json", "html", "text"], 
-                           default=["json", "html"],
-                           help="Output format(s) for test reports")
-        parser.add_argument("--quiet", action="store_true",
-                           help="Suppress test progress output")
+    for parser in [
+        fuzz_parser,
+        sidechannel_parser,
+        kat_parser,
+        benchmark_parser,
+        memory_parser,
+        all_parser,
+    ]:
+        parser.add_argument(
+            "--output-dir", help="Directory for test reports (default: test_reports)"
+        )
+        parser.add_argument(
+            "--output-format",
+            nargs="+",
+            choices=["json", "html", "text"],
+            default=["json", "html"],
+            help="Output format(s) for test reports",
+        )
+        parser.add_argument("--quiet", action="store_true", help="Suppress test progress output")
 
 
 def create_subparser_main():
@@ -1195,7 +1219,7 @@ def create_subparser_main():
     parser.add_argument(
         "--debug",
         action="store_true",
-        help="Show detailed debug information (WARNING: logs passwords and sensitive data - test files only!)"
+        help="Show detailed debug information (WARNING: logs passwords and sensitive data - test files only!)",
     )
     parser.add_argument(
         "--quiet",

@@ -230,17 +230,22 @@ def safe_open_file(file_path, mode, secure_mode=False, allow_special_files=True)
     # List of special files/paths that should bypass symlink checks
     # These are typically system-provided special files, pipes, or pseudo-filesystems
     special_file_prefixes = (
-        "/dev/stdin", "/dev/stdout", "/dev/stderr",  # Standard streams
+        "/dev/stdin",
+        "/dev/stdout",
+        "/dev/stderr",  # Standard streams
         "/dev/fd/",  # File descriptor pseudo-files
-        "/dev/null", "/dev/zero", "/dev/random", "/dev/urandom",  # Special devices
+        "/dev/null",
+        "/dev/zero",
+        "/dev/random",
+        "/dev/urandom",  # Special devices
         "/proc/",  # Linux process filesystem
         "/sys/",  # Linux system filesystem
     )
 
     # Check if this is a special file that should bypass security checks
     is_special_file = allow_special_files and (
-        file_path in special_file_prefixes[:6] or
-        any(file_path.startswith(prefix) for prefix in special_file_prefixes)
+        file_path in special_file_prefixes[:6]
+        or any(file_path.startswith(prefix) for prefix in special_file_prefixes)
     )
 
     # If not in secure mode or is a special file, use standard open()
@@ -250,18 +255,18 @@ def safe_open_file(file_path, mode, secure_mode=False, allow_special_files=True)
     # Secure mode: Use O_NOFOLLOW to atomically reject symlinks
     # Convert mode string to os.open() flags
     mode_flags = {
-        'r': os.O_RDONLY,
-        'rb': os.O_RDONLY,
-        'w': os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-        'wb': os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-        'a': os.O_WRONLY | os.O_CREAT | os.O_APPEND,
-        'ab': os.O_WRONLY | os.O_CREAT | os.O_APPEND,
-        'r+': os.O_RDWR,
-        'r+b': os.O_RDWR,
-        'w+': os.O_RDWR | os.O_CREAT | os.O_TRUNC,
-        'w+b': os.O_RDWR | os.O_CREAT | os.O_TRUNC,
-        'a+': os.O_RDWR | os.O_CREAT | os.O_APPEND,
-        'a+b': os.O_RDWR | os.O_CREAT | os.O_APPEND,
+        "r": os.O_RDONLY,
+        "rb": os.O_RDONLY,
+        "w": os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+        "wb": os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+        "a": os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+        "ab": os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+        "r+": os.O_RDWR,
+        "r+b": os.O_RDWR,
+        "w+": os.O_RDWR | os.O_CREAT | os.O_TRUNC,
+        "w+b": os.O_RDWR | os.O_CREAT | os.O_TRUNC,
+        "a+": os.O_RDWR | os.O_CREAT | os.O_APPEND,
+        "a+b": os.O_RDWR | os.O_CREAT | os.O_APPEND,
     }
 
     if mode not in mode_flags:
@@ -272,9 +277,9 @@ def safe_open_file(file_path, mode, secure_mode=False, allow_special_files=True)
     # Add security flags
     # O_NOFOLLOW: Fail if path is a symbolic link (POSIX systems)
     # O_CLOEXEC: Close file descriptor on exec() to prevent leaks to child processes
-    if hasattr(os, 'O_NOFOLLOW'):
+    if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
-    if hasattr(os, 'O_CLOEXEC'):
+    if hasattr(os, "O_CLOEXEC"):
         flags |= os.O_CLOEXEC
 
     # Attempt to open the file with O_NOFOLLOW protection
@@ -294,7 +299,7 @@ def safe_open_file(file_path, mode, secure_mode=False, allow_special_files=True)
 
     # Fallback check for systems without O_NOFOLLOW (e.g., older Windows)
     # Note: This introduces a small TOCTOU window but provides defense-in-depth
-    if not hasattr(os, 'O_NOFOLLOW'):
+    if not hasattr(os, "O_NOFOLLOW"):
         try:
             if os.path.islink(file_path):
                 os.close(fd)  # Clean up file descriptor
@@ -308,7 +313,7 @@ def safe_open_file(file_path, mode, secure_mode=False, allow_special_files=True)
 
     # Convert file descriptor to file object
     # Determine if binary or text mode based on 'b' in mode string
-    fdopen_mode = mode if 'b' in mode else mode + 't'
+    fdopen_mode = mode if "b" in mode else mode + "t"
 
     try:
         return os.fdopen(fd, fdopen_mode)

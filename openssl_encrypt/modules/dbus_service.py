@@ -18,7 +18,6 @@ Security Features:
 """
 
 import logging
-import os
 import secrets
 import sys
 import threading
@@ -27,42 +26,34 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
-    from gi.repository import GLib
     import dbus
     import dbus.service
     from dbus.mainloop.glib import DBusGMainLoop
+    from gi.repository import GLib
 except ImportError as e:
     print(f"Error: D-Bus dependencies not installed: {e}", file=sys.stderr)
     print("Install with: pip install dbus-python PyGObject", file=sys.stderr)
     sys.exit(1)
 
 # Import openssl_encrypt core functionality
-from . import crypt_core
-from . import crypt_utils
-from . import keystore_utils
-from . import password_policy
 from .secure_memory import SecureBytes
 
 # Import security logger
 try:
     from .security_logger import get_security_logger
+
     security_logger = get_security_logger()
 except ImportError:
     security_logger = None
-from .crypt_core import (
-    encrypt_file,
-    decrypt_file,
-    EncryptionAlgorithm,
-    extract_file_metadata,
+from .crypt_core import EncryptionAlgorithm, decrypt_file, encrypt_file
+from .crypt_errors import (
+    AuthenticationError,
+    DecryptionError,
+    EncryptionError,
+    KeyDerivationError,
+    ValidationError,
 )
 from .crypt_utils import secure_shred_file
-from .crypt_errors import (
-    ValidationError,
-    EncryptionError,
-    DecryptionError,
-    KeyDerivationError,
-    AuthenticationError,
-)
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -217,9 +208,7 @@ class CryptoService(dbus.service.Object):
                 continue
 
         if not path_allowed:
-            logger.warning(
-                f"D-Bus path validation: Path outside allowed directories: {abs_path}"
-            )
+            logger.warning(f"D-Bus path validation: Path outside allowed directories: {abs_path}")
 
             # Security audit log for path traversal attempt
             if security_logger:
@@ -231,7 +220,7 @@ class CryptoService(dbus.service.Object):
                         "resolved_path": str(abs_path),
                         "reason": "outside_allowed_directories",
                         "service": "dbus",
-                    }
+                    },
                 )
 
             return False, f"Path outside allowed directories: {abs_path}"
@@ -254,7 +243,7 @@ class CryptoService(dbus.service.Object):
                             "resolved_path": str(abs_path),
                             "blocked_path": blocked,
                             "service": "dbus",
-                        }
+                        },
                     )
 
                 return False, "Access to system files denied"
@@ -296,7 +285,7 @@ class CryptoService(dbus.service.Object):
                             "active_operations": active_ops,
                             "max_operations": self.max_concurrent_ops,
                             "service": "dbus",
-                        }
+                        },
                     )
 
                 raise RuntimeError(
@@ -335,9 +324,7 @@ class CryptoService(dbus.service.Object):
         except Exception as e:
             logger.error(f"Error emitting progress signal: {e}")
 
-    def _emit_operation_complete(
-        self, operation_id: str, success: bool, error_msg: str = ""
-    ):
+    def _emit_operation_complete(self, operation_id: str, success: bool, error_msg: str = ""):
         """Emit operation complete signal"""
         try:
             self.OperationComplete(operation_id, success, error_msg)
@@ -502,7 +489,7 @@ class CryptoService(dbus.service.Object):
                                 "algorithm": algorithm,
                                 "service": "dbus",
                                 "operation_id": operation_id,
-                            }
+                            },
                         )
 
                     operation.complete(True)
@@ -521,7 +508,7 @@ class CryptoService(dbus.service.Object):
                                 "algorithm": algorithm,
                                 "service": "dbus",
                                 "operation_id": operation_id,
-                            }
+                            },
                         )
 
                     operation.complete(False, error_msg)
@@ -672,7 +659,7 @@ class CryptoService(dbus.service.Object):
                                 "output_file": output_path,
                                 "service": "dbus",
                                 "operation_id": operation_id,
-                            }
+                            },
                         )
 
                     operation.complete(True)
@@ -690,7 +677,7 @@ class CryptoService(dbus.service.Object):
                                 "input_file": input_path,
                                 "service": "dbus",
                                 "operation_id": operation_id,
-                            }
+                            },
                         )
 
                     operation.complete(False, error_msg)
@@ -728,7 +715,7 @@ class CryptoService(dbus.service.Object):
                             "input_file": input_path,
                             "service": "dbus",
                             "reason": "invalid_password",
-                        }
+                        },
                     )
 
                 if operation_id:
@@ -787,9 +774,7 @@ class CryptoService(dbus.service.Object):
         return (False, b"", "Not implemented yet")
 
     @dbus.service.method(INTERFACE_NAME, in_signature="ays", out_signature="bays")
-    def DecryptData(
-        self, encrypted_data: bytes, password: str
-    ) -> Tuple[bool, bytes, str]:
+    def DecryptData(self, encrypted_data: bytes, password: str) -> Tuple[bool, bytes, str]:
         """
         Decrypt binary data directly (no file I/O)
 
@@ -834,10 +819,7 @@ class CryptoService(dbus.service.Object):
         try:
             # Call secure shred function
             success = secure_shred_file(
-                file_path=file_path,
-                passes=passes,
-                quiet=True,
-                secure_mode=True
+                file_path=file_path, passes=passes, quiet=True, secure_mode=True
             )
 
             if success:
@@ -1036,9 +1018,7 @@ class CryptoService(dbus.service.Object):
 
         if property_name == "ActiveOperations":
             with self.operations_lock:
-                return dbus.UInt32(
-                    sum(1 for op in self.operations.values() if not op.completed)
-                )
+                return dbus.UInt32(sum(1 for op in self.operations.values() if not op.completed))
         elif property_name == "MaxConcurrentOperations":
             return dbus.UInt32(self.max_concurrent_ops)
         elif property_name == "DefaultTimeout":
@@ -1103,7 +1083,7 @@ def run_service():
 
     # Request service name
     try:
-        bus_name = dbus.service.BusName(
+        _bus_name = dbus.service.BusName(  # noqa: F841
             CryptoService.BUS_NAME, bus, do_not_queue=True
         )
     except dbus.exceptions.NameExistsException:
@@ -1111,7 +1091,7 @@ def run_service():
         sys.exit(1)
 
     # Create service instance
-    service = CryptoService(bus)
+    _service = CryptoService(bus)  # noqa: F841
 
     logger.info(f"D-Bus service {CryptoService.BUS_NAME} started")
     logger.info(f"Object path: {CryptoService.OBJECT_PATH}")

@@ -1824,7 +1824,7 @@ def main_with_args(args=None):
     global_group.add_argument(
         "--debug",
         action="store_true",
-        help="Show detailed debug information (WARNING: logs passwords and sensitive data - test files only!)"
+        help="Show detailed debug information (WARNING: logs passwords and sensitive data - test files only!)",
     )
     global_group.add_argument(
         "--quiet",
@@ -3817,14 +3817,14 @@ def main_with_args(args=None):
         args.balloon_rounds = default_rounds
 
     # RandomX implicit enable from parameters
-    if (getattr(args, "randomx_rounds", 0) > 0 or
-        getattr(args, "randomx_mode", "light") != "light" or
-        getattr(args, "randomx_height", 1) != 1 or
-        getattr(args, "randomx_hash_len", 32) != 32) and not getattr(args, "enable_randomx", False):
+    if (
+        getattr(args, "randomx_rounds", 0) > 0
+        or getattr(args, "randomx_mode", "light") != "light"
+        or getattr(args, "randomx_height", 1) != 1
+        or getattr(args, "randomx_hash_len", 32) != 32
+    ) and not getattr(args, "enable_randomx", False):
         if not args.quiet:
-            logger.debug(
-                f"Setting --enable-randomx since RandomX parameters were provided"
-            )
+            logger.debug("Setting --enable-randomx since RandomX parameters were provided")
         args.enable_randomx = True
     elif getattr(args, "enable_randomx", False) and getattr(args, "randomx_rounds", 0) <= 0:
         if not args.quiet:

@@ -52,7 +52,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--debug",
         action="store_true",
-        help="Show detailed debug information (WARNING: logs passwords and sensitive data - test files only!)"
+        help="Show detailed debug information (WARNING: logs passwords and sensitive data - test files only!)",
     )
     args, _ = parser.parse_known_args()
 
