@@ -457,11 +457,16 @@ class PluginSandbox:
         Returns:
             PluginResult with execution results or timeout error
         """
+        # Use 'spawn' start method to avoid fork-safety issues with threads
+        # Fork is unsafe when threads exist (common after many tests)
+        # Spawn creates a fresh Python interpreter, avoiding threading issues
+        ctx = multiprocessing.get_context("spawn")
+
         # Create communication queue
-        result_queue = multiprocessing.Queue()
+        result_queue = ctx.Queue()
 
         # Create and start process (using module-level _plugin_worker for picklability)
-        process = multiprocessing.Process(
+        process = ctx.Process(
             target=_plugin_worker, args=(plugin, context, result_queue), daemon=True
         )
 
@@ -610,9 +615,10 @@ class IsolatedPluginExecutor:
                 result = PluginResult.error_result(f"Isolated execution error: {str(e)}")
                 result_queue.put(("error", result))
 
-        # Create process with timeout
-        result_queue = multiprocessing.Queue()
-        process = multiprocessing.Process(
+        # Create process with timeout using spawn for fork-safety
+        ctx = multiprocessing.get_context("spawn")
+        result_queue = ctx.Queue()
+        process = ctx.Process(
             target=target_function, args=(plugin_code, context_data, result_queue)
         )
 
