@@ -16,8 +16,8 @@ for FILE in test1_aes-gcm-siv.txt  test1_aes-ocb3.txt  test1_chacha20-poly1305.t
   ALGO=${ALGO%.txt}
   END=''
   ALGO_Q=""
-  
-  if [[ $ALGO =~ 'kyber' ]] ; then 
+
+  if [[ $ALGO =~ 'kyber' ]] ; then
     # Properly implement dual encryption by using pqc-store-key AND dual-encrypt-key
     # with a known password so that tests can verify password validation
     END='--pqc-store-key --dual-encrypt-key'
@@ -28,12 +28,12 @@ for FILE in test1_aes-gcm-siv.txt  test1_aes-ocb3.txt  test1_chacha20-poly1305.t
     ALGO=${ALGO%_balloon}
     END='--enable-balloon --balloon-rounds 1'
   fi
-  
+
   # Generate test files using consistent password 1234
   python -m openssl_encrypt.crypt encrypt -i /tmp/test_input.txt -o ${OUTPUT}/${FILE} \
     --algorithm ${ALGO} --password 1234 --force-password \
     --pbkdf2-iteration 10000 --enable-argon2 --argon2-rounds 10 ${ALGO_Q} ${END}
-    
+
   # Verify that the file was created successfully
   if [[ -f ${OUTPUT}/${FILE} ]]; then
     echo "Created test file: ${OUTPUT}/${FILE}"

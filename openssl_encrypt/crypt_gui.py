@@ -1551,6 +1551,25 @@ class CryptGUI:
                 if "rounds" in hkdf_config and hkdf_config["rounds"] > 1:
                     cmd.extend(["--hkdf-rounds", str(hkdf_config["rounds"])])
 
+            # RandomX parameters (if present)
+            if "randomx" in hash_config and hash_config["randomx"].get("enabled", False):
+                cmd.append("--enable-randomx")
+
+                randomx_config = hash_config["randomx"]
+
+                if "mode" in randomx_config:
+                    cmd.extend(["--randomx-mode", str(randomx_config["mode"])])
+
+                if "height" in randomx_config:
+                    cmd.extend(["--randomx-height", str(randomx_config["height"])])
+
+                if "hash_len" in randomx_config:
+                    cmd.extend(["--randomx-hash-len", str(randomx_config["hash_len"])])
+
+                # Add rounds parameter if present
+                if "rounds" in randomx_config and randomx_config["rounds"] > 1:
+                    cmd.extend(["--randomx-rounds", str(randomx_config["rounds"])])
+
         # Add force password flag if checkbox is checked
         if self.encrypt_force_password_var.get():
             cmd.append("--force-password")

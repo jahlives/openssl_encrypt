@@ -1,0 +1,20 @@
+[
+  {
+    "test_name": "No hash rounds",
+    "hash_match": true,
+    "cli_hash": "31323334746573745f73616c745f313662797465",
+    "mobile_hash": "31323334746573745f73616c745f313662797465"
+  },
+  {
+    "test_name": "SHA256 1000 rounds",
+    "hash_match": true,
+    "cli_hash": "ce05b78440f4679ce9efd862401424f0b2ee778d",
+    "mobile_hash": "ce05b78440f4679ce9efd862401424f0b2ee778d"
+  },
+  {
+    "test_name": "Multi-hash",
+    "hash_match": true,
+    "cli_hash": "8473a00c9ccf1e78d65bd827c5979b8838d00ee1",
+    "mobile_hash": "8473a00c9ccf1e78d65bd827c5979b8838d00ee1"
+  }
+]

@@ -1,0 +1,24 @@
+{
+  "user_type": "compliance",
+  "experience_level": "intermediate",
+  "primary_use_cases": [],
+  "typical_file_sizes": "mixed",
+  "frequency_of_use": "regular",
+  "performance_priority": "balanced",
+  "target_platforms": [
+    "linux"
+  ],
+  "network_constraints": false,
+  "storage_constraints": false,
+  "computational_constraints": false,
+  "compliance_requirements": [
+    "fips_140_2",
+    "common_criteria"
+  ],
+  "security_clearance_level": "none",
+  "data_sensitivity": "top_secret",
+  "preferred_algorithms": [],
+  "avoided_algorithms": [],
+  "preferred_templates": [],
+  "feedback_history": {}
+}

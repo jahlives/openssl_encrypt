@@ -362,6 +362,19 @@ class ExtendedPQCipher(PQCipher):
             # Determine ciphertext size for the algorithm
             kem_ciphertext_size = self.liboqs_kem.kem.length_ciphertext
 
+            # Workaround for HQC algorithms where length_ciphertext returns 0
+            if kem_ciphertext_size == 0:
+                hqc_sizes = {"HQC-128": 4433, "HQC-192": 8978, "HQC-256": 14421}
+                if self.algorithm_name in hqc_sizes:
+                    kem_ciphertext_size = hqc_sizes[self.algorithm_name]
+                    logger.debug(
+                        f"Using hardcoded ciphertext size for {self.algorithm_name}: {kem_ciphertext_size}"
+                    )
+                else:
+                    raise ValueError(
+                        f"Cannot determine ciphertext size for algorithm {self.algorithm_name}"
+                    )
+
             # Split the encrypted data
             encapsulated_key = encrypted_data[:kem_ciphertext_size]
             remaining_data = encrypted_data[kem_ciphertext_size:]

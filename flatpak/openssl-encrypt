@@ -6,8 +6,8 @@ Flutter GUI only - tkinter support removed.
 """
 
 import os
-import sys
 import subprocess
+import sys
 
 # Add the application directory to Python path
 app_dir = os.path.dirname(os.path.abspath(__file__))
@@ -40,13 +40,16 @@ def main():
                 print(f"❌ Flutter GUI launch failed: {e}", file=sys.stderr)
                 sys.exit(1)
         else:
-            print("❌ Flutter GUI not available - please rebuild with --build-flutter", file=sys.stderr)
+            print(
+                "❌ Flutter GUI not available - please rebuild with --build-flutter", file=sys.stderr
+            )
             print("💡 Note: tkinter GUI is not supported", file=sys.stderr)
             sys.exit(1)
     else:
         # Launch CLI
         try:
             from openssl_encrypt.cli import main as cli_main
+
             cli_main()
         except ImportError:
             print("Error: CLI components not available", file=sys.stderr)

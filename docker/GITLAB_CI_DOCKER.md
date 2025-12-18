@@ -50,7 +50,7 @@ The Docker CI pipeline automatically builds, tests, and publishes Docker contain
 
 The pipeline automatically runs on:
 - ✅ **Main branch commits** - builds and publishes `latest` tag
-- ✅ **Release branch commits** - builds with manual publish step  
+- ✅ **Release branch commits** - builds with manual publish step
 - ✅ **Git tags** - builds and publishes `stable` and version tags
 - ✅ **Dev branch commits** - builds for testing
 - ✅ **Merge requests** - builds for validation

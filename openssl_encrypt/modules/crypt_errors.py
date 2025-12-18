@@ -77,6 +77,10 @@ DEBUG_ERROR_MESSAGES = {
 _jitter_state = threading.local()
 _jitter_mutex = threading.RLock()  # Reentrant lock for thread safety
 
+# Thread-local storage for debug mode state
+_debug_state = threading.local()
+_debug_mutex = threading.RLock()
+
 
 # Initialize the thread-local state on import
 def _init_thread_local_state():
@@ -96,6 +100,68 @@ def _init_thread_local_state():
         _jitter_state.total_jitter = 0
     if not hasattr(_jitter_state, "max_successive_calls"):
         _jitter_state.max_successive_calls = 0
+
+
+def _init_debug_state():
+    """Initialize thread-local debug state if not already done."""
+    if not hasattr(_debug_state, "initialized"):
+        _debug_state.debug_mode = None  # None means "not explicitly set"
+        _debug_state.initialized = True
+
+
+def set_debug_mode(enabled):
+    """
+    Enable or disable debug mode for raw exception passthrough.
+
+    When debug mode is enabled, exceptions will pass through unmodified
+    instead of being wrapped in SecureError subclasses.
+
+    Args:
+        enabled (bool): Whether to enable debug mode
+
+    Thread-safe: Uses thread-local storage to ensure debug mode
+    only affects the current thread.
+    """
+    with _debug_mutex:
+        _init_debug_state()
+        _debug_state.debug_mode = bool(enabled)
+
+
+def get_debug_mode():
+    """
+    Get current debug mode state.
+
+    Returns:
+        bool: True if debug mode is enabled, False otherwise
+
+    Priority order:
+    1. Thread-local state (if explicitly set via set_debug_mode())
+    2. DEBUG environment variable (for backward compatibility)
+    3. Default to False
+    """
+    # Check thread-local state first (takes priority over environment)
+    with _debug_mutex:
+        _init_debug_state()
+        # Check if debug_mode was explicitly set (not None)
+        if _debug_state.debug_mode is not None:
+            return _debug_state.debug_mode
+
+    # Fall back to environment variable for backward compatibility
+    if os.environ.get("DEBUG") == "1":
+        return True
+
+    # Default to False
+    return False
+
+
+def is_debug_passthrough_enabled():
+    """
+    Check if debug mode should pass through raw exceptions.
+
+    Returns:
+        bool: True if raw exceptions should pass through
+    """
+    return get_debug_mode()
 
 
 def add_timing_jitter(min_ms=1, max_ms=20):
@@ -326,6 +392,11 @@ def secure_error_handler(func=None, error_category=None):
     def decorator(f):
         @functools.wraps(f)
         def wrapper(*args, **kwargs):
+            # Check if debug mode is enabled for raw exception passthrough
+            if is_debug_passthrough_enabled():
+                # In debug mode, execute function without error wrapping
+                return f(*args, **kwargs)
+
             # Add random timing jitter before execution
             add_timing_jitter()
 

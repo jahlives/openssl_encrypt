@@ -1,9 +1,19 @@
 # This file contains configurations for scheduled pipelines
 # These configurations can be imported into the GitLab UI
 
-# Daily build of the Docker image with liboqs
+# Daily build of the Docker base image with liboqs for CI testing
+# This schedule automatically includes .gitlab-ci-docker.yml when CI_PIPELINE_SOURCE == "schedule"
 docker-image-daily:
-  description: "Build Docker image with liboqs daily"
+  description: "Build PostQuantum Docker base image nightly"
   cron: "0 2 * * *"  # Run at 2 AM every day
   ref: "dev"  # Use the dev branch for the scheduled pipeline
   active: true
+  # Pipeline flow when scheduled:
+  # 1. Includes .gitlab-ci-docker.yml (contains docker-build-base and docker-test-base jobs)
+  # 2. Builds python-liboqs:3.13-alpine with fresh liboqs 0.12.0
+  # 3. Tests the built base image with basic PQC operations
+  # 4. Runs main CI test suite using the newly built base image
+  #
+  # Manual triggers:
+  # - Can manually trigger docker-build-base job on dev branch
+  # - Can manually trigger on main branch for release image builds

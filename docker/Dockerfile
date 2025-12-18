@@ -80,7 +80,7 @@ ENV PYTHONPATH=/usr/local/lib/python3.11/site-packages
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
 
-# Fix Python path for root-installed packages 
+# Fix Python path for root-installed packages
 RUN ldconfig
 
 # Create a non-root user for security

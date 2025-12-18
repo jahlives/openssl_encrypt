@@ -1,12 +1,12 @@
 {
   "hash_config": {
-                "sha512": 0,
+                "sha512": 10000,
                 "sha384": 0,
                 "sha256": 0,
                 "sha224": 0,
-                "sha3_512": 600000,
+                "sha3_512": 0,
                 "sha3_384": 0,
-                "sha3_256": 0,
+                "sha3_256": 10000,
                 "sha3_224": 0,
                 "blake2b": 200000,
                 "blake3": 150000,
@@ -18,7 +18,7 @@
                     "n": 128,
                     "r": 8,
                     "p": 1,
-                    "rounds": 10
+                    "rounds": 5
                 },
                 "argon2": {
                     "enabled": true,
@@ -27,13 +27,20 @@
                     "parallelism": 4,
                     "hash_len": 32,
                     "type": 2,
-                    "rounds": 100
+                    "rounds": 5
                 },
                 "hkdf": {
                     "enabled": false,
                     "rounds": 1,
                     "algorithm": "sha256",
                     "info": "openssl_encrypt_standard"
+                },
+                "randomx": {
+                    "enabled": false,
+                    "rounds": 1,
+                    "mode": "light",
+                    "height": 1,
+                    "hash_len": 32
                 },
                 "pbkdf2_iterations": 0,
                 "type": "id",

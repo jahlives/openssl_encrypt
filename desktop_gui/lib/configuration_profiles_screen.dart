@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'configuration_profiles_service.dart';
 import 'cli_service.dart';
@@ -1028,6 +1027,7 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
       'argon2': {'enabled': false, 'memory_cost': 65536, 'time_cost': 3, 'parallelism': 1, 'rounds': 1},
       'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1},
       'balloon': {'enabled': false, 'space_cost': 65536, 'time_cost': 3, 'parallelism': 4, 'rounds': 2, 'hash_len': 32},
+      'randomx': {'enabled': false, 'rounds': 1, 'mode': 'light', 'height': 1, 'hash_len': 32},
     };
   }
 
@@ -1089,8 +1089,6 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
                 'xchacha20-poly1305',
                 'aes-siv',
                 'aes-gcm-siv',
-                'aes-ocb3',
-                'camellia',
 
                 // ML-KEM (NIST Post-Quantum) algorithms
                 'ml-kem-512-hybrid',
@@ -1380,6 +1378,10 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
 
         // Balloon Panel
         _buildBalloonPanel(),
+        const SizedBox(height: 8),
+
+        // RandomX Panel
+        _buildRandomXPanel(),
         const SizedBox(height: 8),
 
         // Quick presets
@@ -1748,6 +1750,92 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
         setState(() => _kdfConfig['balloon']!['rounds'] = v)),
       _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 128, (v) =>
         setState(() => _kdfConfig['balloon']!['hash_len'] = v)),
+    ];
+  }
+
+  Widget _buildRandomXPanel() {
+    final config = _kdfConfig['randomx'] ?? {
+      'enabled': false,
+      'rounds': 1,
+      'mode': 'light',
+      'height': 1,
+      'hash_len': 32,
+    };
+    final enabled = config['enabled'] ?? false;
+
+    return Card(
+      color: enabled ? Theme.of(context).colorScheme.errorContainer : Theme.of(context).colorScheme.surfaceContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CheckboxListTile(
+              title: Row(
+                children: [
+                  const Text('RandomX', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.purple,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('CPU-HARD', style: TextStyle(color: Colors.white, fontSize: 10)),
+                  ),
+                ],
+              ),
+              subtitle: const Text('Memory-hard KDF based on cryptocurrency mining algorithm (requires pyrx package)'),
+              value: enabled,
+              onChanged: (bool? value) {
+                setState(() {
+                  _kdfConfig['randomx'] = Map.from(config)..['enabled'] = value ?? false;
+                });
+              },
+              dense: true,
+            ),
+            if (enabled) ...[
+              const SizedBox(height: 8),
+              ..._buildRandomXParameters(config),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildRandomXParameters(Map<String, dynamic> config) {
+    return [
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+        child: Row(
+          children: [
+            const SizedBox(width: 80, child: Text('Mode:', style: TextStyle(fontSize: 11))),
+            const SizedBox(width: 8),
+            Expanded(
+              child: DropdownButton<String>(
+                value: config['mode'] ?? 'light',
+                isExpanded: true,
+                items: const [
+                  DropdownMenuItem(value: 'light', child: Text('Light (256MB RAM)')),
+                  DropdownMenuItem(value: 'fast', child: Text('Fast (2GB RAM)')),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _kdfConfig['randomx']!['mode'] = value ?? 'light';
+                  });
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      _buildKDFSlider('Rounds', config['rounds'] ?? 1, 1, 10, (v) =>
+        setState(() => _kdfConfig['randomx']!['rounds'] = v)),
+      _buildKDFSlider('Block Height', config['height'] ?? 1, 1, 1000, (v) =>
+        setState(() => _kdfConfig['randomx']!['height'] = v)),
+      _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 64, (v) =>
+        setState(() => _kdfConfig['randomx']!['hash_len'] = v)),
     ];
   }
 

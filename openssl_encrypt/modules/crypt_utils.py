@@ -6,9 +6,11 @@ This module provides utility functions for the encryption tool, including
 secure file deletion, password generation, and other helper functions.
 """
 
+import errno
 import glob
 import json
 import os
+import random
 import secrets
 import signal
 import stat
@@ -176,34 +178,187 @@ def display_password_with_timeout(password, timeout_seconds=10):
         else:
             print("\n\nClearing password from screen...")
 
-        # Use system command to clear the screen - this is the most reliable
-        # method
-        if sys.platform == "win32":
-            os.system("cls")  # Windows
-        else:
-            os.system("clear")  # Unix/Linux/MacOS
+        # Clear screen using ANSI escape sequences (safer than os.system)
+        # \033[2J clears the entire screen, \033[H moves cursor to home position
+        sys.stdout.write("\033[2J\033[H")
+        sys.stdout.flush()
 
         print("Password has been cleared from screen.")
         print("For additional security, consider clearing your terminal history.")
 
 
-def secure_shred_file(file_path, passes=3, quiet=False):
+def safe_open_file(file_path, mode, secure_mode=False, allow_special_files=True):
+    """
+    Safely open a file with optional symlink protection using O_NOFOLLOW.
+
+    This function provides protection against TOCTOU (Time-Of-Check-Time-Of-Use)
+    symlink attacks by using the O_NOFOLLOW flag on POSIX systems. When secure_mode
+    is enabled, the function will atomically reject symbolic links at the OS level,
+    preventing attackers from replacing legitimate files with symlinks between
+    validation and file access.
+
+    Args:
+        file_path (str): Path to the file to open
+        mode (str): File open mode ('r', 'w', 'rb', 'wb', 'r+b', 'a', etc.)
+        secure_mode (bool): If True, use O_NOFOLLOW to reject symlinks. Default: False
+        allow_special_files (bool): If True, allow special files like /dev/stdin. Default: True
+
+    Returns:
+        File object: Opened file handle
+
+    Raises:
+        ValidationError: If symlink encountered in secure_mode
+        OSError: If file cannot be opened
+
+    Security:
+        - Uses O_NOFOLLOW on POSIX systems (Linux, macOS, BSD) for atomic symlink rejection
+        - Falls back to os.path.islink() check on Windows (small TOCTOU window remains)
+        - Always uses O_CLOEXEC to prevent file descriptor leaks to child processes
+        - Bypasses symlink checks for special files (/dev/*, /proc/*, etc.) when allow_special_files=True
+
+    Example:
+        # D-Bus service (secure mode - reject symlinks)
+        with safe_open_file("/tmp/untrusted.txt", "rb", secure_mode=True) as f:
+            data = f.read()
+
+        # CLI usage (allow symlinks for backward compatibility)
+        with safe_open_file("myfile.txt", "rb", secure_mode=False) as f:
+            data = f.read()
+    """
+    from .crypt_errors import ValidationError
+
+    # List of special files/paths that should bypass symlink checks
+    # These are typically system-provided special files, pipes, or pseudo-filesystems
+    special_file_prefixes = (
+        "/dev/stdin",
+        "/dev/stdout",
+        "/dev/stderr",  # Standard streams
+        "/dev/fd/",  # File descriptor pseudo-files
+        "/dev/null",
+        "/dev/zero",
+        "/dev/random",
+        "/dev/urandom",  # Special devices
+        "/proc/",  # Linux process filesystem
+        "/sys/",  # Linux system filesystem
+    )
+
+    # Check if this is a special file that should bypass security checks
+    is_special_file = allow_special_files and (
+        file_path in special_file_prefixes[:6]
+        or any(file_path.startswith(prefix) for prefix in special_file_prefixes)
+    )
+
+    # If not in secure mode or is a special file, use standard open()
+    if not secure_mode or is_special_file:
+        return open(file_path, mode)
+
+    # Secure mode: Use O_NOFOLLOW to atomically reject symlinks
+    # Convert mode string to os.open() flags
+    mode_flags = {
+        "r": os.O_RDONLY,
+        "rb": os.O_RDONLY,
+        "w": os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+        "wb": os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+        "a": os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+        "ab": os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+        "r+": os.O_RDWR,
+        "r+b": os.O_RDWR,
+        "w+": os.O_RDWR | os.O_CREAT | os.O_TRUNC,
+        "w+b": os.O_RDWR | os.O_CREAT | os.O_TRUNC,
+        "a+": os.O_RDWR | os.O_CREAT | os.O_APPEND,
+        "a+b": os.O_RDWR | os.O_CREAT | os.O_APPEND,
+    }
+
+    if mode not in mode_flags:
+        raise ValueError(f"Unsupported file mode: {mode}")
+
+    flags = mode_flags[mode]
+
+    # Add security flags
+    # O_NOFOLLOW: Fail if path is a symbolic link (POSIX systems)
+    # O_CLOEXEC: Close file descriptor on exec() to prevent leaks to child processes
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+
+    # Attempt to open the file with O_NOFOLLOW protection
+    try:
+        # On POSIX systems, O_NOFOLLOW will cause open() to fail with ELOOP if path is a symlink
+        fd = os.open(file_path, flags, 0o600)  # Secure permissions: owner read/write only
+    except OSError as e:
+        # ELOOP (errno 40): Too many symbolic links (triggered by O_NOFOLLOW on symlink)
+        # ENOENT (errno 2): File not found (may occur on some systems for symlinks)
+        if e.errno == errno.ELOOP or (e.errno == errno.ENOENT and os.path.islink(file_path)):
+            raise ValidationError(
+                f"Symlink attack blocked: '{file_path}' is a symbolic link. "
+                f"D-Bus service does not follow symlinks for security reasons."
+            )
+        # Re-raise other OS errors (permissions, disk full, etc.)
+        raise
+
+    # Fallback check for systems without O_NOFOLLOW (e.g., older Windows)
+    # Note: This introduces a small TOCTOU window but provides defense-in-depth
+    if not hasattr(os, "O_NOFOLLOW"):
+        try:
+            if os.path.islink(file_path):
+                os.close(fd)  # Clean up file descriptor
+                raise ValidationError(
+                    f"Symlink blocked: '{file_path}' is a symbolic link. "
+                    f"D-Bus service does not follow symlinks for security reasons."
+                )
+        except OSError:
+            # If islink() fails, assume it's not a symlink and continue
+            pass
+
+    # Convert file descriptor to file object
+    # Determine if binary or text mode based on 'b' in mode string
+    fdopen_mode = mode if "b" in mode else mode + "t"
+
+    try:
+        return os.fdopen(fd, fdopen_mode)
+    except Exception:
+        # If fdopen fails, ensure we close the file descriptor to avoid leaks
+        os.close(fd)
+        raise
+
+
+def secure_shred_file(file_path, passes=3, quiet=False, secure_mode=False):
     """
     Securely delete a file by overwriting its contents multiple times with random data
     before unlinking it from the filesystem.
+
+    Args:
+        file_path: Path to the file to securely delete
+        passes: Number of overwrite passes (default: 3)
+        quiet: Suppress output messages (default: False)
+        secure_mode: If True, use O_NOFOLLOW to reject symlinks (default: False)
+
+    Returns:
+        bool: True if file was successfully shredded, False otherwise
     """
+    # Skip special device files (stdin, stdout, stderr, pipes, etc.)
+    if file_path in ("/dev/stdin", "/dev/stdout", "/dev/stderr") or file_path.startswith(
+        "/dev/fd/"
+    ):
+        if not quiet:
+            print(f"Skipping shred for special device file: {file_path}")
+        return False
+
     # Security: Canonicalize path to prevent symlink attacks
     try:
         canonical_path = os.path.realpath(os.path.abspath(file_path))
         if not os.path.samefile(file_path, canonical_path):
             if not quiet:
-                print(f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}")
+                print(
+                    f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}"
+                )
         file_path = canonical_path
     except (OSError, ValueError) as e:
         if not quiet:
             print(f"Error canonicalizing path '{file_path}': {e}")
         return False
-    
+
     if not os.path.exists(file_path):
         if not quiet:
             print(f"File not found: {file_path}")
@@ -284,7 +439,7 @@ def secure_shred_file(file_path, passes=3, quiet=False):
 
         # Open the file for binary read/write without truncating
         try:
-            with open(file_path, "r+b") as f:
+            with safe_open_file(file_path, "r+b", secure_mode=secure_mode) as f:
                 # Use a 64KB buffer for efficient overwriting of large files
                 buffer_size = min(65536, file_size)
 
@@ -328,7 +483,7 @@ def secure_shred_file(file_path, passes=3, quiet=False):
                     os.fsync(f.fileno())
 
             # Truncate the file
-            with open(file_path, "wb") as f:
+            with safe_open_file(file_path, "wb", secure_mode=secure_mode) as f:
                 f.truncate(0)
 
         except Exception as e:
@@ -415,32 +570,141 @@ def request_confirmation(message):
 
 def parse_metadata(encrypted_data):
     """
-    Parse metadata from encrypted file content.
+    Parse metadata from encrypted file content with security limits.
+
+    This function securely parses metadata from encrypted file content
+    with comprehensive size limits and validation to prevent DoS attacks.
+    Designed to accommodate large Post-Quantum Cryptography (PQC) private
+    keys while maintaining security boundaries.
 
     Args:
-        encrypted_data (bytes): The encrypted file content
+        encrypted_data (bytes): The encrypted file content to parse
 
     Returns:
-        dict: Metadata dictionary if found, empty dict otherwise
+        dict: Metadata dictionary if found and valid, empty dict otherwise
+
+    Security Features:
+        - Maximum metadata size limits (512KB total, 64KB per value)
+        - Search range limits to prevent scanning huge files
+        - JSON structure validation and type checking
+        - Key count limits to prevent resource exhaustion
+        - Unicode validation with error handling
     """
+    # Security: Maximum metadata size to prevent DoS attacks
+    # Note: PQC private keys can be large (ML-KEM-1024 ~3KB, HQC-256 ~7KB+, base64 encoded +33%)
+    # Allow generous limit for legitimate PQC use while preventing massive DoS attacks
+    MAX_METADATA_SIZE = 512 * 1024  # 512KB limit for metadata (accommodates large PQC keys)
+    MAX_SEARCH_RANGE = 2 * 1024 * 1024  # Search first 2MB of file for metadata
+
     try:
+        # Security: Limit search range to prevent scanning huge files
+        search_data = (
+            encrypted_data[:MAX_SEARCH_RANGE]
+            if len(encrypted_data) > MAX_SEARCH_RANGE
+            else encrypted_data
+        )
+
         # Look for the METADATA marker
         metadata_marker = b"METADATA:"
-        metadata_start = encrypted_data.find(metadata_marker)
+        metadata_start = search_data.find(metadata_marker)
 
         if metadata_start < 0:
             return {}
 
-        # Extract the JSON metadata
+        # Extract the JSON metadata with size limits
         metadata_start += len(metadata_marker)
-        metadata_end = encrypted_data.find(b":", metadata_start)
 
-        if metadata_end < 0:
+        # Security: Limit search range for metadata end marker
+        search_end = min(metadata_start + MAX_METADATA_SIZE, len(search_data))
+        metadata_end = search_data.find(b":", metadata_start)
+
+        # Security: Ensure metadata_end is within safe bounds
+        if metadata_end < 0 or metadata_end > search_end:
+            print("Warning: Metadata section too large or malformed, ignoring")
             return {}
 
-        metadata_json = encrypted_data[metadata_start:metadata_end].decode("utf-8")
-        metadata = json.loads(metadata_json)
+        # Security: Additional size check for extracted metadata
+        metadata_size = metadata_end - metadata_start
+        if metadata_size > MAX_METADATA_SIZE:
+            print(
+                f"Warning: Metadata size ({metadata_size} bytes) exceeds limit ({MAX_METADATA_SIZE} bytes)"
+            )
+            return {}
+
+        if metadata_size == 0:
+            return {}
+
+        # Security: Decode with error handling and size validation
+        try:
+            metadata_json = search_data[metadata_start:metadata_end].decode("utf-8")
+        except UnicodeDecodeError as e:
+            print(f"Warning: Invalid UTF-8 in metadata: {e}")
+            return {}
+
+        # Security: Validate JSON structure and size
+        if len(metadata_json) > MAX_METADATA_SIZE:
+            print(f"Warning: Metadata JSON too large ({len(metadata_json)} characters)")
+            return {}
+
+        # Security: Parse JSON with comprehensive validation (MED-8 fix)
+        try:
+            from .json_validator import (
+                JSONSecurityError,
+                JSONValidationError,
+                secure_metadata_loads,
+            )
+
+            metadata = secure_metadata_loads(metadata_json)
+        except (JSONSecurityError, JSONValidationError) as e:
+            print(f"Warning: Secure JSON validation failed in metadata: {e}")
+            return {}
+        except ImportError:
+            # Fallback to basic validation if json_validator is not available
+            try:
+                metadata = json.loads(metadata_json)
+            except json.JSONDecodeError as e:
+                print(f"Warning: Invalid JSON in metadata: {e}")
+                return {}
+        except Exception as e:
+            print(f"Warning: Unexpected error in metadata JSON validation: {e}")
+            return {}
+
+        # Security: Ensure result is a dictionary and validate structure
+        if not isinstance(metadata, dict):
+            print("Warning: Metadata must be a JSON object, not array or primitive")
+            return {}
+
+        # Security: Limit the number of metadata keys to prevent resource exhaustion
+        MAX_METADATA_KEYS = 100
+        if len(metadata) > MAX_METADATA_KEYS:
+            print(
+                f"Warning: Too many metadata keys ({len(metadata)}), limit is {MAX_METADATA_KEYS}"
+            )
+            return {}
+
+        # Security: Validate that all keys and values are reasonable
+        for key, value in metadata.items():
+            if not isinstance(key, str) or len(key) > 256:
+                print(f"Warning: Invalid metadata key: {key}")
+                return {}
+
+            # Allow reasonable value types and sizes
+            # Note: PQC private keys can be large when base64 encoded (up to ~15KB for largest keys)
+            MAX_VALUE_SIZE = 64 * 1024  # 64KB per individual metadata value
+
+            if isinstance(value, str) and len(value) > MAX_VALUE_SIZE:
+                print(
+                    f"Warning: Metadata value too long for key '{key}' ({len(value)} chars, max {MAX_VALUE_SIZE})"
+                )
+                return {}
+            elif isinstance(value, (list, dict)) and len(str(value)) > MAX_VALUE_SIZE:
+                print(
+                    f"Warning: Complex metadata value too large for key '{key}' ({len(str(value))} chars, max {MAX_VALUE_SIZE})"
+                )
+                return {}
+
         return metadata
+
     except Exception as e:
         print(f"Error parsing metadata: {e}")
         return {}

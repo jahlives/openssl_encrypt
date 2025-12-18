@@ -9,6 +9,7 @@ import 'file_manager.dart';
 import 'settings_service.dart';
 import 'settings_screen.dart';
 import 'configuration_profiles_screen.dart';
+import 'input_validation.dart';
 
 // Intent classes for keyboard shortcuts
 class OpenFileIntent extends Intent {
@@ -135,6 +136,8 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   final FileManager _fileManager = FileManager();
   final GlobalKey<_FileCryptoTabState> _fileCryptoTabKey = GlobalKey<_FileCryptoTabState>();
+  final GlobalKey<_TextCryptoTabState> _textCryptoTabKey = GlobalKey<_TextCryptoTabState>();
+  final GlobalKey<_BatchOperationsTabState> _batchOperationsTabKey = GlobalKey<_BatchOperationsTabState>();
   int _selectedIndex = 0;
   bool _isDragOver = false;
   bool _debugWindowVisible = false;
@@ -164,23 +167,49 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   void _copyToClipboard() async {
-    // TODO: Copy current result to clipboard
-    if (_result.isNotEmpty) {
-      await Clipboard.setData(ClipboardData(text: _result));
+    // Get result from current active tab
+    String? currentResult;
+
+    if (_selectedIndex == 0) {
+      // Text crypto tab
+      final textTabState = _textCryptoTabKey.currentState;
+      currentResult = textTabState?.result;
+    } else if (_selectedIndex == 1) {
+      // File crypto tab
+      final fileTabState = _fileCryptoTabKey.currentState;
+      currentResult = fileTabState?.result;
+    } else if (_selectedIndex == 2) {
+      // Batch operations tab
+      final batchTabState = _batchOperationsTabKey.currentState;
+      currentResult = batchTabState?.result;
+    }
+
+    if (currentResult != null && currentResult.isNotEmpty) {
+      await Clipboard.setData(ClipboardData(text: currentResult));
 
       // Schedule secure clipboard clearing after 30 seconds
       Timer(const Duration(seconds: 30), () async {
         await Clipboard.setData(const ClipboardData(text: ''));
       });
-    }
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Result copied to clipboard (will auto-clear in 30s)'),
-          duration: Duration(seconds: 3),
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Result copied to clipboard (will auto-clear in 30s)'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No result to copy'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     }
   }
 
@@ -437,11 +466,11 @@ class _MainScreenState extends State<MainScreen> {
   Widget _getSelectedPage() {
     switch (_selectedIndex) {
       case 0:
-        return TextCryptoTab(onDebugChanged: widget.onDebugChanged, onToggleDebugWindow: _toggleDebugWindow);
+        return TextCryptoTab(key: _textCryptoTabKey, onDebugChanged: widget.onDebugChanged, onToggleDebugWindow: _toggleDebugWindow);
       case 1:
         return FileCryptoTab(key: _fileCryptoTabKey, fileManager: _fileManager, onDebugChanged: widget.onDebugChanged);
       case 2:
-        return BatchOperationsTab(fileManager: _fileManager, onDebugChanged: widget.onDebugChanged);
+        return BatchOperationsTab(key: _batchOperationsTabKey, fileManager: _fileManager, onDebugChanged: widget.onDebugChanged);
       case 3:
         return const InfoTab();
       case 4:
@@ -658,7 +687,7 @@ class TextCryptoTab extends StatefulWidget {
 class _TextCryptoTabState extends State<TextCryptoTab> {
   final TextEditingController _textController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  String _result = '';
+  String result = '';
   String _encryptedData = '';
   bool _isLoading = false;
   String _operationStatus = '';
@@ -762,7 +791,8 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
           'scrypt': {'enabled': false, 'n': 16384, 'r': 8, 'p': 1, 'rounds': 1},
           'argon2': {'enabled': false, 'memory_cost': 65536, 'time_cost': 3, 'parallelism': 1, 'rounds': 1},
           'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1},
-          'balloon': {'enabled': false, 'space_cost': 8, 'time_cost': 1, 'parallel_cost': 1, 'rounds': 1}
+          'balloon': {'enabled': false, 'space_cost': 8, 'time_cost': 1, 'parallel_cost': 1, 'rounds': 1},
+          'randomx': {'enabled': false, 'rounds': 1, 'mode': 'light', 'height': 1, 'hash_len': 32}
         };
       });
 
@@ -778,7 +808,8 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
         _hashConfig = {'sha256': {'enabled': true, 'rounds': 1000}};
         _kdfConfig = {
           'pbkdf2': {'enabled': !CLIService.shouldHideLegacyAlgorithms(), 'rounds': 100000},
-          'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1}
+          'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1},
+          'randomx': {'enabled': false, 'rounds': 1, 'mode': 'light', 'height': 1, 'hash_len': 32}
         };
       });
     }
@@ -787,7 +818,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   void _encryptText() async {
     if (_textController.text.isEmpty || _passwordController.text.isEmpty) {
       setState(() {
-        _result = 'Please enter both text and password';
+        result = 'Please enter both text and password';
       });
       return;
     }
@@ -795,7 +826,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     // Check if selected algorithm is available on current platform
     if (!_isAlgorithmAvailable(_selectedAlgorithm)) {
       setState(() {
-        _result = 'Error: $_selectedAlgorithm is not available. This algorithm required the Python cryptography backend which has been removed in favor of pure Dart implementation.';
+        result = 'Error: $_selectedAlgorithm is not available. This algorithm required the Python cryptography backend which has been removed in favor of pure Dart implementation.';
       });
       return;
     }
@@ -805,7 +836,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       _operationStatus = 'Encrypting data...';
       _operationProgress = '';
       _progressValue = 0.0;
-      _result = 'Encrypting...';
+      result = 'Encrypting...';
     });
 
     // Give UI a moment to update before heavy crypto operations
@@ -846,7 +877,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
 
       setState(() {
         _encryptedData = encrypted;
-        _result = encrypted; // Show only the base64 encoded string
+        result = encrypted; // Show only the base64 encoded string
         _isLoading = false;
         _operationStatus = '';
         _operationProgress = '';
@@ -854,7 +885,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       });
     } catch (e) {
       setState(() {
-        _result = 'Encryption failed: $e';
+        result = 'Encryption failed: $e';
         _isLoading = false;
         _operationStatus = '';
         _operationProgress = '';
@@ -869,7 +900,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
 
     if (inputData.isEmpty || _passwordController.text.isEmpty) {
       setState(() {
-        _result = 'Please encrypt some text first, paste encrypted data in the text field, or enter the password';
+        result = 'Please encrypt some text first, paste encrypted data in the text field, or enter the password';
       });
       return;
     }
@@ -879,7 +910,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       _operationStatus = 'Decrypting data...';
       _operationProgress = '';
       _progressValue = 0.0;
-      _result = 'Decrypting...';
+      result = 'Decrypting...';
     });
 
     // Give UI a moment to update before heavy crypto operations
@@ -914,7 +945,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       );
 
       setState(() {
-        _result = decrypted; // Show only the decrypted text
+        result = decrypted; // Show only the decrypted text
         _isLoading = false;
         _operationStatus = '';
         _operationProgress = '';
@@ -922,7 +953,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       });
     } catch (e) {
       setState(() {
-        _result = 'Decryption failed: $e';
+        result = 'Decryption failed: $e';
         _isLoading = false;
         _operationStatus = '';
         _operationProgress = '';
@@ -1018,15 +1049,21 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
+            TextFormField(
               controller: _textController,
               decoration: const InputDecoration(
                 labelText: 'Text to encrypt',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.text_fields),
+                helperText: 'Maximum 1MB text content',
+              ),
+              maxLines: 3,
+              validator: InputValidator.validateTextContent,
+              // Security: Prevent excessively long input that could cause DoS
+              inputFormatters: [
+                LengthLimitingTextInputFormatter(InputValidator.maxTextLength),
+              ],
             ),
-            maxLines: 3,
-          ),
           const SizedBox(height: 16),
           // Advanced Algorithm Selection
           Card(
@@ -1120,7 +1157,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                         const SizedBox(width: 8),
                         const Text('Private Key Encryption', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                         const Spacer(),
-                        Icon(Icons.security, color: Colors.purple, size: 20),
+                        const Icon(Icons.security, color: Colors.purple, size: 20),
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -1337,6 +1374,10 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                               // Balloon Panel
                               _buildBalloonPanel(),
                               const SizedBox(height: 8),
+
+                              // RandomX Panel
+                              _buildRandomXPanel(),
+                              const SizedBox(height: 8),
                               // Quick presets
                               Wrap(
                                 spacing: 8,
@@ -1529,14 +1570,22 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
             ),
           ),
           const SizedBox(height: 16),
-          TextField(
+          TextFormField(
             controller: _passwordController,
             decoration: const InputDecoration(
               labelText: 'Password',
               border: OutlineInputBorder(),
               prefixIcon: Icon(Icons.lock),
+              helperText: 'Maximum 1024 characters',
             ),
             obscureText: true,
+            validator: InputValidator.validatePassword,
+            // Security: Prevent excessively long passwords that could cause buffer overflow
+            inputFormatters: [
+              LengthLimitingTextInputFormatter(InputValidator.maxPasswordLength),
+              // Security: Filter out null bytes and dangerous control characters
+              FilteringTextInputFormatter.deny(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]')),
+            ],
           ),
           const SizedBox(height: 16),
           if (_isLoading)
@@ -1649,19 +1698,19 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                   ),
                   child: SingleChildScrollView(
                     child: SelectableText(
-                      _result.isEmpty ? 'Results will appear here...' : _result,
+                      result.isEmpty ? 'Results will appear here...' : result,
                       style: const TextStyle(fontFamily: 'monospace'),
                     ),
                   ),
                 ),
-              if (_result.isNotEmpty)
+              if (result.isNotEmpty)
                 Positioned(
                   top: 8,
                   right: 8,
                   child: FloatingActionButton.small(
-                    heroTag: "copy_text_result",
+                    heroTag: "copy_textresult",
                     onPressed: () async {
-                      await Clipboard.setData(ClipboardData(text: _result));
+                      await Clipboard.setData(ClipboardData(text: result));
 
                       // Schedule secure clipboard clearing after 30 seconds
                       Timer(const Duration(seconds: 30), () async {
@@ -2127,6 +2176,11 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
               Text('• Newer memory-hard function'),
               Text('• Configurable time/space tradeoffs'),
               Text('• Still under academic evaluation'),
+              SizedBox(height: 12),
+              Text('💎 RandomX (CPU-Hard):', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('• Memory-hard KDF based on cryptocurrency mining'),
+              Text('• Requires significant CPU and memory resources'),
+              Text('• Light mode (256MB) or Fast mode (2GB) available'),
             ],
           ),
         ),
@@ -2516,6 +2570,88 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     );
   }
 
+  /// Build RandomX configuration panel
+  Widget _buildRandomXPanel() {
+    final config = _kdfConfig['randomx'] ?? {
+      'enabled': false,
+      'rounds': 1,
+      'mode': 'light',
+      'height': 1,
+      'hash_len': 32,
+    };
+    final enabled = config['enabled'] ?? false;
+
+    return Card(
+      color: enabled ? Theme.of(context).colorScheme.errorContainer : Theme.of(context).colorScheme.surfaceContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CheckboxListTile(
+              title: Row(
+                children: [
+                  const Text('RandomX', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.purple,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('CPU-HARD', style: TextStyle(color: Colors.white, fontSize: 10)),
+                  ),
+                ],
+              ),
+              subtitle: const Text('Memory-hard KDF based on cryptocurrency mining algorithm (requires pyrx package)'),
+              value: enabled,
+              onChanged: (bool? value) {
+                setState(() {
+                  _kdfConfig['randomx'] = Map.from(config)..['enabled'] = value ?? false;
+                });
+              },
+            ),
+            if (enabled) ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                child: Row(
+                  children: [
+                    SizedBox(width: 120, child: Text('Mode:', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface))),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: DropdownButton<String>(
+                        value: config['mode'] ?? 'light',
+                        isExpanded: true,
+                        items: const [
+                          DropdownMenuItem(value: 'light', child: Text('Light (256MB RAM)')),
+                          DropdownMenuItem(value: 'fast', child: Text('Fast (2GB RAM)')),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _kdfConfig['randomx']!['mode'] = value ?? 'light';
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ...[
+                _buildKDFSlider('Rounds', config['rounds'] ?? 1, 1, 10, (v) =>
+                  setState(() => _kdfConfig['randomx']!['rounds'] = v)),
+                _buildKDFSlider('Block Height', config['height'] ?? 1, 1, 1000, (v) =>
+                  setState(() => _kdfConfig['randomx']!['height'] = v)),
+                _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 64, (v) =>
+                  setState(() => _kdfConfig['randomx']!['hash_len'] = v)),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Helper to build KDF slider
   Widget _buildKDFSlider(String label, int value, int min, int max, Function(int) onChanged) {
     return Padding(
@@ -2688,10 +2824,8 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       'aes-gcm',
       'aes-gcm-siv',
       'aes-siv',
-      'aes-ocb3',
       'chacha20-poly1305',
       'xchacha20-poly1305',
-      'camellia'
     ];
   }
 }
@@ -2710,7 +2844,7 @@ class FileCryptoTab extends StatefulWidget {
 class _FileCryptoTabState extends State<FileCryptoTab> {
   final TextEditingController _passwordController = TextEditingController();
   FileInfo? _selectedFile;
-  String _result = '';
+  String result = '';
   bool _isLoading = false;
   String? _decryptedContent; // Store decrypted content for optional saving
   bool _debugLogging = false;
@@ -2731,6 +2865,15 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   bool _showAdvanced = false;
   bool _showHashConfig = false;
   bool _showKdfConfig = false;
+
+  // Steganography state
+  bool _enableSteganography = false;
+  FileInfo? _coverImageFile;
+  final TextEditingController _stegoPasswordController = TextEditingController();
+  int _bitsPerChannel = 1;
+  bool _randomizePixels = false;
+  bool _addDecoyData = false;
+  bool _stegoExtractMode = false;  // For decrypt mode
 
   @override
   void initState() {
@@ -2768,6 +2911,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
           'argon2': {'enabled': false, 'memory_cost': 65536, 'time_cost': 3, 'parallelism': 1, 'rounds': 1},
           'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1},
           'balloon': {'enabled': false, 'space_cost': 65536, 'time_cost': 3, 'parallelism': 4, 'rounds': 2, 'hash_len': 32},
+          'randomx': {'enabled': false, 'rounds': 1, 'mode': 'light', 'height': 1, 'hash_len': 32},
         };
       });
     } catch (e) {
@@ -2778,7 +2922,8 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
         _hashConfig = {'sha256': {'enabled': true, 'rounds': 1000}};
         _kdfConfig = {
           'pbkdf2': {'enabled': !CLIService.shouldHideLegacyAlgorithms(), 'rounds': 100000},
-          'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1}
+          'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1},
+          'randomx': {'enabled': false, 'rounds': 1, 'mode': 'light', 'height': 1, 'hash_len': 32}
         };
       });
     }
@@ -2787,6 +2932,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   @override
   void dispose() {
     _passwordController.dispose();
+    _stegoPasswordController.dispose();
     super.dispose();
   }
 
@@ -2795,7 +2941,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     if (file != null) {
       setState(() {
         _selectedFile = file;
-        _result = 'Selected file: ${file.name}\nSize: ${file.sizeFormatted}';
+        result = 'Selected file: ${file.name}\nSize: ${file.sizeFormatted}';
       });
     }
   }
@@ -2807,13 +2953,13 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
       if (fileInfo != null) {
         setState(() {
           _selectedFile = fileInfo;
-          _result = 'Selected file: ${fileInfo.name}\nSize: ${fileInfo.sizeFormatted}';
+          result = 'Selected file: ${fileInfo.name}\nSize: ${fileInfo.sizeFormatted}';
         });
         return true;
       }
     } catch (e) {
       setState(() {
-        _result = 'Error loading file: $e';
+        result = 'Error loading file: $e';
       });
     }
     return false;
@@ -2949,7 +3095,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
       if (fileInfo != null) {
         setState(() {
           _selectedFile = fileInfo;
-          _result = 'Selected test file: ${fileInfo.name}\nSize: ${fileInfo.sizeFormatted}\nNote: Test password is "1234"';
+          result = 'Selected test file: ${fileInfo.name}\nSize: ${fileInfo.sizeFormatted}\nNote: Test password is "1234"';
         });
       }
     }
@@ -2958,7 +3104,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   void _encryptFile() async {
     if (_selectedFile == null || _passwordController.text.isEmpty) {
       setState(() {
-        _result = 'Please select a file and enter a password';
+        result = 'Please select a file and enter a password';
       });
       return;
     }
@@ -2966,7 +3112,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     // Use selected algorithm, hash, and KDF configuration
     setState(() {
       _isLoading = true;
-      _result = 'Encrypting file with $_selectedAlgorithm...';
+      result = 'Encrypting file with $_selectedAlgorithm...';
       _operationStatus = 'Preparing encryption...';
       _operationProgress = '';
       _progressValue = 0.0;
@@ -2976,72 +3122,124 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     await Future.delayed(const Duration(milliseconds: 50));
 
     try {
-      // Read file content
-      final fileContent = await widget.fileManager.readFileText(_selectedFile!.path);
-      if (fileContent == null) {
-        throw Exception('Could not read file');
-      }
-
-      // Encrypt file content using CLI service with selected configurations
-      final encrypted = await CLIService.encryptTextWithProgress(
-        fileContent,
-        _passwordController.text,
-        _selectedAlgorithm, // Use selected algorithm
-        _hashConfig,        // Use hash configuration from UI
-        _kdfConfig,         // Use KDF configuration from UI
-        encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
-        onProgress: (progress) {
-          setState(() {
-            _operationStatus = 'Encrypting with $_selectedAlgorithm...';
-            _operationProgress = progress;
-            _progressValue = progress.contains('%')
-              ? (double.tryParse(progress.split('%')[0]) ?? 0.0) / 100.0
-              : 0.5;
-          });
-        },
-      );
-
-      if (encrypted.startsWith('ERROR:')) {
-        throw Exception(encrypted.substring(7));
-      }
-
-      // Generate output filename - use original path if force overwrite is enabled
-      final outputPath = _forceOverwrite
-          ? _selectedFile!.path
-          : widget.fileManager.getEncryptedFileName(_selectedFile!.path);
-
-      // Save encrypted file
-      final success = await widget.fileManager.writeFileText(outputPath, encrypted);
-
-      if (success) {
+      // Check if steganography is enabled
+      if (_enableSteganography && _coverImageFile != null) {
+        // Steganography mode: Encrypt and hide in cover image
         setState(() {
-          if (_forceOverwrite) {
-            _result = 'File encrypted successfully (source overwritten)!\n\n'
+          _operationStatus = 'Encrypting and hiding in cover image...';
+          _progressValue = 0.3;
+        });
+
+        // Generate output filename for stego image
+        final outputPath = _forceOverwrite
+            ? _coverImageFile!.path
+            : widget.fileManager.getEncryptedFileName(_coverImageFile!.path);
+
+        // Encrypt with steganography
+        final cliResult = await CLIService.encryptWithSteganography(
+          inputPath: _selectedFile!.path,
+          coverImagePath: _coverImageFile!.path,
+          outputPath: outputPath,
+          password: _passwordController.text,
+          stegoPassword: _stegoPasswordController.text.isNotEmpty ? _stegoPasswordController.text : null,
+          algorithm: _selectedAlgorithm,
+          bitsPerChannel: _bitsPerChannel,
+          randomizePixels: _randomizePixels,
+          addDecoyData: _addDecoyData,
+          hashConfig: _hashConfig,
+          kdfConfig: _kdfConfig,
+        );
+
+        setState(() {
+          _progressValue = 0.9;
+        });
+
+        if (cliResult.exitCode == 0) {
+          setState(() {
+            result = 'File encrypted and hidden successfully!\n\n'
                 'Original: ${_selectedFile!.name}\n'
                 'Size: ${_selectedFile!.sizeFormatted}\n'
-                'Status: Source file replaced with encrypted content\n'
-                'Path: $outputPath\n\n'
-                'Algorithm: $_selectedAlgorithm\n'
-                'CLI Compatible: Yes\n'
-                'Format: OpenSSL Encrypt Desktop GUI';
-          } else {
-            _result = 'File encrypted successfully!\n\n'
-                'Original: ${_selectedFile!.name}\n'
-                'Size: ${_selectedFile!.sizeFormatted}\n'
-                'Encrypted: ${outputPath.split('/').last}\n'
+                'Cover Image: ${_coverImageFile!.name}\n'
+                'Stego Image: ${outputPath.split('/').last}\n'
                 'Saved to: $outputPath\n\n'
                 'Algorithm: $_selectedAlgorithm\n'
-                'CLI Compatible: Yes\n'
-                'Format: OpenSSL Encrypt Desktop GUI';
-          }
-          _isLoading = false;
-        });
+                'Steganography: LSB (${_bitsPerChannel} bit${_bitsPerChannel > 1 ? "s" : ""}/channel)\n'
+                'Format: OpenSSL Encrypt with Steganography';
+            _isLoading = false;
+          });
+        } else {
+          final errorMsg = cliResult.stderr.toString().trim();
+          throw Exception(errorMsg.isNotEmpty ? errorMsg : 'Steganography encryption failed');
+        }
       } else {
-        throw Exception('Failed to save encrypted file');
+        // Normal encryption mode
+        // Read file content
+        final fileContent = await widget.fileManager.readFileText(_selectedFile!.path);
+        if (fileContent == null) {
+          throw Exception('Could not read file');
+        }
+
+        // Encrypt file content using CLI service with selected configurations
+        final encrypted = await CLIService.encryptTextWithProgress(
+          fileContent,
+          _passwordController.text,
+          _selectedAlgorithm, // Use selected algorithm
+          _hashConfig,        // Use hash configuration from UI
+          _kdfConfig,         // Use KDF configuration from UI
+          encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
+          onProgress: (progress) {
+            setState(() {
+              _operationStatus = 'Encrypting with $_selectedAlgorithm...';
+              _operationProgress = progress;
+              _progressValue = progress.contains('%')
+                ? (double.tryParse(progress.split('%')[0]) ?? 0.0) / 100.0
+                : 0.5;
+            });
+          },
+        );
+
+        if (encrypted.startsWith('ERROR:')) {
+          throw Exception(encrypted.substring(7));
+        }
+
+        // Generate output filename - use original path if force overwrite is enabled
+        final outputPath = _forceOverwrite
+            ? _selectedFile!.path
+            : widget.fileManager.getEncryptedFileName(_selectedFile!.path);
+
+        // Save encrypted file
+        final success = await widget.fileManager.writeFileText(outputPath, encrypted);
+
+        if (success) {
+          setState(() {
+            if (_forceOverwrite) {
+              result = 'File encrypted successfully (source overwritten)!\n\n'
+                  'Original: ${_selectedFile!.name}\n'
+                  'Size: ${_selectedFile!.sizeFormatted}\n'
+                  'Status: Source file replaced with encrypted content\n'
+                  'Path: $outputPath\n\n'
+                  'Algorithm: $_selectedAlgorithm\n'
+                  'CLI Compatible: Yes\n'
+                  'Format: OpenSSL Encrypt Desktop GUI';
+            } else {
+              result = 'File encrypted successfully!\n\n'
+                  'Original: ${_selectedFile!.name}\n'
+                  'Size: ${_selectedFile!.sizeFormatted}\n'
+                  'Encrypted: ${outputPath.split('/').last}\n'
+                  'Saved to: $outputPath\n\n'
+                  'Algorithm: $_selectedAlgorithm\n'
+                  'CLI Compatible: Yes\n'
+                  'Format: OpenSSL Encrypt Desktop GUI';
+            }
+            _isLoading = false;
+          });
+        } else {
+          throw Exception('Failed to save encrypted file');
+        }
       }
     } catch (e) {
       setState(() {
-        _result = 'File encryption failed: $e';
+        result = 'File encryption failed: $e';
         _isLoading = false;
       });
     }
@@ -3050,26 +3248,15 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   void _decryptFile() async {
     if (_selectedFile == null || _passwordController.text.isEmpty) {
       setState(() {
-        _result = 'Please select an encrypted file and enter a password';
-      });
-      return;
-    }
-
-    // Check if file is encrypted by reading metadata
-    bool fileIsEncrypted = await _selectedFile!.isEncrypted;
-    if (!fileIsEncrypted) {
-      setState(() {
-        _result = 'Selected file does not appear to be encrypted.\n'
-            'Expected: CLI format (base64_metadata:base64_data) or JSON format with encrypted_data and metadata fields.\n'
-            'File: ${_selectedFile!.name}';
+        result = 'Please select an encrypted file and enter a password';
       });
       return;
     }
 
     setState(() {
       _isLoading = true;
-      _result = 'Decrypting file...';
-      _operationStatus = 'Starting decryption...';
+      result = _stegoExtractMode ? 'Extracting and decrypting from stego image...' : 'Decrypting file...';
+      _operationStatus = _stegoExtractMode ? 'Starting steganography extraction...' : 'Starting decryption...';
       _operationProgress = '';
       _progressValue = 0.0;
     });
@@ -3078,91 +3265,153 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     await Future.delayed(const Duration(milliseconds: 50));
 
     try {
-      // Read the encrypted file
-      setState(() {
-        _operationStatus = 'Reading encrypted file...';
-        _progressValue = 0.2;
-      });
+      // Check if steganography extraction mode is enabled
+      if (_stegoExtractMode) {
+        // Steganography extraction mode: Extract and decrypt from stego image
+        setState(() {
+          _operationStatus = 'Extracting encrypted data from image...';
+          _progressValue = 0.3;
+        });
 
-      final fileContent = await widget.fileManager.readFileText(_selectedFile!.path);
-      if (fileContent == null) {
-        throw Exception('Could not read file');
-      }
+        // Generate output filename for decrypted file
+        final outputPath = _forceOverwrite
+            ? _selectedFile!.path
+            : widget.fileManager.getEncryptedFileName(_selectedFile!.path).replaceAll('.enc', '.dec');
 
-      setState(() {
-        _operationStatus = 'File loaded, starting decryption...';
-        _progressValue = 0.3;
-      });
+        // Extract and decrypt from steganography
+        final cliResult = await CLIService.decryptFromSteganography(
+          stegoImagePath: _selectedFile!.path,
+          outputPath: outputPath,
+          password: _passwordController.text,
+          stegoPassword: _stegoPasswordController.text.isNotEmpty ? _stegoPasswordController.text : null,
+          bitsPerChannel: _bitsPerChannel,
+        );
 
-      // Decrypt using CLI service with progress callbacks
-      final decrypted = await CLIService.decryptTextWithProgress(
-        fileContent,  // Pass raw file content
-        _passwordController.text,
-        onProgress: (progress) {
-          setState(() {
-            _operationProgress = progress;
-          });
-        },
-        onStatus: (status) {
-          setState(() {
-            _operationStatus = status;
-            // Update progress based on status
-            if (status.contains('Initializing')) {
-              _progressValue = 0.4;
-            } else if (status.contains('Prepared')) {
-              _progressValue = 0.5;
-            } else if (status.contains('Executing')) {
-              _progressValue = 0.7;
-            } else if (status.contains('Reading')) {
-              _progressValue = 0.9;
-            } else if (status.contains('completed')) {
-              _progressValue = 1.0;
-            }
-          });
-        },
-      );
+        setState(() {
+          _progressValue = 0.9;
+        });
 
-      if (decrypted.startsWith('ERROR:')) {
-        throw Exception(decrypted.substring(7));
-      }
+        if (cliResult.exitCode == 0) {
+          // Read the decrypted content
+          final decrypted = await widget.fileManager.readFileText(outputPath);
 
-      // Store decrypted content and optionally save directly if force overwrite is enabled
-      if (_forceOverwrite) {
-        // Save decrypted content directly to source file
-        final success = await widget.fileManager.writeFileText(_selectedFile!.path, decrypted);
-
-        if (success) {
           setState(() {
             _decryptedContent = decrypted;
-            _result = 'File decrypted successfully (source overwritten)!\n\n'
-                'Status: Source file replaced with decrypted content\n'
-                'Path: ${_selectedFile!.path}\n'
-                'File: ${_selectedFile!.name}\n\n'
+            result = 'File extracted and decrypted successfully!\n\n'
+                'Stego Image: ${_selectedFile!.name}\n'
+                'Size: ${_selectedFile!.sizeFormatted}\n'
+                'Decrypted File: ${outputPath.split('/').last}\n'
+                'Saved to: $outputPath\n\n'
+                'Steganography: LSB (${_bitsPerChannel} bit${_bitsPerChannel > 1 ? "s" : ""}/channel)\n'
+                'Format: OpenSSL Encrypt with Steganography\n\n'
                 'Decrypted Content Preview:\n'
-                '${decrypted.length > 200 ? '${decrypted.substring(0, 200)}...' : decrypted}';
+                '${(decrypted != null && decrypted.length > 200) ? '${decrypted.substring(0, 200)}...' : decrypted ?? 'Binary data'}';
             _isLoading = false;
             _operationStatus = '';
             _operationProgress = '';
             _progressValue = 0.0;
           });
         } else {
-          throw Exception('Failed to save decrypted file');
+          final errorMsg = cliResult.stderr.toString().trim();
+          throw Exception(errorMsg.isNotEmpty ? errorMsg : 'Steganography extraction failed');
         }
       } else {
-        // Store for optional saving (existing behavior)
-        setState(() {
-          _decryptedContent = decrypted; // Store for optional saving
-          _result = decrypted; // Show only the decrypted content
-          _isLoading = false;
-          _operationStatus = '';
-          _operationProgress = '';
-          _progressValue = 0.0;
-        });
-      }
+        // Normal decryption mode - check if file is encrypted
+        bool fileIsEncrypted = await _selectedFile!.isEncrypted;
+        if (!fileIsEncrypted) {
+          setState(() {
+            result = 'Selected file does not appear to be encrypted.\n'
+                'Expected: CLI format (base64_metadata:base64_data) or JSON format with encrypted_data and metadata fields.\n'
+                'File: ${_selectedFile!.name}';
+          });
+          return;
+        }
 
+        // Read the encrypted file
+        setState(() {
+          _operationStatus = 'Reading encrypted file...';
+          _progressValue = 0.2;
+        });
+
+        final fileContent = await widget.fileManager.readFileText(_selectedFile!.path);
+        if (fileContent == null) {
+          throw Exception('Could not read file');
+        }
+
+        setState(() {
+          _operationStatus = 'File loaded, starting decryption...';
+          _progressValue = 0.3;
+        });
+
+        // Decrypt using CLI service with progress callbacks
+        final decrypted = await CLIService.decryptTextWithProgress(
+          fileContent,  // Pass raw file content
+          _passwordController.text,
+          onProgress: (progress) {
+            setState(() {
+              _operationProgress = progress;
+            });
+          },
+          onStatus: (status) {
+            setState(() {
+              _operationStatus = status;
+              // Update progress based on status
+              if (status.contains('Initializing')) {
+                _progressValue = 0.4;
+              } else if (status.contains('Prepared')) {
+                _progressValue = 0.5;
+              } else if (status.contains('Executing')) {
+                _progressValue = 0.7;
+              } else if (status.contains('Reading')) {
+                _progressValue = 0.9;
+              } else if (status.contains('completed')) {
+                _progressValue = 1.0;
+              }
+            });
+          },
+        );
+
+        if (decrypted.startsWith('ERROR:')) {
+          throw Exception(decrypted.substring(7));
+        }
+
+        // Store decrypted content and optionally save directly if force overwrite is enabled
+        if (_forceOverwrite) {
+          // Save decrypted content directly to source file
+          final success = await widget.fileManager.writeFileText(_selectedFile!.path, decrypted);
+
+          if (success) {
+            setState(() {
+              _decryptedContent = decrypted;
+              result = 'File decrypted successfully (source overwritten)!\n\n'
+                  'Status: Source file replaced with decrypted content\n'
+                  'Path: ${_selectedFile!.path}\n'
+                  'File: ${_selectedFile!.name}\n\n'
+                  'Decrypted Content Preview:\n'
+                  '${decrypted.length > 200 ? '${decrypted.substring(0, 200)}...' : decrypted}';
+              _isLoading = false;
+              _operationStatus = '';
+              _operationProgress = '';
+              _progressValue = 0.0;
+            });
+          } else {
+            throw Exception('Failed to save decrypted file');
+          }
+        } else {
+          // Store for optional saving (existing behavior)
+          setState(() {
+            _decryptedContent = decrypted; // Store for optional saving
+            result = decrypted; // Show only the decrypted content
+            _isLoading = false;
+            _operationStatus = '';
+            _operationProgress = '';
+            _progressValue = 0.0;
+          });
+        }
+      }
     } catch (e) {
       setState(() {
-        _result = 'File decryption failed: $e';
+        result = 'File decryption failed: $e';
         _isLoading = false;
         _operationStatus = '';
         _operationProgress = '';
@@ -3174,7 +3423,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   void _saveDecryptedToFile() async {
     if (_decryptedContent == null || _selectedFile == null) {
       setState(() {
-        _result = 'No decrypted content available to save';
+        result = 'No decrypted content available to save';
       });
       return;
     }
@@ -3186,16 +3435,16 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
 
       if (success) {
         setState(() {
-          _result += '\n\n✅ Content saved to file:\n$outputPath';
+          result += '\n\n✅ Content saved to file:\n$outputPath';
         });
       } else {
         setState(() {
-          _result += '\n\n❌ Failed to save content to file';
+          result += '\n\n❌ Failed to save content to file';
         });
       }
     } catch (e) {
       setState(() {
-        _result += '\n\n❌ Save failed: $e';
+        result += '\n\n❌ Save failed: $e';
       });
     }
   }
@@ -3234,7 +3483,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     final algorithmCategories = {
       'Classical Symmetric': [
         'fernet', 'aes-gcm', 'chacha20-poly1305', 'xchacha20-poly1305',
-        'aes-siv', 'aes-gcm-siv', 'aes-ocb3', 'camellia'
+        'aes-siv', 'aes-gcm-siv'
       ].where((a) => _algorithms.contains(a)).toList(),
       'ML-KEM Post-Quantum': [
         'ml-kem-512-hybrid', 'ml-kem-768-hybrid', 'ml-kem-1024-hybrid',
@@ -3412,6 +3661,10 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
 
               // Balloon Panel
               _buildBalloonPanel(),
+              const SizedBox(height: 8),
+
+              // RandomX Panel
+              _buildRandomXPanel(),
               const SizedBox(height: 8),
             ],
           ],
@@ -3755,7 +4008,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                         const SizedBox(width: 8),
                         const Text('Private Key Encryption', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                         const Spacer(),
-                        Icon(Icons.security, color: Colors.purple, size: 20),
+                        const Icon(Icons.security, color: Colors.purple, size: 20),
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -3792,14 +4045,28 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
             ),
             const SizedBox(height: 16),
           ],
-          TextField(
+          // Steganography settings (Encrypt mode - Hide in cover image)
+          _buildSteganographySection(isEncryptMode: true),
+          const SizedBox(height: 8),
+          // Steganography settings (Decrypt mode - Extract from stego image)
+          _buildSteganographySection(isEncryptMode: false),
+          const SizedBox(height: 16),
+          TextFormField(
             controller: _passwordController,
             decoration: const InputDecoration(
               labelText: 'Password',
               border: OutlineInputBorder(),
               prefixIcon: Icon(Icons.lock),
+              helperText: 'Maximum 1024 characters',
             ),
             obscureText: true,
+            validator: InputValidator.validatePassword,
+            // Security: Prevent excessively long passwords that could cause buffer overflow
+            inputFormatters: [
+              LengthLimitingTextInputFormatter(InputValidator.maxPasswordLength),
+              // Security: Filter out null bytes and dangerous control characters
+              FilteringTextInputFormatter.deny(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]')),
+            ],
           ),
           const SizedBox(height: 16),
           // Debug Logging Toggle
@@ -4057,19 +4324,19 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                   ),
                   child: SingleChildScrollView(
                     child: SelectableText(
-                      _result.isEmpty ? 'File operation results will appear here...' : _result,
+                      result.isEmpty ? 'File operation results will appear here...' : result,
                       style: const TextStyle(fontFamily: 'monospace'),
                     ),
                   ),
                 ),
-              if (_result.isNotEmpty)
+              if (result.isNotEmpty)
                 Positioned(
                   top: 8,
                   right: 8,
                   child: FloatingActionButton.small(
-                    heroTag: "copy_file_result",
+                    heroTag: "copy_fileresult",
                     onPressed: () async {
-                      await Clipboard.setData(ClipboardData(text: _result));
+                      await Clipboard.setData(ClipboardData(text: result));
 
                       // Schedule secure clipboard clearing after 30 seconds
                       Timer(const Duration(seconds: 30), () async {
@@ -4475,6 +4742,283 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     );
   }
 
+  /// Build RandomX configuration panel
+  Widget _buildRandomXPanel() {
+    final config = _kdfConfig['randomx'] ?? {
+      'enabled': false,
+      'rounds': 1,
+      'mode': 'light',
+      'height': 1,
+      'hash_len': 32,
+    };
+    final enabled = config['enabled'] ?? false;
+
+    return Card(
+      color: enabled ? Theme.of(context).colorScheme.errorContainer : Theme.of(context).colorScheme.surfaceContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CheckboxListTile(
+              title: Row(
+                children: [
+                  const Text('RandomX', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.purple,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('CPU-HARD', style: TextStyle(color: Colors.white, fontSize: 10)),
+                  ),
+                ],
+              ),
+              subtitle: const Text('Memory-hard KDF based on cryptocurrency mining algorithm (requires pyrx package)'),
+              value: enabled,
+              onChanged: (bool? value) {
+                setState(() {
+                  _kdfConfig['randomx'] = Map.from(config)..['enabled'] = value ?? false;
+                });
+              },
+            ),
+            if (enabled) ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                child: Row(
+                  children: [
+                    SizedBox(width: 120, child: Text('Mode:', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface))),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: DropdownButton<String>(
+                        value: config['mode'] ?? 'light',
+                        isExpanded: true,
+                        items: const [
+                          DropdownMenuItem(value: 'light', child: Text('Light (256MB RAM)')),
+                          DropdownMenuItem(value: 'fast', child: Text('Fast (2GB RAM)')),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _kdfConfig['randomx']!['mode'] = value ?? 'light';
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ...[
+                _buildKDFSlider('Rounds', config['rounds'] ?? 1, 1, 10, (v) =>
+                  setState(() => _kdfConfig['randomx']!['rounds'] = v)),
+                _buildKDFSlider('Block Height', config['height'] ?? 1, 1, 1000, (v) =>
+                  setState(() => _kdfConfig['randomx']!['height'] = v)),
+                _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 64, (v) =>
+                  setState(() => _kdfConfig['randomx']!['hash_len'] = v)),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build steganography settings section
+  Widget _buildSteganographySection({required bool isEncryptMode}) {
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Checkbox(
+                  value: isEncryptMode ? _enableSteganography : _stegoExtractMode,
+                  onChanged: (value) {
+                    setState(() {
+                      if (isEncryptMode) {
+                        _enableSteganography = value ?? false;
+                        // Disable extract mode when enabling hide mode
+                        if (_enableSteganography) {
+                          _stegoExtractMode = false;
+                        }
+                      } else {
+                        _stegoExtractMode = value ?? false;
+                        // Disable hide mode when enabling extract mode
+                        if (_stegoExtractMode) {
+                          _enableSteganography = false;
+                        }
+                      }
+                    });
+                  },
+                ),
+                Text(
+                  isEncryptMode ? 'Enable Steganography' : 'Extract from Steganography',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: isEncryptMode
+                      ? 'Hide encrypted data in a cover image (PNG/BMP only)'
+                      : 'Extract and decrypt data from a stego image',
+                  child: Icon(Icons.info_outline, size: 16, color: Colors.grey),
+                ),
+              ],
+            ),
+            if ((isEncryptMode && _enableSteganography) || (!isEncryptMode && _stegoExtractMode)) ...[
+              const Divider(),
+              const SizedBox(height: 8),
+              // Cover image picker (only in encrypt mode)
+              if (isEncryptMode) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        readOnly: true,
+                        controller: TextEditingController(
+                          text: _coverImageFile?.name ?? 'No cover image selected',
+                        ),
+                        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
+                        decoration: InputDecoration(
+                          labelText: 'Cover Image (PNG/BMP)',
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        // Use file manager to pick cover image
+                        final file = await widget.fileManager.pickFile();
+                        if (file != null) {
+                          // Check if file is PNG or BMP
+                          final extension = file.name.toLowerCase().split('.').last;
+                          if (extension == 'png' || extension == 'bmp') {
+                            setState(() {
+                              _coverImageFile = file;
+                            });
+                          } else {
+                            // Show error if wrong file type
+                            setState(() {
+                              result = 'Error: Cover image must be PNG or BMP format.\nSelected: ${file.name}';
+                            });
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.image, size: 16),
+                      label: const Text('Pick Image', style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+              ],
+              // Stego password
+              TextField(
+                controller: _stegoPasswordController,
+                obscureText: true,
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
+                decoration: InputDecoration(
+                  labelText: 'Stego Password (optional)',
+                  hintText: isEncryptMode
+                      ? 'Separate password for steganography layer'
+                      : 'Enter if stego password was used',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  suffixIcon: Tooltip(
+                    message: 'Optional password for pixel randomization. Increases security.',
+                    child: Icon(Icons.info_outline, size: 16),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Bits per channel
+              Row(
+                children: [
+                  SizedBox(
+                    width: 150,
+                    child: Text(
+                      'Bits per Channel:',
+                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
+                    ),
+                  ),
+                  DropdownButton<int>(
+                    value: _bitsPerChannel,
+                    items: [1, 2, 3].map((bits) {
+                      return DropdownMenuItem(
+                        value: bits,
+                        child: Text('$bits bit${bits > 1 ? "s" : ""}', style: TextStyle(fontSize: 12)),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        _bitsPerChannel = value ?? 1;
+                      });
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  Tooltip(
+                    message: 'Higher values = more capacity but more visible. Must match during extraction.',
+                    child: Icon(Icons.info_outline, size: 16, color: Colors.grey),
+                  ),
+                ],
+              ),
+              // Encrypt-only options
+              if (isEncryptMode) ...[
+                const SizedBox(height: 8),
+                CheckboxListTile(
+                  value: _randomizePixels,
+                  onChanged: _stegoPasswordController.text.isNotEmpty
+                      ? (value) {
+                          setState(() {
+                            _randomizePixels = value ?? false;
+                          });
+                        }
+                      : null,
+                  title: Text(
+                    'Randomize Pixels',
+                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
+                  ),
+                  subtitle: Text(
+                    'Requires stego password. Spreads data randomly for better security.',
+                    style: TextStyle(fontSize: 10, color: Colors.grey),
+                  ),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                CheckboxListTile(
+                  value: _addDecoyData,
+                  onChanged: (value) {
+                    setState(() {
+                      _addDecoyData = value ?? false;
+                    });
+                  },
+                  title: Text(
+                    'Add Decoy Data',
+                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
+                  ),
+                  subtitle: Text(
+                    'Adds fake data to unused space for deniability.',
+                    style: TextStyle(fontSize: 10, color: Colors.grey),
+                  ),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Helper to build KDF slider
   Widget _buildKDFSlider(String label, int value, int min, int max, Function(int) onChanged) {
     return Padding(
@@ -4533,10 +5077,8 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
       'aes-gcm',
       'aes-gcm-siv',
       'aes-siv',
-      'aes-ocb3',
       'chacha20-poly1305',
       'xchacha20-poly1305',
-      'camellia'
     ];
   }
 }
@@ -4558,8 +5100,6 @@ class _InfoTabState extends State<InfoTab> {
     'xchacha20-poly1305': 'Extended ChaCha20-Poly1305 with 192-bit nonce',
     'aes-siv': 'AES-SIV synthetic IV mode',
     'aes-gcm-siv': 'AES-GCM-SIV misuse-resistant encryption',
-    'aes-ocb3': 'AES-OCB3 high-performance authenticated encryption',
-    'camellia': 'Camellia block cipher (International standard)',
   };
 
   /// Check if algorithm is available on current platform
@@ -5430,7 +5970,8 @@ class CommandPreviewDialog extends StatelessWidget {
           backgroundColor: Colors.green.shade600,
           duration: const Duration(seconds: 3),
         ),
-    );
+      );
+    }
   }
 }
 
@@ -5794,10 +6335,8 @@ class _SettingsScreenWrapperState extends State<SettingsScreenWrapper> {
       'aes-gcm',
       'aes-gcm-siv',
       'aes-siv',
-      'aes-ocb3',
       'chacha20-poly1305',
       'xchacha20-poly1305',
-      'camellia'
     ];
   }
 }
@@ -5826,6 +6365,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
   String _confirmPassword = '';
   String _selectedOperation = 'encrypt'; // 'encrypt' or 'decrypt'
   final List<BatchOperationResult> _results = [];
+  String result = ''; // Add result field for clipboard copying
 
   // Progress tracking
   int _currentFileIndex = 0;
@@ -6073,8 +6613,6 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                                 'xchacha20-poly1305',
                                 'aes-siv',
                                 'aes-gcm-siv',
-                                'aes-ocb3',
-                                'camellia',
 
                                 // ML-KEM (NIST Post-Quantum) algorithms
                                 'ml-kem-512-hybrid',
@@ -6130,7 +6668,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                                     const SizedBox(width: 8),
                                     const Text('Private Key Encryption', style: TextStyle(fontWeight: FontWeight.bold)),
                                     const Spacer(),
-                                    Icon(Icons.security, color: Colors.purple, size: 18),
+                                    const Icon(Icons.security, color: Colors.purple, size: 18),
                                   ],
                                 ),
                                 const SizedBox(height: 8),
@@ -6173,7 +6711,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                     Row(
                       children: [
                         Expanded(
-                          child: TextField(
+                          child: TextFormField(
                             obscureText: true,
                             enabled: !_isLoading,
                             onChanged: (value) => _password = value,
@@ -6181,13 +6719,21 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                               labelText: _selectedOperation == 'encrypt' ? 'Password' : 'Decryption Password',
                               border: const OutlineInputBorder(),
                               prefixIcon: const Icon(Icons.lock),
+                              helperText: 'Maximum 1024 characters',
                             ),
+                            validator: InputValidator.validatePassword,
+                            // Security: Prevent excessively long passwords that could cause buffer overflow
+                            inputFormatters: [
+                              LengthLimitingTextInputFormatter(InputValidator.maxPasswordLength),
+                              // Security: Filter out null bytes and dangerous control characters
+                              FilteringTextInputFormatter.deny(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]')),
+                            ],
                           ),
                         ),
                         if (_selectedOperation == 'encrypt') ...[
                           const SizedBox(width: 16),
                           Expanded(
-                            child: TextField(
+                            child: TextFormField(
                               obscureText: true,
                               enabled: !_isLoading,
                               onChanged: (value) => _confirmPassword = value,
@@ -6195,10 +6741,25 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                                 labelText: 'Confirm Password',
                                 border: const OutlineInputBorder(),
                                 prefixIcon: const Icon(Icons.lock_outline),
+                                helperText: 'Maximum 1024 characters',
                                 errorText: _password.isNotEmpty && _confirmPassword.isNotEmpty && _password != _confirmPassword
                                     ? 'Passwords do not match'
                                     : null,
                               ),
+                              validator: (value) {
+                                final passwordValidation = InputValidator.validatePassword(value);
+                                if (passwordValidation != null) return passwordValidation;
+                                if (_password.isNotEmpty && value != _password) {
+                                  return 'Passwords do not match';
+                                }
+                                return null;
+                              },
+                              // Security: Prevent excessively long passwords that could cause buffer overflow
+                              inputFormatters: [
+                                LengthLimitingTextInputFormatter(InputValidator.maxPasswordLength),
+                                // Security: Filter out null bytes and dangerous control characters
+                                FilteringTextInputFormatter.deny(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]')),
+                              ],
                             ),
                           ),
                         ],
@@ -6594,10 +7155,8 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
       'aes-gcm',
       'aes-gcm-siv',
       'aes-siv',
-      'aes-ocb3',
       'chacha20-poly1305',
       'xchacha20-poly1305',
-      'camellia'
     ];
   }
 }

@@ -7,6 +7,8 @@ echo "🚀 Building OpenSSL Encrypt Flatpak package..."
 BUILD_FLUTTER=false
 FORCE_CLEAN=false
 LOCAL_INSTALL=false
+DEV_INSTALL=false
+FLATPAK_BRANCH="stable"
 
 for arg in "$@"; do
     case $arg in
@@ -20,19 +22,27 @@ for arg in "$@"; do
             ;;
         --local-install)
             LOCAL_INSTALL=true
-            echo "🏠 Local installation requested"
+            echo "🏠 Local installation requested (stable branch)"
+            ;;
+        --dev-install)
+            DEV_INSTALL=true
+            LOCAL_INSTALL=true
+            FLATPAK_BRANCH="development"
+            echo "🧪 Development installation requested (development branch)"
             ;;
         *)
             echo "Unknown argument: $arg"
-            echo "Usage: $0 [--build-flutter] [-f|--force] [--local-install]"
+            echo "Usage: $0 [--build-flutter] [-f|--force] [--local-install|--dev-install]"
             echo "  --build-flutter   Build Flutter desktop GUI before Flatpak"
             echo "  -f, --force       Force clean build cache"
-            echo "  --local-install   Install locally for testing (user repo)"
+            echo "  --local-install   Install locally as stable branch (overwrites production)"
+            echo "  --dev-install     Install locally as development branch (parallel to production)"
             echo ""
             echo "Examples:"
             echo "  $0                          # Build only (for build-remote.sh)"
-            echo "  $0 --local-install          # Build and install locally for testing"
-            echo "  $0 --build-flutter --local-install  # Build with GUI and install locally"
+            echo "  $0 --local-install          # Build and install as stable"
+            echo "  $0 --dev-install            # Build and install as development (recommended for testing)"
+            echo "  $0 --build-flutter --dev-install  # Build with GUI and install as development"
             exit 1
             ;;
     esac
@@ -127,17 +137,18 @@ if [[ "$BUILD_FLUTTER" == "true" ]]; then
 fi
 
 # Clean up build directory and optionally cache
+echo "📦 Building for branch: $FLATPAK_BRANCH"
 if [[ "$FORCE_CLEAN" == "true" ]]; then
     echo "🧹 Force cleaning build directory and cache..."
     rm -rf build-dir repo .flatpak-builder
     echo "🔨 Building Flatpak package (clean build)..."
-    flatpak-builder --repo=repo build-dir com.opensslencrypt.OpenSSLEncrypt.json
+    flatpak-builder --repo=repo --default-branch="$FLATPAK_BRANCH" build-dir com.opensslencrypt.OpenSSLEncrypt.json
 else
     echo "🧹 Cleaning up repo directory (preserving build cache)..."
     rm -rf repo
     echo "🔨 Building Flatpak package with incremental build..."
     echo "ℹ️  Using build cache from .flatpak-builder/ (if exists)"
-    flatpak-builder --force-clean --repo=repo build-dir com.opensslencrypt.OpenSSLEncrypt.json
+    flatpak-builder --force-clean --repo=repo --default-branch="$FLATPAK_BRANCH" build-dir com.opensslencrypt.OpenSSLEncrypt.json
 fi
 
 # Update the repository summary (required for remote access)
@@ -149,49 +160,61 @@ if [[ "$LOCAL_INSTALL" == "true" ]]; then
     echo ""
     echo "🏠 Setting up local installation for testing..."
 
-    # Clean up any existing local installation and remote
-    echo "🧹 Removing existing local installation and remote..."
-    # First uninstall the specific app
-    flatpak --user uninstall -y com.opensslencrypt.OpenSSLEncrypt 2>/dev/null || true
-    # Then remove the local remote (use consistent naming)
-    flatpak --user remote-delete openssl-encrypt-local 2>/dev/null || true
+    # Use branch-specific remote name
+    REMOTE_NAME="openssl-encrypt-$FLATPAK_BRANCH"
+    BRANCH_DISPLAY="($FLATPAK_BRANCH branch)"
 
-    # Add local repository
-    echo "📁 Adding local repository for testing..."
+    # Clean up any existing local installation and remote for this branch
+    echo "🧹 Removing existing $FLATPAK_BRANCH branch installation and remote..."
+    # First uninstall the specific app branch
+    flatpak --user uninstall -y com.opensslencrypt.OpenSSLEncrypt//$FLATPAK_BRANCH 2>/dev/null || true
+    # Then remove the branch-specific remote
+    flatpak --user remote-delete "$REMOTE_NAME" 2>/dev/null || true
+
+    # Add local repository with branch-specific remote name
+    echo "📁 Adding local repository for $FLATPAK_BRANCH branch..."
     REPO_PATH="$(pwd)/repo"
     echo "Repository path: $REPO_PATH"
-    flatpak --user remote-add --no-gpg-verify openssl-encrypt-local "$REPO_PATH"
+    flatpak --user remote-add --no-gpg-verify "$REMOTE_NAME" "$REPO_PATH"
 
-    # Install the built package
-    echo "💾 Installing the package locally..."
-    flatpak --user install -y openssl-encrypt-local com.opensslencrypt.OpenSSLEncrypt
+    # Install the built package with specific branch
+    echo "💾 Installing the package locally as $FLATPAK_BRANCH branch..."
+    flatpak --user install -y "$REMOTE_NAME" com.opensslencrypt.OpenSSLEncrypt//$FLATPAK_BRANCH
 
-    echo "✅ Local installation complete!"
+    echo "✅ Local installation complete $BRANCH_DISPLAY!"
     echo ""
     echo "🎯 To test the locally installed application:"
-    echo "   CLI: flatpak run com.opensslencrypt.OpenSSLEncrypt --help"
+    echo "   CLI: flatpak run com.opensslencrypt.OpenSSLEncrypt//$FLATPAK_BRANCH --help"
     if [[ "$BUILD_FLUTTER" == "true" ]]; then
-        echo "   GUI: flatpak run com.opensslencrypt.OpenSSLEncrypt --gui"
+        echo "   GUI: flatpak run com.opensslencrypt.OpenSSLEncrypt//$FLATPAK_BRANCH --gui"
     else
-        echo "   GUI: flatpak run com.opensslencrypt.OpenSSLEncrypt --gui"
+        echo "   GUI: flatpak run com.opensslencrypt.OpenSSLEncrypt//$FLATPAK_BRANCH --gui"
         echo "   Note: Run with --build-flutter to include Flutter GUI"
     fi
     echo ""
-    echo "🗑️  To uninstall local test version:"
-    echo "   flatpak --user uninstall com.opensslencrypt.OpenSSLEncrypt"
-    echo "   flatpak --user remote-delete openssl-encrypt-local"
+    if [[ "$DEV_INSTALL" == "true" ]]; then
+        echo "ℹ️  This is a development branch - it runs parallel to production!"
+        echo "   Production (if installed): flatpak run com.opensslencrypt.OpenSSLEncrypt//stable"
+        echo "   Development (this build):  flatpak run com.opensslencrypt.OpenSSLEncrypt//development"
+    fi
+    echo ""
+    echo "🗑️  To uninstall this $FLATPAK_BRANCH version:"
+    echo "   flatpak --user uninstall com.opensslencrypt.OpenSSLEncrypt//$FLATPAK_BRANCH"
+    echo "   flatpak --user remote-delete $REMOTE_NAME"
 else
     echo "✅ Build complete! Repository ready for build-remote.sh"
     echo ""
     echo "📦 Built repository: $(pwd)/repo"
     echo "🚀 To deploy to server: ./build-remote.sh [options]"
-    echo "🏠 To test locally: $0 --local-install"
+    echo "🏠 To test locally (stable):  $0 --local-install"
+    echo "🧪 To test locally (dev):     $0 --dev-install"
 fi
 
 echo ""
 echo "🛠️  Build options:"
-echo "   Build only:        $0"
-echo "   With Flutter:      $0 --build-flutter"
-echo "   Force clean:       $0 --force (or -f)"
-echo "   Local testing:     $0 --local-install"
-echo "   Combined example:  $0 --build-flutter --local-install --force"
+echo "   Build only:              $0"
+echo "   With Flutter:            $0 --build-flutter"
+echo "   Force clean:             $0 --force (or -f)"
+echo "   Stable branch install:   $0 --local-install"
+echo "   Dev branch install:      $0 --dev-install (recommended for testing v1.3.0)"
+echo "   Combined example:        $0 --build-flutter --dev-install --force"

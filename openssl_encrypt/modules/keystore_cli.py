@@ -11,13 +11,10 @@ import hashlib
 import json
 import os
 import sys
+import time
 import uuid
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
-
-# Add UTC constant for Python < 3.11
-if not hasattr(datetime, "UTC"):
-    datetime.UTC = datetime.timezone.utc
 
 from .crypt_errors import (
     KeyNotFoundError,
@@ -45,6 +42,25 @@ except ImportError:
 
 
 from .secure_memory import SecureBytes, secure_memzero
+
+# Import portable media modules
+try:
+    from .portable_media import (
+        QRKeyDistribution,
+        QRKeyError,
+        QRKeyFormat,
+        USBCreationError,
+        USBDriveCreator,
+        USBSecurityProfile,
+        create_portable_usb,
+        verify_usb_integrity,
+    )
+
+    QR_AVAILABLE = True
+    USB_AVAILABLE = True
+except ImportError:
+    QR_AVAILABLE = False
+    USB_AVAILABLE = False
 
 
 class KeystoreSecurityLevel(Enum):
@@ -121,8 +137,8 @@ class PQCKeystore:
         # Create keystore structure
         self.keystore_data = {
             "version": self.KEYSTORE_VERSION,
-            "created": datetime.datetime.now(datetime.UTC).isoformat() + "Z",
-            "last_modified": datetime.datetime.now(datetime.UTC).isoformat() + "Z",
+            "created": datetime.datetime.now(datetime.timezone.utc).isoformat() + "Z",
+            "last_modified": datetime.datetime.now(datetime.timezone.utc).isoformat() + "Z",
             "security_level": security_level.value,
             "encryption": {
                 "salt": base64.b64encode(salt).decode("utf-8"),
@@ -228,7 +244,9 @@ class PQCKeystore:
             raise KeystoreError("No keystore data to save")
 
         # Update modification timestamp
-        self.keystore_data["last_modified"] = datetime.datetime.now(datetime.UTC).isoformat() + "Z"
+        self.keystore_data["last_modified"] = (
+            datetime.datetime.now(datetime.timezone.utc).isoformat() + "Z"
+        )
 
         # Add a test key for password verification if it doesn't exist
         if "test_key" not in self.keystore_data and self.master_key:
@@ -390,7 +408,7 @@ class PQCKeystore:
         self.keystore_data.setdefault("keys", {})
         self.keystore_data["keys"][key_id] = {
             "algorithm": algorithm,
-            "created": datetime.datetime.now(datetime.UTC).isoformat() + "Z",
+            "created": datetime.datetime.now(datetime.timezone.utc).isoformat() + "Z",
             "description": description,
             "tags": tags or [],
             "use_master_password": use_master_password,
@@ -1472,6 +1490,67 @@ def main():
     )
     export_parser.add_argument("--key-password-file", help="File containing the key password")
 
+    # Export key to QR code
+    export_qr_parser = subparsers.add_parser("export-qr", help="Export a key as QR code(s)")
+    export_qr_parser.add_argument("key_id", help="The key ID to export")
+    export_qr_parser.add_argument("output_path", help="Path to save QR image(s)")
+    export_qr_parser.add_argument(
+        "--public-only", action="store_true", help="Export only the public key"
+    )
+    export_qr_parser.add_argument(
+        "--multi-qr", action="store_true", help="Allow multi-QR for large keys"
+    )
+    export_qr_parser.add_argument("--key-password-file", help="File containing the key password")
+    export_qr_parser.add_argument(
+        "--compression",
+        action="store_true",
+        default=True,
+        help="Compress key data (default: enabled)",
+    )
+
+    # Import key from QR code
+    import_qr_parser = subparsers.add_parser("import-qr", help="Import a key from QR code(s)")
+    import_qr_parser.add_argument("qr_images", nargs="+", help="Path(s) to QR image file(s)")
+    import_qr_parser.add_argument("--key-description", help="Description for the imported key")
+    import_qr_parser.add_argument("--key-tags", help="Comma-separated list of tags")
+    import_qr_parser.add_argument(
+        "--prompt-key-password", action="store_true", help="Use a separate password for the key"
+    )
+    import_qr_parser.add_argument("--key-password-file", help="File containing the key password")
+
+    # Create portable USB drive
+    create_usb_parser = subparsers.add_parser(
+        "create-usb", help="Create encrypted portable USB drive"
+    )
+    create_usb_parser.add_argument("usb_path", help="Path to USB drive (e.g., /dev/sdb1, E:\\)")
+    create_usb_parser.add_argument("--password", help="Master password for USB encryption")
+    create_usb_parser.add_argument("--password-file", help="File containing the master password")
+    create_usb_parser.add_argument(
+        "--executable", help="Path to OpenSSL Encrypt executable to include"
+    )
+    create_usb_parser.add_argument("--include-keystore", help="Path to keystore file to include")
+    create_usb_parser.add_argument(
+        "--security-profile",
+        choices=["standard", "high-security", "paranoid"],
+        default="standard",
+        help="Security profile for USB encryption (default: standard)",
+    )
+    create_usb_parser.add_argument(
+        "--enable-logs", action="store_true", help="Enable logging on USB drive"
+    )
+
+    # Add hash chaining arguments to create-usb
+    _add_hash_arguments_to_parser(create_usb_parser)
+
+    # Verify USB drive integrity
+    verify_usb_parser = subparsers.add_parser("verify-usb", help="Verify USB drive integrity")
+    verify_usb_parser.add_argument("usb_path", help="Path to USB drive to verify")
+    verify_usb_parser.add_argument("--password", help="Master password for verification")
+    verify_usb_parser.add_argument("--password-file", help="File containing the master password")
+
+    # Add hash chaining arguments to verify-usb
+    _add_hash_arguments_to_parser(verify_usb_parser)
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -1733,6 +1812,22 @@ def main():
             print("Use the programmatic API to export keys.")
             return 1
 
+        elif args.command == "export-qr":
+            # Export key as QR code(s)
+            return handle_export_qr_command(args, keystore_password)
+
+        elif args.command == "import-qr":
+            # Import key from QR code(s)
+            return handle_import_qr_command(args, keystore_password)
+
+        elif args.command == "create-usb":
+            # Create portable USB drive
+            return handle_create_usb_command(args)
+
+        elif args.command == "verify-usb":
+            # Verify USB drive integrity
+            return handle_verify_usb_command(args)
+
         else:
             parser.print_help()
             return 1
@@ -1751,6 +1846,464 @@ def main():
         return 1
 
     return 0
+
+
+def handle_export_qr_command(args, keystore_password):
+    """Handle export-qr command"""
+    if not QR_AVAILABLE:
+        print("QR code functionality not available.")
+        print("Install required dependencies: pip install qrcode[pil] pyzbar")
+        return 1
+
+    try:
+        # Prompt for password if not provided
+        if not keystore_password:
+            keystore_password = getpass.getpass("Enter keystore password: ")
+
+        # Load keystore
+        keystore = PQCKeystore(args.keystore)
+        keystore.load_keystore(keystore_password)
+
+        # Get key password if needed
+        key_password = None
+        if args.key_password_file:
+            with open(args.key_password_file, "r") as f:
+                key_password = f.read().strip()
+
+        # Export key data
+        print(f"Exporting key '{args.key_id}' to QR code...")
+        key_data = keystore.export_key(args.key_id, key_password, not args.public_only)
+
+        # Serialize key data to bytes (JSON format)
+        import json
+
+        key_json = json.dumps(key_data, separators=(",", ":")).encode("utf-8")
+
+        # Determine QR format
+        qr_format = QRKeyFormat.V1_MULTI if args.multi_qr else QRKeyFormat.V1_SINGLE
+
+        # Create QR code(s)
+        qr_dist = QRKeyDistribution()
+        qr_images = qr_dist.create_key_qr(key_json, args.key_id, qr_format, args.compression)
+
+        # Save QR image(s)
+        if isinstance(qr_images, list):
+            # Multi-QR: save with part numbers
+            base_path = os.path.splitext(args.output_path)[0]
+            for i, img in enumerate(qr_images, 1):
+                part_path = f"{base_path}_part_{i:02d}.png"
+                img.save(part_path)
+                print(f"Saved QR part {i}/{len(qr_images)}: {part_path}")
+            print(f"Key exported to {len(qr_images)} QR codes")
+        else:
+            # Single QR: save directly
+            qr_images.save(args.output_path)
+            print(f"Key exported to QR code: {args.output_path}")
+
+        key_type = "public+private" if not args.public_only else "public only"
+        print(f"Successfully exported {key_type} key '{args.key_id}' to QR code(s)")
+        return 0
+
+    except QRKeyError as e:
+        print(f"QR export error: {e}")
+        return 1
+    except Exception as e:
+        print(f"Export failed: {e}")
+        return 1
+
+
+def handle_import_qr_command(args, keystore_password):
+    """Handle import-qr command"""
+    if not QR_AVAILABLE:
+        print("QR code functionality not available.")
+        print("Install required dependencies: pip install qrcode[pil] pyzbar")
+        return 1
+
+    try:
+        # Prompt for password if not provided
+        if not keystore_password:
+            keystore_password = getpass.getpass("Enter keystore password: ")
+
+        # Load keystore
+        keystore = PQCKeystore(args.keystore)
+        keystore.load_keystore(keystore_password)
+
+        # Read key from QR code(s)
+        print(f"Reading key from {len(args.qr_images)} QR image(s)...")
+        qr_dist = QRKeyDistribution()
+
+        # Handle single vs multiple QR images
+        if len(args.qr_images) == 1:
+            qr_input = args.qr_images[0]
+        else:
+            qr_input = args.qr_images
+
+        key_data_bytes, original_key_name = qr_dist.read_key_qr(qr_input)
+
+        # Deserialize key data from JSON
+        import json
+
+        key_data = json.loads(key_data_bytes.decode("utf-8"))
+
+        # Get key password if needed
+        key_password = None
+        if args.prompt_key_password:
+            key_password = getpass.getpass(f"Enter password for key '{original_key_name}': ")
+        elif args.key_password_file:
+            with open(args.key_password_file, "r") as f:
+                key_password = f.read().strip()
+
+        # Parse tags
+        tags = []
+        if args.key_tags:
+            tags = [tag.strip() for tag in args.key_tags.split(",")]
+
+        # Import the key
+        # Note: This would need to be implemented in the keystore
+        print(f"Importing key '{original_key_name}' from QR code...")
+
+        # For now, show what we would import
+        print(f"Key name: {original_key_name}")
+        print(f"Key data size: {len(key_data_bytes)} bytes")
+        print(f"Description: {args.key_description or 'Imported from QR code'}")
+        print(f"Tags: {tags}")
+
+        # This would need actual keystore.import_key_data() method
+        print("Note: Key import from QR codes requires keystore API enhancement")
+        print("Key data successfully read and validated from QR code(s)")
+        return 0
+
+    except QRKeyError as e:
+        print(f"QR import error: {e}")
+        return 1
+    except Exception as e:
+        print(f"Import failed: {e}")
+        return 1
+
+
+def _add_hash_arguments_to_parser(parser):
+    """Add hash chaining arguments to a parser (same as main CLI)"""
+    # Hash Options group
+    hash_group = parser.add_argument_group(
+        "Hash Options", "Configure hashing algorithms for key derivation"
+    )
+
+    # SHA family arguments
+    hash_group.add_argument(
+        "--sha512-rounds", type=int, default=0, help="Number of SHA-512 iterations"
+    )
+    hash_group.add_argument(
+        "--sha384-rounds", type=int, default=0, help="Number of SHA-384 iterations"
+    )
+    hash_group.add_argument(
+        "--sha256-rounds", type=int, default=0, help="Number of SHA-256 iterations"
+    )
+    hash_group.add_argument(
+        "--sha224-rounds", type=int, default=0, help="Number of SHA-224 iterations"
+    )
+    hash_group.add_argument(
+        "--sha3-256-rounds", type=int, default=0, help="Number of SHA3-256 iterations"
+    )
+    hash_group.add_argument(
+        "--sha3-512-rounds", type=int, default=0, help="Number of SHA3-512 iterations"
+    )
+    hash_group.add_argument(
+        "--sha3-384-rounds", type=int, default=0, help="Number of SHA3-384 iterations"
+    )
+    hash_group.add_argument(
+        "--sha3-224-rounds", type=int, default=0, help="Number of SHA3-224 iterations"
+    )
+    hash_group.add_argument(
+        "--blake2b-rounds", type=int, default=0, help="Number of BLAKE2b iterations"
+    )
+    hash_group.add_argument(
+        "--blake3-rounds", type=int, default=0, help="Number of BLAKE3 iterations"
+    )
+    hash_group.add_argument(
+        "--shake256-rounds", type=int, default=0, help="Number of SHAKE-256 iterations"
+    )
+    hash_group.add_argument(
+        "--shake128-rounds", type=int, default=0, help="Number of SHAKE-128 iterations"
+    )
+    hash_group.add_argument(
+        "--whirlpool-rounds", type=int, default=0, help="Number of Whirlpool iterations"
+    )
+    hash_group.add_argument(
+        "--pbkdf2-iterations", type=int, default=0, help="Number of PBKDF2 iterations"
+    )
+
+    # Scrypt group
+    scrypt_group = parser.add_argument_group(
+        "Scrypt Options", "Configure Scrypt memory-hard function"
+    )
+    scrypt_group.add_argument(
+        "--enable-scrypt", action="store_true", help="Use Scrypt password hashing"
+    )
+    scrypt_group.add_argument("--scrypt-rounds", type=int, default=0, help="Scrypt iterations")
+    scrypt_group.add_argument(
+        "--scrypt-n", type=int, default=16384, help="Scrypt CPU/memory cost parameter"
+    )
+    scrypt_group.add_argument("--scrypt-r", type=int, default=8, help="Scrypt block size parameter")
+    scrypt_group.add_argument(
+        "--scrypt-p", type=int, default=1, help="Scrypt parallelization parameter"
+    )
+
+    # Argon2 group
+    argon2_group = parser.add_argument_group(
+        "Argon2 Options", "Configure Argon2 memory-hard function"
+    )
+    argon2_group.add_argument(
+        "--enable-argon2", action="store_true", help="Use Argon2 password hashing"
+    )
+    argon2_group.add_argument("--argon2-rounds", type=int, default=0, help="Argon2 iterations")
+    argon2_group.add_argument(
+        "--argon2-time", type=int, default=3, help="Argon2 time cost parameter"
+    )
+    argon2_group.add_argument(
+        "--argon2-memory", type=int, default=65536, help="Argon2 memory cost in KB"
+    )
+    argon2_group.add_argument(
+        "--argon2-parallelism", type=int, default=4, help="Argon2 parallelism factor"
+    )
+    argon2_group.add_argument(
+        "--argon2-hash-len", type=int, default=32, help="Argon2 hash length in bytes"
+    )
+
+    # Balloon group
+    balloon_group = parser.add_argument_group("Balloon Hashing Options")
+    balloon_group.add_argument(
+        "--enable-balloon", action="store_true", help="Enable Balloon Hashing KDF"
+    )
+    balloon_group.add_argument(
+        "--balloon-rounds", type=int, default=0, help="Balloon hashing iterations"
+    )
+    balloon_group.add_argument("--balloon-time-cost", type=int, default=4, help="Balloon time cost")
+    balloon_group.add_argument(
+        "--balloon-space-cost", type=int, default=16, help="Balloon space cost"
+    )
+    balloon_group.add_argument(
+        "--balloon-parallelism", type=int, default=1, help="Balloon parallelism"
+    )
+
+    # HKDF group
+    hkdf_group = parser.add_argument_group("HKDF Options")
+    hkdf_group.add_argument("--enable-hkdf", action="store_true", help="Enable HKDF key derivation")
+    hkdf_group.add_argument("--hkdf-rounds", type=int, default=0, help="HKDF iterations")
+    hkdf_group.add_argument("--hkdf-algorithm", default="sha256", help="HKDF hash algorithm")
+    hkdf_group.add_argument("--hkdf-info", default="", help="HKDF info parameter")
+
+
+def _build_hash_config_from_args(args):
+    """Build hash configuration from CLI arguments (same format as main CLI)"""
+    # Build hash configuration similar to main CLI
+    hash_config = {
+        "sha512": getattr(args, "sha512_rounds", 0),
+        "sha384": getattr(args, "sha384_rounds", 0),
+        "sha256": getattr(args, "sha256_rounds", 0),
+        "sha224": getattr(args, "sha224_rounds", 0),
+        "sha3_256": getattr(args, "sha3_256_rounds", 0),
+        "sha3_384": getattr(args, "sha3_384_rounds", 0),
+        "sha3_512": getattr(args, "sha3_512_rounds", 0),
+        "sha3_224": getattr(args, "sha3_224_rounds", 0),
+        "blake2b": getattr(args, "blake2b_rounds", 0),
+        "blake3": getattr(args, "blake3_rounds", 0),
+        "shake256": getattr(args, "shake256_rounds", 0),
+        "shake128": getattr(args, "shake128_rounds", 0),
+        "whirlpool": getattr(args, "whirlpool_rounds", 0),
+        "scrypt": {
+            "enabled": getattr(args, "enable_scrypt", False),
+            "n": getattr(args, "scrypt_n", 16384),
+            "r": getattr(args, "scrypt_r", 8),
+            "p": getattr(args, "scrypt_p", 1),
+            "rounds": getattr(args, "scrypt_rounds", 0),
+        },
+        "argon2": {
+            "enabled": getattr(args, "enable_argon2", False),
+            "time_cost": getattr(args, "argon2_time", 3),
+            "memory_cost": getattr(args, "argon2_memory", 65536),
+            "parallelism": getattr(args, "argon2_parallelism", 4),
+            "hash_len": getattr(args, "argon2_hash_len", 32),
+            "type": 2,  # Default to argon2id
+            "rounds": getattr(args, "argon2_rounds", 0),
+        },
+        "balloon": {
+            "enabled": getattr(args, "enable_balloon", False),
+            "time_cost": getattr(args, "balloon_time_cost", 4),
+            "space_cost": getattr(args, "balloon_space_cost", 16),
+            "parallelism": getattr(args, "balloon_parallelism", 1),
+            "rounds": getattr(args, "balloon_rounds", 0),
+        },
+        "hkdf": {
+            "enabled": getattr(args, "enable_hkdf", False),
+            "rounds": getattr(args, "hkdf_rounds", 0),
+            "algorithm": getattr(args, "hkdf_algorithm", "sha256"),
+            "info": getattr(args, "hkdf_info", ""),
+        },
+        "pbkdf2_iterations": getattr(args, "pbkdf2_iterations", 0),
+    }
+
+    # Return None if all values are default (no hash chaining requested)
+    if all(
+        v == 0 or (isinstance(v, dict) and not v.get("enabled", False))
+        for v in hash_config.values()
+    ):
+        return None
+
+    return hash_config
+
+
+def handle_create_usb_command(args):
+    """Handle create-usb command"""
+    if not USB_AVAILABLE:
+        print("USB functionality not available.")
+        print("Install required dependencies: pip install cryptography")
+        return 1
+
+    try:
+        # Get USB password
+        usb_password = None
+        if args.password:
+            usb_password = args.password
+        elif args.password_file:
+            with open(args.password_file, "r") as f:
+                usb_password = f.read().strip()
+        else:
+            usb_password = getpass.getpass("Enter master password for USB encryption: ")
+
+        if not usb_password:
+            print("USB master password is required")
+            return 1
+
+        print(f"Creating portable USB drive at: {args.usb_path}")
+        print(f"Security profile: {args.security_profile}")
+
+        # Build hash configuration from CLI arguments
+        hash_config = _build_hash_config_from_args(args)
+        if hash_config:
+            print("Using custom hash chaining configuration")
+        else:
+            print("Using default key derivation (Argon2 with PBKDF2 fallback)")
+
+        # Prepare options
+        options = {
+            "security_profile": args.security_profile,
+            "executable_path": args.executable,
+            "keystore_path": args.include_keystore,
+            "include_logs": args.enable_logs,
+        }
+
+        # Remove None values
+        options = {k: v for k, v in options.items() if v is not None}
+
+        # Create USB drive with hash configuration
+        result = create_portable_usb(
+            args.usb_path, usb_password, hash_config=hash_config, **options
+        )
+
+        if result["success"]:
+            print("✅ Portable USB drive created successfully!")
+            print(f"   Portable root: {result['portable_root']}")
+            print(f"   Security profile: {result['security_profile']}")
+
+            if result["executable"]["included"]:
+                print(f"   Executable included: {result['executable']['path']}")
+            else:
+                print(f"   Executable: {result['executable']['note']}")
+
+            if result["keystore"]["included"]:
+                print(f"   Keystore included: {result['keystore']['path']}")
+                print(f"   Keystore size: {result['keystore']['original_size']} bytes")
+            else:
+                print("   Keystore: Not included")
+
+            print(
+                f"   Workspace: {result['workspace']['path']} ({result['workspace']['encryption']})"
+            )
+            print(f"   Auto-run files: {', '.join(result['autorun']['files_created'])}")
+            print(
+                f"   Integrity protection: {result['integrity']['files_verified']} files verified"
+            )
+
+            print("\n🔒 Security Notes:")
+            print("   - All workspace files are automatically encrypted")
+            print("   - USB integrity is protected with tamper detection")
+            print("   - Use the same master password to access the USB")
+            print("   - Auto-run files enable easy launching on different platforms")
+
+        return 0
+
+    except USBCreationError as e:
+        print(f"USB creation error: {e}")
+        return 1
+    except Exception as e:
+        print(f"USB creation failed: {e}")
+        return 1
+
+
+def handle_verify_usb_command(args):
+    """Handle verify-usb command"""
+    if not USB_AVAILABLE:
+        print("USB functionality not available.")
+        print("Install required dependencies: pip install cryptography")
+        return 1
+
+    try:
+        # Get USB password
+        usb_password = None
+        if args.password:
+            usb_password = args.password
+        elif args.password_file:
+            with open(args.password_file, "r") as f:
+                usb_password = f.read().strip()
+        else:
+            usb_password = getpass.getpass("Enter master password for USB verification: ")
+
+        if not usb_password:
+            print("USB master password is required")
+            return 1
+
+        print(f"Verifying USB drive integrity: {args.usb_path}")
+
+        # Build hash configuration from CLI arguments
+        hash_config = _build_hash_config_from_args(args)
+        if hash_config:
+            print("Using custom hash chaining configuration for verification")
+
+        # Verify USB integrity
+        result = verify_usb_integrity(args.usb_path, usb_password, hash_config=hash_config)
+
+        print(f"📊 Verification Results:")
+        print(f"   Overall integrity: {'✅ PASSED' if result['integrity_ok'] else '❌ FAILED'}")
+        print(f"   Files verified: {result['verified_files']}")
+        print(f"   Files failed: {result['failed_files']}")
+        print(f"   Files missing: {result['missing_files']}")
+        print(f"   Original file count: {result['original_file_count']}")
+
+        if result["tampered_files"]:
+            print(f"\n⚠️  Tampered files detected:")
+            for file_path in result["tampered_files"]:
+                print(f"      - {file_path}")
+
+        if result["missing_file_list"]:
+            print(f"\n⚠️  Missing files:")
+            for file_path in result["missing_file_list"]:
+                print(f"      - {file_path}")
+
+        if result["integrity_ok"]:
+            print(f"\n✅ USB drive integrity verified successfully!")
+            print(f"   Created: {time.ctime(result['created_at'])}")
+            return 0
+        else:
+            print(f"\n❌ USB drive integrity check FAILED!")
+            print(f"   The drive may have been tampered with or corrupted.")
+            return 1
+
+    except USBCreationError as e:
+        print(f"USB verification error: {e}")
+        return 1
+    except Exception as e:
+        print(f"USB verification failed: {e}")
+        return 1
 
 
 if __name__ == "__main__":
