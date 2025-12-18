@@ -204,7 +204,7 @@ print('✓ liboqs version:', oqs.oqs_version())
 print('✓ Available KEMs:', len(oqs.get_enabled_kem_mechanisms()))
 print('✓ Available Signatures:', len(oqs.get_enabled_sig_mechanisms()))
 
-# Test basic KEM operations  
+# Test basic KEM operations
 kem = oqs.KeyEncapsulation('Kyber512')
 public_key = kem.generate_keypair()
 ciphertext, shared_secret_1 = kem.encap_secret(public_key)

@@ -6,7 +6,7 @@ The GUI was reporting "Fernet decryption failed: invalid fernet version" when tr
 ## Root Cause
 The Flutter GUI was using an **outdated version** of `mobile_crypto_core.py` that was missing all the critical CLI-compatibility fixes we implemented:
 
-1. **Missing CLI data contamination handling** 
+1. **Missing CLI data contamination handling**
 2. **Missing hash result truncation to 20 bytes**
 3. **Missing PBKDF2 separate-calls implementation**
 4. **Missing PBKDF2 salt generation pattern**
@@ -18,7 +18,7 @@ The Flutter GUI was using an **outdated version** of `mobile_crypto_core.py` tha
 - To `/home/work/private/git/openssl_encrypt/mobile_app/openssl_encrypt_mobile/mobile_crypto_core.py`
 
 ✅ **Fixed subprocess path in `crypto_ffi.dart`**
-- Changed `sys.path.append('/home/work/private/git/openssl_encrypt/mobile_app')` 
+- Changed `sys.path.append('/home/work/private/git/openssl_encrypt/mobile_app')`
 - To `sys.path.append('.')` (current directory)
 - Added traceback printing for better error debugging
 
@@ -44,7 +44,7 @@ for i in range(rounds):
     # Generate salt using CLI pattern: SHA256(base_salt + str(i))
     salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
     round_salt = salt_material  # Use full 32 bytes
-    
+
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
@@ -66,7 +66,7 @@ encrypted_data = base64.b64decode(encrypted_data_b64.encode())
 
 ### Command Line Tests
 ✅ **Direct Python Import**: `Hello World` ✓
-✅ **Subprocess Call**: `Hello World` ✓  
+✅ **Subprocess Call**: `Hello World` ✓
 ✅ **Flutter Directory Test**: `Hello World` ✓
 
 ### Key Compatibility Achieved

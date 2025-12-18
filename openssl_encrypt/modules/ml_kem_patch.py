@@ -61,7 +61,7 @@ def apply_patches():
             """Patched main function that handles ML-KEM algorithm names"""
             # Store original ML-KEM algorithm name for deprecation logic
             original_ml_kem_algorithm = None
-            
+
             # Convert ML-KEM algorithm names in command-line arguments
             if len(sys.argv) > 1:
                 for i, arg in enumerate(sys.argv):
@@ -81,7 +81,8 @@ def apply_patches():
             # so the main function can access it
             if original_ml_kem_algorithm:
                 import os
-                os.environ['OPENSSL_ENCRYPT_ORIGINAL_MLKEM_ALGORITHM'] = original_ml_kem_algorithm
+
+                os.environ["OPENSSL_ENCRYPT_ORIGINAL_MLKEM_ALGORITHM"] = original_ml_kem_algorithm
 
             # Call the original main function
             return original_main()

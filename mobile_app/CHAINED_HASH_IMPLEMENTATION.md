@@ -8,7 +8,7 @@ The mobile app now fully supports **chained hash processing** with **custom roun
 
 ### **Available Hash Algorithms (CLI Order):**
 1. **SHA-512** - 512-bit Secure Hash Algorithm
-2. **SHA-256** - 256-bit Secure Hash Algorithm  
+2. **SHA-256** - 256-bit Secure Hash Algorithm
 3. **SHA3-256** - SHA-3 family, 256-bit output
 4. **SHA3-512** - SHA-3 family, 512-bit output
 5. **BLAKE2b** - Fast cryptographic hash, 512-bit output
@@ -93,7 +93,7 @@ Password + Salt → Hash Chain → KDF → 32-byte Key → Fernet Encryption
 1. Tap "Advanced Security Settings (CLI Compatible)"
 2. Tap "Hash Chain Configuration" to expand
 3. Set SHA-512: 1500 rounds
-4. Set SHA-256: 1000 rounds  
+4. Set SHA-256: 1000 rounds
 5. Set SHA3-256: 500 rounds
 6. Disable others (set to 0)
 7. Select "Scrypt" KDF
@@ -145,7 +145,7 @@ Password + Salt → Hash Chain → KDF → 32-byte Key → Fernet Encryption
 
 ### **Test Coverage:**
 - ✅ Hash chaining with all algorithms
-- ✅ Custom rounds configuration  
+- ✅ Custom rounds configuration
 - ✅ Multiple KDF algorithms with parameters
 - ✅ CLI compatibility verification
 - ✅ Round-trip encryption/decryption

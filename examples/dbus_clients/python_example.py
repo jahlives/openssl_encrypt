@@ -116,6 +116,7 @@ def main():
     # Note: In a real application, you would wait for the operation to complete
     # by listening to signals or polling the operation status
     import time
+
     time.sleep(2)  # Give it time to complete
 
     # Decrypt the file

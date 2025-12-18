@@ -1,8 +1,8 @@
 OpenSSL Encrypt Mobile Test Document
 ====================================
 
-This is a sample document for testing the mobile application's file encryption 
-and decryption capabilities. 
+This is a sample document for testing the mobile application's file encryption
+and decryption capabilities.
 
 Features being tested:
 - File selection and reading

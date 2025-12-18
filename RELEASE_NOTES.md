@@ -2,7 +2,7 @@
 
 ## Current Release: Version 1.2.0 (August 2025)
 
-**Status:** Production Release  
+**Status:** Production Release
 **Development Status:** Stable
 
 ### Professional Flutter Desktop GUI Release

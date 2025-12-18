@@ -16,7 +16,7 @@ class CryptoFFI {
 
   CryptoFFI() {
     print('CryptoFFI: Initializing...');
-    
+
     // Load the dynamic library
     try {
       if (Platform.isAndroid) {
@@ -30,7 +30,7 @@ class CryptoFFI {
           '../libcrypto_ffi.so',
           '/home/work/private/git/openssl_encrypt/mobile_app/openssl_encrypt_mobile/libcrypto_ffi.so'
         ];
-        
+
         for (final path in possiblePaths) {
           try {
             print('CryptoFFI: Trying path: $path');
@@ -42,7 +42,7 @@ class CryptoFFI {
             continue; // Try next path
           }
         }
-        
+
         if (_lib == null) {
           throw Exception('Could not find libcrypto_ffi.so in any expected location');
         }
@@ -58,7 +58,7 @@ class CryptoFFI {
     // Bind C functions
     try {
       _bindFunctions();
-      
+
       // Initialize the crypto module
       final initResult = _initCrypto!();
       if (initResult == 0) {
@@ -75,7 +75,7 @@ class CryptoFFI {
 
   void _bindFunctions() {
     print('CryptoFFI: Binding functions...');
-    
+
     _initCrypto = _lib!
         .lookup<NativeFunction<Int32 Function()>>('init_crypto_ffi')
         .asFunction<int Function()>();
@@ -131,7 +131,7 @@ class CryptoFFI {
   /// Decrypt text using the mobile crypto core
   Future<String> decryptText(String encryptedJson, String password) async {
     print('CryptoFFI: decryptText called, _lib = ${_lib != null ? 'loaded' : 'null'}');
-    
+
     if (_lib == null) {
       // Mock implementation for development
       print('CryptoFFI: Using mock decryption');
@@ -178,7 +178,7 @@ class CryptoFFI {
     // This represents what's available in enhanced_mobile_crypto.py
     return [
       'fernet',
-      'aes-gcm', 
+      'aes-gcm',
       'chacha20-poly1305',
       'xchacha20-poly1305',
       'aes-siv',
@@ -193,7 +193,7 @@ class CryptoFFI {
     // Available hash algorithms from mobile crypto core (CLI order)
     return [
       'sha512',
-      'sha256', 
+      'sha256',
       'sha3_256',
       'sha3_512',
       'blake2b',
@@ -202,7 +202,7 @@ class CryptoFFI {
       'whirlpool',
     ];
   }
-  
+
   /// Get chained hash configuration
   Future<Map<String, int>> getChainedHashConfig() async {
     // Default configuration matching CLI
@@ -272,32 +272,32 @@ class CryptoFFI {
       }
     }
   }
-  
+
   Future<String> _callNativeCrypto(String encryptedJson, String password) async {
     try {
       print('CryptoFFI: Attempting native Dart decryption');
-      
+
       final decoded = json.decode(encryptedJson);
       if (decoded is! Map<String, dynamic>) {
         throw Exception('Invalid JSON structure');
       }
-      
+
       final encryptedData = decoded['encrypted_data'] as String;
       final metadata = decoded['metadata'] as Map<String, dynamic>;
-      
+
       // Use native crypto implementation
       return await NativeCrypto.decryptCliFormat(metadata, encryptedData, password);
-      
+
     } catch (e) {
       throw Exception('Native crypto failed: $e');
     }
   }
-  
+
   Future<String> _callPythonDecrypt(String encryptedJson, String password) async {
     try {
       // Try multiple approaches to call Python with our corrected crypto
       ProcessResult? result;
-      
+
       // Approach 1: Use dedicated Python script (most reliable)
       try {
         print('CryptoFFI: Trying flutter_decrypt.py script...');
@@ -306,13 +306,13 @@ class CryptoFFI {
           ['flutter_decrypt.py', encryptedJson, password],
           workingDirectory: '/home/work/private/git/openssl_encrypt/mobile_app/openssl_encrypt_mobile',
         );
-        
+
         print('CryptoFFI: Script exit code: ${result.exitCode}');
         print('CryptoFFI: Script stdout: ${result.stdout}');
         if (result.stderr.toString().isNotEmpty) {
           print('CryptoFFI: Script stderr: ${result.stderr}');
         }
-        
+
         if (result.exitCode == 0 && !result.stdout.toString().contains('ERROR:')) {
           final output = result.stdout.toString().trim();
           print('CryptoFFI: Script SUCCESS: $output');
@@ -323,14 +323,14 @@ class CryptoFFI {
       } catch (e) {
         print('CryptoFFI: Flutter script approach failed: $e');
       }
-      
+
       // Approach 2: Try with environment variables
       try {
         final env = <String, String>{};
         env.addAll(Platform.environment);
         env['PYTHONPATH'] = '.:/home/work/private/git/openssl_encrypt/mobile_app';
         env['PYTHONDONTWRITEBYTECODE'] = '1';  // Avoid .pyc issues
-        
+
         result = await Process.run(
           'python3',
           ['-c', '''
@@ -345,14 +345,14 @@ print(result)
           workingDirectory: '/home/work/private/git/openssl_encrypt/mobile_app/openssl_encrypt_mobile',
           environment: env,
         );
-        
+
         if (result.exitCode == 0 && !result.stdout.toString().contains('ERROR:')) {
           return result.stdout.toString().trim();
         }
       } catch (e) {
         print('Environment approach failed: $e');
       }
-      
+
       // Final fallback - check if any result was obtained
       if (result != null) {
         if (result.exitCode == 0) {
@@ -369,10 +369,10 @@ print(result)
       if (decoded is Map<String, dynamic> &&
           decoded.containsKey('encrypted_data') &&
           decoded.containsKey('metadata')) {
-        
+
         final metadata = decoded['metadata'] as Map<String, dynamic>;
         final formatVersion = metadata['format_version'] ?? 'unknown';
-        
+
         return 'Subprocess Fallback (Python env issues):\n'
                'Format version: $formatVersion\n'
                'Password: ${password.replaceAll(RegExp(r'.'), '*')}\n'

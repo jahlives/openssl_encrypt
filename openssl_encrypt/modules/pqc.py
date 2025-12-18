@@ -554,7 +554,7 @@ class PQCipher:
         test_name = os.environ.get("PYTEST_CURRENT_TEST", "")
         if test_name or "pytest" in sys.modules or "unittest" in sys.modules:
             is_test_environment = True
-        
+
         # Use TESTDATA format for test environments, real encryption for production
         if is_test_environment:
             # TESTDATA format for backward compatibility with tests
@@ -613,21 +613,22 @@ class PQCipher:
                 with oqs.KeyEncapsulation(self.algorithm_name) as kem:
                     # Encapsulate a shared secret with the public key
                     encapsulated_key, shared_secret = kem.encap_secret(public_key)
-                    
+
                     # Derive symmetric key from shared secret
                     symmetric_key = hashlib.sha256(shared_secret).digest()
-                    
+
                     # Generate random nonce for AES-GCM
                     nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
-                    
+
                     # Encrypt the actual data with AES-GCM
                     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
                     aead = AESGCM(symmetric_key)
                     ciphertext = aead.encrypt(nonce, data, None)
-                    
+
                     # Format: encapsulated_key + nonce + ciphertext
                     result = encapsulated_key + nonce + ciphertext
-                    
+
                     return result
 
             except Exception as e:
@@ -640,7 +641,6 @@ class PQCipher:
                     secure_memzero(shared_secret)
                 if symmetric_key is not None:
                     secure_memzero(symmetric_key)
-
 
     def decrypt(
         self, encrypted_data: bytes, private_key: bytes, file_contents: bytes = None
@@ -660,9 +660,11 @@ class PQCipher:
         Raises:
             ValueError: If decryption fails
         """
-        logger.debug(f"DECRYPT:PQC_KEM decrypt() called with encrypted_data length: {len(encrypted_data)}")
+        logger.debug(
+            f"DECRYPT:PQC_KEM decrypt() called with encrypted_data length: {len(encrypted_data)}"
+        )
         logger.debug(f"DECRYPT:PQC_KEM encrypted_data starts with: {encrypted_data[:50]}")
-        
+
         if not self.is_kem:
             raise ValueError("This method is only supported for KEM algorithms")
 
@@ -679,21 +681,22 @@ class PQCipher:
         try:
             # Import the KeyEncapsulation object
             with oqs.KeyEncapsulation(self.algorithm_name, private_key) as kem:
-                
                 # Determine size of encapsulated key
                 kem_ciphertext_size = kem.length_ciphertext
                 shared_secret_len = kem.length_shared_secret
-                
+
                 if self.debug:
                     logger.debug(f"DECRYPT:PQC_KEM encrypted_data length: {len(encrypted_data)}")
                     logger.debug(f"DECRYPT:PQC_KEM kem_ciphertext_size: {kem_ciphertext_size}")
-                    logger.debug(f"DECRYPT:PQC_KEM encrypted_data starts with: {encrypted_data[:50]}")
+                    logger.debug(
+                        f"DECRYPT:PQC_KEM encrypted_data starts with: {encrypted_data[:50]}"
+                    )
 
                 # CHECK FOR TEST DATA FORMAT FIRST
                 # This approach makes recovery extremely reliable
                 test_data_header = b"PQC_TEST_DATA:"
                 testdata_marker = b"TESTDATA"
-                
+
                 if encrypted_data.startswith(test_data_header):
                     # Handle PQC_TEST_DATA format
                     # In test environment with negative test patterns, we should prevent recovery
@@ -721,26 +724,36 @@ class PQCipher:
                     plaintext = encrypted_data[len(test_data_header) :]
                     # Quiet success
                     return plaintext
-                
+
                 elif encrypted_data.startswith(testdata_marker):
                     # Handle TESTDATA format - this is the old test format
                     if self.debug:
-                                    logger.debug("DECRYPT:PQC_KEM Detected TESTDATA format, processing test data")
-                    
+                        logger.debug(
+                            "DECRYPT:PQC_KEM Detected TESTDATA format, processing test data"
+                        )
+
                     # Extract the test data - format is TESTDATA + length + data
                     data_len_bytes = encrypted_data[8:12]
                     data_len = int.from_bytes(data_len_bytes, byteorder="big")
-                    
+
                     logger.debug(f"DECRYPT:PQC_KEM data_len validation - data_len: {data_len}")
-                    logger.debug(f"DECRYPT:PQC_KEM data_len validation - encrypted_data length: {len(encrypted_data)}")
-                    logger.debug(f"DECRYPT:PQC_KEM data_len validation - condition: {0 <= data_len <= len(encrypted_data) - 12}")
+                    logger.debug(
+                        f"DECRYPT:PQC_KEM data_len validation - encrypted_data length: {len(encrypted_data)}"
+                    )
+                    logger.debug(
+                        f"DECRYPT:PQC_KEM data_len validation - condition: {0 <= data_len <= len(encrypted_data) - 12}"
+                    )
                     if 0 <= data_len <= len(encrypted_data) - 12:
                         plaintext = encrypted_data[12 : 12 + data_len]
-                        logger.debug(f"DECRYPT:PQC_KEM data_len validation - extracted plaintext: {plaintext}")
+                        logger.debug(
+                            f"DECRYPT:PQC_KEM data_len validation - extracted plaintext: {plaintext}"
+                        )
                         return plaintext
                     else:
                         # Invalid format, need to parse test data properly instead of old approach
-                        logger.debug(f"DECRYPT:PQC_KEM data_len validation failed - parsing test data instead")
+                        logger.debug(
+                            f"DECRYPT:PQC_KEM data_len validation failed - parsing test data instead"
+                        )
                         # Find the test nonce and extract proper data
                         test_nonce_pos = encrypted_data.find(b"TESTNONCE123")
                         if test_nonce_pos != -1:
@@ -750,7 +763,9 @@ class PQCipher:
                                 test_data_header = b"PQC_TEST_DATA:"
                                 if ciphertext.startswith(test_data_header):
                                     plaintext = ciphertext[len(test_data_header) :]
-                                    logger.debug(f"DECRYPT:PQC_KEM fallback extracted plaintext: {plaintext}")
+                                    logger.debug(
+                                        f"DECRYPT:PQC_KEM fallback extracted plaintext: {plaintext}"
+                                    )
                                     return plaintext
                         # If all else fails, return the old approach
                         logger.debug(f"DECRYPT:PQC_KEM using old approach fallback")
@@ -795,7 +810,9 @@ class PQCipher:
 
                 # Check for our special test marker in the encapsulated key
                 if self.debug:
-                            logger.debug(f"DECRYPT:PQC_KEM Encapsulated key starts with: {encapsulated_key[:20]}")
+                    logger.debug(
+                        f"DECRYPT:PQC_KEM Encapsulated key starts with: {encapsulated_key[:20]}"
+                    )
                 if encapsulated_key.startswith(b"TESTDATA"):
                     # In test environment with negative test patterns, we should prevent recovery
                     is_negative_test = False
@@ -826,9 +843,13 @@ class PQCipher:
                         reference_id = encapsulated_key[12:20]
 
                         # Look for the plaintext header in the remaining data
-                        logger.debug(f"DECRYPT:PQC_KEM embedded data path - remaining_data: {remaining_data}")
-                        logger.debug(f"DECRYPT:PQC_KEM embedded data path - looking for TESTNONCE123")
-                        
+                        logger.debug(
+                            f"DECRYPT:PQC_KEM embedded data path - remaining_data: {remaining_data}"
+                        )
+                        logger.debug(
+                            f"DECRYPT:PQC_KEM embedded data path - looking for TESTNONCE123"
+                        )
+
                         # Find the test nonce position instead of assuming it's at the start
                         test_nonce_pos = remaining_data.find(b"TESTNONCE123")
                         if test_nonce_pos != -1:
@@ -836,10 +857,14 @@ class PQCipher:
                             test_data_start = test_nonce_pos + 12
                             if test_data_start < len(remaining_data):
                                 ciphertext = remaining_data[test_data_start:]
-                                logger.debug(f"DECRYPT:PQC_KEM embedded data - ciphertext: {ciphertext}")
+                                logger.debug(
+                                    f"DECRYPT:PQC_KEM embedded data - ciphertext: {ciphertext}"
+                                )
                                 if ciphertext.startswith(test_data_header):
                                     plaintext = ciphertext[len(test_data_header) :]
-                                    logger.debug(f"DECRYPT:PQC_KEM embedded data - extracted plaintext: {plaintext}")
+                                    logger.debug(
+                                        f"DECRYPT:PQC_KEM embedded data - extracted plaintext: {plaintext}"
+                                    )
                                     # Success but no need to be verbose
                                     return plaintext
                     else:
@@ -877,7 +902,9 @@ class PQCipher:
                     # Check for our test nonce (may not be at the start due to binary prefix)
                     test_nonce_pos = remaining_data.find(b"TESTNONCE123")
                     logger.debug(f"DECRYPT:PQC_KEM remaining_data length: {len(remaining_data)}")
-                    logger.debug(f"DECRYPT:PQC_KEM remaining_data hex: {remaining_data.hex()[:100]}...")
+                    logger.debug(
+                        f"DECRYPT:PQC_KEM remaining_data hex: {remaining_data.hex()[:100]}..."
+                    )
                     logger.debug(f"DECRYPT:PQC_KEM test_nonce_pos: {test_nonce_pos}")
                     if test_nonce_pos != -1:
                         # In test environment with negative test patterns, we should prevent recovery
@@ -907,7 +934,9 @@ class PQCipher:
                             ciphertext = remaining_data[test_data_start:]
                             logger.debug(f"DECRYPT:PQC_KEM ciphertext: {ciphertext}")
                             logger.debug(f"DECRYPT:PQC_KEM test_data_header: {test_data_header}")
-                            logger.debug(f"DECRYPT:PQC_KEM ciphertext.startswith(test_data_header): {ciphertext.startswith(test_data_header)}")
+                            logger.debug(
+                                f"DECRYPT:PQC_KEM ciphertext.startswith(test_data_header): {ciphertext.startswith(test_data_header)}"
+                            )
                             if ciphertext.startswith(test_data_header):
                                 plaintext = ciphertext[len(test_data_header) :]
                                 logger.debug(f"DECRYPT:PQC_KEM extracted plaintext: {plaintext}")

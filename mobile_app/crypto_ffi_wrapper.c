@@ -15,41 +15,41 @@ int init_crypto_ffi() {
     if (Py_IsInitialized()) {
         return 1; // Already initialized
     }
-    
+
     // Save and redirect stderr before Python initialization
     int stderr_fd = dup(STDERR_FILENO);
     int null_fd = open("/dev/null", O_WRONLY);
     dup2(null_fd, STDERR_FILENO);
     close(null_fd);
-    
+
     // Force environment variables before Python init
     putenv("PYTHONWARNINGS=ignore");
     putenv("PYTHONNOUSERSITE=1");
-    
+
     Py_Initialize();
-    
+
     // Restore stderr
     dup2(stderr_fd, STDERR_FILENO);
     close(stderr_fd);
-    
+
     if (!Py_IsInitialized()) {
         return 0;
     }
-    
+
     // Suppress any remaining warnings at Python level
     PyRun_SimpleString("import warnings; warnings.filterwarnings('ignore')");
     PyRun_SimpleString("import logging; logging.disable(logging.WARNING)");
-    
+
     // Add current directory to Python path
     PyRun_SimpleString("import sys\nsys.path.append('.')");
-    
+
     // Import our mobile crypto module
     crypto_module = PyImport_ImportModule("mobile_crypto_core");
     if (!crypto_module) {
         PyErr_Print();
         return 0;
     }
-    
+
     return 1;
 }
 
@@ -69,17 +69,17 @@ char* call_python_function(const char* func_name, const char* arg1, const char* 
     if (!crypto_module) {
         return strdup("ERROR: Crypto module not initialized");
     }
-    
+
     PyObject *func = PyObject_GetAttrString(crypto_module, func_name);
     if (!func || !PyCallable_Check(func)) {
         Py_XDECREF(func);
         return strdup("ERROR: Function not found or not callable");
     }
-    
+
     PyObject *args = NULL;
     PyObject *arg1_obj = NULL;
     PyObject *arg2_obj = NULL;
-    
+
     if (arg2) {
         arg1_obj = PyUnicode_FromString(arg1);
         arg2_obj = PyUnicode_FromString(arg2);
@@ -93,25 +93,25 @@ char* call_python_function(const char* func_name, const char* arg1, const char* 
     } else {
         args = PyTuple_New(0);
     }
-    
+
     PyObject *result = PyObject_CallObject(func, args);
     Py_DECREF(args);
     Py_DECREF(func);
-    
+
     if (!result) {
         PyErr_Print();
         return strdup("ERROR: Function call failed");
     }
-    
+
     const char *result_str = PyUnicode_AsUTF8(result);
     if (!result_str) {
         Py_DECREF(result);
         return strdup("ERROR: Failed to convert result to string");
     }
-    
+
     char *copy = strdup(result_str);
     Py_DECREF(result);
-    
+
     return copy;
 }
 

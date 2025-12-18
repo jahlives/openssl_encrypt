@@ -13,7 +13,7 @@ docker-image-daily:
   # 2. Builds python-liboqs:3.13-alpine with fresh liboqs 0.12.0
   # 3. Tests the built base image with basic PQC operations
   # 4. Runs main CI test suite using the newly built base image
-  # 
+  #
   # Manual triggers:
   # - Can manually trigger docker-build-base job on dev branch
   # - Can manually trigger on main branch for release image builds

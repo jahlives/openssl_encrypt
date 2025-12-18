@@ -38,7 +38,7 @@ Flutter-based mobile application for OpenSSL Encrypt with Python FFI integration
 
 ## 🚀 **Features Implemented**
 
-### **Core Cryptography** 
+### **Core Cryptography**
 - **29+ Encryption Algorithms**: Full access to main OpenSSL Encrypt algorithms
 - **Advanced Algorithms**: AES-GCM, ChaCha20-Poly1305, XChaCha20-Poly1305, AES-SIV, AES-OCB3, Camellia
 - **Post-Quantum Ready**: ML-KEM, Kyber, MAYO, CROSS algorithms available
@@ -90,7 +90,7 @@ make clean && make all && make test
 ## 🛠️ **Development Setup**
 
 ### Prerequisites
-- Flutter 3.24.5+ 
+- Flutter 3.24.5+
 - Python 3.13 with development headers
 - clang compiler
 - GTK3 development libraries
@@ -132,7 +132,7 @@ The mobile app currently supports:
 
 1. **Text Encryption**: Enter plain text and password, get encrypted JSON with chained hashing
 2. **Text Decryption**: Decrypt previously encrypted text with correct password (CLI-compatible)
-3. **🆕 Hash Chain Configuration**: Configure 8 hash algorithms with custom rounds 
+3. **🆕 Hash Chain Configuration**: Configure 8 hash algorithms with custom rounds
 4. **🆕 KDF Parameters**: PBKDF2, Scrypt, Argon2 with custom parameters
 5. **🆕 CLI Compatibility**: Files encrypted on mobile work with desktop CLI
 6. **Algorithm Display**: Shows all supported encryption and hash algorithms
@@ -178,7 +178,7 @@ cd openssl_encrypt_mobile
 flutter run
 
 # In the app:
-# 1. Enter text: "Hello OpenSSL Encrypt Mobile!"  
+# 1. Enter text: "Hello OpenSSL Encrypt Mobile!"
 # 2. Enter password: "test123"
 # 3. Click "Encrypt" - see encrypted JSON
 # 4. Click "Decrypt" - see original text restored
@@ -186,15 +186,15 @@ flutter run
 
 ## 📈 **Success Metrics**
 
-✅ Flutter app builds and runs successfully  
-✅ Mock encryption/decryption works correctly  
+✅ Flutter app builds and runs successfully
+✅ Mock encryption/decryption works correctly
 ✅ **🆕 Chained hash/KDF implementation complete**
 ✅ **🆕 CLI compatibility verified**
 ✅ **🆕 Custom hash rounds UI implemented**
-✅ UI is responsive and user-friendly  
-✅ Tests pass without errors  
-✅ Python crypto core functions properly  
-⚠️ FFI integration needs memory management fixes  
+✅ UI is responsive and user-friendly
+✅ Tests pass without errors
+✅ Python crypto core functions properly
+⚠️ FFI integration needs memory management fixes
 ⚠️ UI overflow on advanced settings needs fixing
 🚧 Android deployment pending SDK setup
 

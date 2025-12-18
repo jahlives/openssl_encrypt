@@ -14,7 +14,7 @@ This is a comprehensive plan to create native iOS and Android apps that leverage
 ```typescript
 // Pros for your project:
 - Mature Python bridge solutions (react-native-python-runner)
-- Large ecosystem for crypto/security libraries  
+- Large ecosystem for crypto/security libraries
 - Native iOS/Android API access
 - TypeScript support for better code quality
 - Meta's backing ensures long-term support
@@ -32,7 +32,7 @@ This is a comprehensive plan to create native iOS and Android apps that leverage
 - Growing Python FFI support
 - Google's backing, rapidly evolving
 
-// Cons:  
+// Cons:
 - Less mature Python integration
 - Smaller ecosystem for specialized crypto needs
 ```
@@ -45,7 +45,7 @@ This is a comprehensive plan to create native iOS and Android apps that leverage
 │        Mobile App Layer         │
 │  (React Native / TypeScript)    │
 ├─────────────────────────────────┤
-│     Native Bridge Layer        │  
+│     Native Bridge Layer        │
 │   - File system access         │
 │   - Biometric authentication   │
 │   - Keychain/Keystore API      │
@@ -97,7 +97,7 @@ npm install --save @react-native-async-storage/async-storage
 npm install --save react-native-progress react-native-vector-icons
 
 # Python integration
-npm install --save react-native-python-runner  
+npm install --save react-native-python-runner
 # or alternative: rn-bridge or custom FFI solution
 ```
 
@@ -112,19 +112,19 @@ npm install --save react-native-python-runner
 class MobileCryptoCore:
     def __init__(self):
         self.algorithms = [
-            "fernet", "aes-gcm", "chacha20-poly1305", 
+            "fernet", "aes-gcm", "chacha20-poly1305",
             "ml-kem-512-hybrid", "ml-kem-768-hybrid"
         ]
-    
-    def encrypt_file_mobile(self, file_path: str, password: str, 
+
+    def encrypt_file_mobile(self, file_path: str, password: str,
                           algorithm: str = "aes-gcm") -> dict:
         """Mobile-optimized encryption with progress callbacks"""
         # Implement with mobile-specific considerations:
         # - Memory-efficient streaming for large files
-        # - Progress callbacks for UI updates  
+        # - Progress callbacks for UI updates
         # - Error handling for mobile constraints
         pass
-    
+
     def decrypt_file_mobile(self, file_path: str, password: str) -> dict:
         """Mobile-optimized decryption"""
         pass
@@ -138,15 +138,15 @@ import { PythonRunner } from 'react-native-python-runner';
 
 export class PythonCrypto {
     private pythonRunner: PythonRunner;
-    
+
     constructor() {
         this.pythonRunner = new PythonRunner({
             modulePath: './mobile_crypto_core.py',
             pythonPath: '/path/to/embedded/python'
         });
     }
-    
-    async encryptFile(filePath: string, password: string, 
+
+    async encryptFile(filePath: string, password: string,
                      algorithm: string): Promise<EncryptResult> {
         const result = await this.pythonRunner.call('encrypt_file_mobile', {
             file_path: filePath,
@@ -155,7 +155,7 @@ export class PythonCrypto {
         });
         return result;
     }
-    
+
     async decryptFile(filePath: string, password: string): Promise<DecryptResult> {
         const result = await this.pythonRunner.call('decrypt_file_mobile', {
             file_path: filePath,
@@ -176,7 +176,7 @@ export class PythonCrypto {
 1. Quick Encrypt Flow:
    Select File → Choose Algorithm → Enter Password → Encrypt → Share
 
-2. Decrypt Flow:  
+2. Decrypt Flow:
    Select Encrypted File → Enter Password → Decrypt → View/Save
 
 3. Advanced Settings:
@@ -262,7 +262,7 @@ export class FileManager {
             type: result[0].type
         };
     }
-    
+
     async getFileList(directory: string): Promise<FileInfo[]> {
         const files = await RNFS.readDir(directory);
         return files.map(file => ({
@@ -272,7 +272,7 @@ export class FileManager {
             isDirectory: file.isDirectory()
         }));
     }
-    
+
     async shareFile(filePath: string): Promise<void> {
         // Implementation for sharing encrypted files
     }
@@ -299,24 +299,24 @@ pip install python-for-android
 # mobile_optimizations.py
 class MobileOptimizer:
     @staticmethod
-    def stream_encrypt_large_file(file_path: str, password: str, 
+    def stream_encrypt_large_file(file_path: str, password: str,
                                 progress_callback=None):
         """Stream-based encryption for mobile memory constraints"""
         CHUNK_SIZE = 64 * 1024  # 64KB chunks for mobile
-        
+
         with open(file_path, 'rb') as infile:
             total_size = os.path.getsize(file_path)
             processed = 0
-            
+
             while chunk := infile.read(CHUNK_SIZE):
                 # Encrypt chunk
                 encrypted_chunk = encrypt_chunk(chunk, password)
-                
+
                 # Update progress for UI
                 processed += len(chunk)
                 if progress_callback:
                     progress_callback(processed / total_size * 100)
-                
+
                 yield encrypted_chunk
 ```
 
@@ -356,7 +356,7 @@ export class BiometricManager {
         }
         return false;
     }
-    
+
     async authenticateWithBiometric(): Promise<boolean> {
         try {
             await TouchID.authenticate('Unlock OpenSSL Encrypt');
@@ -385,7 +385,7 @@ export class KeychainManager {
             return false;
         }
     }
-    
+
     async retrieveSecureKey(keyId: string): Promise<string | null> {
         try {
             const credentials = await Keychain.getInternetCredentials(keyId);
@@ -410,13 +410,13 @@ export class PQCKeyManager {
         const result = await this.pythonCrypto.call('generate_pqc_keypair', {
             algorithm: algorithm
         });
-        
+
         // Store in secure keychain
         await this.keychainManager.storeSecureKey(
-            `pqc_private_${algorithm}`, 
+            `pqc_private_${algorithm}`,
             result.privateKey
         );
-        
+
         return {
             publicKey: result.publicKey,
             keyId: result.keyId
@@ -437,7 +437,7 @@ export const QRKeyShare = ({ publicKey }: { publicKey: string }) => {
         key: publicKey,
         timestamp: Date.now()
     });
-    
+
     return (
         <QRCode
             value={keyData}
@@ -526,14 +526,14 @@ export const QRKeyShare = ({ publicKey }: { publicKey: string }) => {
 - [ ] Install iOS/Android development tools
 - [ ] Create React Native project structure
 
-### **Phase 3: Integration (Weeks 4-5)**  
+### **Phase 3: Integration (Weeks 4-5)**
 - [ ] Create proof-of-concept Python bridge integration
 - [ ] Develop mobile-optimized Python crypto core
 - [ ] Implement JavaScript bridge interface
 - [ ] Test basic Python function calls from React Native
 
 ### **Phase 4: Design (Weeks 6-7)**
-- [ ] Design mobile UI/UX mockups and user workflows  
+- [ ] Design mobile UI/UX mockups and user workflows
 - [ ] Create React Native component architecture
 - [ ] Implement basic navigation and screen structure
 - [ ] Design algorithm selection interface
@@ -550,10 +550,10 @@ export const QRKeyShare = ({ publicKey }: { publicKey: string }) => {
 - [ ] Add progress callbacks for UI updates
 - [ ] Optimize memory usage for large files
 
-### **Phase 7: Basic Functionality (Weeks 9-11)**  
+### **Phase 7: Basic Functionality (Weeks 9-11)**
 - [ ] Implement basic encryption/decryption functionality
 - [ ] Create password input and validation
-- [ ] Add algorithm selection interface  
+- [ ] Add algorithm selection interface
 - [ ] Test core encryption workflows
 
 ### **Phase 8: Security Features (Weeks 12-13)**
@@ -568,7 +568,7 @@ export const QRKeyShare = ({ publicKey }: { publicKey: string }) => {
 - [ ] Create QR code key sharing functionality
 - [ ] Implement key backup and recovery
 
-### **Phase 10: Testing & Polish (Weeks 17-18)**  
+### **Phase 10: Testing & Polish (Weeks 17-18)**
 - [ ] Testing, optimization, and app store preparation
 - [ ] Performance testing on multiple devices
 - [ ] Security audit and penetration testing

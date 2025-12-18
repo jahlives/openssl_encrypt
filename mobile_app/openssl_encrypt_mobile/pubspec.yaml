@@ -33,18 +33,18 @@ dependencies:
 
   # FFI support for native crypto integration
   ffi: ^2.1.0
-  
+
   # Native crypto support
   crypto: ^3.0.3
   pointycastle: ^3.7.3
-  
+
   # File system operations
   file_picker: ^8.1.4
   path: ^1.9.0
-  
+
   # Progress indicators and UI enhancements
   percent_indicator: ^4.2.3
-  
+
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8

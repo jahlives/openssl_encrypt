@@ -30,7 +30,7 @@ class FileInfo {
   /// Check if file contains valid OpenSSL Encrypt metadata
   Future<bool> get isEncrypted async {
     if (_isEncrypted != null) return _isEncrypted!;
-    
+
     try {
       final file = File(path);
       if (!await file.exists()) {
@@ -49,7 +49,7 @@ class FileInfo {
             final metadataBytes = base64Decode(parts[0]);
             final metadataJson = utf8.decode(metadataBytes);
             final metadata = jsonDecode(metadataJson);
-            
+
             if (metadata is Map<String, dynamic>) {
               // Check for CLI format version 5 structure
               if (metadata.containsKey('format_version') ||
@@ -64,22 +64,22 @@ class FileInfo {
           }
         }
       }
-      
+
       // Check for JSON formats (mobile or test formats)
       try {
         final jsonData = jsonDecode(content);
         if (jsonData is Map<String, dynamic>) {
           // Check for mobile format
-          if (jsonData.containsKey('format') && 
+          if (jsonData.containsKey('format') &&
               jsonData['format'] == 'openssl_encrypt_mobile' &&
               jsonData.containsKey('encrypted_data') &&
               jsonData.containsKey('metadata')) {
             _isEncrypted = true;
             return true;
           }
-          
+
           // Check for test JSON format (direct JSON with encrypted_data and metadata)
-          if (jsonData.containsKey('encrypted_data') && 
+          if (jsonData.containsKey('encrypted_data') &&
               jsonData.containsKey('metadata')) {
             final metadata = jsonData['metadata'];
             if (metadata is Map<String, dynamic>) {
@@ -94,11 +94,11 @@ class FileInfo {
       } catch (e) {
         // Not JSON format
       }
-      
+
     } catch (e) {
       print('File encryption check failed: $e');
     }
-    
+
     _isEncrypted = false;
     return false;
   }
@@ -249,12 +249,12 @@ class FileManager {
   String getDecryptedFileName(String encryptedPath) {
     String baseName = path.basenameWithoutExtension(encryptedPath);
     final dir = path.dirname(encryptedPath);
-    
+
     // Remove .enc extension if present
     if (baseName.endsWith('.enc')) {
       baseName = baseName.substring(0, baseName.length - 4);
     }
-    
+
     return path.join(dir, '$baseName.decrypted');
   }
 

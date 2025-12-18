@@ -11,7 +11,7 @@ This document outlines potential new features and enhancements for the OpenSSL E
 - **Description**: Advanced key lifecycle management
 - **Components**:
   - Automatic key rotation with configurable intervals
-  - Key usage tracking and expiration policies  
+  - Key usage tracking and expiration policies
   - Key separation for different purposes (encryption, signing, transport)
   - Hardware Security Module (HSM) integration
   - Key escrow and recovery mechanisms
@@ -65,7 +65,7 @@ This document outlines potential new features and enhancements for the OpenSSL E
 - **Estimated Effort**: 3-4 weeks
 
 ### 6. **Portable Media & Offline Distribution**
-- **Status**: Not implemented  
+- **Status**: Not implemented
 - **Description**: Secure offline distribution and portable media support
 - **Components**:
   - USB drive encryption with auto-run capabilities
@@ -76,7 +76,7 @@ This document outlines potential new features and enhancements for the OpenSSL E
 - **Estimated Effort**: 2-3 weeks
 
 ### 7. **Database Encryption & Integration**
-- **Status**: Not implemented  
+- **Status**: Not implemented
 - **Description**: Transparent database encryption capabilities
 - **Components**:
   - SQLite database encryption plugin
@@ -116,7 +116,7 @@ This document outlines potential new features and enhancements for the OpenSSL E
 - **Components**:
   - Fix and re-enable WEBP/MP3 steganography
   - Video steganography (MP4, AVI, MKV)
-  - Document steganography (PDF, DOCX, XLSX) 
+  - Document steganography (PDF, DOCX, XLSX)
   - Archive steganography (ZIP, TAR, 7z files)
   - Filesystem steganography (hidden partitions, slack space)
   - Print media steganography (QR codes, dot patterns)
@@ -229,6 +229,6 @@ This document outlines potential new features and enhancements for the OpenSSL E
 
 ---
 
-**Created by**: Claude Code Analysis  
-**Last Updated**: August 31, 2025  
+**Created by**: Claude Code Analysis
+**Last Updated**: August 31, 2025
 **Status**: Living document - update as features are implemented

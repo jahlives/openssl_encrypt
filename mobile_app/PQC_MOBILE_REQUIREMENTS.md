@@ -47,7 +47,7 @@ The CLI uses a sophisticated hybrid approach:
 
 **HQC Hybrid Modes:**
 - `hqc-128-hybrid`: HQC-128 + AES-GCM
-- `hqc-192-hybrid`: HQC-192 + AES-GCM  
+- `hqc-192-hybrid`: HQC-192 + AES-GCM
 - `hqc-256-hybrid`: HQC-256 + AES-GCM
 - Plus ChaCha20-Poly1305 variants
 
@@ -67,7 +67,7 @@ The CLI uses a sophisticated hybrid approach:
     "encryption_data": "aes-gcm",
     "pqc_public_key": "base64_encoded_public_key",
     "pqc_private_key": "base64_encoded_encrypted_private_key",
-    "pqc_key_salt": "base64_key_salt", 
+    "pqc_key_salt": "base64_key_salt",
     "pqc_key_encrypted": true
   },
   "hashes": {
@@ -97,7 +97,7 @@ pip install liboqs-python
 
 #### Method 2: Manual Installation (if PyPI unavailable)
 ```bash
-# Step 1: Install system dependencies  
+# Step 1: Install system dependencies
 sudo dnf install git gcc cmake ninja-build make golang python3-devel openssl-devel
 # (or apt-get for Ubuntu/Debian)
 
@@ -122,12 +122,12 @@ The CLI implementation relies heavily on the **Open Quantum Safe (OQS) liboqs** 
 import oqs
 
 # Key Encapsulation Mechanism
-kem = oqs.KeyEncapsulation("ML-KEM-1024") 
+kem = oqs.KeyEncapsulation("ML-KEM-1024")
 public_key, private_key = kem.generate_keypair()
 ciphertext, shared_secret = kem.encap_secret(public_key)
 recovered_secret = kem.decap_secret(ciphertext)
 
-# Digital Signatures  
+# Digital Signatures
 sig = oqs.Signature("ML-DSA-65")
 public_key, private_key = sig.generate_keypair()
 signature = sig.sign(message)
@@ -139,7 +139,7 @@ is_valid = sig.verify(message, signature, public_key)
 The CLI implementation consists of several key modules:
 
 1. **`modules/pqc.py`** - Core PQC implementation and algorithm management
-2. **`modules/pqc_adapter.py`** - Abstraction layer between native and liboqs algorithms  
+2. **`modules/pqc_adapter.py`** - Abstraction layer between native and liboqs algorithms
 3. **`modules/pqc_liboqs.py`** - Direct liboqs integration and wrapper classes
 4. **`modules/crypt_core.py`** - Integration with main encryption system
 
@@ -163,7 +163,7 @@ The CLI implementation consists of several key modules:
 - **Size constraints** (liboqs is a large library)
 - **Performance** concerns on older devices
 
-#### Android Challenges  
+#### Android Challenges
 - **NDK integration** for native libraries
 - **Multiple architectures** (arm64-v8a, armeabi-v7a, x86_64)
 - **API level compatibility** across different Android versions
@@ -190,7 +190,7 @@ The CLI implementation consists of several key modules:
 
 **Pros**:
 - ✅ **Full compatibility** with CLI implementation
-- ✅ **All algorithms supported** 
+- ✅ **All algorithms supported**
 - ✅ **Minimal code changes** needed
 - ✅ **Proven stability** (same code as CLI)
 
@@ -212,24 +212,24 @@ except ImportError:
 def encrypt_pqc_hybrid(self, data, password, algorithm, public_key=None):
     if not PQC_AVAILABLE:
         raise ImportError("PQC not available - install liboqs-python")
-    
+
     # 1. Generate symmetric key
     symmetric_key = os.urandom(32)
-    
-    # 2. Encrypt data with symmetric algorithm  
+
+    # 2. Encrypt data with symmetric algorithm
     if algorithm.endswith('-aes-gcm'):
         encrypted_data = self.encrypt_aes_gcm(data, symmetric_key)
     elif algorithm.endswith('-chacha20'):
         encrypted_data = self.encrypt_chacha20(data, symmetric_key)
-    
+
     # 3. Encapsulate symmetric key with PQC
     pqc_algorithm = algorithm.split('-hybrid')[0].upper()
     kem = oqs.KeyEncapsulation(pqc_algorithm)
     if not public_key:
         public_key, private_key = kem.generate_keypair()
-    
+
     encapsulated_key, _ = kem.encap_secret(public_key)
-    
+
     # 4. Combine formats
     return encapsulated_key + encrypted_data
 ```
@@ -281,7 +281,7 @@ def encrypt_pqc_hybrid(self, data, password, algorithm, public_key=None):
 
 **Priority Algorithms**:
 1. **ML-KEM-1024** (most important, NIST standard)
-2. **ML-KEM-768** (balance of security/performance)  
+2. **ML-KEM-768** (balance of security/performance)
 3. **ML-DSA-65** (signatures, if needed)
 
 **Implementation Strategy**:
@@ -307,7 +307,7 @@ def encrypt_pqc_hybrid(self, data, password, algorithm, public_key=None):
 
 ### App Size Impact
 - **Option 1 (liboqs)**: +20-50MB
-- **Option 2 (native)**: +5-10MB  
+- **Option 2 (native)**: +5-10MB
 - **Option 3 (server)**: +1-2MB
 - **Option 4 (selective)**: +10-20MB
 
@@ -331,12 +331,12 @@ def encrypt_pqc_hybrid(self, data, password, algorithm, public_key=None):
 3. **CLI compatibility testing**
 
 ### Phase 3: Extended Support (2 weeks)
-1. **Add ML-KEM-768 support** 
+1. **Add ML-KEM-768 support**
 2. **Implement additional symmetric algorithms** (if needed)
 3. **Performance optimization**
 4. **Memory usage optimization**
 
-### Phase 4: Testing & Validation (2 weeks)  
+### Phase 4: Testing & Validation (2 weeks)
 1. **Comprehensive CLI compatibility testing**
 2. **Performance benchmarking**
 3. **Security audit**
@@ -353,19 +353,19 @@ def encrypt_pqc_hybrid(self, data, password, algorithm, public_key=None):
 
 **When to Use Post-Quantum Encryption** (official guidelines):
 - Data that must remain confidential for 10+ years
-- Information subject to "harvest now, decrypt later" attacks  
+- Information subject to "harvest now, decrypt later" attacks
 - Highly sensitive data requiring maximum security
 
 **Hybrid Security Model**:
 > "All post-quantum encryption uses hybrid encryption combining:
 > 1. **Classical Encryption**: AES-GCM or ChaCha20-Poly1305 for data encryption
 > 2. **Post-Quantum Key Encapsulation**: ML-KEM (Kyber) or HQC for key protection
-> 
+>
 > This ensures data remains secure even if either classical or quantum algorithms are compromised."
 
 ### Implementation Security Requirements
 - **Private key protection** - Ensure proper secure storage
-- **Memory management** - Clear sensitive data from memory  
+- **Memory management** - Clear sensitive data from memory
 - **Random number generation** - Use cryptographically secure RNG
 - **Side-channel protections** - Following CLI security model
 
@@ -396,7 +396,7 @@ def encrypt_pqc_hybrid(self, data, password, algorithm, public_key=None):
 
 ## 🎉 Conclusion
 
-Post-quantum cryptography support for mobile is **technically feasible** but requires careful consideration of trade-offs between **compatibility**, **performance**, and **implementation complexity**. 
+Post-quantum cryptography support for mobile is **technically feasible** but requires careful consideration of trade-offs between **compatibility**, **performance**, and **implementation complexity**.
 
 **Recommended approach**: Start with **Option 4 (Selective Algorithm Implementation)** focusing on ML-KEM-1024, with a clear path to expand support based on user needs and technical constraints.
 

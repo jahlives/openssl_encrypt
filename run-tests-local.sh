@@ -45,7 +45,7 @@ podman run --rm -it \
         python -c 'import randomx; print(\"✓ RandomX available\")' || echo '❌ RandomX missing'
         python -c 'import pytest; print(\"✓ pytest available\")' || echo '❌ pytest missing'
         python -c 'import oqs; print(\"✓ liboqs available:\", oqs.oqs_version())' || echo '❌ liboqs missing'
-        
+
         echo ''
         echo 'Running unittests...'
         # Ensure PYTEST_CURRENT_TEST is set for test mode detection

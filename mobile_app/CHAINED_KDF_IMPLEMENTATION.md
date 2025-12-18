@@ -16,7 +16,7 @@
 
 ### **Available KDFs (CLI Order):**
 1. **PBKDF2** - Enable/disable toggle + rounds parameter
-2. **Scrypt** - Enable/disable toggle + N/r/p/rounds parameters  
+2. **Scrypt** - Enable/disable toggle + N/r/p/rounds parameters
 3. **Argon2** - Enable/disable toggle + memory_cost/time_cost/parallelism/rounds parameters
 4. **HKDF** - Enable/disable toggle + info string parameter
 5. **Balloon** - Enable/disable toggle + space_cost/time_cost parameters
@@ -106,10 +106,10 @@ KDF Chain: pbkdf2, scrypt, argon2
 Result: "KDF Chain: pbkdf2, scrypt, argon2"
 ```
 
-### **Scenario 2: Performance Optimized**  
+### **Scenario 2: Performance Optimized**
 ```
 Hash Chain: sha256:500
-KDF Chain: pbkdf2 
+KDF Chain: pbkdf2
 Result: "KDF Chain: pbkdf2"
 ```
 
@@ -124,7 +124,7 @@ Result: "KDF Chain: pbkdf2, scrypt, argon2, hkdf"
 
 ### ✅ **Issues Fixed:**
 1. **Multiple KDF selection** - Can now enable multiple KDFs simultaneously
-2. **Parameter visibility** - All KDF parameters are shown and configurable  
+2. **Parameter visibility** - All KDF parameters are shown and configurable
 3. **Chained processing** - KDFs are applied in sequence like the CLI
 4. **UI feedback** - Real-time display of enabled KDFs and parameters
 
@@ -137,7 +137,7 @@ Result: "KDF Chain: pbkdf2, scrypt, argon2, hkdf"
 ### 📱 **Mobile Experience:**
 - ✅ **Intuitive toggles** for each KDF
 - ✅ **Expandable sections** to manage screen space
-- ✅ **Quick presets** for common configurations  
+- ✅ **Quick presets** for common configurations
 - ✅ **Real-time results** showing active chains
 
 **Result: The mobile app now provides the same advanced KDF chaining capabilities as the desktop CLI, with a user-friendly interface that makes complex cryptographic configurations accessible to mobile users!** 🎯

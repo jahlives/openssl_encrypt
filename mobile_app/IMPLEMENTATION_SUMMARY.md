@@ -12,7 +12,7 @@ Achieve full CLI-Mobile bidirectional cryptographic compatibility for the OpenSS
 - **Features**: Proven security, timestamp-based expiration support
 
 ### 2. AES-GCM (AES-256-GCM)
-- **Status**: ✅ FULLY WORKING  
+- **Status**: ✅ FULLY WORKING
 - **Compatibility**: CLI ↔ Mobile bidirectional encryption/decryption
 - **Key Size**: 32 bytes (raw)
 - **Nonce**: 96-bit (12 bytes)
@@ -37,7 +37,7 @@ Achieve full CLI-Mobile bidirectional cryptographic compatibility for the OpenSS
 
 ### 5. ChaCha20-Poly1305
 - **Status**: ✅ FULLY WORKING
-- **Compatibility**: CLI ↔ Mobile bidirectional encryption/decryption  
+- **Compatibility**: CLI ↔ Mobile bidirectional encryption/decryption
 - **Key Size**: 32 bytes (raw)
 - **Nonce**: 96-bit (12 bytes)
 - **Format**: nonce + ciphertext + 16-byte auth_tag
@@ -45,9 +45,9 @@ Achieve full CLI-Mobile bidirectional cryptographic compatibility for the OpenSS
 
 ### 6. XChaCha20-Poly1305
 - **Status**: ⚠️ MOBILE WORKING, CLI COMPATIBILITY ISSUE
-- **Compatibility**: Mobile round-trip ✅ | CLI decryption ❌ 
+- **Compatibility**: Mobile round-trip ✅ | CLI decryption ❌
 - **Key Size**: 32 bytes (raw)
-- **Nonce**: 192-bit (24 bytes) 
+- **Nonce**: 192-bit (24 bytes)
 - **Format**: nonce + ciphertext + 16-byte auth_tag
 - **Dependencies**: `pip install pynacl`
 - **Features**: Extended nonce ChaCha20, better for high-volume encryption
@@ -98,7 +98,7 @@ Implemented exact CLI-compatible multi-step key derivation:
 ### Algorithm Compatibility Tests
 ```
 ✅ Fernet:              CLI → Mobile ✓  |  Mobile → CLI ✓
-✅ AES-GCM:             CLI → Mobile ✓  |  Mobile → CLI ✓  
+✅ AES-GCM:             CLI → Mobile ✓  |  Mobile → CLI ✓
 ✅ AES-GCM-SIV:         CLI → Mobile ✓  |  Mobile → CLI ✓
 ✅ AES-OCB3:            CLI → Mobile ✓  |  Mobile → CLI ✓
 ✅ ChaCha20-Poly1305:   CLI → Mobile ✓  |  Mobile → CLI ✓
@@ -121,7 +121,7 @@ Implemented exact CLI-compatible multi-step key derivation:
 
 ### Core Components
 1. **`mobile_crypto_core.py`** - Main cryptographic engine with CLI compatibility
-2. **`flutter_decrypt.py`** - Standalone Python script for GUI integration  
+2. **`flutter_decrypt.py`** - Standalone Python script for GUI integration
 3. **`crypto_ffi.dart`** - Flutter FFI interface with multiple execution strategies
 4. **Test Files** - Comprehensive compatibility testing for each algorithm
 
@@ -137,9 +137,9 @@ Implemented exact CLI-compatible multi-step key derivation:
 - `cryptography` - For Fernet, AES-GCM, ChaCha20-Poly1305, hash/KDF operations
 - `argon2-cffi` - For Argon2 KDF support (optional but recommended)
 
-### Optional (Extended Features) 
+### Optional (Extended Features)
 - `pynacl` - For XChaCha20-Poly1305 support
-- `blake3` - For BLAKE3 hash support  
+- `blake3` - For BLAKE3 hash support
 - `whirlpool` or `pywhirlpool` - For Whirlpool hash support
 - Custom balloon hash module - For Balloon KDF support
 
@@ -150,7 +150,7 @@ The user specifically requested:
 
 ### ✅ Completed (5/7 algorithms)
 - **Fernet** (AES-128-CBC + HMAC) - ✅ Working
-- **AES-GCM** (AES-256-GCM) - ✅ Working  
+- **AES-GCM** (AES-256-GCM) - ✅ Working
 - **AES-GCM-SIV** (AES-256-GCM-SIV) - ✅ Working
 - **AES-OCB3** (AES-256-OCB3) - ✅ Working
 - **ChaCha20-Poly1305** - ✅ Working

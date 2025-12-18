@@ -122,13 +122,13 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       final hashAlgorithms = await widget.cryptoFFI.getHashAlgorithms();
       final kdfAlgorithms = await widget.cryptoFFI.getKdfAlgorithms();
       final securityLevels = await widget.cryptoFFI.getSecurityLevels();
-      
+
       setState(() {
         _algorithms = algorithms;
         _hashAlgorithms = hashAlgorithms;
         _kdfAlgorithms = kdfAlgorithms;
         _securityLevels = securityLevels;
-        
+
         if (algorithms.isNotEmpty) {
           _selectedAlgorithm = algorithms.first;
         }
@@ -191,7 +191,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
         final activeHashes = _hashRounds.entries.where((e) => e.value > 0).map((e) => '${e.key}: ${e.value}').join(', ');
         final enabledKdfs = _kdfConfig.entries.where((e) => e.value['enabled'] == true).map((e) => e.key).join(', ');
         final kdfInfo = enabledKdfs.isEmpty ? 'None' : enabledKdfs;
-        
+
         _result = 'Text encrypted successfully!\n\n'
             'Algorithm: $_selectedAlgorithm\n'
             'Hash Chain: $activeHashes\n'
@@ -325,7 +325,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                                 ],
                               ),
                             ),
-                            if (_showHashConfig) ...[ 
+                            if (_showHashConfig) ...[
                               const SizedBox(height: 12),
                               const Text(
                                 'Configure hash algorithms and rounds (CLI order)',
@@ -432,7 +432,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                                 _buildNumberField('pbkdf2', 'rounds', 'Rounds', _kdfConfig['pbkdf2']?['rounds'] ?? 100000)
                               ]),
                               const SizedBox(height: 8),
-                              // Scrypt  
+                              // Scrypt
                               _buildKdfConfig('scrypt', 'Scrypt', [
                                 _buildNumberField('scrypt', 'rounds', 'Rounds', _kdfConfig['scrypt']?['rounds'] ?? 1),
                               ]),
@@ -596,7 +596,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     );
   }
 
-  // Helper method to build number input fields  
+  // Helper method to build number input fields
   Widget _buildNumberField(String kdfId, String paramId, String label, int defaultValue) {
     return Padding(
       padding: const EdgeInsets.only(top: 8.0),
@@ -723,7 +723,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
 
       // Generate output filename
       final outputPath = widget.fileManager.getEncryptedFileName(_selectedFile!.path);
-      
+
       // Save encrypted file
       final success = await widget.fileManager.writeFileText(outputPath, encrypted);
 
@@ -805,16 +805,16 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
         if (parts.length != 2) {
           throw Exception('Invalid CLI file format - expected metadata:data');
         }
-        
+
         try {
           // Decode base64 metadata
           final metadataBytes = base64Decode(parts[0]);
           final metadataJson = utf8.decode(metadataBytes);
           metadata = jsonDecode(metadataJson) as Map<String, dynamic>;
-          
+
           // The encrypted data is already base64 encoded
           encryptedData = parts[1];
-          
+
         } catch (e) {
           throw Exception('Failed to parse CLI format: $e');
         }
@@ -822,7 +822,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
         // JSON formats (mobile or test)
         try {
           final jsonData = jsonDecode(fileContent);
-          
+
           if (jsonData.containsKey('format') && jsonData['format'] == 'openssl_encrypt_mobile') {
             // Mobile format
             encryptedData = jsonData['encrypted_data'];
@@ -867,11 +867,11 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
       // Store decrypted content and display it without saving to disk
       setState(() {
         _decryptedContent = decrypted; // Store for optional saving
-        
-        final contentPreview = decrypted.length > 500 
+
+        final contentPreview = decrypted.length > 500
             ? '${decrypted.substring(0, 500)}...\n\n[Content truncated - ${decrypted.length} total characters]'
             : decrypted;
-            
+
         _result = 'File decrypted successfully!\n\n'
             'Original file: ${_selectedFile!.name}\n'
             'Size: ${_selectedFile!.sizeFormatted}\n'

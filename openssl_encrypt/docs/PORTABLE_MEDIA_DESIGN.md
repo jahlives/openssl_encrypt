@@ -8,7 +8,7 @@ This document outlines the design for secure offline distribution and portable m
 
 ## 🔥 Core Features
 
-### 1. **USB Drive Encryption with Auto-Run** 
+### 1. **USB Drive Encryption with Auto-Run**
 *Priority: High - Foundation for all portable features*
 
 #### **Concept:**
@@ -108,7 +108,7 @@ Use Case: Single key sharing
 **Multi-QR Key Distribution:**
 ```
 QR Code 1/3: Header + Key Part 1
-QR Code 2/3: Key Part 2 + Checksum 1  
+QR Code 2/3: Key Part 2 + Checksum 1
 QR Code 3/3: Key Part 3 + Final Checksum
 ```
 
@@ -120,14 +120,14 @@ QR Code 3/3: Key Part 3 + Final Checksum
 openssl_encrypt --export-key mykey --format qr --output keyshare.png
 openssl_encrypt --export-key mykey --format qr-multi --pages 3
 
-# Import from QR codes  
+# Import from QR codes
 openssl_encrypt --import-key --from-qr keyshare.png
 openssl_encrypt --import-key --from-qr-scan  # Use camera/scanner
 ```
 
 **Data Formats:**
 - **Small Files**: Direct QR encoding for files <1KB
-- **Large Files**: QR contains decryption key, encrypted file shared separately  
+- **Large Files**: QR contains decryption key, encrypted file shared separately
 - **Configuration**: Security profiles via QR codes
 - **Recovery**: Emergency key recovery through printed QR codes
 
@@ -182,7 +182,7 @@ Military-grade secure deletion for removable media.
 
 #### **Sanitization Levels:**
 - **Basic**: Single-pass zero fill
-- **Enhanced**: 3-pass DoD 5220.22-M standard  
+- **Enhanced**: 3-pass DoD 5220.22-M standard
 - **Paranoid**: 7-pass random data + verification
 - **Custom**: User-defined pattern sequences
 
@@ -218,7 +218,7 @@ modules/
 
 ## 💡 Unique Value Propositions
 
-### **1. True Air-Gap Security** 
+### **1. True Air-Gap Security**
 - No network dependencies ever
 - Physical media-based key distribution
 - Tamper-evident security measures
@@ -245,7 +245,7 @@ modules/
 2. **QR Code Key Export/Import** - Unique air-gap feature
 3. **Media Integrity Verification** - Security foundation
 
-### **Phase 2: Advanced Features (Week 2-3)**  
+### **Phase 2: Advanced Features (Week 2-3)**
 4. **Auto-Run Capabilities** - User experience enhancement
 5. **Secure Media Sanitization** - Security compliance
 6. **Multi-QR Key Distribution** - Large key support

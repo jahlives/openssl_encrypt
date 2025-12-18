@@ -18,8 +18,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
     import dbus
-    from gi.repository import GLib
     from dbus.mainloop.glib import DBusGMainLoop
+    from gi.repository import GLib
+
     DBUS_AVAILABLE = True
 except ImportError:
     DBUS_AVAILABLE = False
@@ -149,6 +150,7 @@ class TestDBusFileOperations(unittest.TestCase):
         """Clean up test files"""
         if hasattr(self, "test_dir"):
             import shutil
+
             shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def test_encrypt_file(self):
@@ -266,8 +268,8 @@ class TestDBusServiceStructure(unittest.TestCase):
     def test_imports(self):
         """Test that modules can be imported"""
         try:
-            from openssl_encrypt.modules import dbus_service
-            from openssl_encrypt.modules import dbus_client
+            from openssl_encrypt.modules import dbus_client, dbus_service
+
             self.assertTrue(True)
         except ImportError as e:
             self.fail(f"Failed to import modules: {e}")
@@ -279,6 +281,7 @@ class TestDBusServiceStructure(unittest.TestCase):
 
         # Check XML is valid
         import xml.etree.ElementTree as ET
+
         try:
             tree = ET.parse(xml_path)
             root = tree.getroot()
@@ -299,10 +302,7 @@ class TestDBusServiceStructure(unittest.TestCase):
 
         for filename in required_files:
             file_path = base_path / filename
-            self.assertTrue(
-                file_path.exists(),
-                f"Required file not found: {filename}"
-            )
+            self.assertTrue(file_path.exists(), f"Required file not found: {filename}")
 
     def test_documentation_exists(self):
         """Test that documentation exists"""
