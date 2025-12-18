@@ -317,7 +317,9 @@ The documentation has been consolidated from 37+ files into 10 comprehensive gui
 
 ## Support & Issues
 
-  You can create issues by mailto:issue+world-openssl-encrypt-2-issue-+gitlab@rm-rf.ch to the linked address.
+- **Primary:** [GitHub Issues](https://github.com/jahlives/openssl_encrypt/issues)
+- **Alternative:** Email to issue+world-openssl-encrypt-2-issue-@gitlab.rm-rf.ch
+- **Security vulnerabilities:** Email only (not public issues)
 
 ## License
 
