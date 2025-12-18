@@ -169,14 +169,14 @@ The Flutter GUI automatically detects and integrates with the installed OpenSSL 
 **Solution**: Follow the specific recommendations provided by `flutter doctor` output
 
 **Problem**: Build fails with missing dependencies
-**Solution**: 
+**Solution**:
 ```bash
 # Linux: Install additional build dependencies
 sudo apt-get install build-essential libgtk-3-dev
 
 # Ensure Flutter is properly configured
 flutter config --enable-linux-desktop  # Linux
-flutter config --enable-macos-desktop  # macOS  
+flutter config --enable-macos-desktop  # macOS
 flutter config --enable-windows-desktop  # Windows
 ```
 
@@ -865,7 +865,7 @@ The `--debug` flag provides comprehensive visibility into the encryption/decrypt
 # Debug encryption process
 python -m openssl_encrypt.crypt encrypt -i document.txt --debug
 
-# Debug decryption process  
+# Debug decryption process
 python -m openssl_encrypt.crypt decrypt -i document.txt.enc --debug
 ```
 

@@ -8,8 +8,23 @@ whirlpool-py311>=1.0.0,<2.0.0 ; python_version >= '3.11'
 pywin32>=306,<307; sys_platform == 'win32'
 PyYAML>=6.0.2,<7.0.0
 
+# Steganography dependencies (v1.3.0)
+Pillow>=10.0.0,<11.0.0
+numpy>=2.1.0,<3.0.0
+blake3>=1.0.0,<2.0.0
+
+# QR Code Key Distribution dependencies (v1.3.0)
+qrcode[pil]>=7.0.0,<9.0.0
+pyzbar>=0.1.9,<1.0.0
+
 # Optional post-quantum cryptography dependencies
 # liboqs-python>=0.7.0  # Uncomment to enable post-quantum cryptography support
+
+# Optional RandomX KDF dependencies
+RandomX>=1.1.10  # RandomX key derivation function
+
+# JSON schema validation
+jsonschema>=4.0.0,<5.0.0
 
 # Development tools (commented out by default)
 pytest>=8.0.0,<9.0.0

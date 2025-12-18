@@ -1,0 +1,146 @@
+# GitLab CI configuration for building Docker base images
+# This file contains jobs for building the python-liboqs base image used by the main CI pipeline
+
+stages:
+  - docker-build
+
+variables:
+  # Override these variables if needed
+  # Use hardcoded lowercase registry path to avoid case issues
+  DOCKER_IMAGE: $CI_REGISTRY/world/openssl_encrypt/python-liboqs:3.13-alpine
+  LIBOQS_VERSION: "0.12.0"
+  PYTHON_VERSION: "3.13"
+
+# Build the python-liboqs base image for testing
+# This job builds Python 3.13 Alpine with liboqs pre-installed for faster CI testing
+docker-build-base:
+  stage: docker-build
+  # Use kaniko to build Docker images without Docker daemon
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.0-debug
+    entrypoint: [""]
+  variables:
+    # Kaniko cache and configuration
+    KANIKO_CACHE_ARGS: "--cache=true --cache-copy-layers=true --cache-ttl=24h"
+  before_script:
+    # Setup kaniko authentication for GitLab Container Registry
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"${CI_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
+  script:
+    - |
+      # Create Dockerfile for python-liboqs base image
+      cat > Dockerfile.base << EOF
+      FROM python:${PYTHON_VERSION}-alpine
+
+      # Install build dependencies for liboqs (Alpine Linux packages)
+      RUN apk add --no-cache \\
+          git gcc g++ cmake ninja make go \\
+          python3-dev openssl-dev musl-dev \\
+          linux-headers
+
+      # Clone and build liboqs
+      WORKDIR /build
+      RUN git clone --recurse-submodules --branch ${LIBOQS_VERSION} https://github.com/open-quantum-safe/liboqs.git
+      WORKDIR /build/liboqs
+      RUN mkdir build && cd build && \\
+          cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local .. && \\
+          ninja && \\
+          ninja install
+
+      # Install Python liboqs bindings
+      RUN pip install --no-cache-dir git+https://github.com/open-quantum-safe/liboqs-python.git@${LIBOQS_VERSION}
+
+      # Clean up build artifacts but keep runtime libraries
+      RUN apk del git gcc g++ cmake ninja make go && \\
+          rm -rf /build /var/cache/apk/*
+
+      # Update library cache
+      RUN ldconfig /usr/local/lib
+
+      # Verify liboqs installation
+      RUN python -c "import oqs; print(f'liboqs version: {oqs.oqs_version()}')" && \\
+          python -c "import oqs; print(f'Available KEMs: {len(oqs.get_enabled_KEM_mechanisms())}')"
+
+      # Add build metadata
+      LABEL org.opencontainers.image.title="Python liboqs Base Image"
+      LABEL org.opencontainers.image.description="Python ${PYTHON_VERSION} Alpine with liboqs ${LIBOQS_VERSION} for PQC testing"
+      LABEL org.opencontainers.image.version="${LIBOQS_VERSION}"
+      LABEL org.opencontainers.image.created="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+      LABEL org.opencontainers.image.source="${CI_PROJECT_URL}"
+      LABEL org.opencontainers.image.revision="${CI_COMMIT_SHA}"
+
+      WORKDIR /
+      EOF
+
+    # Build and push base image with kaniko (no Docker daemon needed)
+    - echo "Building base image with Python ${PYTHON_VERSION} and liboqs ${LIBOQS_VERSION}..."
+    - |
+      /kaniko/executor \
+        --context . \
+        --dockerfile Dockerfile.base \
+        --destination $DOCKER_IMAGE \
+        --destination $DOCKER_IMAGE:latest \
+        --destination $DOCKER_IMAGE:python${PYTHON_VERSION}-liboqs${LIBOQS_VERSION} \
+        --destination $DOCKER_IMAGE:$(date +%Y%m%d) \
+        --build-arg PYTHON_VERSION=${PYTHON_VERSION} \
+        --build-arg LIBOQS_VERSION=${LIBOQS_VERSION} \
+        $KANIKO_CACHE_ARGS
+
+    - echo "=== Kaniko Build Summary ==="
+    - echo "Base image built and pushed successfully using kaniko!"
+    - echo "Available tags:"
+    - echo "  - $DOCKER_IMAGE (default)"
+    - echo "  - $DOCKER_IMAGE:latest"
+    - echo "  - $DOCKER_IMAGE:python${PYTHON_VERSION}-liboqs${LIBOQS_VERSION}"
+    - echo "  - $DOCKER_IMAGE:$(date +%Y%m%d)"
+    - echo "No Docker daemon required - built with Google's kaniko!"
+  rules:
+    # Run on scheduled pipelines (nightly builds)
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == "dev"
+    # Manual trigger for rebuilding base image
+    - if: $CI_COMMIT_BRANCH == "dev"
+      when: manual
+      allow_failure: false
+    # Run on main branch for releases
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+      allow_failure: false
+  artifacts:
+    reports:
+      # Export build metadata for other jobs
+      dotenv: build.env
+    paths:
+      - Dockerfile.base
+    expire_in: 1 day
+  after_script:
+    # Create build environment file for downstream jobs
+    - echo "DOCKER_BASE_IMAGE_BUILT=true" >> build.env
+    - echo "DOCKER_BASE_IMAGE_TAG=$DOCKER_IMAGE" >> build.env
+    - echo "BUILD_DATE=$(date +%Y%m%d)" >> build.env
+
+# Test the built base image
+docker-test-base:
+  stage: docker-build
+  image: $DOCKER_IMAGE
+  needs:
+    - job: docker-build-base
+      artifacts: true
+  variables:
+    PQC_QUIET: "true"
+  script:
+    - echo "=== Testing Python liboqs Base Image ==="
+    - python --version
+    - echo "Testing liboqs availability..."
+    - python -c "import oqs; print('✓ liboqs version:', oqs.oqs_version())"
+    - python -c "import oqs; print('✓ Available KEMs:', len(oqs.get_enabled_KEM_mechanisms()))"
+    - python -c "import oqs; print('✓ Available Signatures:', len(oqs.get_enabled_sig_mechanisms()))"
+    - echo "Testing basic KEM operations..."
+    - python -c "import oqs; kem = oqs.KeyEncapsulation('Kyber512'); pk, sk = kem.generate_keypair(); ct, ss1 = kem.encap(pk); ss2 = kem.decap(sk, ct); assert ss1 == ss2; print('✓ Basic KEM test passed')"
+    - echo "=== Base image test completed successfully! ==="
+  rules:
+    # Test after successful build
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH == "dev"
+      when: manual
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual

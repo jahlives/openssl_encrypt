@@ -6,8 +6,21 @@ whirlpool-py311>=1.0.0,<2.0.0; python_version >= '3.11'
 PyYAML>=6.0.2,<7.0.0
 blake3>=1.0.0,<2.0.0
 
+# Steganography dependencies (v1.3.0)
+Pillow>=10.0.0,<12.0.0
+numpy>=2.1.0,<3.0.0
+
+# Video steganography removed due to reliability issues
+
+# QR Code Key Distribution dependencies (v1.3.0)
+qrcode[pil]>=7.0.0,<9.0.0
+pyzbar>=0.1.9,<1.0.0
+
 # Windows-specific dependencies
 pywin32>=306,<307; sys_platform == 'win32'
 
 # Optional post-quantum cryptography dependencies (commented by default)
 # liboqs-python>=0.7.0
+
+# Optional RandomX KDF dependencies
+RandomX>=1.1.10

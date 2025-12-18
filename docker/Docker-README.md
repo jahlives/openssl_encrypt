@@ -33,7 +33,7 @@ This script builds the Docker image with all PQC dependencies. The build process
 # Encrypt a file
 docker run --rm -v $(pwd):/data openssl-encrypt:latest encrypt myfile.txt
 
-# Decrypt a file  
+# Decrypt a file
 docker run --rm -v $(pwd):/data openssl-encrypt:latest decrypt myfile.txt.enc
 
 # Use Post-Quantum algorithms

@@ -42,6 +42,13 @@
       "algorithm": "sha512",
       "info": "openssl_encrypt_paranoid_hkdf"
     },
+    "randomx": {
+      "enabled": false,
+      "rounds": 3,
+      "mode": "fast",
+      "height": 1,
+      "hash_len": 64
+    },
     "pbkdf2_iterations": 0,
     "type": "id",
     "algorithm": "xchacha20-poly1305"

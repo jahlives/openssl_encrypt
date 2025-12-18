@@ -74,8 +74,6 @@ class CLIService {
           'xchacha20-poly1305',
           'aes-siv',
           'aes-gcm-siv',
-          'aes-ocb3',
-          'camellia',
         ],
         'Post-Quantum Hybrid (ML-KEM)': [
           'ml-kem-512-hybrid',
@@ -189,21 +187,43 @@ class CLIService {
     try {
       onStatus?.call('Initializing encryption...');
 
-      // Create temporary input file
+      // Create temporary directory with restrictive permissions
       tempDir = await Directory.systemTemp.createTemp('openssl_encrypt_');
+
+      // Security: Set restrictive permissions on temp directory first (prevents race condition)
+      if (!Platform.isWindows) {
+        try {
+          await Process.run('chmod', ['700', tempDir.path]);
+        } catch (e) {
+          _outputDebugLog('Warning: Could not set restrictive permissions on temp directory: $e');
+        }
+      }
+
       final inputFile = File('${tempDir.path}/input.txt');
       final outputFile = File('${tempDir.path}/output.txt');
 
-      await inputFile.writeAsString(text);
-
-      // Security: Set restrictive permissions on temporary files (0o600 equivalent)
-      try {
-        await Process.run('chmod', ['600', inputFile.path]);
-        await Process.run('chmod', ['600', outputFile.path]);
-      } catch (e) {
-        // Fallback for systems without chmod command (Windows)
-        _outputDebugLog('Warning: Could not set restrictive permissions on temp files: $e');
+      // Create files atomically with secure permissions (Unix-like systems)
+      if (!Platform.isWindows) {
+        try {
+          // Use install command to atomically create files with 0o600 permissions
+          await Process.run('install', ['-m', '600', '/dev/null', inputFile.path]);
+          await Process.run('install', ['-m', '600', '/dev/null', outputFile.path]);
+        } catch (e) {
+          _outputDebugLog('Warning: install command not available, falling back to write+chmod: $e');
+          // Fallback: create empty files, chmod will be applied after write
+          await inputFile.create();
+          await outputFile.create();
+          await Process.run('chmod', ['600', inputFile.path]);
+          await Process.run('chmod', ['600', outputFile.path]);
+        }
+      } else {
+        // Windows: create files normally (Windows has different permission model)
+        await inputFile.create();
+        await outputFile.create();
       }
+
+      // Write data to the already-protected input file
+      await inputFile.writeAsString(text);
 
       onStatus?.call('Prepared temporary files');
 
@@ -293,6 +313,15 @@ class CLIService {
                   if (config['parallelism'] != null) args.addAll(['--balloon-parallelism', config['parallelism'].toString()]);
                   if (config['rounds'] != null) args.addAll(['--balloon-rounds', config['rounds'].toString()]);
                   if (config['hash_len'] != null) args.addAll(['--balloon-hash-len', config['hash_len'].toString()]);
+                }
+                break;
+              case 'randomx':
+                if (config['enabled'] == true) {
+                  args.add('--enable-randomx');
+                  if (config['rounds'] != null) args.addAll(['--randomx-rounds', config['rounds'].toString()]);
+                  if (config['mode'] != null) args.addAll(['--randomx-mode', config['mode']]);
+                  if (config['height'] != null) args.addAll(['--randomx-height', config['height'].toString()]);
+                  if (config['hash_len'] != null) args.addAll(['--randomx-hash-len', config['hash_len'].toString()]);
                 }
                 break;
             }
@@ -399,21 +428,43 @@ class CLIService {
     try {
       onStatus?.call('Initializing decryption...');
 
-      // Create temporary input file
+      // Create temporary directory with restrictive permissions
       tempDir = await Directory.systemTemp.createTemp('openssl_encrypt_');
+
+      // Security: Set restrictive permissions on temp directory first (prevents race condition)
+      if (!Platform.isWindows) {
+        try {
+          await Process.run('chmod', ['700', tempDir.path]);
+        } catch (e) {
+          _outputDebugLog('Warning: Could not set restrictive permissions on temp directory: $e');
+        }
+      }
+
       final inputFile = File('${tempDir.path}/input.txt');
       final outputFile = File('${tempDir.path}/output.txt');
 
-      await inputFile.writeAsString(encryptedData);
-
-      // Security: Set restrictive permissions on temporary files (0o600 equivalent)
-      try {
-        await Process.run('chmod', ['600', inputFile.path]);
-        await Process.run('chmod', ['600', outputFile.path]);
-      } catch (e) {
-        // Fallback for systems without chmod command (Windows)
-        _outputDebugLog('Warning: Could not set restrictive permissions on temp files: $e');
+      // Create files atomically with secure permissions (Unix-like systems)
+      if (!Platform.isWindows) {
+        try {
+          // Use install command to atomically create files with 0o600 permissions
+          await Process.run('install', ['-m', '600', '/dev/null', inputFile.path]);
+          await Process.run('install', ['-m', '600', '/dev/null', outputFile.path]);
+        } catch (e) {
+          _outputDebugLog('Warning: install command not available, falling back to write+chmod: $e');
+          // Fallback: create empty files, chmod will be applied after write
+          await inputFile.create();
+          await outputFile.create();
+          await Process.run('chmod', ['600', inputFile.path]);
+          await Process.run('chmod', ['600', outputFile.path]);
+        }
+      } else {
+        // Windows: create files normally (Windows has different permission model)
+        await inputFile.create();
+        await outputFile.create();
       }
+
+      // Write data to the already-protected input file
+      await inputFile.writeAsString(encryptedData);
 
       onStatus?.call('Prepared temporary files');
 
@@ -544,8 +595,6 @@ class CLIService {
       _outputDebugLog('Development CLI exception: $e');
       throw Exception('No CLI available');
     }
-
-    throw Exception('No CLI available');
   }
 
   /// Run CLI command with real-time progress streaming
@@ -1154,6 +1203,147 @@ class CLIService {
            algorithm.contains('hqc') ||
            algorithm.contains('mayo') ||
            algorithm.contains('cross');
+  }
+
+  /// Encrypt file and hide in steganographic cover image
+  static Future<ProcessResult> encryptWithSteganography({
+    required String inputPath,
+    required String coverImagePath,
+    required String outputPath,
+    required String password,
+    String? stegoPassword,
+    String algorithm = 'aes-gcm',
+    int bitsPerChannel = 1,
+    bool randomizePixels = false,
+    bool addDecoyData = false,
+    Map<String, Map<String, dynamic>>? hashConfig,
+    Map<String, Map<String, dynamic>>? kdfConfig,
+  }) async {
+    final args = [
+      'encrypt',
+      '-i', inputPath,
+      '--stego-hide', coverImagePath,
+      '-o', outputPath,
+      '-a', algorithm,
+      '--stego-method', 'lsb',
+      '--stego-bits-per-channel', bitsPerChannel.toString(),
+    ];
+
+    // Add steganography password if provided
+    if (stegoPassword != null && stegoPassword.isNotEmpty) {
+      args.addAll(['--stego-password', stegoPassword]);
+    }
+
+    // Add pixel randomization if enabled and stego password is provided
+    if (randomizePixels && stegoPassword != null && stegoPassword.isNotEmpty) {
+      args.add('--stego-randomize-pixels');
+    }
+
+    // Add decoy data if enabled
+    if (addDecoyData) {
+      args.add('--stego-decoy-data');
+    }
+
+    // Add hash configuration if provided
+    if (hashConfig != null) {
+      for (final entry in hashConfig.entries) {
+        final hashName = entry.key;
+        final config = entry.value;
+        if (config['enabled'] == true && config['rounds'] != null && config['rounds'] > 0) {
+          args.addAll(['--${hashName}-rounds', config['rounds'].toString()]);
+        }
+      }
+    }
+
+    // Add KDF configuration if provided
+    if (kdfConfig != null) {
+      for (final entry in kdfConfig.entries) {
+        final kdfName = entry.key;
+        final config = entry.value;
+        if (config['enabled'] == true) {
+          switch (kdfName) {
+            case 'pbkdf2':
+              if (config['iterations'] != null && config['iterations'] > 0) {
+                args.addAll(['--pbkdf2-iterations', config['iterations'].toString()]);
+              }
+              break;
+            case 'scrypt':
+              args.add('--enable-scrypt');
+              if (config['n'] != null) args.addAll(['--scrypt-n', config['n'].toString()]);
+              if (config['r'] != null) args.addAll(['--scrypt-r', config['r'].toString()]);
+              if (config['p'] != null) args.addAll(['--scrypt-p', config['p'].toString()]);
+              if (config['rounds'] != null) args.addAll(['--scrypt-rounds', config['rounds'].toString()]);
+              break;
+            case 'argon2':
+              args.add('--enable-argon2');
+              if (config['time_cost'] != null) args.addAll(['--argon2-time', config['time_cost'].toString()]);
+              if (config['memory_cost'] != null) args.addAll(['--argon2-memory', config['memory_cost'].toString()]);
+              if (config['parallelism'] != null) args.addAll(['--argon2-parallelism', config['parallelism'].toString()]);
+              if (config['hash_len'] != null) args.addAll(['--argon2-hash-len', config['hash_len'].toString()]);
+              if (config['type'] != null) {
+                final typeMap = {0: 'd', 1: 'i', 2: 'id'};
+                args.addAll(['--argon2-type', typeMap[config['type']] ?? 'id']);
+              }
+              if (config['rounds'] != null) args.addAll(['--argon2-rounds', config['rounds'].toString()]);
+              break;
+            case 'hkdf':
+              args.add('--enable-hkdf');
+              if (config['rounds'] != null) args.addAll(['--hkdf-rounds', config['rounds'].toString()]);
+              if (config['algorithm'] != null) args.addAll(['--hkdf-algorithm', config['algorithm']]);
+              if (config['info'] != null) args.addAll(['--hkdf-info', config['info']]);
+              break;
+            case 'balloon':
+              args.add('--enable-balloon');
+              if (config['time_cost'] != null) args.addAll(['--balloon-time-cost', config['time_cost'].toString()]);
+              if (config['space_cost'] != null) args.addAll(['--balloon-space-cost', config['space_cost'].toString()]);
+              if (config['parallelism'] != null) args.addAll(['--balloon-parallelism', config['parallelism'].toString()]);
+              if (config['rounds'] != null) args.addAll(['--balloon-rounds', config['rounds'].toString()]);
+              if (config['hash_len'] != null) args.addAll(['--balloon-hash-len', config['hash_len'].toString()]);
+              break;
+            case 'randomx':
+              args.add('--enable-randomx');
+              if (config['rounds'] != null) args.addAll(['--randomx-rounds', config['rounds'].toString()]);
+              if (config['mode'] != null) args.addAll(['--randomx-mode', config['mode']]);
+              if (config['height'] != null) args.addAll(['--randomx-height', config['height'].toString()]);
+              if (config['hash_len'] != null) args.addAll(['--randomx-hash-len', config['hash_len'].toString()]);
+              break;
+          }
+        }
+      }
+    }
+
+    return await _runCLICommandWithProgress(
+      args,
+      environment: {'CRYPT_PASSWORD': password},
+    );
+  }
+
+  /// Decrypt file from steganographic image
+  static Future<ProcessResult> decryptFromSteganography({
+    required String stegoImagePath,
+    required String outputPath,
+    required String password,
+    String? stegoPassword,
+    int bitsPerChannel = 1,
+  }) async {
+    final args = [
+      'decrypt',
+      '-i', stegoImagePath,
+      '-o', outputPath,
+      '--stego-extract',
+      '--stego-method', 'lsb',
+      '--stego-bits-per-channel', bitsPerChannel.toString(),
+    ];
+
+    // Add steganography password if provided
+    if (stegoPassword != null && stegoPassword.isNotEmpty) {
+      args.addAll(['--stego-password', stegoPassword]);
+    }
+
+    return await _runCLICommandWithProgress(
+      args,
+      environment: {'CRYPT_PASSWORD': password},
+    );
   }
 }
 

@@ -1,4 +1,7 @@
 recursive-include openssl_encrypt/docs *
+recursive-include openssl_encrypt/schemas *.json
+recursive-include openssl_encrypt/templates *.json
+recursive-include openssl_encrypt/smart_recommendations_data *.json
 include openssl_encrypt/version.py.template
 include requirements*.txt
 include requirements*.in

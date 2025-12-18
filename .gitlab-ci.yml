@@ -1,3 +1,6 @@
+# Note: Base image is built manually using docker/build-base-image.sh
+# This avoids complex CI Docker builds and allows local debugging
+
 default:
   image: python:3.13-alpine
   cache:
@@ -17,7 +20,8 @@ stages:
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
-  DOCKER_IMAGE: $CI_REGISTRY_IMAGE/python-liboqs:3.13-alpine
+  # Use manually built base image (built with docker/build-base-image.sh)
+  DOCKER_IMAGE: registry.rm-rf.ch/world/openssl_encrypt/python-liboqs:3.13-alpine
   DOCS_ONLY: "false"
 
 
@@ -255,9 +259,10 @@ sbom-generation:
 test:
   stage: test
   image: $DOCKER_IMAGE
+  tags:
+    - amd64
   variables:
     PQC_QUIET: "true"  # Suppress PQC module initialization messages
-    DOCKER_DEFAULT_PLATFORM: linux/amd64
   before_script:
     - pip install -r requirements.txt --break-system-packages
     - pip install setuptools --break-system-packages  # Provides pkg_resources
@@ -287,6 +292,8 @@ test:
 test-fallback:
   stage: test
   image: python:3.13-alpine
+  tags:
+    - amd64
   variables:
     PQC_QUIET: "true"  # Suppress PQC module initialization messages
   before_script:
