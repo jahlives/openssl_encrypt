@@ -404,4 +404,66 @@ class FileManager {
         return 'application/octet-stream';
     }
   }
+
+  /// Get list of test file names from assets
+  Future<List<String>> getTestFileNames() async {
+    final List<String> testFiles = [];
+
+    // List of test files in assets (must match assets in pubspec.yaml)
+    const testFilePaths = [
+      // V3 format test files
+      'assets/test_files/v3/test1_aes-gcm.txt',
+      'assets/test_files/v3/test1_chacha20-poly1305.txt',
+      'assets/test_files/v3/test1_fernet.txt',
+      'assets/test_files/v3/test1_fernet_balloon.txt',
+      'assets/test_files/v3/test1_xchacha20-poly1305.txt',
+      // V4 format test files
+      'assets/test_files/v4/test1_aes-gcm.txt',
+      'assets/test_files/v4/test1_chacha20-poly1305.txt',
+      'assets/test_files/v4/test1_fernet.txt',
+      'assets/test_files/v4/test1_fernet_balloon.txt',
+      'assets/test_files/v4/test1_xchacha20-poly1305.txt',
+      // V5 format test files
+      'assets/test_files/v5/test1_aes-gcm.txt',
+      'assets/test_files/v5/test1_chacha20-poly1305.txt',
+      'assets/test_files/v5/test1_fernet.txt',
+      'assets/test_files/v5/test1_fernet_balloon.txt',
+      'assets/test_files/v5/test1_fernet_balloon_test.txt',
+      'assets/test_files/v5/test1_xchacha20-poly1305.txt',
+      'assets/test_files/v5/mobile_generated_test.txt',
+    ];
+
+    for (final filePath in testFilePaths) {
+      try {
+        // Try to load the asset to verify it exists
+        await rootBundle.load(filePath);
+        testFiles.add(filePath);
+      } catch (e) {
+        // Skip files that don't exist
+        CLIService.outputDebugLog('Test file not found: $filePath');
+      }
+    }
+
+    return testFiles;
+  }
+
+  /// Get FileInfo for a specific test file from assets
+  Future<FileInfo?> getTestFileInfo(String assetPath) async {
+    try {
+      // Load the asset to get its size
+      final data = await rootBundle.load(assetPath);
+      final fileName = path.basename(assetPath);
+
+      return FileInfo(
+        name: fileName,
+        path: assetPath,
+        size: data.lengthInBytes,
+        extension: path.extension(fileName).toLowerCase(),
+        lastModified: DateTime.now(), // Assets don't have modification times
+      );
+    } catch (e) {
+      CLIService.outputDebugLog('Error loading test file $assetPath: $e');
+      return null;
+    }
+  }
 }
