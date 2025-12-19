@@ -21,6 +21,168 @@
 - **Memory**: Minimum 512MB RAM (2GB+ recommended for paranoid security settings)
 - **Storage**: 100MB for installation plus encrypted file storage space
 
+## Flutter Desktop GUI Installation
+
+### Overview
+
+The Flutter Desktop GUI provides a cross-platform interface for OpenSSL Encrypt with enhanced usability and native performance. The GUI is available for Linux, macOS, and Windows.
+
+### Prerequisites
+
+#### Linux
+```bash
+# Install Flutter dependencies
+sudo apt-get update
+sudo apt-get install curl git unzip xz-utils zip libglu1-mesa
+
+# Install Flutter SDK
+git clone https://github.com/flutter/flutter.git -b stable
+export PATH="$PATH:`pwd`/flutter/bin"
+flutter doctor
+```
+
+#### macOS
+```bash
+# Install Xcode command line tools
+xcode-select --install
+
+# Install Flutter SDK
+git clone https://github.com/flutter/flutter.git -b stable
+export PATH="$PATH:`pwd`/flutter/bin"
+flutter doctor
+
+# Accept Xcode license
+sudo xcodebuild -license accept
+```
+
+#### Windows
+```powershell
+# Download Flutter SDK from https://flutter.dev/docs/get-started/install/windows
+# Extract to C:\flutter
+# Add C:\flutter\bin to PATH environment variable
+
+# Verify installation
+flutter doctor
+```
+
+### Installation Options
+
+#### Option 1: Flatpak Installation (Linux only)
+
+**Prerequisites**: Flatpak must be installed on your system.
+
+**Option 1A: Install from Custom Repository**
+```bash
+# Install Flatpak (if not already installed)
+# Ubuntu/Debian:
+sudo apt install flatpak
+
+# Fedora:
+sudo dnf install flatpak
+
+# Add custom repository
+flatpak remote-add --if-not-exists custom-repo https://flatpak.rm-rf.ch/custom-repo.flatpakrepo
+
+# Install OpenSSL Encrypt with Flutter GUI
+flatpak install custom-repo com.opensslencrypt.OpenSSLEncrypt
+
+# Run the GUI application
+flatpak run com.opensslencrypt.OpenSSLEncrypt --gui
+```
+
+**Option 1B: Build Flatpak Locally**
+```bash
+# Clone the repository
+git clone https://gitlab.rm-rf.ch/world/openssl_encrypt/
+cd openssl_encrypt
+
+# Build and install Flatpak with Flutter GUI
+cd flatpak
+./build-flatpak --build-flutter
+
+# Run the GUI application
+flatpak run com.opensslencrypt.OpenSSLEncrypt --gui
+```
+
+#### Option 2: Manual Installation (All Platforms)
+
+**Step 1: Clone the Repository**
+```bash
+git clone https://gitlab.rm-rf.ch/world/openssl_encrypt/
+cd openssl_encrypt
+```
+
+**Step 2: Build the Flutter Desktop GUI**
+```bash
+# Navigate to Flutter project directory
+cd desktop_gui
+
+# Get Flutter dependencies
+flutter pub get
+
+# Build for your platform
+# Linux:
+flutter build linux --release
+
+# macOS:
+flutter build macos --release
+
+# Windows:
+flutter build windows --release
+```
+
+**Step 3: Install OpenSSL Encrypt CLI**
+
+Choose one of the following methods:
+
+**Method A: Install from PyPI (Recommended)**
+```bash
+pip install openssl_encrypt
+```
+
+**Method B: Build and Install Locally**
+```bash
+# From the main project directory
+cd ..  # Back to openssl_encrypt root
+pip install -e .
+```
+
+**Step 4: Run the Flutter GUI**
+```bash
+# Linux:
+./desktop_gui/build/linux/x64/release/bundle/openssl_encrypt_gui
+
+# macOS:
+open ./desktop_gui/build/macos/Build/Products/Release/openssl_encrypt_gui.app
+
+# Windows:
+./desktop_gui/build/windows/x64/runner/Release/openssl_encrypt_gui.exe
+```
+
+### Integration with CLI
+
+The Flutter GUI automatically detects and integrates with the installed OpenSSL Encrypt CLI, providing seamless access to all encryption features through an intuitive interface.
+
+### Troubleshooting Flutter Installation
+
+**Problem**: `flutter doctor` shows issues
+**Solution**: Follow the specific recommendations provided by `flutter doctor` output
+
+**Problem**: Build fails with missing dependencies
+**Solution**:
+```bash
+# Linux: Install additional build dependencies
+sudo apt-get install build-essential libgtk-3-dev
+
+# Ensure Flutter is properly configured
+flutter config --enable-linux-desktop  # Linux
+flutter config --enable-macos-desktop  # macOS
+flutter config --enable-windows-desktop  # Windows
+```
+
+**Problem**: GUI fails to find CLI installation
+**Solution**: Ensure the `openssl_encrypt` Python package is installed and accessible from your PATH
+
 ### Installation Methods
 
 #### From PyPI (Recommended)
@@ -676,6 +838,85 @@ pip install liboqs-python
 python -c "from openssl_encrypt.modules.pqc import get_supported_algorithms; print(get_supported_algorithms())"
 ```
 
+#### Debug Mode for Troubleshooting
+
+> **SECURITY WARNING**
+>
+> **The `--debug` flag outputs highly sensitive cryptographic information including:**
+> - **Derived encryption keys in hex format**
+> - **Nonces, salts, and initialization vectors**
+> - **Plaintext data content in hex**
+> - **Intermediate hash values and cryptographic parameters**
+>
+> **NEVER use `--debug` with sensitive or production data!**
+>
+> **Only use debug mode with:**
+> - Test files and dummy data
+> - Non-sensitive documents
+> - Educational or development purposes
+> - Troubleshooting with data you can safely expose
+>
+> **Debug output should NEVER be logged, shared, or stored when working with confidential information.**
+
+The `--debug` flag provides comprehensive visibility into the encryption/decryption process, showing detailed information about every cryptographic operation. This is invaluable for troubleshooting, security analysis, and understanding how the tool works.
+
+**Basic Debug Usage**:
+```bash
+# Debug encryption process
+python -m openssl_encrypt.crypt encrypt -i document.txt --debug
+
+# Debug decryption process
+python -m openssl_encrypt.crypt decrypt -i document.txt.enc --debug
+```
+
+**Debug Output Categories**:
+
+1. **Hash Processing Debug**: Shows INPUT/OUTPUT/FINAL hex values for every hash round
+2. **Key Derivation Debug**: Details for Argon2, Scrypt, Balloon, PBKDF2, HKDF operations
+3. **Encryption Algorithm Debug**: Algorithm-specific parameters, nonces, and data
+4. **Post-Quantum Debug**: PQC algorithm details, key lengths, and hybrid operations
+
+**Sample Debug Output**:
+
+*Hash Processing Debug*:
+```
+DEBUG - SHA-512:INPUT Round 1/1000000: 48656c6c6f20576f726c64...
+DEBUG - SHA-512:OUTPUT Round 1/1000000: e258d248fda94c63753607...
+DEBUG - SHA-512:FINAL After 1000000 rounds: b94d27b9934d3e08a52e...
+DEBUG - ARGON2:PARAMS time_cost=3, memory_cost=65536, parallelism=4
+DEBUG - ARGON2:OUTPUT Round 1/1: a1b2c3d4e5f6789a0b1c2d3e...
+```
+
+*Encryption Debug*:
+```
+DEBUG - ENCRYPT:AES_GCM Key length: 32 bytes
+DEBUG - ENCRYPT:AES_GCM Using 12-byte nonce for encryption
+DEBUG - ENCRYPT:AES_GCM Nonce: a1b2c3d4e5f6789a12b3c4d5
+DEBUG - ENCRYPT:AES_GCM Encrypted payload length: 45 bytes
+DEBUG - ENCRYPT:AES_GCM Encrypted payload: def456abc123...
+```
+
+*Post-Quantum Debug*:
+```
+DEBUG - ENCRYPT:PQC_SIG Algorithm: mayo-1-hybrid
+DEBUG - ENCRYPT:PQC_SIG HKDF salt: 4f70656e53534c2d456e63727970742d...
+DEBUG - ENCRYPT:PQC_KEM Algorithm: ML-KEM-512
+DEBUG - ENCRYPT:PQC_KEM Public key length: 800 bytes
+DEBUG - ENCRYPT:PQC_KEM Symmetric encryption: aes-gcm
+```
+
+**Debug Use Cases**:
+
+- **Troubleshooting failed operations**: See exactly where an error occurs
+- **Security analysis**: Verify all cryptographic parameters are correct
+- **Performance optimization**: Identify slow operations in the crypto pipeline
+- **Educational purposes**: Learn how modern cryptography works step-by-step
+- **Algorithm comparison**: Compare debug output between different algorithms
+
+> **SECURITY REMINDER**
+>
+> Debug output exposes **ALL** cryptographic secrets including encryption keys, plaintext data, and intermediate values. **NEVER** use debug mode with sensitive data or in production environments. Debug information should never be saved, logged, or shared when working with confidential files.
+
 ### Getting Help
 
 1. **Check version and basic info**:
@@ -691,7 +932,13 @@ python -m openssl_encrypt.crypt encrypt -i file.txt --verbose
 
 3. **Check logs and error messages carefully**
 
-4. **Report issues**: Use the project's issue tracking system
+4. **Use debug mode for detailed troubleshooting**:
+```bash
+python -m openssl_encrypt.crypt encrypt -i file.txt --debug
+python -m openssl_encrypt.crypt decrypt -i file.enc --debug
+```
+
+5. **Report issues**: Use the project's issue tracking system
 
 ### Best Practices
 

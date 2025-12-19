@@ -1,21 +1,87 @@
 # OpenSSL Encrypt - Complete Release Notes
 
-## Current Release: Version 1.0.0 (June 2025)
+## Current Release: Version 1.2.0 (August 2025)
+
+**Status:** Production Release
+**Development Status:** Stable
+
+### Professional Flutter Desktop GUI Release
+
+Version 1.2.0 delivers a professional Flutter-based desktop GUI with native Wayland and X11 support, comprehensive CLI integration, and a desktop-optimized interface. This release improves the user experience while maintaining all cryptographic capabilities and introducing advanced configuration interfaces for power users.
+
+### Flutter Desktop GUI Excellence
+- **Native Desktop Application**: Professional Flutter desktop GUI with native Wayland and X11 support eliminating display server compatibility issues
+- **Advanced CLI Integration**: Complete Flutter-to-CLI bridge service providing real-time progress monitoring, error handling, and full algorithm access
+- **Desktop UX Standards**: Professional menu bar, comprehensive keyboard shortcuts (Ctrl+O, Ctrl+S, F1), drag & drop file operations, and native desktop dialogs
+- **Responsive Design**: Modern desktop-optimized layout with NavigationRail sidebar, tabbed interface, and professional visual hierarchy
+
+### Comprehensive Configuration System
+- **Professional Settings Interface**: Searchable settings with theme switching (Light/Dark/System), cryptographic defaults, and application behavior controls
+- **Advanced Algorithm Configuration**: Interactive parameter tuning interface for all KDFs (Argon2, Scrypt, Balloon, HKDF) with real-time validation
+- **Post-Quantum Algorithm UI**: Complete graphical interface for ML-KEM, Kyber, HQC, MAYO, and CROSS algorithms with security guidance
+- **Algorithm Recommendation Engine**: Intelligent algorithm selection with security level recommendations and performance considerations
+
+### Streamlined Architecture & Security
+- **GUI Architecture Migration**: Complete migration from tkinter to Flutter providing superior cross-platform compatibility and native desktop integration
+- **Simplified Flatpak Integration**: Streamlined Flatpak permissions and launcher focusing on Flutter's native capabilities
+- **Enhanced Security Posture**: Reduced attack surface through elimination of complex X11/XWayland compatibility layers
+- **Native Platform Security**: Flutter's native desktop integration provides better sandboxing than X11-based solutions
+- **Algorithm Security Hardening**: Removed deprecated PBKDF2 key derivation and Whirlpool hash algorithms from encryption operations to eliminate weak cryptographic options and strengthen security posture
+
+### Key Enhancements in 1.0.1
+- **Segregated CLI Help System**: Two-tier help (global overview + command-specific options)
+- **Improved User Experience**: Context-aware help reduces cognitive load
+- **Better Discoverability**: Clear command overview with focused option display
+- **Maintained Compatibility**: All existing functionality and file formats unchanged
+
+---
+
+## Previous Release: Version 1.1.0 (June 2025)
+
+**Status:** Production Release
+**Development Status:** Stable
+
+### Comprehensive Cryptographic Enhancement Release
+
+Version 1.1.0 represented a major advancement in OpenSSL Encrypt's cryptographic capabilities, delivering extensive hash algorithm support, modern key derivation functions, post-quantum signature algorithms, and a completely reorganized user interface. This release significantly expanded our cryptographic portfolio while maintaining the highest standards of security and usability.
+
+### Extended Cryptographic Hash Support
+- **Complete SHA-2 Family**: Added SHA-224 and SHA-384 to complement existing SHA-256 and SHA-512
+- **Complete SHA-3 Family**: Added SHA3-224 and SHA3-384 to complement existing SHA3-256 and SHA3-512
+- **BLAKE3 Ultra-Fast Hash**: Latest evolution of BLAKE family with tree-based parallelism for maximum performance
+- **SHAKE-128 Function**: Additional extendable-output function complementing SHAKE-256
+- **Professional Organization**: All hash algorithms now organized by cryptographic families in both GUI and CLI
+
+### Modern Key Derivation Functions
+- **HKDF Implementation**: RFC 5869 HMAC-based Key Derivation Function with configurable hash algorithms (SHA-224/256/384/512)
+- **Flexible Configuration**: Support for chained KDF rounds and application-specific context information
+- **Legacy Categorization**: PBKDF2 properly categorized as legacy with secure defaults (disabled by default)
+- **Modern KDF Promotion**: Clear distinction between modern (HKDF, Argon2, Scrypt, Balloon) and legacy options
+
+### Post-Quantum Signature Integration
+- **MAYO Algorithm Support**: MAYO-1/3/5 multivariate signature algorithms for quantum-resistant authentication
+- **CROSS Algorithm Integration**: CROSS-128/192/256 code-based signature algorithms with comprehensive validation
+- **Hybrid Signature Architecture**: Support for combining classical and post-quantum signature schemes
+- **Complete Portfolio**: Authentication algorithms complement existing encryption portfolio (Kyber, ML-KEM, HQC)
+
+---
+
+## Previous Release: Version 1.0.0 (June 2025)
 
 **Status:** Production Release
 **Development Status:** Stable
 
 ### Production Release Achievement
 
-Version 1.0.0 represents the official production release of OpenSSL Encrypt, delivering enterprise-grade quantum-resistant cryptographic capabilities with comprehensive security hardening and production stability. This milestone release completes our commitment to providing a robust, secure, and reliable cryptographic solution ready for production deployment across all environments.
+Version 1.0.0 represents the official production release of OpenSSL Encrypt, delivering quantum-resistant cryptographic capabilities suitable for production use with comprehensive security hardening and stability. This release provides a robust, secure, and reliable cryptographic solution ready for production deployment across all environments.
 
 ### Key Production Features
 - Complete post-quantum cryptography support (Kyber, ML-KEM, HQC algorithms)
 - Production-grade type safety and runtime stability
 - Comprehensive security hardening with constant-time operations
-- Enterprise-ready keystore management for PQC keys
+- Keystore management for PQC keys suitable for production use
 - Full backward compatibility with all previous file formats
-- Industry-leading code quality standards with comprehensive static analysis
+- Multiple static analysis tools with strong code quality standards
 
 ---
 
@@ -166,4 +232,4 @@ We've implemented multiple layers of security hardening to strengthen our crypto
 
 ---
 
-This comprehensive release history demonstrates OpenSSL Encrypt's evolution from a basic encryption tool to a production-ready, quantum-resistant cryptographic solution with industry-leading security practices and comprehensive feature support.
+This comprehensive release history demonstrates OpenSSL Encrypt's evolution from a basic encryption tool to a production-ready, quantum-resistant cryptographic solution with strong security practices and comprehensive feature support.
