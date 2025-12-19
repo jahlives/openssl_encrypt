@@ -18,7 +18,7 @@
 
 ## Security Philosophy
 
-The openssl_encrypt library is designed with a security-first approach, following these core principles:
+The openssl_encrypt library is designed with security as a primary consideration, following these core principles:
 
 ### Defense in Depth
 - Multiple layers of security controls to protect data
@@ -420,6 +420,6 @@ Security issues should be reported according to the project's security policy:
 
 ---
 
-This security documentation is updated regularly as security features and best practices evolve. The openssl_encrypt library is designed to provide military-grade security with user-friendly interfaces, ensuring your data remains protected against current and future threats.
+This security documentation is updated regularly as security features and best practices evolve. The openssl_encrypt library provides comprehensive security protections through multiple layers of defense, helping protect your data against current threats.
 
 **Last updated**: June 16, 2025
