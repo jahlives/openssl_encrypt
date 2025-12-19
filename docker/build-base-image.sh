@@ -184,6 +184,7 @@ fi
 
 ${CONTAINER_CMD} build \
     ${BUILD_ARGS} \
+    --platform linux/amd64 \
     --file docker/Dockerfile.base \
     --tag "${FULL_IMAGE}" \
     --tag "${FULL_IMAGE%:*}:latest" \
