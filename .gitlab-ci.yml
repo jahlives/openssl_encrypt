@@ -305,6 +305,8 @@ test:
   stage: test
   image: $CI_REGISTRY_IMAGE/python-liboqs:3.13-alpine  # Switch back to original Alpine image to test
   # NOTE: Removed needs: [build-liboqs] - Alpine image already has liboqs pre-built
+  tags:
+    - amd64
   variables:
     PQC_QUIET: "true"  # Suppress PQC module initialization messages
   # NOTE: Removed cache - Alpine image already has liboqs, no need to restore cache
