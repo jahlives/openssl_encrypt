@@ -154,12 +154,59 @@ For key derivation chaining:
 
 ## Installation
 
-### Requirements
+### Flatpak (Recommended)
 
+The easiest way to install with all dependencies included (Python, liboqs, liboqs-python, Flutter GUI):
+
+```bash
+# Add the repository
+flatpak remote-add --if-not-exists openssl-encrypt https://flatpak.rm-rf.ch/openssl-encrypt.flatpakrepo
+
+# Install latest stable version
+flatpak install openssl-encrypt com.opensslencrypt.OpenSSLEncrypt
+
+# Run the application
+flatpak run com.opensslencrypt.OpenSSLEncrypt --help
+```
+
+**Benefits:**
+- All dependencies pre-installed (including liboqs and Python bindings)
+- Flutter Desktop GUI included
+- Sandboxed environment
+- Automatic updates
+- Works on any Linux distribution
+
+**Build Flatpak locally (alternative to using the repository):**
+
+```bash
+# Clone the repository
+git clone https://github.com/jahlives/openssl_encrypt.git
+cd openssl_encrypt/flatpak
+
+# Build and install locally (includes Flutter GUI)
+./build-flatpak.sh --build-flutter --local-install
+
+# Or install as development branch (recommended for testing, runs parallel to stable)
+./build-flatpak.sh --build-flutter --dev-install
+
+# Run the locally installed flatpak
+flatpak run com.opensslencrypt.OpenSSLEncrypt
+```
+
+**Build options:**
+- `--build-flutter` - Build Flutter Desktop GUI before packaging
+- `--local-install` - Install as stable branch (overwrites production)
+- `--dev-install` - Install as development branch (parallel to production, recommended)
+- `-f, --force` - Force clean build cache
+
+See `flatpak/README.md` for detailed build instructions.
+
+### PyPI / Source Installation
+
+**Requirements:**
 - Python 3.11+ (3.12 or 3.13 recommended)
 
-### Core Dependencies
-
+**Core Dependencies:**
 ```
 cryptography>=44.0.1
 argon2-cffi>=23.1.0
@@ -167,14 +214,14 @@ PyYAML>=6.0.2
 blake3>=1.0.0
 ```
 
-### Optional Dependencies
-
+**Optional Dependencies:**
 ```
 liboqs-python          # Extended PQC support (HQC, ML-DSA, etc.)
+                       # Requires liboqs (https://github.com/open-quantum-safe/liboqs)
 tkinter                # GUI (usually included with Python)
 ```
 
-### Install
+**Install:**
 
 ```bash
 # From PyPI (when available)
@@ -185,6 +232,8 @@ git clone https://github.com/jahlives/openssl_encrypt.git
 cd openssl_encrypt
 pip install -e .
 ```
+
+**Note:** For full post-quantum support (HQC, ML-DSA), you need to manually install liboqs and liboqs-python. The Flatpak version includes these by default.
 
 ## Usage
 
