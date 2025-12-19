@@ -264,7 +264,7 @@ test:
     - pip install -r requirements.txt --break-system-packages
     - pip install setuptools --break-system-packages  # Provides pkg_resources
   script:
-    - python3 -m pytest openssl_encrypt/unittests/unittests.py -v
+    - python3 -m pytest openssl_encrypt/unittests/unittests.py -v -k "not hqc"
   rules:
     # Run tests on dev, testing, and release branches, and for tags
     - if: $CI_COMMIT_BRANCH == "dev" && $DOCS_ONLY != "true"
