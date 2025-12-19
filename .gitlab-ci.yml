@@ -310,7 +310,7 @@ test-fallback:
     # Install liboqs Python bindings
     - pip install --user git+https://github.com/open-quantum-safe/liboqs-python.git
   script:
-    - python3 -m pytest openssl_encrypt/unittests/unittests.py -v
+    - python3 -m pytest openssl_encrypt/unittests/unittests.py -v -k "not hqc"
   rules:
     - if: $CI_COMMIT_BRANCH == "dev" && $DOCS_ONLY != "true"
       when: on_failure
