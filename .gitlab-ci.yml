@@ -39,6 +39,8 @@ sync-wiki:
     - git add .
     - git diff-index --quiet HEAD || git commit -m "Update wiki from docs folder"
     - git push
+    - git remote add github git@github.com:jahlives/openssl_encrypt.wiki.git || true
+    - git push github master:master --force
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_BRANCH == "release"
