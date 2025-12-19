@@ -4271,8 +4271,7 @@ def decrypt_file(
 
                 # Check if this is a PQC operation (algorithm contains 'kyber')
                 if (
-                    "kyber" in algorithm.lower()
-                    or "ml-kem" in algorithm.lower()
+                    "kyber" in algorithm.lower() or "ml-kem" in algorithm.lower()
                 ) and os.environ.get("PYTEST_CURRENT_TEST") is None:
                     # For PQC in development, show warning but continue
                     if not quiet:
