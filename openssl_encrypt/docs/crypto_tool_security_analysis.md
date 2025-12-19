@@ -2,7 +2,7 @@
 
 ## Overview
 
-This analysis demonstrates the cryptographic strength of our encryption tool, specifically examining how **Balloon KDF key stretching** transforms even relatively short passwords into computationally unbreakable security barriers.
+This analysis examines the cryptographic strength of our encryption tool, specifically how **Balloon KDF key stretching** provides strong resistance against password cracking attacks.
 
 **Key Parameters:**
 - **Key Stretching**: Balloon KDF with configurable rounds
@@ -30,7 +30,7 @@ Our tool uses a **sequential chaining architecture** that provides unique securi
 - **No Precomputation**: Cannot build lookup tables or cache intermediate states
 - **Parallelization Resistant**: Must be computed as a single sequential chain
 
-This architecture **fundamentally breaks** traditional cryptographic attack methods.
+This architecture provides strong resistance to traditional cryptographic attack methods by preventing parallelization and precomputation.
 
 ## Password Space Analysis
 
@@ -70,9 +70,9 @@ Traditional attacks might achieve high testing rates through parallelization and
 
 *Note: These assume optimal conditions for attackers including parallel processing and rainbow tables*
 
-### With Balloon KDF Key Stretching (Forced Sequential Attacks)
+### With Balloon KDF Key Stretching (Sequential Processing Required)
 
-Our design **eliminates all attack optimizations** and forces sequential processing. Attack times scale with balloon rounds:
+Our design prevents common attack optimizations by requiring sequential processing. Attack times scale linearly with balloon rounds:
 
 #### 5 Balloon Rounds (~40 seconds per attempt)
 | Password Length | Average Crack Time | Maximum Crack Time | Universe Lifetimes* |
@@ -271,20 +271,21 @@ Beyond the fundamental sequential limitation, attackers also face:
 ## Comparative Security Levels
 
 ### Government Classification Equivalents
-| Password + Key Stretching | Equivalent Security Level |
+| Password + Key Stretching | Estimated Security Level |
 |---------------------------|-------------------------|
-| 8 chars + Balloon KDF | Beyond "TOP SECRET" |
-| 10 chars + Balloon KDF | Beyond "COSMIC" classification |
-| 12+ chars + Balloon KDF | Physically impossible to break |
+| 8 chars + Balloon KDF | Suitable for classified data |
+| 10 chars + Balloon KDF | Suitable for highly classified data |
+| 12+ chars + Balloon KDF | Extremely strong protection |
 
 ### Threat Actor Resistance
 | Attacker Type | 8 chars + KDF | 10 chars + KDF | 12+ chars + KDF |
 |---------------|---------------|-----------------|------------------|
-| Individual hacker | ✅ Impossible | ✅ Impossible | ✅ Impossible |
-| Criminal organization | ✅ Impossible | ✅ Impossible | ✅ Impossible |
-| Nation-state actor | ✅ Impossible | ✅ Impossible | ✅ Impossible |
-| Future quantum computers | ✅ Impossible | ✅ Impossible | ✅ Impossible |
-| Alien civilization | ❓ Probably impossible | ✅ Impossible | ✅ Impossible |
+| Individual hacker | Strong resistance | Strong resistance | Strong resistance |
+| Criminal organization | Strong resistance | Strong resistance | Strong resistance |
+| Nation-state actor | Strong resistance | Strong resistance | Strong resistance |
+| Future quantum computers* | Strong resistance | Strong resistance | Strong resistance |
+
+*Note: Quantum computers threaten asymmetric cryptography (RSA, ECC) but have limited impact on symmetric key derivation from passwords. Grover's algorithm provides only quadratic speedup for brute-force attacks.
 
 ## Key Stretching Configuration Impact
 
@@ -308,13 +309,13 @@ Beyond the fundamental sequential limitation, attackers also face:
 
 ### Key Findings
 
-1. **Sequential Processing Constraint**: Individual password attempts cannot be optimized below 8 seconds per balloon round
-2. **Precomputation Immunity**: Dynamic salting prevents rainbow tables and cached lookups at every round
-3. **Practical Impossibility**: Resource requirements for parallel attacks exceed planetary capacity
-4. **Dual Security Barriers**: Both computational (sequential constraint) and economic/physical (resource requirements)
-5. **Attack Method Immunity**: Resistant to all known cryptographic attack optimizations
-6. **Future-proof Security**: No conceivable technological advance can bypass fundamental constraints
-7. **Practical Usability**: 40-second unlock time (5 rounds) provides absolute security
+1. **Sequential Processing Constraint**: Individual password attempts require approximately 8 seconds per balloon round
+2. **Precomputation Resistance**: Dynamic salting prevents rainbow tables and cached lookups at every round
+3. **High Resource Requirements**: Parallel attacks at scale require impractical resource allocation
+4. **Dual Defense Layers**: Both computational (sequential constraint) and economic (resource requirements)
+5. **Attack Method Resistance**: Resistant to known cryptographic attack optimizations
+6. **Strong Practical Security**: 40-second unlock time (5 rounds) provides strong protection for most use cases
+7. **Limitations**: Implementation bugs, side-channel attacks, weak passwords, or compromised systems remain potential risks
 
 ### Economic and Physical Impossibility
 
@@ -340,16 +341,22 @@ The attack becomes not just computationally impossible, but **economically and p
 
 ### Bottom Line
 
-Our crypto tool's **chained hash/KDF architecture** provides fundamentally unbreakable security through:
+Our crypto tool's **chained hash/KDF architecture** provides strong security through multiple defense layers:
 
-- **Sequential constraint**: Forces 60+ seconds per password attempt regardless of attacker resources
-- **Dynamic salting**: Eliminates precomputation and rainbow table attacks
-- **Parallelization immunity**: Cannot be optimized with multiple processors or distributed computing
+- **Sequential constraint**: Requires substantial time per password attempt (40-80+ seconds depending on configuration)
+- **Dynamic salting**: Prevents precomputation and rainbow table attacks
+- **Parallelization resistance**: Multiple rounds significantly increase the cost of distributed attacks
 
-**The mathematics and architecture are definitive**: Any password 8+ characters with our chained key stretching creates an **absolutely unbreakable cryptographic barrier** that will remain secure until the heat death of the universe - and no technological advancement can change the fundamental sequential constraint.
+**Security assessment**: Passwords of 8+ characters with chained key stretching provide strong practical security against current and foreseeable attacks. The sequential processing requirement makes brute-force attacks computationally expensive and time-consuming.
 
-This represents a **paradigm shift** from "computationally hard" to "fundamentally impossible" cryptographic security.
+**Important caveats**: No cryptographic system provides absolute guarantees. Security depends on:
+- Password strength (avoid dictionary words, reused passwords)
+- Implementation correctness (no bugs, no side-channels)
+- Operational security (secure systems, no keyloggers, no coercion)
+- Protection of encrypted files (backups, secure storage)
+
+Use strong, unique passwords (12+ random characters recommended) and follow security best practices.
 
 ---
 
-*Analysis based on cryptographic best practices and conservative computational assumptions. Actual security may be even higher due to implementation-specific factors and real-world attack constraints.*
+*Analysis based on cryptographic best practices and computational assumptions current as of 2025. Security estimates assume strong passwords, correct implementation, and no operational security failures. No cryptographic system is immune to implementation bugs, side-channel attacks, or compromise of the underlying system.*
