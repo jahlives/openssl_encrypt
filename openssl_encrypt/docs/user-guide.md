@@ -25,7 +25,7 @@
 
 ### Overview
 
-The Flutter Desktop GUI provides a modern, cross-platform interface for OpenSSL Encrypt with enhanced usability and native performance. The GUI is available for Linux, macOS, and Windows.
+The Flutter Desktop GUI provides a cross-platform interface for OpenSSL Encrypt with enhanced usability and native performance. The GUI is available for Linux, macOS, and Windows.
 
 ### Prerequisites
 
@@ -169,14 +169,14 @@ The Flutter GUI automatically detects and integrates with the installed OpenSSL 
 **Solution**: Follow the specific recommendations provided by `flutter doctor` output
 
 **Problem**: Build fails with missing dependencies
-**Solution**: 
+**Solution**:
 ```bash
 # Linux: Install additional build dependencies
 sudo apt-get install build-essential libgtk-3-dev
 
 # Ensure Flutter is properly configured
 flutter config --enable-linux-desktop  # Linux
-flutter config --enable-macos-desktop  # macOS  
+flutter config --enable-macos-desktop  # macOS
 flutter config --enable-windows-desktop  # Windows
 ```
 
@@ -840,7 +840,7 @@ python -c "from openssl_encrypt.modules.pqc import get_supported_algorithms; pri
 
 #### Debug Mode for Troubleshooting
 
-> **🚨 SECURITY WARNING 🚨**
+> **SECURITY WARNING**
 >
 > **The `--debug` flag outputs highly sensitive cryptographic information including:**
 > - **Derived encryption keys in hex format**
@@ -848,7 +848,7 @@ python -c "from openssl_encrypt.modules.pqc import get_supported_algorithms; pri
 > - **Plaintext data content in hex**
 > - **Intermediate hash values and cryptographic parameters**
 >
-> **⚠️ NEVER use `--debug` with sensitive or production data! ⚠️**
+> **NEVER use `--debug` with sensitive or production data!**
 >
 > **Only use debug mode with:**
 > - Test files and dummy data
@@ -865,7 +865,7 @@ The `--debug` flag provides comprehensive visibility into the encryption/decrypt
 # Debug encryption process
 python -m openssl_encrypt.crypt encrypt -i document.txt --debug
 
-# Debug decryption process  
+# Debug decryption process
 python -m openssl_encrypt.crypt decrypt -i document.txt.enc --debug
 ```
 
@@ -913,7 +913,7 @@ DEBUG - ENCRYPT:PQC_KEM Symmetric encryption: aes-gcm
 - **Educational purposes**: Learn how modern cryptography works step-by-step
 - **Algorithm comparison**: Compare debug output between different algorithms
 
-> **⚠️ SECURITY REMINDER ⚠️**
+> **SECURITY REMINDER**
 >
 > Debug output exposes **ALL** cryptographic secrets including encryption keys, plaintext data, and intermediate values. **NEVER** use debug mode with sensitive data or in production environments. Debug information should never be saved, logged, or shared when working with confidential files.
 
