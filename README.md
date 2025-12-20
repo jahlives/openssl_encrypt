@@ -28,7 +28,21 @@ Version 1.3.0 focuses on **security hardening**, **testing capabilities**, and *
 - **Security**: O_NOFOLLOW symlink attack prevention in D-Bus service, audit logging, debug mode warnings
 - **Features**: Steganography support, enhanced plugin system with process isolation, improved RandomX KDF
 - **Quality**: 8.8/10 security score (independent review), 950+ tests, zero vulnerable dependencies
+Issues
 
+  ### HQC Support in v1.2.x
+
+  **Note:** HQC (Hamming Quasi-Cyclic) post-quantum cryptography is not functional in v1.2.x releases due to fork-safety issues in liboqs on certain AMD64 systems. Files encrypted with HQC algorithms (hqc-128, hqc-192, hqc-256) cannot be decrypted reliably in these versions.
+
+  - ✅ **Other PQC algorithms work correctly**: Kyber/ML-KEM, Dilithium, Falcon, SPHINCS+, and all other supported post-quantum algorithms function as expected in v1.2.x
+  - ✅ **HQC fully supported in v1.3.0+**: The issue has been resolved in version 1.3.0 and later through improved multiprocessing handling
+
+  **Recommendation:** If you need to encrypt or decrypt files using HQC algorithms, please upgrade to version 1.3.0 or later.
+
+  **For v1.2.x users:** If you have files encrypted with HQC, you can:
+  1. Upgrade to v1.3.0+ to decrypt them
+  2. Use a different system where the fork-safety issue doesn't occur
+  3. Re-encrypt important files using Kyber/ML-KEM instead (recommended for long-term compatibility)
 ## Security Architecture
 
 ### Chained Key Derivation
