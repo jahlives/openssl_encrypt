@@ -6,6 +6,20 @@ A Python-based file encryption tool with modern ciphers, post-quantum algorithms
 
 The project is historically named `openssl-encrypt` because it once was a Python script wrapper around OpenSSL. That approach stopped working with recent Python versions, so I did a complete rewrite in pure Python using modern ciphers and hashes. The project name is a “homage” to its roots.
 
+## 📚 Documentation & Security Architecture
+
+For deep-dives into the cryptographic design and security policies of this project, please refer to the specialized documentation in the `docs/` folder:
+
+* **[Technical Architecture](openssl_encrypt/docs/architecture.md)**: Detailed explanation of the Hybrid PQC-flow, the Hardened KDF Chain (Argon2id + RandomX), and the AEAD Metadata Binding.
+* **[Security Policy](openssl_encrypt/docs/security.md)**: Information on our "Defense in Depth" strategy, anti-oracle policies, and how to responsibly disclose vulnerabilities.
+
+### Key Security Features at a Glance:
+* **Post-Quantum Ready**: Hybrid encryption using NIST-standardized KEMs (HQC, CROSS, MAYO).
+* **Deterministic AEAD**: AES-SIV support for maximum protection against nonce-misuse.
+* **Metadata Integrity**: Cryptographic binding of headers to prevent tampering (on AEAD-supported ciphers).
+* **Hardware-Resistant KDF**: Sequential Argon2id and RandomX hashing to neutralize ASIC/GPU brute-force clusters.
+
+
 ## What’s New in v1.3.0
 
 Version 1.3.0 focuses on **security hardening**, **testing capabilities**, and **advanced features**:
