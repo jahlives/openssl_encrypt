@@ -25,7 +25,7 @@ jobs:
         with:
           repository: ${{ github.repository }}.wiki
           path: wiki
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.WIKI_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Check if wiki exists
         id: wiki-check
@@ -86,27 +86,50 @@ jobs:
           COMMIT_SHA: ${{ github.sha }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
+          set -x  # Enable debug mode
+
+          echo "=== Configuring git ==="
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          echo "=== Current directory ==="
+          pwd
+          ls -la
+
+          echo "=== Git status before add ==="
+          git status
+
+          echo "=== Adding files ==="
           git add .
 
+          echo "=== Git status after add ==="
+          git status
+
+          echo "=== Checking for changes ==="
           if git diff --staged --quiet; then
             echo "No changes to commit"
             exit 0
           fi
 
-          git commit -m "Sync documentation from repository
+          echo "=== Creating commit ==="
+          git commit -m "Sync documentation from repository" -m "Automated sync from openssl_encrypt/docs/ directory" -m "Triggered by: ${COMMIT_SHA}"
 
-          Automated sync from openssl_encrypt/docs/ directory
-          Triggered by: ${COMMIT_SHA}
-          Commit: ${COMMIT_MSG}"
-
-          # Detect the default branch (master or main)
+          echo "=== Detecting branch ==="
           DEFAULT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-          echo "Pushing to branch: ${DEFAULT_BRANCH}"
+          echo "Current branch: ${DEFAULT_BRANCH}"
 
-          git push origin "${DEFAULT_BRANCH}"
+          echo "=== Git remote info ==="
+          git remote -v
+
+          echo "=== Pushing to wiki ==="
+          git push origin "${DEFAULT_BRANCH}" || {
+            echo "Push failed with exit code $?"
+            echo "=== Checking remote branches ==="
+            git ls-remote --heads origin
+            exit 1
+          }
+
+          echo "=== Push successful ==="
 
       - name: Summary
         if: success()
