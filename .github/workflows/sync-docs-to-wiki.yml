@@ -83,8 +83,15 @@ jobs:
 
       - name: Sync documentation files
         run: |
-          # Copy all markdown files from docs to wiki
-          cp -v openssl_encrypt/docs/*.md wiki/
+          # Remove old lowercase sidebar if it exists
+          rm -f wiki/_sidebar.md
+
+          # Copy all markdown files from docs to wiki (except _sidebar.md)
+          for file in openssl_encrypt/docs/*.md; do
+            if [[ "$(basename "$file")" != "_sidebar.md" ]]; then
+              cp -v "$file" wiki/
+            fi
+          done
 
           # Transform sidebar for GitHub Wiki format
           if [ -f "openssl_encrypt/docs/_sidebar.md" ]; then
@@ -94,9 +101,6 @@ jobs:
               sed 's/\](\.\.\/\.\.\/README\.md)/](Home)/g' | \
               sed 's/\](\([^)]*\)\.md)/](\1)/g' > wiki/_Sidebar.md
 
-            echo "=== Original sidebar ==="
-            cat openssl_encrypt/docs/_sidebar.md
-            echo ""
             echo "=== Transformed sidebar ==="
             cat wiki/_Sidebar.md
           fi
