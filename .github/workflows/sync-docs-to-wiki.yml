@@ -26,6 +26,8 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Sync documentation files
+        env:
+          REPO_NAME: ${{ github.repository }}
         run: |
           # Copy all markdown files from docs to wiki
           cp -v openssl_encrypt/docs/*.md wiki/
@@ -38,7 +40,7 @@ jobs:
           # Create a Home page if it doesn't exist
           if [ ! -f "wiki/Home.md" ]; then
             echo "Creating Home.md for wiki..."
-            cat > wiki/Home.md << 'EOF'
+            cat > wiki/Home.md << EOF
 # OpenSSL Encrypt Documentation
 
 Welcome to the OpenSSL Encrypt documentation wiki!
@@ -57,7 +59,7 @@ See the sidebar for the complete documentation structure.
 
 ## Quick Links
 
-- [Repository README](https://github.com/${{ github.repository }})
+- [Repository README](https://github.com/${REPO_NAME})
 - [User Guide](user-guide.md)
 - [Architecture & KDF Chain](architecture.md)
 - [Security Policy](security.md)
@@ -66,6 +68,9 @@ EOF
 
       - name: Commit and push to wiki
         working-directory: wiki
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -80,13 +85,15 @@ EOF
           git commit -m "Sync documentation from repository
 
           Automated sync from openssl_encrypt/docs/ directory
-          Triggered by: ${{ github.sha }}
-          Commit: ${{ github.event.head_commit.message }}"
+          Triggered by: ${COMMIT_SHA}
+          Commit: ${COMMIT_MSG}"
 
           git push origin master
 
       - name: Summary
         if: success()
+        env:
+          REPO_NAME: ${{ github.repository }}
         run: |
           echo "✅ Documentation successfully synced to wiki"
-          echo "📚 Wiki URL: https://github.com/${{ github.repository }}/wiki"
+          echo "📚 Wiki URL: https://github.com/${REPO_NAME}/wiki"
