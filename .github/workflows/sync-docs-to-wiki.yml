@@ -40,7 +40,7 @@ jobs:
           # Create a Home page if it doesn't exist
           if [ ! -f "wiki/Home.md" ]; then
             echo "Creating Home.md for wiki..."
-            cat > wiki/Home.md << EOF
+            cat > wiki/Home.md <<'HEREDOC_EOF'
 # OpenSSL Encrypt Documentation
 
 Welcome to the OpenSSL Encrypt documentation wiki!
@@ -59,11 +59,11 @@ See the sidebar for the complete documentation structure.
 
 ## Quick Links
 
-- [Repository README](https://github.com/${REPO_NAME})
+- [Repository README](https://github.com/jahlives/openssl_encrypt)
 - [User Guide](user-guide.md)
 - [Architecture & KDF Chain](architecture.md)
 - [Security Policy](security.md)
-EOF
+HEREDOC_EOF
           fi
 
       - name: Commit and push to wiki
