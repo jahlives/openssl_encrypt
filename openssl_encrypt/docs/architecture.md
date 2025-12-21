@@ -58,7 +58,6 @@ For broad compatibility and legacy support, the tool includes the **Fernet** pro
 | **Best For** | Performance & Security | Maximum Robustness | Interoperability |
 
 ---
----
 
 ## 5. Key Derivation Integrity (Hardened Salt Policy)
 A critical design decision in `openssl_encrypt` is the use of **strictly random, non-deterministic salts**. 
@@ -76,8 +75,26 @@ In our architecture, the only way to verify if a password is correct is to:
 3. Attempt an **AEAD decryption** with the resulting key.
 
 This ensures that every single guess in a brute-force attack incurs the **maximum computational cost**, effectively neutralizing high-speed cracking attempts.
+---
 
-## 6. Anti-Oracle Policy (Generic Errors)
+## 6. Salt Independence & Brute-Force Resistance
+
+A fundamental design principle of `openssl_encrypt` is the strict separation of the **User Password** and the **Cryptographic Salt**. 
+
+### 6.1 Why we avoid Password-Derived Salts
+During development, the idea of mixing parts of the user's password into the salt (even at runtime) was evaluated and rejected for the following cryptographic reasons:
+
+* **Correlating Entropy:** A salt is intended to be an independent variable. Mixing password fragments into the salt creates a correlation between the two inputs. In high-assurance cryptography, the salt must remain strictly independent of the secret to ensure the KDF (Argon2id) operates at its maximum theoretical strength.
+* **Code Transparency vs. Obscurity:** According to Kerckhoffs's Principle, the security of a system should reside solely in the secrecy of the password, not the secrecy of the algorithm. If an attacker knows the algorithm (which is public in open-source), "hiding" password fragments in the salt at runtime provides no additional security, as the attacker's cracking tools will simply replicate that logic.
+* **The "Slow-Failure" Guarantee:** By keeping the salt 100% random and stored in the metadata, we force an attacker to use the exact salt provided. This ensures that the attacker **cannot avoid** the massive computational overhead of the Argon2id and RandomX chain. There are no "fast-fail" shortcuts; every single guess requires the full execution of the hardened KDF stack.
+
+### 6.2 Implementation Conclusion
+The current implementation utilizes a **CSPRNG (Cryptographically Secure Pseudo-Random Number Generator)** to generate a fresh, unique salt for every encryption operation. This ensures that:
+1. Identical passwords result in different ciphertexts.
+2. Rainbow table attacks are mathematically impossible.
+3. The workload for a brute-force attacker is maximized by the full complexity of the KDF chain.
+---
+## 7. Anti-Oracle Policy (Generic Errors)
 To prevent side-channel and padding oracle attacks, the application implements a strict **generic error policy**. 
 * Any failure during KDF derivation, metadata parsing, or AEAD verification returns an identical `Decryption Failed` message. 
 * This prevents an attacker from gaining information about which specific layer of the security stack they have successfully bypassed.
