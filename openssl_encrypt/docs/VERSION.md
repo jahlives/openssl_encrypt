@@ -450,6 +450,6 @@ print(f"Build Date: {info.get('build_date', 'Unknown')}")
 ---
 
 **Maintainer:** Tobi <jahlives@gmx.ch>
-**License:** MIT License
+**License:** Hippocratic License 3.0 (https://firstdonoharm.dev)
 **Repository:** https://gitlab.rm-rf.ch/world/openssl_encrypt
 **Documentation:** https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs
