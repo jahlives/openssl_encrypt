@@ -58,8 +58,26 @@ For broad compatibility and legacy support, the tool includes the **Fernet** pro
 | **Best For** | Performance & Security | Maximum Robustness | Interoperability |
 
 ---
+---
 
-## 5. Anti-Oracle Policy (Generic Errors)
+## 5. Key Derivation Integrity (Hardened Salt Policy)
+A critical design decision in `openssl_encrypt` is the use of **strictly random, non-deterministic salts**. 
+
+### 5.1 Resistance to Pre-computation & Fast-Fail Attacks
+We consciously avoid embedding any information derived from the user's password (such as hashes of password fragments) into the salt or the metadata. While "password-derived salts" might seem like an extra layer of security, they introduce two major vulnerabilities:
+
+1. **Information Leakage:** Even a salted hash of password fragments reveals entropy characteristics of the original password, reducing the search space for an attacker.
+2. **KDF-Bypass (Fast-Fail):** If an attacker can verify a password's validity by checking a "cheap" hash in the metadata, they can bypass the expensive KDF chain (Argon2id + RandomX). They could test millions of passwords per second and only execute the heavy KDF for the few that pass the "cheap" pre-check.
+
+### 5.2 The "Slow-Failure" Principle
+In our architecture, the only way to verify if a password is correct is to:
+1. Complete the full **Argon2id** memory-hard cycle.
+2. Complete the full **RandomX** CPU-hard cycle.
+3. Attempt an **AEAD decryption** with the resulting key.
+
+This ensures that every single guess in a brute-force attack incurs the **maximum computational cost**, effectively neutralizing high-speed cracking attempts.
+
+## 6. Anti-Oracle Policy (Generic Errors)
 To prevent side-channel and padding oracle attacks, the application implements a strict **generic error policy**. 
 * Any failure during KDF derivation, metadata parsing, or AEAD verification returns an identical `Decryption Failed` message. 
 * This prevents an attacker from gaining information about which specific layer of the security stack they have successfully bypassed.
