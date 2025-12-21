@@ -18,6 +18,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check for WIKI_TOKEN
+        run: |
+          if [ -n "${{ secrets.WIKI_TOKEN }}" ]; then
+            echo "✅ WIKI_TOKEN is configured"
+          else
+            echo "❌ WIKI_TOKEN is NOT configured - will fail on push"
+            echo "Please add WIKI_TOKEN secret with 'repo' scope"
+            exit 1
+          fi
+
       - name: Checkout wiki
         uses: actions/checkout@v4
         continue-on-error: true
@@ -25,7 +35,8 @@ jobs:
         with:
           repository: ${{ github.repository }}.wiki
           path: wiki
-          token: ${{ secrets.WIKI_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.WIKI_TOKEN }}
+          persist-credentials: true
 
       - name: Check if wiki exists
         id: wiki-check
