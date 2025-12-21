@@ -20,10 +20,25 @@ jobs:
 
       - name: Checkout wiki
         uses: actions/checkout@v4
+        continue-on-error: true
+        id: checkout-wiki
         with:
           repository: ${{ github.repository }}.wiki
           path: wiki
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if wiki exists
+        id: wiki-check
+        run: |
+          if [ -d "wiki/.git" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            cd wiki
+            git branch -a
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Wiki not initialized. Please create at least one page manually at https://github.com/${{ github.repository }}/wiki"
+            exit 1
+          fi
 
       - name: Create wiki Home page
         if: ${{ !hashFiles('wiki/Home.md') }}
@@ -87,7 +102,11 @@ jobs:
           Triggered by: ${COMMIT_SHA}
           Commit: ${COMMIT_MSG}"
 
-          git push origin master
+          # Detect the default branch (master or main)
+          DEFAULT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+          echo "Pushing to branch: ${DEFAULT_BRANCH}"
+
+          git push origin "${DEFAULT_BRANCH}"
 
       - name: Summary
         if: success()
