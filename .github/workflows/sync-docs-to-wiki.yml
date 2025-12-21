@@ -25,9 +25,37 @@ jobs:
           path: wiki
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Create wiki Home page
+        if: ${{ !hashFiles('wiki/Home.md') }}
+        working-directory: wiki
+        run: |
+          echo "Creating Home.md for wiki..."
+          {
+            echo "# OpenSSL Encrypt Documentation"
+            echo ""
+            echo "Welcome to the OpenSSL Encrypt documentation wiki!"
+            echo ""
+            echo "## Navigation"
+            echo ""
+            echo "See the sidebar for the complete documentation structure."
+            echo ""
+            echo "## Main Documentation Sections"
+            echo ""
+            echo "- **Getting Started**: Installation, user guides, and keystore management"
+            echo "- **Technical Deep Dive**: Architecture, algorithms, metadata formats, and system integration"
+            echo "- **Security & Compliance**: Security policies and cryptographic analysis"
+            echo "- **Development**: Setup guides, dependency management, and contribution guidelines"
+            echo "- **Project Info**: Version history and future features"
+            echo ""
+            echo "## Quick Links"
+            echo ""
+            echo "- [Repository README](https://github.com/jahlives/openssl_encrypt)"
+            echo "- [User Guide](user-guide.md)"
+            echo "- [Architecture & KDF Chain](architecture.md)"
+            echo "- [Security Policy](security.md)"
+          } > Home.md
+
       - name: Sync documentation files
-        env:
-          REPO_NAME: ${{ github.repository }}
         run: |
           # Copy all markdown files from docs to wiki
           cp -v openssl_encrypt/docs/*.md wiki/
@@ -35,35 +63,6 @@ jobs:
           # Handle the sidebar specially
           if [ -f "openssl_encrypt/docs/_sidebar.md" ]; then
             cp -v openssl_encrypt/docs/_sidebar.md wiki/_Sidebar.md
-          fi
-
-          # Create a Home page if it doesn't exist
-          if [ ! -f "wiki/Home.md" ]; then
-            echo "Creating Home.md for wiki..."
-            cat > wiki/Home.md <<'HEREDOC_EOF'
-# OpenSSL Encrypt Documentation
-
-Welcome to the OpenSSL Encrypt documentation wiki!
-
-## Navigation
-
-See the sidebar for the complete documentation structure.
-
-## Main Documentation Sections
-
-- **Getting Started**: Installation, user guides, and keystore management
-- **Technical Deep Dive**: Architecture, algorithms, metadata formats, and system integration
-- **Security & Compliance**: Security policies and cryptographic analysis
-- **Development**: Setup guides, dependency management, and contribution guidelines
-- **Project Info**: Version history and future features
-
-## Quick Links
-
-- [Repository README](https://github.com/jahlives/openssl_encrypt)
-- [User Guide](user-guide.md)
-- [Architecture & KDF Chain](architecture.md)
-- [Security Policy](security.md)
-HEREDOC_EOF
           fi
 
       - name: Commit and push to wiki
