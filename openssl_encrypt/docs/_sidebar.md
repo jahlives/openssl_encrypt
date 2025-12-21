@@ -1,18 +1,25 @@
 * **Getting Started**
-  * [Home](Home.md)
-  * [Installation](Installation.md)
-  * [Usage Examples](Usage.md)
+  * [Home](../../README.md)
+  * [User Guide](user-guide.md)
+  * [Keystore Guide](keystore-guide.md)
 
 * **Technical Deep Dive**
   * [Architecture & KDF Chain](architecture.md)
-  * [Symmetric Models (AEAD)](architecture.md#3-symmetric-encryption--integrity-models)
-  * [Post-Quantum Layers](architecture.md#2-the-hybrid-encryption-flow)
+  * [Algorithm Reference](algorithm-reference.md)
+  * [Metadata Formats](metadata-formats.md)
+  * [D-Bus Service](dbus-service.md)
+  * [Portable Media Design](PORTABLE_MEDIA_DESIGN.md)
 
 * **Security & Compliance**
   * [Security Policy](security.md)
-  * [Anti-Oracle Design](security.md#5-anti-oracle-policy)
-  * [Vulnerability Reporting](security.md#4-reporting-a-vulnerability)
+  * [Crypto Security Analysis](crypto_tool_security_analysis.md)
 
-* **Community**
-  * [Contributing](Contributing.md)
-  * [License](License.md)
+* **Development**
+  * [Development Setup](development-setup.md)
+  * [Dependency Management](dependency-management.md)
+  * [Version Pinning Policy](VERSION_PINNING_POLICY.md)
+  * [TODO List](TODO.md)
+
+* **Project Info**
+  * [Version History](VERSION.md)
+  * [Future Features](FUTURE_FEATURES.md)
