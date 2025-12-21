@@ -1,0 +1,92 @@
+name: Sync Docs to Wiki
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'openssl_encrypt/docs/**'
+  workflow_dispatch:
+
+jobs:
+  sync-wiki:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout wiki
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}.wiki
+          path: wiki
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sync documentation files
+        run: |
+          # Copy all markdown files from docs to wiki
+          cp -v openssl_encrypt/docs/*.md wiki/
+
+          # Handle the sidebar specially
+          if [ -f "openssl_encrypt/docs/_sidebar.md" ]; then
+            cp -v openssl_encrypt/docs/_sidebar.md wiki/_Sidebar.md
+          fi
+
+          # Create a Home page if it doesn't exist
+          if [ ! -f "wiki/Home.md" ]; then
+            echo "Creating Home.md for wiki..."
+            cat > wiki/Home.md << 'EOF'
+# OpenSSL Encrypt Documentation
+
+Welcome to the OpenSSL Encrypt documentation wiki!
+
+## Navigation
+
+See the sidebar for the complete documentation structure.
+
+## Main Documentation Sections
+
+- **Getting Started**: Installation, user guides, and keystore management
+- **Technical Deep Dive**: Architecture, algorithms, metadata formats, and system integration
+- **Security & Compliance**: Security policies and cryptographic analysis
+- **Development**: Setup guides, dependency management, and contribution guidelines
+- **Project Info**: Version history and future features
+
+## Quick Links
+
+- [Repository README](https://github.com/${{ github.repository }})
+- [User Guide](user-guide.md)
+- [Architecture & KDF Chain](architecture.md)
+- [Security Policy](security.md)
+EOF
+          fi
+
+      - name: Commit and push to wiki
+        working-directory: wiki
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add .
+
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "Sync documentation from repository
+
+          Automated sync from openssl_encrypt/docs/ directory
+          Triggered by: ${{ github.sha }}
+          Commit: ${{ github.event.head_commit.message }}"
+
+          git push origin master
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "✅ Documentation successfully synced to wiki"
+          echo "📚 Wiki URL: https://github.com/${{ github.repository }}/wiki"
