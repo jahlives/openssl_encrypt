@@ -51,35 +51,10 @@ jobs:
             exit 1
           fi
 
-      - name: Create wiki Home page
-        if: ${{ !hashFiles('wiki/Home.md') }}
-        working-directory: wiki
+      - name: Copy README as Home page
         run: |
-          echo "Creating Home.md for wiki..."
-          {
-            echo "# OpenSSL Encrypt Documentation"
-            echo ""
-            echo "Welcome to the OpenSSL Encrypt documentation wiki!"
-            echo ""
-            echo "## Navigation"
-            echo ""
-            echo "See the sidebar for the complete documentation structure."
-            echo ""
-            echo "## Main Documentation Sections"
-            echo ""
-            echo "- **Getting Started**: Installation, user guides, and keystore management"
-            echo "- **Technical Deep Dive**: Architecture, algorithms, metadata formats, and system integration"
-            echo "- **Security & Compliance**: Security policies and cryptographic analysis"
-            echo "- **Development**: Setup guides, dependency management, and contribution guidelines"
-            echo "- **Project Info**: Version history and future features"
-            echo ""
-            echo "## Quick Links"
-            echo ""
-            echo "- [Repository README](https://github.com/jahlives/openssl_encrypt)"
-            echo "- [User Guide](user-guide.md)"
-            echo "- [Architecture & KDF Chain](architecture.md)"
-            echo "- [Security Policy](security.md)"
-          } > Home.md
+          echo "Copying README.md to wiki Home.md..."
+          cp -v README.md wiki/Home.md
 
       - name: Sync documentation files
         run: |
