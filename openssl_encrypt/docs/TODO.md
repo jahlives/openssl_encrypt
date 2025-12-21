@@ -189,4 +189,4 @@ This document outlines planned security enhancements and improvements for the op
 - **Static Analysis**: Comprehensive multi-layered static code analysis implementation with 7 CI jobs and pre-commit hooks
 - **Legacy Warnings**: Complete algorithm deprecation warning system for NIST ML-KEM migration guidance
 
-The openssl_encrypt library now provides industry-leading post-quantum cryptography support with comprehensive test coverage and robust security validation across all implemented algorithm families.
+The openssl_encrypt library now provides comprehensive post-quantum cryptography support with comprehensive test coverage and robust security validation across all implemented algorithm families.
