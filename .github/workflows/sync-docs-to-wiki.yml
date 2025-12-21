@@ -86,9 +86,14 @@ jobs:
           # Copy all markdown files from docs to wiki
           cp -v openssl_encrypt/docs/*.md wiki/
 
-          # Handle the sidebar specially
+          # Transform sidebar for GitHub Wiki format
           if [ -f "openssl_encrypt/docs/_sidebar.md" ]; then
-            cp -v openssl_encrypt/docs/_sidebar.md wiki/_Sidebar.md
+            echo "Transforming sidebar for GitHub Wiki..."
+            # Remove .md extensions from links and fix the Home link
+            sed 's/(\([^)]*\)\.md)/(\1)/g' openssl_encrypt/docs/_sidebar.md | \
+            sed 's|(../../README)|Home|g' > wiki/_Sidebar.md
+            echo "Sidebar transformed:"
+            cat wiki/_Sidebar.md
           fi
 
       - name: Commit and push to wiki
