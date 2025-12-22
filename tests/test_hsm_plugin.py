@@ -192,8 +192,8 @@ class TestPluginManager:
 class TestRealYubikey:
     """Integration tests with real Yubikey hardware."""
 
-    def test_yubikey_challenge_response(self):
-        """Test actual Yubikey Challenge-Response operation."""
+    def test_yubikey_challenge_response_auto_detect(self):
+        """Test actual Yubikey Challenge-Response with auto-detection."""
         try:
             from openssl_encrypt.plugins.hsm.yubikey_challenge_response import YubikeyHSMPlugin
         except ImportError:
@@ -208,9 +208,56 @@ class TestRealYubikey:
 
         result = plugin.get_hsm_pepper(salt, context)
 
-        # This will fail if no Yubikey is connected
+        # This will fail if no Yubikey is connected or no Challenge-Response configured
+        assert result.success, f"Auto-detect failed: {result.message}"
+        assert "hsm_pepper" in result.data
+        print(f"\n✅ Auto-detect successful, used slot {result.data.get('slot')}")
+
+    def test_yubikey_challenge_response_slot2(self):
+        """Test actual Yubikey Challenge-Response with explicit slot 2."""
+        try:
+            from openssl_encrypt.plugins.hsm.yubikey_challenge_response import YubikeyHSMPlugin
+        except ImportError:
+            pytest.skip("Yubikey plugin not available")
+
+        plugin = YubikeyHSMPlugin()
+        salt = secrets.token_bytes(16)
+
+        context = PluginSecurityContext(
+            plugin_id=plugin.plugin_id, capabilities={PluginCapability.ACCESS_CONFIG}
+        )
+        context.config['slot'] = 2  # Explicitly use slot 2
+
+        result = plugin.get_hsm_pepper(salt, context)
+
         assert result.success
         assert "hsm_pepper" in result.data
+        assert result.data.get('slot') == 2
+        assert len(result.data['hsm_pepper']) == 20  # HMAC-SHA1 = 20 bytes
+        print(f"\n✅ Slot 2 test successful, pepper length: {len(result.data['hsm_pepper'])} bytes")
+
+    def test_yubikey_deterministic_pepper(self):
+        """Test that same salt produces same pepper on real Yubikey."""
+        try:
+            from openssl_encrypt.plugins.hsm.yubikey_challenge_response import YubikeyHSMPlugin
+        except ImportError:
+            pytest.skip("Yubikey plugin not available")
+
+        plugin = YubikeyHSMPlugin()
+        salt = secrets.token_bytes(16)
+
+        context = PluginSecurityContext(
+            plugin_id=plugin.plugin_id, capabilities={PluginCapability.ACCESS_CONFIG}
+        )
+        context.config['slot'] = 2
+
+        # Get pepper twice with same salt
+        result1 = plugin.get_hsm_pepper(salt, context)
+        result2 = plugin.get_hsm_pepper(salt, context)
+
+        assert result1.success and result2.success
+        assert result1.data['hsm_pepper'] == result2.data['hsm_pepper']
+        print(f"\n✅ Deterministic test passed: same salt → same pepper")
 
 
 if __name__ == "__main__":

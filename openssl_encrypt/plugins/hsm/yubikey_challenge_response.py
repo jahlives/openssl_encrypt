@@ -95,39 +95,41 @@ class YubikeyHSMPlugin(HSMPlugin):
         """
         try:
             from ykman.device import list_all_devices
-            from yubikit.core.smartcard import SmartCardConnection
+            from yubikit.core.otp import OtpConnection
             from yubikit.yubiotp import YubiOtpSession
 
             # Find connected Yubikey
-            devices, _ = list_all_devices()
+            result = list_all_devices()
+            # Handle different API versions: newer returns list, older returns (list, state)
+            devices = result if isinstance(result, list) else result[0]
             if not devices:
                 self.logger.error("No Yubikey device found")
                 return None
 
-            # Use first device
-            device = devices[0]
+            # Use first device - handle tuple format (device, device_info)
+            device_entry = devices[0]
+            device = device_entry[0] if isinstance(device_entry, tuple) else device_entry
 
-            # Open connection and check slots
-            with device.open_connection(SmartCardConnection) as conn:
+            # Open connection and check slots via OTP (HID) interface
+            with device.open_connection(OtpConnection) as conn:
                 session = YubiOtpSession(conn)
 
-                # Check slot 1
-                try:
-                    config1 = session.get_config_state()
-                    if config1.is_configured(1):
-                        self.logger.info("Challenge-Response found on slot 1")
-                        return 1
-                except Exception as e:
-                    self.logger.debug(f"Slot 1 check failed: {e}")
+                # Get config state once
+                config = session.get_config_state()
 
-                # Check slot 2
-                try:
-                    config2 = session.get_config_state()
-                    if config2.is_configured(2):
-                        self.logger.info("Challenge-Response found on slot 2")
-                        return 2
-                except Exception as e:
-                    self.logger.debug(f"Slot 2 check failed: {e}")
+                # Check both slots - try to use them, not just check if configured
+                # because is_configured() doesn't tell us if it's Challenge-Response
+                for slot in [1, 2]:
+                    if config.is_configured(slot):
+                        # Try a test challenge to verify it's actually Challenge-Response
+                        try:
+                            test_challenge = b'\x00' * 16
+                            session.calculate_hmac_sha1(slot, test_challenge)
+                            self.logger.info(f"Challenge-Response found on slot {slot}")
+                            return slot
+                        except Exception as e:
+                            self.logger.debug(f"Slot {slot} configured but not for Challenge-Response: {e}")
+                            continue
 
             return None
 
@@ -151,19 +153,27 @@ class YubikeyHSMPlugin(HSMPlugin):
         """
         try:
             from ykman.device import list_all_devices
-            from yubikit.core.smartcard import SmartCardConnection
+            from yubikit.core.otp import OtpConnection
             from yubikit.yubiotp import YubiOtpSession
 
             # Find connected Yubikey
-            devices, _ = list_all_devices()
+            result = list_all_devices()
+            # Handle different API versions: newer returns list, older returns (list, state)
+            devices = result if isinstance(result, list) else result[0]
             if not devices:
                 raise RuntimeError("No Yubikey device found")
 
-            device = devices[0]
+            # Use first device - handle tuple format (device, device_info)
+            device_entry = devices[0]
+            device = device_entry[0] if isinstance(device_entry, tuple) else device_entry
 
-            # Perform Challenge-Response
-            with device.open_connection(SmartCardConnection) as conn:
+            # Perform Challenge-Response via OTP (HID) interface
+            with device.open_connection(OtpConnection) as conn:
                 session = YubiOtpSession(conn)
+
+                # Prompt user to touch Yubikey if required
+                self.logger.info(f"Performing Challenge-Response on slot {slot}...")
+                self.logger.info("👆 Touch your Yubikey if touch is required")
 
                 # Calculate response (HMAC-SHA1)
                 # Yubikey Challenge-Response produces 20-byte HMAC-SHA1
@@ -183,7 +193,10 @@ class YubikeyHSMPlugin(HSMPlugin):
                 f"Install with: pip install yubikey-manager"
             )
         except Exception as e:
-            raise RuntimeError(f"Yubikey Challenge-Response failed: {e}")
+            import traceback
+            error_details = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
+            self.logger.error(f"Challenge-Response exception details: {error_details}")
+            raise RuntimeError(f"Yubikey Challenge-Response failed: {str(e)}") from e
 
     def get_hsm_pepper(self, salt: bytes, context: PluginSecurityContext) -> PluginResult:
         """
@@ -240,6 +253,7 @@ class YubikeyHSMPlugin(HSMPlugin):
 
             # Perform Challenge-Response
             self.logger.info(f"Performing Challenge-Response with Yubikey slot {slot}...")
+            print(f"👆 Touch your Yubikey now (slot {slot})...")
             response = self._calculate_challenge_response(salt, slot)
 
             # Response is the hsm_pepper (20 bytes HMAC-SHA1)
