@@ -13,7 +13,7 @@ This document outlines potential new features and enhancements for the OpenSSL E
   - Automatic key rotation with configurable intervals
   - Key usage tracking and expiration policies
   - Key separation for different purposes (encryption, signing, transport)
-  - Hardware Security Module (HSM) integration
+  - ~~Hardware Security Module (HSM) integration~~ (done in 1.3.1 for yubikey)
   - Key escrow and recovery mechanisms
 - **Estimated Effort**: 2-3 weeks
 
@@ -32,8 +32,8 @@ This document outlines potential new features and enhancements for the OpenSSL E
 - **Status**: Not implemented
 - **Description**: Modular plugin system for custom algorithms and formats
 - **Components**:
-  - Plugin API for custom encryption algorithms
-  - Custom hash function plugins
+  - ~~Plugin API for custom encryption algorithms~~ (cannot be done as plugins are not allowed to access sensitive data PERIOD)
+  - ~~Custom hash function plugins~~ (cannot be done as plugins are not allowed to access sensitive data PERIOD)
   - Custom steganography format plugins
   - Plugin validation and security sandboxing
   - Plugin marketplace/registry system
