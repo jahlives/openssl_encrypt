@@ -19,6 +19,7 @@ Plugin Types:
 - FormatConverterPlugin: Handle format conversions
 - AnalyzerPlugin: Analyze encrypted files without decrypting
 - UtilityPlugin: Provide helper functions
+- HSMPlugin: Hardware Security Module integration for hardware-bound key derivation
 
 Example Usage:
     # Initialize plugin system
@@ -78,6 +79,7 @@ from .plugin_base import (
     AnalyzerPlugin,
     BasePlugin,
     FormatConverterPlugin,
+    HSMPlugin,
     MetadataHandlerPlugin,
     PluginCapability,
     PluginResult,
@@ -104,6 +106,9 @@ from .plugin_sandbox import (
     SandboxViolationError,
 )
 
+# Standard library imports
+import logging
+
 # Plugin system availability and status
 PLUGIN_SYSTEM_AVAILABLE = True
 
@@ -117,6 +122,7 @@ __all__ = [
     "FormatConverterPlugin",
     "AnalyzerPlugin",
     "UtilityPlugin",
+    "HSMPlugin",
     # Enums and data structures
     "PluginCapability",
     "PluginType",
@@ -273,6 +279,7 @@ def validate_plugin_compatibility(plugin_file: str) -> dict:
                         "FormatConverterPlugin",
                         "AnalyzerPlugin",
                         "UtilityPlugin",
+                        "HSMPlugin",
                     ]:
                         result["plugin_class_found"] = True
                         break
@@ -289,6 +296,4 @@ def validate_plugin_compatibility(plugin_file: str) -> dict:
 
 
 # Initialize logging for plugin system
-import logging
-
 logging.getLogger(__name__).addHandler(logging.NullHandler())
