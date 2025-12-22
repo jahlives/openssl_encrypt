@@ -1,7 +1,7 @@
 # Security Policy
 
 ## 1. Security Philosophy
-`openssl_encrypt` is designed with a **Defense in Depth** approach. Our security model doesn't just focus on data confidentiality but emphasizes **Metadata Integrity** and **Quantum Resistance**. 
+`openssl_encrypt` is designed with a **Defense in Depth** approach. Our security model doesn't just focus on data confidentiality but emphasizes **Metadata Integrity** and **Quantum Resistance**.
 
 We believe in transparency; therefore, our cryptographic choices are documented to allow for public audit and verification.
 
@@ -11,18 +11,47 @@ We believe in transparency; therefore, our cryptographic choices are documented 
 A core requirement of this tool is the cryptographic binding of file metadata (the JSON header) to the encrypted payload. This is achieved through **Authenticated Encryption with Associated Data (AEAD)**.
 
 ### 2.1 Metadata Binding (AAD)
-The following ciphers are implemented as AEAD/DAE, meaning the Base64-encoded metadata header is fed into the cipher as **Associated Data (AAD)**. Any modification to the header will result in an authentication failure.
 
-* **AES-256-GCM:** Standard hardware-accelerated AEAD.
-* **ChaCha20-Poly1305:** Standard software-efficient AEAD.
-* **AES-256-SIV (Deterministic AEAD):** Our most robust mode. It provides **Nonce-Misuse Resistance** and uses the S2V construction to bind metadata even more tightly to the encryption process.
+#### AEAD Algorithms (Full AAD Binding)
+The following ciphers implement true AEAD, where the Base64-encoded metadata header is cryptographically bound to the ciphertext via Associated Data (AAD):
 
+**Pure AEAD Algorithms:**
+* **AES-256-GCM**: Standard hardware-accelerated AEAD with AAD binding
+* **ChaCha20-Poly1305**: Software-efficient AEAD with AAD binding
+* **XChaCha20-Poly1305**: Extended-nonce AEAD with AAD binding
+* **AES-256-SIV**: Deterministic AEAD with AAD binding (nonce-misuse resistant)
+* **AES-GCM-SIV**: Misuse-resistant AEAD with AAD binding
+* **AES-OCB3**: OCB mode AEAD with AAD binding
 
+**Post-Quantum Hybrid Algorithms (18 total):**
+All PQC hybrid algorithms use AEAD ciphers for their symmetric encryption layer:
+* **ML-KEM** variants (512, 768, 1024, with AES-GCM or ChaCha20-Poly1305)
+* **HQC** variants (128, 192, 256)
+* **MAYO** variants (1, 3, 5)
+* **CROSS** variants (128, 192, 256)
+* **Kyber** variants (512, 768, 1024) - deprecated
+
+For these algorithms:
+- Metadata is created BEFORE encryption
+- Metadata is passed as AAD to the cipher
+- Any modification to metadata causes authentication failure
+- No `encrypted_hash` is stored (redundant with AAD protection)
+
+#### Non-AEAD Algorithms (Hash-Based Verification)
+The following algorithms use hash-based integrity verification:
+
+* **Fernet**: Uses internal HMAC (no AAD support per specification)
+* **Camellia**: Uses HMAC-SHA256 for authentication
+
+For these algorithms:
+- Metadata is created AFTER encryption
+- `encrypted_hash` is included in metadata
+- Verification via hash comparison (not AAD)
 
 ### 2.2 Note on Fernet
-Fernet is included for compatibility with the Python `cryptography` ecosystem. 
-* **Limitation:** The Fernet specification does not natively support Associated Data (AAD). 
-* **Security Bound:** While the payload integrity is guaranteed, the metadata header is not cryptographically bound to the Fernet token. This is a documented design trade-off for interoperability.
+Fernet is included for compatibility with the Python `cryptography` ecosystem.
+* **Limitation:** The Fernet specification does not natively support Associated Data (AAD).
+* **Security Bound:** While the payload integrity is guaranteed, the metadata header is not cryptographically bound to the Fernet token via AAD. Hash-based verification is used instead.
 
 ---
 

@@ -529,13 +529,14 @@ class PQCipher:
                     print(f"Available methods: {dir(kem)}")
             raise
 
-    def encrypt(self, data: bytes, public_key: bytes) -> bytes:
+    def encrypt(self, data: bytes, public_key: bytes, aad: bytes = None) -> bytes:
         """
         Encrypt data using a hybrid post-quantum + symmetric approach
 
         Args:
             data (bytes): The data to encrypt
             public_key (bytes): The recipient's public key
+            aad (bytes, optional): Additional authenticated data for AEAD binding
 
         Returns:
             bytes: The encrypted data format: encapsulated_key + nonce + ciphertext
@@ -624,7 +625,7 @@ class PQCipher:
                     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
                     aead = AESGCM(symmetric_key)
-                    ciphertext = aead.encrypt(nonce, data, None)
+                    ciphertext = aead.encrypt(nonce, data, aad)
 
                     # Format: encapsulated_key + nonce + ciphertext
                     result = encapsulated_key + nonce + ciphertext
@@ -643,7 +644,11 @@ class PQCipher:
                     secure_memzero(symmetric_key)
 
     def decrypt(
-        self, encrypted_data: bytes, private_key: bytes, file_contents: bytes = None
+        self,
+        encrypted_data: bytes,
+        private_key: bytes,
+        file_contents: bytes = None,
+        aad: bytes = None,
     ) -> bytes:
         """
         Decrypt data that was encrypted with the corresponding public key
@@ -653,6 +658,7 @@ class PQCipher:
             private_key (bytes): The recipient's private key
             file_contents (bytes, optional): The full original encrypted file contents
                                            for recovery if direct decryption fails
+            aad (bytes, optional): Additional authenticated data (must match encryption AAD)
 
         Returns:
             bytes: The decrypted data
@@ -1282,7 +1288,7 @@ class PQCipher:
                     # Normal decrypt path using secure memory
                     with SecureBytes() as secure_plaintext:
                         # Decrypt directly into secure memory
-                        decrypted = cipher.decrypt(nonce, ciphertext, None)
+                        decrypted = cipher.decrypt(nonce, ciphertext, aad)
 
                         # If this is a negative test case and we still successfully decrypted,
                         # we need to perform additional validation

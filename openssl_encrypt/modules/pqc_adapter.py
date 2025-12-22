@@ -263,20 +263,21 @@ class ExtendedPQCipher(PQCipher):
             # For KEM algorithms
             return self.liboqs_kem.generate_keypair()
 
-    def encrypt(self, data: bytes, public_key: bytes) -> bytes:
+    def encrypt(self, data: bytes, public_key: bytes, aad: bytes = None) -> bytes:
         """
         Encrypt data using a hybrid post-quantum + symmetric approach
 
         Args:
             data: The data to encrypt
             public_key: The recipient's public key
+            aad: Additional authenticated data for AEAD binding
 
         Returns:
             bytes: The encrypted data
         """
         if not self.use_liboqs:
             # Use native implementation for supported algorithms
-            return super().encrypt(data, public_key)
+            return super().encrypt(data, public_key, aad=aad)
 
         if not self.is_kem:
             raise ValueError("This method is only supported for KEM algorithms")
@@ -324,7 +325,7 @@ class ExtendedPQCipher(PQCipher):
             nonce = secrets.token_bytes(12)  # 96 bits for AES-GCM
 
             # Encrypt data
-            encrypted_data = cipher.encrypt(nonce, data, None)
+            encrypted_data = cipher.encrypt(nonce, data, aad)
 
             # Format: encapsulated_key + nonce + ciphertext
             result = ciphertext + nonce + encrypted_data
@@ -338,7 +339,11 @@ class ExtendedPQCipher(PQCipher):
                 secure_memzero(symmetric_key)
 
     def decrypt(
-        self, encrypted_data: bytes, private_key: bytes, file_contents: bytes = None
+        self,
+        encrypted_data: bytes,
+        private_key: bytes,
+        file_contents: bytes = None,
+        aad: bytes = None,
     ) -> bytes:
         """
         Decrypt data that was encrypted with the corresponding public key
@@ -347,13 +352,14 @@ class ExtendedPQCipher(PQCipher):
             encrypted_data: The encrypted data
             private_key: The recipient's private key
             file_contents: The full original encrypted file contents for recovery
+            aad: Additional authenticated data (must match encryption AAD)
 
         Returns:
             bytes: The decrypted data
         """
         if not self.use_liboqs:
             # Use native implementation for supported algorithms
-            return super().decrypt(encrypted_data, private_key, file_contents)
+            return super().decrypt(encrypted_data, private_key, file_contents, aad=aad)
 
         if not self.is_kem:
             raise ValueError("This method is only supported for KEM algorithms")
@@ -424,7 +430,7 @@ class ExtendedPQCipher(PQCipher):
                 # Decrypt data using secure memory
                 with SecureBytes() as secure_plaintext:
                     # Decrypt directly into secure memory
-                    decrypted = cipher.decrypt(nonce, ciphertext, None)
+                    decrypted = cipher.decrypt(nonce, ciphertext, aad)
                     secure_plaintext.extend(decrypted)
 
                     # Zero out the original decrypted data

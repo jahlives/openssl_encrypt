@@ -199,8 +199,13 @@
         }
       }
     },
+    "aead_binding": {
+      "type": "boolean",
+      "description": "Indicates metadata is cryptographically bound via AEAD AAD"
+    },
     "hashes": {
       "type": "object",
+      "required": ["original_hash"],
       "additionalProperties": true,
       "properties": {
         "original_hash": {
@@ -213,7 +218,7 @@
           "type": "string",
           "maxLength": 128,
           "pattern": "^[a-fA-F0-9]*$",
-          "description": "Hexadecimal hash of encrypted content"
+          "description": "Hexadecimal hash of encrypted content (optional for AEAD-bound files)"
         }
       }
     },

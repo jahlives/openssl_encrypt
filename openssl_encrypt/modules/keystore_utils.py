@@ -41,8 +41,32 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
                     metadata = json.loads(metadata_json)
                     format_version = metadata.get("format_version", 1)
 
+                    # Handle format_version 6
+                    if format_version == 6:
+                        # Format version 6 uses derivation_config.keystore_id
+                        if (
+                            "derivation_config" in metadata
+                            and "keystore_id" in metadata["derivation_config"]
+                        ):
+                            key_id = metadata["derivation_config"]["keystore_id"]
+                            if verbose:
+                                logger.info(
+                                    f"Found key ID in format version 6 metadata derivation_config: {key_id}"
+                                )
+                            return key_id
+                        # Also check old location for backward compatibility (dual encryption migration)
+                        elif (
+                            "derivation_config" in metadata
+                            and "kdf_config" in metadata["derivation_config"]
+                            and "dual_encryption" in metadata["derivation_config"]["kdf_config"]
+                            and metadata["derivation_config"]["kdf_config"]["dual_encryption"]
+                        ):
+                            if verbose:
+                                logger.info(
+                                    "Found dual_encryption flag in format version 6 metadata"
+                                )
                     # Handle format_version 5
-                    if format_version == 5:
+                    elif format_version == 5:
                         # Format version 5 follows the same structure as v4, look in derivation_config.kdf_config
                         if (
                             "derivation_config" in metadata
@@ -303,7 +327,13 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
         format_version = metadata.get("format_version", 3)
 
     # Check if we have a key ID in the hash_config or metadata
-    if format_version == 5 and metadata:
+    if format_version == 6 and metadata:
+        # Check for key ID in format version 6 structure
+        if "derivation_config" in metadata and "keystore_id" in metadata["derivation_config"]:
+            key_id = metadata["derivation_config"]["keystore_id"]
+            if not getattr(args, "quiet", False):
+                print(f"Found key ID in metadata derivation_config (v6): {key_id}")
+    elif format_version == 5 and metadata:
         # Check for key ID in format version 5 structure (same as v4)
         if (
             "derivation_config" in metadata
@@ -354,8 +384,8 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                     # Get format version from metadata
                     format_version = header_config.get("format_version", 3)
 
-                    if format_version == 4:
-                        # Extract from format version 4 structure
+                    if format_version in [4, 5, 6]:
+                        # Extract from format version 4/5/6 structure (all use encryption section)
                         if (
                             "encryption" in header_config
                             and "pqc_private_key" in header_config["encryption"]
@@ -364,7 +394,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                             if embedded_private_key:
                                 if not getattr(args, "quiet", False):
                                     print(
-                                        "Successfully retrieved embedded private key from format v4 metadata"
+                                        f"Successfully retrieved embedded private key from format v{format_version} metadata"
                                     )
 
                                 # Decode the private key
@@ -412,7 +442,17 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
     # Check for dual encryption flag in metadata
     dual_encryption = False
 
-    if format_version == 5 and metadata:
+    if format_version == 6 and metadata:
+        # Check for dual encryption flag in format version 6 structure (same as v4/v5)
+        if (
+            "derivation_config" in metadata
+            and "kdf_config" in metadata["derivation_config"]
+            and "dual_encryption" in metadata["derivation_config"]["kdf_config"]
+        ):
+            dual_encryption = metadata["derivation_config"]["kdf_config"]["dual_encryption"]
+            if not getattr(args, "quiet", False) and dual_encryption:
+                print("Dual encryption is enabled for this file (format v6)")
+    elif format_version == 5 and metadata:
         # Check for dual encryption flag in format version 5 structure (same as v4)
         if (
             "derivation_config" in metadata
@@ -595,8 +635,8 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
     public_key = None
     algorithm = None
 
-    if format_version == 5:
-        # Format version 5 structure (same structure as v4 for key storage)
+    if format_version == 6 or format_version == 5:
+        # Format version 6 and 5 structures (same structure for key storage)
         if "derivation_config" in metadata and "kdf_config" in metadata["derivation_config"]:
             dual_encrypt_enabled = metadata["derivation_config"]["kdf_config"].get(
                 "dual_encryption", False
@@ -730,7 +770,11 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
                 keystore._key_has_dual_encryption_flag(key_id, True)
 
             # Update metadata with the key ID based on format version
-            if format_version == 5:
+            if format_version == 6:
+                # For v6, use the new keystore_id location
+                if "derivation_config" in metadata:
+                    metadata["derivation_config"]["keystore_id"] = key_id
+            elif format_version == 5:
                 if (
                     "derivation_config" in metadata
                     and "kdf_config" in metadata["derivation_config"]
@@ -907,7 +951,16 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
                     print(f"Added new key to keystore with ID: {key_id}")
 
             # Store key ID in metadata based on format version
-            if format_version == 5:
+            if format_version == 6:
+                # Format version 6 structure - use new keystore_id location
+                if not isinstance(hash_config, dict):
+                    hash_config = {}
+
+                if "derivation_config" not in hash_config:
+                    hash_config["derivation_config"] = {}
+
+                hash_config["derivation_config"]["keystore_id"] = key_id
+            elif format_version == 5:
                 # Format version 5 structure (same hierarchical structure as v4)
                 if not isinstance(hash_config, dict):
                     hash_config = {}
@@ -945,7 +998,15 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
 
             # If we're using dual encryption, store that in metadata
             if dual_encryption:
-                if format_version == 5:
+                if format_version == 6:
+                    # Format version 6 structure
+                    if "derivation_config" not in hash_config:
+                        hash_config["derivation_config"] = {}
+                    if "kdf_config" not in hash_config["derivation_config"]:
+                        hash_config["derivation_config"]["kdf_config"] = {}
+
+                    hash_config["derivation_config"]["kdf_config"]["dual_encryption"] = True
+                elif format_version == 5:
                     # Store in both locations for maximum compatibility
                     # Legacy location for backward compatibility
                     hash_config["dual_encryption"] = True
@@ -976,8 +1037,8 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
             # If requested, also store the private key in metadata for self-decryption
             if hasattr(args, "pqc_store_key") and args.pqc_store_key:
                 encoded_private_key = base64.b64encode(private_key).decode("utf-8")
-                if format_version == 5:
-                    # Store in format version 5 structure (same as v4)
+                if format_version == 6 or format_version == 5:
+                    # Store in format version 6/5 structure (same as v4)
                     if "encryption" not in hash_config:
                         hash_config["encryption"] = {}
 
@@ -1044,8 +1105,8 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
         # Store just the public key for verification
         encoded_public_key = base64.b64encode(public_key).decode("utf-8")
 
-        if format_version == 5:
-            # Store in format version 5 structure (same as v4)
+        if format_version == 6 or format_version == 5:
+            # Store in format version 6/5 structure (same as v4)
             if "encryption" not in hash_config:
                 hash_config["encryption"] = {}
 
