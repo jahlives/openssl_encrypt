@@ -3272,8 +3272,30 @@ def encrypt_file(
             hsm_pepper = result.data.get("hsm_pepper")
             hsm_slot_used = result.data.get("slot")
 
+            # Comprehensive pepper validation
             if not hsm_pepper:
                 raise KeyDerivationError("HSM plugin returned no pepper value")
+
+            if not isinstance(hsm_pepper, bytes):
+                raise KeyDerivationError(
+                    f"HSM pepper must be bytes, got {type(hsm_pepper).__name__}"
+                )
+
+            if len(hsm_pepper) < 16:
+                raise KeyDerivationError(
+                    f"HSM pepper too short ({len(hsm_pepper)} bytes), minimum 16 bytes required for security"
+                )
+
+            if len(hsm_pepper) > 128:
+                raise KeyDerivationError(
+                    f"HSM pepper too long ({len(hsm_pepper)} bytes), maximum 128 bytes allowed"
+                )
+
+            # Warning for all-zero pepper (suspicious but technically valid)
+            if hsm_pepper == b"\x00" * len(hsm_pepper):
+                logger.warning(
+                    "HSM pepper is all zeros - this is unusual and may indicate a problem"
+                )
 
             if not quiet:
                 print(f"Hardware pepper derived ({len(hsm_pepper)} bytes)")
@@ -4443,8 +4465,30 @@ def decrypt_file(
 
             hsm_pepper = result.data.get("hsm_pepper")
 
+            # Comprehensive pepper validation
             if not hsm_pepper:
                 raise KeyDerivationError("HSM plugin returned no pepper value")
+
+            if not isinstance(hsm_pepper, bytes):
+                raise KeyDerivationError(
+                    f"HSM pepper must be bytes, got {type(hsm_pepper).__name__}"
+                )
+
+            if len(hsm_pepper) < 16:
+                raise KeyDerivationError(
+                    f"HSM pepper too short ({len(hsm_pepper)} bytes), minimum 16 bytes required for security"
+                )
+
+            if len(hsm_pepper) > 128:
+                raise KeyDerivationError(
+                    f"HSM pepper too long ({len(hsm_pepper)} bytes), maximum 128 bytes allowed"
+                )
+
+            # Warning for all-zero pepper (suspicious but technically valid)
+            if hsm_pepper == b"\x00" * len(hsm_pepper):
+                logger.warning(
+                    "HSM pepper is all zeros - this is unusual and may indicate a problem"
+                )
 
             if not quiet:
                 print(f"Hardware pepper derived ({len(hsm_pepper)} bytes)")
