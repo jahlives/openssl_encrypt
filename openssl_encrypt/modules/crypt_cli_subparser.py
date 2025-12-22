@@ -436,6 +436,25 @@ def setup_encrypt_parser(subparser):
         help="Video quality preservation level (1=max capacity, 10=max quality, default: 8)",
     )
 
+    # HSM plugin arguments for hardware-bound key derivation
+    hsm_group = subparser.add_argument_group("HSM Options", "Hardware Security Module integration")
+    hsm_group.add_argument(
+        "--hsm",
+        metavar="PLUGIN",
+        help="Enable HSM (Hardware Security Module) plugin for hardware-bound key derivation. "
+        "Supported: 'yubikey' (Yubikey Challenge-Response). "
+        "The HSM adds a hardware-specific pepper to the key derivation, requiring the device "
+        "for both encryption and decryption.",
+    )
+    hsm_group.add_argument(
+        "--hsm-slot",
+        type=int,
+        choices=[1, 2],
+        metavar="SLOT",
+        help="Manually specify Yubikey slot (1 or 2) for Challenge-Response. "
+        "If not specified, the plugin will auto-detect the configured slot.",
+    )
+
 
 def setup_decrypt_parser(subparser):
     """Set up arguments specific to the decrypt command."""
@@ -569,6 +588,24 @@ def setup_decrypt_parser(subparser):
         metavar="1-10",
         default=8,
         help="Video quality preservation level used during hiding (default: 8)",
+    )
+
+    # HSM plugin arguments for hardware-bound key derivation
+    hsm_group = subparser.add_argument_group("HSM Options", "Hardware Security Module integration")
+    hsm_group.add_argument(
+        "--hsm",
+        metavar="PLUGIN",
+        help="Enable HSM (Hardware Security Module) plugin for hardware-bound key derivation. "
+        "Supported: 'yubikey' (Yubikey Challenge-Response). "
+        "Required if the file was encrypted with an HSM plugin.",
+    )
+    hsm_group.add_argument(
+        "--hsm-slot",
+        type=int,
+        choices=[1, 2],
+        metavar="SLOT",
+        help="Manually specify Yubikey slot (1 or 2) for Challenge-Response. "
+        "If not specified, the slot will be read from file metadata or auto-detected.",
     )
 
 

@@ -146,12 +146,24 @@ class PluginManager:
                 )
 
             # Load module
-            spec = importlib.util.spec_from_file_location("plugin_module", file_path)
-            if spec is None or spec.loader is None:
-                return PluginResult.error_result(f"Could not load plugin spec: {file_path}")
+            # Add project root to sys.path to ensure plugins can import correctly
+            project_root = os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            )
+            original_path = sys.path.copy()
+            if project_root not in sys.path:
+                sys.path.insert(0, project_root)
 
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
+            try:
+                spec = importlib.util.spec_from_file_location("plugin_module", file_path)
+                if spec is None or spec.loader is None:
+                    return PluginResult.error_result(f"Could not load plugin spec: {file_path}")
+
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+            finally:
+                # Restore original sys.path
+                sys.path = original_path
 
             # Find plugin class
             plugin_class = self._find_plugin_class(module)
