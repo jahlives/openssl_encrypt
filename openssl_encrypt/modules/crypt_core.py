@@ -2824,6 +2824,146 @@ def create_metadata_v5(
     return metadata
 
 
+def create_metadata_v6(
+    salt,
+    hash_config,
+    original_hash,
+    encrypted_hash,
+    algorithm,
+    pbkdf2_iterations=0,
+    pqc_info=None,
+    encryption_data="aes-gcm",
+    hsm_plugin_name=None,
+    hsm_slot_used=None,
+):
+    """
+    Create metadata in format version 6 with formal HSM validation.
+
+    Changes from v5:
+    - Adds formal HSM schema validation for plugin names and slot numbers
+    - No functional changes, only improved validation and security
+
+    Args:
+        salt (bytes): Salt used for key derivation
+        hash_config (dict): Hash configuration
+        original_hash (str): Hash of original content
+        encrypted_hash (str): Hash of encrypted content
+        algorithm (str): Encryption algorithm used
+        pbkdf2_iterations (int): PBKDF2 iterations if used
+        pqc_info (dict): Post-quantum cryptography information
+        encryption_data (str): The symmetric encryption algorithm to use for data encryption
+        hsm_plugin_name (str): HSM plugin identifier (optional)
+        hsm_slot_used (int): HSM slot number used (optional)
+
+    Returns:
+        dict: Metadata in format version 6
+
+    Raises:
+        ValueError: If HSM parameters don't meet validation requirements
+    """
+    import re
+
+    # Encode salt to base64
+    salt_b64 = base64.b64encode(salt).decode("utf-8")
+
+    # Create basic metadata
+    metadata = {
+        "format_version": 6,  # Version 6
+        "derivation_config": {"salt": salt_b64, "hash_config": {}, "kdf_config": {}},
+        "hashes": {"original_hash": original_hash, "encrypted_hash": encrypted_hash},
+        "encryption": {"algorithm": algorithm, "encryption_data": encryption_data},
+    }
+
+    # Process hash algorithms to use nested structure
+    hash_algorithms = [
+        "sha512",
+        "sha384",
+        "sha256",
+        "sha224",
+        "sha3_512",
+        "sha3_384",
+        "sha3_256",
+        "sha3_224",
+        "blake2b",
+        "blake3",
+        "shake256",
+        "shake128",
+        "whirlpool",
+    ]
+    for algo in hash_algorithms:
+        if algo in hash_config:
+            metadata["derivation_config"]["hash_config"][algo] = {"rounds": hash_config[algo]}
+
+    # Add PBKDF2 config if used
+    # Use the effective pbkdf2_iterations from hash_config if available (for default template compatibility)
+    effective_pbkdf2_iterations = hash_config.get("pbkdf2_iterations", pbkdf2_iterations)
+    if effective_pbkdf2_iterations > 0:
+        metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {
+            "rounds": effective_pbkdf2_iterations
+        }
+
+    # Move KDF configurations from hash_config if present
+    kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf", "randomx"]
+    for kdf in kdf_algorithms:
+        if kdf in hash_config:
+            metadata["derivation_config"]["kdf_config"][kdf] = hash_config[kdf]
+
+    # Add PQC information if present
+    if pqc_info:
+        if "public_key" in pqc_info:
+            metadata["encryption"]["pqc_public_key"] = base64.b64encode(
+                pqc_info["public_key"]
+            ).decode("utf-8")
+
+        if "private_key" in pqc_info and pqc_info["private_key"]:
+            metadata["encryption"]["pqc_private_key"] = base64.b64encode(
+                pqc_info["private_key"]
+            ).decode("utf-8")
+
+        if "key_salt" in pqc_info:
+            metadata["encryption"]["pqc_key_salt"] = base64.b64encode(pqc_info["key_salt"]).decode(
+                "utf-8"
+            )
+
+        if "key_encrypted" in pqc_info:
+            metadata["encryption"]["pqc_key_encrypted"] = pqc_info["key_encrypted"]
+
+        if "dual_encrypt_key" in pqc_info:
+            metadata["encryption"]["pqc_dual_encrypt_key"] = pqc_info["dual_encrypt_key"]
+
+    # Add HSM configuration with validation (v6 enhancement)
+    if hsm_plugin_name:
+        # Validate plugin name format (alphanumeric, underscore, hyphen only)
+        if not re.match(r"^[a-zA-Z0-9_-]+$", hsm_plugin_name):
+            raise ValueError(
+                f"Invalid HSM plugin name '{hsm_plugin_name}': "
+                f"must contain only alphanumeric characters, underscores, and hyphens"
+            )
+
+        # Validate plugin name length
+        if len(hsm_plugin_name) < 1 or len(hsm_plugin_name) > 64:
+            raise ValueError(
+                f"Invalid HSM plugin name '{hsm_plugin_name}': "
+                f"must be between 1 and 64 characters"
+            )
+
+        metadata["encryption"]["hsm_plugin"] = hsm_plugin_name
+
+        if hsm_slot_used is not None:
+            # Validate slot is a non-negative integer
+            if not isinstance(hsm_slot_used, int):
+                raise ValueError(f"Invalid HSM slot '{hsm_slot_used}': must be an integer")
+
+            if hsm_slot_used < 0 or hsm_slot_used > 1000000:
+                raise ValueError(
+                    f"Invalid HSM slot '{hsm_slot_used}': must be between 0 and 1000000"
+                )
+
+            metadata["encryption"]["hsm_config"] = {"slot": hsm_slot_used}
+
+    return metadata
+
+
 def create_metadata_v4(
     salt,
     hash_config,
@@ -3719,8 +3859,8 @@ def encrypt_file(
                     )
                     pqc_info["dual_encrypt_key"] = True
 
-    # Create metadata in version 5 format using the helper function
-    metadata = create_metadata_v5(
+    # Create metadata in version 6 format using the helper function
+    metadata = create_metadata_v6(
         salt=salt,
         hash_config=hash_config,
         original_hash=original_hash,
@@ -3855,7 +3995,7 @@ def extract_file_metadata(input_file):
         format_version = metadata.get("format_version", 1)
 
         # Extract algorithm based on format version
-        if format_version in [4, 5]:
+        if format_version in [4, 5, 6]:
             encryption = metadata.get("encryption", {})
             algorithm = encryption.get("algorithm", EncryptionAlgorithm.FERNET.value)
             encryption_data = encryption.get("encryption_data", "aes-gcm")
@@ -4046,9 +4186,9 @@ def decrypt_file(
     # Extract necessary information from metadata
     format_version = metadata.get("format_version", 1)
 
-    # For format_version 4 or 5, set correct hash_config for printing purposes
+    # For format_version 4, 5, or 6, set correct hash_config for printing purposes
     # This doesn't change the actual metadata, just passes the right info to print_hash_config
-    if format_version in [4, 5]:
+    if format_version in [4, 5, 6]:
         # If verbose, pass the full metadata to print_hash_config for proper display
         if verbose:
             print_hash_config_metadata = metadata
@@ -4057,8 +4197,8 @@ def decrypt_file(
     else:
         print_hash_config_metadata = metadata.get("hash_config", {})
 
-    # Handle format version 4 or 5
-    if format_version in [4, 5]:
+    # Handle format version 4, 5, or 6
+    if format_version in [4, 5, 6]:
         # Extract information from new hierarchical structure
         derivation_config = metadata["derivation_config"]
         salt = base64.b64decode(derivation_config["salt"])
@@ -4101,11 +4241,11 @@ def decrypt_file(
         encryption = metadata["encryption"]
         algorithm = encryption.get("algorithm", EncryptionAlgorithm.FERNET.value)
 
-        # For v5 format, extract encryption_data from metadata (overrides parameter)
+        # For v5+ format, extract encryption_data from metadata (overrides parameter)
         if format_version >= 5 and "encryption_data" in encryption:
             encryption_data = encryption["encryption_data"]
 
-        # Extract HSM configuration if present
+        # Extract HSM configuration if present (v5+)
         hsm_plugin_name = encryption.get("hsm_plugin")
         hsm_config = encryption.get("hsm_config", {})
 
@@ -4222,12 +4362,39 @@ def decrypt_file(
     # HSM pepper derivation if required
     hsm_pepper = None
     if hsm_plugin_name:
+        # Auto-load HSM plugin if not provided via CLI
         if not hsm_plugin:
-            raise KeyDerivationError(
-                f"File was encrypted with HSM plugin '{hsm_plugin_name}' but no HSM plugin provided. "
-                f"Use --hsm {hsm_plugin_name} to decrypt."
-            )
+            if not quiet:
+                print(f"File requires HSM plugin '{hsm_plugin_name}', loading automatically...")
 
+            try:
+                # Import HSM plugin based on name from metadata
+                if hsm_plugin_name == "yubikey" or hsm_plugin_name == "yubikey_hsm":
+                    from ..plugins.hsm.yubikey_challenge_response import YubikeyHSMPlugin
+
+                    hsm_plugin = YubikeyHSMPlugin()
+                    init_result = hsm_plugin.initialize({})
+
+                    if not init_result.success:
+                        raise KeyDerivationError(
+                            f"Failed to initialize HSM plugin '{hsm_plugin_name}': {init_result.message}"
+                        )
+
+                    if not quiet:
+                        print(f"✅ Auto-loaded HSM plugin: {hsm_plugin.name}")
+                else:
+                    raise KeyDerivationError(
+                        f"Unknown HSM plugin '{hsm_plugin_name}'. "
+                        f"Supported: 'yubikey'. "
+                        f"Please specify manually with --hsm {hsm_plugin_name}"
+                    )
+            except ImportError as e:
+                raise KeyDerivationError(
+                    f"Cannot load HSM plugin '{hsm_plugin_name}': {e}. "
+                    f"Install dependencies: pip install -r requirements-hsm.txt"
+                )
+
+        # Validate plugin matches metadata
         if hsm_plugin.plugin_id != hsm_plugin_name:
             raise KeyDerivationError(
                 f"File was encrypted with HSM plugin '{hsm_plugin_name}' but '{hsm_plugin.plugin_id}' provided. "
@@ -4340,8 +4507,8 @@ def decrypt_file(
     if pqc_has_private_key:
         try:
             # Handle different format versions
-            if format_version in [4, 5]:
-                # Get encrypted private key from v4/v5 structure
+            if format_version in [4, 5, 6]:
+                # Get encrypted private key from v4/v5/v6 structure
                 encrypted_private_key = base64.b64decode(metadata["encryption"]["pqc_private_key"])
             else:  # format_version 3
                 encrypted_private_key = base64.b64decode(metadata["pqc_private_key"])
@@ -4353,7 +4520,7 @@ def decrypt_file(
             if pqc_key_is_encrypted:
                 # We need to decrypt the private key using the separately derived key
                 # Get the salt from metadata based on format version
-                if format_version in [4, 5]:
+                if format_version in [4, 5, 6]:
                     if "pqc_key_salt" not in metadata["encryption"]:
                         if not quiet:
                             print("Failed to decrypt post-quantum private key - wrong format")

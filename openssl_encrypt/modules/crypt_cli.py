@@ -4093,9 +4093,7 @@ def main_with_args(args=None):
 
             except ImportError as e:
                 print(f"Error: Could not import HSM plugin: {e}")
-                print(
-                    "Make sure yubikey-manager is installed: pip install -r requirements-hsm.txt"
-                )
+                print("Make sure yubikey-manager is installed: pip install -r requirements-hsm.txt")
                 sys.exit(1)
             except Exception as e:
                 print(f"Error initializing HSM plugin: {e}")
