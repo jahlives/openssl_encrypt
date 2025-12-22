@@ -2526,6 +2526,24 @@ def main_with_args(args=None):
     plugin_group.add_argument("--plugin-config-dir", help="Directory for plugin configurations")
     plugin_group.add_argument("--plugin-id", help="Plugin ID for plugin-specific operations")
 
+    # HSM plugin arguments
+    plugin_group.add_argument(
+        "--hsm",
+        metavar="PLUGIN",
+        help="Enable HSM (Hardware Security Module) plugin for hardware-bound key derivation. "
+        "Supported: 'yubikey' (Yubikey Challenge-Response). "
+        "The HSM adds a hardware-specific pepper to the key derivation, requiring the device "
+        "for both encryption and decryption.",
+    )
+    plugin_group.add_argument(
+        "--hsm-slot",
+        type=int,
+        choices=[1, 2],
+        metavar="SLOT",
+        help="Manually specify Yubikey slot (1 or 2) for Challenge-Response. "
+        "If not specified, the plugin will auto-detect the configured slot.",
+    )
+
     # Add CLI aliases for simplified user experience
     alias_processor = add_cli_aliases(parser)
 
@@ -3967,9 +3985,9 @@ def main_with_args(args=None):
                 "whirlpool": getattr(args, "whirlpool_rounds", 0),
                 "scrypt": {
                     "enabled": args.enable_scrypt,
-                    "n": args.scrypt_n,
-                    "r": args.scrypt_r,
-                    "p": args.scrypt_p,
+                    "n": args.scrypt_n if args.scrypt_n is not None else 0,
+                    "r": args.scrypt_r if args.scrypt_r is not None else 8,
+                    "p": args.scrypt_p if args.scrypt_p is not None else 1,
                     "rounds": args.scrypt_rounds,
                 },
                 "argon2": {
@@ -4046,6 +4064,40 @@ def main_with_args(args=None):
                     print(f"⚠️  Plugin system error: {e}")
                 plugin_manager = None
                 enable_plugins = False
+
+        # Load HSM plugin if requested
+        hsm_plugin_instance = None
+        if hasattr(args, "hsm") and args.hsm:
+            try:
+                # Direct import of HSM plugins (avoids dynamic loading issues)
+                if args.hsm.lower() == "yubikey":
+                    from ..plugins.hsm.yubikey_challenge_response import YubikeyHSMPlugin
+
+                    hsm_plugin_instance = YubikeyHSMPlugin()
+
+                    # Initialize plugin
+                    init_result = hsm_plugin_instance.initialize({})
+                    if not init_result.success:
+                        print(f"Error initializing HSM plugin: {init_result.message}")
+                        sys.exit(1)
+
+                    if not args.quiet:
+                        print(f"✅ Loaded HSM plugin: {hsm_plugin_instance.name}")
+                        if hasattr(args, "hsm_slot") and args.hsm_slot:
+                            print(f"   Using manual slot: {args.hsm_slot}")
+                        else:
+                            print("   Auto-detecting Challenge-Response slot")
+                else:
+                    print(f"Error: Unknown HSM plugin '{args.hsm}'. Supported: yubikey")
+                    sys.exit(1)
+
+            except ImportError as e:
+                print(f"Error: Could not import HSM plugin: {e}")
+                print("Make sure yubikey-manager is installed: pip install -r requirements-hsm.txt")
+                sys.exit(1)
+            except Exception as e:
+                print(f"Error initializing HSM plugin: {e}")
+                sys.exit(1)
 
         if args.action == "encrypt":
             # DEPRECATED: Whirlpool is no longer supported for new encryptions
@@ -4560,6 +4612,7 @@ def main_with_args(args=None):
                             encryption_data=args.encryption_data,
                             enable_plugins=enable_plugins,
                             plugin_manager=plugin_manager,
+                            hsm_plugin=hsm_plugin_instance,
                         )
 
                     if success:
@@ -4656,6 +4709,7 @@ def main_with_args(args=None):
                     encryption_data=args.encryption_data,
                     enable_plugins=enable_plugins,
                     plugin_manager=plugin_manager,
+                    hsm_plugin=hsm_plugin_instance,
                 )
 
                 if success:
@@ -5128,6 +5182,7 @@ def main_with_args(args=None):
                         encryption_data=args.encryption_data,
                         enable_plugins=enable_plugins,
                         plugin_manager=plugin_manager,
+                        hsm_plugin=hsm_plugin_instance,
                     )
 
                 # Handle steganography if requested
@@ -5580,6 +5635,7 @@ def main_with_args(args=None):
                             pqc_private_key=pqc_private_key,
                             enable_plugins=enable_plugins,
                             plugin_manager=plugin_manager,
+                            hsm_plugin=hsm_plugin_instance,
                         )
                     if success:
                         # Apply the original permissions to the temp file
@@ -5783,6 +5839,7 @@ def main_with_args(args=None):
                         pqc_private_key=pqc_private_key,
                         enable_plugins=enable_plugins,
                         plugin_manager=plugin_manager,
+                        hsm_plugin=hsm_plugin_instance,
                     )
                 if success:
                     # Security audit log for successful decryption
@@ -5950,6 +6007,7 @@ def main_with_args(args=None):
                         pqc_private_key=pqc_private_key,
                         enable_plugins=enable_plugins,
                         plugin_manager=plugin_manager,
+                        hsm_plugin=hsm_plugin_instance,
                     )
                 try:
                     # Try to decode as text

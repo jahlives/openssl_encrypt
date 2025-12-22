@@ -136,8 +136,8 @@ Modern AEAD (Authenticated Encryption with Associated Data) ciphers:
 |XChaCha20-Poly1305|✅ Recommended |Extended nonce (192-bit)           |
 |AES-SIV           |✅ Supported   |Deterministic encryption           |
 |Fernet            |✅ Default     |AES-128-CBC + HMAC, simple API     |
-|AES-OCB3          |⚠️ Decrypt only|Deprecated in v1.2.0               |
-|Camellia          |⚠️ Decrypt only|Deprecated in v1.2.0               |
+|AES-OCB3          |⚠ Decrypt only|Deprecated in v1.2.0               |
+|Camellia          |⚠ Decrypt only|Deprecated in v1.2.0               |
 
 ### Post-Quantum Cryptography
 
@@ -166,7 +166,7 @@ Hybrid encryption combining classical symmetric ciphers with post-quantum KEMs:
 |Scrypt  |Memory-hard       |✅ Supported   |GPU-resistant               |
 |HKDF    |Extract-and-expand|✅ Supported   |Key expansion               |
 |RandomX |CPU-hard          |✅ Supported   |Anti-ASIC (from Monero)     |
-|PBKDF2  |Iterative         |⚠️ Decrypt only|Deprecated in v1.2.0        |
+|PBKDF2  |Iterative         |⚠ Decrypt only|Deprecated in v1.2.0        |
 
 ### Hash Functions
 

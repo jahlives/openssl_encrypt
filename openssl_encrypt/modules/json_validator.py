@@ -77,6 +77,7 @@ class SecureJSONValidator:
                 "metadata_v3": "metadata_v3_schema.json",
                 "metadata_v4": "metadata_v4_schema.json",
                 "metadata_v5": "metadata_v5_schema.json",
+                "metadata_v6": "metadata_v6_schema.json",
             }
 
             for schema_name, filename in schema_files.items():
@@ -270,6 +271,8 @@ class SecureJSONValidator:
             schema_name = "metadata_v4"
         elif format_version == 5:
             schema_name = "metadata_v5"
+        elif format_version == 6:
+            schema_name = "metadata_v6"
         else:
             # For unknown versions, perform basic validation without schema
             print(

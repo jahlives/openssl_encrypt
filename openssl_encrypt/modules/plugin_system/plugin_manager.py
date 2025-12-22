@@ -146,12 +146,24 @@ class PluginManager:
                 )
 
             # Load module
-            spec = importlib.util.spec_from_file_location("plugin_module", file_path)
-            if spec is None or spec.loader is None:
-                return PluginResult.error_result(f"Could not load plugin spec: {file_path}")
+            # Add project root to sys.path to ensure plugins can import correctly
+            project_root = os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            )
+            original_path = sys.path.copy()
+            if project_root not in sys.path:
+                sys.path.insert(0, project_root)
 
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
+            try:
+                spec = importlib.util.spec_from_file_location("plugin_module", file_path)
+                if spec is None or spec.loader is None:
+                    return PluginResult.error_result(f"Could not load plugin spec: {file_path}")
+
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+            finally:
+                # Restore original sys.path
+                sys.path = original_path
 
             # Find plugin class
             plugin_class = self._find_plugin_class(module)
@@ -408,6 +420,72 @@ class PluginManager:
             self.plugins[plugin_id].enabled = False
             self._audit_log(f"Disabled plugin: {plugin_id}")
             return PluginResult.success_result(f"Plugin {plugin_id} disabled")
+
+    def get_hsm_plugin(self, plugin_name: str) -> Optional[Any]:
+        """
+        Get HSM plugin by name.
+
+        Args:
+            plugin_name: Name of HSM plugin (e.g., 'yubikey')
+
+        Returns:
+            HSM plugin instance or None if not found
+        """
+        with self.lock:
+            for plugin_id, registration in self.plugins.items():
+                if (
+                    registration.plugin.get_plugin_type() == PluginType.HSM
+                    and registration.enabled
+                    and plugin_name.lower() in plugin_id.lower()
+                ):
+                    return registration.plugin
+        return None
+
+    def execute_hsm_plugin(
+        self, plugin: Any, salt: bytes, config: Optional[Dict[str, Any]] = None
+    ) -> bytes:
+        """
+        Execute HSM plugin and return pepper.
+
+        Args:
+            plugin: HSM plugin instance
+            salt: Salt to use as challenge
+            config: Optional configuration (e.g., slot number)
+
+        Returns:
+            HSM pepper bytes
+
+        Raises:
+            KeyDerivationError: If HSM operation fails
+        """
+        try:
+            from ..crypt_errors import KeyDerivationError
+        except ImportError:
+            # Fallback if import fails
+            class KeyDerivationError(Exception):
+                pass
+
+        # Create security context
+        context = PluginSecurityContext(
+            plugin_id=plugin.plugin_id,
+            capabilities={PluginCapability.ACCESS_CONFIG, PluginCapability.WRITE_LOGS},
+        )
+        context.metadata["salt"] = salt
+
+        if config:
+            context.config.update(config)
+
+        # Execute plugin
+        result = self.execute_plugin(plugin.plugin_id, context, use_process_isolation=False)
+
+        if not result.success:
+            raise KeyDerivationError(f"HSM plugin execution failed: {result.message}")
+
+        hsm_pepper = result.data.get("hsm_pepper")
+        if not hsm_pepper:
+            raise KeyDerivationError("HSM plugin returned no pepper value")
+
+        return hsm_pepper
 
     def get_audit_log(self) -> List[Dict[str, Any]]:
         """Get plugin audit log."""
