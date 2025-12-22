@@ -4369,10 +4369,14 @@ def decrypt_file(
 
             try:
                 # Use plugin manager to dynamically discover and load HSM plugin
-                from .plugin_system import PluginManager, PluginType
+                from .plugin_system import PluginType, create_default_plugin_manager
 
-                plugin_manager = PluginManager()
-                plugin_manager.discover_plugins()
+                plugin_manager = create_default_plugin_manager()
+                discovered = plugin_manager.discover_plugins()
+
+                # Load discovered plugins
+                for plugin_file in discovered:
+                    plugin_manager.load_plugin(plugin_file)
 
                 # Get HSM plugin by name from plugin manager
                 hsm_plugin = plugin_manager.get_hsm_plugin(hsm_plugin_name)

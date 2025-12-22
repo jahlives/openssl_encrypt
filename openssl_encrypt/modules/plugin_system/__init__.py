@@ -169,6 +169,7 @@ PLUGIN_SYSTEM_METADATA = {
 # Default plugin directories (relative to OpenSSL Encrypt installation)
 DEFAULT_PLUGIN_DIRECTORIES = [
     "plugins",  # Main plugins directory
+    "plugins/hsm",  # HSM (Hardware Security Module) plugins
     "plugins/official",  # Official plugins
     "plugins/community",  # Community plugins
     "plugins/user",  # User-specific plugins

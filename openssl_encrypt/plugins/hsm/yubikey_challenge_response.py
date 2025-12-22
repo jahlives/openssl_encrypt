@@ -27,27 +27,21 @@ Usage:
 """
 
 import logging
+import os
+import sys
 from typing import Any, Dict, Set
 
-try:
-    from ...modules.plugin_system import (
-        HSMPlugin,
-        PluginCapability,
-        PluginResult,
-        PluginSecurityContext,
-    )
-except ImportError:
-    # Fallback for different import paths
-    import os
-    import sys
+# Ensure openssl_encrypt is in path for absolute imports
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../"))
-    from modules.plugin_system import (
-        HSMPlugin,
-        PluginCapability,
-        PluginResult,
-        PluginSecurityContext,
-    )
+from openssl_encrypt.modules.plugin_system import (
+    HSMPlugin,
+    PluginCapability,
+    PluginResult,
+    PluginSecurityContext,
+)
 
 logger = logging.getLogger(__name__)
 
