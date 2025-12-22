@@ -43,7 +43,9 @@ The Yubikey OTP interface requires HID access. You have two options:
 
 #### Option A: udev Rules (Recommended)
 
-Create a udev rule to allow your user to access Yubikey HID devices:
+Create a udev rule to allow your user to access Yubikey HID devices.
+
+**For Debian/Ubuntu (uses `plugdev` group):**
 
 ```bash
 # Create udev rules file
@@ -63,10 +65,33 @@ sudo usermod -a -G plugdev $USER
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 
-# Unplug and replug your Yubikey, or restart
+# Unplug and replug your Yubikey
+# Log out and log back in for group changes to take effect
 ```
 
-After this, **log out and log back in** for group changes to take effect.
+**For Fedora/RHEL/CentOS (uses systemd ACLs):**
+
+```bash
+# Create udev rules file
+sudo tee /etc/udev/rules.d/70-yubikey.rules << 'EOF'
+# Yubikey udev rules for Fedora/RHEL
+# This allows non-root access to Yubikey devices via systemd ACLs
+
+# Yubikey 4/5 series
+ACTION=="add|change", SUBSYSTEM=="usb", ATTRS{idVendor}=="1050", TAG+="uaccess"
+ACTION=="add|change", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1050", TAG+="uaccess"
+
+# Yubikey NEO, 4, 5 - HID OTP interface (for Challenge-Response)
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1050", TAG+="uaccess"
+EOF
+
+# Reload udev rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+
+# Unplug and replug your Yubikey
+# No need to log out - systemd ACLs apply immediately
+```
 
 #### Option B: Run with sudo (Not Recommended)
 
