@@ -2526,6 +2526,24 @@ def main_with_args(args=None):
     plugin_group.add_argument("--plugin-config-dir", help="Directory for plugin configurations")
     plugin_group.add_argument("--plugin-id", help="Plugin ID for plugin-specific operations")
 
+    # HSM plugin arguments
+    plugin_group.add_argument(
+        "--hsm",
+        metavar="PLUGIN",
+        help="Enable HSM (Hardware Security Module) plugin for hardware-bound key derivation. "
+        "Supported: 'yubikey' (Yubikey Challenge-Response). "
+        "The HSM adds a hardware-specific pepper to the key derivation, requiring the device "
+        "for both encryption and decryption.",
+    )
+    plugin_group.add_argument(
+        "--hsm-slot",
+        type=int,
+        choices=[1, 2],
+        metavar="SLOT",
+        help="Manually specify Yubikey slot (1 or 2) for Challenge-Response. "
+        "If not specified, the plugin will auto-detect the configured slot.",
+    )
+
     # Add CLI aliases for simplified user experience
     alias_processor = add_cli_aliases(parser)
 
@@ -4047,6 +4065,73 @@ def main_with_args(args=None):
                 plugin_manager = None
                 enable_plugins = False
 
+        # Load HSM plugin if requested
+        hsm_plugin_instance = None
+        if hasattr(args, "hsm") and args.hsm:
+            try:
+                from .plugin_system import PluginType
+
+                # Map HSM plugin names to plugin files
+                hsm_plugin_map = {
+                    "yubikey": os.path.join(
+                        os.path.dirname(__file__), "../plugins/hsm/yubikey_challenge_response.py"
+                    )
+                }
+
+                if args.hsm.lower() not in hsm_plugin_map:
+                    print(
+                        f"Error: Unknown HSM plugin '{args.hsm}'. Supported: {', '.join(hsm_plugin_map.keys())}"
+                    )
+                    sys.exit(1)
+
+                # Create plugin manager if not already created
+                if not plugin_manager:
+                    from .plugin_system import create_default_plugin_manager
+
+                    plugin_manager = create_default_plugin_manager(args.plugin_config_dir)
+
+                # Add HSM plugin directory
+                hsm_plugin_file = hsm_plugin_map[args.hsm.lower()]
+                hsm_plugin_dir = os.path.dirname(hsm_plugin_file)
+                plugin_manager.add_plugin_directory(hsm_plugin_dir)
+
+                # Load HSM plugin
+                if not os.path.exists(hsm_plugin_file):
+                    print(f"Error: HSM plugin file not found: {hsm_plugin_file}")
+                    sys.exit(1)
+
+                load_result = plugin_manager.load_plugin(hsm_plugin_file)
+                if not load_result.success:
+                    print(f"Error loading HSM plugin: {load_result.message}")
+                    sys.exit(1)
+
+                # Get the HSM plugin instance
+                hsm_plugins = plugin_manager.get_plugins_by_type(PluginType.HSM)
+                if not hsm_plugins:
+                    print(f"Error: No HSM plugin loaded from {hsm_plugin_file}")
+                    sys.exit(1)
+
+                hsm_plugin_instance = hsm_plugins[0].plugin
+
+                # Configure HSM plugin with slot if specified
+                if hasattr(args, "hsm_slot") and args.hsm_slot:
+                    # Slot will be passed via context during execution
+                    pass
+
+                if not args.quiet:
+                    print(f"✅ Loaded HSM plugin: {hsm_plugin_instance.name}")
+                    if hasattr(args, "hsm_slot") and args.hsm_slot:
+                        print(f"   Using manual slot: {args.hsm_slot}")
+                    else:
+                        print(f"   Auto-detecting Challenge-Response slot")
+
+            except ImportError as e:
+                print(f"Error: Plugin system not available: {e}")
+                sys.exit(1)
+            except Exception as e:
+                print(f"Error initializing HSM plugin: {e}")
+                sys.exit(1)
+
         if args.action == "encrypt":
             # DEPRECATED: Whirlpool is no longer supported for new encryptions
             if hasattr(args, "whirlpool_rounds") and getattr(args, "whirlpool_rounds", 0) > 0:
@@ -4560,6 +4645,7 @@ def main_with_args(args=None):
                             encryption_data=args.encryption_data,
                             enable_plugins=enable_plugins,
                             plugin_manager=plugin_manager,
+                            hsm_plugin=hsm_plugin_instance,
                         )
 
                     if success:
@@ -5783,6 +5869,7 @@ def main_with_args(args=None):
                         pqc_private_key=pqc_private_key,
                         enable_plugins=enable_plugins,
                         plugin_manager=plugin_manager,
+                        hsm_plugin=hsm_plugin_instance,
                     )
                 if success:
                     # Security audit log for successful decryption

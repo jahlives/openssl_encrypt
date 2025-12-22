@@ -1162,7 +1162,9 @@ def with_progress_bar(func, message, *args, quiet=False, **kwargs):
 
 
 @add_timing_jitter
-def multi_hash_password(password, salt, hash_config, quiet=False, progress=False, debug=False):
+def multi_hash_password(
+    password, salt, hash_config, quiet=False, progress=False, debug=False, hsm_pepper=None
+):
     """
     Apply multiple rounds of different hash algorithms to a password.
 
@@ -1240,9 +1242,15 @@ def multi_hash_password(password, salt, hash_config, quiet=False, progress=False
         from .secure_memory import secure_buffer, secure_memcpy, secure_memzero
 
         # Use secure memory approach
-        with secure_buffer(len(password) + len(salt), zero=False) as hashed:
-            # Initialize the secure buffer with password + salt
-            secure_memcpy(hashed, password + salt)
+        pepper_len = len(hsm_pepper) if hsm_pepper else 0
+        with secure_buffer(len(password) + len(salt) + pepper_len, zero=False) as hashed:
+            # Initialize the secure buffer with password + salt + hsm_pepper
+            if hsm_pepper:
+                if debug:
+                    logger.debug(f"HASH-DEBUG: Injecting HSM pepper ({len(hsm_pepper)} bytes)")
+                secure_memcpy(hashed, password + salt + hsm_pepper)
+            else:
+                secure_memcpy(hashed, password + salt)
 
             # Extract the correct hash configuration based on format (v3 vs v4)
             if (
@@ -1564,6 +1572,7 @@ def generate_key(
     progress=False,
     debug=False,
     pqc_keypair=None,
+    hsm_pepper=None,
 ):
     """
     Generate an encryption key from a password using PBKDF2 or Argon2.
@@ -1734,12 +1743,21 @@ def generate_key(
             print("Applying hash iterations")
         # Apply multiple hash algorithms in sequence
         password = multi_hash_password(
-            password, salt, hash_config, quiet, progress=progress, debug=debug
+            password,
+            salt,
+            hash_config,
+            quiet,
+            progress=progress,
+            debug=debug,
+            hsm_pepper=hsm_pepper,
         )
     else:
         # Even when no hash iterations are configured, we need to combine password with salt
         # for consistency with the original key derivation behavior
-        password = password + salt
+        if hsm_pepper:
+            password = password + salt + hsm_pepper
+        else:
+            password = password + salt
 
     # Check if Argon2 is available on the system
     argon2_available = ARGON2_AVAILABLE
@@ -2710,6 +2728,8 @@ def create_metadata_v5(
     pbkdf2_iterations=0,
     pqc_info=None,
     encryption_data="aes-gcm",
+    hsm_plugin_name=None,
+    hsm_slot_used=None,
 ):
     """
     Create metadata in format version 5.
@@ -2795,6 +2815,12 @@ def create_metadata_v5(
         if "dual_encrypt_key" in pqc_info:
             metadata["encryption"]["pqc_dual_encrypt_key"] = pqc_info["dual_encrypt_key"]
 
+    # Add HSM configuration if used
+    if hsm_plugin_name:
+        metadata["encryption"]["hsm_plugin"] = hsm_plugin_name
+        if hsm_slot_used:
+            metadata["encryption"]["hsm_config"] = {"slot": hsm_slot_used}
+
     return metadata
 
 
@@ -2854,6 +2880,7 @@ def encrypt_file(
     enable_plugins=True,
     plugin_manager=None,
     secure_mode=False,
+    hsm_plugin=None,
 ):
     """
     Encrypt a file with a password using the specified algorithm.
@@ -3079,6 +3106,50 @@ def encrypt_file(
         debug=debug,
     )
 
+    # HSM pepper derivation if HSM plugin provided
+    hsm_pepper = None
+    hsm_slot_used = None
+    if hsm_plugin:
+        if not quiet:
+            print("Deriving hardware-bound pepper from HSM...")
+
+        try:
+            from .plugin_system import PluginCapability, PluginSecurityContext
+
+            # Create security context for HSM plugin
+            hsm_context = PluginSecurityContext(
+                plugin_id=hsm_plugin.plugin_id,
+                capabilities={PluginCapability.ACCESS_CONFIG, PluginCapability.WRITE_LOGS},
+            )
+            hsm_context.metadata["salt"] = salt
+
+            # Execute HSM plugin
+            result = hsm_plugin.get_hsm_pepper(salt, hsm_context)
+
+            if not result.success:
+                raise KeyDerivationError(f"HSM pepper derivation failed: {result.message}")
+
+            hsm_pepper = result.data.get("hsm_pepper")
+            hsm_slot_used = result.data.get("slot")
+
+            if not hsm_pepper:
+                raise KeyDerivationError("HSM plugin returned no pepper value")
+
+            if not quiet:
+                print(f"Hardware pepper derived ({len(hsm_pepper)} bytes)")
+
+            if debug:
+                logger.debug(f"HSM pepper length: {len(hsm_pepper)} bytes")
+                logger.debug(
+                    f"HSM slot used: {hsm_slot_used if hsm_slot_used else 'auto-detected'}"
+                )
+
+        except ImportError:
+            raise KeyDerivationError("Plugin system not available for HSM operation")
+        except Exception as e:
+            raise KeyDerivationError(f"HSM operation failed: {str(e)}")
+
+    # Generate key (now with hsm_pepper)
     key, salt, hash_config = generate_key(
         password,
         salt,
@@ -3089,6 +3160,7 @@ def encrypt_file(
         progress=progress,
         debug=debug,
         pqc_keypair=pqc_keypair,
+        hsm_pepper=hsm_pepper,
     )
     # Read the input file
     if not quiet:
@@ -3657,6 +3729,8 @@ def encrypt_file(
         pbkdf2_iterations=pbkdf2_iterations,
         pqc_info=pqc_info,
         encryption_data=encryption_data,
+        hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
+        hsm_slot_used=hsm_slot_used,
     )
     # If scrypt is used, add rounds to hash_config
     # Serialize and encode the metadata
@@ -3734,6 +3808,11 @@ def encrypt_file(
             secure_memzero(encrypted_hash)
             encrypted_hash = None
 
+        # Clean up HSM pepper
+        if "hsm_pepper" in locals() and hsm_pepper is not None:
+            secure_memzero(hsm_pepper)
+            hsm_pepper = None
+
 
 def extract_file_metadata(input_file):
     """
@@ -3808,6 +3887,7 @@ def decrypt_file(
     enable_plugins=True,
     plugin_manager=None,
     secure_mode=False,
+    hsm_plugin=None,
 ):
     """
     Decrypt a file with a password.
@@ -4025,6 +4105,10 @@ def decrypt_file(
         if format_version >= 5 and "encryption_data" in encryption:
             encryption_data = encryption["encryption_data"]
 
+        # Extract HSM configuration if present
+        hsm_plugin_name = encryption.get("hsm_plugin")
+        hsm_config = encryption.get("hsm_config", {})
+
         # Extract PQC information if present
         pqc_info = None
         pqc_has_private_key = "pqc_private_key" in encryption
@@ -4135,7 +4219,61 @@ def decrypt_file(
         elif not quiet:
             print("✅")  # Green check symbol
 
-    # Generate the key from the password and salt
+    # HSM pepper derivation if required
+    hsm_pepper = None
+    if hsm_plugin_name:
+        if not hsm_plugin:
+            raise KeyDerivationError(
+                f"File was encrypted with HSM plugin '{hsm_plugin_name}' but no HSM plugin provided. "
+                f"Use --hsm {hsm_plugin_name} to decrypt."
+            )
+
+        if hsm_plugin.plugin_id != hsm_plugin_name:
+            raise KeyDerivationError(
+                f"File was encrypted with HSM plugin '{hsm_plugin_name}' but '{hsm_plugin.plugin_id}' provided. "
+                f"Use --hsm {hsm_plugin_name} to decrypt."
+            )
+
+        if not quiet:
+            print("Deriving hardware-bound pepper from HSM for decryption...")
+
+        try:
+            from .plugin_system import PluginCapability, PluginSecurityContext
+
+            # Create security context for HSM plugin
+            hsm_context = PluginSecurityContext(
+                plugin_id=hsm_plugin.plugin_id,
+                capabilities={PluginCapability.ACCESS_CONFIG, PluginCapability.WRITE_LOGS},
+            )
+            hsm_context.metadata["salt"] = salt
+
+            # Pass stored slot config if available
+            if "slot" in hsm_config:
+                hsm_context.config["slot"] = hsm_config["slot"]
+
+            # Execute HSM plugin
+            result = hsm_plugin.get_hsm_pepper(salt, hsm_context)
+
+            if not result.success:
+                raise KeyDerivationError(f"HSM pepper derivation failed: {result.message}")
+
+            hsm_pepper = result.data.get("hsm_pepper")
+
+            if not hsm_pepper:
+                raise KeyDerivationError("HSM plugin returned no pepper value")
+
+            if not quiet:
+                print(f"Hardware pepper derived ({len(hsm_pepper)} bytes)")
+
+            if debug:
+                logger.debug(f"HSM pepper length: {len(hsm_pepper)} bytes")
+
+        except ImportError:
+            raise KeyDerivationError("Plugin system not available for HSM operation")
+        except Exception as e:
+            raise KeyDerivationError(f"HSM operation failed: {str(e)}")
+
+    # Generate the key from the password and salt (with hsm_pepper if applicable)
     if not quiet:
         print("Generating decryption key ✅")  # Green check symbol)
 
@@ -4149,6 +4287,7 @@ def decrypt_file(
         progress=progress,
         debug=debug,
         pqc_keypair=pqc_info,
+        hsm_pepper=hsm_pepper,
     )
 
     # Helper function to get expected nonce size for each algorithm
@@ -4894,6 +5033,11 @@ def decrypt_file(
         if "file_content" in locals() and file_content is not None:
             secure_memzero(file_content)
             file_content = None
+
+        # Clean up HSM pepper
+        if "hsm_pepper" in locals() and hsm_pepper is not None:
+            secure_memzero(hsm_pepper)
+            hsm_pepper = None
 
 
 def get_organized_hash_config(hash_config, encryption_algo=None, salt=None):
