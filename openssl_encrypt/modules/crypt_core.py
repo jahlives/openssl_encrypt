@@ -4368,30 +4368,43 @@ def decrypt_file(
                 print(f"File requires HSM plugin '{hsm_plugin_name}', loading automatically...")
 
             try:
-                # Import HSM plugin based on name from metadata
-                if hsm_plugin_name == "yubikey" or hsm_plugin_name == "yubikey_hsm":
-                    from ..plugins.hsm.yubikey_challenge_response import YubikeyHSMPlugin
+                # Use plugin manager to dynamically discover and load HSM plugin
+                from .plugin_system import PluginManager, PluginType
 
-                    hsm_plugin = YubikeyHSMPlugin()
-                    init_result = hsm_plugin.initialize({})
+                plugin_manager = PluginManager()
+                plugin_manager.discover_plugins()
 
-                    if not init_result.success:
-                        raise KeyDerivationError(
-                            f"Failed to initialize HSM plugin '{hsm_plugin_name}': {init_result.message}"
-                        )
+                # Get HSM plugin by name from plugin manager
+                hsm_plugin = plugin_manager.get_hsm_plugin(hsm_plugin_name)
 
-                    if not quiet:
-                        print(f"✅ Auto-loaded HSM plugin: {hsm_plugin.name}")
-                else:
+                if not hsm_plugin:
+                    # List available HSM plugins for better error message
+                    available_hsm = [
+                        p.plugin.plugin_id
+                        for p in plugin_manager.get_plugins_by_type(PluginType.HSM)
+                    ]
+                    available_list = ", ".join(available_hsm) if available_hsm else "none"
                     raise KeyDerivationError(
-                        f"Unknown HSM plugin '{hsm_plugin_name}'. "
-                        f"Supported: 'yubikey'. "
-                        f"Please specify manually with --hsm {hsm_plugin_name}"
+                        f"HSM plugin '{hsm_plugin_name}' not found. "
+                        f"Available HSM plugins: {available_list}. "
+                        f"Ensure the plugin is installed and enabled."
                     )
+
+                # Initialize the plugin
+                init_result = hsm_plugin.initialize({})
+
+                if not init_result.success:
+                    raise KeyDerivationError(
+                        f"Failed to initialize HSM plugin '{hsm_plugin_name}': {init_result.message}"
+                    )
+
+                if not quiet:
+                    print(f"✅ Auto-loaded HSM plugin: {hsm_plugin.name}")
+
             except ImportError as e:
                 raise KeyDerivationError(
                     f"Cannot load HSM plugin '{hsm_plugin_name}': {e}. "
-                    f"Install dependencies: pip install -r requirements-hsm.txt"
+                    f"Install plugin dependencies or check plugin availability."
                 )
 
         # Validate plugin matches metadata
