@@ -123,12 +123,14 @@ class YubikeyHSMPlugin(HSMPlugin):
                     if config.is_configured(slot):
                         # Try a test challenge to verify it's actually Challenge-Response
                         try:
-                            test_challenge = b'\x00' * 16
+                            test_challenge = b"\x00" * 16
                             session.calculate_hmac_sha1(slot, test_challenge)
                             self.logger.info(f"Challenge-Response found on slot {slot}")
                             return slot
                         except Exception as e:
-                            self.logger.debug(f"Slot {slot} configured but not for Challenge-Response: {e}")
+                            self.logger.debug(
+                                f"Slot {slot} configured but not for Challenge-Response: {e}"
+                            )
                             continue
 
             return None
@@ -194,6 +196,7 @@ class YubikeyHSMPlugin(HSMPlugin):
             )
         except Exception as e:
             import traceback
+
             error_details = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
             self.logger.error(f"Challenge-Response exception details: {error_details}")
             raise RuntimeError(f"Yubikey Challenge-Response failed: {str(e)}") from e

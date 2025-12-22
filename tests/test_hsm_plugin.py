@@ -226,14 +226,14 @@ class TestRealYubikey:
         context = PluginSecurityContext(
             plugin_id=plugin.plugin_id, capabilities={PluginCapability.ACCESS_CONFIG}
         )
-        context.config['slot'] = 2  # Explicitly use slot 2
+        context.config["slot"] = 2  # Explicitly use slot 2
 
         result = plugin.get_hsm_pepper(salt, context)
 
         assert result.success
         assert "hsm_pepper" in result.data
-        assert result.data.get('slot') == 2
-        assert len(result.data['hsm_pepper']) == 20  # HMAC-SHA1 = 20 bytes
+        assert result.data.get("slot") == 2
+        assert len(result.data["hsm_pepper"]) == 20  # HMAC-SHA1 = 20 bytes
         print(f"\n✅ Slot 2 test successful, pepper length: {len(result.data['hsm_pepper'])} bytes")
 
     def test_yubikey_deterministic_pepper(self):
@@ -249,14 +249,14 @@ class TestRealYubikey:
         context = PluginSecurityContext(
             plugin_id=plugin.plugin_id, capabilities={PluginCapability.ACCESS_CONFIG}
         )
-        context.config['slot'] = 2
+        context.config["slot"] = 2
 
         # Get pepper twice with same salt
         result1 = plugin.get_hsm_pepper(salt, context)
         result2 = plugin.get_hsm_pepper(salt, context)
 
         assert result1.success and result2.success
-        assert result1.data['hsm_pepper'] == result2.data['hsm_pepper']
+        assert result1.data["hsm_pepper"] == result2.data["hsm_pepper"]
         print(f"\n✅ Deterministic test passed: same salt → same pepper")
 
 
