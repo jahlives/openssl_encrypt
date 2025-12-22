@@ -4,9 +4,33 @@ A Python-based file encryption tool with modern ciphers, post-quantum algorithms
 
 ## History
 
-The project is historically named `openssl-encrypt` because it once was a Python script wrapper around OpenSSL. That approach stopped working with recent Python versions, so I did a complete rewrite in pure Python using modern ciphers and hashes. The project name is a “homage” to its roots.
+The project is historically named `openssl-encrypt` because it once was a Python script wrapper around OpenSSL. That approach stopped working with recent Python versions, so I did a complete rewrite in pure Python using modern ciphers and hashes. The project name is a “homage” to its ---
 
-## 📚 Documentation & Security Architecture
+---
+## thical Commitment & Usage Restrictions
+
+This project is committed to the protection of human rights and the prevention of mass surveillance. To reflect these values, it is licensed under the **Hippocratic License 2.1**. 
+
+While the source code is public, usage is subject to strict ethical conditions. We prioritize human rights over traditional "neutral" open-source definitions.
+
+### Prohibited Use Cases
+By using this software, you agree that it shall **not** be used for:
+
+* **Violations of Human Rights:** Usage by any entity that undermines the [UN Universal Declaration of Human Rights](https://github.com/jahlives/openssl_encrypt/blob/main/LICENSE#L51) is strictly prohibited (See [License Section 2.1](https://github.com/jahlives/openssl_encrypt/blob/main/LICENSE#L51)).
+* **Mass Surveillance:** The software may not be used for bulk, warrantless monitoring or data collection (See [License Section 2.2.a](https://github.com/jahlives/openssl_encrypt/blob/main/LICENSE#L58)).
+* **Government Intelligence Agencies:** Usage by agencies (such as NSA, GCHQ, etc.) or their contractors for offensive cyber operations or domestic spying is not permitted under this license.
+* **Military & Weapons:** Usage by or for the defense industry, specifically for the development of lethal weaponry, targeting systems, or military-grade surveillance equipment (See [License Section 2.2](https://github.com/jahlives/openssl_encrypt/blob/main/LICENSE#L58)).
+
+
+### Why this License?
+Technological tools are not neutral. We believe that encryption should empower individuals, not oppressive systems. The **Hippocratic License** creates a legal barrier that prevents the integration of this code into software stacks used for surveillance and harm.
+
+> **Note:** Because of these ethical protections, this project is considered **Ethical Source**, not "Open Source" according to the OSI definition, as we intentionally restrict usage for harmful purposes.
+
+> "The Software shall be used for Good, not Evil." — *Inspired by the JSON License & HL 2.1*
+---
+
+## Documentation & Security Architecture
 
 For deep-dives into the cryptographic design and security policies of this project, please refer to the specialized documentation in the `docs/` folder:
 
@@ -18,8 +42,7 @@ For deep-dives into the cryptographic design and security policies of this proje
 * **Deterministic AEAD**: AES-SIV support for maximum protection against nonce-misuse.
 * **Metadata Integrity**: Cryptographic binding of headers to prevent tampering (on AEAD-supported ciphers).
 * **Hardware-Resistant KDF**: Sequential Argon2id and RandomX hashing to neutralize ASIC/GPU brute-force clusters.
-
-
+---
 ## What’s New in v1.3.0
 
 Version 1.3.0 focuses on **security hardening**, **testing capabilities**, and **advanced features**:
@@ -28,21 +51,22 @@ Version 1.3.0 focuses on **security hardening**, **testing capabilities**, and *
 - **Security**: O_NOFOLLOW symlink attack prevention in D-Bus service, audit logging, debug mode warnings
 - **Features**: Steganography support, enhanced plugin system with process isolation, improved RandomX KDF
 - **Quality**: 8.8/10 security score (independent review), 950+ tests, zero vulnerable dependencies
-Issues
+---
+## Known Issues
+### HQC Support in v1.2.x
 
-  ### HQC Support in v1.2.x
+**Note:** HQC (Hamming Quasi-Cyclic) post-quantum cryptography is not functional in v1.2.x releases due to fork-safety issues in liboqs on certain AMD64 systems. Files encrypted with HQC algorithms (hqc-128, hqc-192, hqc-256) cannot be decrypted reliably in these versions.
 
-  **Note:** HQC (Hamming Quasi-Cyclic) post-quantum cryptography is not functional in v1.2.x releases due to fork-safety issues in liboqs on certain AMD64 systems. Files encrypted with HQC algorithms (hqc-128, hqc-192, hqc-256) cannot be decrypted reliably in these versions.
+- ✅ **Other PQC algorithms work correctly**: Kyber/ML-KEM, Dilithium, Falcon, SPHINCS+, and all other supported post-quantum algorithms function as expected in v1.2.x
+- ✅ **HQC fully supported in v1.3.0+**: The issue has been resolved in version 1.3.0 and later through improved multiprocessing handling
 
-  - ✅ **Other PQC algorithms work correctly**: Kyber/ML-KEM, Dilithium, Falcon, SPHINCS+, and all other supported post-quantum algorithms function as expected in v1.2.x
-  - ✅ **HQC fully supported in v1.3.0+**: The issue has been resolved in version 1.3.0 and later through improved multiprocessing handling
+**Recommendation:** If you need to encrypt or decrypt files using HQC algorithms, please upgrade to version 1.3.0 or later.
 
-  **Recommendation:** If you need to encrypt or decrypt files using HQC algorithms, please upgrade to version 1.3.0 or later.
-
-  **For v1.2.x users:** If you have files encrypted with HQC, you can:
-  1. Upgrade to v1.3.0+ to decrypt them
-  2. Use a different system where the fork-safety issue doesn't occur
-  3. Re-encrypt important files using Kyber/ML-KEM instead (recommended for long-term compatibility)
+**For v1.2.x users:** If you have files encrypted with HQC, you can:
+1. Upgrade to v1.3.0+ to decrypt them
+2. Use a different system where the fork-safety issue doesn't occur
+3. Re-encrypt important files using Kyber/ML-KEM instead (recommended for long-term compatibility)
+---
 ## Security Architecture
 
 ### Chained Key Derivation
@@ -97,7 +121,7 @@ The v1.3.0 codebase received an independent security review:
 - **Dependencies**: pip-audit clean, zero known vulnerabilities
 
 See <SECURITY_REVIEW_v1.3.0.md> for the full report.
-
+---
 ## Features
 
 ### Symmetric Encryption
@@ -179,7 +203,7 @@ For key derivation chaining:
 - Password policy enforcement
 - Common password dictionary check
 - Audit logging
-
+---
 ## Installation
 
 ### Flatpak (Recommended)
@@ -262,7 +286,7 @@ pip install -e .
 ```
 
 **Note:** For full post-quantum support (HQC, ML-DSA), you need to manually install liboqs and liboqs-python. The Flatpak version includes these by default.
-
+---
 ## Usage
 
 ### Command-Line Interface
@@ -321,7 +345,7 @@ python -m openssl_encrypt.keystore_cli_main generate --keystore-path keys.pqc \
 python -m openssl_encrypt.crypt encrypt -i file.txt \
     --keystore keys.pqc --key-id my-key
 ```
-
+---
 ## Configuration Templates
 
 Pre-configured security profiles in `templates/`:
@@ -331,7 +355,7 @@ Pre-configured security profiles in `templates/`:
 |`quick.json`   |Fast encryption, good security|Argon2                 |1     |~1s  |
 |`standard.json`|Balanced (default)            |Argon2 + SHA3          |3     |~5s  |
 |`paranoid.json`|Maximum security              |Argon2 + Balloon + SHA3|10+   |~60s+|
-
+---
 ## Project Structure
 
 ```
@@ -359,7 +383,7 @@ openssl_encrypt/
 ├── templates/               # Security profiles
 └── docs/                    # Documentation
 ```
-
+---
 ## Documentation
 
 |Document                                                          |Description                                   |
@@ -370,7 +394,7 @@ openssl_encrypt/
 |[Algorithm Reference](openssl_encrypt/docs/algorithm-reference.md)|Cipher and KDF specifications                 |
 |[Metadata Formats](openssl_encrypt/docs/metadata-formats.md)      |File format specs (v3, v4, v5)                |
 |[Development Setup](openssl_encrypt/docs/development-setup.md)    |Contributing, CI/CD, testing                  |
-
+---
 ## Testing
 
 ```bash
@@ -385,13 +409,13 @@ pytest openssl_encrypt/unittests/unittests.py::TestCryptCore
 ```
 
 Test files in `unittests/testfiles/` are encrypted with password `1234`.
-
+---
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/jahlives/openssl_encrypt/issues)
 - **Email**: issue+world-openssl-encrypt-2-issue-@gitlab.rm-rf.ch
 - **Security vulnerabilities**: Email only (not public issues)
-
+---
 ## License
 
 See <LICENSE> file.
