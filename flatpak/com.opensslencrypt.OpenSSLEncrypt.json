@@ -91,7 +91,7 @@
         {
           "type": "archive",
           "url": "https://pcsclite.apdu.fr/files/pcsc-lite-2.3.0.tar.xz",
-          "sha256": "2e5a5e3a8e5a0b4bccb5a1176a7c5edd88dbbce66c32d2171c144fdc2a7b6e62"
+          "sha256": "1acca22d2891d43ffe6d782740d32e78150d4fcc99e8a3cc763abaf546060d3d"
         }
       ]
     },
