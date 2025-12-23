@@ -43,10 +43,10 @@ For deep-dives into the cryptographic design and security policies of this proje
 * **Metadata Integrity**: Cryptographic binding of headers to prevent tampering (on AEAD-supported ciphers).
 * **Hardware-Resistant KDF**: Sequential Argon2id and RandomX hashing to neutralize ASIC/GPU brute-force clusters.
 ---
-## What's New in v1.3.0                                                                                                                                                                                                                                                                                                                                                                  
-                                                                                                                                                                                                                                                                                                                                                                                           
-   Version 1.3.0 delivers security fixes and enterprise-grade hardware security:                                                                                                                                                                                                                                                                                                   
-                                                                                                                                                                                                                                                                                                                                                                                           
+## What's New in v1.3.0
+
+   Version 1.3.0 delivers security fixes and enterprise-grade hardware security:
+
   **SECURITY FIX: AEAD Additional Authenticated Data (AAD) Implementation**
 
   - **Fixed documentation discrepancy**: AEAD algorithms (AES-GCM, ChaCha20-Poly1305, etc.) were passing `None` for the AAD parameter despite documentation claiming metadata was cryptographically bound
@@ -55,40 +55,40 @@ For deep-dives into the cryptographic design and security policies of this proje
   - **Limitation**: AAD does not prevent DoS attacks - metadata parsing and KDF chain execution (the expensive operations) occur before AAD validation during decryption. An attacker with write access can still modify the `rounds` parameter to trigger resource exhaustion
   - **Affects**: AES-GCM, AES-GCM-SIV, AES-SIV, AES-OCB3, ChaCha20-Poly1305, XChaCha20-Poly1305, and all PQC hybrid variants (24 algorithms total)
 
-  **Key Point**: This fixes an implementation gap where documented behavior didn't match actual behavior. The encryption itself was never vulnerable - the metadata is cryptographically bound through the key derivation chain, ensuring any tampering causes decryption failure. AAD provides better integrity guarantees but cannot prevent DoS via metadata manipulation since the expensive KDF chain executes before AAD validation.                                                                                                                                                                                                                                          
-                                                                                                                                                                                                                                                                                                                                                                                           
-  ### Hardware Security Module (HSM) Support                                                                                                                                                                                                                                                                                                                                               
-                                                                                                                                                                                                                                                                                                                                                                                           
-  - **YubiKey HSM Plugin**: Native support for YubiKey 5 series hardware security modules                                                                                                                                                                                                                                                                                                  
-  - **PKCS#11 Integration**: Generic HSM support via PKCS#11 interface for enterprise HSMs                                                                                                                                                                                                                                                                                                 
-  - **Pepper Protection**: Cryptographic peppers stored in tamper-resistant hardware with PIN protection                                                                                                                                                                                                                                                                                   
-  - **Plugin Architecture**: Extensible system for additional HSM vendors (Nitrokey, SoftHSM, etc.)                                                                                                                                                                                                                                                                                        
-  - **Metadata Format v6**: Enhanced metadata structure with HSM validation and auto-detection                                                                                                                                                                                                                                                                                             
-                                                                                                                                                                                                                                                                                                                                                                                           
-  ### Testing & Quality Assurance                                                                                                                                                                                                                                                                                                                                                          
-                                                                                                                                                                                                                                                                                                                                                                                           
-  - Comprehensive test suite (`crypt test`) with fuzzing, side-channel analysis, and benchmarking                                                                                                                                                                                                                                                                                          
-  - 960+ tests passing with 8.8/10 security score (independent review)                                                                                                                                                                                                                                                                                                                     
-  - Zero vulnerable dependencies                                                                                                                                                                                                                                                                                                                                                           
-                                                                                                                                                                                                                                                                                                                                                                                           
-  ### Security Hardening                                                                                                                                                                                                                                                                                                                                                                   
-                                                                                                                                                                                                                                                                                                                                                                                           
-  - O_NOFOLLOW symlink attack prevention in D-Bus service                                                                                                                                                                                                                                                                                                                                  
-  - Audit logging and debug mode warnings                                                                                                                                                                                                                                                                                                                                                  
-  - Enhanced validation and tamper detection                                                                                                                                                                                                                                                                                                                                               
-                                                                                                                                                                                                                                                                                                                                                                                           
-  ### Advanced Features                                                                                                                                                                                                                                                                                                                                                                    
-                                                                                                                                                                                                                                                                                                                                                                                           
-  - Steganography support for covert data transport                                                                                                                                                                                                                                                                                                                                        
-  - Enhanced plugin system with process isolation                                                                                                                                                                                                                                                                                                                                          
-  - Improved RandomX KDF performance                                                                                                                                                                                                                                                                                                                                                       
-  - Dual encryption support for PQC keys (keystore + file password)                                                                                                                                                                                                                                                                                                                        
-                                                                                                                                                                                                                                                                                                                                                                                           
-  ### Backward Compatibility                                                                                                                                                                                                                                                                                                                                                               
-                                                                                                                                                                                                                                                                                                                                                                                           
-  - Fully compatible with v3, v4, and v5 encrypted files                                                                                                                                                                                                                                                                                                                                   
-  - Automatic format detection and migration                                                                                                                                                                                                                                                                                                                                               
-  - **Warning**: Files encrypted with v1.3.0 AEAD algorithms cannot be decrypted by older versions (forward-breaking due to security fix) 
+  **Key Point**: This fixes an implementation gap where documented behavior didn't match actual behavior. The encryption itself was never vulnerable - the metadata is cryptographically bound through the key derivation chain, ensuring any tampering causes decryption failure. AAD provides better integrity guarantees but cannot prevent DoS via metadata manipulation since the expensive KDF chain executes before AAD validation.
+
+  ### Hardware Security Module (HSM) Support
+
+  - **YubiKey HSM Plugin**: Native support for YubiKey 5 series hardware security modules
+  - **PKCS#11 Integration**: Generic HSM support via PKCS#11 interface for enterprise HSMs
+  - **Pepper Protection**: Cryptographic peppers stored in tamper-resistant hardware with PIN protection
+  - **Plugin Architecture**: Extensible system for additional HSM vendors (Nitrokey, SoftHSM, etc.)
+  - **Metadata Format v6**: Enhanced metadata structure with HSM validation and auto-detection
+
+  ### Testing & Quality Assurance
+
+  - Comprehensive test suite (`crypt test`) with fuzzing, side-channel analysis, and benchmarking
+  - 960+ tests passing with 8.8/10 security score (independent review)
+  - Zero vulnerable dependencies
+
+  ### Security Hardening
+
+  - O_NOFOLLOW symlink attack prevention in D-Bus service
+  - Audit logging and debug mode warnings
+  - Enhanced validation and tamper detection
+
+  ### Advanced Features
+
+  - Steganography support for covert data transport
+  - Enhanced plugin system with process isolation
+  - Improved RandomX KDF performance
+  - Dual encryption support for PQC keys (keystore + file password)
+
+  ### Backward Compatibility
+
+  - Fully compatible with v3, v4, and v5 encrypted files
+  - Automatic format detection and migration
+  - **Warning**: Files encrypted with v1.3.0 AEAD algorithms cannot be decrypted by older versions (forward-breaking due to security fix)
 ---
 ## Known Issues
 ### HQC Support in v1.2.x
