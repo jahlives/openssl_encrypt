@@ -13,6 +13,8 @@
 * **Security & Compliance**
   * [Security Policy](security.md)
   * [Crypto Security Analysis](crypto_tool_security_analysis.md)
+  * [HSM Plugin](HSM_PLUGIN_GUIDE.md)
+  * [YubiKey setup](YUBIKEY_SETUP.md)
 
 * **Development**
   * [Development Setup](development-setup.md)
