@@ -3878,9 +3878,98 @@ def encrypt_file(
             EncryptionAlgorithm.CROSS_256_HYBRID,
         ]:
             pqc_info = {}
+
             if pqc_keypair:
                 # Always store the public key
                 pqc_info["public_key"] = pqc_keypair[0]
+
+                # Store private key only if requested (for self-decryption)
+                if (pqc_store_private_key or pqc_dual_encrypt_key) and len(pqc_keypair) > 1:
+                    if not quiet:
+                        print(
+                            "Storing encrypted post-quantum private key in file for self-decryption"
+                        )
+                    # Create a separate derived key that specifically depends on the provided password
+                    # This way, even if the main encryption key has issues, the private key's encryption
+                    # will still be password dependent
+
+                    # Use a different salt for private key encryption
+                    private_key_salt = secrets.token_bytes(16)
+                    pqc_info["key_salt"] = private_key_salt
+
+                    # START DO NOT CHANGE
+                    try:
+                        # Use the derived private_key_key NOT the main key
+                        cipher = AESGCM(hashlib.sha3_256(key).digest())
+                        nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
+                        # Use logger for DEBUG messages instead of print
+                        logger.debug(
+                            f"Encrypting private key (keypair): key length = {len(key)}, nonce length = {len(nonce)}, private key length = {len(pqc_keypair[1])}"
+                        )
+                        encrypted_private_key = nonce + cipher.encrypt(nonce, pqc_keypair[1], None)
+                        logger.debug(
+                            f"Successfully encrypted private key, length = {len(encrypted_private_key)}"
+                        )
+                    except Exception as e:
+                        logger.error(f"Error encrypting private key: {e}")
+                        raise
+                    # END DO NOT CHANGE
+
+                    pqc_info["private_key"] = encrypted_private_key
+                    pqc_info["key_encrypted"] = True  # Mark that the key is encrypted
+                    if pqc_dual_encrypt_key:
+                        logger.debug(
+                            "Setting pqc_dual_encrypt_key flag to True for keypair provided"
+                        )
+                        pqc_info["dual_encrypt_key"] = True
+
+                elif not quiet:
+                    print(
+                        "Post-quantum private key NOT stored - you'll need the key file for decryption"
+                    )
+            elif "private_key" in locals():
+                # If we generated a keypair internally, store both keys
+                pqc_info["public_key"] = public_key
+
+                # Store the private key if requested
+                if pqc_store_private_key or pqc_dual_encrypt_key:
+                    if not quiet:
+                        print(
+                            "Storing encrypted post-quantum private key in file for self-decryption"
+                        )
+                    # Create a separate derived key that specifically depends on the provided password
+                    # This way, even if the main encryption key has issues, the private key's encryption
+                    # will still be password dependent
+
+                    # Use a different salt for private key encryption
+                    private_key_salt = secrets.token_bytes(16)
+                    pqc_info["key_salt"] = private_key_salt
+
+                    # START DO NOT CHANGE
+                    try:
+                        # Use AES-GCM for encryption
+                        cipher = AESGCM(hashlib.sha3_256(key).digest())
+                        nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
+                        # Use logger for DEBUG messages instead of print
+                        logger.debug(
+                            f"Encrypting private key: key length = {len(key)}, nonce length = {len(nonce)}, private key length = {len(private_key)}"
+                        )
+                        encrypted_private_key = nonce + cipher.encrypt(nonce, private_key, None)
+                        logger.debug(
+                            f"Successfully encrypted private key, length = {len(encrypted_private_key)}"
+                        )
+                    except Exception as e:
+                        logger.error(f"Error encrypting private key: {e}")
+                        raise
+                    # END DO NOT CHANGE
+
+                    pqc_info["private_key"] = encrypted_private_key
+                    pqc_info["key_encrypted"] = True  # Mark that the key is encrypted
+                    if pqc_dual_encrypt_key:
+                        logger.debug(
+                            "Setting pqc_dual_encrypt_key flag to True for generated internal keypair"
+                        )
+                        pqc_info["dual_encrypt_key"] = True
 
         # Extract keystore_id from hash_config if present
         keystore_id = (
@@ -4000,7 +4089,7 @@ def encrypt_file(
                     pqc_info["key_encrypted"] = True  # Mark that the key is encrypted
                     if pqc_dual_encrypt_key:
                         logger.debug(
-                            f"Setting pqc_dual_encrypt_key flag to True for keypair provided"
+                            "Setting pqc_dual_encrypt_key flag to True for keypair provided"
                         )
                         pqc_info["dual_encrypt_key"] = True
 
@@ -4048,7 +4137,7 @@ def encrypt_file(
                     pqc_info["key_encrypted"] = True  # Mark that the key is encrypted
                     if pqc_dual_encrypt_key:
                         logger.debug(
-                            f"Setting pqc_dual_encrypt_key flag to True for generated internal keypair"
+                            "Setting pqc_dual_encrypt_key flag to True for generated internal keypair"
                         )
                         pqc_info["dual_encrypt_key"] = True
 
