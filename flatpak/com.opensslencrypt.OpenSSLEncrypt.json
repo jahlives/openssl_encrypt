@@ -10,7 +10,6 @@
     "--socket=wayland",
     "--socket=pcsc",
     "--device=dri",
-    "--device=all",
     "--filesystem=host",
     "--filesystem=xdg-run/at-spi",
     "--filesystem=/run/udev:ro",

@@ -103,6 +103,98 @@ sudo openssl-encrypt --hsm yubikey input.txt output.enc
 
 **Warning:** Running encryption tools as root is not recommended for security reasons.
 
+## Flatpak Installation Notes
+
+If you're using the Flatpak distribution of OpenSSL Encrypt, additional steps are **required** for Yubikey HSM functionality.
+
+### Built-in Permissions
+
+The Flatpak manifest includes basic permissions:
+- `--socket=pcsc` - PC/SC smart card protocol access
+- `--device=dri` - GPU access for GUI
+- `--filesystem=/run/udev:ro` - udev device information (read-only)
+
+**Note:** For security reasons, `--device=all` is **not** included by default. HSM functionality requires explicit user permission.
+
+### Required Permission Override for HSM
+
+Yubikey Challenge-Response (HMAC-SHA1) uses the HID OTP interface, which requires device access. You **must** grant this permission explicitly:
+
+```bash
+flatpak override --user com.opensslencrypt.OpenSSLEncrypt --device=all
+```
+
+**⚠️  Security Warning:**
+
+This command grants the application access to **all system devices**, including:
+- USB devices (required for Yubikey)
+- Network devices (`/dev/net/*`)
+- Block devices (`/dev/sda`, `/dev/nvme*`, etc.)
+- Video/audio devices
+- Serial ports
+
+**Only grant this permission if:**
+- ✅ You trust this application
+- ✅ You need Yubikey HSM functionality
+- ✅ You understand the security implications
+
+**Without HSM:** The application works normally for all encryption/decryption without this permission. Only Yubikey HSM features require it.
+
+### Host System udev Rules
+
+You may still need to configure udev rules on your **host system** (outside Flatpak) to grant HID permissions. Even though the Flatpak has device access, the host must allow your user to access the device.
+
+Follow the udev rules setup in "Option A: udev Rules" above for your distribution (Debian/Ubuntu or Fedora/RHEL).
+
+### Verifying Flatpak HSM Access
+
+After applying the permission override and configuring udev rules, test if Yubikey access works:
+
+```bash
+# Run encryption test with HSM
+flatpak run com.opensslencrypt.OpenSSLEncrypt encrypt --hsm yubikey --hsm-slot 2 test.txt test.enc
+
+# Should display: "👆 Touch your Yubikey now (slot 2)..."
+```
+
+**Common errors if override not applied:**
+- `"PC/SC not available"`
+- `"OtpConnection not supported"`
+- `"Unsupported Connection type"`
+
+These errors indicate you need to apply the `flatpak override` command above.
+
+### Flatpak HSM Design Decisions
+
+**Security-First Approach:**
+- `--device=all` is **not included by default** in the manifest
+- HSM users must **explicitly opt-in** to broad device access
+- Non-HSM users get minimal permissions by default
+
+**Trade-offs:**
+- ✅ More secure default installation
+- ✅ Transparent security model - users know what they're granting
+- ✅ App works for non-HSM encryption without extra permissions
+- ❌ HSM requires manual setup (not plug-and-play)
+- ❌ Broad device access required due to Flatpak limitations
+
+**Why `--device=all` is necessary:**
+- Yubikey Challenge-Response uses HID OTP interface
+- Flatpak doesn't support granular USB-only permissions
+- Dynamic device numbering (`/dev/hidraw0`, `/dev/hidraw1`) prevents specific paths
+- This is a Flatpak architectural limitation, not an OpenSSL Encrypt design flaw
+
+**📢 Community Input Welcome:**
+
+If you know of a more restrictive Flatpak permission that works for USB HID access (more targeted than `--device=all`), please let us know! We'd be happy to implement a more secure alternative. Open an issue on GitHub or submit a pull request.
+
+**Alternative:** If you prefer tighter permission control, consider installing via pip instead:
+```bash
+pip install openssl-encrypt
+```
+
+The pip installation only requires standard udev rules without broad Flatpak device access.
+
 ## Usage
 
 ### Encrypt with Yubikey HSM
