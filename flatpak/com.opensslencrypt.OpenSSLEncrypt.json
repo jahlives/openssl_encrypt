@@ -74,6 +74,28 @@
       "sources": []
     },
     {
+      "name": "pcsc-lite",
+      "config-opts": [
+        "--disable-libudev",
+        "--disable-libsystemd",
+        "--without-systemdsystemunitdir",
+        "--disable-serial",
+        "--disable-usb",
+        "--disable-libusb"
+      ],
+      "post-install": [
+        "rm /app/sbin/pcscd",
+        "rmdir /app/sbin || true"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://pcsclite.apdu.fr/files/pcsc-lite-2.3.0.tar.xz",
+          "sha256": "2e5a5e3a8e5a0b4bccb5a1176a7c5edd88dbbce66c32d2171c144fdc2a7b6e62"
+        }
+      ]
+    },
+    {
       "name": "python3-dependencies",
       "buildsystem": "simple",
       "build-options": {
