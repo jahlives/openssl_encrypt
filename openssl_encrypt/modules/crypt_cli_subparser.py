@@ -497,22 +497,7 @@ def setup_decrypt_parser(subparser):
         help="Number of passes for secure deletion (default: 3)",
     )
 
-    # Display options (also available as global flags)
-    subparser.add_argument(
-        "--progress",
-        action="store_true",
-        help="Show progress bar during decryption",
-    )
-    subparser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Show detailed hash/KDF information",
-    )
-    subparser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Show debug information (WARNING: may log sensitive data)",
-    )
+    # Display options
     subparser.add_argument(
         "--no-estimate",
         action="store_true",

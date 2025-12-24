@@ -1712,7 +1712,9 @@ def main():
 
     sys.argv = preprocess_global_args(sys.argv)
 
-    if len(sys.argv) > 1 and sys.argv[1] in [
+    # After preprocessing, global flags are moved to the front, so we need to find
+    # the command anywhere in argv, not just at position 1
+    subparser_commands = [
         "encrypt",
         "decrypt",
         "shred",
@@ -1728,7 +1730,12 @@ def main():
         "check-pqc",
         "version",
         "show-version-file",
-    ]:
+    ]
+
+    # Check if any command is present in argv (after global flags)
+    has_subcommand = any(arg in subparser_commands for arg in sys.argv[1:])
+
+    if len(sys.argv) > 1 and has_subcommand:
         # Use subparser for all command-specific operations
         from .crypt_cli_subparser import create_subparser_main
 
