@@ -13,15 +13,16 @@
 
           <div class="stats">
               <h3>&#128202; Release Statistics</h3>
-              <p><strong>Total Releases:</strong> 22 versions | <strong>Development Period:</strong> v0.1.0 &rarr; v1.3.0-dev | <strong>Latest:</strong> 1.3.0-dev (Development), 1.2.1-stable (Production)</p>
-              <p><strong>Major Milestones:</strong> Initial Release (0.1.0), Post-Quantum Support (0.5.2), Feature Complete (0.6.0), Stable Release (1.0.0), Extended PQC (1.1.0), Steganography & QR Codes (1.3.0-dev)</p>
+              <p><strong>Total Releases:</strong> 23 versions | <strong>Development Period:</strong> v0.1.0 &rarr; v1.3.1-stable | <strong>Latest:</strong> 1.3.1-stable (Stable)</p>
+              <p><strong>Major Milestones:</strong> Initial Release (0.1.0), Post-Quantum Support (0.5.2), Feature Complete (0.6.0), Stable Release (1.0.0), Extended PQC (1.1.0), Steganography & QR Codes (1.3.0-stable), PyPI Redeployment (1.3.1-stable)</p>
           </div>
 
           <div class="toc">
               <h3>&#128203; Table of Contents</h3>
               <ul>
-                  <li><a href="#v1-3-0-dev">1.3.0-dev - Development Release (Experimental)</a></li>
-                  <li><a href="#v1-2-1">1.2.1 - Latest Stable Release</a></li>
+                  <li><a href="#v1-3-1-stable">1.3.1-stable - PyPI Redeployment Release</a></li>
+                  <li><a href="#v1-3-0-stable">1.3.0-stable - Stable Release</a></li>
+                  <li><a href="#v1-2-1">1.2.1 - Stable Release</a></li>
                   <li><a href="#v1-1-0-stable">1.1.0 - Stable Release with Debug System</a></li>
                   <li><a href="#v1-1-0">1.1.0-dev - Extended PQC Support</a></li>
                   <li><a href="#v1-0-1">1.0.1-stable - UI/UX Enhancement</a></li>
@@ -53,14 +54,25 @@
           <!-- Development Release Series -->
           <h2>&#128640; Development Release Series (1.3.x)</h2>
 
-          <div class="changelog-item" id="v1-3-0-dev">
+          <div class="changelog-item" id="v1-3-1-stable">
               <div class="version">
-                  1.3.0-dev
-                  <span class="release-type development">DEVELOPMENT RELEASE</span>
-                  <span class="release-type minor">EXPERIMENTAL</span>
+                  1.3.1-stable
+                  <span class="release-type stable">STABLE RELEASE</span>
+                  <span class="release-type minor">PATCH</span>
               </div>
               <div class="description">
-                  <strong>WARNING: Development version with experimental features - Not for production use.</strong> This release includes cutting-edge features currently in development. <strong>&#128190; Steganography Support:</strong> Hide encrypted data within image files using LSB (Least Significant Bit) encoding. Supports PNG, BMP, and other lossless formats for covert data transmission. <strong>&#128247; QR Code Key Distribution:</strong> Generate QR codes containing encryption keys for easy secure sharing across devices. Scan QR codes to import keys directly into the keystore. <strong>&#128295; Enhanced Debug Mode:</strong> Raw exception passthrough with --debug flag for easier troubleshooting during development - see actual exceptions instead of generic error messages. <strong>&#128295; Improvements & Fixes:</strong> Updated Pillow to 11.3.0 for enhanced image processing, improved backward compatibility for files encrypted during format transitions, fixed nested hash_config structure handling, schema files now properly included in package distribution, Docker optimization reducing image size to 140MB, enhanced Flutter GUI with configuration profiles. <strong>RandomX KDF:</strong> Proof-of-work key derivation function with light (256MB) and fast (2GB) modes for enhanced security. <strong>Installation:</strong> This development version can be installed alongside stable version (1.2.1) using: <code>flatpak install custom-repo com.opensslencrypt.OpenSSLEncrypt//development</code>. For production use, install the latest stable version (1.2.1).
+                  <strong>Version bump release for PyPI deployment.</strong> This is a maintenance release that increments the version number to enable redeployment on PyPI. All functionality remains the same as 1.3.0. No feature changes or bug fixes in this release.
+              </div>
+          </div>
+
+          <div class="changelog-item" id="v1-3-0-stable">
+              <div class="version">
+                  1.3.0-stable
+                  <span class="release-type stable">STABLE RELEASE</span>
+                  <span class="release-type minor">MINOR</span>
+              </div>
+              <div class="description">
+                  <strong>Stable release with advanced features.</strong> Production-ready release with cutting-edge cryptography and security features. <strong>&#128190; Steganography Support:</strong> Hide encrypted data within image files using LSB (Least Significant Bit) encoding. Supports PNG, BMP, and other lossless formats for covert data transmission. <strong>&#128247; QR Code Key Distribution:</strong> Generate QR codes containing encryption keys for easy secure sharing across devices. Scan QR codes to import keys directly into the keystore. <strong>&#128295; Enhanced Debug Mode:</strong> Raw exception passthrough with --debug flag for easier troubleshooting - see actual exceptions instead of generic error messages. <strong>&#128295; Improvements & Fixes:</strong> Updated Pillow to 11.3.0 for enhanced image processing, improved backward compatibility for files encrypted during format transitions, fixed nested hash_config structure handling, schema files now properly included in package distribution, Docker optimization reducing image size to 140MB, enhanced Flutter GUI with configuration profiles. <strong>RandomX KDF:</strong> Proof-of-work key derivation function with light (256MB) and fast (2GB) modes for enhanced security. Production-ready for secure file encryption.
               </div>
           </div>
 
