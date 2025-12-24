@@ -4319,6 +4319,7 @@ def decrypt_file(
     plugin_manager=None,
     secure_mode=False,
     hsm_plugin=None,
+    no_estimate=False,
 ):
     """
     Decrypt a file with a password.
@@ -4644,6 +4645,53 @@ def decrypt_file(
         verbose=verbose,
         debug=debug,
     )
+
+    # Display time/memory estimates for decryption
+    if not quiet and not no_estimate:
+        try:
+            from .decryption_estimator import estimate_decryption_cost, format_memory, format_time
+
+            print("\n" + "=" * 60)
+            print("DECRYPTION COST ESTIMATE")
+            print("=" * 60)
+
+            estimate = estimate_decryption_cost(metadata)
+
+            # Show breakdown if operations exist
+            if estimate.breakdown:
+                print("\nOperation Breakdown:")
+                for op_name, time_sec, memory_kb in estimate.breakdown:
+                    print(f"  • {op_name}")
+                    print(
+                        f"    Time: ~{format_time(time_sec)}, "
+                        f"Memory: ~{format_memory(memory_kb)}"
+                    )
+
+            # Show totals
+            print("\nEstimated Total:")
+            print(f"  Time: ~{format_time(estimate.total_time_seconds)}")
+            print(f"  Peak Memory: ~{format_memory(estimate.peak_memory_kb)}")
+
+            # Show warnings if thresholds exceeded
+            if estimate.warnings:
+                print()
+                for warning in estimate.warnings:
+                    print(warning)
+
+            print("=" * 60)
+            print("Note: Estimates are approximate based on benchmark data.")
+            print("Press Ctrl+C within 2 seconds to cancel decryption.")
+            print("=" * 60 + "\n")
+
+            # 2-second sleep for user to review and cancel
+            import time
+
+            time.sleep(2)
+
+        except Exception as e:
+            # Don't fail decryption if estimation fails
+            if verbose or debug:
+                print(f"Warning: Could not estimate decryption cost: {e}")
 
     # Verify the hash of encrypted data
     if encrypted_hash:

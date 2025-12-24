@@ -496,6 +496,11 @@ def setup_decrypt_parser(subparser):
         default=3,
         help="Number of passes for secure deletion (default: 3)",
     )
+    subparser.add_argument(
+        "--no-estimate",
+        action="store_true",
+        help="Suppress decryption time/memory estimation display (useful when you trust the file)",
+    )
 
     # PQC options for decryption
     pqc_group = subparser.add_argument_group("Post-Quantum Cryptography options")

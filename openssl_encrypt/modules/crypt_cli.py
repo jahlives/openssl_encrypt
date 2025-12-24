@@ -5636,6 +5636,7 @@ def main_with_args(args=None):
                             enable_plugins=enable_plugins,
                             plugin_manager=plugin_manager,
                             hsm_plugin=hsm_plugin_instance,
+                            no_estimate=getattr(args, "no_estimate", False),
                         )
                     if success:
                         # Apply the original permissions to the temp file
@@ -5840,6 +5841,7 @@ def main_with_args(args=None):
                         enable_plugins=enable_plugins,
                         plugin_manager=plugin_manager,
                         hsm_plugin=hsm_plugin_instance,
+                        no_estimate=getattr(args, "no_estimate", False),
                     )
                 if success:
                     # Security audit log for successful decryption
@@ -6008,6 +6010,7 @@ def main_with_args(args=None):
                         enable_plugins=enable_plugins,
                         plugin_manager=plugin_manager,
                         hsm_plugin=hsm_plugin_instance,
+                        no_estimate=getattr(args, "no_estimate", False),
                     )
                 try:
                     # Try to decode as text
