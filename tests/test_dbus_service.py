@@ -222,7 +222,10 @@ class TestDBusKeystore(unittest.TestCase):
         if not self.service_available:
             self.skipTest("D-Bus service not available")
 
-        self.keystore_file = tempfile.mktemp(suffix=".pqc")
+        # Create a temporary file securely (avoids race condition in mktemp)
+        temp_file = tempfile.NamedTemporaryFile(mode="w", suffix=".pqc", delete=False)
+        self.keystore_file = temp_file.name
+        temp_file.close()
 
     def tearDown(self):
         """Clean up keystore file"""
