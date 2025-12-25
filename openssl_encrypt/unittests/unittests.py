@@ -58,7 +58,7 @@ from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any, Dict, Optional
 from unittest import mock
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
