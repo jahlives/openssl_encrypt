@@ -228,7 +228,7 @@ def cmd_show(args) -> int:
 
         if identity is None:
             print(
-                f"ERROR: Identity '{args.identity_name}' not found",
+                f"ERROR: Identity '{args.identity_name}' not found ❌",
                 file=sys.stderr,
             )
             return 1
@@ -286,7 +286,7 @@ def cmd_export(args) -> int:
 
         if identity is None:
             print(
-                f"ERROR: Identity '{args.identity_name}' not found",
+                f"ERROR: Identity '{args.identity_name}' not found ❌",
                 file=sys.stderr,
             )
             return 1
@@ -391,7 +391,7 @@ def cmd_delete(args) -> int:
 
         if identity is None:
             print(
-                f"ERROR: Identity '{args.identity_name}' not found",
+                f"ERROR: Identity '{args.identity_name}' not found ❌",
                 file=sys.stderr,
             )
             return 1
@@ -446,7 +446,7 @@ def cmd_change_password(args) -> int:
 
         if identity_check is None:
             print(
-                f"ERROR: Identity '{args.identity_name}' not found",
+                f"ERROR: Identity '{args.identity_name}' not found ❌",
                 file=sys.stderr,
             )
             return 1

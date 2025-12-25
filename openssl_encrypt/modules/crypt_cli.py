@@ -4188,7 +4188,7 @@ def main_with_args(args=None):
                         )
                         if recipient is None:
                             print(
-                                f"ERROR: Recipient identity '{recipient_name}' not found",
+                                f"ERROR: Recipient identity '{recipient_name}' not found ❌",
                                 file=sys.stderr,
                             )
                             sys.exit(1)
@@ -4214,7 +4214,7 @@ def main_with_args(args=None):
                         args.sign_with, passphrase=sender_passphrase, load_private_keys=True
                     )
                     if sender is None:
-                        print(f"ERROR: Sender identity '{args.sign_with}' not found", file=sys.stderr)
+                        print(f"ERROR: Sender identity '{args.sign_with}' not found ❌", file=sys.stderr)
                         sys.exit(1)
                 except Exception as e:
                     error_msg = f"ERROR: Failed to load identity '{args.sign_with}'"
@@ -5599,7 +5599,7 @@ def main_with_args(args=None):
                                     )
                                     if recipient is None:
                                         print(
-                                            f"ERROR: Identity '{args.key_identity}' not found",
+                                            f"ERROR: Identity '{args.key_identity}' not found ❌",
                                             file=sys.stderr,
                                         )
                                         sys.exit(1)
@@ -5627,7 +5627,7 @@ def main_with_args(args=None):
                                         )
                                         if sender is None:
                                             print(
-                                                f"ERROR: Sender identity '{args.verify_from}' not found",
+                                                f"ERROR: Sender identity '{args.verify_from}' not found ❌",
                                                 file=sys.stderr,
                                             )
                                             sys.exit(1)
@@ -5731,7 +5731,7 @@ def main_with_args(args=None):
                                 )
                                 if recipient is None:
                                     print(
-                                        f"ERROR: Identity '{args.key_identity}' not found",
+                                        f"ERROR: Identity '{args.key_identity}' not found ❌",
                                         file=sys.stderr,
                                     )
                                     sys.exit(1)
@@ -5759,7 +5759,7 @@ def main_with_args(args=None):
                                     )
                                     if sender is None:
                                         print(
-                                            f"ERROR: Sender identity '{args.verify_from}' not found",
+                                            f"ERROR: Sender identity '{args.verify_from}' not found ❌",
                                             file=sys.stderr,
                                         )
                                         sys.exit(1)
