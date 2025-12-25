@@ -283,6 +283,56 @@ def setup_encrypt_parser(subparser):
         "--scrypt-p", type=int, default=1, help="Scrypt p parameter (parallelization factor)"
     )
 
+    # Argon2 options for encryption
+    argon2_group = subparser.add_argument_group("Argon2 Options", "Configure Argon2 memory-hard function parameters")
+    argon2_group.add_argument(
+        "--enable-argon2",
+        action="store_true",
+        default=False,
+        help="Use Argon2 password hashing (requires argon2-cffi package)",
+    )
+    argon2_group.add_argument(
+        "--argon2-rounds",
+        type=int,
+        default=0,
+        help="Argon2 time cost parameter / rounds (default when enabled: 10)",
+    )
+    argon2_group.add_argument(
+        "--argon2-time",
+        type=int,
+        default=3,
+        help="Argon2 time cost parameter (default: 3)",
+    )
+    argon2_group.add_argument(
+        "--argon2-memory",
+        type=int,
+        default=65536,
+        help="Argon2 memory cost in KB (default: 65536 - 64MB)",
+    )
+    argon2_group.add_argument(
+        "--argon2-parallelism",
+        type=int,
+        default=4,
+        help="Argon2 parallelism factor (default: 4)",
+    )
+    argon2_group.add_argument(
+        "--argon2-hash-len",
+        type=int,
+        default=32,
+        help="Argon2 hash length in bytes (default: 32)",
+    )
+    argon2_group.add_argument(
+        "--argon2-type",
+        choices=["id", "i", "d"],
+        default="id",
+        help="Argon2 variant to use: id (recommended), i, or d",
+    )
+    argon2_group.add_argument(
+        "--argon2-preset",
+        choices=["low", "medium", "high", "paranoid"],
+        help="Use predefined Argon2 parameters (overrides other Argon2 settings)",
+    )
+
     # RandomX options for encryption
     randomx_group = subparser.add_argument_group("RandomX options")
     randomx_group.add_argument(
@@ -330,7 +380,7 @@ def setup_encrypt_parser(subparser):
         "Asymmetric Encryption (Post-Quantum Identity-Based)"
     )
     asymmetric_group.add_argument(
-        "--for",
+        "--for-identity",
         dest="for_identity",
         action="append",
         metavar="IDENTITY",
@@ -538,7 +588,7 @@ def setup_decrypt_parser(subparser):
         "Asymmetric Decryption (Post-Quantum Identity-Based)"
     )
     asymmetric_group.add_argument(
-        "--key",
+        "--with-key",
         dest="key_identity",
         metavar="IDENTITY",
         help="Decrypt using this identity's private key (for asymmetric mode)",
@@ -764,6 +814,18 @@ def setup_analyze_security_parser(subparser):
     kdf_group = subparser.add_argument_group("Key Derivation Function options")
 
     # Argon2 options
+    kdf_group.add_argument(
+        "--enable-argon2",
+        action="store_true",
+        default=False,
+        help="Enable Argon2 password hashing (requires argon2-cffi package)",
+    )
+    kdf_group.add_argument(
+        "--argon2-rounds",
+        type=int,
+        default=0,
+        help="Argon2 rounds/iterations (default when enabled: 10)",
+    )
     kdf_group.add_argument(
         "--argon2-memory-cost",
         type=int,
