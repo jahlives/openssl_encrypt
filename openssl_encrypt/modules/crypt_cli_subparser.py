@@ -394,6 +394,12 @@ def setup_encrypt_parser(subparser):
         help="Sign with sender identity (required for asymmetric mode). "
         "Uses post-quantum ML-DSA-65 digital signatures.",
     )
+    asymmetric_group.add_argument(
+        "--identity-store",
+        dest="identity_store",
+        metavar="PATH",
+        help="Path to identity store directory (overrides global --identity-store)",
+    )
 
     # Keystore options
     keystore_group = subparser.add_argument_group("Keystore options")
@@ -605,6 +611,12 @@ def setup_decrypt_parser(subparser):
         dest="skip_verification",
         action="store_true",
         help="Skip signature verification (DANGEROUS! Only use if you trust the source)",
+    )
+    asymmetric_group.add_argument(
+        "--identity-store",
+        dest="identity_store",
+        metavar="PATH",
+        help="Path to identity store directory (overrides global --identity-store)",
     )
 
     # Steganography options
@@ -1161,6 +1173,14 @@ def setup_smart_recommendations_parser(subparser):
 
 def setup_identity_parser(subparser):
     """Set up arguments for the identity command."""
+    # Global identity store option
+    subparser.add_argument(
+        "--identity-store",
+        dest="identity_store",
+        metavar="PATH",
+        help="Path to identity store directory (default: ~/.openssl_encrypt/identities/)",
+    )
+
     # Create subparsers for identity subcommands
     identity_subparsers = subparser.add_subparsers(
         dest="identity_action", help="Identity management operations", metavar="operation"
@@ -1334,6 +1354,13 @@ def create_subparser_main():
         "-q",
         action="store_true",
         help="Suppress all output except decrypted content and exit code",
+    )
+    parser.add_argument(
+        "--identity-store",
+        dest="identity_store",
+        metavar="PATH",
+        help="Path to identity store directory (default: ~/.openssl_encrypt/identities/). "
+             "Can also be set via OPENSSL_ENCRYPT_IDENTITY_STORE environment variable.",
     )
 
     # Create subparsers for each command

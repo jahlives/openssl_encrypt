@@ -93,6 +93,30 @@ from .template_manager import TemplateCategory, TemplateFormat, TemplateManager
 logger = logging.getLogger(__name__)
 
 
+def resolve_identity_store_path(args):
+    """Resolve identity store path from args with proper priority.
+
+    Priority (lowest to highest):
+    1. Default (handled by get_identity_store)
+    2. Environment variable (handled by get_identity_store)
+    3. Global --identity-store parameter
+    4. Command-specific --identity-store parameter
+
+    Args:
+        args: Parsed command-line arguments
+
+    Returns:
+        Path or None: Resolved path if explicitly provided, None to use default resolution
+    """
+    from pathlib import Path
+
+    # Command-specific overrides global
+    path = getattr(args, "identity_store", None)
+    if path:
+        return Path(path).expanduser()
+    return None
+
+
 class ReconstructedStdinStream:
     """
     A file-like object that replays consumed data followed by remaining stdin stream.
@@ -4151,9 +4175,9 @@ def main_with_args(args=None):
             if hasattr(args, "for_identity") and args.for_identity:
                 # Asymmetric encryption mode
                 from .crypt_core import encrypt_file_asymmetric
-                from .identity import IdentityStore
+                from .identity_cli import get_identity_store
 
-                store = IdentityStore()
+                store = get_identity_store(resolve_identity_store_path(args))
 
                 # Load recipients
                 recipients = []
@@ -5546,9 +5570,9 @@ def main_with_args(args=None):
                             if format_version == 7 and metadata.get("mode") == "asymmetric":
                                 # Asymmetric decryption mode (new format)
                                 from .crypt_core import decrypt_file_asymmetric
-                                from .identity import IdentityStore
+                                from .identity_cli import get_identity_store
 
-                                store = IdentityStore()
+                                store = get_identity_store(resolve_identity_store_path(args))
 
                                 # Load recipient (decrypt with this identity)
                                 if not hasattr(args, "key_identity") or not args.key_identity:
@@ -5678,9 +5702,9 @@ def main_with_args(args=None):
                         if format_version == 7 and metadata.get("mode") == "asymmetric":
                             # Asymmetric decryption mode (old format)
                             from .crypt_core import decrypt_file_asymmetric
-                            from .identity import IdentityStore
+                            from .identity_cli import get_identity_store
 
-                            store = IdentityStore()
+                            store = get_identity_store(resolve_identity_store_path(args))
 
                             # Load recipient (decrypt with this identity)
                             if not hasattr(args, "key_identity") or not args.key_identity:

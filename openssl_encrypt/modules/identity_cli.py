@@ -14,6 +14,7 @@ Provides CLI commands for managing identities:
 
 import getpass
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -23,9 +24,28 @@ from .pqc_signing import LIBOQS_AVAILABLE
 
 
 def get_identity_store(base_path: Optional[Path] = None) -> IdentityStore:
-    """Get IdentityStore instance with default or custom path."""
+    """Get IdentityStore instance with path resolution.
+
+    Priority (lowest to highest):
+    1. Default: ~/.openssl_encrypt/identities/
+    2. Environment variable: OPENSSL_ENCRYPT_IDENTITY_STORE
+    3. Explicit base_path parameter
+
+    Args:
+        base_path: Optional path to identity store. Can be Path or str.
+
+    Returns:
+        IdentityStore instance
+    """
     if base_path is None:
-        base_path = Path.home() / ".openssl_encrypt" / "identities"
+        # Check environment variable
+        env_path = os.environ.get("OPENSSL_ENCRYPT_IDENTITY_STORE")
+        if env_path:
+            base_path = Path(env_path).expanduser()
+        else:
+            base_path = Path.home() / ".openssl_encrypt" / "identities"
+    elif isinstance(base_path, str):
+        base_path = Path(base_path).expanduser()
     return IdentityStore(base_path=base_path)
 
 
