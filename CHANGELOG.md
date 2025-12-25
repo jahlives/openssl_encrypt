@@ -5,6 +5,127 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2025-12-25
+
+### Added
+
+#### Post-Quantum Asymmetric Encryption (Format Version 7)
+- **ML-KEM-768 (Kyber)** for key encapsulation mechanism
+- **ML-DSA-65 (Dilithium)** for digital signatures
+- Full NIST Post-Quantum Cryptography compliance
+- Quantum-resistant security for asymmetric operations
+
+#### Identity Management System
+- Identity generation with dual keypairs (encryption + signing)
+- Private key encryption at rest (Argon2id + AES-256-GCM)
+- Identity storage in `~/.openssl_encrypt/identities/`
+- Fingerprint-based identity verification (SHA-256)
+- Support for both own identities and contacts
+
+#### Multiple Recipients Support
+- Single file encryption for N recipients
+- Each recipient can independently decrypt
+- Minimal overhead: ~1.2KB per recipient
+- No increase in encrypted data size
+- Shared encrypted payload with individual password wrappers
+
+#### Identity CLI Commands
+- `identity create`: Generate new identity with passphrase
+- `identity list`: List all identities and contacts
+- `identity show`: Display detailed identity information
+- `identity export`: Export public keys to JSON
+- `identity import`: Import public keys from JSON
+- `identity delete`: Remove identity with confirmation
+- `identity change-password`: Update identity passphrase
+
+#### Asymmetric Encryption CLI
+- `--for`: Specify recipient(s), can be used multiple times
+- `--sign-with`: Specify sender identity for signing
+- `--key`: Specify recipient identity for decryption
+- `--verify-from`: Verify signature from sender
+- `--no-verify`: Skip signature verification (dangerous)
+
+#### HSM Plugin Support
+- YubiKey Challenge-Response integration
+- Plugin system architecture for hardware security modules
+- Extensible plugin framework
+
+#### Developer Tools
+- Benchmarking system for performance analysis
+- Decryption time estimator for progress feedback
+- 120 new tests covering all asymmetric features
+- Comprehensive test suite with zero warnings
+
+#### Documentation
+- Complete asymmetric encryption guide (ASYMMETRIC_ENCRYPTION_GUIDE.md)
+- Security considerations and best practices
+- Trust-On-First-Use (TOFU) model documentation
+- Usage examples and troubleshooting guide
+
+### Security
+
+#### DoS Protection
+- Signature verification before expensive KDF operations
+- Fast signature check (~1-5ms) prevents KDF attacks
+- Invalid signatures rejected immediately without KDF execution
+- Timing measurements for security auditing
+
+#### Secure Memory Management
+- **CryptoKey** class for private key protection
+- **SecureBytes** for sensitive data handling
+- Explicit memory zeroing (secure_memzero)
+- Context managers for automatic cleanup
+- Secure memory throughout cryptographic operations
+
+#### Cryptographic Integrity
+- Metadata integrity via digital signatures over canonical metadata
+- Private key protection: Argon2id + AES-256-GCM encryption at rest
+- Defense in depth: KDF chain runs even with asymmetric mode
+- Constant-time verification operations
+
+### Changed
+
+- Enhanced plugin system for HSM support
+- Improved error handling in asymmetric operations
+- Updated documentation structure with comprehensive guides
+
+### Technical Details
+
+#### New Modules
+- **pqc_signing.py** (450 lines): ML-DSA signature operations
+- **identity.py** (750 lines): Identity management core
+- **asymmetric_core.py** (650 lines): KEM-based password wrapping
+- **identity_cli.py** (540 lines): CLI interface for identities
+
+#### Extended Modules
+- **crypt_core.py** (+700 lines): Asymmetric encryption/decryption pipelines
+- **pqc.py** (+100 lines): KEM encapsulation methods
+- **crypt_cli.py** (+200 lines): Asymmetric CLI arguments
+- **crypt_cli_subparser.py** (+150 lines): Identity subparser
+
+#### Test Coverage
+- 120 new tests across 6 test files
+- Zero test warnings
+- Complete coverage of asymmetric features
+- DoS protection verification tests
+
+#### Backward Compatibility
+- Format V7 fully backward compatible with V6
+- Symmetric encryption unchanged
+- Automatic format detection based on metadata version
+- No breaking changes to existing functionality
+
+### Dependencies
+
+- No new dependencies added
+- Uses existing: cryptography, argon2-cffi, liboqs-python
+
+### Notes
+
+This is a major release introducing post-quantum asymmetric encryption capabilities. The implementation is production-ready with comprehensive test coverage, security auditing, and full documentation. Format Version 7 maintains complete backward compatibility with Version 6 symmetric encryption.
+
+---
+
 ## [1.3.0] - 2025-12-15
 
 ### Added

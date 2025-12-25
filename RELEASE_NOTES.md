@@ -1,6 +1,98 @@
 # OpenSSL Encrypt - Complete Release Notes
 
-## Current Release: Version 1.2.0 (August 2025)
+## Current Release: Version 1.4.0 (December 25, 2025) - "Quantum Shield"
+
+**Status:** Production Release
+**Development Status:** Stable
+
+### Post-Quantum Asymmetric Encryption Release
+
+Version 1.4.0 represents a major milestone in OpenSSL Encrypt, introducing **Post-Quantum Asymmetric Encryption** with Format Version 7. This release enables secure multi-recipient encryption using quantum-resistant algorithms, comprehensive identity management, and advanced security features including DoS protection and secure memory handling.
+
+### Post-Quantum Cryptography
+- **ML-KEM-768 (Kyber)**: NIST-standardized key encapsulation mechanism for quantum-resistant key exchange
+- **ML-DSA-65 (Dilithium)**: NIST-standardized digital signature algorithm for quantum-resistant authentication
+- **Full NIST PQC Compliance**: Production-ready post-quantum cryptographic primitives
+- **Format Version 7**: New metadata format with asymmetric encryption support, fully backward compatible with V6
+
+### Identity Management System
+- **Generate and manage cryptographic identities** with dual keypairs (encryption + signing)
+- **Secure private key storage** with Argon2id + AES-256-GCM encryption at rest
+- **Identity directory structure** at `~/.openssl_encrypt/identities/` for organized key management
+- **Public key exchange** for contacts with fingerprint-based verification (SHA-256)
+- **CLI commands for complete identity lifecycle**: create, list, show, export, import, delete, change-password
+
+### Multiple Recipients Support
+- **Encrypt once, decrypt by multiple recipients** - single file encryption for N recipients
+- **Each recipient maintains independent access** without coordination
+- **Minimal metadata overhead**: ~1.2KB per recipient
+- **No increase in encrypted data size** - efficient shared encryption with individual password wrappers
+- **Flexible recipient management** via CLI with multiple `--for` flags
+
+### Security Enhancements
+
+#### DoS Protection
+- **Signature verification before KDF**: Fast signature check (~1-5ms) prevents expensive KDF attacks
+- **Invalid signatures rejected immediately** without executing KDF operations
+- **Timing measurements** included for security auditing
+
+#### Secure Memory Management
+- **CryptoKey class** for private key protection
+- **SecureBytes** for sensitive data handling
+- **Explicit memory zeroing** (secure_memzero) throughout
+- **Context managers** for automatic cleanup
+
+#### Cryptographic Integrity
+- **Metadata integrity** via digital signatures over canonical metadata
+- **Private key protection** with Argon2id + AES-256-GCM at rest
+- **Defense in depth**: KDF chain runs even with asymmetric mode
+
+### Developer Features
+- **HSM plugin system** with YubiKey Challenge-Response support
+- **Benchmarking tools** for performance analysis
+- **Decryption time estimation** for progress feedback
+- **120 new tests** covering all asymmetric features with zero warnings
+- **Comprehensive documentation** (ASYMMETRIC_ENCRYPTION_GUIDE.md)
+
+### Usage Example
+
+```bash
+# Create identity
+openssl_encrypt identity create --name Alice --email alice@example.com
+
+# Encrypt for multiple recipients
+openssl_encrypt encrypt --for Bob --for Charlie --sign-with Alice --input secret.txt
+
+# Decrypt and verify
+openssl_encrypt decrypt --key Bob --verify-from Alice --input secret.txt.enc
+```
+
+### Technical Implementation
+- **4 new modules**: pqc_signing.py (450 lines), identity.py (750 lines), asymmetric_core.py (650 lines), identity_cli.py (540 lines)
+- **Extended modules**: crypt_core.py (+700 lines), pqc.py (+100 lines)
+- **Zero new dependencies**: Uses existing cryptography, argon2-cffi, liboqs-python
+- **Full backward compatibility**: V6 symmetric encryption unchanged
+
+---
+
+## Previous Release: Version 1.3.2 (December 24, 2025)
+
+**Status:** Production Release
+**Development Status:** Stable
+
+### Security & Performance Monitoring Release
+
+Version 1.3.2 introduced comprehensive decryption time/memory estimation to prevent DoS attacks via inflated metadata parameters, along with critical bug fixes for CLI argument parsing.
+
+### Key Features
+- **Decryption cost estimation** with pre-decryption display and 2-second cancellation window
+- **Static benchmark data** for all hash algorithms and KDF operations
+- **DoS attack prevention** with warnings when thresholds exceeded (>10 seconds or >1GB memory)
+- **Fixed critical --no-estimate flag** parsing bug with --progress flag
+
+---
+
+## Previous Release: Version 1.2.0 (August 2025)
 
 **Status:** Production Release
 **Development Status:** Stable
@@ -14,25 +106,6 @@ Version 1.2.0 delivers a professional Flutter-based desktop GUI with native Wayl
 - **Advanced CLI Integration**: Complete Flutter-to-CLI bridge service providing real-time progress monitoring, error handling, and full algorithm access
 - **Desktop UX Standards**: Professional menu bar, comprehensive keyboard shortcuts (Ctrl+O, Ctrl+S, F1), drag & drop file operations, and native desktop dialogs
 - **Responsive Design**: Modern desktop-optimized layout with NavigationRail sidebar, tabbed interface, and professional visual hierarchy
-
-### Comprehensive Configuration System
-- **Professional Settings Interface**: Searchable settings with theme switching (Light/Dark/System), cryptographic defaults, and application behavior controls
-- **Advanced Algorithm Configuration**: Interactive parameter tuning interface for all KDFs (Argon2, Scrypt, Balloon, HKDF) with real-time validation
-- **Post-Quantum Algorithm UI**: Complete graphical interface for ML-KEM, Kyber, HQC, MAYO, and CROSS algorithms with security guidance
-- **Algorithm Recommendation Engine**: Intelligent algorithm selection with security level recommendations and performance considerations
-
-### Streamlined Architecture & Security
-- **GUI Architecture Migration**: Complete migration from tkinter to Flutter providing superior cross-platform compatibility and native desktop integration
-- **Simplified Flatpak Integration**: Streamlined Flatpak permissions and launcher focusing on Flutter's native capabilities
-- **Enhanced Security Posture**: Reduced attack surface through elimination of complex X11/XWayland compatibility layers
-- **Native Platform Security**: Flutter's native desktop integration provides better sandboxing than X11-based solutions
-- **Algorithm Security Hardening**: Removed deprecated PBKDF2 key derivation and Whirlpool hash algorithms from encryption operations to eliminate weak cryptographic options and strengthen security posture
-
-### Key Enhancements in 1.0.1
-- **Segregated CLI Help System**: Two-tier help (global overview + command-specific options)
-- **Improved User Experience**: Context-aware help reduces cognitive load
-- **Better Discoverability**: Clear command overview with focused option display
-- **Maintained Compatibility**: All existing functionality and file formats unchanged
 
 ---
 
