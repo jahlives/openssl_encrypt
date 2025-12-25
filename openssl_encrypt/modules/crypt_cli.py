@@ -4122,8 +4122,6 @@ def main_with_args(args=None):
             # Check if asymmetric mode (--for flag present)
             if hasattr(args, "for_identity") and args.for_identity:
                 # Asymmetric encryption mode
-                import getpass
-
                 from .crypt_core import encrypt_file_asymmetric
                 from .identity import IdentityStore
 
@@ -5447,8 +5445,6 @@ def main_with_args(args=None):
 
                         if format_version == 7 and metadata.get("mode") == "asymmetric":
                             # Asymmetric decryption mode
-                            import getpass
-
                             from .crypt_core import decrypt_file_asymmetric
                             from .identity import IdentityStore
 
