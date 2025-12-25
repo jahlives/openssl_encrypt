@@ -3431,7 +3431,11 @@ def main_with_args(args=None):
         parser.error("the following arguments are required: --input/-i")
 
     # Get password (only for encrypt/decrypt actions)
-    if args.action in ["encrypt", "decrypt"]:
+    # Skip password prompt for asymmetric encryption/decryption (uses identity-based keys)
+    is_asymmetric_encrypt = args.action == "encrypt" and hasattr(args, "for_identity") and args.for_identity
+    is_asymmetric_decrypt = args.action == "decrypt" and hasattr(args, "key_identity") and args.key_identity
+
+    if args.action in ["encrypt", "decrypt"] and not (is_asymmetric_encrypt or is_asymmetric_decrypt):
         password = None
         generated_password = None
 
