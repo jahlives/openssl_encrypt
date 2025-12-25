@@ -1,0 +1,140 @@
+name: Sync Docs to Wiki
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'openssl_encrypt/docs/**'
+  workflow_dispatch:
+
+jobs:
+  sync-wiki:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for WIKI_TOKEN
+        run: |
+          if [ -n "${{ secrets.WIKI_TOKEN }}" ]; then
+            echo "✅ WIKI_TOKEN is configured"
+          else
+            echo "❌ WIKI_TOKEN is NOT configured - will fail on push"
+            echo "Please add WIKI_TOKEN secret with 'repo' scope"
+            exit 1
+          fi
+
+      - name: Checkout wiki
+        uses: actions/checkout@v4
+        continue-on-error: true
+        id: checkout-wiki
+        with:
+          repository: ${{ github.repository }}.wiki
+          path: wiki
+          token: ${{ secrets.WIKI_TOKEN }}
+          persist-credentials: true
+
+      - name: Check if wiki exists
+        id: wiki-check
+        run: |
+          if [ -d "wiki/.git" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            cd wiki
+            git branch -a
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Wiki not initialized. Please create at least one page manually at https://github.com/${{ github.repository }}/wiki"
+            exit 1
+          fi
+
+      - name: Copy README as Home page
+        run: |
+          echo "Copying README.md to wiki Home.md..."
+          cp -v README.md wiki/Home.md
+
+      - name: Sync documentation files
+        run: |
+          # Remove old lowercase sidebar if it exists
+          rm -f wiki/_sidebar.md
+
+          # Copy all markdown files from docs to wiki (except _sidebar.md)
+          for file in openssl_encrypt/docs/*.md; do
+            if [[ "$(basename "$file")" != "_sidebar.md" ]]; then
+              cp -v "$file" wiki/
+            fi
+          done
+
+          # Transform sidebar for GitHub Wiki format
+          if [ -f "openssl_encrypt/docs/_sidebar.md" ]; then
+            echo "Transforming sidebar for GitHub Wiki..."
+            # Create transformed sidebar
+            cat openssl_encrypt/docs/_sidebar.md | \
+              sed 's/\](\.\.\/\.\.\/README\.md)/](Home)/g' | \
+              sed 's/\](\([^)]*\)\.md)/](\1)/g' > wiki/_Sidebar.md
+
+            echo "=== Transformed sidebar ==="
+            cat wiki/_Sidebar.md
+          fi
+
+      - name: Commit and push to wiki
+        working-directory: wiki
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          set -x  # Enable debug mode
+
+          echo "=== Configuring git ==="
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          echo "=== Current directory ==="
+          pwd
+          ls -la
+
+          echo "=== Git status before add ==="
+          git status
+
+          echo "=== Adding files ==="
+          git add .
+
+          echo "=== Git status after add ==="
+          git status
+
+          echo "=== Checking for changes ==="
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          echo "=== Creating commit ==="
+          git commit -m "Sync documentation from repository" -m "Automated sync from openssl_encrypt/docs/ directory" -m "Triggered by: ${COMMIT_SHA}"
+
+          echo "=== Detecting branch ==="
+          DEFAULT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+          echo "Current branch: ${DEFAULT_BRANCH}"
+
+          echo "=== Git remote info ==="
+          git remote -v
+
+          echo "=== Pushing to wiki ==="
+          git push origin "${DEFAULT_BRANCH}" || {
+            echo "Push failed with exit code $?"
+            echo "=== Checking remote branches ==="
+            git ls-remote --heads origin
+            exit 1
+          }
+
+          echo "=== Push successful ==="
+
+      - name: Summary
+        if: success()
+        env:
+          REPO_NAME: ${{ github.repository }}
+        run: |
+          echo "✅ Documentation successfully synced to wiki"
+          echo "📚 Wiki URL: https://github.com/${REPO_NAME}/wiki"

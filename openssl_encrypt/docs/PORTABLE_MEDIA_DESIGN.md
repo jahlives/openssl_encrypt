@@ -1,12 +1,12 @@
-# 🔒 Portable Media & Offline Distribution - Design Document
+# Portable Media & Offline Distribution - Design Document
 
 *Air-Gapped Security Features for OpenSSL Encrypt*
 
-## 🎯 Overview
+## Overview
 
 This document outlines the design for secure offline distribution and portable media integration, maintaining strict air-gapped operation principles.
 
-## 🔥 Core Features
+## Core Features
 
 ### 1. **USB Drive Encryption with Auto-Run**
 *Priority: High - Foundation for all portable features*
@@ -90,8 +90,8 @@ openssl_encrypt --create-iso archive.iso --with-recovery-key
 
 ---
 
-### 3. **QR Code Key Distribution** ⭐
-*Priority: High - Unique air-gapped key sharing*
+### 3. **QR Code Key Distribution**
+*Priority: High - Air-gapped key sharing*
 
 #### **Concept:**
 Distribute keys and small encrypted data through QR codes for truly air-gapped scenarios.
@@ -196,7 +196,7 @@ openssl_encrypt --secure-wipe E:\ --dod-standard --verify
 openssl_encrypt --emergency-wipe /media/usb --no-confirmation
 ```
 
-## 🏗️ Implementation Architecture
+## Implementation Architecture
 
 ### **Module Structure:**
 ```
@@ -216,7 +216,7 @@ modules/
 - **Configuration System**: Use current settings framework
 - **Security Framework**: Build on existing secure memory
 
-## 💡 Unique Value Propositions
+## Key Capabilities
 
 ### **1. True Air-Gap Security**
 - No network dependencies ever
@@ -233,12 +233,12 @@ modules/
 - Corporate data governance
 - Legal/regulatory requirements
 
-### **4. Innovative QR Distribution**
-- First-of-its-kind QR-based key sharing
+### **4. QR-Based Key Distribution**
+- QR-based key sharing for air-gapped systems
 - Printed key backups possible
 - Visual verification of key integrity
 
-## 🎯 Implementation Priority
+## Implementation Priority
 
 ### **Phase 1: Foundation (Week 1-2)**
 1. **Basic USB Drive Creation** - Core portable functionality
@@ -255,12 +255,10 @@ modules/
 8. **Air-Gap Integration Tools** - Professional features
 9. **Emergency Procedures** - Comprehensive security
 
-## 🔒 Security Considerations
+## Security Considerations
 
 - **Physical Security**: Tamper-evident seals, write-protect
 - **Key Protection**: Multiple encryption layers, secure deletion
 - **Access Control**: Optional PIN/password protection
 - **Audit Trails**: Complete operation logging
 - **Recovery Procedures**: Multiple backup strategies
-
-This portable media system would make OpenSSL Encrypt unique in the market - true air-gapped security with innovative distribution mechanisms that no other tool offers!

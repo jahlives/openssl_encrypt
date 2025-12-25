@@ -114,7 +114,7 @@ repos:
 
 # Configuration for specific checks
 default_install_hook_types: [pre-commit, pre-push]
-default_stages: [commit]
+default_stages: [pre-commit]
 
 # Exclude specific patterns globally
 exclude: |

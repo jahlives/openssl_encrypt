@@ -19,6 +19,7 @@ Plugin Types:
 - FormatConverterPlugin: Handle format conversions
 - AnalyzerPlugin: Analyze encrypted files without decrypting
 - UtilityPlugin: Provide helper functions
+- HSMPlugin: Hardware Security Module integration for hardware-bound key derivation
 
 Example Usage:
     # Initialize plugin system
@@ -73,11 +74,15 @@ Security Architecture:
 __version__ = "1.3.0"
 __author__ = "OpenSSL Encrypt Team"
 
+# Standard library imports
+import logging
+
 # Core plugin system components
 from .plugin_base import (
     AnalyzerPlugin,
     BasePlugin,
     FormatConverterPlugin,
+    HSMPlugin,
     MetadataHandlerPlugin,
     PluginCapability,
     PluginResult,
@@ -117,6 +122,7 @@ __all__ = [
     "FormatConverterPlugin",
     "AnalyzerPlugin",
     "UtilityPlugin",
+    "HSMPlugin",
     # Enums and data structures
     "PluginCapability",
     "PluginType",
@@ -163,6 +169,7 @@ PLUGIN_SYSTEM_METADATA = {
 # Default plugin directories (relative to OpenSSL Encrypt installation)
 DEFAULT_PLUGIN_DIRECTORIES = [
     "plugins",  # Main plugins directory
+    "plugins/hsm",  # HSM (Hardware Security Module) plugins
     "plugins/official",  # Official plugins
     "plugins/community",  # Community plugins
     "plugins/user",  # User-specific plugins
@@ -273,6 +280,7 @@ def validate_plugin_compatibility(plugin_file: str) -> dict:
                         "FormatConverterPlugin",
                         "AnalyzerPlugin",
                         "UtilityPlugin",
+                        "HSMPlugin",
                     ]:
                         result["plugin_class_found"] = True
                         break
@@ -289,6 +297,4 @@ def validate_plugin_compatibility(plugin_file: str) -> dict:
 
 
 # Initialize logging for plugin system
-import logging
-
 logging.getLogger(__name__).addHandler(logging.NullHandler())

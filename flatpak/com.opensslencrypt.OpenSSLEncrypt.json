@@ -8,9 +8,11 @@
     "--share=ipc",
     "--socket=x11",
     "--socket=wayland",
+    "--socket=pcsc",
     "--device=dri",
     "--filesystem=host",
     "--filesystem=xdg-run/at-spi",
+    "--filesystem=/run/udev:ro",
     "--talk-name=org.freedesktop.FileManager1",
     "--talk-name=org.gtk.vfs.*",
     "--talk-name=org.a11y.*",
@@ -74,6 +76,29 @@
       "sources": []
     },
     {
+      "name": "pcsc-lite",
+      "config-opts": [
+        "--disable-libudev",
+        "--disable-libsystemd",
+        "--without-systemdsystemunitdir",
+        "--disable-serial",
+        "--disable-usb",
+        "--disable-libusb",
+        "--disable-polkit"
+      ],
+      "post-install": [
+        "rm /app/sbin/pcscd",
+        "rmdir /app/sbin || true"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://pcsclite.apdu.fr/files/pcsc-lite-2.3.0.tar.xz",
+          "sha256": "1acca22d2891d43ffe6d782740d32e78150d4fcc99e8a3cc763abaf546060d3d"
+        }
+      ]
+    },
+    {
       "name": "python3-dependencies",
       "buildsystem": "simple",
       "build-options": {
@@ -96,7 +121,8 @@
         "pip3 install --prefix=${FLATPAK_DEST} 'pyzbar==0.1.9'",
         "pip3 install --prefix=${FLATPAK_DEST} 'RandomX==1.1.10.post3'",
         "pip3 install --prefix=${FLATPAK_DEST} 'jsonschema>=4.0.0,<5.0.0'",
-        "pip3 install --prefix=${FLATPAK_DEST} 'git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0'"
+        "pip3 install --prefix=${FLATPAK_DEST} 'git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0'",
+        "pip3 install --prefix=${FLATPAK_DEST} 'yubikey-manager>=5.0.0,<6.0.0'"
       ],
       "sources": []
     },

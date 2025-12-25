@@ -82,6 +82,7 @@ from openssl_encrypt.modules.crypt_core import (
     decrypt_file,
     encrypt_file,
     generate_key,
+    is_aead_algorithm,
     multi_hash_password,
 )
 from openssl_encrypt.modules.crypt_errors import add_timing_jitter, get_jitter_stats
@@ -3380,11 +3381,11 @@ class TestPostQuantumCrypto(unittest.TestCase):
             metadata_json = base64.b64decode(metadata_b64)
             metadata = json.loads(metadata_json)
 
-            # Check that we have format_version 5
-            self.assertEqual(
+            # Check that we have format_version 5 or 6
+            self.assertIn(
                 metadata["format_version"],
-                5,
-                f"Expected format_version 5, got {metadata.get('format_version')}",
+                [5, 6],
+                f"Expected format_version 5 or 6, got {metadata.get('format_version')}",
             )
 
             # Check that encryption_data is set correctly
@@ -3496,8 +3497,8 @@ class TestPostQuantumCrypto(unittest.TestCase):
                 metadata_json = base64.b64decode(metadata_b64)
                 metadata = json.loads(metadata_json)
 
-                # Check format version
-                self.assertEqual(metadata.get("format_version"), 5)
+                # Check format version (can be 5 or 6)
+                self.assertIn(metadata.get("format_version"), [5, 6])
 
                 # Check encryption_data field
                 self.assertIn("encryption", metadata)
@@ -3650,8 +3651,8 @@ class TestPostQuantumCrypto(unittest.TestCase):
             # Convert v4 to v5
             v5_metadata = convert_metadata_v4_to_v5(v4_metadata, encryption_data)
 
-            # Verify conversion
-            self.assertEqual(v5_metadata["format_version"], 5)
+            # Verify conversion (can be v5 or v6)
+            self.assertIn(v5_metadata["format_version"], [5, 6])
             self.assertEqual(v5_metadata["encryption"]["encryption_data"], encryption_data)
 
             # Make sure other fields are preserved
@@ -3688,7 +3689,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
             )
 
     def test_metadata_v4_v5_compatibility(self):
-        """Test compatibility between v4 and v5 metadata with encryption and decryption."""
+        """Test compatibility between v4, v5, and v6 metadata with encryption and decryption."""
         # Prepare files
         v4_in = os.path.join(self.test_dir, "test_v4_compat.txt")
         v4_out = os.path.join(self.test_dir, "test_v4_compat.enc")
@@ -3746,11 +3747,11 @@ class TestPostQuantumCrypto(unittest.TestCase):
         metadata_json = base64.b64decode(metadata_b64)
         v4_metadata = json.loads(metadata_json)
 
-        # Allow either v4 or v5, since the implementation may auto-convert
-        self.assertIn(v4_metadata["format_version"], [4, 5])
+        # Allow v4, v5, or v6, since the implementation may auto-convert
+        self.assertIn(v4_metadata["format_version"], [4, 5, 6])
 
-        # If it was converted to v5, encryption_data might exist but should be aes-gcm
-        if v4_metadata["format_version"] == 5 and "encryption_data" in v4_metadata.get(
+        # If it was converted to v5 or v6, encryption_data might exist but should be aes-gcm
+        if v4_metadata["format_version"] in [5, 6] and "encryption_data" in v4_metadata.get(
             "encryption", {}
         ):
             self.assertEqual(v4_metadata["encryption"]["encryption_data"], "aes-gcm")
@@ -3764,7 +3765,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         metadata_json = base64.b64decode(metadata_b64)
         v5_metadata = json.loads(metadata_json)
 
-        self.assertEqual(v5_metadata["format_version"], 5)
+        self.assertIn(v5_metadata["format_version"], [5, 6])
         self.assertIn("encryption_data", v5_metadata["encryption"])
         # Allow either the specified value or aes-gcm if the implementation defaults to it
         self.assertIn(
@@ -14617,6 +14618,262 @@ class TestSecurityLogger(unittest.TestCase):
             log_content = f.read()
             self.assertIn("[truncated]", log_content)
             self.assertNotIn("x" * 500, log_content)
+
+
+class TestAEADBinding(unittest.TestCase):
+    """
+    Tests for AEAD (Authenticated Encryption with Associated Data) binding.
+
+    These tests verify that:
+    1. AEAD algorithms properly bind metadata via AAD
+    2. Non-AEAD algorithms use hash-based verification
+    3. Metadata tampering is detected for both types
+    4. Backward compatibility is maintained
+    """
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.test_dir = tempfile.mkdtemp()
+        self.test_files = []
+
+    def tearDown(self):
+        """Clean up test files."""
+        for test_file in self.test_files:
+            if os.path.exists(test_file):
+                try:
+                    os.unlink(test_file)
+                except Exception:
+                    pass
+        if os.path.exists(self.test_dir):
+            try:
+                shutil.rmtree(self.test_dir)
+            except Exception:
+                pass
+
+    def test_pure_aead_algorithm_detection(self):
+        """Test that pure AEAD algorithms are correctly identified."""
+        aead_algorithms = [
+            EncryptionAlgorithm.AES_GCM,
+            EncryptionAlgorithm.AES_GCM_SIV,
+            EncryptionAlgorithm.AES_SIV,
+            EncryptionAlgorithm.AES_OCB3,
+            EncryptionAlgorithm.CHACHA20_POLY1305,
+            EncryptionAlgorithm.XCHACHA20_POLY1305,
+        ]
+        for algo in aead_algorithms:
+            self.assertTrue(is_aead_algorithm(algo), f"{algo.value} should be AEAD")
+
+    def test_pqc_hybrid_algorithm_detection(self):
+        """Test that PQC hybrid algorithms are correctly identified as AEAD."""
+        pqc_algorithms = [
+            EncryptionAlgorithm.ML_KEM_512_HYBRID,
+            EncryptionAlgorithm.ML_KEM_768_HYBRID,
+            EncryptionAlgorithm.ML_KEM_1024_HYBRID,
+            EncryptionAlgorithm.ML_KEM_512_CHACHA20,
+            EncryptionAlgorithm.ML_KEM_768_CHACHA20,
+            EncryptionAlgorithm.ML_KEM_1024_CHACHA20,
+            EncryptionAlgorithm.HQC_128_HYBRID,
+            EncryptionAlgorithm.HQC_192_HYBRID,
+            EncryptionAlgorithm.HQC_256_HYBRID,
+            EncryptionAlgorithm.MAYO_1_HYBRID,
+            EncryptionAlgorithm.MAYO_3_HYBRID,
+            EncryptionAlgorithm.MAYO_5_HYBRID,
+            EncryptionAlgorithm.CROSS_128_HYBRID,
+            EncryptionAlgorithm.CROSS_192_HYBRID,
+            EncryptionAlgorithm.CROSS_256_HYBRID,
+            EncryptionAlgorithm.KYBER512_HYBRID,
+            EncryptionAlgorithm.KYBER768_HYBRID,
+            EncryptionAlgorithm.KYBER1024_HYBRID,
+        ]
+        for algo in pqc_algorithms:
+            self.assertTrue(
+                is_aead_algorithm(algo),
+                f"{algo.value} should be AEAD (uses AEAD for symmetric layer)",
+            )
+
+    def test_non_aead_algorithm_detection(self):
+        """Test that non-AEAD algorithms are correctly identified."""
+        non_aead_algorithms = [
+            EncryptionAlgorithm.FERNET,
+            EncryptionAlgorithm.CAMELLIA,
+        ]
+        for algo in non_aead_algorithms:
+            self.assertFalse(is_aead_algorithm(algo), f"{algo.value} should NOT be AEAD")
+
+    def test_aead_metadata_has_binding_marker(self):
+        """Test that AEAD-encrypted files have aead_binding marker."""
+        input_file = os.path.join(self.test_dir, "input.txt")
+        encrypted_file = os.path.join(self.test_dir, "encrypted.bin")
+        self.test_files.extend([input_file, encrypted_file])
+
+        # Create test file
+        with open(input_file, "w") as f:
+            f.write("test data")
+
+        # Encrypt with AEAD algorithm
+        encrypt_file(
+            input_file,
+            encrypted_file,
+            b"password",
+            algorithm=EncryptionAlgorithm.AES_GCM,
+            quiet=True,
+        )
+
+        # Read and parse metadata
+        with open(encrypted_file, "rb") as f:
+            content = f.read()
+        metadata_b64, _ = content.split(b":", 1)
+        metadata = json.loads(base64.b64decode(metadata_b64))
+
+        # Check for AEAD binding marker
+        self.assertIn("aead_binding", metadata, "AEAD file should have aead_binding field")
+        self.assertTrue(metadata["aead_binding"], "aead_binding should be True")
+
+        # Check that encrypted_hash is NOT present
+        self.assertNotIn(
+            "encrypted_hash", metadata.get("hashes", {}), "AEAD file should not have encrypted_hash"
+        )
+
+        # Check that original_hash IS present
+        self.assertIn(
+            "original_hash", metadata.get("hashes", {}), "AEAD file should have original_hash"
+        )
+
+    def test_non_aead_metadata_has_encrypted_hash(self):
+        """Test that non-AEAD-encrypted files have encrypted_hash."""
+        input_file = os.path.join(self.test_dir, "input.txt")
+        encrypted_file = os.path.join(self.test_dir, "encrypted.bin")
+        self.test_files.extend([input_file, encrypted_file])
+
+        # Create test file
+        with open(input_file, "w") as f:
+            f.write("test data")
+
+        # Encrypt with non-AEAD algorithm
+        encrypt_file(
+            input_file,
+            encrypted_file,
+            b"password",
+            algorithm=EncryptionAlgorithm.FERNET,
+            quiet=True,
+        )
+
+        # Read and parse metadata
+        with open(encrypted_file, "rb") as f:
+            content = f.read()
+        metadata_b64, _ = content.split(b":", 1)
+        metadata = json.loads(base64.b64decode(metadata_b64))
+
+        # Check that aead_binding is NOT present or False
+        aead_binding = metadata.get("aead_binding", False)
+        self.assertFalse(aead_binding, "Non-AEAD file should not have aead_binding=True")
+
+        # Check that encrypted_hash IS present
+        self.assertIn(
+            "encrypted_hash", metadata.get("hashes", {}), "Non-AEAD file should have encrypted_hash"
+        )
+
+        # Check that original_hash IS present
+        self.assertIn(
+            "original_hash", metadata.get("hashes", {}), "Non-AEAD file should have original_hash"
+        )
+
+    def test_aead_metadata_tampering_detected(self):
+        """Test that tampering AEAD metadata causes decryption failure."""
+        input_file = os.path.join(self.test_dir, "input.txt")
+        encrypted_file = os.path.join(self.test_dir, "encrypted.bin")
+        output_file = os.path.join(self.test_dir, "output.txt")
+        self.test_files.extend([input_file, encrypted_file, output_file])
+
+        # Create test file
+        with open(input_file, "w") as f:
+            f.write("test data for tampering")
+
+        # Encrypt with AEAD algorithm
+        encrypt_file(
+            input_file,
+            encrypted_file,
+            b"password",
+            algorithm=EncryptionAlgorithm.AES_GCM,
+            quiet=True,
+        )
+
+        # Read encrypted file
+        with open(encrypted_file, "rb") as f:
+            content = f.read()
+        metadata_b64, encrypted_data = content.split(b":", 1)
+
+        # Tamper with metadata (add a fake field)
+        metadata = json.loads(base64.b64decode(metadata_b64))
+        metadata["tampered"] = True
+        tampered_metadata_b64 = base64.b64encode(json.dumps(metadata).encode("utf-8"))
+
+        # Write tampered file
+        with open(encrypted_file, "wb") as f:
+            f.write(tampered_metadata_b64 + b":" + encrypted_data)
+
+        # Attempt to decrypt - should fail due to AAD mismatch
+        with self.assertRaises(Exception):  # Should raise authentication error
+            decrypt_file(
+                encrypted_file,
+                output_file,
+                b"password",
+                quiet=True,
+            )
+
+    def test_aead_algorithms_encrypt_and_decrypt(self):
+        """Test that each AEAD algorithm properly encrypts and decrypts with AAD."""
+        algorithms = [
+            EncryptionAlgorithm.AES_GCM,
+            EncryptionAlgorithm.CHACHA20_POLY1305,
+            EncryptionAlgorithm.XCHACHA20_POLY1305,
+            EncryptionAlgorithm.AES_GCM_SIV,
+            EncryptionAlgorithm.AES_SIV,
+            # AES_OCB3 is blocked for encryption (deprecated), so excluded from this test
+        ]
+
+        for algorithm in algorithms:
+            with self.subTest(algorithm=algorithm.value):
+                input_file = os.path.join(self.test_dir, f"input_{algorithm.value}.txt")
+                encrypted_file = os.path.join(self.test_dir, f"encrypted_{algorithm.value}.bin")
+                output_file = os.path.join(self.test_dir, f"output_{algorithm.value}.txt")
+                self.test_files.extend([input_file, encrypted_file, output_file])
+
+                # Create test file
+                test_data = f"test data for {algorithm.value}"
+                with open(input_file, "w") as f:
+                    f.write(test_data)
+
+                # Encrypt
+                encrypt_file(
+                    input_file,
+                    encrypted_file,
+                    b"password",
+                    algorithm=algorithm,
+                    quiet=True,
+                )
+
+                # Verify metadata has AEAD binding
+                with open(encrypted_file, "rb") as f:
+                    content = f.read()
+                metadata_b64, _ = content.split(b":", 1)
+                metadata = json.loads(base64.b64decode(metadata_b64))
+                self.assertTrue(
+                    metadata.get("aead_binding"), f"{algorithm.value} should use AEAD binding"
+                )
+
+                # Decrypt
+                decrypt_file(
+                    encrypted_file,
+                    output_file,
+                    b"password",
+                    quiet=True,
+                )
+
+                # Verify content matches
+                with open(output_file, "r") as f:
+                    decrypted_data = f.read()
+                self.assertEqual(decrypted_data, test_data, f"{algorithm.value} decryption failed")
 
 
 if __name__ == "__main__":

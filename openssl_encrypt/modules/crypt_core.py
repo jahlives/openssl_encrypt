@@ -618,6 +618,53 @@ class EncryptionAlgorithm(Enum):
         return None
 
 
+def is_aead_algorithm(algorithm):
+    """Check if algorithm supports native AEAD with AAD.
+
+    Args:
+        algorithm: EncryptionAlgorithm enum value or string
+
+    Returns:
+        bool: True if algorithm supports AAD binding, False otherwise
+    """
+    # Convert string to enum if needed
+    if isinstance(algorithm, str):
+        try:
+            algorithm = EncryptionAlgorithm(algorithm)
+        except ValueError:
+            return False
+
+    AEAD_ALGORITHMS = {
+        # Pure AEAD algorithms
+        EncryptionAlgorithm.AES_GCM,
+        EncryptionAlgorithm.AES_GCM_SIV,
+        EncryptionAlgorithm.AES_SIV,
+        EncryptionAlgorithm.AES_OCB3,
+        EncryptionAlgorithm.CHACHA20_POLY1305,
+        EncryptionAlgorithm.XCHACHA20_POLY1305,
+        # PQC Hybrid algorithms (use AEAD for symmetric layer)
+        EncryptionAlgorithm.ML_KEM_512_HYBRID,
+        EncryptionAlgorithm.ML_KEM_768_HYBRID,
+        EncryptionAlgorithm.ML_KEM_1024_HYBRID,
+        EncryptionAlgorithm.ML_KEM_512_CHACHA20,
+        EncryptionAlgorithm.ML_KEM_768_CHACHA20,
+        EncryptionAlgorithm.ML_KEM_1024_CHACHA20,
+        EncryptionAlgorithm.HQC_128_HYBRID,
+        EncryptionAlgorithm.HQC_192_HYBRID,
+        EncryptionAlgorithm.HQC_256_HYBRID,
+        EncryptionAlgorithm.MAYO_1_HYBRID,
+        EncryptionAlgorithm.MAYO_3_HYBRID,
+        EncryptionAlgorithm.MAYO_5_HYBRID,
+        EncryptionAlgorithm.CROSS_128_HYBRID,
+        EncryptionAlgorithm.CROSS_192_HYBRID,
+        EncryptionAlgorithm.CROSS_256_HYBRID,
+        EncryptionAlgorithm.KYBER512_HYBRID,
+        EncryptionAlgorithm.KYBER768_HYBRID,
+        EncryptionAlgorithm.KYBER1024_HYBRID,
+    }
+    return algorithm in AEAD_ALGORITHMS
+
+
 class KeyStretch:
     key_stretch = False
     hash_stretch = False
@@ -1162,7 +1209,9 @@ def with_progress_bar(func, message, *args, quiet=False, **kwargs):
 
 
 @add_timing_jitter
-def multi_hash_password(password, salt, hash_config, quiet=False, progress=False, debug=False):
+def multi_hash_password(
+    password, salt, hash_config, quiet=False, progress=False, debug=False, hsm_pepper=None
+):
     """
     Apply multiple rounds of different hash algorithms to a password.
 
@@ -1240,9 +1289,15 @@ def multi_hash_password(password, salt, hash_config, quiet=False, progress=False
         from .secure_memory import secure_buffer, secure_memcpy, secure_memzero
 
         # Use secure memory approach
-        with secure_buffer(len(password) + len(salt), zero=False) as hashed:
-            # Initialize the secure buffer with password + salt
-            secure_memcpy(hashed, password + salt)
+        pepper_len = len(hsm_pepper) if hsm_pepper else 0
+        with secure_buffer(len(password) + len(salt) + pepper_len, zero=False) as hashed:
+            # Initialize the secure buffer with password + salt + hsm_pepper
+            if hsm_pepper:
+                if debug:
+                    logger.debug(f"HASH-DEBUG: Injecting HSM pepper ({len(hsm_pepper)} bytes)")
+                secure_memcpy(hashed, password + salt + hsm_pepper)
+            else:
+                secure_memcpy(hashed, password + salt)
 
             # Extract the correct hash configuration based on format (v3 vs v4)
             if (
@@ -1564,6 +1619,7 @@ def generate_key(
     progress=False,
     debug=False,
     pqc_keypair=None,
+    hsm_pepper=None,
 ):
     """
     Generate an encryption key from a password using PBKDF2 or Argon2.
@@ -1734,12 +1790,21 @@ def generate_key(
             print("Applying hash iterations")
         # Apply multiple hash algorithms in sequence
         password = multi_hash_password(
-            password, salt, hash_config, quiet, progress=progress, debug=debug
+            password,
+            salt,
+            hash_config,
+            quiet,
+            progress=progress,
+            debug=debug,
+            hsm_pepper=hsm_pepper,
         )
     else:
         # Even when no hash iterations are configured, we need to combine password with salt
         # for consistency with the original key derivation behavior
-        password = password + salt
+        if hsm_pepper:
+            password = password + salt + hsm_pepper
+        else:
+            password = password + salt
 
     # Check if Argon2 is available on the system
     argon2_available = ARGON2_AVAILABLE
@@ -2710,6 +2775,10 @@ def create_metadata_v5(
     pbkdf2_iterations=0,
     pqc_info=None,
     encryption_data="aes-gcm",
+    hsm_plugin_name=None,
+    hsm_slot_used=None,
+    include_encrypted_hash=True,
+    aad_mode=False,
 ):
     """
     Create metadata in format version 5.
@@ -2718,11 +2787,15 @@ def create_metadata_v5(
         salt (bytes): Salt used for key derivation
         hash_config (dict): Hash configuration
         original_hash (str): Hash of original content
-        encrypted_hash (str): Hash of encrypted content
+        encrypted_hash (str): Hash of encrypted content (can be None if aad_mode=True)
         algorithm (str): Encryption algorithm used
         pbkdf2_iterations (int): PBKDF2 iterations if used
         pqc_info (dict): Post-quantum cryptography information
         encryption_data (str): The symmetric encryption algorithm to use for data encryption
+        hsm_plugin_name (str): HSM plugin identifier (optional)
+        hsm_slot_used (int): HSM slot number used (optional)
+        include_encrypted_hash (bool): Whether to include encrypted_hash in metadata (default: True)
+        aad_mode (bool): Whether metadata will be used as AAD for AEAD binding (default: False)
 
     Returns:
         dict: Metadata in format version 5
@@ -2730,13 +2803,24 @@ def create_metadata_v5(
     # Encode salt to base64
     salt_b64 = base64.b64encode(salt).decode("utf-8")
 
+    # Create hashes dictionary based on AAD mode
+    if include_encrypted_hash and encrypted_hash is not None:
+        hashes_dict = {"original_hash": original_hash, "encrypted_hash": encrypted_hash}
+    else:
+        # AEAD mode: only include original_hash
+        hashes_dict = {"original_hash": original_hash}
+
     # Create basic metadata
     metadata = {
         "format_version": 5,
         "derivation_config": {"salt": salt_b64, "hash_config": {}, "kdf_config": {}},
-        "hashes": {"original_hash": original_hash, "encrypted_hash": encrypted_hash},
+        "hashes": hashes_dict,
         "encryption": {"algorithm": algorithm, "encryption_data": encryption_data},
     }
+
+    # Add AAD binding marker if in AAD mode
+    if aad_mode:
+        metadata["aead_binding"] = True
 
     # Process hash algorithms to use nested structure
     hash_algorithms = [
@@ -2795,6 +2879,316 @@ def create_metadata_v5(
         if "dual_encrypt_key" in pqc_info:
             metadata["encryption"]["pqc_dual_encrypt_key"] = pqc_info["dual_encrypt_key"]
 
+    # Add HSM configuration if used
+    if hsm_plugin_name:
+        metadata["encryption"]["hsm_plugin"] = hsm_plugin_name
+        if hsm_slot_used:
+            metadata["encryption"]["hsm_config"] = {"slot": hsm_slot_used}
+
+    return metadata
+
+
+def create_metadata_v6(
+    salt,
+    hash_config,
+    original_hash,
+    encrypted_hash,
+    algorithm,
+    pbkdf2_iterations=0,
+    pqc_info=None,
+    encryption_data="aes-gcm",
+    hsm_plugin_name=None,
+    hsm_slot_used=None,
+    include_encrypted_hash=True,
+    aad_mode=False,
+    keystore_id=None,
+):
+    """
+    Create metadata in format version 6 with formal HSM validation.
+
+    Changes from v5:
+    - Adds formal HSM schema validation for plugin names and slot numbers
+    - No functional changes, only improved validation and security
+
+    Args:
+        salt (bytes): Salt used for key derivation
+        hash_config (dict): Hash configuration
+        original_hash (str): Hash of original content
+        encrypted_hash (str): Hash of encrypted content (can be None if aad_mode=True)
+        algorithm (str): Encryption algorithm used
+        pbkdf2_iterations (int): PBKDF2 iterations if used
+        pqc_info (dict): Post-quantum cryptography information
+        encryption_data (str): The symmetric encryption algorithm to use for data encryption
+        hsm_plugin_name (str): HSM plugin identifier (optional)
+        hsm_slot_used (int): HSM slot number used (optional)
+        include_encrypted_hash (bool): Whether to include encrypted_hash in metadata (default: True)
+        aad_mode (bool): Whether metadata will be used as AAD for AEAD binding (default: False)
+        keystore_id (str): PQC keystore key ID (optional)
+
+    Returns:
+        dict: Metadata in format version 6
+
+    Raises:
+        ValueError: If HSM parameters don't meet validation requirements
+    """
+    import re
+
+    # Encode salt to base64
+    salt_b64 = base64.b64encode(salt).decode("utf-8")
+
+    # Create hashes dictionary based on AAD mode
+    if include_encrypted_hash and encrypted_hash is not None:
+        hashes_dict = {"original_hash": original_hash, "encrypted_hash": encrypted_hash}
+    else:
+        # AEAD mode: only include original_hash
+        hashes_dict = {"original_hash": original_hash}
+
+    # Create basic metadata
+    metadata = {
+        "format_version": 6,  # Version 6
+        "derivation_config": {"salt": salt_b64, "hash_config": {}, "kdf_config": {}},
+        "hashes": hashes_dict,
+        "encryption": {"algorithm": algorithm, "encryption_data": encryption_data},
+    }
+
+    # Add AAD binding marker if in AAD mode
+    if aad_mode:
+        metadata["aead_binding"] = True
+
+    # Process hash algorithms to use nested structure
+    hash_algorithms = [
+        "sha512",
+        "sha384",
+        "sha256",
+        "sha224",
+        "sha3_512",
+        "sha3_384",
+        "sha3_256",
+        "sha3_224",
+        "blake2b",
+        "blake3",
+        "shake256",
+        "shake128",
+        "whirlpool",
+    ]
+    for algo in hash_algorithms:
+        if algo in hash_config:
+            metadata["derivation_config"]["hash_config"][algo] = {"rounds": hash_config[algo]}
+
+    # Add PBKDF2 config if used
+    # Use the effective pbkdf2_iterations from hash_config if available (for default template compatibility)
+    effective_pbkdf2_iterations = hash_config.get("pbkdf2_iterations", pbkdf2_iterations)
+    if effective_pbkdf2_iterations > 0:
+        metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {
+            "rounds": effective_pbkdf2_iterations
+        }
+
+    # Move KDF configurations from hash_config if present
+    kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf", "randomx"]
+    for kdf in kdf_algorithms:
+        if kdf in hash_config:
+            metadata["derivation_config"]["kdf_config"][kdf] = hash_config[kdf]
+
+    # Copy dual encryption flag if present (for PQC keystore integration)
+    if "dual_encryption" in hash_config:
+        metadata["derivation_config"]["kdf_config"]["dual_encryption"] = hash_config[
+            "dual_encryption"
+        ]
+
+    # Copy password verification hashes for dual encryption if present
+    if "pqc_dual_encrypt_verify" in hash_config:
+        metadata["derivation_config"]["kdf_config"]["pqc_dual_encrypt_verify"] = hash_config[
+            "pqc_dual_encrypt_verify"
+        ]
+    if "pqc_dual_encrypt_verify_salt" in hash_config:
+        metadata["derivation_config"]["kdf_config"]["pqc_dual_encrypt_verify_salt"] = hash_config[
+            "pqc_dual_encrypt_verify_salt"
+        ]
+
+    # Add PQC information if present
+    if pqc_info:
+        if "public_key" in pqc_info:
+            metadata["encryption"]["pqc_public_key"] = base64.b64encode(
+                pqc_info["public_key"]
+            ).decode("utf-8")
+
+        if "private_key" in pqc_info and pqc_info["private_key"]:
+            metadata["encryption"]["pqc_private_key"] = base64.b64encode(
+                pqc_info["private_key"]
+            ).decode("utf-8")
+
+        if "key_salt" in pqc_info:
+            metadata["encryption"]["pqc_key_salt"] = base64.b64encode(pqc_info["key_salt"]).decode(
+                "utf-8"
+            )
+
+        if "key_encrypted" in pqc_info:
+            metadata["encryption"]["pqc_key_encrypted"] = pqc_info["key_encrypted"]
+
+        if "dual_encrypt_key" in pqc_info:
+            metadata["encryption"]["pqc_dual_encrypt_key"] = pqc_info["dual_encrypt_key"]
+
+    # Add HSM configuration with validation (v6 enhancement)
+    if hsm_plugin_name:
+        # Validate plugin name format (alphanumeric, underscore, hyphen only)
+        if not re.match(r"^[a-zA-Z0-9_-]+$", hsm_plugin_name):
+            raise ValueError(
+                f"Invalid HSM plugin name '{hsm_plugin_name}': "
+                f"must contain only alphanumeric characters, underscores, and hyphens"
+            )
+
+        # Validate plugin name length
+        if len(hsm_plugin_name) < 1 or len(hsm_plugin_name) > 64:
+            raise ValueError(
+                f"Invalid HSM plugin name '{hsm_plugin_name}': "
+                f"must be between 1 and 64 characters"
+            )
+
+        metadata["encryption"]["hsm_plugin"] = hsm_plugin_name
+
+        if hsm_slot_used is not None:
+            # Validate slot is a non-negative integer
+            if not isinstance(hsm_slot_used, int):
+                raise ValueError(f"Invalid HSM slot '{hsm_slot_used}': must be an integer")
+
+            if hsm_slot_used < 0 or hsm_slot_used > 1000000:
+                raise ValueError(
+                    f"Invalid HSM slot '{hsm_slot_used}': must be between 0 and 1000000"
+                )
+
+            metadata["encryption"]["hsm_config"] = {"slot": hsm_slot_used}
+
+    # Add keystore ID if present (v6 enhancement)
+    if keystore_id:
+        metadata["derivation_config"]["keystore_id"] = keystore_id
+
+    return metadata
+
+
+def create_metadata_v7(
+    salt: bytes,
+    hash_config: dict,
+    original_hash: str,
+    algorithm: str,
+    recipients: list,
+    sender_key_id: str,
+    sender_sig_algo: str,
+    signature: bytes,
+    encryption_data: str = "aes-gcm",
+    encrypted_hash: str = None,
+    include_encrypted_hash: bool = True,
+    aad_mode: bool = False,
+):
+    """
+    Create metadata in format version 7 for asymmetric encryption.
+
+    V7 adds asymmetric cryptography support with:
+    - Multiple recipients (each with encrypted password wrapper)
+    - Sender signature over metadata
+    - ML-KEM for key encapsulation
+    - ML-DSA for signatures
+
+    Args:
+        salt: Salt used for key derivation
+        hash_config: Hash configuration
+        original_hash: Hash of original content
+        algorithm: Encryption algorithm used
+        recipients: List of recipient dicts with keys:
+            - key_id: Recipient fingerprint
+            - kem_algorithm: KEM algorithm (e.g., ML-KEM-768)
+            - encapsulated_key: KEM encapsulated key (bytes)
+            - encrypted_password: Wrapped password (bytes)
+        sender_key_id: Sender's identity fingerprint
+        sender_sig_algo: Signature algorithm (e.g., ML-DSA-65)
+        signature: Signature over canonical metadata (bytes)
+        encryption_data: Symmetric encryption algorithm for data
+        encrypted_hash: Hash of encrypted content (optional)
+        include_encrypted_hash: Whether to include encrypted_hash
+        aad_mode: Whether metadata will be used as AAD
+
+    Returns:
+        dict: Metadata in format version 7
+
+    Raises:
+        ValueError: If parameters are invalid
+    """
+    # Encode salt to base64
+    salt_b64 = base64.b64encode(salt).decode("utf-8")
+
+    # Create hashes dictionary
+    if include_encrypted_hash and encrypted_hash is not None:
+        hashes_dict = {"original_hash": original_hash, "encrypted_hash": encrypted_hash}
+    else:
+        hashes_dict = {"original_hash": original_hash}
+
+    # Encode recipient data to base64
+    recipients_encoded = []
+    for recipient in recipients:
+        recipients_encoded.append(
+            {
+                "key_id": recipient["key_id"],
+                "kem_algorithm": recipient["kem_algorithm"],
+                "encapsulated_key": base64.b64encode(recipient["encapsulated_key"]).decode("utf-8"),
+                "encrypted_password": base64.b64encode(recipient["encrypted_password"]).decode(
+                    "utf-8"
+                ),
+            }
+        )
+
+    # Create basic metadata structure
+    metadata = {
+        "format_version": 7,
+        "mode": "asymmetric",
+        "derivation_config": {"salt": salt_b64, "hash_config": {}, "kdf_config": {}},
+        "asymmetric": {
+            "recipients": recipients_encoded,
+            "sender": {"key_id": sender_key_id, "sig_algorithm": sender_sig_algo},
+        },
+        "hashes": hashes_dict,
+        "encryption": {"algorithm": algorithm, "encryption_data": encryption_data},
+    }
+
+    # Add AAD binding marker if in AAD mode
+    if aad_mode:
+        metadata["aead_binding"] = True
+
+    # Process hash algorithms to use nested structure (same as V6)
+    hash_algorithms = [
+        "sha512",
+        "sha384",
+        "sha256",
+        "sha224",
+        "sha3_512",
+        "sha3_384",
+        "sha3_256",
+        "sha3_224",
+        "blake2b",
+        "blake3",
+        "shake256",
+        "shake128",
+        "whirlpool",
+    ]
+    for algo in hash_algorithms:
+        if algo in hash_config:
+            metadata["derivation_config"]["hash_config"][algo] = {"rounds": hash_config[algo]}
+
+    # Add PBKDF2 config if used
+    pbkdf2_iterations = hash_config.get("pbkdf2_iterations", 0)
+    if pbkdf2_iterations > 0:
+        metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {"rounds": pbkdf2_iterations}
+
+    # Move KDF configurations from hash_config if present
+    kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf", "randomx"]
+    for kdf in kdf_algorithms:
+        if kdf in hash_config:
+            metadata["derivation_config"]["kdf_config"][kdf] = hash_config[kdf]
+
+    # Add signature (this is added AFTER metadata is created, but before returning)
+    metadata["signature"] = {
+        "algorithm": sender_sig_algo,
+        "value": base64.b64encode(signature).decode("utf-8"),
+    }
+
     return metadata
 
 
@@ -2835,6 +3229,512 @@ def create_metadata_v4(
     return convert_metadata_v5_to_v4(v5_metadata)
 
 
+def decrypt_file_asymmetric(
+    input_file: str,
+    output_file: str,
+    recipient,  # Identity object with private keys
+    sender_public_key: bytes = None,
+    skip_verification: bool = False,
+    quiet: bool = False,
+    progress: bool = False,
+    verbose: bool = False,
+):
+    """
+    Decrypt a file asymmetrically encrypted with Format V7.
+
+    CRITICAL SECURITY FEATURE - DoS Protection:
+    This function MUST verify the signature BEFORE running the expensive KDF.
+    Order of operations:
+    1. Parse metadata (fast)
+    2. Find recipient entry (fast)
+    3. **VERIFY SIGNATURE** (fast, ~1-5ms) ← DoS PROTECTION
+    4. If invalid → ABORT (no KDF!)
+    5. If valid → Unwrap password
+    6. Run KDF chain (expensive, but now safe)
+    7. Decrypt data
+
+    Args:
+        input_file: Path to encrypted file
+        output_file: Path for decrypted output
+        recipient: Identity object with encryption private key
+        sender_public_key: Sender's signing public key (for verification)
+        skip_verification: Skip signature verification (DANGEROUS!)
+        quiet: Suppress output
+        progress: Show progress bar
+        verbose: Verbose output
+
+    Returns:
+        bytes: Original file hash
+
+    Raises:
+        ValueError: If format invalid or signature verification fails
+        DecryptionError: If decryption fails
+    """
+    from .asymmetric_core import MetadataCanonicalizer, PasswordWrapper
+    from .identity import Identity
+    from .pqc_signing import PQCSigner
+    from .secure_memory import SecureBytes, secure_memzero
+
+    # Validate input
+    if not recipient:
+        raise ValueError("Recipient identity required")
+
+    if not isinstance(recipient, Identity):
+        raise TypeError("Recipient must be Identity object")
+
+    if not recipient.encryption_private_key:
+        raise ValueError("Recipient identity must have encryption private key")
+
+    if not quiet:
+        print(f"Decrypting {input_file} for {recipient.name}...")
+
+    # Step 1: Parse file and metadata
+    with open(input_file, "r") as f:
+        content = f.read()
+
+    if "---ENCRYPTED_DATA---" not in content:
+        raise ValueError("Invalid encrypted file format")
+
+    parts = content.split("---ENCRYPTED_DATA---")
+    metadata_str = parts[0]
+    encrypted_data_b64 = parts[1].strip()
+
+    try:
+        metadata = json.loads(metadata_str)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid metadata JSON: {e}")
+
+    # Verify format version
+    if metadata.get("format_version") != 7:
+        raise ValueError(f"Expected format version 7, got {metadata.get('format_version')}")
+
+    if metadata.get("mode") != "asymmetric":
+        raise ValueError(f"Expected asymmetric mode, got {metadata.get('mode')}")
+
+    # Step 2: Find recipient entry
+    recipient_entry = None
+    for r in metadata["asymmetric"]["recipients"]:
+        if r["key_id"] == recipient.fingerprint:
+            recipient_entry = r
+            break
+
+    if not recipient_entry:
+        raise ValueError(
+            f"File is not encrypted for recipient {recipient.name} "
+            f"(fingerprint: {recipient.fingerprint[:16]}...)"
+        )
+
+    if not quiet:
+        print(f"  Found entry for: {recipient.name}")
+
+    # Step 3: **CRITICAL - VERIFY SIGNATURE BEFORE KDF**
+    # This is the DoS protection - signature verification is fast (~1-5ms)
+    # while KDF can take minutes. We MUST verify BEFORE running KDF.
+    if not skip_verification:
+        if "signature" not in metadata:
+            raise ValueError("File has no signature (cannot verify)")
+
+        signature_data = metadata["signature"]
+        signature_algo = signature_data["algorithm"]
+        signature_b64 = signature_data["value"]
+
+        try:
+            signature = base64.b64decode(signature_b64)
+        except Exception as e:
+            raise ValueError(f"Invalid signature encoding: {e}")
+
+        # Canonicalize metadata (removes signature field)
+        canonical_metadata = MetadataCanonicalizer.canonicalize(metadata)
+
+        # Verify signature
+        signer = PQCSigner(signature_algo, quiet=True)
+
+        # Use sender public key if provided, otherwise try to extract from metadata
+        if sender_public_key is None:
+            # For now, require sender_public_key to be provided
+            raise ValueError(
+                "Sender's public key required for signature verification. "
+                "Use --verify-from <identity> or --no-verify to skip (dangerous!)"
+            )
+
+        is_valid = signer.verify(canonical_metadata, signature, sender_public_key)
+
+        if not is_valid:
+            # CRITICAL: Signature invalid - ABORT before KDF!
+            raise ValueError(
+                "⚠️ SIGNATURE VERIFICATION FAILED! ⚠️\n"
+                "The file's signature is invalid. This could indicate:\n"
+                "  - File has been tampered with\n"
+                "  - File was signed by a different sender\n"
+                "  - Metadata corruption\n"
+                "Decryption ABORTED for security."
+            )
+
+        if not quiet:
+            sender_id = metadata["asymmetric"]["sender"]["key_id"]
+            print(f"  ✓ Signature verified from: {sender_id[:16]}...")
+
+    else:
+        if not quiet:
+            print("  ⚠️ WARNING: Signature verification SKIPPED!")
+
+    # Step 4: Unwrap password (fast)
+    try:
+        encapsulated_key = base64.b64decode(recipient_entry["encapsulated_key"])
+        encrypted_password = base64.b64decode(recipient_entry["encrypted_password"])
+    except Exception as e:
+        raise ValueError(f"Invalid recipient data encoding: {e}")
+
+    wrapper = PasswordWrapper(recipient_entry["kem_algorithm"])
+
+    with recipient.encryption_private_key as priv_key:
+        password_raw = wrapper.decapsulate(encapsulated_key, priv_key.get_bytes())
+
+    try:
+        with SecureBytes(password_raw) as password_secure:
+            # Unwrap password
+            password = wrapper.unwrap_password(encrypted_password, bytes(password_secure))
+
+    finally:
+        secure_memzero(password_raw)
+
+    if not quiet:
+        print("  ✓ Password unwrapped successfully")
+
+    # Step 5: NOW it's safe to run expensive KDF
+    # (signature has been verified, so we know this is legitimate)
+    try:
+        with SecureBytes(password) as secure_password:
+            # Extract derivation config
+            derivation_config = metadata["derivation_config"]
+            salt = base64.b64decode(derivation_config["salt"])
+
+            # Convert hash config from nested to flat structure
+            nested_hash_config = derivation_config.get("hash_config", {})
+            hash_config = {}
+            for algo, config in nested_hash_config.items():
+                if isinstance(config, dict) and "rounds" in config:
+                    hash_config[algo] = config["rounds"]
+
+            # Get KDF config
+            kdf_config = derivation_config.get("kdf_config", {})
+            for kdf_name, kdf_params in kdf_config.items():
+                if kdf_name in ["scrypt", "argon2", "balloon", "hkdf", "randomx"]:
+                    hash_config[kdf_name] = kdf_params
+                elif kdf_name == "pbkdf2":
+                    hash_config["pbkdf2_iterations"] = kdf_params.get("rounds", 0)
+
+            if not quiet:
+                print("  Running KDF chain (this may take a while)...")
+
+            # Derive key
+            derived_key, _, _ = generate_key(
+                password=bytes(secure_password),
+                salt=salt,
+                hash_config=hash_config,
+                quiet=quiet,
+                progress=progress,
+            )
+
+            if not quiet:
+                print("  ✓ Key derived successfully")
+
+            # Step 6: Decrypt data
+            encrypted_data = base64.b64decode(encrypted_data_b64)
+            nonce = encrypted_data[:12]
+            ciphertext = encrypted_data[12:]
+
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+            aead = AESGCM(derived_key[:32])
+            plaintext = aead.decrypt(nonce, ciphertext, None)
+
+            # Step 7: Verify hash
+            import hashlib
+
+            original_hash_computed = hashlib.sha256(plaintext).hexdigest()
+            original_hash_expected = metadata["hashes"]["original_hash"]
+
+            if original_hash_computed != original_hash_expected:
+                raise ValueError("Hash verification failed! File may be corrupted.")
+
+            if not quiet:
+                print("  ✓ Hash verified")
+
+            # Write output
+            with open(output_file, "wb") as f:
+                f.write(plaintext)
+
+            if not quiet:
+                print(f"✓ File decrypted successfully: {output_file}")
+                print(
+                    f"  File size: {len(encrypted_data)} bytes (encrypted) → {len(plaintext)} bytes"
+                )
+
+            # Secure cleanup
+            secure_memzero(derived_key)
+            secure_memzero(plaintext)
+
+            return original_hash_computed.encode("utf-8")
+
+    finally:
+        # Ensure password is zeroed
+        secure_memzero(password)
+
+
+def encrypt_file_asymmetric(
+    input_file: str,
+    output_file: str,
+    recipients: list,  # List of Identity objects
+    sender,  # Identity object with private keys
+    hash_config: dict = None,
+    algorithm: str = "aes-gcm",
+    encryption_data: str = "aes-gcm",
+    quiet: bool = False,
+    progress: bool = False,
+    verbose: bool = False,
+):
+    """
+    Encrypt a file asymmetrically for one or more recipients.
+
+    This implements Format V7 asymmetric encryption:
+    1. Generate random 32-byte password
+    2. Run KDF chain with password
+    3. Encrypt file with derived key
+    4. Wrap password for each recipient using ML-KEM
+    5. Sign metadata with sender's ML-DSA key
+    6. Write encrypted file with V7 metadata
+
+    Args:
+        input_file: Path to file to encrypt
+        output_file: Path for encrypted output
+        recipients: List of Identity objects (must have encryption_public_key)
+        sender: Identity object with private signing key
+        hash_config: Hash configuration dict
+        algorithm: Encryption algorithm (default: aes-gcm)
+        encryption_data: Data encryption algorithm
+        quiet: Suppress output
+        progress: Show progress bar
+        verbose: Verbose output
+
+    Returns:
+        dict: Encryption result with metadata
+
+    Raises:
+        ValueError: If parameters invalid or recipients/sender missing keys
+        EncryptionError: If encryption fails
+    """
+    from .asymmetric_core import MetadataCanonicalizer, PasswordWrapper
+    from .identity import Identity
+    from .pqc_signing import PQCSigner
+    from .secure_memory import SecureBytes, secure_memzero
+
+    # Validate input
+    if not recipients or len(recipients) == 0:
+        raise ValueError("At least one recipient required")
+
+    if not sender:
+        raise ValueError("Sender identity required")
+
+    # Verify sender has signing private key
+    if not sender.signing_private_key:
+        raise ValueError("Sender identity must have signing private key")
+
+    # Verify all recipients have encryption public keys
+    for i, recipient in enumerate(recipients):
+        if not isinstance(recipient, Identity):
+            raise TypeError(f"Recipient {i} must be Identity object")
+        if not recipient.encryption_public_key:
+            raise ValueError(f"Recipient {i} ({recipient.name}) missing encryption_public_key")
+
+    # Default hash config
+    if hash_config is None:
+        hash_config = {
+            "sha512": 5,
+            "blake2b": 3,
+            "pbkdf2_iterations": 100000,
+        }
+
+    if not quiet:
+        print(f"Encrypting {input_file} for {len(recipients)} recipient(s)...")
+
+    # Step 1: Generate random password (32 bytes)
+    random_password = secrets.token_bytes(32)
+
+    try:
+        with SecureBytes(random_password) as secure_password:
+            # Step 2 & 3: Use existing symmetric encryption with random password
+            # We'll call the existing encrypt_file() function internally
+            # but we need to handle this differently - let's do it manually
+
+            # Read input file
+            with open(input_file, "rb") as f:
+                plaintext = f.read()
+
+            # Generate salt
+            salt = secrets.token_bytes(16)
+
+            # Calculate original hash
+            import hashlib
+
+            original_hash = hashlib.sha256(plaintext).hexdigest()
+
+            # Derive encryption key using KDF chain
+            derived_key, _, _ = generate_key(
+                password=bytes(secure_password), salt=salt, hash_config=hash_config, quiet=quiet
+            )
+
+            # Encrypt data
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+            aead = AESGCM(derived_key[:32])  # Use first 32 bytes as key
+            nonce = secrets.token_bytes(12)
+            ciphertext = aead.encrypt(nonce, plaintext, None)
+
+            # Calculate encrypted hash
+            encrypted_hash = hashlib.sha256(nonce + ciphertext).hexdigest()
+
+            # Step 4: Wrap password for each recipient
+            wrapper = PasswordWrapper("ML-KEM-768")
+            recipients_data = []
+
+            for recipient in recipients:
+                # Encapsulate to get shared secret
+                encapsulated_key, shared_secret_raw = wrapper.encapsulate(
+                    recipient.encryption_public_key
+                )
+
+                try:
+                    # Wrap password with shared secret
+                    with SecureBytes(shared_secret_raw) as shared_secret:
+                        encrypted_password = wrapper.wrap_password(
+                            bytes(secure_password), bytes(shared_secret)
+                        )
+
+                    recipients_data.append(
+                        {
+                            "key_id": recipient.fingerprint,
+                            "kem_algorithm": "ML-KEM-768",
+                            "encapsulated_key": encapsulated_key,
+                            "encrypted_password": encrypted_password,
+                        }
+                    )
+
+                    if not quiet:
+                        print(
+                            f"  Wrapped password for: {recipient.name} ({recipient.fingerprint[:16]}...)"
+                        )
+
+                finally:
+                    secure_memzero(shared_secret_raw)
+
+            # Step 5: Create metadata (without signature first)
+            # We need to create metadata, canonicalize it, sign it, then add signature
+            metadata_unsigned = {
+                "format_version": 7,
+                "mode": "asymmetric",
+                "derivation_config": {
+                    "salt": base64.b64encode(salt).decode("utf-8"),
+                    "hash_config": {},
+                    "kdf_config": {},
+                },
+                "asymmetric": {
+                    "recipients": [
+                        {
+                            "key_id": r["key_id"],
+                            "kem_algorithm": r["kem_algorithm"],
+                            "encapsulated_key": base64.b64encode(r["encapsulated_key"]).decode(
+                                "utf-8"
+                            ),
+                            "encrypted_password": base64.b64encode(r["encrypted_password"]).decode(
+                                "utf-8"
+                            ),
+                        }
+                        for r in recipients_data
+                    ],
+                    "sender": {"key_id": sender.fingerprint, "sig_algorithm": "ML-DSA-65"},
+                },
+                "hashes": {"original_hash": original_hash, "encrypted_hash": encrypted_hash},
+                "encryption": {"algorithm": algorithm, "encryption_data": encryption_data},
+            }
+
+            # Add hash algorithms
+            hash_algorithms = [
+                "sha512",
+                "sha384",
+                "sha256",
+                "sha224",
+                "sha3_512",
+                "sha3_384",
+                "sha3_256",
+                "sha3_224",
+                "blake2b",
+                "blake3",
+                "shake256",
+                "shake128",
+                "whirlpool",
+            ]
+            for algo in hash_algorithms:
+                if algo in hash_config:
+                    metadata_unsigned["derivation_config"]["hash_config"][algo] = {
+                        "rounds": hash_config[algo]
+                    }
+
+            # Add PBKDF2 if used
+            pbkdf2_iterations = hash_config.get("pbkdf2_iterations", 0)
+            if pbkdf2_iterations > 0:
+                metadata_unsigned["derivation_config"]["kdf_config"]["pbkdf2"] = {
+                    "rounds": pbkdf2_iterations
+                }
+
+            # Canonicalize and sign metadata
+            canonical_metadata = MetadataCanonicalizer.canonicalize(metadata_unsigned)
+
+            signer = PQCSigner("ML-DSA-65", quiet=True)
+            with sender.signing_private_key as signing_key:
+                signature = signer.sign(canonical_metadata, signing_key.get_bytes())
+
+            # Add signature to metadata
+            metadata_unsigned["signature"] = {
+                "algorithm": "ML-DSA-65",
+                "value": base64.b64encode(signature).decode("utf-8"),
+            }
+
+            if not quiet:
+                print(f"  Signed with: {sender.name} ({sender.fingerprint[:16]}...)")
+
+            # Step 6: Write encrypted file
+            metadata_json = json.dumps(metadata_unsigned, indent=2)
+            encrypted_data_b64 = base64.b64encode(nonce + ciphertext).decode("utf-8")
+
+            with open(output_file, "w") as f:
+                f.write(metadata_json)
+                f.write("\n---ENCRYPTED_DATA---\n")
+                f.write(encrypted_data_b64)
+
+            if not quiet:
+                print(f"✓ File encrypted successfully: {output_file}")
+                print(f"  Recipients: {len(recipients)}")
+                print(
+                    f"  File size: {len(plaintext)} bytes → {len(nonce + ciphertext)} bytes (encrypted)"
+                )
+
+            # Secure cleanup
+            secure_memzero(derived_key)
+            secure_memzero(plaintext)
+
+            return {
+                "success": True,
+                "output_file": output_file,
+                "recipients": len(recipients),
+                "sender": sender.fingerprint,
+            }
+
+    finally:
+        # Ensure password is zeroed
+        secure_memzero(random_password)
+
+
 @secure_encrypt_error_handler
 def encrypt_file(
     input_file,
@@ -2854,6 +3754,7 @@ def encrypt_file(
     enable_plugins=True,
     plugin_manager=None,
     secure_mode=False,
+    hsm_plugin=None,
 ):
     """
     Encrypt a file with a password using the specified algorithm.
@@ -2983,6 +3884,10 @@ def encrypt_file(
         error_message = get_encryption_block_message(algorithm_value)
         raise ValidationError(error_message)
 
+    # Determine if this algorithm uses AEAD with metadata binding
+    use_aead_binding = is_aead_algorithm(algorithm)
+    metadata_b64 = None  # Will be set before encryption for AEAD algorithms
+
     # Handle signature algorithms (MAYO/CROSS) - generate keypair if not provided
     is_signature_algorithm = algorithm in [
         EncryptionAlgorithm.MAYO_1_HYBRID,
@@ -3079,6 +3984,72 @@ def encrypt_file(
         debug=debug,
     )
 
+    # HSM pepper derivation if HSM plugin provided
+    hsm_pepper = None
+    hsm_slot_used = None
+    if hsm_plugin:
+        if not quiet:
+            print("Deriving hardware-bound pepper from HSM...")
+
+        try:
+            from .plugin_system import PluginCapability, PluginSecurityContext
+
+            # Create security context for HSM plugin
+            hsm_context = PluginSecurityContext(
+                plugin_id=hsm_plugin.plugin_id,
+                capabilities={PluginCapability.ACCESS_CONFIG, PluginCapability.WRITE_LOGS},
+            )
+            hsm_context.metadata["salt"] = salt
+
+            # Execute HSM plugin
+            result = hsm_plugin.get_hsm_pepper(salt, hsm_context)
+
+            if not result.success:
+                raise KeyDerivationError(f"HSM pepper derivation failed: {result.message}")
+
+            hsm_pepper = result.data.get("hsm_pepper")
+            hsm_slot_used = result.data.get("slot")
+
+            # Comprehensive pepper validation
+            if not hsm_pepper:
+                raise KeyDerivationError("HSM plugin returned no pepper value")
+
+            if not isinstance(hsm_pepper, bytes):
+                raise KeyDerivationError(
+                    f"HSM pepper must be bytes, got {type(hsm_pepper).__name__}"
+                )
+
+            if len(hsm_pepper) < 16:
+                raise KeyDerivationError(
+                    f"HSM pepper too short ({len(hsm_pepper)} bytes), minimum 16 bytes required for security"
+                )
+
+            if len(hsm_pepper) > 128:
+                raise KeyDerivationError(
+                    f"HSM pepper too long ({len(hsm_pepper)} bytes), maximum 128 bytes allowed"
+                )
+
+            # Warning for all-zero pepper (suspicious but technically valid)
+            if hsm_pepper == b"\x00" * len(hsm_pepper):
+                logger.warning(
+                    "HSM pepper is all zeros - this is unusual and may indicate a problem"
+                )
+
+            if not quiet:
+                print(f"Hardware pepper derived ({len(hsm_pepper)} bytes)")
+
+            if debug:
+                logger.debug(f"HSM pepper length: {len(hsm_pepper)} bytes")
+                logger.debug(
+                    f"HSM slot used: {hsm_slot_used if hsm_slot_used else 'auto-detected'}"
+                )
+
+        except ImportError:
+            raise KeyDerivationError("Plugin system not available for HSM operation")
+        except Exception as e:
+            raise KeyDerivationError(f"HSM operation failed: {str(e)}")
+
+    # Generate key (now with hsm_pepper)
     key, salt, hash_config = generate_key(
         password,
         salt,
@@ -3089,6 +4060,7 @@ def encrypt_file(
         progress=progress,
         debug=debug,
         pqc_keypair=pqc_keypair,
+        hsm_pepper=hsm_pepper,
     )
     # Read the input file
     if not quiet:
@@ -3168,7 +4140,7 @@ def encrypt_file(
             return secrets.token_bytes(16), 16
 
     # For large files, use progress bar for encryption
-    def do_encrypt():
+    def do_encrypt(aad=None):
         if debug:
             logger.debug(f"ENCRYPT:KEY Final derived key for {algorithm_value}: {key.hex()}")
             logger.debug(f"ENCRYPT:DATA Input data length: {len(data)} bytes")
@@ -3303,7 +4275,7 @@ def encrypt_file(
                     logger.debug(f"ENCRYPT:PQC_SIG AES-GCM nonce: {nonce.hex()}")
 
                 aes_cipher = AESGCM(derived_key)
-                encrypted_payload = aes_cipher.encrypt(nonce, data, None)
+                encrypted_payload = aes_cipher.encrypt(nonce, data, aad)
                 encrypted_data = nonce + encrypted_payload
 
                 if debug:
@@ -3340,7 +4312,7 @@ def encrypt_file(
                     verbose=verbose,
                     debug=debug,
                 )
-                return cipher.encrypt(data, public_key)
+                return cipher.encrypt(data, public_key, aad=aad)
         else:
             # Check if we're in test mode - this affects nonce generation for some algorithms
             is_test_env = os.environ.get("PYTEST_CURRENT_TEST") is not None
@@ -3361,7 +4333,7 @@ def encrypt_file(
                     logger.debug(f"ENCRYPT:AES_GCM Using {nonce_size}-byte nonce for encryption")
 
                 cipher = AESGCM(key)
-                encrypted_payload = cipher.encrypt(nonce[:nonce_size], data, None)
+                encrypted_payload = cipher.encrypt(nonce[:nonce_size], data, aad)
 
                 if debug:
                     logger.debug(
@@ -3379,7 +4351,7 @@ def encrypt_file(
 
                 cipher = AESSIV(key)
                 # AES-SIV is special as it doesn't use the nonce for encryption
-                encrypted_payload = cipher.encrypt(data, None)
+                encrypted_payload = cipher.encrypt(data, [aad] if aad else None)
 
                 if debug:
                     logger.debug(
@@ -3395,7 +4367,7 @@ def encrypt_file(
                     logger.debug(f"ENCRYPT:CHACHA20 Using {nonce_size}-byte nonce for encryption")
 
                 cipher = ChaCha20Poly1305(key)
-                encrypted_payload = cipher.encrypt(nonce[:nonce_size], data, None)
+                encrypted_payload = cipher.encrypt(nonce[:nonce_size], data, aad)
 
                 if debug:
                     logger.debug(
@@ -3411,7 +4383,7 @@ def encrypt_file(
                     logger.debug(f"ENCRYPT:XCHACHA20 Using {nonce_size}-byte nonce for encryption")
 
                 cipher = XChaCha20Poly1305(key)
-                encrypted_payload = cipher.encrypt(nonce[:nonce_size], data, None)
+                encrypted_payload = cipher.encrypt(nonce[:nonce_size], data, aad)
 
                 if debug:
                     logger.debug(
@@ -3430,7 +4402,7 @@ def encrypt_file(
                     logger.debug(f"ENCRYPT:AES_GCM_SIV Nonce: {nonce[:nonce_size].hex()}")
 
                 cipher = AESGCMSIV(key)
-                encrypted_payload = cipher.encrypt(nonce[:nonce_size], data, None)
+                encrypted_payload = cipher.encrypt(nonce[:nonce_size], data, aad)
 
                 if debug:
                     logger.debug(
@@ -3449,7 +4421,7 @@ def encrypt_file(
                     logger.debug(f"ENCRYPT:AES_OCB3 Nonce: {nonce[:nonce_size].hex()}")
 
                 cipher = AESOCB3(key)
-                encrypted_payload = cipher.encrypt(nonce[:nonce_size], data, None)
+                encrypted_payload = cipher.encrypt(nonce[:nonce_size], data, aad)
 
                 if debug:
                     logger.debug(
@@ -3510,15 +4482,161 @@ def encrypt_file(
                     quiet=quiet,
                     encryption_data=encryption_data,
                 )
-                return cipher.encrypt(data, public_key)
+                return cipher.encrypt(data, public_key, aad=aad)
             else:
                 raise ValueError(f"Unknown encryption algorithm: {algorithm}")
 
+    # For AEAD algorithms, create metadata BEFORE encryption to pass as AAD
+    if use_aead_binding:
+        # Prepare PQC information if applicable (needed for metadata)
+        pqc_info = None
+        if algorithm in [
+            EncryptionAlgorithm.KYBER512_HYBRID,
+            EncryptionAlgorithm.KYBER768_HYBRID,
+            EncryptionAlgorithm.KYBER1024_HYBRID,
+            EncryptionAlgorithm.ML_KEM_512_HYBRID,
+            EncryptionAlgorithm.ML_KEM_768_HYBRID,
+            EncryptionAlgorithm.ML_KEM_1024_HYBRID,
+            EncryptionAlgorithm.ML_KEM_512_CHACHA20,
+            EncryptionAlgorithm.ML_KEM_768_CHACHA20,
+            EncryptionAlgorithm.ML_KEM_1024_CHACHA20,
+            EncryptionAlgorithm.HQC_128_HYBRID,
+            EncryptionAlgorithm.HQC_192_HYBRID,
+            EncryptionAlgorithm.HQC_256_HYBRID,
+            EncryptionAlgorithm.MAYO_1_HYBRID,
+            EncryptionAlgorithm.MAYO_3_HYBRID,
+            EncryptionAlgorithm.MAYO_5_HYBRID,
+            EncryptionAlgorithm.CROSS_128_HYBRID,
+            EncryptionAlgorithm.CROSS_192_HYBRID,
+            EncryptionAlgorithm.CROSS_256_HYBRID,
+        ]:
+            pqc_info = {}
+
+            if pqc_keypair:
+                # Always store the public key
+                pqc_info["public_key"] = pqc_keypair[0]
+
+                # Store private key only if requested (for self-decryption)
+                if (pqc_store_private_key or pqc_dual_encrypt_key) and len(pqc_keypair) > 1:
+                    if not quiet:
+                        print(
+                            "Storing encrypted post-quantum private key in file for self-decryption"
+                        )
+                    # Create a separate derived key that specifically depends on the provided password
+                    # This way, even if the main encryption key has issues, the private key's encryption
+                    # will still be password dependent
+
+                    # Use a different salt for private key encryption
+                    private_key_salt = secrets.token_bytes(16)
+                    pqc_info["key_salt"] = private_key_salt
+
+                    # START DO NOT CHANGE
+                    try:
+                        # Use the derived private_key_key NOT the main key
+                        cipher = AESGCM(hashlib.sha3_256(key).digest())
+                        nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
+                        # Use logger for DEBUG messages instead of print
+                        logger.debug(
+                            f"Encrypting private key (keypair): key length = {len(key)}, nonce length = {len(nonce)}, private key length = {len(pqc_keypair[1])}"
+                        )
+                        encrypted_private_key = nonce + cipher.encrypt(nonce, pqc_keypair[1], None)
+                        logger.debug(
+                            f"Successfully encrypted private key, length = {len(encrypted_private_key)}"
+                        )
+                    except Exception as e:
+                        logger.error(f"Error encrypting private key: {e}")
+                        raise
+                    # END DO NOT CHANGE
+
+                    pqc_info["private_key"] = encrypted_private_key
+                    pqc_info["key_encrypted"] = True  # Mark that the key is encrypted
+                    if pqc_dual_encrypt_key:
+                        logger.debug(
+                            "Setting pqc_dual_encrypt_key flag to True for keypair provided"
+                        )
+                        pqc_info["dual_encrypt_key"] = True
+
+                elif not quiet:
+                    print(
+                        "Post-quantum private key NOT stored - you'll need the key file for decryption"
+                    )
+            elif "private_key" in locals():
+                # If we generated a keypair internally, store both keys
+                pqc_info["public_key"] = public_key
+
+                # Store the private key if requested
+                if pqc_store_private_key or pqc_dual_encrypt_key:
+                    if not quiet:
+                        print(
+                            "Storing encrypted post-quantum private key in file for self-decryption"
+                        )
+                    # Create a separate derived key that specifically depends on the provided password
+                    # This way, even if the main encryption key has issues, the private key's encryption
+                    # will still be password dependent
+
+                    # Use a different salt for private key encryption
+                    private_key_salt = secrets.token_bytes(16)
+                    pqc_info["key_salt"] = private_key_salt
+
+                    # START DO NOT CHANGE
+                    try:
+                        # Use AES-GCM for encryption
+                        cipher = AESGCM(hashlib.sha3_256(key).digest())
+                        nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
+                        # Use logger for DEBUG messages instead of print
+                        logger.debug(
+                            f"Encrypting private key: key length = {len(key)}, nonce length = {len(nonce)}, private key length = {len(private_key)}"
+                        )
+                        encrypted_private_key = nonce + cipher.encrypt(nonce, private_key, None)
+                        logger.debug(
+                            f"Successfully encrypted private key, length = {len(encrypted_private_key)}"
+                        )
+                    except Exception as e:
+                        logger.error(f"Error encrypting private key: {e}")
+                        raise
+                    # END DO NOT CHANGE
+
+                    pqc_info["private_key"] = encrypted_private_key
+                    pqc_info["key_encrypted"] = True  # Mark that the key is encrypted
+                    if pqc_dual_encrypt_key:
+                        logger.debug(
+                            "Setting pqc_dual_encrypt_key flag to True for generated internal keypair"
+                        )
+                        pqc_info["dual_encrypt_key"] = True
+
+        # Extract keystore_id from hash_config if present
+        keystore_id = (
+            hash_config.get("pqc_keystore_key_id") if isinstance(hash_config, dict) else None
+        )
+
+        # Create metadata WITHOUT encrypted_hash (before encryption)
+        metadata = create_metadata_v6(
+            salt=salt,
+            hash_config=hash_config,
+            original_hash=original_hash,
+            encrypted_hash=None,  # Not available yet - will be protected by AAD
+            algorithm=algorithm.value,
+            pbkdf2_iterations=pbkdf2_iterations,
+            pqc_info=pqc_info,
+            encryption_data=encryption_data,
+            hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
+            hsm_slot_used=hsm_slot_used,
+            include_encrypted_hash=False,  # AEAD mode: no encrypted_hash
+            aad_mode=True,  # Mark as AEAD binding
+            keystore_id=keystore_id,  # Pass keystore ID if present
+        )
+        metadata_json = json.dumps(metadata).encode("utf-8")
+        metadata_b64 = base64.b64encode(metadata_json)
+
     # Only show progress for larger files (> 1MB)
     if len(data) > 1024 * 1024 and not quiet:
-        encrypted_data = with_progress_bar(do_encrypt, "Encrypting data", quiet=quiet)
+        encrypted_data = with_progress_bar(
+            lambda: do_encrypt(aad=metadata_b64 if use_aead_binding else None),
+            "Encrypting data",
+            quiet=quiet,
+        )
     else:
-        encrypted_data = do_encrypt()
+        encrypted_data = do_encrypt(aad=metadata_b64 if use_aead_binding else None)
 
     if debug:
         logger.debug(f"ENCRYPT:OUTPUT Encrypted data length: {len(encrypted_data)} bytes")
@@ -3528,140 +4646,160 @@ def encrypt_file(
 
     if not quiet:
         print("✅")
-    # Calculate hash of encrypted data
-    if not quiet:
-        print("Calculating encrypted content hash", end=" ")
 
-    encrypted_hash = calculate_hash(encrypted_data)
-    if not quiet:
-        print("✅")
+    # For non-AEAD algorithms, create metadata AFTER encryption (includes encrypted_hash)
+    if not use_aead_binding:
+        # Calculate hash of encrypted data
+        if not quiet:
+            print("Calculating encrypted content hash", end=" ")
 
-    # Create metadata with all necessary information using version 4 format
-    # Prepare PQC information if applicable
-    pqc_info = None
-    if algorithm in [
-        EncryptionAlgorithm.KYBER512_HYBRID,
-        EncryptionAlgorithm.KYBER768_HYBRID,
-        EncryptionAlgorithm.KYBER1024_HYBRID,
-        EncryptionAlgorithm.ML_KEM_512_HYBRID,
-        EncryptionAlgorithm.ML_KEM_768_HYBRID,
-        EncryptionAlgorithm.ML_KEM_1024_HYBRID,
-        EncryptionAlgorithm.ML_KEM_512_CHACHA20,
-        EncryptionAlgorithm.ML_KEM_768_CHACHA20,
-        EncryptionAlgorithm.ML_KEM_1024_CHACHA20,
-        EncryptionAlgorithm.HQC_128_HYBRID,
-        EncryptionAlgorithm.HQC_192_HYBRID,
-        EncryptionAlgorithm.HQC_256_HYBRID,
-        EncryptionAlgorithm.MAYO_1_HYBRID,
-        EncryptionAlgorithm.MAYO_3_HYBRID,
-        EncryptionAlgorithm.MAYO_5_HYBRID,
-        EncryptionAlgorithm.CROSS_128_HYBRID,
-        EncryptionAlgorithm.CROSS_192_HYBRID,
-        EncryptionAlgorithm.CROSS_256_HYBRID,
-    ]:
-        pqc_info = {}
+        encrypted_hash = calculate_hash(encrypted_data)
+        if not quiet:
+            print("✅")
 
-        if pqc_keypair:
-            # Always store the public key
-            pqc_info["public_key"] = pqc_keypair[0]
+        # Create metadata with all necessary information using version 4 format
+        # Prepare PQC information if applicable
+        pqc_info = None
+        if algorithm in [
+            EncryptionAlgorithm.KYBER512_HYBRID,
+            EncryptionAlgorithm.KYBER768_HYBRID,
+            EncryptionAlgorithm.KYBER1024_HYBRID,
+            EncryptionAlgorithm.ML_KEM_512_HYBRID,
+            EncryptionAlgorithm.ML_KEM_768_HYBRID,
+            EncryptionAlgorithm.ML_KEM_1024_HYBRID,
+            EncryptionAlgorithm.ML_KEM_512_CHACHA20,
+            EncryptionAlgorithm.ML_KEM_768_CHACHA20,
+            EncryptionAlgorithm.ML_KEM_1024_CHACHA20,
+            EncryptionAlgorithm.HQC_128_HYBRID,
+            EncryptionAlgorithm.HQC_192_HYBRID,
+            EncryptionAlgorithm.HQC_256_HYBRID,
+            EncryptionAlgorithm.MAYO_1_HYBRID,
+            EncryptionAlgorithm.MAYO_3_HYBRID,
+            EncryptionAlgorithm.MAYO_5_HYBRID,
+            EncryptionAlgorithm.CROSS_128_HYBRID,
+            EncryptionAlgorithm.CROSS_192_HYBRID,
+            EncryptionAlgorithm.CROSS_256_HYBRID,
+        ]:
+            pqc_info = {}
 
-            # Store private key only if requested (for self-decryption)
-            if (pqc_store_private_key or pqc_dual_encrypt_key) and len(pqc_keypair) > 1:
-                if not quiet:
-                    print("Storing encrypted post-quantum private key in file for self-decryption")
-                # Create a separate derived key that specifically depends on the provided password
-                # This way, even if the main encryption key has issues, the private key's encryption
-                # will still be password dependent
+            if pqc_keypair:
+                # Always store the public key
+                pqc_info["public_key"] = pqc_keypair[0]
 
-                # Use a different salt for private key encryption
-                private_key_salt = secrets.token_bytes(16)
-                pqc_info["key_salt"] = private_key_salt
+                # Store private key only if requested (for self-decryption)
+                if (pqc_store_private_key or pqc_dual_encrypt_key) and len(pqc_keypair) > 1:
+                    if not quiet:
+                        print(
+                            "Storing encrypted post-quantum private key in file for self-decryption"
+                        )
+                    # Create a separate derived key that specifically depends on the provided password
+                    # This way, even if the main encryption key has issues, the private key's encryption
+                    # will still be password dependent
 
-                # START DO NOT CHANGE
-                try:
-                    # Use the derived private_key_key NOT the main key
-                    cipher = AESGCM(hashlib.sha3_256(key).digest())
-                    nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
-                    # Use logger for DEBUG messages instead of print
-                    logger.debug(
-                        f"Encrypting private key (keypair): key length = {len(key)}, nonce length = {len(nonce)}, private key length = {len(pqc_keypair[1])}"
+                    # Use a different salt for private key encryption
+                    private_key_salt = secrets.token_bytes(16)
+                    pqc_info["key_salt"] = private_key_salt
+
+                    # START DO NOT CHANGE
+                    try:
+                        # Use the derived private_key_key NOT the main key
+                        cipher = AESGCM(hashlib.sha3_256(key).digest())
+                        nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
+                        # Use logger for DEBUG messages instead of print
+                        logger.debug(
+                            f"Encrypting private key (keypair): key length = {len(key)}, nonce length = {len(nonce)}, private key length = {len(pqc_keypair[1])}"
+                        )
+                        encrypted_private_key = nonce + cipher.encrypt(nonce, pqc_keypair[1], None)
+                        logger.debug(
+                            f"Successfully encrypted private key, length = {len(encrypted_private_key)}"
+                        )
+                    except Exception as e:
+                        logger.error(f"Error encrypting private key: {e}")
+                        raise
+                    # END DO NOT CHANGE
+
+                    pqc_info["private_key"] = encrypted_private_key
+                    pqc_info["key_encrypted"] = True  # Mark that the key is encrypted
+                    if pqc_dual_encrypt_key:
+                        logger.debug(
+                            "Setting pqc_dual_encrypt_key flag to True for keypair provided"
+                        )
+                        pqc_info["dual_encrypt_key"] = True
+
+                elif not quiet:
+                    print(
+                        "Post-quantum private key NOT stored - you'll need the key file for decryption"
                     )
-                    encrypted_private_key = nonce + cipher.encrypt(nonce, pqc_keypair[1], None)
-                    logger.debug(
-                        f"Successfully encrypted private key, length = {len(encrypted_private_key)}"
-                    )
-                except Exception as e:
-                    logger.error(f"Error encrypting private key: {e}")
-                    raise
-                # END DO NOT CHANGE
+            elif "private_key" in locals():
+                # If we generated a keypair internally, store both keys
+                pqc_info["public_key"] = public_key
 
-                pqc_info["private_key"] = encrypted_private_key
-                pqc_info["key_encrypted"] = True  # Mark that the key is encrypted
-                if pqc_dual_encrypt_key:
-                    logger.debug(f"Setting pqc_dual_encrypt_key flag to True for keypair provided")
-                    pqc_info["dual_encrypt_key"] = True
+                # Store the private key if requested
+                if pqc_store_private_key or pqc_dual_encrypt_key:
+                    if not quiet:
+                        print(
+                            "Storing encrypted post-quantum private key in file for self-decryption"
+                        )
+                    # Create a separate derived key that specifically depends on the provided password
+                    # This way, even if the main encryption key has issues, the private key's encryption
+                    # will still be password dependent
 
-            elif not quiet:
-                print(
-                    "Post-quantum private key NOT stored - you'll need the key file for decryption"
-                )
-        elif "private_key" in locals():
-            # If we generated a keypair internally, store both keys
-            pqc_info["public_key"] = public_key
+                    # Use a different salt for private key encryption
+                    private_key_salt = secrets.token_bytes(16)
+                    pqc_info["key_salt"] = private_key_salt
 
-            # Store the private key if requested
-            if pqc_store_private_key or pqc_dual_encrypt_key:
-                if not quiet:
-                    print("Storing encrypted post-quantum private key in file for self-decryption")
-                # Create a separate derived key that specifically depends on the provided password
-                # This way, even if the main encryption key has issues, the private key's encryption
-                # will still be password dependent
+                    # START DO NOT CHANGE
+                    try:
+                        # Use AES-GCM for encryption
+                        cipher = AESGCM(hashlib.sha3_256(key).digest())
+                        nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
+                        # Use logger for DEBUG messages instead of print
+                        logger.debug(
+                            f"Encrypting private key: key length = {len(key)}, nonce length = {len(nonce)}, private key length = {len(private_key)}"
+                        )
+                        encrypted_private_key = nonce + cipher.encrypt(nonce, private_key, None)
+                        logger.debug(
+                            f"Successfully encrypted private key, length = {len(encrypted_private_key)}"
+                        )
+                    except Exception as e:
+                        logger.error(f"Error encrypting private key: {e}")
+                        raise
+                    # END DO NOT CHANGE
 
-                # Use a different salt for private key encryption
-                private_key_salt = secrets.token_bytes(16)
-                pqc_info["key_salt"] = private_key_salt
+                    pqc_info["private_key"] = encrypted_private_key
+                    pqc_info["key_encrypted"] = True  # Mark that the key is encrypted
+                    if pqc_dual_encrypt_key:
+                        logger.debug(
+                            "Setting pqc_dual_encrypt_key flag to True for generated internal keypair"
+                        )
+                        pqc_info["dual_encrypt_key"] = True
 
-                # START DO NOT CHANGE
-                try:
-                    # Use AES-GCM for encryption
-                    cipher = AESGCM(hashlib.sha3_256(key).digest())
-                    nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
-                    # Use logger for DEBUG messages instead of print
-                    logger.debug(
-                        f"Encrypting private key: key length = {len(key)}, nonce length = {len(nonce)}, private key length = {len(private_key)}"
-                    )
-                    encrypted_private_key = nonce + cipher.encrypt(nonce, private_key, None)
-                    logger.debug(
-                        f"Successfully encrypted private key, length = {len(encrypted_private_key)}"
-                    )
-                except Exception as e:
-                    logger.error(f"Error encrypting private key: {e}")
-                    raise
-                # END DO NOT CHANGE
+        # Extract keystore_id from hash_config if present
+        keystore_id = (
+            hash_config.get("pqc_keystore_key_id") if isinstance(hash_config, dict) else None
+        )
 
-                pqc_info["private_key"] = encrypted_private_key
-                pqc_info["key_encrypted"] = True  # Mark that the key is encrypted
-                if pqc_dual_encrypt_key:
-                    logger.debug(
-                        f"Setting pqc_dual_encrypt_key flag to True for generated internal keypair"
-                    )
-                    pqc_info["dual_encrypt_key"] = True
-
-    # Create metadata in version 5 format using the helper function
-    metadata = create_metadata_v5(
-        salt=salt,
-        hash_config=hash_config,
-        original_hash=original_hash,
-        encrypted_hash=encrypted_hash,
-        algorithm=algorithm.value,
-        pbkdf2_iterations=pbkdf2_iterations,
-        pqc_info=pqc_info,
-        encryption_data=encryption_data,
-    )
-    # If scrypt is used, add rounds to hash_config
-    # Serialize and encode the metadata
-    metadata_json = json.dumps(metadata).encode("utf-8")
-    metadata_base64 = base64.b64encode(metadata_json)
+        # Create metadata in version 6 format using the helper function
+        metadata = create_metadata_v6(
+            salt=salt,
+            hash_config=hash_config,
+            original_hash=original_hash,
+            encrypted_hash=encrypted_hash,
+            algorithm=algorithm.value,
+            pbkdf2_iterations=pbkdf2_iterations,
+            pqc_info=pqc_info,
+            encryption_data=encryption_data,
+            hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
+            hsm_slot_used=hsm_slot_used,
+            keystore_id=keystore_id,  # Pass keystore ID if present
+        )
+        # If scrypt is used, add rounds to hash_config
+        # Serialize and encode the metadata
+        metadata_json = json.dumps(metadata).encode("utf-8")
+        metadata_base64 = base64.b64encode(metadata_json)
+    else:
+        # AEAD: metadata was already created and encoded before encryption
+        metadata_base64 = metadata_b64
 
     # Base64 encode the encrypted data
     encrypted_data = base64.b64encode(encrypted_data)
@@ -3734,6 +4872,11 @@ def encrypt_file(
             secure_memzero(encrypted_hash)
             encrypted_hash = None
 
+        # Clean up HSM pepper
+        if "hsm_pepper" in locals() and hsm_pepper is not None:
+            secure_memzero(hsm_pepper)
+            hsm_pepper = None
+
 
 def extract_file_metadata(input_file):
     """
@@ -3776,7 +4919,7 @@ def extract_file_metadata(input_file):
         format_version = metadata.get("format_version", 1)
 
         # Extract algorithm based on format version
-        if format_version in [4, 5]:
+        if format_version in [4, 5, 6]:
             encryption = metadata.get("encryption", {})
             algorithm = encryption.get("algorithm", EncryptionAlgorithm.FERNET.value)
             encryption_data = encryption.get("encryption_data", "aes-gcm")
@@ -3808,6 +4951,8 @@ def decrypt_file(
     enable_plugins=True,
     plugin_manager=None,
     secure_mode=False,
+    hsm_plugin=None,
+    no_estimate=False,
 ):
     """
     Decrypt a file with a password.
@@ -3966,9 +5111,9 @@ def decrypt_file(
     # Extract necessary information from metadata
     format_version = metadata.get("format_version", 1)
 
-    # For format_version 4 or 5, set correct hash_config for printing purposes
+    # For format_version 4, 5, 6, or 7, set correct hash_config for printing purposes
     # This doesn't change the actual metadata, just passes the right info to print_hash_config
-    if format_version in [4, 5]:
+    if format_version in [4, 5, 6, 7]:
         # If verbose, pass the full metadata to print_hash_config for proper display
         if verbose:
             print_hash_config_metadata = metadata
@@ -3977,8 +5122,8 @@ def decrypt_file(
     else:
         print_hash_config_metadata = metadata.get("hash_config", {})
 
-    # Handle format version 4 or 5
-    if format_version in [4, 5]:
+    # Handle format version 4, 5, 6, or 7
+    if format_version in [4, 5, 6, 7]:
         # Extract information from new hierarchical structure
         derivation_config = metadata["derivation_config"]
         salt = base64.b64decode(derivation_config["salt"])
@@ -4017,13 +5162,28 @@ def decrypt_file(
         original_hash = hashes.get("original_hash")
         encrypted_hash = hashes.get("encrypted_hash")
 
+        # Check if this file uses AEAD binding
+        aead_binding = metadata.get("aead_binding", False)
+
+        # Validate hash presence based on AEAD binding
+        if aead_binding:
+            if encrypted_hash is not None:
+                raise ValidationError("AEAD-bound file should not contain encrypted_hash")
+        else:
+            if encrypted_hash is None:
+                raise ValidationError("Non-AEAD file missing encrypted_hash")
+
         # Get encryption information
         encryption = metadata["encryption"]
         algorithm = encryption.get("algorithm", EncryptionAlgorithm.FERNET.value)
 
-        # For v5 format, extract encryption_data from metadata (overrides parameter)
+        # For v5+ format, extract encryption_data from metadata (overrides parameter)
         if format_version >= 5 and "encryption_data" in encryption:
             encryption_data = encryption["encryption_data"]
+
+        # Extract HSM configuration if present (v5+)
+        hsm_plugin_name = encryption.get("hsm_plugin")
+        hsm_config = encryption.get("hsm_config", {})
 
         # Extract PQC information if present
         pqc_info = None
@@ -4069,6 +5229,13 @@ def decrypt_file(
         # Default to Fernet for backward compatibility
         algorithm = metadata.get("algorithm", EncryptionAlgorithm.FERNET.value)
 
+        # HSM not supported in older format versions
+        hsm_plugin_name = None
+        hsm_config = {}
+
+        # AEAD binding not supported in older format versions
+        aead_binding = False
+
         # Extract PQC information if present (format version 3+)
         pqc_info = None
         pqc_has_private_key = False
@@ -4112,6 +5279,53 @@ def decrypt_file(
         debug=debug,
     )
 
+    # Display time/memory estimates for decryption
+    if not quiet and not no_estimate:
+        try:
+            from .decryption_estimator import estimate_decryption_cost, format_memory, format_time
+
+            print("\n" + "=" * 60)
+            print("DECRYPTION COST ESTIMATE")
+            print("=" * 60)
+
+            estimate = estimate_decryption_cost(metadata)
+
+            # Show breakdown if operations exist
+            if estimate.breakdown:
+                print("\nOperation Breakdown:")
+                for op_name, time_sec, memory_kb in estimate.breakdown:
+                    print(f"  • {op_name}")
+                    print(
+                        f"    Time: ~{format_time(time_sec)}, "
+                        f"Memory: ~{format_memory(memory_kb)}"
+                    )
+
+            # Show totals
+            print("\nEstimated Total:")
+            print(f"  Time: ~{format_time(estimate.total_time_seconds)}")
+            print(f"  Peak Memory: ~{format_memory(estimate.peak_memory_kb)}")
+
+            # Show warnings if thresholds exceeded
+            if estimate.warnings:
+                print()
+                for warning in estimate.warnings:
+                    print(warning)
+
+            print("=" * 60)
+            print("Note: Estimates are approximate based on benchmark data.")
+            print("Press Ctrl+C within 2 seconds to cancel decryption.")
+            print("=" * 60 + "\n")
+
+            # 2-second sleep for user to review and cancel
+            import time
+
+            time.sleep(2)
+
+        except Exception as e:
+            # Don't fail decryption if estimation fails
+            if verbose or debug:
+                print(f"Warning: Could not estimate decryption cost: {e}")
+
     # Verify the hash of encrypted data
     if encrypted_hash:
         if not quiet:
@@ -4135,7 +5349,127 @@ def decrypt_file(
         elif not quiet:
             print("✅")  # Green check symbol
 
-    # Generate the key from the password and salt
+    # HSM pepper derivation if required
+    hsm_pepper = None
+    if hsm_plugin_name:
+        # Auto-load HSM plugin if not provided via CLI
+        if not hsm_plugin:
+            if not quiet:
+                print(f"File requires HSM plugin '{hsm_plugin_name}', loading automatically...")
+
+            try:
+                # Use plugin manager to dynamically discover and load HSM plugin
+                from .plugin_system import PluginType, create_default_plugin_manager
+
+                plugin_manager = create_default_plugin_manager()
+                discovered = plugin_manager.discover_plugins()
+
+                # Load discovered plugins
+                for plugin_file in discovered:
+                    plugin_manager.load_plugin(plugin_file)
+
+                # Get HSM plugin by name from plugin manager
+                hsm_plugin = plugin_manager.get_hsm_plugin(hsm_plugin_name)
+
+                if not hsm_plugin:
+                    # List available HSM plugins for better error message
+                    available_hsm = [
+                        p.plugin.plugin_id
+                        for p in plugin_manager.get_plugins_by_type(PluginType.HSM)
+                    ]
+                    available_list = ", ".join(available_hsm) if available_hsm else "none"
+                    raise KeyDerivationError(
+                        f"HSM plugin '{hsm_plugin_name}' not found. "
+                        f"Available HSM plugins: {available_list}. "
+                        f"Ensure the plugin is installed and enabled."
+                    )
+
+                # Initialize the plugin
+                init_result = hsm_plugin.initialize({})
+
+                if not init_result.success:
+                    raise KeyDerivationError(
+                        f"Failed to initialize HSM plugin '{hsm_plugin_name}': {init_result.message}"
+                    )
+
+                if not quiet:
+                    print(f"✅ Auto-loaded HSM plugin: {hsm_plugin.name}")
+
+            except ImportError as e:
+                raise KeyDerivationError(
+                    f"Cannot load HSM plugin '{hsm_plugin_name}': {e}. "
+                    f"Install plugin dependencies or check plugin availability."
+                )
+
+        # Validate plugin matches metadata
+        if hsm_plugin.plugin_id != hsm_plugin_name:
+            raise KeyDerivationError(
+                f"File was encrypted with HSM plugin '{hsm_plugin_name}' but '{hsm_plugin.plugin_id}' provided. "
+                f"Use --hsm {hsm_plugin_name} to decrypt."
+            )
+
+        if not quiet:
+            print("Deriving hardware-bound pepper from HSM for decryption...")
+
+        try:
+            from .plugin_system import PluginCapability, PluginSecurityContext
+
+            # Create security context for HSM plugin
+            hsm_context = PluginSecurityContext(
+                plugin_id=hsm_plugin.plugin_id,
+                capabilities={PluginCapability.ACCESS_CONFIG, PluginCapability.WRITE_LOGS},
+            )
+            hsm_context.metadata["salt"] = salt
+
+            # Pass stored slot config if available
+            if "slot" in hsm_config:
+                hsm_context.config["slot"] = hsm_config["slot"]
+
+            # Execute HSM plugin
+            result = hsm_plugin.get_hsm_pepper(salt, hsm_context)
+
+            if not result.success:
+                raise KeyDerivationError(f"HSM pepper derivation failed: {result.message}")
+
+            hsm_pepper = result.data.get("hsm_pepper")
+
+            # Comprehensive pepper validation
+            if not hsm_pepper:
+                raise KeyDerivationError("HSM plugin returned no pepper value")
+
+            if not isinstance(hsm_pepper, bytes):
+                raise KeyDerivationError(
+                    f"HSM pepper must be bytes, got {type(hsm_pepper).__name__}"
+                )
+
+            if len(hsm_pepper) < 16:
+                raise KeyDerivationError(
+                    f"HSM pepper too short ({len(hsm_pepper)} bytes), minimum 16 bytes required for security"
+                )
+
+            if len(hsm_pepper) > 128:
+                raise KeyDerivationError(
+                    f"HSM pepper too long ({len(hsm_pepper)} bytes), maximum 128 bytes allowed"
+                )
+
+            # Warning for all-zero pepper (suspicious but technically valid)
+            if hsm_pepper == b"\x00" * len(hsm_pepper):
+                logger.warning(
+                    "HSM pepper is all zeros - this is unusual and may indicate a problem"
+                )
+
+            if not quiet:
+                print(f"Hardware pepper derived ({len(hsm_pepper)} bytes)")
+
+            if debug:
+                logger.debug(f"HSM pepper length: {len(hsm_pepper)} bytes")
+
+        except ImportError:
+            raise KeyDerivationError("Plugin system not available for HSM operation")
+        except Exception as e:
+            raise KeyDerivationError(f"HSM operation failed: {str(e)}")
+
+    # Generate the key from the password and salt (with hsm_pepper if applicable)
     if not quiet:
         print("Generating decryption key ✅")  # Green check symbol)
 
@@ -4149,6 +5483,7 @@ def decrypt_file(
         progress=progress,
         debug=debug,
         pqc_keypair=pqc_info,
+        hsm_pepper=hsm_pepper,
     )
 
     # Helper function to get expected nonce size for each algorithm
@@ -4201,8 +5536,8 @@ def decrypt_file(
     if pqc_has_private_key:
         try:
             # Handle different format versions
-            if format_version in [4, 5]:
-                # Get encrypted private key from v4/v5 structure
+            if format_version in [4, 5, 6]:
+                # Get encrypted private key from v4/v5/v6 structure
                 encrypted_private_key = base64.b64decode(metadata["encryption"]["pqc_private_key"])
             else:  # format_version 3
                 encrypted_private_key = base64.b64decode(metadata["pqc_private_key"])
@@ -4214,7 +5549,7 @@ def decrypt_file(
             if pqc_key_is_encrypted:
                 # We need to decrypt the private key using the separately derived key
                 # Get the salt from metadata based on format version
-                if format_version in [4, 5]:
+                if format_version in [4, 5, 6]:
                     if "pqc_key_salt" not in metadata["encryption"]:
                         if not quiet:
                             print("Failed to decrypt post-quantum private key - wrong format")
@@ -4313,6 +5648,13 @@ def decrypt_file(
             # If there's an error, we'll continue without a private key    # Decrypt the data
     if not quiet:
         print("Decrypting content with " + algorithm, end=" ")
+
+    # For AEAD algorithms, prepare AAD from metadata
+    if aead_binding:
+        # Use the original metadata_b64 as AAD
+        aad_for_decrypt = metadata_b64
+    else:
+        aad_for_decrypt = None
 
     def do_decrypt():
         if debug:
@@ -4452,7 +5794,7 @@ def decrypt_file(
                     logger.debug(f"DECRYPT:PQC_SIG AES-GCM ciphertext: {ciphertext.hex()}")
 
                 aes_cipher = AESGCM(derived_key)
-                decrypted_data = aes_cipher.decrypt(nonce, ciphertext, None)
+                decrypted_data = aes_cipher.decrypt(nonce, ciphertext, aad_for_decrypt)
 
                 if debug:
                     logger.debug(
@@ -4539,12 +5881,15 @@ def decrypt_file(
                                 encrypted_data,
                                 pqc_private_key,
                                 file_contents=original_file_contents,
+                                aad=aad_for_decrypt,
                             )
                             # NOTE: Removed special case handling for test environment to ensure proper password validation
                             return pqc_result
                     else:
                         # Standard approach without file contents
-                        pqc_result = cipher.decrypt(encrypted_data, pqc_private_key)
+                        pqc_result = cipher.decrypt(
+                            encrypted_data, pqc_private_key, aad=aad_for_decrypt
+                        )
                         # NOTE: Removed special case handling for test environment to ensure proper password validation
                         return pqc_result
                 except Exception as e:
@@ -4585,7 +5930,9 @@ def decrypt_file(
                                 )
 
                             cipher = AESSIV(key)
-                            result = cipher.decrypt(encrypted_data, None)
+                            result = cipher.decrypt(
+                                encrypted_data, [aad_for_decrypt] if aad_for_decrypt else None
+                            )
 
                             if debug:
                                 logger.debug(
@@ -4605,7 +5952,10 @@ def decrypt_file(
                                 )
 
                             cipher = AESSIV(key)
-                            result = cipher.decrypt(encrypted_data[stored_size:], None)
+                            result = cipher.decrypt(
+                                encrypted_data[stored_size:],
+                                [aad_for_decrypt] if aad_for_decrypt else None,
+                            )
 
                             if debug:
                                 logger.debug(
@@ -4641,7 +5991,9 @@ def decrypt_file(
 
                             cipher = AESGCM(key)
                             # Use first effective_size bytes of nonce for decryption
-                            result = cipher.decrypt(nonce[:effective_size], ciphertext, None)
+                            result = cipher.decrypt(
+                                nonce[:effective_size], ciphertext, aad_for_decrypt
+                            )
 
                             if debug:
                                 logger.debug(
@@ -4656,7 +6008,9 @@ def decrypt_file(
                                 logger.debug(f"DECRYPT:AES_GCM_SIV Ciphertext: {ciphertext.hex()}")
 
                             cipher = AESGCMSIV(key)
-                            result = cipher.decrypt(nonce[:effective_size], ciphertext, None)
+                            result = cipher.decrypt(
+                                nonce[:effective_size], ciphertext, aad_for_decrypt
+                            )
 
                             if debug:
                                 logger.debug(
@@ -4673,7 +6027,9 @@ def decrypt_file(
                                 logger.debug(f"DECRYPT:AES_OCB3 Ciphertext: {ciphertext.hex()}")
 
                             cipher = AESOCB3(key)
-                            result = cipher.decrypt(nonce[:effective_size], ciphertext, None)
+                            result = cipher.decrypt(
+                                nonce[:effective_size], ciphertext, aad_for_decrypt
+                            )
 
                             if debug:
                                 logger.debug(
@@ -4690,7 +6046,9 @@ def decrypt_file(
                                 logger.debug(f"DECRYPT:CHACHA20 Ciphertext: {ciphertext.hex()}")
 
                             cipher = ChaCha20Poly1305(key)
-                            result = cipher.decrypt(nonce[:effective_size], ciphertext, None)
+                            result = cipher.decrypt(
+                                nonce[:effective_size], ciphertext, aad_for_decrypt
+                            )
 
                             if debug:
                                 logger.debug(
@@ -4712,7 +6070,9 @@ def decrypt_file(
                                 print(
                                     "\nWARNING: Using legacy 12-byte nonce for XChaCha20-Poly1305"
                                 )
-                            result = cipher.decrypt(nonce[:effective_size], ciphertext, None)
+                            result = cipher.decrypt(
+                                nonce[:effective_size], ciphertext, aad_for_decrypt
+                            )
 
                             if debug:
                                 logger.debug(
@@ -4894,6 +6254,11 @@ def decrypt_file(
         if "file_content" in locals() and file_content is not None:
             secure_memzero(file_content)
             file_content = None
+
+        # Clean up HSM pepper
+        if "hsm_pepper" in locals() and hsm_pepper is not None:
+            secure_memzero(hsm_pepper)
+            hsm_pepper = None
 
 
 def get_organized_hash_config(hash_config, encryption_algo=None, salt=None):

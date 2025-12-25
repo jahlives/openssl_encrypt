@@ -1,0 +1,5 @@
+# HSM Plugin Dependencies
+# Install with: pip install -r requirements-hsm.txt
+
+# Yubikey Challenge-Response support
+yubikey-manager>=5.0.0,<6.0.0

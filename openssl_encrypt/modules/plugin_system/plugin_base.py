@@ -71,6 +71,9 @@ class PluginType(enum.Enum):
     # Utility plugins (provide helper functions)
     UTILITY = "utility"
 
+    # HSM plugins (hardware security module integration)
+    HSM = "hsm"
+
 
 class PluginSecurityContext:
     """
@@ -545,3 +548,73 @@ class UtilityPlugin(BasePlugin):
             )
         except Exception as e:
             return PluginResult.error_result(f"Utility function failed: {str(e)}")
+
+
+class HSMPlugin(BasePlugin):
+    """
+    Base class for Hardware Security Module (HSM) plugins.
+
+    HSM plugins enhance key derivation by providing hardware-bound pepper values.
+    They operate during the key derivation process, transforming the salt into
+    a hardware-specific pepper value.
+
+    Security Design:
+    - HSM plugins receive the salt (challenge) as input
+    - They return an hsm_pepper value derived from hardware
+    - The pepper is NOT stored - it must be recalculated on each operation
+    - Hardware must be present for both encryption and decryption
+
+    Use Cases:
+    - Yubikey Challenge-Response
+    - TPM 2.0 key derivation
+    - Hardware security tokens
+    - Smart cards
+    """
+
+    def get_plugin_type(self) -> PluginType:
+        return PluginType.HSM
+
+    @abc.abstractmethod
+    def get_hsm_pepper(self, salt: bytes, context: PluginSecurityContext) -> PluginResult:
+        """
+        Derive HSM pepper from salt using hardware security module.
+
+        This method performs a challenge-response operation with the HSM hardware,
+        transforming the salt (challenge) into a pepper value (response) that is
+        unique to the hardware device.
+
+        Args:
+            salt: The encryption salt (16 bytes) to use as challenge
+            context: Security context with HSM configuration (slot, timeout, etc.)
+
+        Returns:
+            PluginResult with:
+                success: True if hardware operation succeeded
+                message: Status message or error description
+                data: {'hsm_pepper': bytes} - the derived pepper value
+
+        Raises:
+            Should NOT raise exceptions - return PluginResult.error_result() instead
+
+        Security Notes:
+            - The hsm_pepper MUST be deterministic (same salt -> same pepper)
+            - The pepper should be cryptographically strong (e.g., HMAC-SHA1 or stronger)
+            - Hardware availability is REQUIRED - return error if device not present
+            - Never log or expose the pepper value
+        """
+        pass
+
+    def execute(self, context: PluginSecurityContext) -> PluginResult:
+        """
+        Execute HSM pepper derivation based on context.
+
+        The salt should be provided in context.metadata['salt'] as bytes.
+        """
+        salt = context.metadata.get("salt")
+        if not salt:
+            return PluginResult.error_result("No salt provided for HSM pepper derivation")
+
+        if not isinstance(salt, bytes):
+            return PluginResult.error_result("Salt must be bytes")
+
+        return self.get_hsm_pepper(salt, context)

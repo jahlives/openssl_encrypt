@@ -17,7 +17,7 @@
 
 The Post-Quantum Cryptography (PQC) keystore functionality provides a secure, centralized way to manage cryptographic keys for file encryption and decryption operations. It enables:
 
-### Key Benefits
+### Features
 - **Centralized Key Management**: Store multiple post-quantum key pairs in a single encrypted container
 - **Key Identification**: Reference keys by human-readable IDs instead of managing files
 - **Automated Key Generation**: Automatically create appropriate keys for different algorithms

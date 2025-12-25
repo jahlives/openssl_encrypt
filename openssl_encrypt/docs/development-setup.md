@@ -86,7 +86,7 @@ echo "Run 'make lint' to verify setup."
 
 ### Tools Overview
 
-#### 🔒 Security Analysis Tools
+#### Security Analysis Tools
 
 ##### Bandit
 - **Purpose**: Python security vulnerability scanner
@@ -136,7 +136,7 @@ pip-audit --requirement requirements-dev.txt
 pip-audit --requirement requirements-prod.txt --format cyclonedx-json --output sbom.json
 ```
 
-#### 📊 Code Quality Tools
+#### Code Quality Tools
 
 ##### MyPy
 - **Purpose**: Static type checking

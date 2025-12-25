@@ -325,6 +325,26 @@ def setup_encrypt_parser(subparser):
         help="Store the PQC private key in the encrypted file",
     )
 
+    # Asymmetric encryption options
+    asymmetric_group = subparser.add_argument_group(
+        "Asymmetric Encryption (Post-Quantum Identity-Based)"
+    )
+    asymmetric_group.add_argument(
+        "--for",
+        dest="for_identity",
+        action="append",
+        metavar="IDENTITY",
+        help="Encrypt for recipient identity (can be specified multiple times for multiple recipients). "
+        "Switches to asymmetric mode with post-quantum ML-KEM-768 key encapsulation.",
+    )
+    asymmetric_group.add_argument(
+        "--sign-with",
+        dest="sign_with",
+        metavar="IDENTITY",
+        help="Sign with sender identity (required for asymmetric mode). "
+        "Uses post-quantum ML-DSA-65 digital signatures.",
+    )
+
     # Keystore options
     keystore_group = subparser.add_argument_group("Keystore options")
     keystore_group.add_argument(
@@ -436,6 +456,25 @@ def setup_encrypt_parser(subparser):
         help="Video quality preservation level (1=max capacity, 10=max quality, default: 8)",
     )
 
+    # HSM plugin arguments for hardware-bound key derivation
+    hsm_group = subparser.add_argument_group("HSM Options", "Hardware Security Module integration")
+    hsm_group.add_argument(
+        "--hsm",
+        metavar="PLUGIN",
+        help="Enable HSM (Hardware Security Module) plugin for hardware-bound key derivation. "
+        "Supported: 'yubikey' (Yubikey Challenge-Response). "
+        "The HSM adds a hardware-specific pepper to the key derivation, requiring the device "
+        "for both encryption and decryption.",
+    )
+    hsm_group.add_argument(
+        "--hsm-slot",
+        type=int,
+        choices=[1, 2],
+        metavar="SLOT",
+        help="Manually specify Yubikey slot (1 or 2) for Challenge-Response. "
+        "If not specified, the plugin will auto-detect the configured slot.",
+    )
+
 
 def setup_decrypt_parser(subparser):
     """Set up arguments specific to the decrypt command."""
@@ -478,6 +517,13 @@ def setup_decrypt_parser(subparser):
         help="Number of passes for secure deletion (default: 3)",
     )
 
+    # Display options
+    subparser.add_argument(
+        "--no-estimate",
+        action="store_true",
+        help="Suppress decryption time/memory estimation display (useful when you trust the file)",
+    )
+
     # PQC options for decryption
     pqc_group = subparser.add_argument_group("Post-Quantum Cryptography options")
     pqc_group.add_argument("--pqc-keyfile", help="Path to load the PQC key file for decryption")
@@ -485,6 +531,30 @@ def setup_decrypt_parser(subparser):
         "--pqc-allow-mixed-operations",
         action="store_true",
         help="Allow files encrypted with classic algorithms to be decrypted using PQC settings",
+    )
+
+    # Asymmetric decryption options
+    asymmetric_group = subparser.add_argument_group(
+        "Asymmetric Decryption (Post-Quantum Identity-Based)"
+    )
+    asymmetric_group.add_argument(
+        "--key",
+        dest="key_identity",
+        metavar="IDENTITY",
+        help="Decrypt using this identity's private key (for asymmetric mode)",
+    )
+    asymmetric_group.add_argument(
+        "--verify-from",
+        dest="verify_from",
+        metavar="IDENTITY",
+        help="Verify signature from this sender identity. "
+        "If not specified, will attempt to verify using sender info from metadata.",
+    )
+    asymmetric_group.add_argument(
+        "--no-verify",
+        dest="skip_verification",
+        action="store_true",
+        help="Skip signature verification (DANGEROUS! Only use if you trust the source)",
     )
 
     # Steganography options
@@ -569,6 +639,24 @@ def setup_decrypt_parser(subparser):
         metavar="1-10",
         default=8,
         help="Video quality preservation level used during hiding (default: 8)",
+    )
+
+    # HSM plugin arguments for hardware-bound key derivation
+    hsm_group = subparser.add_argument_group("HSM Options", "Hardware Security Module integration")
+    hsm_group.add_argument(
+        "--hsm",
+        metavar="PLUGIN",
+        help="Enable HSM (Hardware Security Module) plugin for hardware-bound key derivation. "
+        "Supported: 'yubikey' (Yubikey Challenge-Response). "
+        "Required if the file was encrypted with an HSM plugin.",
+    )
+    hsm_group.add_argument(
+        "--hsm-slot",
+        type=int,
+        choices=[1, 2],
+        metavar="SLOT",
+        help="Manually specify Yubikey slot (1 or 2) for Challenge-Response. "
+        "If not specified, the slot will be read from file metadata or auto-detected.",
     )
 
 
@@ -1009,6 +1097,71 @@ def setup_smart_recommendations_parser(subparser):
     )
 
 
+def setup_identity_parser(subparser):
+    """Set up arguments for the identity command."""
+    # Create subparsers for identity subcommands
+    identity_subparsers = subparser.add_subparsers(
+        dest="identity_action", help="Identity management operations", metavar="operation"
+    )
+
+    # Create identity
+    create_parser = identity_subparsers.add_parser("create", help="Create new identity")
+    create_parser.add_argument("--name", required=True, help="Identity name")
+    create_parser.add_argument("--email", help="Email address (optional)")
+    create_parser.add_argument(
+        "--kem-algorithm",
+        choices=["ML-KEM-512", "ML-KEM-768", "ML-KEM-1024"],
+        default="ML-KEM-768",
+        help="KEM algorithm (default: ML-KEM-768)",
+    )
+    create_parser.add_argument(
+        "--sig-algorithm",
+        choices=["ML-DSA-44", "ML-DSA-65", "ML-DSA-87"],
+        default="ML-DSA-65",
+        help="Signature algorithm (default: ML-DSA-65)",
+    )
+    create_parser.add_argument(
+        "--overwrite", action="store_true", help="Overwrite existing identity"
+    )
+
+    # List identities
+    list_parser = identity_subparsers.add_parser("list", help="List all identities")
+    list_parser.add_argument(
+        "--include-contacts",
+        action="store_true",
+        default=True,
+        help="Include contacts (default: True)",
+    )
+
+    # Show identity details
+    show_parser = identity_subparsers.add_parser("show", help="Show identity details")
+    show_parser.add_argument("identity_name", help="Identity name to show")
+
+    # Export public identity
+    export_parser = identity_subparsers.add_parser("export", help="Export public identity")
+    export_parser.add_argument("identity_name", help="Identity name to export")
+    export_parser.add_argument("--output", "-o", help="Output file (default: <name>_public.json)")
+    export_parser.add_argument("--overwrite", action="store_true", help="Overwrite existing file")
+
+    # Import public identity
+    import_parser = identity_subparsers.add_parser("import", help="Import public identity")
+    import_parser.add_argument("--file", required=True, help="JSON file to import")
+    import_parser.add_argument(
+        "--overwrite", action="store_true", help="Overwrite existing identity"
+    )
+
+    # Delete identity
+    delete_parser = identity_subparsers.add_parser("delete", help="Delete identity")
+    delete_parser.add_argument("identity_name", help="Identity name to delete")
+    delete_parser.add_argument("--force", action="store_true", help="Skip confirmation")
+
+    # Change password
+    change_password_parser = identity_subparsers.add_parser(
+        "change-password", help="Change identity passphrase"
+    )
+    change_password_parser.add_argument("identity_name", help="Identity name")
+
+
 def setup_test_parser(subparser):
     """Set up arguments for the test command."""
     # Create subparsers for test subcommands
@@ -1205,6 +1358,13 @@ def create_subparser_main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_test_parser(test_parser)
+
+    identity_parser = subparsers.add_parser(
+        "identity",
+        help="Manage post-quantum identities for asymmetric encryption",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_identity_parser(identity_parser)
 
     check_argon2_parser = subparsers.add_parser(
         "check-argon2",

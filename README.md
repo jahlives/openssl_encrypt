@@ -1,329 +1,478 @@
+# OpenSSL Encrypt
+
+A Python-based file encryption tool with modern ciphers, post-quantum algorithms, and defense-in-depth key derivation.
+
 ## History
-The project is historically named `openssl-encrypt` because it once was a python script wrapper around openssl. But that did not work anymore with recent python versions.
-Therefore I decided to do a complete rewrite in pure python also using modern cipher and hashes. So the projectname is a "homage" to the root of all :-)
 
-Whirlpool support: The whirlpool hash algorithm is now supported on all Python versions, including Python 3.11, 3.12, and 3.13. The package will automatically detect your Python version and install the appropriate
-Whirlpool implementation.
+The project is historically named `openssl-encrypt` because it once was a Python script wrapper around OpenSSL. That approach stopped working with recent Python versions, so I did a complete rewrite in pure Python using modern ciphers and hashes. The project name is a “homage” to its ---
 
+---
+## Ethical Commitment & Usage Restrictions
+
+This project is committed to the protection of human rights and the prevention of mass surveillance. To reflect these values, it is licensed under the **Hippocratic License 2.1**.
+
+While the source code is public, usage is subject to strict ethical conditions. We prioritize human rights over traditional "neutral" open-source definitions.
+
+### Prohibited Use Cases
+By using this software, you agree that it shall **not** be used for:
+
+* **Violations of Human Rights:** Usage by any entity that undermines the [UN Universal Declaration of Human Rights](https://github.com/jahlives/openssl_encrypt/blob/main/LICENSE#L51) is strictly prohibited (See [License Section 2.1](https://github.com/jahlives/openssl_encrypt/blob/main/LICENSE#L51)).
+* **Mass Surveillance:** The software may not be used for bulk, warrantless monitoring or data collection (See [License Section 2.2.a](https://github.com/jahlives/openssl_encrypt/blob/main/LICENSE#L58)).
+* **Government Intelligence Agencies:** Usage by agencies (such as NSA, GCHQ, etc.) or their contractors for offensive cyber operations or domestic spying is not permitted under this license.
+* **Military & Weapons:** Usage by or for the defense industry, specifically for the development of lethal weaponry, targeting systems, or military-grade surveillance equipment (See [License Section 2.2](https://github.com/jahlives/openssl_encrypt/blob/main/LICENSE#L58)).
+
+
+### Why this License?
+Technological tools are not neutral. We believe that encryption should empower individuals, not oppressive systems. The **Hippocratic License** creates a legal barrier that prevents the integration of this code into software stacks used for surveillance and harm.
+
+> **Note:** Because of these ethical protections, this project is considered **Ethical Source**, not "Open Source" according to the OSI definition, as we intentionally restrict usage for harmful purposes.
+
+> "The Software shall be used for Good, not Evil." — *Inspired by the JSON License & HL 2.1*
+---
+
+## Documentation & Security Architecture
+
+For deep-dives into the cryptographic design and security policies of this project, please refer to the specialized documentation in the `docs/` folder:
+
+* **[Technical Architecture](openssl_encrypt/docs/architecture.md)**: Detailed explanation of the Hybrid PQC-flow, the Hardened KDF Chain (Argon2id + RandomX), and the AEAD Metadata Binding.
+* **[Security Policy](openssl_encrypt/docs/security.md)**: Information on our "Defense in Depth" strategy, anti-oracle policies, and how to responsibly disclose vulnerabilities.
+
+### Key Security Features at a Glance:
+* **Post-Quantum Ready**: Hybrid encryption using NIST-standardized KEMs (HQC, CROSS, MAYO).
+* **Deterministic AEAD**: AES-SIV support for maximum protection against nonce-misuse.
+* **Metadata Integrity**: Cryptographic binding of headers to prevent tampering (on AEAD-supported ciphers).
+* **Hardware-Resistant KDF**: Sequential Argon2id and RandomX hashing to neutralize ASIC/GPU brute-force clusters.
+---
 ## What's New in v1.3.0
 
-Version 1.3.0 represents a major release focused on **security hardening**, **enterprise testing capabilities**, and **advanced features**. This release introduces a comprehensive test suite (`crypt test`) with fuzzing, side-channel analysis, and benchmarking tools; O_NOFOLLOW symlink attack prevention in the D-Bus service; steganography support for hiding encrypted data in images and audio files; an enhanced plugin system with process isolation; and improved RandomX key derivation. Security improvements include comprehensive audit logging, debug mode warnings, and resolution of all medium-priority vulnerabilities. The codebase achieves an **8.8/10 security score** with zero critical or high-severity issues, making it **production-ready** with 128+ passing tests and zero vulnerable dependencies.
+   Version 1.3.0 delivers security fixes and enterprise-grade hardware security:
 
-## 🔒 Security Architecture & Cryptographic Impossibility
+  **SECURITY FIX: AEAD Additional Authenticated Data (AAD) Implementation**
 
-### Fundamental Design Principles
+  - **Fixed documentation discrepancy**: AEAD algorithms (AES-GCM, ChaCha20-Poly1305, etc.) were passing `None` for the AAD parameter despite documentation claiming metadata was cryptographically bound
+  - **Actual impact**: Limited - metadata tampering would fail decryption regardless due to key derivation chain dependency. Without AAD, detection only occurred after both expensive KDF operations and decryption attempts
+  - **Resolution**: Proper AAD implementation now binds metadata to ciphertext, enabling detection of tampering through authentication failure
+  - **Limitation**: AAD does not prevent DoS attacks - metadata parsing and KDF chain execution (the expensive operations) occur before AAD validation during decryption. An attacker with write access can still modify the `rounds` parameter to trigger resource exhaustion
+  - **Affects**: AES-GCM, AES-GCM-SIV, AES-SIV, AES-OCB3, ChaCha20-Poly1305, XChaCha20-Poly1305, and all PQC hybrid variants (24 algorithms total)
 
-This tool implements a **revolutionary chained hash/KDF architecture** that provides security guarantees beyond traditional encryption:
+  **Key Point**: This fixes an implementation gap where documented behavior didn't match actual behavior. The encryption itself was never vulnerable - the metadata is cryptographically bound through the key derivation chain, ensuring any tampering causes decryption failure. AAD provides better integrity guarantees but cannot prevent DoS via metadata manipulation since the expensive KDF chain executes before AAD validation.
+
+  ### Hardware Security Module (HSM) Support
+
+  - **YubiKey HSM Plugin**: Native support for YubiKey 5 series hardware security modules
+  - **PKCS#11 Integration**: Generic HSM support via PKCS#11 interface for enterprise HSMs
+  - **Pepper Protection**: Cryptographic peppers stored in tamper-resistant hardware with PIN protection
+  - **Plugin Architecture**: Extensible system for additional HSM vendors (Nitrokey, SoftHSM, etc.)
+  - **Metadata Format v6**: Enhanced metadata structure with HSM validation and auto-detection
+
+  ### Testing & Quality Assurance
+
+  - Comprehensive test suite (`crypt test`) with fuzzing, side-channel analysis, and benchmarking
+  - 960+ tests passing with 8.8/10 security score (independent review)
+  - Zero vulnerable dependencies
+
+  ### Security Hardening
+
+  - O_NOFOLLOW symlink attack prevention in D-Bus service
+  - Audit logging and debug mode warnings
+  - Enhanced validation and tamper detection
+
+  ### Advanced Features
+
+  - Steganography support for covert data transport
+  - Enhanced plugin system with process isolation
+  - Improved RandomX KDF performance
+  - Dual encryption support for PQC keys (keystore + file password)
+
+  ### Backward Compatibility
+
+  - Fully compatible with v3, v4, and v5 encrypted files
+  - Automatic format detection and migration
+  - **Warning**: Files encrypted with v1.3.0 AEAD algorithms cannot be decrypted by older versions (forward-breaking due to security fix)
+---
+## Known Issues
+### HQC Support in v1.2.x
+
+**Note:** HQC (Hamming Quasi-Cyclic) post-quantum cryptography is not functional in v1.2.x releases due to fork-safety issues in liboqs on certain AMD64 systems. Files encrypted with HQC algorithms (hqc-128, hqc-192, hqc-256) cannot be decrypted reliably in these versions.
+
+- ✅ **Other PQC algorithms work correctly**: Kyber/ML-KEM, Dilithium, Falcon, SPHINCS+, and all other supported post-quantum algorithms function as expected in v1.2.x
+- ✅ **HQC fully supported in v1.3.0+**: The issue has been resolved in version 1.3.0 and later through improved multiprocessing handling
+
+**Recommendation:** If you need to encrypt or decrypt files using HQC algorithms, please upgrade to version 1.3.0 or later.
+
+**For v1.2.x users:** If you have files encrypted with HQC, you can:
+1. Upgrade to v1.3.0+ to decrypt them
+2. Use a different system where the fork-safety issue doesn't occur
+3. Re-encrypt important files using Kyber/ML-KEM instead (recommended for long-term compatibility)
+### Incomplete AEAD Metadata Binding (Versions < 1.3.0)
+
+  **Issue**: In versions prior to 1.3.0, AEAD algorithms (AES-GCM, ChaCha20-Poly1305, AES-GCM-SIV, AES-SIV, AES-OCB3, XChaCha20-Poly1305, and all PQC hybrid variants) pass `None` for the Additional Authenticated Data (AAD) parameter, despite documentation indicating metadata is cryptographically bound to the ciphertext.
+
+  **Security Impact**: Low - The encryption itself remains secure. Metadata is already cryptographically bound through the key derivation chain, meaning any tampering causes decryption failure. However, without AAD, tampering detection is delayed until after both KDF operations and decryption attempts complete.
+
+  **Attack Scenarios**:
+  - An attacker with write access to encrypted files can tamper with metadata
+  - Modified metadata will cause decryption to fail, but only after processing
+  - No data confidentiality breach is possible
+  - Potential DoS vector: modifying the `rounds` parameter forces expensive KDF operations before failure is detected
+
+  **Recommendation**: Upgrade to version 1.3.0 or later, which implements proper AAD binding for earlier tampering detection. Note that AAD does not eliminate the DoS risk, as metadata parsing and KDF execution occur before AAD validation.
+
+  **Workaround**: No workaround needed for data security. To mitigate DoS risks, ensure file permissions prevent unauthorized write access to encrypted files.
+---
+## Security Architecture
+
+### Chained Key Derivation
+
+This tool uses a chained hash/KDF architecture where each round’s output determines the next round’s salt:
 
 ```
-(Password + Initial Salt) → Hash₁ → Result₁ → Salt₂(derived from Result₁) → Hash₂ → Result₂ → Salt₃(derived from Result₂) → ... → Final Key
+Password + Salt₀ → KDF₁ → Result₁ → Salt₁ = f(Result₁) → KDF₂ → Result₂ → ... → Final Key
 ```
 
-**Core Security Features:**
-- **Sequential Dependency**: Each hash round requires the previous round's completion
-- **Dynamic Salting**: Salts are derived from previous results, making them unpredictable
-- **Parallelization Immunity**: Attacks must be strictly sequential regardless of attacker resources
-- **Precomputation Resistance**: Rainbow tables and lookup caches are impossible at every round
-- **Memory-Hard Functions**: Balloon hashing and Argon2 require significant memory per attempt
+**Design Properties:**
 
-### Attack Impossibility Analysis
+- **Sequential Dependency**: Each round requires the previous round’s result
+- **Dynamic Salting**: Salts are derived from previous outputs, not predictable in advance
+- **Memory-Hard Functions**: Argon2 and Balloon hashing require significant memory per attempt
 
-Our architecture fundamentally breaks traditional cryptographic attack methods:
+### Attack Resistance
 
-**⚡ Eliminated Attack Optimizations:**
-- **No Parallel Processing**: GPU farms and distributed computing cannot accelerate attacks
-- **No Rainbow Tables**: Dynamic salting prevents any precomputation at any round
-- **No Space-Time Trade-offs**: Cannot cache intermediate results between attempts
-- **No Partial Optimization**: Every single hash operation must be computed from scratch
+The chained architecture provides several security properties:
 
-**📊 Real-World Security Impact:**
+|Attack Vector           |Mitigation                                              |
+|------------------------|--------------------------------------------------------|
+|GPU/ASIC parallelization|Sequential dependency forces single-threaded computation|
+|Rainbow tables          |Dynamic per-round salts prevent precomputation          |
+|Time-memory trade-offs  |Cannot cache intermediate results across attempts       |
+|Quantum key recovery    |Hybrid PQC modes (ML-KEM, HQC) for key encapsulation    |
 
-| Password Length | Balloon Rounds | Time per Attempt | Attack Duration |
-|-----------------|----------------|------------------|-----------------|
-| 8 characters | 5 rounds | ~40 seconds | 282,000 universe lifetimes |
-| 10 characters | 5 rounds | ~40 seconds | 2.5 billion universe lifetimes |
-| 13 characters | 5 rounds | ~40 seconds | 207 trillion universe lifetimes |
+### Computational Cost Estimates
 
-*Universe age: ~13.8 billion years*
+|Password Entropy         |KDF Configuration|Time/Attempt|Brute-Force Estimate*|
+|-------------------------|-----------------|------------|---------------------|
+|50 bits (8 random chars) |Balloon ×5       |~40s        |~10²² years          |
+|60 bits (10 random chars)|Balloon ×5       |~40s        |~10²⁵ years          |
+|80 bits (13 random chars)|Balloon ×5       |~40s        |~10³¹ years          |
 
-**🛡️ Threat Actor Resistance:**
-- **Individual hackers**: ✅ Impossible
-- **Criminal organizations**: ✅ Impossible
-- **Nation-state actors**: ✅ Impossible
-- **Future quantum computers**: ✅ Impossible
-- **Unlimited computational resources**: ✅ Still impossible (sequential constraint)
+*Estimates assume: 95-character set, uniformly random password, single-threaded attack, no implementation flaws. Actual security depends on password quality and operational security.
 
-### Why This Matters
+### Security Considerations
 
-**Traditional encryption** relies on computational difficulty that could theoretically be overcome with enough resources or technological advances.
+- Strong passwords (12+ random characters) make brute-force computationally infeasible
+- Sequential chaining prevents parallelization of key derivation
+- Post-quantum algorithms provide resistance against quantum key-recovery attacks
+- **Limitations**: Implementation bugs, side-channel attacks, weak passwords, or compromised systems remain potential risks. No cryptographic system provides absolute guarantees.
 
-**Our approach** creates **architectural impossibility** where even unlimited resources cannot bypass the fundamental sequential processing requirement. This represents a paradigm shift from "computationally hard" to "physically impossible within any conceivable timeframe."
+### Security Review
 
-**Security Guarantee**: Any password 8+ characters with balloon key stretching creates an unbreakable cryptographic barrier that will remain secure until the heat death of the universe.
+The v1.3.0 codebase received an independent security review:
 
-### Practical Benefits
+- **Score**: 8.8/10
+- **Critical/High findings**: 0
+- **Medium findings**: 3 (defense-in-depth improvements, not blocking)
+- **Dependencies**: pip-audit clean, zero known vulnerabilities
 
-- **User-Friendly**: Reasonable password lengths (8-13 characters) provide absolute security
-- **Future-Proof**: Immune to advances in computing power, quantum computers, or mathematical breakthroughs
-- **Configurable**: Dial your paranoia level from quick (1 balloon round) to maximum (50+ rounds + chained hashes)
-- **Standards-Based**: Uses proven cryptographic primitives (AES, ChaCha20, Argon2, etc.) in novel architecture
+See <SECURITY_REVIEW_v1.3.0.md> for the full report.
+---
+## Features
 
-## Comprehensive Feature Set
+### Symmetric Encryption
 
-### Core Encryption Features
+Modern AEAD (Authenticated Encryption with Associated Data) ciphers:
 
-  - Military-Grade Symmetric Encryption:
-    - Fernet (AES-128-CBC) - Default, proven security
-    - AES-GCM - Authenticated encryption with associated data
-    - AES-GCM-SIV - Misuse-resistant authenticated encryption
-    - AES-SIV - Synthetic IV mode for nonce reuse resistance
-    - AES-OCB3 - High-performance authenticated encryption (removed for encryption in 1.2.0, still supported for decryption)
-    - ChaCha20-Poly1305 - Stream cipher with authentication
-    - XChaCha20-Poly1305 - Extended nonce variant
-    - Camellia - International standard block cipher (removed for encryption in 1.2.0, still supported for decryption)
+|Algorithm         |Status        |Notes                              |
+|------------------|--------------|-----------------------------------|
+|AES-GCM           |✅ Recommended |NIST standard, hardware-accelerated|
+|AES-GCM-SIV       |✅ Recommended |Nonce-misuse resistant             |
+|ChaCha20-Poly1305 |✅ Recommended |Software-optimized, constant-time  |
+|XChaCha20-Poly1305|✅ Recommended |Extended nonce (192-bit)           |
+|AES-SIV           |✅ Supported   |Deterministic encryption           |
+|Fernet            |✅ Default     |AES-128-CBC + HMAC, simple API     |
+|AES-OCB3          |⚠ Decrypt only|Deprecated in v1.2.0               |
+|Camellia          |⚠ Decrypt only|Deprecated in v1.2.0               |
 
-###  Advanced Post-Quantum Cryptography
+### Post-Quantum Cryptography
 
-  - NIST-Approved Algorithms:
-    - ML-KEM (Module Lattice KEM) - NIST FIPS 203 standard
-        - ML-KEM-512 (Security Level 1)
-      - ML-KEM-768 (Security Level 3)
-      - ML-KEM-1024 (Security Level 5)
-    - Kyber KEM - Original CRYSTALS-Kyber implementation
-        - Kyber-512, Kyber-768, Kyber-1024
-    - HQC (Hamming Quasi-Cyclic) - NIST 2025 additional KEM
-        - HQC-128, HQC-192, HQC-256
-    - MAYO - Multivariate quadratic signature scheme
-        - MAYO-1 (Security Level 1)
-        - MAYO-2 (Security Level 1)
-        - MAYO-3 (Security Level 3)
-        - MAYO-5 (Security Level 5)
-    - CROSS - Code-based signature scheme
-        - CROSS-R-SDPG-1 (Security Level 1)
-        - CROSS-R-SDPG-3 (Security Level 3)
-        - CROSS-R-SDPG-5 (Security Level 5)
-  - Hybrid Encryption Architecture: Combines post-quantum KEMs with classical symmetric encryption for quantum-resistant protection
+Hybrid encryption combining classical symmetric ciphers with post-quantum KEMs:
 
-###  Multi-Layer Password Protection
+**NIST Standardized:**
 
-  - Cryptographic Hash Functions:
-    - SHA-2 Family (FIPS 180-4): SHA-512, SHA-384, SHA-256, SHA-224
-    - SHA-3 Family (FIPS 202): SHA3-512, SHA3-384, SHA3-256, SHA3-224
-    - BLAKE Family: BLAKE2b (high-performance), BLAKE3 (ultra-fast tree-based)
-    - SHAKE Functions: SHAKE-256, SHAKE-128 (extendable-output functions)
-    - Legacy: Whirlpool (512-bit cryptographic hash, removed for encryption in 1.2.0, still supported for decryption)
-  - Key Derivation Functions (KDFs):
-    - Modern KDFs:
-        - HKDF - HMAC-based Key Derivation Function (RFC 5869)
-        - Scrypt - Memory-hard function for GPU resistance
-        - Argon2 - Winner of Password Hashing Competition (Argon2i, Argon2d, Argon2id variants)
-        - Balloon Hashing - Memory-hard function with proven security
-    - Legacy KDF:
-        - PBKDF2 - Password-Based Key Derivation Function 2 (removed for encryption in 1.2.0, still supported for decryption)
+- **ML-KEM** (FIPS 203): ML-KEM-512, ML-KEM-768, ML-KEM-1024
+- **Kyber**: Kyber-512, Kyber-768, Kyber-1024 (original implementation)
 
-###  Enterprise Security Features
+**NIST Selected (2025):**
 
-  - Secure Key Management:
-    - Local encrypted keystore for PQC keys
-    - Key rotation and lifecycle management
-    - Hardware security module (HSM) integration ready
-  - Memory Security:
-    - Secure memory allocation and deallocation
-    - Protection against memory-based attacks
-    - Buffer overflow prevention
-    - Secure memory wiping
-  - File Integrity & Verification:
-    - Built-in cryptographic hash verification
-    - Tamper detection mechanisms
-    - Metadata integrity protection
+- **HQC**: HQC-128, HQC-192, HQC-256
 
-###  Operational Features
+**Signature Schemes (for authenticated encryption):**
 
-  - Secure File Operations:
-    - Military-grade secure deletion (multi-pass overwriting)
-    - Atomic file operations to prevent corruption
-    - In-place encryption with safety checks
-    - Directory recursive processing
-  - User Interface Options:
-    - Full-featured graphical user interface (Tkinter-based)
-    - Comprehensive command-line interface
-    - Batch processing capabilities
-    - Progress visualization for long operations
-  - Flexibility & Customization:
-    - Pre-configured security templates (Quick, Standard, Paranoid)
-    - Custom template support
-    - Glob pattern support for batch operations
-    - Extensive configuration options
+- **MAYO**: MAYO-1, MAYO-2, MAYO-3, MAYO-5
+- **CROSS**: CROSS-R-SDPG-1, CROSS-R-SDPG-3, CROSS-R-SDPG-5
 
-###  Advanced Security Implementations
+### Key Derivation Functions
 
-  - Password Security:
-    - Password policy enforcement
-    - Secure random password generation
-    - Password confirmation to prevent typos
-    - Common password dictionary protection
-  - Algorithm Flexibility:
-    - Dual encryption modes (classical + post-quantum)
-    - Algorithm chaining and cascading
-    - Security level customization
-    - Future algorithm extensibility
+|KDF     |Type              |Status        |Use Case                    |
+|--------|------------------|--------------|----------------------------|
+|Argon2id|Memory-hard       |✅ Recommended |Default for password hashing|
+|Balloon |Memory-hard       |✅ Recommended |Alternative to Argon2       |
+|Scrypt  |Memory-hard       |✅ Supported   |GPU-resistant               |
+|HKDF    |Extract-and-expand|✅ Supported   |Key expansion               |
+|RandomX |CPU-hard          |✅ Supported   |Anti-ASIC (from Monero)     |
+|PBKDF2  |Iterative         |⚠ Decrypt only|Deprecated in v1.2.0        |
 
-## Architecture & Components
+### Hash Functions
 
-### Core Modules
+For key derivation chaining:
 
-  - crypt.py - Main command-line utility entry point
-  - crypt_gui.py - Graphical user interface application
-  - cli.py - CLI routing and argument parsing
-  - modules/crypt_core.py - Core cryptographic operations
-  - modules/crypt_cli.py - Command-line interface implementation
-  - modules/crypt_utils.py - Utility functions and helpers
+- **SHA-2 Family** (FIPS 180-4): SHA-512, SHA-384, SHA-256, SHA-224
+- **SHA-3 Family** (FIPS 202): SHA3-512, SHA3-384, SHA3-256, SHA3-224
+- **BLAKE Family**: BLAKE2b, BLAKE3
+- **SHAKE** (XOF): SHAKE-256, SHAKE-128
+- **Legacy**: Whirlpool (decrypt only in v1.2.0+)
 
-### Cryptographic Modules
+### Additional Security Features
 
-  - modules/pqc.py - Post-quantum cryptography implementation
-  - modules/pqc_adapter.py - PQC algorithm adapter layer
-  - modules/pqc_liboqs.py - LibOQS integration
-  - modules/ml_kem_patch.py - ML-KEM specific implementations
-  - modules/balloon.py - Balloon hash implementation
-  - modules/secure_memory.py - Memory security functions
-  - modules/crypto_secure_memory.py - Advanced memory protection
+**Memory Protection:**
 
-### Security & Management
+- Secure memory allocation with mlock/VirtualLock
+- Multi-pass memory wiping (random, 0xFF, 0xAA, 0x55, 0x00)
+- Constant-time operations for timing attack resistance
 
-  - modules/keystore_cli.py - Keystore command-line interface
-  - modules/keystore_utils.py - Keystore utility functions
-  - modules/keystore_wrapper.py - Keystore abstraction layer
-  - modules/password_policy.py - Password validation and policies
-  - modules/algorithm_warnings.py - Security algorithm warnings
-  - modules/crypt_settings.py - Configuration management
-  - modules/crypt_errors.py - Custom exception classes
+**File Operations:**
 
-### Testing & Quality Assurance
+- Multi-pass secure deletion (configurable passes)
+- Atomic file operations
+- Symlink attack protection (O_NOFOLLOW in D-Bus service)
 
-  - Comprehensive Test Suite:
-    - Unit tests (unittests/unittests.py)
-    - GUI testing (unittests/test_gui.py)
-    - Dual encryption tests (tests/dual_encryption/)
-    - Keystore functionality tests (tests/keystore/)
-    - Post-quantum algorithm tests
-    - Backward compatibility tests
-  - Security Testing:
-    - Static analysis integration
-    - Dependency vulnerability scanning
-    - CI/CD security pipeline
-    - Comprehensive test file formats (v3, v4, v5)
+**Key Management:**
 
-## Installation & Dependencies
+- Encrypted keystore for PQC keys
+- Key rotation support
+- Dual encryption (password + keystore)
 
-### Core Dependencies
+**Operational:**
 
-  - Python 3.11+ (recommended for full feature support)
-  - cryptography>=44.0.1 - Core cryptographic primitives
-  - argon2-cffi>=23.1.0 - Argon2 password hashing
-  - PyYAML>=6.0.2 - Configuration file support
-  - whirlpool-py311>=1.0.0 - Whirlpool hash algorithm
-  - blake3>=1.0.0 - BLAKE3 high-performance hash algorithm
+- Password policy enforcement
+- Common password dictionary check
+- Audit logging
+---
+## Installation
 
-### Optional Dependencies
+### Flatpak (Recommended)
 
-  - liboqs-python - Extended post-quantum algorithm support (HQC, ML-DSA, SLH-DSA, FN-DSA)
-  - tkinter - GUI interface (usually included with Python)
+The easiest way to install with all dependencies included (Python, liboqs, liboqs-python, Flutter GUI):
 
-## Usage Interfaces
+```bash
+# Add the repository
+flatpak remote-add --if-not-exists openssl-encrypt https://flatpak.rm-rf.ch/openssl-encrypt.flatpakrepo
+
+# Install latest stable version
+flatpak install openssl-encrypt com.opensslencrypt.OpenSSLEncrypt
+
+# Run the application
+flatpak run com.opensslencrypt.OpenSSLEncrypt --help
+```
+
+**Benefits:**
+- All dependencies pre-installed (including liboqs and Python bindings)
+- Flutter Desktop GUI included
+- Sandboxed environment
+- Automatic updates
+- Works on any Linux distribution
+
+**Build Flatpak locally (alternative to using the repository):**
+
+```bash
+# Clone the repository
+git clone https://github.com/jahlives/openssl_encrypt.git
+cd openssl_encrypt/flatpak
+
+# Build and install locally (includes Flutter GUI)
+./build-flatpak.sh --build-flutter --local-install
+
+# Or install as development branch (recommended for testing, runs parallel to stable)
+./build-flatpak.sh --build-flutter --dev-install
+
+# Run the locally installed flatpak
+flatpak run com.opensslencrypt.OpenSSLEncrypt
+```
+
+**Build options:**
+- `--build-flutter` - Build Flutter Desktop GUI before packaging
+- `--local-install` - Install as stable branch (overwrites production)
+- `--dev-install` - Install as development branch (parallel to production, recommended)
+- `-f, --force` - Force clean build cache
+
+See `flatpak/README.md` for detailed build instructions.
+
+### PyPI / Source Installation
+
+**Requirements:**
+- Python 3.11+ (3.12 or 3.13 recommended)
+
+**Core Dependencies:**
+```
+cryptography>=44.0.1
+argon2-cffi>=23.1.0
+PyYAML>=6.0.2
+blake3>=1.0.0
+```
+
+**Optional Dependencies:**
+```
+liboqs-python          # Extended PQC support (HQC, ML-DSA, etc.)
+                       # Requires liboqs (https://github.com/open-quantum-safe/liboqs)
+tkinter                # GUI (usually included with Python)
+```
+
+**Install:**
+
+```bash
+# From PyPI (when available)
+pip install openssl-encrypt
+
+# From source
+git clone https://github.com/jahlives/openssl_encrypt.git
+cd openssl_encrypt
+pip install -e .
+```
+
+**Note:** For full post-quantum support (HQC, ML-DSA), you need to manually install liboqs and liboqs-python. The Flatpak version includes these by default.
+---
+## Usage
 
 ### Command-Line Interface
+
+```bash
+# Basic encryption (Fernet, default settings)
+python -m openssl_encrypt.crypt encrypt -i file.txt -o file.txt.enc
+
+# AES-GCM with Argon2
+python -m openssl_encrypt.crypt encrypt -i file.txt -o file.txt.enc \
+    --algorithm aes-gcm \
+    --enable-argon2 --argon2-rounds 3
+
+# Post-quantum hybrid encryption
+python -m openssl_encrypt.crypt encrypt -i file.txt -o file.txt.enc \
+    --algorithm ml-kem-768-hybrid
+
+# Using security templates
+python -m openssl_encrypt.crypt encrypt -i file.txt --quick      # Fast, good security
+python -m openssl_encrypt.crypt encrypt -i file.txt --standard   # Balanced (default)
+python -m openssl_encrypt.crypt encrypt -i file.txt --paranoid   # Maximum security
+
+# Decryption (algorithm auto-detected from metadata)
+python -m openssl_encrypt.crypt decrypt -i file.txt.enc -o file.txt
+
+# Secure file deletion
+python -m openssl_encrypt.crypt shred -i sensitive.txt --passes 3
+
+# Generate random password
+python -m openssl_encrypt.crypt generate --length 20
 ```
-  # Basic encryption
-  python -m openssl_encrypt.crypt encrypt -i file.txt -o file.txt.enc
 
-  # Post-quantum encryption with MAYO signatures
-  python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm mayo-3-hybrid
-
-  # Modern hash algorithms
-  python -m openssl_encrypt.crypt encrypt -i file.txt --blake3-rounds 150000 --enable-hkdf
-
-  # SHA-3 family encryption
-  python -m openssl_encrypt.crypt encrypt -i file.txt --sha3-384-rounds 50000
-
-  # Using security templates
-  python -m openssl_encrypt.crypt encrypt -i file.txt --paranoid
-
-  # Keystore operations
-  python -m openssl_encrypt.keystore_cli_main create --keystore-path my_keys.pqc
-```
 ### Graphical User Interface
+
+```bash
+python -m openssl_encrypt.crypt_gui
+# or
+python -m openssl_encrypt.cli --gui
 ```
-  # Launch GUI
-  python -m openssl_encrypt.crypt_gui
-  # or
-  python -m openssl_encrypt.cli --gui
-```
-  The GUI provides intuitive tabs for:
-  - Encrypt: File encryption with algorithm selection (including MAYO/CROSS post-quantum)
-  - Decrypt: Secure file decryption
-  - Shred: Military-grade secure deletion
-  - Settings: Organized hash families (SHA-2, SHA-3, BLAKE, SHAKE) and modern KDF configuration
 
 ### Flutter Desktop GUI
-The Flutter-based desktop GUI has been ported to all versions and is available across all platforms (Linux, macOS, Windows) without requiring a version number upgrade. This modern interface provides enhanced usability and cross-platform compatibility.
 
-For detailed Flutter GUI installation instructions, see the [User Guide](openssl_encrypt/docs/user-guide.md#flutter-desktop-gui-installation).
+Cross-platform GUI available for Linux, macOS, and Windows. See the [User Guide](openssl_encrypt/docs/user-guide.md#flutter-desktop-gui-installation) for installation.
 
-## Documentation Structure
+### Keystore Operations
 
-The documentation has been consolidated from 37+ files into 10 comprehensive guides for better organization and usability.
+```bash
+# Create keystore
+python -m openssl_encrypt.keystore_cli_main create --keystore-path keys.pqc
 
-### User Documentation
+# Generate PQC keypair
+python -m openssl_encrypt.keystore_cli_main generate --keystore-path keys.pqc \
+    --algorithm ml-kem-768
 
-  - [**User Guide**](openssl_encrypt/docs/user-guide.md) - Complete installation, usage, examples, and troubleshooting
-  - [**Keystore Guide**](openssl_encrypt/docs/keystore-guide.md) - PQC keystore management and dual encryption
+# Encrypt with keystore
+python -m openssl_encrypt.crypt encrypt -i file.txt \
+    --keystore keys.pqc --key-id my-key
+```
+---
+## Configuration Templates
 
-### Security Documentation
+Pre-configured security profiles in `templates/`:
 
-  - [**Security Documentation**](openssl_encrypt/docs/security.md) - Comprehensive security architecture, threat model, and best practices
-  - [**Algorithm Reference**](openssl_encrypt/docs/algorithm-reference.md) - Cryptographic algorithm audit and compliance analysis
-  - [**Dependency Management**](openssl_encrypt/docs/dependency-management.md) - Security assessment and version pinning policies
+|Template       |Use Case                      |KDF                    |Rounds|Time |
+|---------------|------------------------------|-----------------------|------|-----|
+|`quick.json`   |Fast encryption, good security|Argon2                 |1     |~1s  |
+|`standard.json`|Balanced (default)            |Argon2 + SHA3          |3     |~5s  |
+|`paranoid.json`|Maximum security              |Argon2 + Balloon + SHA3|10+   |~60s+|
+---
+## Project Structure
 
-### Technical Documentation
+```
+openssl_encrypt/
+├── crypt.py                 # CLI entry point
+├── crypt_gui.py             # Tkinter GUI
+├── modules/
+│   ├── crypt_core.py        # Core encryption/decryption
+│   ├── crypt_cli.py         # CLI implementation
+│   ├── crypt_utils.py       # Utilities (shred, password gen)
+│   ├── crypt_errors.py      # Exception classes
+│   ├── secure_memory.py     # Memory protection
+│   ├── secure_ops.py        # Constant-time operations
+│   ├── balloon.py           # Balloon hashing
+│   ├── randomx.py           # RandomX KDF
+│   ├── pqc.py               # Post-quantum crypto
+│   ├── pqc_adapter.py       # PQC algorithm adapter
+│   ├── keystore_cli.py      # Keystore management
+│   ├── password_policy.py   # Password validation
+│   ├── dbus_service.py      # D-Bus integration (Linux)
+│   └── plugin_system/       # Plugin sandbox
+├── unittests/
+│   ├── unittests.py         # Main test suite (950+ tests)
+│   └── testfiles/           # Test vectors (password: 1234)
+├── templates/               # Security profiles
+└── docs/                    # Documentation
+```
+---
+## Documentation
 
-  - [**Metadata Formats**](openssl_encrypt/docs/metadata-formats.md) - File format specifications and migration guide
-  - [**Development Setup**](openssl_encrypt/docs/development-setup.md) - Development environment, CI/CD, and testing
+|Document                                                          |Description                                   |
+|------------------------------------------------------------------|----------------------------------------------|
+|[User Guide](openssl_encrypt/docs/user-guide.md)                  |Installation, usage, examples, troubleshooting|
+|[Keystore Guide](openssl_encrypt/docs/keystore-guide.md)          |PQC key management, dual encryption           |
+|[Security Documentation](openssl_encrypt/docs/security.md)        |Architecture, threat model, best practices    |
+|[Algorithm Reference](openssl_encrypt/docs/algorithm-reference.md)|Cipher and KDF specifications                 |
+|[Metadata Formats](openssl_encrypt/docs/metadata-formats.md)      |File format specs (v3, v4, v5)                |
+|[Development Setup](openssl_encrypt/docs/development-setup.md)    |Contributing, CI/CD, testing                  |
+---
+## Testing
 
-### Project Documentation
+```bash
+# Run all tests
+pytest openssl_encrypt/unittests/
 
-  - [**VERSION.md**](openssl_encrypt/docs/VERSION.md) - Complete version history and changelog
-  - [**VERSION_PINNING_POLICY.md**](openssl_encrypt/docs/VERSION_PINNING_POLICY.md) - Dependency versioning strategy
-  - [**TODO.md**](openssl_encrypt/docs/TODO.md) - Development roadmap and planned features
+# Run with coverage
+pytest --cov=openssl_encrypt openssl_encrypt/unittests/
 
-## Development & Testing
+# Run specific test class
+pytest openssl_encrypt/unittests/unittests.py::TestCryptCore
+```
 
-### Test Files & Validation
+Test files in `unittests/testfiles/` are encrypted with password `1234`.
+---
+## Support
 
-  All test files in unittests/testfiles/ are encrypted with password 1234 for testing purposes.
-
-#### Security Templates
-
-  - templates/quick.json - Fast encryption with good security
-  - templates/standard.json - Balanced security and performance (default)
-  - templates/paranoid.json - Maximum security configuration
-
-#### Build & Distribution
-
-  - Modern Python packaging with pyproject.toml
-  - Docker support with multi-stage builds
-  - CI/CD integration with GitLab CI
-  - Automated testing and security scanning
-
-## Support & Issues
-
-- **Primary:** [GitHub Issues](https://github.com/jahlives/openssl_encrypt/issues)
-- **Alternative:** Email to issue+world-openssl-encrypt-2-issue-@gitlab.rm-rf.ch
-- **Security vulnerabilities:** Email only (not public issues)
-
+- **Issues**: [GitHub Issues](https://github.com/jahlives/openssl_encrypt/issues)
+- **Email**: issue+world-openssl-encrypt-2-issue-@gitlab.rm-rf.ch
+- **Security vulnerabilities**: Email only (not public issues)
+---
 ## License
 
-  LICENSE
+See <LICENSE> file.
 
-  ---
-  OpenSSL Encrypt - Securing your data for the quantum age with military-grade cryptography and user-friendly interfaces.
+-----
+
+*OpenSSL Encrypt – File encryption with modern ciphers, post-quantum algorithms, and defense-in-depth key derivation.*

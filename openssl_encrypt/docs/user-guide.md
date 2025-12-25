@@ -25,7 +25,7 @@
 
 ### Overview
 
-The Flutter Desktop GUI provides a modern, cross-platform interface for OpenSSL Encrypt with enhanced usability and native performance. The GUI is available for Linux, macOS, and Windows.
+The Flutter Desktop GUI provides a cross-platform interface for OpenSSL Encrypt with enhanced usability and native performance. The GUI is available for Linux, macOS, and Windows.
 
 ### Prerequisites
 
@@ -840,7 +840,7 @@ python -c "from openssl_encrypt.modules.pqc import get_supported_algorithms; pri
 
 #### Debug Mode for Troubleshooting
 
-> **🚨 SECURITY WARNING 🚨**
+> **SECURITY WARNING**
 >
 > **The `--debug` flag outputs highly sensitive cryptographic information including:**
 > - **Derived encryption keys in hex format**
@@ -848,7 +848,7 @@ python -c "from openssl_encrypt.modules.pqc import get_supported_algorithms; pri
 > - **Plaintext data content in hex**
 > - **Intermediate hash values and cryptographic parameters**
 >
-> **⚠️ NEVER use `--debug` with sensitive or production data! ⚠️**
+> **NEVER use `--debug` with sensitive or production data!**
 >
 > **Only use debug mode with:**
 > - Test files and dummy data
@@ -913,7 +913,7 @@ DEBUG - ENCRYPT:PQC_KEM Symmetric encryption: aes-gcm
 - **Educational purposes**: Learn how modern cryptography works step-by-step
 - **Algorithm comparison**: Compare debug output between different algorithms
 
-> **⚠️ SECURITY REMINDER ⚠️**
+> **SECURITY REMINDER**
 >
 > Debug output exposes **ALL** cryptographic secrets including encryption keys, plaintext data, and intermediate values. **NEVER** use debug mode with sensitive data or in production environments. Debug information should never be saved, logged, or shared when working with confidential files.
 

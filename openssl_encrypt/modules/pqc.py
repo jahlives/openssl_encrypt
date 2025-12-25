@@ -529,13 +529,101 @@ class PQCipher:
                     print(f"Available methods: {dir(kem)}")
             raise
 
-    def encrypt(self, data: bytes, public_key: bytes) -> bytes:
+    def encapsulate_only(self, public_key: bytes) -> Tuple[bytes, bytes]:
+        """
+        Perform KEM encapsulation only (without data encryption).
+
+        This is used for password wrapping in asymmetric mode where we need
+        the shared secret to wrap a password, but don't directly encrypt data.
+
+        Args:
+            public_key (bytes): Recipient's public key
+
+        Returns:
+            Tuple[bytes, bytes]: (shared_secret, encapsulated_key)
+
+        Note:
+            Caller is responsible for secure memory handling of shared_secret.
+            Use SecureBytes and call secure_memzero() after use.
+        """
+        if not self.is_kem:
+            raise ValueError("This method is only supported for KEM algorithms")
+
+        shared_secret = None
+
+        try:
+            with oqs.KeyEncapsulation(self.algorithm_name) as kem:
+                # Encapsulate to get shared secret
+                encapsulated_key, shared_secret = kem.encap_secret(public_key)
+
+                if self.debug:
+                    logger.debug(
+                        f"KEM encapsulation: encapsulated_key={len(encapsulated_key)} bytes, "
+                        f"shared_secret={len(shared_secret)} bytes"
+                    )
+
+                # Return (shared_secret, encapsulated_key) - caller must handle secure cleanup
+                return shared_secret, encapsulated_key
+
+        except Exception as e:
+            if not self.quiet:
+                print(f"Error in KEM encapsulation: {e}")
+            # Clean up on error
+            if shared_secret is not None:
+                secure_memzero(shared_secret)
+            raise ValueError(f"KEM encapsulation failed: {e}")
+
+    def decapsulate_only(self, encapsulated_key: bytes, private_key: bytes) -> bytes:
+        """
+        Perform KEM decapsulation only (without data decryption).
+
+        This is used for password unwrapping in asymmetric mode where we need
+        to recover the shared secret from the encapsulated key.
+
+        Args:
+            encapsulated_key (bytes): Encapsulated key from sender
+            private_key (bytes): Recipient's private key
+
+        Returns:
+            bytes: Shared secret
+
+        Note:
+            Caller is responsible for secure memory handling.
+            Use SecureBytes and call secure_memzero() after use.
+        """
+        if not self.is_kem:
+            raise ValueError("This method is only supported for KEM algorithms")
+
+        shared_secret = None
+
+        try:
+            # Create KeyEncapsulation with private key
+            with oqs.KeyEncapsulation(self.algorithm_name, private_key) as kem:
+                # Decapsulate to recover shared secret (only takes encapsulated_key)
+                shared_secret = kem.decap_secret(encapsulated_key)
+
+                if self.debug:
+                    logger.debug(f"KEM decapsulation: shared_secret={len(shared_secret)} bytes")
+
+                # Return shared secret - caller must handle secure cleanup
+                return shared_secret
+
+        except Exception as e:
+            if not self.quiet:
+                print(f"Error in KEM decapsulation: {e}")
+            # Clean up on error
+            if shared_secret is not None:
+                secure_memzero(shared_secret)
+            raise ValueError(f"KEM decapsulation failed: {e}")
+
+    def encrypt(self, data: bytes, public_key: bytes, aad: bytes = None) -> bytes:
         """
         Encrypt data using a hybrid post-quantum + symmetric approach
 
         Args:
             data (bytes): The data to encrypt
             public_key (bytes): The recipient's public key
+            aad (bytes, optional): Additional authenticated data for AEAD binding
 
         Returns:
             bytes: The encrypted data format: encapsulated_key + nonce + ciphertext
@@ -624,7 +712,7 @@ class PQCipher:
                     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
                     aead = AESGCM(symmetric_key)
-                    ciphertext = aead.encrypt(nonce, data, None)
+                    ciphertext = aead.encrypt(nonce, data, aad)
 
                     # Format: encapsulated_key + nonce + ciphertext
                     result = encapsulated_key + nonce + ciphertext
@@ -643,7 +731,11 @@ class PQCipher:
                     secure_memzero(symmetric_key)
 
     def decrypt(
-        self, encrypted_data: bytes, private_key: bytes, file_contents: bytes = None
+        self,
+        encrypted_data: bytes,
+        private_key: bytes,
+        file_contents: bytes = None,
+        aad: bytes = None,
     ) -> bytes:
         """
         Decrypt data that was encrypted with the corresponding public key
@@ -653,6 +745,7 @@ class PQCipher:
             private_key (bytes): The recipient's private key
             file_contents (bytes, optional): The full original encrypted file contents
                                            for recovery if direct decryption fails
+            aad (bytes, optional): Additional authenticated data (must match encryption AAD)
 
         Returns:
             bytes: The decrypted data
@@ -1282,7 +1375,7 @@ class PQCipher:
                     # Normal decrypt path using secure memory
                     with SecureBytes() as secure_plaintext:
                         # Decrypt directly into secure memory
-                        decrypted = cipher.decrypt(nonce, ciphertext, None)
+                        decrypted = cipher.decrypt(nonce, ciphertext, aad)
 
                         # If this is a negative test case and we still successfully decrypted,
                         # we need to perform additional validation
