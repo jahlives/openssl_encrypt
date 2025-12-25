@@ -1,12 +1,76 @@
 # Future Features Roadmap
 
-*Last Updated: December 22, 2025 - Based on v1.3.0+ codebase analysis*
+*Last Updated: December 25, 2025 - Based on v1.3.2 codebase analysis*
 
 This document outlines features for the OpenSSL Encrypt project, organized by implementation status: what's already done, what's in progress, and what's planned for the future.
 
 ---
 
-## ✅ Implemented Features (v1.0.0 - v1.3.0+)
+## 🔥 Current Development (v1.4.0)
+
+### **Asymmetric Exchange Mode**
+- **Status**: 🚧 IN ACTIVE DEVELOPMENT
+- **Target Version**: v1.4.0
+- **Metadata Format**: v7 (completely separate from symmetric v3-v6, no breaking changes)
+- **Description**: Secure file exchange without password sharing, with DoS protection via metadata signatures
+
+#### New Modules
+| Module | Purpose |
+|--------|---------|
+| `modules/identity.py` | Identity management (Encryption + Signing keypairs) |
+| `modules/asymmetric.py` | Password wrapping and signature logic |
+| `modules/pqc_signing.py` | ML-DSA signature wrapper for liboqs |
+
+#### Features
+- 📋 Random password generation (256-bit entropy) for each encryption
+- 📋 Password wrapped with recipient's ML-KEM public key
+- 📋 Metadata signed with sender's ML-DSA private key
+- 📋 **Signature verification BEFORE KDF** (DoS protection!)
+- 📋 Full KDF-chain still executed by recipient (Defense in Depth)
+- 📋 Identity management system (create, export, import, list)
+- 📋 Two keypairs per identity: Encryption (ML-KEM) + Signing (ML-DSA)
+
+#### CLI Commands
+```bash
+# Identity management
+openssl_encrypt identity create --name "Alice" --email "alice@example.com"
+openssl_encrypt identity export --identity alice --output alice.pubkeys
+openssl_encrypt identity import --file bob.pubkeys --name "Bob"
+openssl_encrypt identity list
+
+# Asymmetric encryption
+openssl_encrypt encrypt --for bob --sign-with alice --input secret.txt
+openssl_encrypt decrypt --key bob --verify-from alice --input secret.txt.enc
+
+# Without signature verification (shows warning, estimate system still runs)
+openssl_encrypt decrypt --key bob --no-verify --input secret.txt.enc
+```
+
+#### Security Benefits
+| Benefit | Description |
+|---------|-------------|
+| No password sharing | Asymmetric key exchange via ML-KEM |
+| DoS protection | Signature check (~1ms) before expensive KDF |
+| Post-Quantum secure | ML-KEM-768 + ML-DSA-65 (NIST standardized) |
+| KDF-Chain preserved | Recipient still runs full chain (Defense in Depth) |
+| Backward compatible | New v7 format, existing v3-v6 files still work |
+
+#### Critical Security Flow
+```
+1. Parse metadata (fast)
+2. ⚠️ VERIFY SIGNATURE (~1ms) ⚠️
+   ├─→ FAIL: Immediate abort, KDF does NOT run
+   └─→ OK: Continue
+3. Decrypt password (fast, KEM decap)
+4. KDF-Chain (expensive, but now safe)
+5. Decrypt data
+```
+
+- **Estimated Completion**: Q1 2026
+
+---
+
+## ✅ Implemented Features (v1.0.0 - v1.3.2)
 
 These features are fully implemented and available in current releases.
 
@@ -117,13 +181,24 @@ These features are fully implemented and available in current releases.
   - ✅ HSM plugin integration in key derivation pipeline
 - **Note**: Hardware Security Module integration for Yubikey is complete. The Yubikey's HMAC-SHA1 Challenge-Response is used to generate a hardware-specific pepper that enhances encryption security and requires the physical Yubikey to be present for decryption.
 
+### 8. **Decryption Cost Estimate System** (v1.3.2)
+- **Status**: ✅ FULLY IMPLEMENTED
+- **Description**: Pre-decryption analysis of KDF parameters with DoS warning
+- **Features**:
+  - ✅ Estimates time and memory requirements before KDF execution
+  - ✅ Warns user if parameters exceed safe thresholds
+  - ✅ 2-second abort window for suspicious parameters
+  - ✅ Detailed breakdown by hash/KDF operation
+- **Example Output**: `"Time: ~17.0s, Peak Memory: ~2.00 GB"`
+- **Note**: Provides protection against malicious metadata with extreme KDF parameters. Users are warned before expensive operations execute. This is the pragmatic DoS protection for symmetric mode (where asymmetric signature verification is not available).
+
 ---
 
 ## 🚧 Partially Implemented Features
 
 These features have some components complete but are still in active development.
 
-### 8. **Key Management & Rotation System**
+### 9. **Key Management & Rotation System**
 - **Status**: 🚧 PARTIALLY IMPLEMENTED (v1.3.0)
 - **What's Done** (Storage & Tracking):
   - ✅ Key storage with encryption
@@ -137,7 +212,7 @@ These features have some components complete but are still in active development
 - **Estimated Effort for Completion**: 2-3 weeks
 - **Note**: Core keystore with encryption and expiration tracking is implemented. The automatic rotation system and advanced key lifecycle management features remain to be built.
 
-### 9. **Performance & Scalability**
+### 10. **Performance & Scalability**
 - **Status**: 🚧 PARTIALLY IMPLEMENTED (v1.3.0)
 - **What's Done** (Progress Indicators):
   - ✅ Progress indicators for long operations in CLI
@@ -157,7 +232,17 @@ These features are planned for future releases but not yet implemented.
 
 ### High Priority
 
-#### 10. **Enhanced GUI & User Experience**
+#### 11. **Multiple Recipients Support** (v1.5.0)
+- **Status**: 📋 PLANNED
+- **Description**: Encrypt a single file for multiple recipients
+- **Components**:
+  - Multiple `encrypted_password` entries in v7 metadata
+  - Group key management
+  - Recipient list management in CLI
+- **Estimated Effort**: 2-3 weeks
+- **Note**: Natural extension of asymmetric mode (v1.4.0). Each recipient can decrypt with their own private key.
+
+#### 12. **Enhanced GUI & User Experience**
 - **Status**: 📋 PLANNED (Basic GUI exists in `crypt_gui.py`)
 - **Description**: Modern, intuitive user interface (100% offline)
 - **Components**:
@@ -168,9 +253,10 @@ These features are planned for future releases but not yet implemented.
   - 📋 Configuration wizard for non-expert users (GUI version of CLI wizard)
   - 📋 Dark mode and accessibility features
   - 📋 Offline help system and documentation viewer
+  - 📋 Identity management UI for asymmetric mode (v1.4.0+)
 - **Estimated Effort**: 3-4 weeks
 
-#### 11. **Advanced Cryptographic Protocols**
+#### 13. **Advanced Cryptographic Protocols**
 - **Status**: 📋 PLANNED
 - **Description**: Advanced **offline** cryptographic protocols
 - **Components**:
@@ -182,7 +268,7 @@ These features are planned for future releases but not yet implemented.
 - **Estimated Effort**: 6-8 weeks
 - **Note**: All protocols designed for offline, air-gapped operation. No network communication.
 
-#### 12. **Local Compliance & Standards Tools**
+#### 14. **Local Compliance & Standards Tools**
 - **Status**: 📋 PLANNED
 - **Description**: Local compliance tools and offline audit generation
 - **Components**:
@@ -194,7 +280,7 @@ These features are planned for future releases but not yet implemented.
 - **Estimated Effort**: 3-4 weeks
 - **Note**: All compliance tools are local. No remote reporting or network transmission.
 
-#### 13. **Local Docker Deployment**
+#### 15. **Local Docker Deployment**
 - **Status**: 📋 PLANNED
 - **Description**: Local containerization for isolated deployment (no orchestration)
 - **Components**:
@@ -205,7 +291,7 @@ These features are planned for future releases but not yet implemented.
 - **Estimated Effort**: 1-2 weeks
 - **Note**: Docker for isolation only. No Kubernetes, no centralized management, no network orchestration.
 
-#### 14. **Local SQLite Database Encryption**
+#### 16. **Local SQLite Database Encryption**
 - **Status**: 📋 PLANNED
 - **Description**: Encrypt local SQLite database files
 - **Components**:
@@ -215,9 +301,25 @@ These features are planned for future releases but not yet implemented.
 - **Estimated Effort**: 1-2 weeks
 - **Note**: Only local SQLite files. No remote databases (PostgreSQL, MySQL, MongoDB, Redis).
 
+#### 17. **Optional Telemetry Plugin** (v1.5.0+)
+- **Status**: 📋 PLANNED
+- **Description**: Opt-in anonymized usage statistics for algorithm/KDF usage analysis
+- **Components**:
+  - Telemetry plugin with strict opt-in (`--telemetry` or config)
+  - Anonymized data collection (algorithms, KDF parameters only)
+  - No fingerprints, keys, or file sizes
+  - Local aggregation before any transmission
+- **Security Constraints**:
+  - Plugin only sees metadata (Kerckhoff's principle - safe)
+  - NEVER sees: passwords, private keys, plaintext data
+  - Requires explicit user consent
+  - Core remains network-free; only plugin has network capability
+- **Estimated Effort**: 1-2 weeks
+- **Note**: This is the ONLY planned feature with network access, strictly isolated in an optional plugin.
+
 ### Experimental Features
 
-#### 16. **Biometric Integration**
+#### 18. **Biometric Integration**
 - **Status**: 📋 EXPERIMENTAL
 - **Description**: Biometric-enhanced security (local hardware only)
 - **Components**:
@@ -232,7 +334,7 @@ These features are planned for future releases but not yet implemented.
 
 ## ❌ Won't Be Implemented (Security Policy)
 
-These features are **explicitly excluded** due to the project's core security requirement: **zero network access**. OpenSSL Encrypt maintains a strict air-gapped, network-free security model to ensure maximum security and eliminate entire classes of attacks (network eavesdropping, man-in-the-middle, remote exploitation, data exfiltration).
+These features are **explicitly excluded** due to the project's core security requirement: **zero network access in core**. OpenSSL Encrypt maintains a strict air-gapped, network-free security model to ensure maximum security and eliminate entire classes of attacks (network eavesdropping, man-in-the-middle, remote exploitation, data exfiltration).
 
 ### Network-Dependent Features (Rejected)
 
@@ -281,61 +383,72 @@ These features are **explicitly excluded** due to the project's core security re
   - ✅ **Local GDPR compliance tools** (right to erasure, data portability on local files)
   - ✅ **Offline compliance report generation** (for manual submission)
 
-### Security Policy: Zero Network Access
+### Security Policy: Zero Network Access (Core)
 
-**Core Principle**: OpenSSL Encrypt will **never** access the network, directly or through plugins.
+**Core Principle**: OpenSSL Encrypt **core** will **never** access the network, directly or through plugins.
 
-**What This Means**:
+**What This Means for Core**:
 - No HTTP/HTTPS requests
 - No TCP/IP socket connections
 - No DNS lookups
 - No remote database connections
 - No cloud service integrations
 - No automatic updates over network
-- No telemetry or analytics
+- No telemetry or analytics in core
 - No plugin marketplace downloads
 - No remote key servers or certificate authorities
+
+**Plugin Network Policy**:
+- Plugins requesting `PluginCapability.NETWORK_ACCESS` are rejected by default
+- Exception: Explicitly user-enabled plugins (e.g., optional telemetry)
+- Network plugins NEVER receive sensitive data (passwords, keys, plaintext)
+- Network plugins only see metadata (safe per Kerckhoff's principle)
 
 **Why This Policy Exists**:
 1. **Attack Surface Reduction**: Eliminates entire categories of network-based attacks
 2. **Air-Gapped Security**: Designed for high-security, offline, and air-gapped environments
-3. **Privacy Guarantee**: Zero data exfiltration risk
-4. **Audit Simplicity**: Network code = 0 lines, easy to verify
+3. **Privacy Guarantee**: Zero data exfiltration risk from core
+4. **Audit Simplicity**: Network code = 0 lines in core, easy to verify
 5. **Trust Model**: No reliance on external services or infrastructure
-
-**Plugin Policy**: Plugins requesting `PluginCapability.NETWORK_ACCESS` will be **rejected** at load time. The capability exists in the enum for documentation purposes but is never granted.
 
 ---
 
 ## Implementation Priority Matrix
 
-| Feature | Status | Priority | User Impact | Technical Risk | Notes |
-|---------|--------|----------|-------------|----------------|-------|
-| Plugin Architecture | ✅ DONE | High | High | Low | 7 plugin types, capability-based security |
-| Configuration Management | ✅ DONE | Medium | High | Low | Wizard, templates, security analysis |
-| Testing Framework | ✅ DONE | High | High | Low | Fuzzing, KAT, benchmarks, side-channel, memory |
-| Post-Quantum Crypto | ✅ DONE | High | High | Low | ML-KEM, Kyber, hybrid modes |
-| Steganography | ✅ DONE | Medium | Medium | Medium | ALL formats working as of v1.3.0 |
-| Portable Media | ✅ DONE | Medium | Medium | Low | USB, QR codes, air-gapped |
-| HSM Integration (Yubikey) | ✅ DONE | High | High | Low | Challenge-Response, auto-detection |
-| Key Management | 🚧 PARTIAL | High | High | Low | Storage ✅, Rotation 📋 |
-| Performance | 🚧 PARTIAL | High | Medium | Medium | Progress bars ✅, GPU/threading 📋 |
-| Enhanced GUI | 📋 PLANNED | Medium | Medium | Low | Offline GUI, basic version exists |
-| Advanced Crypto Protocols | 📋 PLANNED | Medium | Medium | High | ZKP, homomorphic, offline only |
-| Local Compliance Tools | 📋 PLANNED | Medium | High | Low | FIPS mode, local audit logs |
-| Local Docker Deployment | 📋 PLANNED | Low | Medium | Low | Isolation only, no network |
-| Local SQLite Encryption | 📋 PLANNED | Medium | Medium | Low | Local database files only |
-| Biometric Integration | 📋 EXPERIMENTAL | Low | Low | High | Local sensors only |
-| ~~Remote Databases~~ | ❌ REJECTED | N/A | N/A | N/A | Requires network - security policy violation |
-| ~~Kubernetes/Orchestration~~ | ❌ REJECTED | N/A | N/A | N/A | Requires network - security policy violation |
-| ~~Cloud ML Services~~ | ❌ REJECTED | N/A | N/A | N/A | Requires network - security policy violation |
-| ~~Remote Compliance~~ | ❌ REJECTED | N/A | N/A | N/A | Requires network - security policy violation |
+| Feature | Status | Priority | User Impact | Technical Risk | Target Version |
+|---------|--------|----------|-------------|----------------|----------------|
+| **Asymmetric Exchange Mode** | 🔥 IN DEV | **Critical** | **High** | Medium | **v1.4.0** |
+| Plugin Architecture | ✅ DONE | High | High | Low | v1.3.0 |
+| Configuration Management | ✅ DONE | Medium | High | Low | v1.3.0 |
+| Testing Framework | ✅ DONE | High | High | Low | v1.3.0 |
+| Post-Quantum Crypto | ✅ DONE | High | High | Low | v1.0.0+ |
+| Steganography | ✅ DONE | Medium | Medium | Medium | v1.3.0 |
+| Portable Media | ✅ DONE | Medium | Medium | Low | v1.3.0 |
+| HSM Integration (Yubikey) | ✅ DONE | High | High | Low | v1.3.1 |
+| Decryption Cost Estimate | ✅ DONE | High | High | Low | v1.3.2 |
+| Key Management | 🚧 PARTIAL | High | High | Low | v1.3.x |
+| Performance | 🚧 PARTIAL | High | Medium | Medium | v1.5.0 |
+| Multiple Recipients | 📋 PLANNED | Medium | Medium | Low | v1.5.0 |
+| Optional Telemetry Plugin | 📋 PLANNED | Low | Low | Low | v1.5.0+ |
+| Enhanced GUI | 📋 PLANNED | Medium | Medium | Low | v1.5.0 |
+| Advanced Crypto Protocols | 📋 PLANNED | Medium | Medium | High | v1.6.0 |
+| Local Compliance Tools | 📋 PLANNED | Medium | High | Low | v1.6.0 |
+| Local Docker Deployment | 📋 PLANNED | Low | Medium | Low | v1.6.0 |
+| Local SQLite Encryption | 📋 PLANNED | Medium | Medium | Low | v1.5.0 |
+| Biometric Integration | 📋 EXPERIMENTAL | Low | Low | High | v2.0.0 |
+| ~~Remote Databases~~ | ❌ REJECTED | N/A | N/A | N/A | Never |
+| ~~Kubernetes/Orchestration~~ | ❌ REJECTED | N/A | N/A | N/A | Never |
+| ~~Cloud ML Services~~ | ❌ REJECTED | N/A | N/A | N/A | Never |
+| ~~Remote Compliance~~ | ❌ REJECTED | N/A | N/A | N/A | Never |
 
 ---
 
 ## Recommended Implementation Order
 
-### Already Complete (v1.0.0 - v1.3.1):
+### Currently In Development (v1.4.0):
+1. 🔥 **Asymmetric Exchange Mode** - Secure file exchange without password sharing
+
+### Already Complete (v1.0.0 - v1.3.2):
 1. ✅ Post-Quantum Cryptography (v1.0.0+)
 2. ✅ Plugin Architecture (v1.3.0+)
 3. ✅ Configuration Management (v1.3.0+)
@@ -343,41 +456,66 @@ These features are **explicitly excluded** due to the project's core security re
 5. ✅ Steganography - All Formats (v1.3.0)
 6. ✅ Portable Media (v1.3.0+)
 7. ✅ HSM Integration - Yubikey (v1.3.1)
+8. ✅ Decryption Cost Estimate (v1.3.2)
 
-### Next 2 months (Phase 1):
-1. **Complete Key Rotation System** - Finish automatic rotation for existing keystore
-2. **Performance Optimizations** - GPU acceleration, multi-threading for large files
-3. **Enhanced GUI** - Drag-drop, progress indicators, steganography viewer (100% offline)
+### Next After v1.4.0 (v1.5.0):
+1. **Multiple Recipients** - Encrypt for multiple recipients (extends asymmetric mode)
+2. **Complete Key Rotation System** - Finish automatic rotation for existing keystore
+3. **Performance Optimizations** - GPU acceleration, multi-threaded encryption for large files
+4. **Enhanced GUI** - Drag-drop, progress indicators, identity management UI (100% offline)
+5. **Local SQLite Encryption** - Encrypt local SQLite database files
+6. **Optional Telemetry Plugin** - Opt-in usage statistics (plugin only, core stays offline)
 
-### Months 3-4 (Phase 2):
-4. **Local SQLite Encryption** - Encrypt local SQLite database files
-5. **Local Compliance Tools** - FIPS mode, local audit logs, GDPR utilities (offline)
-6. **Local Docker Deployment** - Containerization for isolation (network-disabled)
-
-### Months 5-6 (Phase 3):
-7. **Advanced Crypto Protocols** - ZKP, secret sharing, homomorphic encryption (offline only)
-8. **Biometric Integration** - Local sensors, no cloud services
+### Future (v1.6.0+):
+7. **Local Compliance Tools** - FIPS mode, local audit logs, GDPR utilities (offline)
+8. **Local Docker Deployment** - Containerization for isolation (network-disabled)
+9. **Advanced Crypto Protocols** - ZKP, secret sharing, homomorphic encryption (offline only)
+10. **Biometric Integration** - Local sensors, no cloud services
 
 ### Explicitly Rejected (Network Required):
 - ❌ Remote Database Encryption (PostgreSQL, MySQL, MongoDB, Redis)
 - ❌ Kubernetes/Centralized Orchestration
 - ❌ Cloud ML Services
 - ❌ Remote Compliance Reporting
-- ❌ Any network-dependent features
+- ❌ Any network-dependent features in core
+
+---
+
+## Version History
+
+| Version | Key Features | Release Date |
+|---------|--------------|--------------|
+| v1.0.0 | Initial release, PQC support | 2024 |
+| v1.3.0 | Plugin system, Steganography, Testing framework | 2025 |
+| v1.3.1 | HSM/Yubikey integration | Dec 2025 |
+| v1.3.2 | Decryption cost estimate system | Dec 2025 |
+| **v1.4.0** | **Asymmetric exchange mode (IN DEV)** | **Q1 2026** |
+| v1.5.0 | Multiple recipients, Performance, GUI improvements | TBD |
+| v1.6.0 | Compliance tools, Advanced protocols | TBD |
 
 ---
 
 ## Notes
 
-- **Current Version**: v1.3.0+ (with v1.3.1 HSM support)
+- **Current Version**: v1.3.2
+- **In Development**: v1.4.0 (Asymmetric Exchange Mode)
 
-- **Core Security Principle: ZERO NETWORK ACCESS**:
-  - OpenSSL Encrypt will **never** access the network, directly or through plugins
+- **Core Security Principle: ZERO NETWORK ACCESS (in Core)**:
+  - OpenSSL Encrypt core will **never** access the network
   - Designed for air-gapped, high-security, offline environments
-  - Network code = 0 lines (easy to audit and verify)
+  - Network code = 0 lines in core (easy to audit and verify)
   - Eliminates entire categories of attacks: network eavesdropping, MITM, remote exploitation, data exfiltration
-  - No telemetry, no analytics, no phone-home, no automatic updates over network
-  - Privacy guarantee: Zero risk of data exfiltration
+  - No telemetry, no analytics, no phone-home, no automatic updates over network in core
+  - Privacy guarantee: Zero risk of data exfiltration from core
+  - Optional network plugins (e.g., telemetry) are strictly isolated and opt-in
+
+- **v1.4.0 Asymmetric Mode Highlights**:
+  - Solves the "how do I share encrypted files" problem
+  - DoS protection via signature verification BEFORE KDF
+  - Uses NIST-standardized PQC algorithms (ML-KEM-768, ML-DSA-65)
+  - New metadata format v7 (completely separate from symmetric v3-v6)
+  - Full KDF-chain preserved for Defense in Depth
+  - No breaking changes to existing functionality
 
 - **Current Strengths**:
   - Excellent post-quantum cryptography support (ML-KEM, Kyber)
@@ -387,41 +525,27 @@ These features are **explicitly excluded** due to the project's core security re
   - HSM integration with Yubikey Challenge-Response
   - Configuration wizard and template management
   - Portable media and offline key distribution
+  - Decryption cost estimation with DoS warnings
   - **100% offline operation - works completely without network**
 
-- **Major Achievements Since v1.0.0**:
-  - Complete plugin architecture with security sandboxing (v1.3.0)
-  - All steganography formats fixed and working - WEBP and MP3 were broken, now functional (v1.3.0)
-  - Full testing suite with fuzzing, KAT, benchmarks, side-channel, and memory tests (v1.3.0)
-  - Configuration wizard, templates, and security analysis (v1.3.0)
-  - Portable media tools for USB and QR code distribution (v1.3.0)
-  - Hardware Security Module support via Yubikey (v1.3.1)
-
-- **Focus Areas for Next Release**:
-  - Complete automatic key rotation system
-  - GPU acceleration and multi-threaded encryption (local only)
-  - Enhanced GUI features (drag-drop, dark mode, steganography viewer - 100% offline)
-  - Local SQLite database encryption
-
-- **What Will NEVER Be Implemented**:
+- **What Will NEVER Be Implemented in Core**:
   - Remote database connections (PostgreSQL, MySQL, MongoDB, Redis, etc.)
   - Cloud services or cloud ML
   - Centralized management or orchestration (Kubernetes, etc.)
   - Network-based compliance reporting
-  - Any feature requiring network access
+  - Any feature requiring network access in core
   - Automatic updates over network
-  - Telemetry or analytics
-  - Plugin marketplace downloads
+  - Telemetry or analytics in core
 
 - **Security Philosophy**:
-  - All features maintain strict air-gapped, network-free operation for maximum security
+  - All features maintain strict air-gapped, network-free operation in core for maximum security
   - Plugins are never allowed to access sensitive data (passwords, keys, plaintext)
-  - Plugins requesting network access are rejected at load time
+  - Plugins requesting network access require explicit user opt-in
   - Designed for environments where network access is a security risk
   - Trust model: No reliance on external services or infrastructure
 
 ---
 
 **Created by**: Claude Code Analysis
-**Last Updated**: December 22, 2025
-**Status**: Living document - updated to reflect v1.3.0+ implementation status
+**Last Updated**: December 25, 2025
+**Status**: Living document - updated to reflect v1.3.2 status and v1.4.0 development
