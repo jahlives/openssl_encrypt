@@ -1728,6 +1728,7 @@ def main():
         "template",
         "smart-recommendations",
         "test",
+        "identity",
         "check-argon2",
         "check-pqc",
         "version",
@@ -3017,6 +3018,11 @@ def main_with_args(args=None):
         run_security_tests(args)
         sys.exit(0)
 
+    elif args.action == "identity":
+        from .identity_cli import main as identity_main
+
+        sys.exit(identity_main(args))
+
     elif args.action == "check-argon2":
         argon2_available, version, supported_types = check_argon2_support()
         print("\nARGON2 SUPPORT CHECK")
@@ -4113,6 +4119,109 @@ def main_with_args(args=None):
                 sys.exit(1)
 
         if args.action == "encrypt":
+            # Check if asymmetric mode (--for flag present)
+            if hasattr(args, "for_identity") and args.for_identity:
+                # Asymmetric encryption mode
+                import getpass
+
+                from .crypt_core import encrypt_file_asymmetric
+                from .identity import IdentityStore
+
+                store = IdentityStore()
+
+                # Load recipients
+                recipients = []
+                for recipient_name in args.for_identity:
+                    recipient = store.get_by_name(
+                        recipient_name, passphrase=None, load_private_keys=False
+                    )
+                    if recipient is None:
+                        print(
+                            f"ERROR: Recipient identity '{recipient_name}' not found",
+                            file=sys.stderr,
+                        )
+                        sys.exit(1)
+                    recipients.append(recipient)
+
+                # Load sender
+                if not hasattr(args, "sign_with") or not args.sign_with:
+                    print("ERROR: --sign-with required for asymmetric encryption", file=sys.stderr)
+                    sys.exit(1)
+
+                sender_passphrase = getpass.getpass(
+                    f"Passphrase for sender identity '{args.sign_with}': "
+                )
+                sender = store.get_by_name(
+                    args.sign_with, passphrase=sender_passphrase, load_private_keys=True
+                )
+                if sender is None:
+                    print(f"ERROR: Sender identity '{args.sign_with}' not found", file=sys.stderr)
+                    sys.exit(1)
+
+                # Build hash config (simplified for now, can be extended)
+                hash_config = {}
+                if hasattr(args, "sha512_rounds") and args.sha512_rounds > 0:
+                    hash_config["sha512"] = args.sha512_rounds
+                if hasattr(args, "blake2b_rounds") and args.blake2b_rounds > 0:
+                    hash_config["blake2b"] = args.blake2b_rounds
+                if hasattr(args, "pbkdf2_iterations") and args.pbkdf2_iterations > 0:
+                    hash_config["pbkdf2_iterations"] = args.pbkdf2_iterations
+
+                # Determine output file
+                if args.overwrite:
+                    output_file = args.input
+                    temp_dir = os.path.dirname(os.path.abspath(args.input))
+                    temp_suffix = f".{__import__('uuid').uuid4().hex[:12]}.tmp"
+                    temp_output = os.path.join(temp_dir, os.path.basename(args.input) + temp_suffix)
+                elif args.output:
+                    output_file = args.output
+                    temp_output = output_file
+                else:
+                    output_file = args.input + ".enc"
+                    temp_output = output_file
+
+                # Encrypt
+                try:
+                    result = encrypt_file_asymmetric(
+                        input_file=args.input,
+                        output_file=temp_output,
+                        recipients=recipients,
+                        sender=sender,
+                        hash_config=hash_config if hash_config else None,
+                        algorithm=getattr(args, "encryption_data", "aes-gcm"),
+                        quiet=args.quiet,
+                        progress=args.progress,
+                        verbose=args.verbose,
+                    )
+
+                    # Handle temp file if overwrite mode
+                    if args.overwrite and temp_output != output_file:
+                        import shutil
+
+                        shutil.move(temp_output, output_file)
+
+                    if not args.quiet:
+                        print("\nAsymmetric encryption successful!")
+                        print(f"Recipients: {result['recipients']}")
+                        print(f"Sender: {result['sender']}")
+                        print(f"Output: {output_file}")
+
+                    # Shred original if requested
+                    if args.shred:
+                        from .crypt_utils import shred_file
+
+                        shred_file(args.input, passes=args.shred_passes)
+
+                    sys.exit(0)
+
+                except Exception as e:
+                    print(f"ERROR: Asymmetric encryption failed: {e}", file=sys.stderr)
+                    if args.debug:
+                        import traceback
+
+                        traceback.print_exc()
+                    sys.exit(1)
+
             # DEPRECATED: Whirlpool is no longer supported for new encryptions
             if hasattr(args, "whirlpool_rounds") and getattr(args, "whirlpool_rounds", 0) > 0:
                 print("ERROR: Whirlpool is deprecated for new encryptions.")
@@ -5325,6 +5434,151 @@ def main_with_args(args=None):
                     secure_shred_file(args.input, args.shred_passes, args.quiet)
 
         elif args.action == "decrypt":
+            # Check if asymmetric mode by reading metadata
+            try:
+                import json
+
+                with open(args.input, "r") as f:
+                    content = f.read()
+                    if "---ENCRYPTED_DATA---" in content:
+                        metadata_str = content.split("---ENCRYPTED_DATA---")[0]
+                        metadata = json.loads(metadata_str)
+                        format_version = metadata.get("format_version", 0)
+
+                        if format_version == 7 and metadata.get("mode") == "asymmetric":
+                            # Asymmetric decryption mode
+                            import getpass
+
+                            from .crypt_core import decrypt_file_asymmetric
+                            from .identity import IdentityStore
+
+                            store = IdentityStore()
+
+                            # Load recipient (decrypt with this identity)
+                            if not hasattr(args, "key_identity") or not args.key_identity:
+                                print(
+                                    "ERROR: --key required for asymmetric decryption",
+                                    file=sys.stderr,
+                                )
+                                sys.exit(1)
+
+                            recipient_passphrase = getpass.getpass(
+                                f"Passphrase for identity '{args.key_identity}': "
+                            )
+                            recipient = store.get_by_name(
+                                args.key_identity,
+                                passphrase=recipient_passphrase,
+                                load_private_keys=True,
+                            )
+                            if recipient is None:
+                                print(
+                                    f"ERROR: Identity '{args.key_identity}' not found",
+                                    file=sys.stderr,
+                                )
+                                sys.exit(1)
+
+                            # Load sender public key for verification
+                            sender_public_key = None
+                            skip_verification = getattr(args, "skip_verification", False)
+
+                            if not skip_verification:
+                                if hasattr(args, "verify_from") and args.verify_from:
+                                    sender = store.get_by_name(
+                                        args.verify_from, passphrase=None, load_private_keys=False
+                                    )
+                                    if sender is None:
+                                        print(
+                                            f"ERROR: Sender identity '{args.verify_from}' not found",
+                                            file=sys.stderr,
+                                        )
+                                        sys.exit(1)
+                                    sender_public_key = sender.signing_public_key
+                                else:
+                                    # Try to load sender from metadata
+                                    sender_key_id = (
+                                        metadata.get("asymmetric", {})
+                                        .get("sender", {})
+                                        .get("key_id")
+                                    )
+                                    if sender_key_id:
+                                        sender = store.get_by_fingerprint(
+                                            sender_key_id, passphrase=None, load_private_keys=False
+                                        )
+                                        if sender:
+                                            sender_public_key = sender.signing_public_key
+                                        else:
+                                            print(
+                                                f"WARNING: Sender with fingerprint {sender_key_id} not found in store",
+                                                file=sys.stderr,
+                                            )
+                                            print(
+                                                "Use --verify-from to specify sender or --no-verify to skip verification",
+                                                file=sys.stderr,
+                                            )
+                                            sys.exit(1)
+
+                            # Determine output file
+                            if args.overwrite:
+                                output_file = args.input
+                                temp_dir = os.path.dirname(os.path.abspath(args.input))
+                                temp_suffix = f".{__import__('uuid').uuid4().hex[:12]}.tmp"
+                                temp_output = os.path.join(
+                                    temp_dir, os.path.basename(args.input) + temp_suffix
+                                )
+                            elif args.output:
+                                output_file = args.output
+                                temp_output = output_file
+                            else:
+                                # Remove .enc extension if present
+                                if args.input.endswith(".enc"):
+                                    output_file = args.input[:-4]
+                                else:
+                                    output_file = args.input + ".dec"
+                                temp_output = output_file
+
+                            # Decrypt
+                            try:
+                                decrypt_file_asymmetric(
+                                    input_file=args.input,
+                                    output_file=temp_output,
+                                    recipient=recipient,
+                                    sender_public_key=sender_public_key,
+                                    skip_verification=skip_verification,
+                                    quiet=args.quiet,
+                                    progress=args.progress,
+                                    verbose=args.verbose,
+                                )
+
+                                # Handle temp file if overwrite mode
+                                if args.overwrite and temp_output != output_file:
+                                    import shutil
+
+                                    shutil.move(temp_output, output_file)
+
+                                if not args.quiet:
+                                    print("\nAsymmetric decryption successful!")
+                                    print(f"Output: {output_file}")
+
+                                # Shred original if requested
+                                if args.shred:
+                                    from .crypt_utils import shred_file
+
+                                    shred_file(args.input, passes=args.shred_passes)
+
+                                sys.exit(0)
+
+                            except Exception as e:
+                                print(f"ERROR: Asymmetric decryption failed: {e}", file=sys.stderr)
+                                if args.debug:
+                                    import traceback
+
+                                    traceback.print_exc()
+                                sys.exit(1)
+
+            except (json.JSONDecodeError, FileNotFoundError, KeyError):
+                # Not asymmetric or can't read metadata - continue with symmetric decryption
+                pass
+
             # Extract metadata early to check for deprecated algorithms
             stdin_temp_file = None
             if args.input == "/dev/stdin":

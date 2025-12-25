@@ -3065,6 +3065,133 @@ def create_metadata_v6(
     return metadata
 
 
+def create_metadata_v7(
+    salt: bytes,
+    hash_config: dict,
+    original_hash: str,
+    algorithm: str,
+    recipients: list,
+    sender_key_id: str,
+    sender_sig_algo: str,
+    signature: bytes,
+    encryption_data: str = "aes-gcm",
+    encrypted_hash: str = None,
+    include_encrypted_hash: bool = True,
+    aad_mode: bool = False,
+):
+    """
+    Create metadata in format version 7 for asymmetric encryption.
+
+    V7 adds asymmetric cryptography support with:
+    - Multiple recipients (each with encrypted password wrapper)
+    - Sender signature over metadata
+    - ML-KEM for key encapsulation
+    - ML-DSA for signatures
+
+    Args:
+        salt: Salt used for key derivation
+        hash_config: Hash configuration
+        original_hash: Hash of original content
+        algorithm: Encryption algorithm used
+        recipients: List of recipient dicts with keys:
+            - key_id: Recipient fingerprint
+            - kem_algorithm: KEM algorithm (e.g., ML-KEM-768)
+            - encapsulated_key: KEM encapsulated key (bytes)
+            - encrypted_password: Wrapped password (bytes)
+        sender_key_id: Sender's identity fingerprint
+        sender_sig_algo: Signature algorithm (e.g., ML-DSA-65)
+        signature: Signature over canonical metadata (bytes)
+        encryption_data: Symmetric encryption algorithm for data
+        encrypted_hash: Hash of encrypted content (optional)
+        include_encrypted_hash: Whether to include encrypted_hash
+        aad_mode: Whether metadata will be used as AAD
+
+    Returns:
+        dict: Metadata in format version 7
+
+    Raises:
+        ValueError: If parameters are invalid
+    """
+    # Encode salt to base64
+    salt_b64 = base64.b64encode(salt).decode("utf-8")
+
+    # Create hashes dictionary
+    if include_encrypted_hash and encrypted_hash is not None:
+        hashes_dict = {"original_hash": original_hash, "encrypted_hash": encrypted_hash}
+    else:
+        hashes_dict = {"original_hash": original_hash}
+
+    # Encode recipient data to base64
+    recipients_encoded = []
+    for recipient in recipients:
+        recipients_encoded.append(
+            {
+                "key_id": recipient["key_id"],
+                "kem_algorithm": recipient["kem_algorithm"],
+                "encapsulated_key": base64.b64encode(recipient["encapsulated_key"]).decode("utf-8"),
+                "encrypted_password": base64.b64encode(recipient["encrypted_password"]).decode(
+                    "utf-8"
+                ),
+            }
+        )
+
+    # Create basic metadata structure
+    metadata = {
+        "format_version": 7,
+        "mode": "asymmetric",
+        "derivation_config": {"salt": salt_b64, "hash_config": {}, "kdf_config": {}},
+        "asymmetric": {
+            "recipients": recipients_encoded,
+            "sender": {"key_id": sender_key_id, "sig_algorithm": sender_sig_algo},
+        },
+        "hashes": hashes_dict,
+        "encryption": {"algorithm": algorithm, "encryption_data": encryption_data},
+    }
+
+    # Add AAD binding marker if in AAD mode
+    if aad_mode:
+        metadata["aead_binding"] = True
+
+    # Process hash algorithms to use nested structure (same as V6)
+    hash_algorithms = [
+        "sha512",
+        "sha384",
+        "sha256",
+        "sha224",
+        "sha3_512",
+        "sha3_384",
+        "sha3_256",
+        "sha3_224",
+        "blake2b",
+        "blake3",
+        "shake256",
+        "shake128",
+        "whirlpool",
+    ]
+    for algo in hash_algorithms:
+        if algo in hash_config:
+            metadata["derivation_config"]["hash_config"][algo] = {"rounds": hash_config[algo]}
+
+    # Add PBKDF2 config if used
+    pbkdf2_iterations = hash_config.get("pbkdf2_iterations", 0)
+    if pbkdf2_iterations > 0:
+        metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {"rounds": pbkdf2_iterations}
+
+    # Move KDF configurations from hash_config if present
+    kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf", "randomx"]
+    for kdf in kdf_algorithms:
+        if kdf in hash_config:
+            metadata["derivation_config"]["kdf_config"][kdf] = hash_config[kdf]
+
+    # Add signature (this is added AFTER metadata is created, but before returning)
+    metadata["signature"] = {
+        "algorithm": sender_sig_algo,
+        "value": base64.b64encode(signature).decode("utf-8"),
+    }
+
+    return metadata
+
+
 def create_metadata_v4(
     salt,
     hash_config,
@@ -3100,6 +3227,512 @@ def create_metadata_v4(
         pqc_info,
     )
     return convert_metadata_v5_to_v4(v5_metadata)
+
+
+def decrypt_file_asymmetric(
+    input_file: str,
+    output_file: str,
+    recipient,  # Identity object with private keys
+    sender_public_key: bytes = None,
+    skip_verification: bool = False,
+    quiet: bool = False,
+    progress: bool = False,
+    verbose: bool = False,
+):
+    """
+    Decrypt a file asymmetrically encrypted with Format V7.
+
+    CRITICAL SECURITY FEATURE - DoS Protection:
+    This function MUST verify the signature BEFORE running the expensive KDF.
+    Order of operations:
+    1. Parse metadata (fast)
+    2. Find recipient entry (fast)
+    3. **VERIFY SIGNATURE** (fast, ~1-5ms) ← DoS PROTECTION
+    4. If invalid → ABORT (no KDF!)
+    5. If valid → Unwrap password
+    6. Run KDF chain (expensive, but now safe)
+    7. Decrypt data
+
+    Args:
+        input_file: Path to encrypted file
+        output_file: Path for decrypted output
+        recipient: Identity object with encryption private key
+        sender_public_key: Sender's signing public key (for verification)
+        skip_verification: Skip signature verification (DANGEROUS!)
+        quiet: Suppress output
+        progress: Show progress bar
+        verbose: Verbose output
+
+    Returns:
+        bytes: Original file hash
+
+    Raises:
+        ValueError: If format invalid or signature verification fails
+        DecryptionError: If decryption fails
+    """
+    from .asymmetric_core import MetadataCanonicalizer, PasswordWrapper
+    from .identity import Identity
+    from .pqc_signing import PQCSigner
+    from .secure_memory import SecureBytes, secure_memzero
+
+    # Validate input
+    if not recipient:
+        raise ValueError("Recipient identity required")
+
+    if not isinstance(recipient, Identity):
+        raise TypeError("Recipient must be Identity object")
+
+    if not recipient.encryption_private_key:
+        raise ValueError("Recipient identity must have encryption private key")
+
+    if not quiet:
+        print(f"Decrypting {input_file} for {recipient.name}...")
+
+    # Step 1: Parse file and metadata
+    with open(input_file, "r") as f:
+        content = f.read()
+
+    if "---ENCRYPTED_DATA---" not in content:
+        raise ValueError("Invalid encrypted file format")
+
+    parts = content.split("---ENCRYPTED_DATA---")
+    metadata_str = parts[0]
+    encrypted_data_b64 = parts[1].strip()
+
+    try:
+        metadata = json.loads(metadata_str)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid metadata JSON: {e}")
+
+    # Verify format version
+    if metadata.get("format_version") != 7:
+        raise ValueError(f"Expected format version 7, got {metadata.get('format_version')}")
+
+    if metadata.get("mode") != "asymmetric":
+        raise ValueError(f"Expected asymmetric mode, got {metadata.get('mode')}")
+
+    # Step 2: Find recipient entry
+    recipient_entry = None
+    for r in metadata["asymmetric"]["recipients"]:
+        if r["key_id"] == recipient.fingerprint:
+            recipient_entry = r
+            break
+
+    if not recipient_entry:
+        raise ValueError(
+            f"File is not encrypted for recipient {recipient.name} "
+            f"(fingerprint: {recipient.fingerprint[:16]}...)"
+        )
+
+    if not quiet:
+        print(f"  Found entry for: {recipient.name}")
+
+    # Step 3: **CRITICAL - VERIFY SIGNATURE BEFORE KDF**
+    # This is the DoS protection - signature verification is fast (~1-5ms)
+    # while KDF can take minutes. We MUST verify BEFORE running KDF.
+    if not skip_verification:
+        if "signature" not in metadata:
+            raise ValueError("File has no signature (cannot verify)")
+
+        signature_data = metadata["signature"]
+        signature_algo = signature_data["algorithm"]
+        signature_b64 = signature_data["value"]
+
+        try:
+            signature = base64.b64decode(signature_b64)
+        except Exception as e:
+            raise ValueError(f"Invalid signature encoding: {e}")
+
+        # Canonicalize metadata (removes signature field)
+        canonical_metadata = MetadataCanonicalizer.canonicalize(metadata)
+
+        # Verify signature
+        signer = PQCSigner(signature_algo, quiet=True)
+
+        # Use sender public key if provided, otherwise try to extract from metadata
+        if sender_public_key is None:
+            # For now, require sender_public_key to be provided
+            raise ValueError(
+                "Sender's public key required for signature verification. "
+                "Use --verify-from <identity> or --no-verify to skip (dangerous!)"
+            )
+
+        is_valid = signer.verify(canonical_metadata, signature, sender_public_key)
+
+        if not is_valid:
+            # CRITICAL: Signature invalid - ABORT before KDF!
+            raise ValueError(
+                "⚠️ SIGNATURE VERIFICATION FAILED! ⚠️\n"
+                "The file's signature is invalid. This could indicate:\n"
+                "  - File has been tampered with\n"
+                "  - File was signed by a different sender\n"
+                "  - Metadata corruption\n"
+                "Decryption ABORTED for security."
+            )
+
+        if not quiet:
+            sender_id = metadata["asymmetric"]["sender"]["key_id"]
+            print(f"  ✓ Signature verified from: {sender_id[:16]}...")
+
+    else:
+        if not quiet:
+            print("  ⚠️ WARNING: Signature verification SKIPPED!")
+
+    # Step 4: Unwrap password (fast)
+    try:
+        encapsulated_key = base64.b64decode(recipient_entry["encapsulated_key"])
+        encrypted_password = base64.b64decode(recipient_entry["encrypted_password"])
+    except Exception as e:
+        raise ValueError(f"Invalid recipient data encoding: {e}")
+
+    wrapper = PasswordWrapper(recipient_entry["kem_algorithm"])
+
+    with recipient.encryption_private_key as priv_key:
+        password_raw = wrapper.decapsulate(encapsulated_key, priv_key.get_bytes())
+
+    try:
+        with SecureBytes(password_raw) as password_secure:
+            # Unwrap password
+            password = wrapper.unwrap_password(encrypted_password, bytes(password_secure))
+
+    finally:
+        secure_memzero(password_raw)
+
+    if not quiet:
+        print("  ✓ Password unwrapped successfully")
+
+    # Step 5: NOW it's safe to run expensive KDF
+    # (signature has been verified, so we know this is legitimate)
+    try:
+        with SecureBytes(password) as secure_password:
+            # Extract derivation config
+            derivation_config = metadata["derivation_config"]
+            salt = base64.b64decode(derivation_config["salt"])
+
+            # Convert hash config from nested to flat structure
+            nested_hash_config = derivation_config.get("hash_config", {})
+            hash_config = {}
+            for algo, config in nested_hash_config.items():
+                if isinstance(config, dict) and "rounds" in config:
+                    hash_config[algo] = config["rounds"]
+
+            # Get KDF config
+            kdf_config = derivation_config.get("kdf_config", {})
+            for kdf_name, kdf_params in kdf_config.items():
+                if kdf_name in ["scrypt", "argon2", "balloon", "hkdf", "randomx"]:
+                    hash_config[kdf_name] = kdf_params
+                elif kdf_name == "pbkdf2":
+                    hash_config["pbkdf2_iterations"] = kdf_params.get("rounds", 0)
+
+            if not quiet:
+                print("  Running KDF chain (this may take a while)...")
+
+            # Derive key
+            derived_key, _, _ = generate_key(
+                password=bytes(secure_password),
+                salt=salt,
+                hash_config=hash_config,
+                quiet=quiet,
+                progress=progress,
+            )
+
+            if not quiet:
+                print("  ✓ Key derived successfully")
+
+            # Step 6: Decrypt data
+            encrypted_data = base64.b64decode(encrypted_data_b64)
+            nonce = encrypted_data[:12]
+            ciphertext = encrypted_data[12:]
+
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+            aead = AESGCM(derived_key[:32])
+            plaintext = aead.decrypt(nonce, ciphertext, None)
+
+            # Step 7: Verify hash
+            import hashlib
+
+            original_hash_computed = hashlib.sha256(plaintext).hexdigest()
+            original_hash_expected = metadata["hashes"]["original_hash"]
+
+            if original_hash_computed != original_hash_expected:
+                raise ValueError("Hash verification failed! File may be corrupted.")
+
+            if not quiet:
+                print("  ✓ Hash verified")
+
+            # Write output
+            with open(output_file, "wb") as f:
+                f.write(plaintext)
+
+            if not quiet:
+                print(f"✓ File decrypted successfully: {output_file}")
+                print(
+                    f"  File size: {len(encrypted_data)} bytes (encrypted) → {len(plaintext)} bytes"
+                )
+
+            # Secure cleanup
+            secure_memzero(derived_key)
+            secure_memzero(plaintext)
+
+            return original_hash_computed.encode("utf-8")
+
+    finally:
+        # Ensure password is zeroed
+        secure_memzero(password)
+
+
+def encrypt_file_asymmetric(
+    input_file: str,
+    output_file: str,
+    recipients: list,  # List of Identity objects
+    sender,  # Identity object with private keys
+    hash_config: dict = None,
+    algorithm: str = "aes-gcm",
+    encryption_data: str = "aes-gcm",
+    quiet: bool = False,
+    progress: bool = False,
+    verbose: bool = False,
+):
+    """
+    Encrypt a file asymmetrically for one or more recipients.
+
+    This implements Format V7 asymmetric encryption:
+    1. Generate random 32-byte password
+    2. Run KDF chain with password
+    3. Encrypt file with derived key
+    4. Wrap password for each recipient using ML-KEM
+    5. Sign metadata with sender's ML-DSA key
+    6. Write encrypted file with V7 metadata
+
+    Args:
+        input_file: Path to file to encrypt
+        output_file: Path for encrypted output
+        recipients: List of Identity objects (must have encryption_public_key)
+        sender: Identity object with private signing key
+        hash_config: Hash configuration dict
+        algorithm: Encryption algorithm (default: aes-gcm)
+        encryption_data: Data encryption algorithm
+        quiet: Suppress output
+        progress: Show progress bar
+        verbose: Verbose output
+
+    Returns:
+        dict: Encryption result with metadata
+
+    Raises:
+        ValueError: If parameters invalid or recipients/sender missing keys
+        EncryptionError: If encryption fails
+    """
+    from .asymmetric_core import MetadataCanonicalizer, PasswordWrapper
+    from .identity import Identity
+    from .pqc_signing import PQCSigner
+    from .secure_memory import SecureBytes, secure_memzero
+
+    # Validate input
+    if not recipients or len(recipients) == 0:
+        raise ValueError("At least one recipient required")
+
+    if not sender:
+        raise ValueError("Sender identity required")
+
+    # Verify sender has signing private key
+    if not sender.signing_private_key:
+        raise ValueError("Sender identity must have signing private key")
+
+    # Verify all recipients have encryption public keys
+    for i, recipient in enumerate(recipients):
+        if not isinstance(recipient, Identity):
+            raise TypeError(f"Recipient {i} must be Identity object")
+        if not recipient.encryption_public_key:
+            raise ValueError(f"Recipient {i} ({recipient.name}) missing encryption_public_key")
+
+    # Default hash config
+    if hash_config is None:
+        hash_config = {
+            "sha512": 5,
+            "blake2b": 3,
+            "pbkdf2_iterations": 100000,
+        }
+
+    if not quiet:
+        print(f"Encrypting {input_file} for {len(recipients)} recipient(s)...")
+
+    # Step 1: Generate random password (32 bytes)
+    random_password = secrets.token_bytes(32)
+
+    try:
+        with SecureBytes(random_password) as secure_password:
+            # Step 2 & 3: Use existing symmetric encryption with random password
+            # We'll call the existing encrypt_file() function internally
+            # but we need to handle this differently - let's do it manually
+
+            # Read input file
+            with open(input_file, "rb") as f:
+                plaintext = f.read()
+
+            # Generate salt
+            salt = secrets.token_bytes(16)
+
+            # Calculate original hash
+            import hashlib
+
+            original_hash = hashlib.sha256(plaintext).hexdigest()
+
+            # Derive encryption key using KDF chain
+            derived_key, _, _ = generate_key(
+                password=bytes(secure_password), salt=salt, hash_config=hash_config, quiet=quiet
+            )
+
+            # Encrypt data
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+            aead = AESGCM(derived_key[:32])  # Use first 32 bytes as key
+            nonce = secrets.token_bytes(12)
+            ciphertext = aead.encrypt(nonce, plaintext, None)
+
+            # Calculate encrypted hash
+            encrypted_hash = hashlib.sha256(nonce + ciphertext).hexdigest()
+
+            # Step 4: Wrap password for each recipient
+            wrapper = PasswordWrapper("ML-KEM-768")
+            recipients_data = []
+
+            for recipient in recipients:
+                # Encapsulate to get shared secret
+                encapsulated_key, shared_secret_raw = wrapper.encapsulate(
+                    recipient.encryption_public_key
+                )
+
+                try:
+                    # Wrap password with shared secret
+                    with SecureBytes(shared_secret_raw) as shared_secret:
+                        encrypted_password = wrapper.wrap_password(
+                            bytes(secure_password), bytes(shared_secret)
+                        )
+
+                    recipients_data.append(
+                        {
+                            "key_id": recipient.fingerprint,
+                            "kem_algorithm": "ML-KEM-768",
+                            "encapsulated_key": encapsulated_key,
+                            "encrypted_password": encrypted_password,
+                        }
+                    )
+
+                    if not quiet:
+                        print(
+                            f"  Wrapped password for: {recipient.name} ({recipient.fingerprint[:16]}...)"
+                        )
+
+                finally:
+                    secure_memzero(shared_secret_raw)
+
+            # Step 5: Create metadata (without signature first)
+            # We need to create metadata, canonicalize it, sign it, then add signature
+            metadata_unsigned = {
+                "format_version": 7,
+                "mode": "asymmetric",
+                "derivation_config": {
+                    "salt": base64.b64encode(salt).decode("utf-8"),
+                    "hash_config": {},
+                    "kdf_config": {},
+                },
+                "asymmetric": {
+                    "recipients": [
+                        {
+                            "key_id": r["key_id"],
+                            "kem_algorithm": r["kem_algorithm"],
+                            "encapsulated_key": base64.b64encode(r["encapsulated_key"]).decode(
+                                "utf-8"
+                            ),
+                            "encrypted_password": base64.b64encode(r["encrypted_password"]).decode(
+                                "utf-8"
+                            ),
+                        }
+                        for r in recipients_data
+                    ],
+                    "sender": {"key_id": sender.fingerprint, "sig_algorithm": "ML-DSA-65"},
+                },
+                "hashes": {"original_hash": original_hash, "encrypted_hash": encrypted_hash},
+                "encryption": {"algorithm": algorithm, "encryption_data": encryption_data},
+            }
+
+            # Add hash algorithms
+            hash_algorithms = [
+                "sha512",
+                "sha384",
+                "sha256",
+                "sha224",
+                "sha3_512",
+                "sha3_384",
+                "sha3_256",
+                "sha3_224",
+                "blake2b",
+                "blake3",
+                "shake256",
+                "shake128",
+                "whirlpool",
+            ]
+            for algo in hash_algorithms:
+                if algo in hash_config:
+                    metadata_unsigned["derivation_config"]["hash_config"][algo] = {
+                        "rounds": hash_config[algo]
+                    }
+
+            # Add PBKDF2 if used
+            pbkdf2_iterations = hash_config.get("pbkdf2_iterations", 0)
+            if pbkdf2_iterations > 0:
+                metadata_unsigned["derivation_config"]["kdf_config"]["pbkdf2"] = {
+                    "rounds": pbkdf2_iterations
+                }
+
+            # Canonicalize and sign metadata
+            canonical_metadata = MetadataCanonicalizer.canonicalize(metadata_unsigned)
+
+            signer = PQCSigner("ML-DSA-65", quiet=True)
+            with sender.signing_private_key as signing_key:
+                signature = signer.sign(canonical_metadata, signing_key.get_bytes())
+
+            # Add signature to metadata
+            metadata_unsigned["signature"] = {
+                "algorithm": "ML-DSA-65",
+                "value": base64.b64encode(signature).decode("utf-8"),
+            }
+
+            if not quiet:
+                print(f"  Signed with: {sender.name} ({sender.fingerprint[:16]}...)")
+
+            # Step 6: Write encrypted file
+            metadata_json = json.dumps(metadata_unsigned, indent=2)
+            encrypted_data_b64 = base64.b64encode(nonce + ciphertext).decode("utf-8")
+
+            with open(output_file, "w") as f:
+                f.write(metadata_json)
+                f.write("\n---ENCRYPTED_DATA---\n")
+                f.write(encrypted_data_b64)
+
+            if not quiet:
+                print(f"✓ File encrypted successfully: {output_file}")
+                print(f"  Recipients: {len(recipients)}")
+                print(
+                    f"  File size: {len(plaintext)} bytes → {len(nonce + ciphertext)} bytes (encrypted)"
+                )
+
+            # Secure cleanup
+            secure_memzero(derived_key)
+            secure_memzero(plaintext)
+
+            return {
+                "success": True,
+                "output_file": output_file,
+                "recipients": len(recipients),
+                "sender": sender.fingerprint,
+            }
+
+    finally:
+        # Ensure password is zeroed
+        secure_memzero(random_password)
 
 
 @secure_encrypt_error_handler
@@ -4478,9 +5111,9 @@ def decrypt_file(
     # Extract necessary information from metadata
     format_version = metadata.get("format_version", 1)
 
-    # For format_version 4, 5, or 6, set correct hash_config for printing purposes
+    # For format_version 4, 5, 6, or 7, set correct hash_config for printing purposes
     # This doesn't change the actual metadata, just passes the right info to print_hash_config
-    if format_version in [4, 5, 6]:
+    if format_version in [4, 5, 6, 7]:
         # If verbose, pass the full metadata to print_hash_config for proper display
         if verbose:
             print_hash_config_metadata = metadata
@@ -4489,8 +5122,8 @@ def decrypt_file(
     else:
         print_hash_config_metadata = metadata.get("hash_config", {})
 
-    # Handle format version 4, 5, or 6
-    if format_version in [4, 5, 6]:
+    # Handle format version 4, 5, 6, or 7
+    if format_version in [4, 5, 6, 7]:
         # Extract information from new hierarchical structure
         derivation_config = metadata["derivation_config"]
         salt = base64.b64decode(derivation_config["salt"])

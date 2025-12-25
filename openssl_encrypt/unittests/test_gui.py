@@ -22,7 +22,9 @@ def main():
 
         # Add a label
         label = tk.Label(
-            root, text="If you can see this, tkinter is working correctly!", font=("Arial", 14)
+            root,
+            text="If you can see this, tkinter is working correctly!",
+            font=("Arial", 14),
         )
         label.pack(pady=50)
 
