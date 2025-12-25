@@ -1712,8 +1712,10 @@ def main():
 
     sys.argv = preprocess_global_args(sys.argv)
 
-    # After preprocessing, global flags are moved to the front, so we need to find
-    # the command anywhere in argv, not just at position 1
+    # After preprocessing, global flags are moved to the front when they appear after the command.
+    # Check if position 1 is a subcommand to decide which parser to use.
+    # This allows backward compatibility: when global flags are BEFORE the command,
+    # the monolithic parser is used (which has all arguments).
     subparser_commands = [
         "encrypt",
         "decrypt",
@@ -1732,10 +1734,9 @@ def main():
         "show-version-file",
     ]
 
-    # Check if any command is present in argv (after global flags)
-    has_subcommand = any(arg in subparser_commands for arg in sys.argv[1:])
-
-    if len(sys.argv) > 1 and has_subcommand:
+    # Use subparser only if position 1 is a subcommand
+    # (after global flags have been moved to the front by preprocess_global_args)
+    if len(sys.argv) > 1 and sys.argv[1] in subparser_commands:
         # Use subparser for all command-specific operations
         from .crypt_cli_subparser import create_subparser_main
 
@@ -2020,6 +2021,11 @@ def main_with_args(args=None):
         "-r",
         action="store_true",
         help="Process directories recursively when shredding",
+    )
+    parser.add_argument(
+        "--no-estimate",
+        action="store_true",
+        help="Suppress decryption time/memory estimation display (useful when you trust the file)",
     )
 
     # # Add memory security option
