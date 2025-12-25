@@ -4198,7 +4198,7 @@ def main_with_args(args=None):
                 finally:
                     # Clean up passphrase from memory
                     if 'sender_passphrase' in locals():
-                        from .crypt_utils import secure_memzero
+                        from .secure_memory import secure_memzero
                         secure_memzero(sender_passphrase)
 
                 # Build hash config from CLI arguments
@@ -5585,7 +5585,7 @@ def main_with_args(args=None):
                                 finally:
                                     # Clean up passphrase from memory
                                     if 'recipient_passphrase' in locals():
-                                        from .crypt_utils import secure_memzero
+                                        from .secure_memory import secure_memzero
                                         secure_memzero(recipient_passphrase)
 
                                 # Load sender public key for verification
@@ -5654,7 +5654,7 @@ def main_with_args(args=None):
                                             secure_shred_file(args.input, args.shred_passes, args.quiet)
                                     finally:
                                         # Clean up plaintext from memory
-                                        from .crypt_utils import secure_memzero
+                                        from .secure_memory import secure_memzero
                                         secure_memzero(plaintext)
 
                                     sys.exit(0)
@@ -5717,7 +5717,7 @@ def main_with_args(args=None):
                             finally:
                                 # Clean up passphrase from memory
                                 if 'recipient_passphrase' in locals():
-                                    from .crypt_utils import secure_memzero
+                                    from .secure_memory import secure_memzero
                                     secure_memzero(recipient_passphrase)
 
                             # Load sender public key for verification
@@ -5815,7 +5815,7 @@ def main_with_args(args=None):
                                         shred_file(args.input, passes=args.shred_passes)
                                 finally:
                                     # Clean up plaintext from memory
-                                    from .crypt_utils import secure_memzero
+                                    from .secure_memory import secure_memzero
                                     secure_memzero(plaintext)
 
                                 sys.exit(0)

@@ -3601,7 +3601,7 @@ def encrypt_file_asymmetric(
 
             # Derive encryption key using KDF chain
             derived_key, _, _ = generate_key(
-                password=bytes(secure_password), salt=salt, hash_config=hash_config, quiet=quiet
+                password=bytes(secure_password), salt=salt, hash_config=hash_config, quiet=quiet, progress=progress
             )
 
             # Encrypt data
