@@ -4328,9 +4328,20 @@ def main_with_args(args=None):
                     print("ERROR: --sign-with required for asymmetric encryption", file=sys.stderr)
                     sys.exit(1)
 
-                sender_passphrase = getpass.getpass(
-                    f"Passphrase for sender identity '{args.sign_with}': "
-                )
+                # First load identity metadata to check protection level
+                sender_metadata = store.get_by_name(args.sign_with, load_private_keys=False)
+                if sender_metadata is None:
+                    print(f"ERROR: Sender identity '{args.sign_with}' not found ❌", file=sys.stderr)
+                    sys.exit(1)
+
+                # Determine if passphrase is needed
+                from .identity_protection import ProtectionLevel
+                sender_passphrase = None
+                if not sender_metadata.protection or sender_metadata.protection.level != ProtectionLevel.HSM_ONLY:
+                    sender_passphrase = getpass.getpass(
+                        f"Passphrase for sender identity '{args.sign_with}': "
+                    )
+
                 try:
                     sender = store.get_by_name(
                         args.sign_with, passphrase=sender_passphrase, load_private_keys=True
@@ -4347,7 +4358,7 @@ def main_with_args(args=None):
                     sys.exit(1)
                 finally:
                     # Clean up passphrase from memory
-                    if 'sender_passphrase' in locals():
+                    if 'sender_passphrase' in locals() and sender_passphrase:
                         from .secure_memory import secure_memzero
                         secure_memzero(sender_passphrase)
 
@@ -5705,12 +5716,25 @@ def main_with_args(args=None):
                                     )
                                     sys.exit(1)
 
-                                recipient_passphrase = getpass.getpass(
-                                    f"Passphrase for identity '{args.key_identity}': "
-                                )
+                                # First load identity metadata to check protection level
+                                recipient_metadata = store.get_by_name(args.key_identity, load_private_keys=False)
+                                if recipient_metadata is None:
+                                    print(
+                                        f"ERROR: Identity '{args.key_identity}' not found ❌",
+                                        file=sys.stderr,
+                                    )
+                                    sys.exit(1)
+
+                                # Determine if passphrase is needed
+                                from .identity_protection import ProtectionLevel
+                                recipient_passphrase = None
+                                if not recipient_metadata.protection or recipient_metadata.protection.level != ProtectionLevel.HSM_ONLY:
+                                    recipient_passphrase = getpass.getpass(
+                                        f"Passphrase for identity '{args.key_identity}': "
+                                    )
 
                                 # Clear passphrase prompt line immediately in quiet mode
-                                if args.quiet:
+                                if args.quiet and recipient_passphrase:
                                     sys.stdout.write("\033[F\033[K")
                                     sys.stdout.flush()
 
@@ -5735,7 +5759,7 @@ def main_with_args(args=None):
                                     sys.exit(1)
                                 finally:
                                     # Clean up passphrase from memory
-                                    if 'recipient_passphrase' in locals():
+                                    if 'recipient_passphrase' in locals() and recipient_passphrase:
                                         from .secure_memory import secure_memzero
                                         secure_memzero(recipient_passphrase)
 
@@ -5838,12 +5862,25 @@ def main_with_args(args=None):
                                 )
                                 sys.exit(1)
 
-                            recipient_passphrase = getpass.getpass(
-                                f"Passphrase for identity '{args.key_identity}': "
-                            )
+                            # First load identity metadata to check protection level
+                            recipient_metadata = store.get_by_name(args.key_identity, load_private_keys=False)
+                            if recipient_metadata is None:
+                                print(
+                                    f"ERROR: Identity '{args.key_identity}' not found ❌",
+                                    file=sys.stderr,
+                                )
+                                sys.exit(1)
+
+                            # Determine if passphrase is needed
+                            from .identity_protection import ProtectionLevel
+                            recipient_passphrase = None
+                            if not recipient_metadata.protection or recipient_metadata.protection.level != ProtectionLevel.HSM_ONLY:
+                                recipient_passphrase = getpass.getpass(
+                                    f"Passphrase for identity '{args.key_identity}': "
+                                )
 
                             # Clear passphrase prompt line immediately in quiet mode
-                            if args.quiet:
+                            if args.quiet and recipient_passphrase:
                                 sys.stdout.write("\033[F\033[K")
                                 sys.stdout.flush()
 
@@ -5868,7 +5905,7 @@ def main_with_args(args=None):
                                 sys.exit(1)
                             finally:
                                 # Clean up passphrase from memory
-                                if 'recipient_passphrase' in locals():
+                                if 'recipient_passphrase' in locals() and recipient_passphrase:
                                     from .secure_memory import secure_memzero
                                     secure_memzero(recipient_passphrase)
 
