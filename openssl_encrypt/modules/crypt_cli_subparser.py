@@ -1205,6 +1205,26 @@ def setup_identity_parser(subparser):
     create_parser.add_argument(
         "--overwrite", action="store_true", help="Overwrite existing identity"
     )
+    create_parser.add_argument(
+        "--hsm",
+        choices=["none", "yubikey", "yubikey-only"],
+        default="none",
+        help="HSM protection for private keys: "
+        "'none' (default, password only), "
+        "'yubikey' (password + Yubikey required), "
+        "'yubikey-only' (Yubikey only, no password)",
+    )
+    create_parser.add_argument(
+        "--hsm-slot",
+        type=int,
+        choices=[1, 2],
+        help="Yubikey slot (1 or 2, default: auto-detect)",
+    )
+    create_parser.add_argument(
+        "--no-touch",
+        action="store_true",
+        help="Disable Yubikey touch requirement (less secure)",
+    )
 
     # List identities
     list_parser = identity_subparsers.add_parser("list", help="List all identities")
