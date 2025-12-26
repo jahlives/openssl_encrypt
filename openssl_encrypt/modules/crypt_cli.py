@@ -3530,7 +3530,13 @@ def main_with_args(args=None):
     # Auto-detect encryption type for decrypt operations
     encryption_info = None
     if args.action == "decrypt" and getattr(args, "input", None):
-        encryption_info = detect_encryption_type(args.input)
+        try:
+            encryption_info = detect_encryption_type(args.input)
+        except Exception as e:
+            # If detection fails, assume symmetric and continue
+            if args.debug:
+                print(f"DEBUG: Auto-detection failed: {e}")
+            encryption_info = {"type": "symmetric", "format_version": 0}
 
         if encryption_info["type"] == "asymmetric":
             # Skip if user explicitly provided --with-key
