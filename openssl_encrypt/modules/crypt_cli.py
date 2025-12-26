@@ -117,6 +117,79 @@ def resolve_identity_store_path(args):
     return None
 
 
+def detect_encryption_type(input_file: str) -> dict:
+    """
+    Read file and detect encryption type from metadata.
+
+    Args:
+        input_file: Path to encrypted file
+
+    Returns:
+        Dictionary with:
+            - type: "symmetric" or "asymmetric"
+            - format_version: int (format version number)
+            - recipient_fingerprints: List[str] (only for asymmetric)
+            - sender_fingerprint: str (only for asymmetric)
+
+    Returns {"type": "symmetric", "format_version": 0} if detection fails.
+    """
+    import base64
+    import json
+
+    try:
+        with open(input_file, "rb") as f:
+            content = f.read()
+
+        metadata = None
+
+        # Try new format: base64(metadata):base64(data)
+        if b":" in content:
+            colon_pos = content.index(b":")
+            metadata_b64 = content[:colon_pos]
+            try:
+                metadata_json = base64.b64decode(metadata_b64)
+                metadata = json.loads(metadata_json)
+            except (ValueError, json.JSONDecodeError):
+                pass
+
+        # Try old format: ---ENCRYPTED_DATA---
+        if metadata is None and b"---ENCRYPTED_DATA---" in content:
+            try:
+                content_str = content.decode("utf-8", errors="ignore")
+                metadata_str = content_str.split("---ENCRYPTED_DATA---")[0]
+                metadata = json.loads(metadata_str)
+            except (json.JSONDecodeError, UnicodeDecodeError, IndexError):
+                pass
+
+        # Check if asymmetric
+        if metadata:
+            format_version = metadata.get("format_version", 0)
+            mode = metadata.get("mode", "symmetric")
+
+            if format_version == 7 and mode == "asymmetric":
+                # Extract recipient and sender info
+                asymmetric_data = metadata.get("asymmetric", {})
+                recipients = asymmetric_data.get("recipients", [])
+                sender = asymmetric_data.get("sender", {})
+
+                recipient_fingerprints = [r.get("key_id", "") for r in recipients]
+                sender_fingerprint = sender.get("key_id", "")
+
+                return {
+                    "type": "asymmetric",
+                    "format_version": format_version,
+                    "recipient_fingerprints": recipient_fingerprints,
+                    "sender_fingerprint": sender_fingerprint,
+                }
+
+        # Default to symmetric
+        return {"type": "symmetric", "format_version": 0}
+
+    except (FileNotFoundError, IOError, Exception):
+        # If we can't read the file, assume symmetric
+        return {"type": "symmetric", "format_version": 0}
+
+
 class ReconstructedStdinStream:
     """
     A file-like object that replays consumed data followed by remaining stdin stream.
@@ -3454,10 +3527,52 @@ def main_with_args(args=None):
     ]:
         parser.error("the following arguments are required: --input/-i")
 
+    # Auto-detect encryption type for decrypt operations
+    encryption_info = None
+    if args.action == "decrypt" and getattr(args, "input", None):
+        encryption_info = detect_encryption_type(args.input)
+
+        if encryption_info["type"] == "asymmetric":
+            # Skip if user explicitly provided --with-key
+            if not getattr(args, "key_identity", None):
+                # Find matching identity in keystore
+                from .identity_cli import get_identity_store
+
+                store_path = resolve_identity_store_path(args)
+                store = get_identity_store(store_path)
+
+                matching = store.find_by_fingerprints(encryption_info["recipient_fingerprints"])
+
+                if len(matching) == 0:
+                    # No matching identity found
+                    print("ERROR: This file is encrypted asymmetrically but no matching identity found.", file=sys.stderr)
+                    print("\nFile was encrypted for:", file=sys.stderr)
+                    for fp in encryption_info["recipient_fingerprints"]:
+                        print(f"  • {fp}", file=sys.stderr)
+                    print(
+                        "\nTo decrypt, you need one of these identities in your keystore.",
+                        file=sys.stderr,
+                    )
+                    print(
+                        "Import the private key or use --with-key to specify an identity.",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+                else:
+                    # Use first matching identity
+                    args.key_identity = matching[0].name
+                    if not args.quiet:
+                        print(f"Using identity '{args.key_identity}' for decryption")
+
     # Get password (only for encrypt/decrypt actions)
     # Skip password prompt for asymmetric encryption/decryption (uses identity-based keys)
     is_asymmetric_encrypt = args.action == "encrypt" and hasattr(args, "for_identity") and args.for_identity
-    is_asymmetric_decrypt = args.action == "decrypt" and hasattr(args, "key_identity") and args.key_identity
+    is_asymmetric_decrypt = (
+        args.action == "decrypt"
+        and hasattr(args, "key_identity")
+        and args.key_identity
+        or (encryption_info and encryption_info["type"] == "asymmetric")
+    )
 
     if args.action in ["encrypt", "decrypt"] and not (is_asymmetric_encrypt or is_asymmetric_decrypt):
         password = None
@@ -5575,9 +5690,10 @@ def main_with_args(args=None):
                                 store = get_identity_store(resolve_identity_store_path(args))
 
                                 # Load recipient (decrypt with this identity)
+                                # Note: key_identity should already be set by auto-detection
                                 if not hasattr(args, "key_identity") or not args.key_identity:
                                     print(
-                                        "ERROR: --with-key required for asymmetric decryption",
+                                        "ERROR: No matching identity found. This should not happen after auto-detection.",
                                         file=sys.stderr,
                                     )
                                     sys.exit(1)
@@ -5707,9 +5823,10 @@ def main_with_args(args=None):
                             store = get_identity_store(resolve_identity_store_path(args))
 
                             # Load recipient (decrypt with this identity)
+                            # Note: key_identity should already be set by auto-detection
                             if not hasattr(args, "key_identity") or not args.key_identity:
                                 print(
-                                    "ERROR: --with-key required for asymmetric decryption",
+                                    "ERROR: No matching identity found. This should not happen after auto-detection.",
                                     file=sys.stderr,
                                 )
                                 sys.exit(1)

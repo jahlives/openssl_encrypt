@@ -675,6 +675,23 @@ class IdentityStore:
         contact_path = self.contacts_path / name
         return path.exists() or contact_path.exists()
 
+    def find_by_fingerprints(self, fingerprints: List[str]) -> List[Identity]:
+        """
+        Find identities that match any of the given fingerprints.
+        Returns only own identities (with private keys).
+
+        Args:
+            fingerprints: List of fingerprints to search for
+
+        Returns:
+            List of matching Identity objects (without private keys loaded)
+        """
+        matches = []
+        for identity in self.list_identities(include_contacts=False):
+            if identity.fingerprint in fingerprints:
+                matches.append(identity)
+        return matches
+
 
 def _encrypt_private_key(
     private_key: bytes,
