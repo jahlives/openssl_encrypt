@@ -3528,8 +3528,10 @@ def main_with_args(args=None):
         parser.error("the following arguments are required: --input/-i")
 
     # Auto-detect encryption type for decrypt operations
+    # Only run auto-detection if user didn't explicitly provide --with-key
+    # This avoids potential interference with symmetric HSM decryption
     encryption_info = None
-    if args.action == "decrypt" and getattr(args, "input", None):
+    if args.action == "decrypt" and getattr(args, "input", None) and not getattr(args, "key_identity", None):
         try:
             encryption_info = detect_encryption_type(args.input)
         except Exception as e:
@@ -3538,37 +3540,35 @@ def main_with_args(args=None):
                 print(f"DEBUG: Auto-detection failed: {e}")
             encryption_info = {"type": "symmetric", "format_version": 0}
 
-        if encryption_info["type"] == "asymmetric":
-            # Skip if user explicitly provided --with-key
-            if not getattr(args, "key_identity", None):
-                # Find matching identity in keystore
-                from .identity_cli import get_identity_store
+        if encryption_info and encryption_info["type"] == "asymmetric":
+            # Find matching identity in keystore
+            from .identity_cli import get_identity_store
 
-                store_path = resolve_identity_store_path(args)
-                store = get_identity_store(store_path)
+            store_path = resolve_identity_store_path(args)
+            store = get_identity_store(store_path)
 
-                matching = store.find_by_fingerprints(encryption_info["recipient_fingerprints"])
+            matching = store.find_by_fingerprints(encryption_info["recipient_fingerprints"])
 
-                if len(matching) == 0:
-                    # No matching identity found
-                    print("ERROR: This file is encrypted asymmetrically but no matching identity found.", file=sys.stderr)
-                    print("\nFile was encrypted for:", file=sys.stderr)
-                    for fp in encryption_info["recipient_fingerprints"]:
-                        print(f"  • {fp}", file=sys.stderr)
-                    print(
-                        "\nTo decrypt, you need one of these identities in your keystore.",
-                        file=sys.stderr,
-                    )
-                    print(
-                        "Import the private key or use --with-key to specify an identity.",
-                        file=sys.stderr,
-                    )
-                    sys.exit(1)
-                else:
-                    # Use first matching identity
-                    args.key_identity = matching[0].name
-                    if not args.quiet:
-                        print(f"Using identity '{args.key_identity}' for decryption")
+            if len(matching) == 0:
+                # No matching identity found
+                print("ERROR: This file is encrypted asymmetrically but no matching identity found.", file=sys.stderr)
+                print("\nFile was encrypted for:", file=sys.stderr)
+                for fp in encryption_info["recipient_fingerprints"]:
+                    print(f"  • {fp}", file=sys.stderr)
+                print(
+                    "\nTo decrypt, you need one of these identities in your keystore.",
+                    file=sys.stderr,
+                )
+                print(
+                    "Import the private key or use --with-key to specify an identity.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            else:
+                # Use first matching identity
+                args.key_identity = matching[0].name
+                if not args.quiet:
+                    print(f"Using identity '{args.key_identity}' for decryption")
 
     # Get password (only for encrypt/decrypt actions)
     # Skip password prompt for asymmetric encryption/decryption (uses identity-based keys)
