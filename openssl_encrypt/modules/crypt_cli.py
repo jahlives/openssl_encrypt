@@ -3567,12 +3567,13 @@ def main_with_args(args=None):
     # Get password (only for encrypt/decrypt actions)
     # Skip password prompt for asymmetric encryption/decryption (uses identity-based keys)
     is_asymmetric_encrypt = args.action == "encrypt" and hasattr(args, "for_identity") and args.for_identity
-    is_asymmetric_decrypt = (
-        args.action == "decrypt"
-        and hasattr(args, "key_identity")
-        and args.key_identity
-        or (encryption_info and encryption_info["type"] == "asymmetric")
-    )
+
+    # Check if this is asymmetric decryption
+    is_asymmetric_decrypt = False
+    if args.action == "decrypt":
+        # Explicit --with-key provided OR auto-detected asymmetric file
+        if (hasattr(args, "key_identity") and args.key_identity) or (encryption_info and encryption_info.get("type") == "asymmetric"):
+            is_asymmetric_decrypt = True
 
     if args.action in ["encrypt", "decrypt"] and not (is_asymmetric_encrypt or is_asymmetric_decrypt):
         password = None
