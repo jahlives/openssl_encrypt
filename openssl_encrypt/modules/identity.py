@@ -274,7 +274,8 @@ class Identity:
         sig_private_key = None
 
         if load_private_keys and has_private_keys:
-            if not passphrase:
+            # Allow None passphrase for HSM_ONLY protection
+            if not passphrase and (not protection or protection.level != ProtectionLevel.HSM_ONLY):
                 raise ValueError("Passphrase required to load private keys")
 
             # Load encrypted private keys
@@ -370,7 +371,8 @@ class Identity:
 
         # Save private keys if available
         if self.encryption_private_key or self.signing_private_key:
-            if not passphrase:
+            # Allow None passphrase for HSM_ONLY protection
+            if not passphrase and (not self.protection or self.protection.level != ProtectionLevel.HSM_ONLY):
                 raise ValueError("Passphrase required to save private keys")
 
             if self.encryption_private_key:
