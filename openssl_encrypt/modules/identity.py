@@ -31,6 +31,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
+# Import protection classes
+from .identity_protection import (
+    IdentityKeyProtectionService,
+    IdentityProtection,
+    ProtectionLevel,
+    InvalidCredentialsError,
+    HSMNotAvailableError,
+)
+
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .crypto_secure_memory import CryptoKey
@@ -112,6 +121,7 @@ class Identity:
 
     is_own_identity: bool
     key_encryption_kdf: str = "argon2id"
+    protection: Optional[IdentityProtection] = None  # HSM protection configuration
 
     @classmethod
     def generate(
@@ -121,6 +131,9 @@ class Identity:
         passphrase: Optional[str] = None,
         kem_algorithm: str = "ML-KEM-768",
         sig_algorithm: str = "ML-DSA-65",
+        protection_level: ProtectionLevel = ProtectionLevel.PASSWORD_ONLY,
+        hsm_slot: Optional[int] = None,
+        require_touch: bool = True,
     ) -> "Identity":
         """
         Generate a new identity with fresh keypairs.
@@ -128,9 +141,12 @@ class Identity:
         Args:
             name: Identity name
             email: Optional email address
-            passphrase: Passphrase to encrypt private keys (required for saving)
+            passphrase: Passphrase to encrypt private keys (required for PASSWORD_ONLY or PASSWORD_AND_HSM)
             kem_algorithm: KEM algorithm for encryption
             sig_algorithm: Signature algorithm
+            protection_level: Protection level (PASSWORD_ONLY, PASSWORD_AND_HSM, or HSM_ONLY)
+            hsm_slot: Yubikey slot (1 or 2, None = auto-detect)
+            require_touch: Whether Yubikey touch is required
 
         Returns:
             New Identity instance
@@ -138,6 +154,7 @@ class Identity:
         Raises:
             ValueError: If algorithm not supported
             RuntimeError: If key generation fails
+            HSMNotAvailableError: If HSM required but not available
         """
         logger.info(f"Generating identity '{name}' with {kem_algorithm} + {sig_algorithm}")
 
@@ -161,6 +178,14 @@ class Identity:
             sig_priv_crypto = CryptoKey(key_data=sig_private_key)
             secure_memzero(sig_private_key)  # Clean original
 
+            # Create protection configuration
+            protection = None
+            if protection_level != ProtectionLevel.PASSWORD_ONLY:
+                protection_service = IdentityKeyProtectionService()
+                protection = protection_service.create_protection_config(
+                    level=protection_level, hsm_slot=hsm_slot, require_touch=require_touch
+                )
+
             identity = cls(
                 name=name,
                 email=email,
@@ -173,6 +198,7 @@ class Identity:
                 signing_public_key=sig_public_key,
                 signing_private_key=sig_priv_crypto,
                 is_own_identity=True,
+                protection=protection,
             )
 
             logger.info(f"Generated identity '{name}' with fingerprint {fingerprint[:40]}...")
@@ -218,6 +244,15 @@ class Identity:
         name = data["name"]
         logger.debug(f"Loading identity '{name}' from {path}")
 
+        # Load protection configuration (for backward compatibility, assume PASSWORD_ONLY if not present)
+        protection = None
+        if "protection" in data:
+            protection = IdentityProtection.from_dict(data["protection"])
+        elif "version" in data and data["version"] >= 2:
+            # Version 2+ should always have protection field
+            logger.warning(f"Identity version {data['version']} missing protection field, assuming PASSWORD_ONLY")
+        # If no version or version 1, assume PASSWORD_ONLY (backward compatible)
+
         # Load public keys
         enc_pub_path = path / "encryption_public.pem"
         sig_pub_path = path / "signing_public.pem"
@@ -248,9 +283,9 @@ class Identity:
             with open(sig_priv_path, "rb") as f:
                 sig_priv_encrypted = f.read()
 
-            # Decrypt private keys
-            enc_private_key = _decrypt_private_key(enc_priv_encrypted, passphrase)
-            sig_private_key = _decrypt_private_key(sig_priv_encrypted, passphrase)
+            # Decrypt private keys (pass protection and identity name)
+            enc_private_key = _decrypt_private_key(enc_priv_encrypted, passphrase, protection, name)
+            sig_private_key = _decrypt_private_key(sig_priv_encrypted, passphrase, protection, name)
 
         identity = cls(
             name=name,
@@ -265,6 +300,7 @@ class Identity:
             signing_private_key=sig_private_key,
             is_own_identity=is_own_identity,
             key_encryption_kdf=data.get("key_encryption_kdf", "argon2id"),
+            protection=protection,
         )
 
         logger.info(
@@ -300,6 +336,7 @@ class Identity:
 
         # Save identity.json
         identity_data = {
+            "version": 2 if self.protection else 1,  # Version 2 if HSM protection used
             "name": self.name,
             "email": self.email,
             "fingerprint": self.fingerprint,
@@ -309,6 +346,10 @@ class Identity:
             "key_encryption_kdf": self.key_encryption_kdf,
             "is_own_identity": self.is_own_identity,
         }
+
+        # Add protection configuration if present
+        if self.protection:
+            identity_data["protection"] = self.protection.to_dict()
 
         identity_json_path = path / "identity.json"
         with open(identity_json_path, "w") as f:
@@ -334,7 +375,7 @@ class Identity:
 
             if self.encryption_private_key:
                 enc_priv_encrypted = _encrypt_private_key(
-                    self.encryption_private_key.get_bytes(), passphrase
+                    self.encryption_private_key.get_bytes(), passphrase, self.protection, self.name
                 )
                 enc_priv_path = path / "encryption_private.pem"
                 with open(enc_priv_path, "wb") as f:
@@ -343,7 +384,7 @@ class Identity:
 
             if self.signing_private_key:
                 sig_priv_encrypted = _encrypt_private_key(
-                    self.signing_private_key.get_bytes(), passphrase
+                    self.signing_private_key.get_bytes(), passphrase, self.protection, self.name
                 )
                 sig_priv_path = path / "signing_private.pem"
                 with open(sig_priv_path, "wb") as f:
@@ -635,21 +676,45 @@ class IdentityStore:
         return path.exists() or contact_path.exists()
 
 
-def _encrypt_private_key(private_key: bytes, passphrase: str) -> bytes:
+def _encrypt_private_key(
+    private_key: bytes,
+    passphrase: Optional[str],
+    protection: Optional[IdentityProtection] = None,
+    identity_name: str = "",
+) -> bytes:
     """
     Encrypt private key for at-rest storage.
 
-    Format: [salt:16][nonce:12][ciphertext][tag:16]
+    Supports both legacy password-only encryption and HSM-based protection.
+
+    Format (legacy): [salt:16][nonce:12][ciphertext][tag:16]
+    Format (HSM): [nonce:12][ciphertext][tag:16] (salt stored in protection config)
 
     Args:
         private_key: Private key bytes
-        passphrase: Passphrase for encryption
+        passphrase: Passphrase for encryption (None for HSM_ONLY)
+        protection: Optional protection configuration (None = legacy PASSWORD_ONLY)
+        identity_name: Identity name (required for HSM challenge)
 
     Returns:
         Encrypted private key
     """
     if not ARGON2_AVAILABLE:
         raise RuntimeError("argon2-cffi required for private key encryption")
+
+    # Use HSM protection service if configured
+    if protection and protection.level != ProtectionLevel.PASSWORD_ONLY:
+        protection_service = IdentityKeyProtectionService()
+        return protection_service.encrypt_private_key(
+            private_key_data=private_key,
+            password=passphrase,
+            protection=protection,
+            identity_name=identity_name,
+        )
+
+    # Legacy password-only encryption (backward compatible)
+    if not passphrase:
+        raise ValueError("Passphrase required for PASSWORD_ONLY encryption")
 
     # Generate salt
     salt = secrets.token_bytes(16)
@@ -677,22 +742,54 @@ def _encrypt_private_key(private_key: bytes, passphrase: str) -> bytes:
     return salt + nonce + ciphertext
 
 
-def _decrypt_private_key(encrypted_data: bytes, passphrase: str) -> CryptoKey:
+def _decrypt_private_key(
+    encrypted_data: bytes,
+    passphrase: Optional[str],
+    protection: Optional[IdentityProtection] = None,
+    identity_name: str = "",
+) -> CryptoKey:
     """
     Decrypt private key from at-rest storage.
 
+    Supports both legacy password-only encryption and HSM-based protection.
+
     Args:
-        encrypted_data: Encrypted private key (salt+nonce+ciphertext+tag)
-        passphrase: Passphrase for decryption
+        encrypted_data: Encrypted private key
+        passphrase: Passphrase for decryption (None for HSM_ONLY)
+        protection: Optional protection configuration (None = legacy PASSWORD_ONLY)
+        identity_name: Identity name (required for HSM challenge)
 
     Returns:
         CryptoKey with decrypted private key
 
     Raises:
         ValueError: If decryption fails
+        InvalidCredentialsError: If password or HSM response invalid
     """
     if not ARGON2_AVAILABLE:
         raise RuntimeError("argon2-cffi required for private key decryption")
+
+    # Use HSM protection service if configured
+    if protection and protection.level != ProtectionLevel.PASSWORD_ONLY:
+        protection_service = IdentityKeyProtectionService()
+        try:
+            private_key_bytes = protection_service.decrypt_private_key(
+                encrypted_data=encrypted_data,
+                password=passphrase,
+                protection=protection,
+                identity_name=identity_name,
+            )
+            # Wrap in CryptoKey for secure memory
+            crypto_key = CryptoKey(key_data=private_key_bytes)
+            # Clean temporary data
+            secure_memzero(private_key_bytes)
+            return crypto_key
+        except InvalidCredentialsError:
+            raise ValueError("Failed to decrypt private key: Invalid password or HSM response")
+
+    # Legacy password-only decryption (backward compatible)
+    if not passphrase:
+        raise ValueError("Passphrase required for PASSWORD_ONLY decryption")
 
     if len(encrypted_data) < 28:  # 16 salt + 12 nonce
         raise ValueError("Invalid encrypted private key format")

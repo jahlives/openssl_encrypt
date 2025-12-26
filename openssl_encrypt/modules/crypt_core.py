@@ -3399,6 +3399,8 @@ def decrypt_file_asymmetric(
 
     wrapper = PasswordWrapper(recipient_entry["kem_algorithm"])
 
+    # Unwrap password (store in password_unwrapped temporarily)
+    password_unwrapped = None
     try:
         with recipient.encryption_private_key as priv_key:
             password_raw = wrapper.decapsulate(encapsulated_key, priv_key.get_bytes())
@@ -3406,7 +3408,7 @@ def decrypt_file_asymmetric(
         try:
             with SecureBytes(password_raw) as password_secure:
                 # Unwrap password
-                password = wrapper.unwrap_password(encrypted_password, bytes(password_secure))
+                password_unwrapped = wrapper.unwrap_password(encrypted_password, bytes(password_secure))
 
         finally:
             secure_memzero(password_raw)
@@ -3420,8 +3422,9 @@ def decrypt_file_asymmetric(
 
     # Step 5: NOW it's safe to run expensive KDF
     # (signature has been verified, so we know this is legitimate)
+    # SECURITY: Immediately wrap unwrapped password in SecureBytes to protect it in memory
     try:
-        with SecureBytes(password) as secure_password:
+        with SecureBytes(password_unwrapped) as secure_password:
             # Extract derivation config
             derivation_config = metadata["derivation_config"]
             salt = base64.b64decode(derivation_config["salt"])
@@ -3499,7 +3502,8 @@ def decrypt_file_asymmetric(
 
     finally:
         # Ensure password is zeroed
-        secure_memzero(password)
+        if password_unwrapped is not None:
+            secure_memzero(password_unwrapped)
 
 
 def encrypt_file_asymmetric(
