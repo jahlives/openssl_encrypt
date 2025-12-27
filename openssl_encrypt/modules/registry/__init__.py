@@ -104,8 +104,45 @@ __all__.extend([
     "XChaCha20Poly1305",
 ])
 
+# Hash registry
+from .hash_registry import (
+    HashBase,
+    HashRegistry,
+    get_hash,
+    SHA256,
+    SHA384,
+    SHA512,
+    SHA3_256,
+    SHA3_384,
+    SHA3_512,
+    BLAKE2b,
+    BLAKE2s,
+    BLAKE3,
+    SHAKE128,
+    SHAKE256,
+    Whirlpool,
+)
+
+__all__.extend([
+    # Hash registry
+    "HashBase",
+    "HashRegistry",
+    "get_hash",
+    "SHA256",
+    "SHA384",
+    "SHA512",
+    "SHA3_256",
+    "SHA3_384",
+    "SHA3_512",
+    "BLAKE2b",
+    "BLAKE2s",
+    "BLAKE3",
+    "SHAKE128",
+    "SHAKE256",
+    "Whirlpool",
+])
+
 # Registries to be added:
-# "HashRegistry", "get_hash",
 # "KDFRegistry", "get_kdf",
 # "KEMRegistry", "get_kem",
 # "SignatureRegistry", "get_signature",
