@@ -796,7 +796,7 @@ class RandomX(KDFBase):
     def is_available(cls) -> bool:
         if cls._available is None:
             try:
-                import pyrx
+                import randomx
                 cls._available = True
             except ImportError:
                 cls._available = False
@@ -825,7 +825,7 @@ class RandomX(KDFBase):
 
         self.validate_params(params)
 
-        import pyrx
+        import randomx
         import hashlib
 
         # Convert password to bytes if needed
@@ -836,14 +836,14 @@ class RandomX(KDFBase):
             hash_func = getattr(hashlib, params.hash)
             initial = hash_func(password_bytes + salt).digest()
 
-            # Apply RandomX
+            # Apply RandomX hashing
+            # Use initial hash as the RandomX key
+            vm = randomx.RandomX(initial[:32])  # RandomX key (32 bytes)
+
+            # Apply multiple passes for increased security
             derived = initial
             for _ in range(params.passes):
-                derived = pyrx.get_rx_hash(
-                    key=derived[:16],  # RandomX key (16 bytes)
-                    data=derived,
-                    height=params.init_rounds,
-                )
+                derived = vm.calculate_hash(derived)
 
             # Ensure correct output length
             if len(derived) >= params.output_length:
