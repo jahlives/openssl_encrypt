@@ -142,8 +142,53 @@ __all__.extend([
     "Whirlpool",
 ])
 
+# KDF registry
+from .kdf_registry import (
+    KDFBase,
+    KDFParams,
+    Argon2Params,
+    PBKDF2Params,
+    ScryptParams,
+    BalloonParams,
+    HKDFParams,
+    RandomXParams,
+    Argon2Type,
+    KDFRegistry,
+    get_kdf,
+    Argon2id,
+    Argon2i,
+    Argon2d,
+    PBKDF2,
+    Scrypt,
+    Balloon,
+    HKDF,
+    RandomX,
+)
+
+__all__.extend([
+    # KDF registry
+    "KDFBase",
+    "KDFParams",
+    "Argon2Params",
+    "PBKDF2Params",
+    "ScryptParams",
+    "BalloonParams",
+    "HKDFParams",
+    "RandomXParams",
+    "Argon2Type",
+    "KDFRegistry",
+    "get_kdf",
+    "Argon2id",
+    "Argon2i",
+    "Argon2d",
+    "PBKDF2",
+    "Scrypt",
+    "Balloon",
+    "HKDF",
+    "RandomX",
+])
+
 # Registries to be added:
-# "KDFRegistry", "get_kdf",
 # "KEMRegistry", "get_kem",
 # "SignatureRegistry", "get_signature",
 # "HybridRegistry", "get_hybrid",
