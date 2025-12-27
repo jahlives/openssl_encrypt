@@ -295,6 +295,12 @@ def setup_encrypt_parser(subparser):
     scrypt_group.add_argument(
         "--enable-scrypt", action="store_true", help="Use Scrypt password hashing"
     )
+    scrypt_group.add_argument(
+        "--scrypt-rounds",
+        type=int,
+        default=0,
+        help="Use scrypt rounds for iterating (default when enabled: 10)",
+    )
     scrypt_group.add_argument("--scrypt-n", type=int, help="Scrypt N parameter (CPU/memory cost)")
     scrypt_group.add_argument(
         "--scrypt-r", type=int, default=8, help="Scrypt r parameter (block size)"
@@ -387,6 +393,87 @@ def setup_encrypt_parser(subparser):
         type=int,
         default=32,
         help="RandomX output hash length in bytes (default: 32)",
+    )
+
+    # PBKDF2 options
+    pbkdf2_group = subparser.add_argument_group("PBKDF2 options")
+    pbkdf2_group.add_argument(
+        "--pbkdf2-iterations",
+        type=int,
+        default=0,
+        help="Number of PBKDF2 iterations (default: 100000)",
+    )
+
+    # Balloon Hashing options
+    balloon_group = subparser.add_argument_group("Balloon Hashing options")
+    balloon_group.add_argument(
+        "--enable-balloon",
+        action="store_true",
+        help="Enable Balloon Hashing KDF",
+    )
+    balloon_group.add_argument(
+        "--balloon-time-cost",
+        type=int,
+        default=3,
+        help="Time cost parameter for Balloon hashing - controls computational complexity. Higher values increase security but also processing time.",
+    )
+    balloon_group.add_argument(
+        "--balloon-space-cost",
+        type=int,
+        default=65536,
+        help="Space cost parameter for Balloon hashing in bytes - controls memory usage. Higher values increase security but require more memory.",
+    )
+    balloon_group.add_argument(
+        "--balloon-parallelism",
+        type=int,
+        default=4,
+        help="Parallelism parameter for Balloon hashing - controls number of parallel threads. Higher values can improve performance on multi-core systems.",
+    )
+    balloon_group.add_argument(
+        "--balloon-rounds",
+        type=int,
+        default=0,
+        help="Number of rounds for Balloon hashing (default when enabled: 10). More rounds increase security but also processing time.",
+    )
+    balloon_group.add_argument(
+        "--balloon-hash-len",
+        type=int,
+        default=32,
+        help="Length of the final hash output in bytes for Balloon hashing.",
+    )
+    balloon_group.add_argument(
+        "--use-balloon",
+        action="store_true",
+        help=argparse.SUPPRESS,  # Hidden legacy option
+    )
+
+    # HKDF options
+    hkdf_group = subparser.add_argument_group(
+        "HKDF Options", "Configure HMAC-based Key Derivation Function"
+    )
+    hkdf_group.add_argument(
+        "--enable-hkdf",
+        action="store_true",
+        help="Enable HKDF key derivation",
+        default=False,
+    )
+    hkdf_group.add_argument(
+        "--hkdf-rounds",
+        type=int,
+        default=1,
+        help="Number of HKDF chained rounds (default: 1)",
+    )
+    hkdf_group.add_argument(
+        "--hkdf-algorithm",
+        choices=["sha224", "sha256", "sha384", "sha512"],
+        default="sha256",
+        help="Hash algorithm for HKDF (default: sha256)",
+    )
+    hkdf_group.add_argument(
+        "--hkdf-info",
+        type=str,
+        default="openssl_encrypt_hkdf",
+        help="HKDF info string for context (default: openssl_encrypt_hkdf)",
     )
 
     # PQC options for encryption
