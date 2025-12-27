@@ -3078,6 +3078,8 @@ def create_metadata_v7(
     encrypted_hash: str = None,
     include_encrypted_hash: bool = True,
     aad_mode: bool = False,
+    quiet: bool = False,
+    verbose: bool = False,
 ):
     """
     Create metadata in format version 7 for asymmetric encryption.
@@ -3178,10 +3180,20 @@ def create_metadata_v7(
         metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {"rounds": pbkdf2_iterations}
 
     # Move KDF configurations from hash_config if present
+    if not quiet and verbose:
+        print(f"  DEBUG: hash_config keys before KDF copy: {list(hash_config.keys())}")
+
     kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf", "randomx"]
     for kdf in kdf_algorithms:
         if kdf in hash_config:
+            if not quiet and verbose:
+                print(f"  DEBUG: Copying KDF '{kdf}' to metadata: {hash_config[kdf]}")
             metadata["derivation_config"]["kdf_config"][kdf] = hash_config[kdf]
+        elif not quiet and verbose:
+            print(f"  DEBUG: KDF '{kdf}' NOT found in hash_config")
+
+    if not quiet and verbose:
+        print(f"  DEBUG: Final kdf_config in metadata: {metadata['derivation_config']['kdf_config']}")
 
     # Add signature (this is added AFTER metadata is created, but before returning)
     metadata["signature"] = {
