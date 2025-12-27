@@ -188,7 +188,73 @@ __all__.extend([
     "RandomX",
 ])
 
-# Registries to be added:
-# "KEMRegistry", "get_kem",
-# "SignatureRegistry", "get_signature",
-# "HybridRegistry", "get_hybrid",
+# KEM registry (Post-Quantum Key Encapsulation Mechanisms)
+from .kem_registry import (
+    KEMBase,
+    KEMRegistry,
+    get_kem,
+    MLKEM512,
+    MLKEM768,
+    MLKEM1024,
+    HQC128,
+    HQC192,
+    HQC256,
+)
+
+__all__.extend([
+    # KEM registry
+    "KEMBase",
+    "KEMRegistry",
+    "get_kem",
+    "MLKEM512",
+    "MLKEM768",
+    "MLKEM1024",
+    "HQC128",
+    "HQC192",
+    "HQC256",
+])
+
+# Signature registry (Post-Quantum Digital Signatures)
+from .signature_registry import (
+    SignatureBase,
+    SignatureRegistry,
+    get_signature,
+    MLDSA44,
+    MLDSA65,
+    MLDSA87,
+    SLHDSASHA2128F,
+    SLHDSASHA2192F,
+    SLHDSASHA2256F,
+    FNDSA512,
+    FNDSA1024,
+    MAYO1,
+    MAYO3,
+    MAYO5,
+    CROSS128,
+    CROSS192,
+    CROSS256,
+)
+
+__all__.extend([
+    # Signature registry
+    "SignatureBase",
+    "SignatureRegistry",
+    "get_signature",
+    "MLDSA44",
+    "MLDSA65",
+    "MLDSA87",
+    "SLHDSASHA2128F",
+    "SLHDSASHA2192F",
+    "SLHDSASHA2256F",
+    "FNDSA512",
+    "FNDSA1024",
+    "MAYO1",
+    "MAYO3",
+    "MAYO5",
+    "CROSS128",
+    "CROSS192",
+    "CROSS256",
+])
+
+# Note: HybridRegistry not needed - hybrid encryption can be composed by
+# combining KEMs with ciphers at application level
