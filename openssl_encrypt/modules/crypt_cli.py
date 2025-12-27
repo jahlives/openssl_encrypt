@@ -889,6 +889,82 @@ def analyze_current_security_configuration(args):
         print("Please check your configuration parameters.")
 
 
+def validate_algorithm_availability(args):
+    """
+    Validate that specified algorithms are available on this system.
+
+    Checks hash and KDF algorithms specified via CLI flags and warns
+    if they're not available (e.g., missing optional dependencies).
+
+    Args:
+        args: Parsed command line arguments
+
+    Returns:
+        List of warning messages for unavailable algorithms
+    """
+    warnings = []
+
+    try:
+        from .registry import validate_algorithm_name
+
+        # Check hash algorithms
+        hash_algorithms = []
+        if getattr(args, "sha256_rounds", 0) > 0:
+            hash_algorithms.append("sha256")
+        if getattr(args, "sha512_rounds", 0) > 0:
+            hash_algorithms.append("sha512")
+        if getattr(args, "sha384_rounds", 0) > 0:
+            hash_algorithms.append("sha384")
+        if getattr(args, "blake2b_rounds", 0) > 0:
+            hash_algorithms.append("blake2b")
+        if getattr(args, "blake3_rounds", 0) > 0:
+            hash_algorithms.append("blake3")
+        if getattr(args, "shake256_rounds", 0) > 0:
+            hash_algorithms.append("shake256")
+        if getattr(args, "whirlpool_rounds", 0) > 0:
+            hash_algorithms.append("whirlpool")
+
+        for algo in hash_algorithms:
+            is_valid, error_msg = validate_algorithm_name(algo, "hash")
+            if not is_valid:
+                warnings.append(f"Hash algorithm '{algo}': {error_msg}")
+
+        # Check KDF algorithms
+        if getattr(args, "enable_argon2", False):
+            is_valid, error_msg = validate_algorithm_name("argon2id", "kdf")
+            if not is_valid:
+                warnings.append(f"Argon2: {error_msg}")
+
+        if getattr(args, "enable_scrypt", False):
+            is_valid, error_msg = validate_algorithm_name("scrypt", "kdf")
+            if not is_valid:
+                warnings.append(f"Scrypt: {error_msg}")
+
+        if getattr(args, "enable_randomx", False):
+            is_valid, error_msg = validate_algorithm_name("randomx", "kdf")
+            if not is_valid:
+                warnings.append(f"RandomX: {error_msg}")
+
+        if getattr(args, "enable_balloon", False):
+            is_valid, error_msg = validate_algorithm_name("balloon", "kdf")
+            if not is_valid:
+                warnings.append(f"Balloon: {error_msg}")
+
+        if getattr(args, "enable_hkdf", False):
+            is_valid, error_msg = validate_algorithm_name("hkdf", "kdf")
+            if not is_valid:
+                warnings.append(f"HKDF: {error_msg}")
+
+    except ImportError:
+        # Registry not available, skip validation
+        pass
+    except Exception as e:
+        # Don't fail on validation errors
+        logger.debug(f"Algorithm validation error: {e}")
+
+    return warnings
+
+
 def show_algorithm_registry(args):
     """
     Display available algorithms from the registry system.
@@ -3653,6 +3729,16 @@ def main_with_args(args=None):
         # Explicit --with-key provided OR auto-detected asymmetric file
         if (hasattr(args, "key_identity") and args.key_identity) or (encryption_info and encryption_info.get("type") == "asymmetric"):
             is_asymmetric_decrypt = True
+
+    # Validate algorithm availability before encryption/decryption
+    if args.action in ["encrypt", "decrypt"]:
+        validation_warnings = validate_algorithm_availability(args)
+        if validation_warnings and not args.quiet:
+            print("\nWARNING: Some requested algorithms are not available:")
+            for warning in validation_warnings:
+                print(f"  ⚠ {warning}")
+            print("\nUse 'list-algorithms' command to see available algorithms.")
+            print("Install required packages or choose different algorithms.\n")
 
     if args.action in ["encrypt", "decrypt"] and not (is_asymmetric_encrypt or is_asymmetric_decrypt):
         password = None
