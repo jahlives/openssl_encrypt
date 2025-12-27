@@ -1839,40 +1839,43 @@ def generate_key(
         # Check if this is from decryption metadata (skip warning for decryption)
         is_decryption = hash_config and hash_config.get("_is_from_decryption_metadata", False)
         if not is_decryption:
-            enabled_kdfs = []
-            if use_argon2:
-                enabled_kdfs.append("Argon2")
-            if use_randomx:
-                enabled_kdfs.append("RandomX")
-            if use_balloon:
-                enabled_kdfs.append("Balloon")
-            if use_hkdf:
-                enabled_kdfs.append("HKDF")
-            if use_scrypt:
-                enabled_kdfs.append("Scrypt")
-
-            print("\n⚠️  WARNING: Security Risk Detected")
-            print(
-                f"KDFs ({', '.join(enabled_kdfs)}) will operate directly on your password without prior hashing."
-            )
-            print("This may be insecure if your password is short or has low entropy.")
-            print(
-                "Consider adding hash rounds (--sha256-rounds, --blake2b-rounds, etc.) for better security."
-            )
-            print("Continue anyway? [y/N]: ", end="", flush=True)
-
-            # Get user confirmation
             import sys
 
-            try:
-                response = input().strip().lower()
-                if response not in ["y", "yes"]:
-                    print("Operation cancelled by user.")
+            # Only prompt if stdin is a TTY (interactive terminal)
+            # In non-interactive mode (pytest, pipes, etc.), skip the prompt
+            if sys.stdin.isatty():
+                enabled_kdfs = []
+                if use_argon2:
+                    enabled_kdfs.append("Argon2")
+                if use_randomx:
+                    enabled_kdfs.append("RandomX")
+                if use_balloon:
+                    enabled_kdfs.append("Balloon")
+                if use_hkdf:
+                    enabled_kdfs.append("HKDF")
+                if use_scrypt:
+                    enabled_kdfs.append("Scrypt")
+
+                print("\n⚠️  WARNING: Security Risk Detected")
+                print(
+                    f"KDFs ({', '.join(enabled_kdfs)}) will operate directly on your password without prior hashing."
+                )
+                print("This may be insecure if your password is short or has low entropy.")
+                print(
+                    "Consider adding hash rounds (--sha256-rounds, --blake2b-rounds, etc.) for better security."
+                )
+                print("Continue anyway? [y/N]: ", end="", flush=True)
+
+                # Get user confirmation
+                try:
+                    response = input().strip().lower()
+                    if response not in ["y", "yes"]:
+                        print("Operation cancelled by user.")
+                        sys.exit(1)
+                    print()  # Add blank line after confirmation
+                except (KeyboardInterrupt, EOFError):
+                    print("\nOperation cancelled by user.")
                     sys.exit(1)
-                print()  # Add blank line after confirmation
-            except (KeyboardInterrupt, EOFError):
-                print("\nOperation cancelled by user.")
-                sys.exit(1)
 
     # If hash_config has argon2 section with enabled explicitly set to False, honor that
     # if hash_config and 'argon2' in hash_config and 'enabled' in hash_config['argon2']:
