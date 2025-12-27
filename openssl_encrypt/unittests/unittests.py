@@ -15376,13 +15376,15 @@ class TestAsymmetricEncryption(unittest.TestCase):
         self.assertTrue(os.path.exists(output_file))
 
         # Verify file structure
-        with open(output_file, "r") as f:
+        with open(output_file, "rb") as f:
             content = f.read()
-            self.assertIn("---ENCRYPTED_DATA---", content)
+            self.assertIn(b":", content)
 
-            # Parse metadata
-            metadata_str = content.split("---ENCRYPTED_DATA---")[0]
-            metadata = json.loads(metadata_str)
+            # Parse metadata (format: base64(metadata):base64(data))
+            colon_pos = content.index(b":")
+            metadata_b64 = content[:colon_pos]
+            metadata_json = base64.b64decode(metadata_b64)
+            metadata = json.loads(metadata_json)
 
             # Verify format
             self.assertEqual(metadata["format_version"], 7)
@@ -15410,9 +15412,12 @@ class TestAsymmetricEncryption(unittest.TestCase):
         self.assertEqual(result["recipients"], 3)
 
         # Verify metadata
-        with open(output_file, "r") as f:
-            metadata_str = f.read().split("---ENCRYPTED_DATA---")[0]
-            metadata = json.loads(metadata_str)
+        with open(output_file, "rb") as f:
+            content = f.read()
+            colon_pos = content.index(b":")
+            metadata_b64 = content[:colon_pos]
+            metadata_json = base64.b64decode(metadata_b64)
+            metadata = json.loads(metadata_json)
 
             self.assertEqual(len(metadata["asymmetric"]["recipients"]), 3)
 
@@ -15444,9 +15449,12 @@ class TestAsymmetricEncryption(unittest.TestCase):
         self.assertTrue(result["success"])
 
         # Verify hash config in metadata
-        with open(output_file, "r") as f:
-            metadata_str = f.read().split("---ENCRYPTED_DATA---")[0]
-            metadata = json.loads(metadata_str)
+        with open(output_file, "rb") as f:
+            content = f.read()
+            colon_pos = content.index(b":")
+            metadata_b64 = content[:colon_pos]
+            metadata_json = base64.b64decode(metadata_b64)
+            metadata = json.loads(metadata_json)
 
             hash_cfg = metadata["derivation_config"]["hash_config"]
             self.assertEqual(hash_cfg["sha512"]["rounds"], 10)
@@ -15652,21 +15660,28 @@ class TestAsymmetricDecryption(unittest.TestCase):
         )
 
         # Tamper with signature
-        with open(encrypted_file, "r") as f:
+        with open(encrypted_file, "rb") as f:
             content = f.read()
 
-        # Corrupt one byte in the signature
-        metadata_str, encrypted_data = content.split("---ENCRYPTED_DATA---")
-        metadata = json.loads(metadata_str)
+        # Corrupt one byte in the signature (format: base64(metadata):base64(data))
+        colon_pos = content.index(b":")
+        metadata_b64 = content[:colon_pos]
+        encrypted_data_b64 = content[colon_pos + 1:]
+
+        metadata_json = base64.b64decode(metadata_b64)
+        metadata = json.loads(metadata_json)
+
         sig_b64 = metadata["signature"]["value"]
         sig_bytes = bytearray(base64.b64decode(sig_b64))
         sig_bytes[100] ^= 0xFF  # Flip one byte
         metadata["signature"]["value"] = base64.b64encode(bytes(sig_bytes)).decode("utf-8")
 
-        with open(encrypted_file, "w") as f:
-            f.write(json.dumps(metadata, indent=2))
-            f.write("\n---ENCRYPTED_DATA---\n")
-            f.write(encrypted_data.strip())
+        # Rewrite file with tampered metadata
+        tampered_metadata_json = json.dumps(metadata)
+        tampered_metadata_b64 = base64.b64encode(tampered_metadata_json.encode("utf-8"))
+
+        with open(encrypted_file, "wb") as f:
+            f.write(tampered_metadata_b64 + b":" + encrypted_data_b64)
 
         # Decryption should fail
         with self.assertRaises(ValueError) as ctx:
