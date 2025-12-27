@@ -3676,6 +3676,28 @@ def main_with_args(args=None):
     ]:
         parser.error("the following arguments are required: --input/-i")
 
+    # Handle stdin input FIRST - convert to temp file to avoid multiple reads
+    # This must happen BEFORE detect_encryption_type() which would consume stdin
+    if args.action == "decrypt" and getattr(args, "input", None) == "/dev/stdin":
+        import tempfile
+
+        # Read stdin once into a temp file
+        stdin_temp_file_early = tempfile.NamedTemporaryFile(delete=False)
+        os.chmod(stdin_temp_file_early.name, 0o600)  # Security: Restrict to user read/write only
+        temp_files_to_cleanup.append(stdin_temp_file_early.name)
+
+        # Copy all data from stdin to temp file
+        stdin_data = sys.stdin.buffer.read()
+        if args.debug:
+            print(f"DEBUG: Read {len(stdin_data)} bytes from stdin (early)", file=sys.stderr)
+        stdin_temp_file_early.write(stdin_data)
+        stdin_temp_file_early.close()
+
+        # Update args.input to point to the temp file for all subsequent operations
+        args.input = stdin_temp_file_early.name
+        if args.debug:
+            print(f"DEBUG: Converted stdin to temp file: {args.input}", file=sys.stderr)
+
     # Auto-detect encryption type for decrypt operations
     # Only run auto-detection if user didn't explicitly provide --with-key
     # This avoids potential interference with symmetric HSM decryption
