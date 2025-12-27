@@ -16212,6 +16212,7 @@ class TestIdentityCLI(unittest.TestCase):
         args.sig_algorithm = "ML-DSA-65"
         args.overwrite = False
         args.identity_store = self.identity_store_path
+        args.hsm = None  # Explicitly set to None to avoid MagicMock
 
         # Mock getpass to return test passphrase
         with patch("openssl_encrypt.modules.identity_cli.getpass.getpass") as mock_getpass:
@@ -16240,6 +16241,7 @@ class TestIdentityCLI(unittest.TestCase):
         args.sig_algorithm = "ML-DSA-65"
         args.overwrite = False
         args.identity_store = self.identity_store_path
+        args.hsm = None  # Explicitly set to None to avoid MagicMock
 
         # Mock getpass to return weak passphrase
         with patch("openssl_encrypt.modules.identity_cli.getpass.getpass") as mock_getpass:
