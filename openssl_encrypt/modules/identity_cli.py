@@ -98,7 +98,7 @@ def cmd_create(args) -> int:
     try:
         # Determine protection level from --hsm argument
         hsm_option = getattr(args, "hsm", "none")
-        if hsm_option == "none":
+        if hsm_option == "none" or hsm_option is None:
             protection_level = ProtectionLevel.PASSWORD_ONLY
         elif hsm_option == "yubikey":
             protection_level = ProtectionLevel.PASSWORD_AND_HSM
