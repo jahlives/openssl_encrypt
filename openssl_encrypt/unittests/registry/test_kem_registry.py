@@ -20,6 +20,7 @@ from openssl_encrypt.modules.registry import (
     SecurityLevel,
     AlgorithmNotAvailableError,
 )
+from openssl_encrypt.modules.secure_memory import SecureBytes
 
 # Check if liboqs is available
 try:
@@ -113,9 +114,10 @@ class TestMLKEM512:
         public_key, secret_key = kem.generate_keypair()
 
         assert isinstance(public_key, bytes)
-        assert isinstance(secret_key, bytes)
+        # secret_key can be bytes or SecureBytes (for secure memory)
+        assert isinstance(secret_key, (bytes, memoryview, SecureBytes))
         assert len(public_key) == 800
-        assert len(secret_key) == 1632
+        assert len(bytes(secret_key)) == 1632
 
     @pytest.mark.skipif(not LIBOQS_AVAILABLE, reason="liboqs not available")
     def test_encapsulate_decapsulate(self):
