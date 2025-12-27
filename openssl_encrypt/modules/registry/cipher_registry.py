@@ -11,7 +11,7 @@ All code in English as per project requirements.
 
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Optional, ClassVar, Dict
+from typing import Optional, ClassVar, Dict, Union
 
 from .base import (
     AlgorithmBase,
@@ -24,6 +24,31 @@ from .base import (
     AuthenticationError,
 )
 from .utils import generate_random_bytes
+
+# Import secure memory handling
+try:
+    from ..secure_memory import SecureBytes, secure_memzero
+    SECURE_MEMORY_AVAILABLE = True
+except ImportError:
+    # Fallback if secure_memory not available
+    SecureBytes = bytes
+    SECURE_MEMORY_AVAILABLE = False
+
+    def secure_memzero(data):
+        """Fallback no-op."""
+        pass
+
+
+# Helper functions for secure memory handling
+def _convert_to_bytes(data: Union[bytes, 'SecureBytes']) -> bytes:
+    """Convert SecureBytes to bytes for library calls."""
+    return bytes(data) if isinstance(data, SecureBytes) else data
+
+
+def _secure_cleanup(original, copy):
+    """Securely zero a copy if original was SecureBytes."""
+    if isinstance(original, SecureBytes) and copy != original:
+        secure_memzero(bytearray(copy))
 
 
 @dataclass
@@ -52,8 +77,8 @@ class CipherBase(AlgorithmBase):
     @abstractmethod
     def encrypt(
         self,
-        key: bytes,
-        plaintext: bytes,
+        key: Union[bytes, 'SecureBytes'],
+        plaintext: Union[bytes, 'SecureBytes'],
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> bytes:
@@ -61,42 +86,53 @@ class CipherBase(AlgorithmBase):
         Encrypts plaintext with authenticated encryption.
 
         Args:
-            key: Encryption key (size depends on algorithm)
-            plaintext: Data to encrypt
+            key: Encryption key (bytes or SecureBytes)
+            plaintext: Data to encrypt (bytes or SecureBytes)
             nonce: Nonce/IV (None = auto-generate)
             associated_data: Additional data to authenticate (AEAD only)
 
         Returns:
             Nonce + ciphertext + tag (format may vary by algorithm)
+            Note: Ciphertext is not returned as SecureBytes since it's meant
+            to be stored/transmitted
 
         Raises:
             ValidationError: If parameters are invalid
+
+        Security:
+            - Accepts SecureBytes for key and plaintext (auto-zeroed)
+            - Key and plaintext copies are zeroed after use
+            - Ciphertext is NOT SecureBytes (meant for storage)
         """
         pass
 
     @abstractmethod
     def decrypt(
         self,
-        key: bytes,
+        key: Union[bytes, 'SecureBytes'],
         ciphertext: bytes,
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
-    ) -> bytes:
+    ) -> 'SecureBytes':
         """
         Decrypts ciphertext and verifies authentication.
 
         Args:
-            key: Decryption key
+            key: Decryption key (bytes or SecureBytes)
             ciphertext: Encrypted data (may include nonce + tag)
             nonce: Nonce/IV (None = extract from ciphertext)
             associated_data: Additional authenticated data
 
         Returns:
-            Decrypted plaintext
+            Decrypted plaintext as SecureBytes (MUST be zeroed after use)
 
         Raises:
             AuthenticationError: If authentication tag verification fails
             ValidationError: If parameters are invalid
+
+        Security:
+            - Returns SecureBytes which will be zeroed when deleted
+            - Caller MUST explicitly zero the returned plaintext after use
         """
         pass
 
@@ -163,8 +199,8 @@ class AES256GCM(CipherBase):
 
     def encrypt(
         self,
-        key: bytes,
-        plaintext: bytes,
+        key: Union[bytes, SecureBytes],
+        plaintext: Union[bytes, SecureBytes],
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> bytes:
@@ -176,33 +212,42 @@ class AES256GCM(CipherBase):
         """
         self.check_available()
 
-        # Validate key
-        if len(key) != 32:
-            raise ValidationError(f"AES-256-GCM requires 32-byte key, got {len(key)}")
+        # Convert SecureBytes to bytes for library
+        key_bytes = _convert_to_bytes(key)
+        plaintext_bytes = _convert_to_bytes(plaintext)
 
-        # Generate nonce if not provided
-        if nonce is None:
-            nonce = self.generate_nonce()
+        try:
+            # Validate key
+            if len(key_bytes) != 32:
+                raise ValidationError(f"AES-256-GCM requires 32-byte key, got {len(key_bytes)}")
 
-        if len(nonce) != 12:
-            raise ValidationError(f"AES-GCM nonce must be 12 bytes, got {len(nonce)}")
+            # Generate nonce if not provided
+            if nonce is None:
+                nonce = self.generate_nonce()
 
-        # Import here to allow optional dependency
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+            if len(nonce) != 12:
+                raise ValidationError(f"AES-GCM nonce must be 12 bytes, got {len(nonce)}")
 
-        cipher = AESGCM(key)
-        encrypted = cipher.encrypt(nonce, plaintext, associated_data)
+            # Import here to allow optional dependency
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-        # Return nonce + ciphertext+tag
-        return nonce + encrypted
+            cipher = AESGCM(key_bytes)
+            encrypted = cipher.encrypt(nonce, plaintext_bytes, associated_data)
+
+            # Return nonce + ciphertext+tag
+            return nonce + encrypted
+        finally:
+            # Zero copies if originals were SecureBytes
+            _secure_cleanup(key, key_bytes)
+            _secure_cleanup(plaintext, plaintext_bytes)
 
     def decrypt(
         self,
-        key: bytes,
+        key: Union[bytes, SecureBytes],
         ciphertext: bytes,
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
-    ) -> bytes:
+    ) -> SecureBytes:
         """
         Decrypts AES-256-GCM ciphertext.
 
@@ -211,25 +256,33 @@ class AES256GCM(CipherBase):
         """
         self.check_available()
 
-        # Validate key
-        if len(key) != 32:
-            raise ValidationError(f"AES-256-GCM requires 32-byte key, got {len(key)}")
+        # Convert SecureBytes to bytes for library
+        key_bytes = _convert_to_bytes(key)
 
-        # Extract nonce if not provided separately
-        if nonce is None:
-            if len(ciphertext) < 12 + 16:  # nonce + minimum tag
-                raise ValidationError("Ciphertext too short")
-            nonce = ciphertext[:12]
-            ciphertext = ciphertext[12:]
-
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-        import cryptography.exceptions
-
-        cipher = AESGCM(key)
         try:
-            return cipher.decrypt(nonce, ciphertext, associated_data)
-        except cryptography.exceptions.InvalidTag:
-            raise AuthenticationError("Authentication tag verification failed")
+            # Validate key
+            if len(key_bytes) != 32:
+                raise ValidationError(f"AES-256-GCM requires 32-byte key, got {len(key_bytes)}")
+
+            # Extract nonce if not provided separately
+            if nonce is None:
+                if len(ciphertext) < 12 + 16:  # nonce + minimum tag
+                    raise ValidationError("Ciphertext too short")
+                nonce = ciphertext[:12]
+                ciphertext = ciphertext[12:]
+
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+            import cryptography.exceptions
+
+            cipher = AESGCM(key_bytes)
+            try:
+                plaintext = cipher.decrypt(nonce, ciphertext, associated_data)
+                return SecureBytes(plaintext)
+            except cryptography.exceptions.InvalidTag:
+                raise AuthenticationError("Authentication tag verification failed")
+        finally:
+            # Zero key copy if original was SecureBytes
+            _secure_cleanup(key, key_bytes)
 
 
 class AESGCMSIV(CipherBase):
@@ -265,10 +318,7 @@ class AESGCMSIV(CipherBase):
     def generate_nonce(self) -> bytes:
         return generate_random_bytes(12)
 
-    def encrypt(
-        self,
-        key: bytes,
-        plaintext: bytes,
+    def encrypt(self, key: Union[bytes, SecureBytes], plaintext: Union[bytes, SecureBytes],
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> bytes:
@@ -290,10 +340,7 @@ class AESGCMSIV(CipherBase):
 
         return nonce + encrypted
 
-    def decrypt(
-        self,
-        key: bytes,
-        ciphertext: bytes,
+    def decrypt(self, key: Union[bytes, SecureBytes], ciphertext: bytes,
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> bytes:
@@ -348,14 +395,11 @@ class AESSIV(CipherBase):
     def get_key_size(cls) -> int:
         return 64  # SIV uses 2 keys (64 bytes total for AES-256)
 
-    def generate_nonce(self) -> bytes:
+    def generate_nonce(self) -> SecureBytes:
         """SIV is deterministic, no nonce needed."""
         return b""
 
-    def encrypt(
-        self,
-        key: bytes,
-        plaintext: bytes,
+    def encrypt(self, key: Union[bytes, SecureBytes], plaintext: Union[bytes, SecureBytes],
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> bytes:
@@ -371,10 +415,7 @@ class AESSIV(CipherBase):
         aad_list = [associated_data] if associated_data else None
         return cipher.encrypt(plaintext, aad_list)
 
-    def decrypt(
-        self,
-        key: bytes,
-        ciphertext: bytes,
+    def decrypt(self, key: Union[bytes, SecureBytes], ciphertext: bytes,
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> bytes:
@@ -428,10 +469,7 @@ class AESOCB3(CipherBase):
     def generate_nonce(self) -> bytes:
         return generate_random_bytes(12)
 
-    def encrypt(
-        self,
-        key: bytes,
-        plaintext: bytes,
+    def encrypt(self, key: Union[bytes, SecureBytes], plaintext: Union[bytes, SecureBytes],
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> bytes:
@@ -461,10 +499,7 @@ class AESOCB3(CipherBase):
 
         return nonce + encrypted
 
-    def decrypt(
-        self,
-        key: bytes,
-        ciphertext: bytes,
+    def decrypt(self, key: Union[bytes, SecureBytes], ciphertext: bytes,
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> bytes:
@@ -526,10 +561,7 @@ class ChaCha20Poly1305(CipherBase):
     def generate_nonce(self) -> bytes:
         return generate_random_bytes(12)
 
-    def encrypt(
-        self,
-        key: bytes,
-        plaintext: bytes,
+    def encrypt(self, key: Union[bytes, SecureBytes], plaintext: Union[bytes, SecureBytes],
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> bytes:
@@ -551,10 +583,7 @@ class ChaCha20Poly1305(CipherBase):
 
         return nonce + encrypted
 
-    def decrypt(
-        self,
-        key: bytes,
-        ciphertext: bytes,
+    def decrypt(self, key: Union[bytes, SecureBytes], ciphertext: bytes,
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> bytes:
@@ -615,7 +644,7 @@ class XChaCha20Poly1305(CipherBase):
     def generate_nonce(self) -> bytes:
         return generate_random_bytes(24)
 
-    def _process_nonce(self, key: bytes, nonce: bytes) -> bytes:
+    def _process_nonce(self, key: bytes, nonce: bytes) -> SecureBytes:
         """
         Process 24-byte XChaCha20 nonce to 12-byte ChaCha20 nonce.
 
@@ -642,10 +671,7 @@ class XChaCha20Poly1305(CipherBase):
                 f"XChaCha20 nonce must be 24 bytes (or 12 for compat), got {len(nonce)}"
             )
 
-    def encrypt(
-        self,
-        key: bytes,
-        plaintext: bytes,
+    def encrypt(self, key: Union[bytes, SecureBytes], plaintext: Union[bytes, SecureBytes],
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> bytes:
@@ -669,10 +695,7 @@ class XChaCha20Poly1305(CipherBase):
         # Return original nonce (24 bytes) + ciphertext+tag
         return original_nonce + encrypted
 
-    def decrypt(
-        self,
-        key: bytes,
-        ciphertext: bytes,
+    def decrypt(self, key: Union[bytes, SecureBytes], ciphertext: bytes,
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> bytes:
