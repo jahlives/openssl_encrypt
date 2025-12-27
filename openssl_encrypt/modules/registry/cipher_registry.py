@@ -324,45 +324,62 @@ class AESGCMSIV(CipherBase):
     ) -> bytes:
         self.check_available()
 
-        if len(key) != 32:
-            raise ValidationError(f"AES-256-GCM-SIV requires 32-byte key, got {len(key)}")
+        # Convert SecureBytes to bytes for library
+        key_bytes = _convert_to_bytes(key)
+        plaintext_bytes = _convert_to_bytes(plaintext)
 
-        if nonce is None:
-            nonce = self.generate_nonce()
+        try:
+            if len(key_bytes) != 32:
+                raise ValidationError(f"AES-256-GCM-SIV requires 32-byte key, got {len(key_bytes)}")
 
-        if len(nonce) != 12:
-            raise ValidationError(f"AES-GCM-SIV nonce must be 12 bytes, got {len(nonce)}")
+            if nonce is None:
+                nonce = self.generate_nonce()
 
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCMSIV
+            if len(nonce) != 12:
+                raise ValidationError(f"AES-GCM-SIV nonce must be 12 bytes, got {len(nonce)}")
 
-        cipher = AESGCMSIV(key)
-        encrypted = cipher.encrypt(nonce, plaintext, associated_data)
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCMSIV
 
-        return nonce + encrypted
+            cipher = AESGCMSIV(key_bytes)
+            encrypted = cipher.encrypt(nonce, plaintext_bytes, associated_data)
+
+            return nonce + encrypted
+        finally:
+            # Zero copies if originals were SecureBytes
+            _secure_cleanup(key, key_bytes)
+            _secure_cleanup(plaintext, plaintext_bytes)
 
     def decrypt(self, key: Union[bytes, SecureBytes], ciphertext: bytes,
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
-    ) -> bytes:
+    ) -> SecureBytes:
         self.check_available()
 
-        if len(key) != 32:
-            raise ValidationError(f"AES-256-GCM-SIV requires 32-byte key, got {len(key)}")
+        # Convert SecureBytes to bytes for library
+        key_bytes = _convert_to_bytes(key)
 
-        if nonce is None:
-            if len(ciphertext) < 12 + 16:
-                raise ValidationError("Ciphertext too short")
-            nonce = ciphertext[:12]
-            ciphertext = ciphertext[12:]
-
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCMSIV
-        import cryptography.exceptions
-
-        cipher = AESGCMSIV(key)
         try:
-            return cipher.decrypt(nonce, ciphertext, associated_data)
-        except cryptography.exceptions.InvalidTag:
-            raise AuthenticationError("Authentication tag verification failed")
+            if len(key_bytes) != 32:
+                raise ValidationError(f"AES-256-GCM-SIV requires 32-byte key, got {len(key_bytes)}")
+
+            if nonce is None:
+                if len(ciphertext) < 12 + 16:
+                    raise ValidationError("Ciphertext too short")
+                nonce = ciphertext[:12]
+                ciphertext = ciphertext[12:]
+
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCMSIV
+            import cryptography.exceptions
+
+            cipher = AESGCMSIV(key_bytes)
+            try:
+                plaintext = cipher.decrypt(nonce, ciphertext, associated_data)
+                return SecureBytes(plaintext)
+            except cryptography.exceptions.InvalidTag:
+                raise AuthenticationError("Authentication tag verification failed")
+        finally:
+            # Zero key copy if original was SecureBytes
+            _secure_cleanup(key, key_bytes)
 
 
 class AESSIV(CipherBase):
@@ -405,35 +422,52 @@ class AESSIV(CipherBase):
     ) -> bytes:
         self.check_available()
 
-        if len(key) != 64:
-            raise ValidationError(f"AES-256-SIV requires 64-byte key, got {len(key)}")
+        # Convert SecureBytes to bytes for library
+        key_bytes = _convert_to_bytes(key)
+        plaintext_bytes = _convert_to_bytes(plaintext)
 
-        from cryptography.hazmat.primitives.ciphers.aead import AESSIV
+        try:
+            if len(key_bytes) != 64:
+                raise ValidationError(f"AES-256-SIV requires 64-byte key, got {len(key_bytes)}")
 
-        cipher = AESSIV(key)
-        # SIV takes AAD as a list
-        aad_list = [associated_data] if associated_data else None
-        return cipher.encrypt(plaintext, aad_list)
+            from cryptography.hazmat.primitives.ciphers.aead import AESSIV
+
+            cipher = AESSIV(key_bytes)
+            # SIV takes AAD as a list
+            aad_list = [associated_data] if associated_data else None
+            return cipher.encrypt(plaintext_bytes, aad_list)
+        finally:
+            # Zero copies if originals were SecureBytes
+            _secure_cleanup(key, key_bytes)
+            _secure_cleanup(plaintext, plaintext_bytes)
 
     def decrypt(self, key: Union[bytes, SecureBytes], ciphertext: bytes,
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
-    ) -> bytes:
+    ) -> SecureBytes:
         self.check_available()
 
-        if len(key) != 64:
-            raise ValidationError(f"AES-256-SIV requires 64-byte key, got {len(key)}")
-
-        from cryptography.hazmat.primitives.ciphers.aead import AESSIV
-        import cryptography.exceptions
-
-        cipher = AESSIV(key)
-        aad_list = [associated_data] if associated_data else None
+        # Convert SecureBytes to bytes for library
+        key_bytes = _convert_to_bytes(key)
 
         try:
-            return cipher.decrypt(ciphertext, aad_list)
-        except cryptography.exceptions.InvalidTag:
-            raise AuthenticationError("Authentication tag verification failed")
+            if len(key_bytes) != 64:
+                raise ValidationError(f"AES-256-SIV requires 64-byte key, got {len(key_bytes)}")
+
+            from cryptography.hazmat.primitives.ciphers.aead import AESSIV
+            import cryptography.exceptions
+
+            cipher = AESSIV(key_bytes)
+            aad_list = [associated_data] if associated_data else None
+
+            try:
+                plaintext = cipher.decrypt(ciphertext, aad_list)
+                return SecureBytes(plaintext)
+            except cryptography.exceptions.InvalidTag:
+                raise AuthenticationError("Authentication tag verification failed")
+        finally:
+            # Zero key copy if original was SecureBytes
+            _secure_cleanup(key, key_bytes)
 
 
 class AESOCB3(CipherBase):
@@ -483,45 +517,62 @@ class AESOCB3(CipherBase):
             stacklevel=2
         )
 
-        if len(key) != 32:
-            raise ValidationError(f"AES-256-OCB3 requires 32-byte key, got {len(key)}")
+        # Convert SecureBytes to bytes for library
+        key_bytes = _convert_to_bytes(key)
+        plaintext_bytes = _convert_to_bytes(plaintext)
 
-        if nonce is None:
-            nonce = self.generate_nonce()
+        try:
+            if len(key_bytes) != 32:
+                raise ValidationError(f"AES-256-OCB3 requires 32-byte key, got {len(key_bytes)}")
 
-        if len(nonce) != 12:
-            raise ValidationError(f"AES-OCB3 nonce must be 12 bytes, got {len(nonce)}")
+            if nonce is None:
+                nonce = self.generate_nonce()
 
-        from cryptography.hazmat.primitives.ciphers.aead import AESOCB3
+            if len(nonce) != 12:
+                raise ValidationError(f"AES-OCB3 nonce must be 12 bytes, got {len(nonce)}")
 
-        cipher = AESOCB3(key)
-        encrypted = cipher.encrypt(nonce, plaintext, associated_data)
+            from cryptography.hazmat.primitives.ciphers.aead import AESOCB3
 
-        return nonce + encrypted
+            cipher = AESOCB3(key_bytes)
+            encrypted = cipher.encrypt(nonce, plaintext_bytes, associated_data)
+
+            return nonce + encrypted
+        finally:
+            # Zero copies if originals were SecureBytes
+            _secure_cleanup(key, key_bytes)
+            _secure_cleanup(plaintext, plaintext_bytes)
 
     def decrypt(self, key: Union[bytes, SecureBytes], ciphertext: bytes,
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
-    ) -> bytes:
+    ) -> SecureBytes:
         self.check_available()
 
-        if len(key) != 32:
-            raise ValidationError(f"AES-256-OCB3 requires 32-byte key, got {len(key)}")
+        # Convert SecureBytes to bytes for library
+        key_bytes = _convert_to_bytes(key)
 
-        if nonce is None:
-            if len(ciphertext) < 12 + 16:
-                raise ValidationError("Ciphertext too short")
-            nonce = ciphertext[:12]
-            ciphertext = ciphertext[12:]
-
-        from cryptography.hazmat.primitives.ciphers.aead import AESOCB3
-        import cryptography.exceptions
-
-        cipher = AESOCB3(key)
         try:
-            return cipher.decrypt(nonce, ciphertext, associated_data)
-        except cryptography.exceptions.InvalidTag:
-            raise AuthenticationError("Authentication tag verification failed")
+            if len(key_bytes) != 32:
+                raise ValidationError(f"AES-256-OCB3 requires 32-byte key, got {len(key_bytes)}")
+
+            if nonce is None:
+                if len(ciphertext) < 12 + 16:
+                    raise ValidationError("Ciphertext too short")
+                nonce = ciphertext[:12]
+                ciphertext = ciphertext[12:]
+
+            from cryptography.hazmat.primitives.ciphers.aead import AESOCB3
+            import cryptography.exceptions
+
+            cipher = AESOCB3(key_bytes)
+            try:
+                plaintext = cipher.decrypt(nonce, ciphertext, associated_data)
+                return SecureBytes(plaintext)
+            except cryptography.exceptions.InvalidTag:
+                raise AuthenticationError("Authentication tag verification failed")
+        finally:
+            # Zero key copy if original was SecureBytes
+            _secure_cleanup(key, key_bytes)
 
 
 # ============================================================================
@@ -567,45 +618,62 @@ class ChaCha20Poly1305(CipherBase):
     ) -> bytes:
         self.check_available()
 
-        if len(key) != 32:
-            raise ValidationError(f"ChaCha20-Poly1305 requires 32-byte key, got {len(key)}")
+        # Convert SecureBytes to bytes for library
+        key_bytes = _convert_to_bytes(key)
+        plaintext_bytes = _convert_to_bytes(plaintext)
 
-        if nonce is None:
-            nonce = self.generate_nonce()
+        try:
+            if len(key_bytes) != 32:
+                raise ValidationError(f"ChaCha20-Poly1305 requires 32-byte key, got {len(key_bytes)}")
 
-        if len(nonce) != 12:
-            raise ValidationError(f"ChaCha20-Poly1305 nonce must be 12 bytes, got {len(nonce)}")
+            if nonce is None:
+                nonce = self.generate_nonce()
 
-        from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305 as CryptoChaChaCipher
+            if len(nonce) != 12:
+                raise ValidationError(f"ChaCha20-Poly1305 nonce must be 12 bytes, got {len(nonce)}")
 
-        cipher = CryptoChaChaCipher(key)
-        encrypted = cipher.encrypt(nonce, plaintext, associated_data)
+            from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305 as CryptoChaChaCipher
 
-        return nonce + encrypted
+            cipher = CryptoChaChaCipher(key_bytes)
+            encrypted = cipher.encrypt(nonce, plaintext_bytes, associated_data)
+
+            return nonce + encrypted
+        finally:
+            # Zero copies if originals were SecureBytes
+            _secure_cleanup(key, key_bytes)
+            _secure_cleanup(plaintext, plaintext_bytes)
 
     def decrypt(self, key: Union[bytes, SecureBytes], ciphertext: bytes,
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
-    ) -> bytes:
+    ) -> SecureBytes:
         self.check_available()
 
-        if len(key) != 32:
-            raise ValidationError(f"ChaCha20-Poly1305 requires 32-byte key, got {len(key)}")
+        # Convert SecureBytes to bytes for library
+        key_bytes = _convert_to_bytes(key)
 
-        if nonce is None:
-            if len(ciphertext) < 12 + 16:
-                raise ValidationError("Ciphertext too short")
-            nonce = ciphertext[:12]
-            ciphertext = ciphertext[12:]
-
-        from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305 as CryptoChaChaCipher
-        import cryptography.exceptions
-
-        cipher = CryptoChaChaCipher(key)
         try:
-            return cipher.decrypt(nonce, ciphertext, associated_data)
-        except cryptography.exceptions.InvalidTag:
-            raise AuthenticationError("Authentication tag verification failed")
+            if len(key_bytes) != 32:
+                raise ValidationError(f"ChaCha20-Poly1305 requires 32-byte key, got {len(key_bytes)}")
+
+            if nonce is None:
+                if len(ciphertext) < 12 + 16:
+                    raise ValidationError("Ciphertext too short")
+                nonce = ciphertext[:12]
+                ciphertext = ciphertext[12:]
+
+            from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305 as CryptoChaChaCipher
+            import cryptography.exceptions
+
+            cipher = CryptoChaChaCipher(key_bytes)
+            try:
+                plaintext = cipher.decrypt(nonce, ciphertext, associated_data)
+                return SecureBytes(plaintext)
+            except cryptography.exceptions.InvalidTag:
+                raise AuthenticationError("Authentication tag verification failed")
+        finally:
+            # Zero key copy if original was SecureBytes
+            _secure_cleanup(key, key_bytes)
 
 
 class XChaCha20Poly1305(CipherBase):
@@ -677,50 +745,67 @@ class XChaCha20Poly1305(CipherBase):
     ) -> bytes:
         self.check_available()
 
-        if len(key) != 32:
-            raise ValidationError(f"XChaCha20-Poly1305 requires 32-byte key, got {len(key)}")
+        # Convert SecureBytes to bytes for library
+        key_bytes = _convert_to_bytes(key)
+        plaintext_bytes = _convert_to_bytes(plaintext)
 
-        if nonce is None:
-            nonce = self.generate_nonce()
+        try:
+            if len(key_bytes) != 32:
+                raise ValidationError(f"XChaCha20-Poly1305 requires 32-byte key, got {len(key_bytes)}")
 
-        # Store original nonce in output
-        original_nonce = nonce
-        processed_nonce = self._process_nonce(key, nonce)
+            if nonce is None:
+                nonce = self.generate_nonce()
 
-        from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+            # Store original nonce in output
+            original_nonce = nonce
+            processed_nonce = self._process_nonce(key_bytes, nonce)
 
-        cipher = ChaCha20Poly1305(key)
-        encrypted = cipher.encrypt(processed_nonce, plaintext, associated_data)
+            from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
-        # Return original nonce (24 bytes) + ciphertext+tag
-        return original_nonce + encrypted
+            cipher = ChaCha20Poly1305(key_bytes)
+            encrypted = cipher.encrypt(processed_nonce, plaintext_bytes, associated_data)
+
+            # Return original nonce (24 bytes) + ciphertext+tag
+            return original_nonce + encrypted
+        finally:
+            # Zero copies if originals were SecureBytes
+            _secure_cleanup(key, key_bytes)
+            _secure_cleanup(plaintext, plaintext_bytes)
 
     def decrypt(self, key: Union[bytes, SecureBytes], ciphertext: bytes,
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
-    ) -> bytes:
+    ) -> SecureBytes:
         self.check_available()
 
-        if len(key) != 32:
-            raise ValidationError(f"XChaCha20-Poly1305 requires 32-byte key, got {len(key)}")
+        # Convert SecureBytes to bytes for library
+        key_bytes = _convert_to_bytes(key)
 
-        # Extract nonce if not provided
-        if nonce is None:
-            if len(ciphertext) < 24 + 16:
-                raise ValidationError("Ciphertext too short")
-            nonce = ciphertext[:24]
-            ciphertext = ciphertext[24:]
-
-        processed_nonce = self._process_nonce(key, nonce)
-
-        from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-        import cryptography.exceptions
-
-        cipher = ChaCha20Poly1305(key)
         try:
-            return cipher.decrypt(processed_nonce, ciphertext, associated_data)
-        except cryptography.exceptions.InvalidTag:
-            raise AuthenticationError("Authentication tag verification failed")
+            if len(key_bytes) != 32:
+                raise ValidationError(f"XChaCha20-Poly1305 requires 32-byte key, got {len(key_bytes)}")
+
+            # Extract nonce if not provided
+            if nonce is None:
+                if len(ciphertext) < 24 + 16:
+                    raise ValidationError("Ciphertext too short")
+                nonce = ciphertext[:24]
+                ciphertext = ciphertext[24:]
+
+            processed_nonce = self._process_nonce(key_bytes, nonce)
+
+            from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+            import cryptography.exceptions
+
+            cipher = ChaCha20Poly1305(key_bytes)
+            try:
+                plaintext = cipher.decrypt(processed_nonce, ciphertext, associated_data)
+                return SecureBytes(plaintext)
+            except cryptography.exceptions.InvalidTag:
+                raise AuthenticationError("Authentication tag verification failed")
+        finally:
+            # Zero key copy if original was SecureBytes
+            _secure_cleanup(key, key_bytes)
 
 
 # ============================================================================
