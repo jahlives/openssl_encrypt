@@ -10953,9 +10953,10 @@ class TestRandomXIntegration(unittest.TestCase):
             else:
                 raise
 
+    @unittest.mock.patch("sys.stdin.isatty", return_value=True)
     @unittest.mock.patch("builtins.input", return_value="n")
     @unittest.mock.patch("sys.exit")
-    def test_security_warning_randomx_no_hashing(self, mock_exit, mock_input):
+    def test_security_warning_randomx_no_hashing(self, mock_exit, mock_input, mock_isatty):
         """Test that security warning appears when RandomX is used without prior hashing."""
         self._check_randomx_available()
 
@@ -10986,8 +10987,9 @@ class TestRandomXIntegration(unittest.TestCase):
                 if not mock_exit.called:
                     raise
 
+    @unittest.mock.patch("sys.stdin.isatty", return_value=True)
     @unittest.mock.patch("builtins.input", return_value="y")
-    def test_security_warning_randomx_user_accepts(self, mock_input):
+    def test_security_warning_randomx_user_accepts(self, mock_input, mock_isatty):
         """Test that encryption proceeds when user accepts security warning."""
         self._check_randomx_available()
 
