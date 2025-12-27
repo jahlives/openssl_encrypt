@@ -13,7 +13,7 @@ All code in English as per project requirements.
 """
 
 from abc import abstractmethod
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 from .base import (
     AlgorithmBase,
@@ -23,6 +23,18 @@ from .base import (
     RegistryBase,
     SecurityLevel,
 )
+
+# Import SecureBytes for secure memory handling of secret keys
+try:
+    from ..secure_memory import SecureBytes, secure_memzero
+    SECURE_MEMORY_AVAILABLE = True
+except ImportError:
+    # Fallback if secure_memory module not available
+    SecureBytes = bytes
+    SECURE_MEMORY_AVAILABLE = False
+    def secure_memzero(data):
+        """Fallback no-op if secure_memory not available."""
+        pass
 
 # Import existing PQC implementation
 try:
@@ -48,26 +60,36 @@ class SignatureBase(AlgorithmBase):
     """
 
     @abstractmethod
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, 'SecureBytes']:
         """
         Generate a signature keypair.
 
         Returns:
             tuple: (public_key, secret_key)
+                - public_key: Public key (bytes - meant to be shared)
+                - secret_key: Secret key (SecureBytes - MUST be zeroed after use)
+
+        Security:
+            - Secret key is returned as SecureBytes for automatic cleanup
+            - Caller must ensure secret key is zeroed when no longer needed
         """
         pass
 
     @abstractmethod
-    def sign(self, message: bytes, secret_key: bytes) -> bytes:
+    def sign(self, message: bytes, secret_key: Union[bytes, 'SecureBytes']) -> bytes:
         """
         Sign a message using the secret key.
 
         Args:
             message: The message to sign
-            secret_key: The signer's secret key
+            secret_key: The signer's secret key (bytes or SecureBytes)
 
         Returns:
             bytes: The signature
+
+        Security:
+            - If secret_key is SecureBytes, a temporary copy is made and zeroed
+            - The original secret_key is never modified
         """
         pass
 
@@ -143,14 +165,23 @@ class MLDSA44(SignatureBase):
         # Use oqs library directly
         self._signer = oqs.Signature("ML-DSA-44")
 
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, SecureBytes]:
         public_key = self._signer.generate_keypair()
         secret_key = self._signer.export_secret_key()
-        return public_key, secret_key
+        # Wrap secret key in SecureBytes for automatic cleanup
+        return public_key, SecureBytes(secret_key)
 
-    def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        signer = oqs.Signature("ML-DSA-44", secret_key)
-        return signer.sign(message)
+    def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
+        # Convert SecureBytes to bytes for library
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
+
+        try:
+            signer = oqs.Signature("ML-DSA-44", secret_key_bytes)
+            return signer.sign(message)
+        finally:
+            # Zero secret key copy if original was SecureBytes
+            if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
+                secure_memzero(bytearray(secret_key_bytes))
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -192,14 +223,23 @@ class MLDSA65(SignatureBase):
             )
         self._signer = oqs.Signature("ML-DSA-65")
 
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, SecureBytes]:
         public_key = self._signer.generate_keypair()
         secret_key = self._signer.export_secret_key()
-        return public_key, secret_key
+        # Wrap secret key in SecureBytes for automatic cleanup
+        return public_key, SecureBytes(secret_key)
 
-    def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        signer = oqs.Signature("ML-DSA-65", secret_key)
-        return signer.sign(message)
+    def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
+        # Convert SecureBytes to bytes for library
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
+
+        try:
+            signer = oqs.Signature("ML-DSA-65", secret_key_bytes)
+            return signer.sign(message)
+        finally:
+            # Zero secret key copy if original was SecureBytes
+            if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
+                secure_memzero(bytearray(secret_key_bytes))
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -241,14 +281,23 @@ class MLDSA87(SignatureBase):
             )
         self._signer = oqs.Signature("ML-DSA-87")
 
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, SecureBytes]:
         public_key = self._signer.generate_keypair()
         secret_key = self._signer.export_secret_key()
-        return public_key, secret_key
+        # Wrap secret key in SecureBytes for automatic cleanup
+        return public_key, SecureBytes(secret_key)
 
-    def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        signer = oqs.Signature("ML-DSA-87", secret_key)
-        return signer.sign(message)
+    def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
+        # Convert SecureBytes to bytes for library
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
+
+        try:
+            signer = oqs.Signature("ML-DSA-87", secret_key_bytes)
+            return signer.sign(message)
+        finally:
+            # Zero secret key copy if original was SecureBytes
+            if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
+                secure_memzero(bytearray(secret_key_bytes))
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -294,14 +343,23 @@ class SLHDSASHA2128F(SignatureBase):
             )
         self._signer = oqs.Signature("SPHINCS+-SHA2-128f-simple")
 
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, SecureBytes]:
         public_key = self._signer.generate_keypair()
         secret_key = self._signer.export_secret_key()
-        return public_key, secret_key
+        # Wrap secret key in SecureBytes for automatic cleanup
+        return public_key, SecureBytes(secret_key)
 
-    def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        signer = oqs.Signature("SPHINCS+-SHA2-128f-simple", secret_key)
-        return signer.sign(message)
+    def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
+        # Convert SecureBytes to bytes for library
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
+
+        try:
+            signer = oqs.Signature("SPHINCS+-SHA2-128f-simple", secret_key_bytes)
+            return signer.sign(message)
+        finally:
+            # Zero secret key copy if original was SecureBytes
+            if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
+                secure_memzero(bytearray(secret_key_bytes))
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -343,14 +401,23 @@ class SLHDSASHA2192F(SignatureBase):
             )
         self._signer = oqs.Signature("SPHINCS+-SHA2-192f-simple")
 
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, SecureBytes]:
         public_key = self._signer.generate_keypair()
         secret_key = self._signer.export_secret_key()
-        return public_key, secret_key
+        # Wrap secret key in SecureBytes for automatic cleanup
+        return public_key, SecureBytes(secret_key)
 
-    def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        signer = oqs.Signature("SPHINCS+-SHA2-192f-simple", secret_key)
-        return signer.sign(message)
+    def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
+        # Convert SecureBytes to bytes for library
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
+
+        try:
+            signer = oqs.Signature("SPHINCS+-SHA2-192f-simple", secret_key_bytes)
+            return signer.sign(message)
+        finally:
+            # Zero secret key copy if original was SecureBytes
+            if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
+                secure_memzero(bytearray(secret_key_bytes))
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -392,14 +459,23 @@ class SLHDSASHA2256F(SignatureBase):
             )
         self._signer = oqs.Signature("SPHINCS+-SHA2-256f-simple")
 
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, SecureBytes]:
         public_key = self._signer.generate_keypair()
         secret_key = self._signer.export_secret_key()
-        return public_key, secret_key
+        # Wrap secret key in SecureBytes for automatic cleanup
+        return public_key, SecureBytes(secret_key)
 
-    def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        signer = oqs.Signature("SPHINCS+-SHA2-256f-simple", secret_key)
-        return signer.sign(message)
+    def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
+        # Convert SecureBytes to bytes for library
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
+
+        try:
+            signer = oqs.Signature("SPHINCS+-SHA2-256f-simple", secret_key_bytes)
+            return signer.sign(message)
+        finally:
+            # Zero secret key copy if original was SecureBytes
+            if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
+                secure_memzero(bytearray(secret_key_bytes))
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -445,14 +521,23 @@ class FNDSA512(SignatureBase):
             )
         self._signer = oqs.Signature("Falcon-512")
 
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, SecureBytes]:
         public_key = self._signer.generate_keypair()
         secret_key = self._signer.export_secret_key()
-        return public_key, secret_key
+        # Wrap secret key in SecureBytes for automatic cleanup
+        return public_key, SecureBytes(secret_key)
 
-    def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        signer = oqs.Signature("Falcon-512", secret_key)
-        return signer.sign(message)
+    def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
+        # Convert SecureBytes to bytes for library
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
+
+        try:
+            signer = oqs.Signature("Falcon-512", secret_key_bytes)
+            return signer.sign(message)
+        finally:
+            # Zero secret key copy if original was SecureBytes
+            if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
+                secure_memzero(bytearray(secret_key_bytes))
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -494,14 +579,23 @@ class FNDSA1024(SignatureBase):
             )
         self._signer = oqs.Signature("Falcon-1024")
 
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, SecureBytes]:
         public_key = self._signer.generate_keypair()
         secret_key = self._signer.export_secret_key()
-        return public_key, secret_key
+        # Wrap secret key in SecureBytes for automatic cleanup
+        return public_key, SecureBytes(secret_key)
 
-    def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        signer = oqs.Signature("Falcon-1024", secret_key)
-        return signer.sign(message)
+    def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
+        # Convert SecureBytes to bytes for library
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
+
+        try:
+            signer = oqs.Signature("Falcon-1024", secret_key_bytes)
+            return signer.sign(message)
+        finally:
+            # Zero secret key copy if original was SecureBytes
+            if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
+                secure_memzero(bytearray(secret_key_bytes))
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -547,14 +641,23 @@ class MAYO1(SignatureBase):
             )
         self._signer = oqs.Signature("MAYO-1")
 
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, SecureBytes]:
         public_key = self._signer.generate_keypair()
         secret_key = self._signer.export_secret_key()
-        return public_key, secret_key
+        # Wrap secret key in SecureBytes for automatic cleanup
+        return public_key, SecureBytes(secret_key)
 
-    def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        signer = oqs.Signature("MAYO-1", secret_key)
-        return signer.sign(message)
+    def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
+        # Convert SecureBytes to bytes for library
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
+
+        try:
+            signer = oqs.Signature("MAYO-1", secret_key_bytes)
+            return signer.sign(message)
+        finally:
+            # Zero secret key copy if original was SecureBytes
+            if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
+                secure_memzero(bytearray(secret_key_bytes))
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -596,14 +699,23 @@ class MAYO3(SignatureBase):
             )
         self._signer = oqs.Signature("MAYO-3")
 
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, SecureBytes]:
         public_key = self._signer.generate_keypair()
         secret_key = self._signer.export_secret_key()
-        return public_key, secret_key
+        # Wrap secret key in SecureBytes for automatic cleanup
+        return public_key, SecureBytes(secret_key)
 
-    def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        signer = oqs.Signature("MAYO-3", secret_key)
-        return signer.sign(message)
+    def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
+        # Convert SecureBytes to bytes for library
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
+
+        try:
+            signer = oqs.Signature("MAYO-3", secret_key_bytes)
+            return signer.sign(message)
+        finally:
+            # Zero secret key copy if original was SecureBytes
+            if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
+                secure_memzero(bytearray(secret_key_bytes))
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -645,14 +757,23 @@ class MAYO5(SignatureBase):
             )
         self._signer = oqs.Signature("MAYO-5")
 
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, SecureBytes]:
         public_key = self._signer.generate_keypair()
         secret_key = self._signer.export_secret_key()
-        return public_key, secret_key
+        # Wrap secret key in SecureBytes for automatic cleanup
+        return public_key, SecureBytes(secret_key)
 
-    def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        signer = oqs.Signature("MAYO-5", secret_key)
-        return signer.sign(message)
+    def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
+        # Convert SecureBytes to bytes for library
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
+
+        try:
+            signer = oqs.Signature("MAYO-5", secret_key_bytes)
+            return signer.sign(message)
+        finally:
+            # Zero secret key copy if original was SecureBytes
+            if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
+                secure_memzero(bytearray(secret_key_bytes))
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -698,14 +819,23 @@ class CROSS128(SignatureBase):
             )
         self._signer = oqs.Signature("cross-rsdp-128-balanced")
 
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, SecureBytes]:
         public_key = self._signer.generate_keypair()
         secret_key = self._signer.export_secret_key()
-        return public_key, secret_key
+        # Wrap secret key in SecureBytes for automatic cleanup
+        return public_key, SecureBytes(secret_key)
 
-    def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        signer = oqs.Signature("cross-rsdp-128-balanced", secret_key)
-        return signer.sign(message)
+    def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
+        # Convert SecureBytes to bytes for library
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
+
+        try:
+            signer = oqs.Signature("cross-rsdp-128-balanced", secret_key_bytes)
+            return signer.sign(message)
+        finally:
+            # Zero secret key copy if original was SecureBytes
+            if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
+                secure_memzero(bytearray(secret_key_bytes))
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -747,14 +877,23 @@ class CROSS192(SignatureBase):
             )
         self._signer = oqs.Signature("cross-rsdp-192-balanced")
 
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, SecureBytes]:
         public_key = self._signer.generate_keypair()
         secret_key = self._signer.export_secret_key()
-        return public_key, secret_key
+        # Wrap secret key in SecureBytes for automatic cleanup
+        return public_key, SecureBytes(secret_key)
 
-    def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        signer = oqs.Signature("cross-rsdp-192-balanced", secret_key)
-        return signer.sign(message)
+    def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
+        # Convert SecureBytes to bytes for library
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
+
+        try:
+            signer = oqs.Signature("cross-rsdp-192-balanced", secret_key_bytes)
+            return signer.sign(message)
+        finally:
+            # Zero secret key copy if original was SecureBytes
+            if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
+                secure_memzero(bytearray(secret_key_bytes))
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -796,14 +935,23 @@ class CROSS256(SignatureBase):
             )
         self._signer = oqs.Signature("cross-rsdp-256-balanced")
 
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, SecureBytes]:
         public_key = self._signer.generate_keypair()
         secret_key = self._signer.export_secret_key()
-        return public_key, secret_key
+        # Wrap secret key in SecureBytes for automatic cleanup
+        return public_key, SecureBytes(secret_key)
 
-    def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        signer = oqs.Signature("cross-rsdp-256-balanced", secret_key)
-        return signer.sign(message)
+    def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
+        # Convert SecureBytes to bytes for library
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
+
+        try:
+            signer = oqs.Signature("cross-rsdp-256-balanced", secret_key_bytes)
+            return signer.sign(message)
+        finally:
+            # Zero secret key copy if original was SecureBytes
+            if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
+                secure_memzero(bytearray(secret_key_bytes))
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
