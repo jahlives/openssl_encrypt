@@ -556,18 +556,22 @@ class TestSignatureComparison:
         assert FNDSA1024.info().security_level == SecurityLevel.PARANOID
 
     @pytest.mark.skipif(not LIBOQS_AVAILABLE, reason="liboqs not available")
-    def test_deterministic_signatures(self):
-        """Test that signatures are deterministic (for same key and message)."""
+    def test_randomized_signatures(self):
+        """Test that signatures are randomized (different each time)."""
         sig = MLDSA44()
         public_key, secret_key = sig.generate_keypair()
 
-        message = b"Determinism test"
+        message = b"Randomization test"
 
         signature1 = sig.sign(message, secret_key)
         signature2 = sig.sign(message, secret_key)
 
-        # ML-DSA signatures should be deterministic
-        assert signature1 == signature2
+        # ML-DSA signatures are randomized (not deterministic)
+        assert signature1 != signature2
+
+        # But both signatures should verify correctly
+        assert sig.verify(message, signature1, public_key)
+        assert sig.verify(message, signature2, public_key)
 
 
 # ============================================================================

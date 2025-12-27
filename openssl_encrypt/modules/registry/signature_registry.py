@@ -29,14 +29,15 @@ try:
     from ..pqc_liboqs import (
         LIBOQS_AVAILABLE,
         PQAlgorithm,
-        PQSigner,
         check_liboqs_support,
     )
+    # Import oqs directly to avoid incorrect mapping in PQSigner
+    import oqs
 except ImportError:
     LIBOQS_AVAILABLE = False
     PQAlgorithm = None
-    PQSigner = None
     check_liboqs_support = None
+    oqs = None
 
 
 class SignatureBase(AlgorithmBase):
@@ -127,6 +128,7 @@ class MLDSA44(SignatureBase):
             public_key_size=1312,
             secret_key_size=2560,
             signature_size=2420,
+            aliases=("ml_dsa_44", "mldsa44", "mldsa-44", "dilithium2"),
         )
 
     @classmethod
@@ -138,13 +140,17 @@ class MLDSA44(SignatureBase):
             raise AlgorithmNotAvailableError(
                 "ML-DSA-44 requires liboqs-python. Install with: pip install liboqs"
             )
-        self._signer = PQSigner("ML-DSA-44", quiet=True)
+        # Use oqs library directly
+        self._signer = oqs.Signature("ML-DSA-44")
 
     def generate_keypair(self) -> Tuple[bytes, bytes]:
-        return self._signer.generate_keypair()
+        public_key = self._signer.generate_keypair()
+        secret_key = self._signer.export_secret_key()
+        return public_key, secret_key
 
     def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        return self._signer.sign(message, secret_key)
+        signer = oqs.Signature("ML-DSA-44", secret_key)
+        return signer.sign(message)
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -172,6 +178,7 @@ class MLDSA65(SignatureBase):
             public_key_size=1952,
             secret_key_size=4032,
             signature_size=3309,
+            aliases=("ml_dsa_65", "mldsa65", "mldsa-65", "dilithium3"),
         )
 
     @classmethod
@@ -183,13 +190,16 @@ class MLDSA65(SignatureBase):
             raise AlgorithmNotAvailableError(
                 "ML-DSA-65 requires liboqs-python. Install with: pip install liboqs"
             )
-        self._signer = PQSigner("ML-DSA-65", quiet=True)
+        self._signer = oqs.Signature("ML-DSA-65")
 
     def generate_keypair(self) -> Tuple[bytes, bytes]:
-        return self._signer.generate_keypair()
+        public_key = self._signer.generate_keypair()
+        secret_key = self._signer.export_secret_key()
+        return public_key, secret_key
 
     def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        return self._signer.sign(message, secret_key)
+        signer = oqs.Signature("ML-DSA-65", secret_key)
+        return signer.sign(message)
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -217,6 +227,7 @@ class MLDSA87(SignatureBase):
             public_key_size=2592,
             secret_key_size=4896,
             signature_size=4627,
+            aliases=("ml_dsa_87", "mldsa87", "mldsa-87", "dilithium5"),
         )
 
     @classmethod
@@ -228,13 +239,16 @@ class MLDSA87(SignatureBase):
             raise AlgorithmNotAvailableError(
                 "ML-DSA-87 requires liboqs-python. Install with: pip install liboqs"
             )
-        self._signer = PQSigner("ML-DSA-87", quiet=True)
+        self._signer = oqs.Signature("ML-DSA-87")
 
     def generate_keypair(self) -> Tuple[bytes, bytes]:
-        return self._signer.generate_keypair()
+        public_key = self._signer.generate_keypair()
+        secret_key = self._signer.export_secret_key()
+        return public_key, secret_key
 
     def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        return self._signer.sign(message, secret_key)
+        signer = oqs.Signature("ML-DSA-87", secret_key)
+        return signer.sign(message)
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -266,6 +280,7 @@ class SLHDSASHA2128F(SignatureBase):
             public_key_size=32,
             secret_key_size=64,
             signature_size=17088,
+            aliases=("slh_dsa_sha2_128f", "slhdsasha2-128f", "sphincs-sha2-128f"),
         )
 
     @classmethod
@@ -277,13 +292,16 @@ class SLHDSASHA2128F(SignatureBase):
             raise AlgorithmNotAvailableError(
                 "SLH-DSA-SHA2-128F requires liboqs-python. Install with: pip install liboqs"
             )
-        self._signer = PQSigner("SLH-DSA-SHA2-128F", quiet=True)
+        self._signer = oqs.Signature("SPHINCS+-SHA2-128f-simple")
 
     def generate_keypair(self) -> Tuple[bytes, bytes]:
-        return self._signer.generate_keypair()
+        public_key = self._signer.generate_keypair()
+        secret_key = self._signer.export_secret_key()
+        return public_key, secret_key
 
     def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        return self._signer.sign(message, secret_key)
+        signer = oqs.Signature("SPHINCS+-SHA2-128f-simple", secret_key)
+        return signer.sign(message)
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -311,6 +329,7 @@ class SLHDSASHA2192F(SignatureBase):
             public_key_size=48,
             secret_key_size=96,
             signature_size=35664,
+            aliases=("slh_dsa_sha2_192f", "slhdsasha2-192f", "sphincs-sha2-192f"),
         )
 
     @classmethod
@@ -322,13 +341,16 @@ class SLHDSASHA2192F(SignatureBase):
             raise AlgorithmNotAvailableError(
                 "SLH-DSA-SHA2-192F requires liboqs-python. Install with: pip install liboqs"
             )
-        self._signer = PQSigner("SLH-DSA-SHA2-192F", quiet=True)
+        self._signer = oqs.Signature("SPHINCS+-SHA2-192f-simple")
 
     def generate_keypair(self) -> Tuple[bytes, bytes]:
-        return self._signer.generate_keypair()
+        public_key = self._signer.generate_keypair()
+        secret_key = self._signer.export_secret_key()
+        return public_key, secret_key
 
     def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        return self._signer.sign(message, secret_key)
+        signer = oqs.Signature("SPHINCS+-SHA2-192f-simple", secret_key)
+        return signer.sign(message)
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -356,6 +378,7 @@ class SLHDSASHA2256F(SignatureBase):
             public_key_size=64,
             secret_key_size=128,
             signature_size=49856,
+            aliases=("slh_dsa_sha2_256f", "slhdsasha2-256f", "sphincs-sha2-256f"),
         )
 
     @classmethod
@@ -367,13 +390,16 @@ class SLHDSASHA2256F(SignatureBase):
             raise AlgorithmNotAvailableError(
                 "SLH-DSA-SHA2-256F requires liboqs-python. Install with: pip install liboqs"
             )
-        self._signer = PQSigner("SLH-DSA-SHA2-256F", quiet=True)
+        self._signer = oqs.Signature("SPHINCS+-SHA2-256f-simple")
 
     def generate_keypair(self) -> Tuple[bytes, bytes]:
-        return self._signer.generate_keypair()
+        public_key = self._signer.generate_keypair()
+        secret_key = self._signer.export_secret_key()
+        return public_key, secret_key
 
     def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        return self._signer.sign(message, secret_key)
+        signer = oqs.Signature("SPHINCS+-SHA2-256f-simple", secret_key)
+        return signer.sign(message)
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -405,6 +431,7 @@ class FNDSA512(SignatureBase):
             public_key_size=897,
             secret_key_size=1281,
             signature_size=666,
+            aliases=('fn_dsa_512', 'fndsa512', 'fndsa-512', 'falcon512', 'falcon-512'),
         )
 
     @classmethod
@@ -416,13 +443,16 @@ class FNDSA512(SignatureBase):
             raise AlgorithmNotAvailableError(
                 "FN-DSA-512 requires liboqs-python. Install with: pip install liboqs"
             )
-        self._signer = PQSigner("FN-DSA-512", quiet=True)
+        self._signer = oqs.Signature("Falcon-512")
 
     def generate_keypair(self) -> Tuple[bytes, bytes]:
-        return self._signer.generate_keypair()
+        public_key = self._signer.generate_keypair()
+        secret_key = self._signer.export_secret_key()
+        return public_key, secret_key
 
     def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        return self._signer.sign(message, secret_key)
+        signer = oqs.Signature("Falcon-512", secret_key)
+        return signer.sign(message)
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -450,6 +480,7 @@ class FNDSA1024(SignatureBase):
             public_key_size=1793,
             secret_key_size=2305,
             signature_size=1280,
+            aliases=('fn_dsa_1024', 'fndsa1024', 'fndsa-1024', 'falcon1024', 'falcon-1024'),
         )
 
     @classmethod
@@ -461,13 +492,16 @@ class FNDSA1024(SignatureBase):
             raise AlgorithmNotAvailableError(
                 "FN-DSA-1024 requires liboqs-python. Install with: pip install liboqs"
             )
-        self._signer = PQSigner("FN-DSA-1024", quiet=True)
+        self._signer = oqs.Signature("Falcon-1024")
 
     def generate_keypair(self) -> Tuple[bytes, bytes]:
-        return self._signer.generate_keypair()
+        public_key = self._signer.generate_keypair()
+        secret_key = self._signer.export_secret_key()
+        return public_key, secret_key
 
     def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        return self._signer.sign(message, secret_key)
+        signer = oqs.Signature("Falcon-1024", secret_key)
+        return signer.sign(message)
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -499,6 +533,7 @@ class MAYO1(SignatureBase):
             public_key_size=1168,
             secret_key_size=24,
             signature_size=321,
+            aliases=('mayo_1', 'mayo1'),
         )
 
     @classmethod
@@ -510,13 +545,16 @@ class MAYO1(SignatureBase):
             raise AlgorithmNotAvailableError(
                 "MAYO-1 requires liboqs-python. Install with: pip install liboqs"
             )
-        self._signer = PQSigner("MAYO-1", quiet=True)
+        self._signer = oqs.Signature("MAYO-1")
 
     def generate_keypair(self) -> Tuple[bytes, bytes]:
-        return self._signer.generate_keypair()
+        public_key = self._signer.generate_keypair()
+        secret_key = self._signer.export_secret_key()
+        return public_key, secret_key
 
     def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        return self._signer.sign(message, secret_key)
+        signer = oqs.Signature("MAYO-1", secret_key)
+        return signer.sign(message)
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -544,6 +582,7 @@ class MAYO3(SignatureBase):
             public_key_size=2656,
             secret_key_size=32,
             signature_size=577,
+            aliases=('mayo_3', 'mayo3'),
         )
 
     @classmethod
@@ -555,13 +594,16 @@ class MAYO3(SignatureBase):
             raise AlgorithmNotAvailableError(
                 "MAYO-3 requires liboqs-python. Install with: pip install liboqs"
             )
-        self._signer = PQSigner("MAYO-3", quiet=True)
+        self._signer = oqs.Signature("MAYO-3")
 
     def generate_keypair(self) -> Tuple[bytes, bytes]:
-        return self._signer.generate_keypair()
+        public_key = self._signer.generate_keypair()
+        secret_key = self._signer.export_secret_key()
+        return public_key, secret_key
 
     def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        return self._signer.sign(message, secret_key)
+        signer = oqs.Signature("MAYO-3", secret_key)
+        return signer.sign(message)
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -589,6 +631,7 @@ class MAYO5(SignatureBase):
             public_key_size=5488,
             secret_key_size=40,
             signature_size=838,
+            aliases=('mayo_5', 'mayo5'),
         )
 
     @classmethod
@@ -600,13 +643,16 @@ class MAYO5(SignatureBase):
             raise AlgorithmNotAvailableError(
                 "MAYO-5 requires liboqs-python. Install with: pip install liboqs"
             )
-        self._signer = PQSigner("MAYO-5", quiet=True)
+        self._signer = oqs.Signature("MAYO-5")
 
     def generate_keypair(self) -> Tuple[bytes, bytes]:
-        return self._signer.generate_keypair()
+        public_key = self._signer.generate_keypair()
+        secret_key = self._signer.export_secret_key()
+        return public_key, secret_key
 
     def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        return self._signer.sign(message, secret_key)
+        signer = oqs.Signature("MAYO-5", secret_key)
+        return signer.sign(message)
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -638,6 +684,7 @@ class CROSS128(SignatureBase):
             public_key_size=77,
             secret_key_size=32,
             signature_size=12852,
+            aliases=('cross_128', 'cross128'),
         )
 
     @classmethod
@@ -649,13 +696,16 @@ class CROSS128(SignatureBase):
             raise AlgorithmNotAvailableError(
                 "CROSS-128 requires liboqs-python. Install with: pip install liboqs"
             )
-        self._signer = PQSigner("CROSS-128", quiet=True)
+        self._signer = oqs.Signature("cross-rsdp-128-balanced")
 
     def generate_keypair(self) -> Tuple[bytes, bytes]:
-        return self._signer.generate_keypair()
+        public_key = self._signer.generate_keypair()
+        secret_key = self._signer.export_secret_key()
+        return public_key, secret_key
 
     def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        return self._signer.sign(message, secret_key)
+        signer = oqs.Signature("cross-rsdp-128-balanced", secret_key)
+        return signer.sign(message)
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -683,6 +733,7 @@ class CROSS192(SignatureBase):
             public_key_size=115,
             secret_key_size=48,
             signature_size=28036,
+            aliases=('cross_192', 'cross192'),
         )
 
     @classmethod
@@ -694,13 +745,16 @@ class CROSS192(SignatureBase):
             raise AlgorithmNotAvailableError(
                 "CROSS-192 requires liboqs-python. Install with: pip install liboqs"
             )
-        self._signer = PQSigner("CROSS-192", quiet=True)
+        self._signer = oqs.Signature("cross-rsdp-192-balanced")
 
     def generate_keypair(self) -> Tuple[bytes, bytes]:
-        return self._signer.generate_keypair()
+        public_key = self._signer.generate_keypair()
+        secret_key = self._signer.export_secret_key()
+        return public_key, secret_key
 
     def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        return self._signer.sign(message, secret_key)
+        signer = oqs.Signature("cross-rsdp-192-balanced", secret_key)
+        return signer.sign(message)
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -728,6 +782,7 @@ class CROSS256(SignatureBase):
             public_key_size=153,
             secret_key_size=64,
             signature_size=51044,
+            aliases=('cross_256', 'cross256'),
         )
 
     @classmethod
@@ -739,13 +794,16 @@ class CROSS256(SignatureBase):
             raise AlgorithmNotAvailableError(
                 "CROSS-256 requires liboqs-python. Install with: pip install liboqs"
             )
-        self._signer = PQSigner("CROSS-256", quiet=True)
+        self._signer = oqs.Signature("cross-rsdp-256-balanced")
 
     def generate_keypair(self) -> Tuple[bytes, bytes]:
-        return self._signer.generate_keypair()
+        public_key = self._signer.generate_keypair()
+        secret_key = self._signer.export_secret_key()
+        return public_key, secret_key
 
     def sign(self, message: bytes, secret_key: bytes) -> bytes:
-        return self._signer.sign(message, secret_key)
+        signer = oqs.Signature("cross-rsdp-256-balanced", secret_key)
+        return signer.sign(message)
 
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
         return self._signer.verify(message, signature, public_key)
@@ -779,70 +837,28 @@ class SignatureRegistry(RegistryBase[SignatureBase]):
     def _register_all(self):
         """Register all signature implementations."""
         # ML-DSA (NIST FIPS 204)
-        self.register(
-            MLDSA44,
-            aliases=("ml_dsa_44", "mldsa44", "mldsa-44", "dilithium2")
-        )
-        self.register(
-            MLDSA65,
-            aliases=("ml_dsa_65", "mldsa65", "mldsa-65", "dilithium3")
-        )
-        self.register(
-            MLDSA87,
-            aliases=("ml_dsa_87", "mldsa87", "mldsa-87", "dilithium5")
-        )
+        self.register(MLDSA44)
+        self.register(MLDSA65)
+        self.register(MLDSA87)
 
         # SLH-DSA (NIST FIPS 205)
-        self.register(
-            SLHDSASHA2128F,
-            aliases=("slh_dsa_sha2_128f", "slhdsasha2-128f", "sphincs-sha2-128f")
-        )
-        self.register(
-            SLHDSASHA2192F,
-            aliases=("slh_dsa_sha2_192f", "slhdsasha2-192f", "sphincs-sha2-192f")
-        )
-        self.register(
-            SLHDSASHA2256F,
-            aliases=("slh_dsa_sha2_256f", "slhdsasha2-256f", "sphincs-sha2-256f")
-        )
+        self.register(SLHDSASHA2128F)
+        self.register(SLHDSASHA2192F)
+        self.register(SLHDSASHA2256F)
 
         # FN-DSA (NIST FIPS 206)
-        self.register(
-            FNDSA512,
-            aliases=("fn_dsa_512", "fndsa512", "fndsa-512", "falcon512", "falcon-512")
-        )
-        self.register(
-            FNDSA1024,
-            aliases=("fn_dsa_1024", "fndsa1024", "fndsa-1024", "falcon1024", "falcon-1024")
-        )
+        self.register(FNDSA512)
+        self.register(FNDSA1024)
 
         # MAYO (NIST Round 2)
-        self.register(
-            MAYO1,
-            aliases=("mayo_1", "mayo1")
-        )
-        self.register(
-            MAYO3,
-            aliases=("mayo_3", "mayo3")
-        )
-        self.register(
-            MAYO5,
-            aliases=("mayo_5", "mayo5")
-        )
+        self.register(MAYO1)
+        self.register(MAYO3)
+        self.register(MAYO5)
 
         # CROSS (NIST Round 2)
-        self.register(
-            CROSS128,
-            aliases=("cross_128", "cross128")
-        )
-        self.register(
-            CROSS192,
-            aliases=("cross_192", "cross192")
-        )
-        self.register(
-            CROSS256,
-            aliases=("cross_256", "cross256")
-        )
+        self.register(CROSS128)
+        self.register(CROSS192)
+        self.register(CROSS256)
 
     @classmethod
     def default(cls) -> "SignatureRegistry":
