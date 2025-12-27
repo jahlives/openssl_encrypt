@@ -76,8 +76,35 @@ __all__ = [
     "unpad_pkcs7",
 ]
 
-# Registries will be added as they are implemented:
-# "CipherRegistry", "get_cipher",
+# Cipher registry
+from .cipher_registry import (
+    CipherBase,
+    CipherParams,
+    CipherRegistry,
+    get_cipher,
+    AES256GCM,
+    AESGCMSIV,
+    AESSIV,
+    AESOCB3,
+    ChaCha20Poly1305,
+    XChaCha20Poly1305,
+)
+
+__all__.extend([
+    # Cipher registry
+    "CipherBase",
+    "CipherParams",
+    "CipherRegistry",
+    "get_cipher",
+    "AES256GCM",
+    "AESGCMSIV",
+    "AESSIV",
+    "AESOCB3",
+    "ChaCha20Poly1305",
+    "XChaCha20Poly1305",
+])
+
+# Registries to be added:
 # "HashRegistry", "get_hash",
 # "KDFRegistry", "get_kdf",
 # "KEMRegistry", "get_kem",
