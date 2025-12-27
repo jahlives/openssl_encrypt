@@ -258,3 +258,41 @@ __all__.extend([
 
 # Note: HybridRegistry not needed - hybrid encryption can be composed by
 # combining KEMs with ciphers at application level
+
+# CLI helper functions
+from .cli_helpers import (
+    get_available_ciphers,
+    get_available_hashes,
+    get_available_kdfs,
+    get_available_kems,
+    get_available_signatures,
+    get_cipher_info_dict,
+    get_kdf_info_dict,
+    format_algorithm_help,
+    get_recommended_cipher,
+    get_recommended_hash,
+    get_recommended_kdf,
+    get_recommended_kem,
+    get_recommended_signature,
+    validate_algorithm_name,
+    get_cipher_aliases,
+)
+
+__all__.extend([
+    # CLI helpers
+    "get_available_ciphers",
+    "get_available_hashes",
+    "get_available_kdfs",
+    "get_available_kems",
+    "get_available_signatures",
+    "get_cipher_info_dict",
+    "get_kdf_info_dict",
+    "format_algorithm_help",
+    "get_recommended_cipher",
+    "get_recommended_hash",
+    "get_recommended_kdf",
+    "get_recommended_kem",
+    "get_recommended_signature",
+    "validate_algorithm_name",
+    "get_cipher_aliases",
+])
