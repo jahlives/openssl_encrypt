@@ -889,6 +889,74 @@ def analyze_current_security_configuration(args):
         print("Please check your configuration parameters.")
 
 
+def show_algorithm_registry(args):
+    """
+    Display available algorithms from the registry system.
+
+    Args:
+        args: Parsed command line arguments with category and format options
+    """
+    try:
+        from .registry import format_algorithm_help
+
+        category = getattr(args, "category", "all")
+        output_format = getattr(args, "format", "detailed")
+
+        if category == "all":
+            # Show all categories
+            categories = ["cipher", "hash", "kdf", "kem", "signature"]
+        else:
+            # Map plural form to singular
+            category_map = {
+                "ciphers": "cipher",
+                "hashes": "hash",
+                "kdfs": "kdf",
+                "kems": "kem",
+                "signatures": "signature",
+            }
+            categories = [category_map.get(category, category)]
+
+        if output_format == "detailed":
+            # Show detailed information with descriptions
+            for cat in categories:
+                print(format_algorithm_help(cat))
+                print()  # Blank line between categories
+        else:
+            # Simple format - just list names
+            from .registry import (
+                get_available_ciphers,
+                get_available_hashes,
+                get_available_kdfs,
+                get_available_kems,
+                get_available_signatures,
+            )
+
+            getters = {
+                "cipher": ("Ciphers", get_available_ciphers),
+                "hash": ("Hash Functions", get_available_hashes),
+                "kdf": ("Key Derivation Functions", get_available_kdfs),
+                "kem": ("KEMs (Post-Quantum)", get_available_kems),
+                "signature": ("Signatures (Post-Quantum)", get_available_signatures),
+            }
+
+            for cat in categories:
+                if cat in getters:
+                    title, getter = getters[cat]
+                    algorithms = getter()
+                    print(f"\n{title}:")
+                    print("=" * len(title))
+                    for algo in algorithms:
+                        print(f"  {algo}")
+
+    except ImportError:
+        print("Error: Registry system not available.")
+        print("The algorithm registry module could not be imported.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error displaying algorithms: {e}")
+        sys.exit(1)
+
+
 def run_config_wizard(args):
     """
     Run the configuration wizard and display results.
@@ -1818,6 +1886,7 @@ def main():
         "decrypt",
         "shred",
         "generate-password",
+        "list-algorithms",
         "security-info",
         "analyze-security",
         "config-wizard",
@@ -3139,6 +3208,10 @@ def main_with_args(args=None):
         from .identity_cli import main as identity_main
 
         sys.exit(identity_main(args))
+
+    elif args.action == "list-algorithms":
+        show_algorithm_registry(args)
+        sys.exit(0)
 
     elif args.action == "check-argon2":
         argon2_available, version, supported_types = check_argon2_support()

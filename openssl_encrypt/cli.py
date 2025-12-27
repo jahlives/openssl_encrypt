@@ -44,6 +44,7 @@ def main():
             print("  decrypt              Decrypt previously encrypted files")
             print("  shred                Securely delete files")
             print("  generate-password    Generate cryptographically secure passwords")
+            print("  list-algorithms      List available cryptographic algorithms")
             print("  security-info        Display security information and algorithms")
             print("  check-argon2         Verify Argon2 implementation")
             print("  check-pqc           Check post-quantum cryptography support")

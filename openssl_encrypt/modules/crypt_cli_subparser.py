@@ -11,6 +11,20 @@ import argparse
 from .crypt_cli_helper import add_extended_algorithm_help
 from .crypt_core import EncryptionAlgorithm
 
+# Import registry helper functions
+try:
+    from .registry import (
+        format_algorithm_help,
+        get_available_ciphers,
+        get_available_hashes,
+        get_available_kdfs,
+        get_available_kems,
+        get_available_signatures,
+    )
+    REGISTRY_AVAILABLE = True
+except ImportError:
+    REGISTRY_AVAILABLE = False
+
 
 def get_available_algorithms_1_0():
     """Get only algorithms available in 1.0.0 (excludes MAYO and CROSS)."""
@@ -1349,6 +1363,22 @@ def setup_test_parser(subparser):
         parser.add_argument("--quiet", action="store_true", help="Suppress test progress output")
 
 
+def setup_list_algorithms_parser(subparser):
+    """Set up arguments for list-algorithms command (registry-based)."""
+    subparser.add_argument(
+        "--category",
+        choices=["ciphers", "hashes", "kdfs", "kems", "signatures", "all"],
+        default="all",
+        help="Algorithm category to list (default: all)",
+    )
+    subparser.add_argument(
+        "--format",
+        choices=["simple", "detailed"],
+        default="detailed",
+        help="Output format (default: detailed)",
+    )
+
+
 def create_subparser_main():
     """
     Create a main function that uses subparsers instead of the monolithic approach.
@@ -1502,6 +1532,15 @@ def create_subparser_main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_simple_parser(show_version_file_parser)
+
+    # Registry-based algorithm listing command
+    if REGISTRY_AVAILABLE:
+        list_algorithms_parser = subparsers.add_parser(
+            "list-algorithms",
+            help="List available cryptographic algorithms (ciphers, hashes, KDFs, KEMs, signatures)",
+            formatter_class=argparse.RawTextHelpFormatter,
+        )
+        setup_list_algorithms_parser(list_algorithms_parser)
 
     # Note: Steganography is now integrated into encrypt/decrypt commands
     # rather than separate commands
