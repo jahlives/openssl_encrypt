@@ -373,8 +373,8 @@ def setup_encrypt_parser(subparser):
     randomx_group.add_argument(
         "--randomx-rounds",
         type=int,
-        default=1,
-        help="Number of RandomX rounds (default: 1)",
+        default=0,
+        help="Number of RandomX rounds (default when enabled: 10)",
     )
     randomx_group.add_argument(
         "--randomx-mode",

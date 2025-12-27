@@ -1443,10 +1443,6 @@ class TestCLIInterface(unittest.TestCase):
             "--output",
             decrypted_file,
             "--force-password",
-            "--algorithm",
-            "fernet",
-            "--pbkdf2-iterations",
-            "1000",
         ]
 
         # Redirect stdout again
