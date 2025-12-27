@@ -11,7 +11,7 @@ All code in English as per project requirements.
 
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 from .base import (
     AlgorithmBase,
@@ -21,6 +21,18 @@ from .base import (
     SecurityLevel,
     AlgorithmNotAvailableError,
 )
+
+# Import secure memory handling
+try:
+    from ..secure_memory import SecureBytes, secure_memzero
+    SECURE_MEMORY_AVAILABLE = True
+except ImportError:
+    SecureBytes = bytes
+    SECURE_MEMORY_AVAILABLE = False
+
+    def secure_memzero(data):
+        """Fallback no-op."""
+        pass
 
 # Import existing PQC implementation
 try:
@@ -47,17 +59,23 @@ class KEMBase(AlgorithmBase):
     """
 
     @abstractmethod
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, 'SecureBytes']:
         """
         Generate a KEM keypair.
 
         Returns:
             tuple: (public_key, secret_key)
+                - public_key: Public key (bytes - meant to be shared)
+                - secret_key: Secret key (SecureBytes - MUST be zeroed after use)
+
+        Security:
+            - Returns secret key as SecureBytes for automatic cleanup
+            - Caller MUST explicitly zero the secret key after use
         """
         pass
 
     @abstractmethod
-    def encapsulate(self, public_key: bytes) -> Tuple[bytes, bytes]:
+    def encapsulate(self, public_key: bytes) -> Tuple[bytes, 'SecureBytes']:
         """
         Encapsulate a shared secret using a public key.
 
@@ -66,22 +84,31 @@ class KEMBase(AlgorithmBase):
 
         Returns:
             tuple: (ciphertext, shared_secret)
-                - ciphertext: Encapsulated shared secret to send
-                - shared_secret: The shared secret to use for encryption
+                - ciphertext: Encapsulated shared secret to send (bytes)
+                - shared_secret: The shared secret (SecureBytes - MUST be zeroed after use)
+
+        Security:
+            - Returns shared secret as SecureBytes for automatic cleanup
+            - Caller MUST explicitly zero the shared secret after use
         """
         pass
 
     @abstractmethod
-    def decapsulate(self, ciphertext: bytes, secret_key: bytes) -> bytes:
+    def decapsulate(self, ciphertext: bytes, secret_key: Union[bytes, 'SecureBytes']) -> 'SecureBytes':
         """
         Decapsulate the shared secret using the secret key.
 
         Args:
             ciphertext: The encapsulated shared secret
-            secret_key: The recipient's secret key
+            secret_key: The recipient's secret key (bytes or SecureBytes)
 
         Returns:
-            bytes: The decapsulated shared secret
+            SecureBytes: The decapsulated shared secret (MUST be zeroed after use)
+
+        Security:
+            - Accepts secret key as bytes or SecureBytes
+            - Returns shared secret as SecureBytes for automatic cleanup
+            - Secret key copy is zeroed after use
         """
         pass
 
@@ -148,18 +175,28 @@ class MLKEM512(KEMBase):
         # Use oqs library directly (PQEncapsulator has incorrect name mappings)
         self._kem = oqs.KeyEncapsulation("ML-KEM-512")
 
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, SecureBytes]:
         public_key = self._kem.generate_keypair()
         secret_key = self._kem.export_secret_key()
-        return public_key, secret_key
+        return public_key, SecureBytes(secret_key)
 
-    def encapsulate(self, public_key: bytes) -> Tuple[bytes, bytes]:
-        return self._kem.encap_secret(public_key)
+    def encapsulate(self, public_key: bytes) -> Tuple[bytes, SecureBytes]:
+        ciphertext, shared_secret = self._kem.encap_secret(public_key)
+        return ciphertext, SecureBytes(shared_secret)
 
-    def decapsulate(self, ciphertext: bytes, secret_key: bytes) -> bytes:
-        # Load secret key and decapsulate
-        kem = oqs.KeyEncapsulation("ML-KEM-512", secret_key)
-        return kem.decap_secret(ciphertext)
+    def decapsulate(self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]) -> SecureBytes:
+        # Convert SecureBytes to bytes for library
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
+
+        try:
+            # Load secret key and decapsulate
+            kem = oqs.KeyEncapsulation("ML-KEM-512", secret_key_bytes)
+            shared_secret = kem.decap_secret(ciphertext)
+            return SecureBytes(shared_secret)
+        finally:
+            # Zero secret key copy if original was SecureBytes
+            if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
+                secure_memzero(bytearray(secret_key_bytes))
 
 
 class MLKEM768(KEMBase):
@@ -199,17 +236,28 @@ class MLKEM768(KEMBase):
             )
         self._kem = oqs.KeyEncapsulation("ML-KEM-768")
 
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, SecureBytes]:
         public_key = self._kem.generate_keypair()
         secret_key = self._kem.export_secret_key()
-        return public_key, secret_key
+        return public_key, SecureBytes(secret_key)
 
-    def encapsulate(self, public_key: bytes) -> Tuple[bytes, bytes]:
-        return self._kem.encap_secret(public_key)
+    def encapsulate(self, public_key: bytes) -> Tuple[bytes, SecureBytes]:
+        ciphertext, shared_secret = self._kem.encap_secret(public_key)
+        return ciphertext, SecureBytes(shared_secret)
+    def decapsulate(self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]) -> SecureBytes:
+        # Convert SecureBytes to bytes for library
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
-    def decapsulate(self, ciphertext: bytes, secret_key: bytes) -> bytes:
-        kem = oqs.KeyEncapsulation("ML-KEM-768", secret_key)
-        return kem.decap_secret(ciphertext)
+        try:
+            # Load secret key and decapsulate
+            kem = oqs.KeyEncapsulation("ML-KEM-768", secret_key_bytes)
+            shared_secret = kem.decap_secret(ciphertext)
+            return SecureBytes(shared_secret)
+        finally:
+            # Zero secret key copy if original was SecureBytes
+            if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
+                secure_memzero(bytearray(secret_key_bytes))
+
 
 
 class MLKEM1024(KEMBase):
@@ -249,17 +297,28 @@ class MLKEM1024(KEMBase):
             )
         self._kem = oqs.KeyEncapsulation("ML-KEM-1024")
 
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, SecureBytes]:
         public_key = self._kem.generate_keypair()
         secret_key = self._kem.export_secret_key()
-        return public_key, secret_key
+        return public_key, SecureBytes(secret_key)
 
-    def encapsulate(self, public_key: bytes) -> Tuple[bytes, bytes]:
-        return self._kem.encap_secret(public_key)
+    def encapsulate(self, public_key: bytes) -> Tuple[bytes, SecureBytes]:
+        ciphertext, shared_secret = self._kem.encap_secret(public_key)
+        return ciphertext, SecureBytes(shared_secret)
+    def decapsulate(self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]) -> SecureBytes:
+        # Convert SecureBytes to bytes for library
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
-    def decapsulate(self, ciphertext: bytes, secret_key: bytes) -> bytes:
-        kem = oqs.KeyEncapsulation("ML-KEM-1024", secret_key)
-        return kem.decap_secret(ciphertext)
+        try:
+            # Load secret key and decapsulate
+            kem = oqs.KeyEncapsulation("ML-KEM-1024", secret_key_bytes)
+            shared_secret = kem.decap_secret(ciphertext)
+            return SecureBytes(shared_secret)
+        finally:
+            # Zero secret key copy if original was SecureBytes
+            if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
+                secure_memzero(bytearray(secret_key_bytes))
+
 
 
 # ============================================================================
@@ -303,17 +362,28 @@ class HQC128(KEMBase):
             )
         self._kem = oqs.KeyEncapsulation("HQC-128")
 
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, SecureBytes]:
         public_key = self._kem.generate_keypair()
         secret_key = self._kem.export_secret_key()
-        return public_key, secret_key
+        return public_key, SecureBytes(secret_key)
 
-    def encapsulate(self, public_key: bytes) -> Tuple[bytes, bytes]:
-        return self._kem.encap_secret(public_key)
+    def encapsulate(self, public_key: bytes) -> Tuple[bytes, SecureBytes]:
+        ciphertext, shared_secret = self._kem.encap_secret(public_key)
+        return ciphertext, SecureBytes(shared_secret)
+    def decapsulate(self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]) -> SecureBytes:
+        # Convert SecureBytes to bytes for library
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
-    def decapsulate(self, ciphertext: bytes, secret_key: bytes) -> bytes:
-        kem = oqs.KeyEncapsulation("HQC-128", secret_key)
-        return kem.decap_secret(ciphertext)
+        try:
+            # Load secret key and decapsulate
+            kem = oqs.KeyEncapsulation("HQC-128", secret_key_bytes)
+            shared_secret = kem.decap_secret(ciphertext)
+            return SecureBytes(shared_secret)
+        finally:
+            # Zero secret key copy if original was SecureBytes
+            if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
+                secure_memzero(bytearray(secret_key_bytes))
+
 
 
 class HQC192(KEMBase):
@@ -353,17 +423,28 @@ class HQC192(KEMBase):
             )
         self._kem = oqs.KeyEncapsulation("HQC-192")
 
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, SecureBytes]:
         public_key = self._kem.generate_keypair()
         secret_key = self._kem.export_secret_key()
-        return public_key, secret_key
+        return public_key, SecureBytes(secret_key)
 
-    def encapsulate(self, public_key: bytes) -> Tuple[bytes, bytes]:
-        return self._kem.encap_secret(public_key)
+    def encapsulate(self, public_key: bytes) -> Tuple[bytes, SecureBytes]:
+        ciphertext, shared_secret = self._kem.encap_secret(public_key)
+        return ciphertext, SecureBytes(shared_secret)
+    def decapsulate(self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]) -> SecureBytes:
+        # Convert SecureBytes to bytes for library
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
-    def decapsulate(self, ciphertext: bytes, secret_key: bytes) -> bytes:
-        kem = oqs.KeyEncapsulation("HQC-192", secret_key)
-        return kem.decap_secret(ciphertext)
+        try:
+            # Load secret key and decapsulate
+            kem = oqs.KeyEncapsulation("HQC-192", secret_key_bytes)
+            shared_secret = kem.decap_secret(ciphertext)
+            return SecureBytes(shared_secret)
+        finally:
+            # Zero secret key copy if original was SecureBytes
+            if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
+                secure_memzero(bytearray(secret_key_bytes))
+
 
 
 class HQC256(KEMBase):
@@ -403,17 +484,28 @@ class HQC256(KEMBase):
             )
         self._kem = oqs.KeyEncapsulation("HQC-256")
 
-    def generate_keypair(self) -> Tuple[bytes, bytes]:
+    def generate_keypair(self) -> Tuple[bytes, SecureBytes]:
         public_key = self._kem.generate_keypair()
         secret_key = self._kem.export_secret_key()
-        return public_key, secret_key
+        return public_key, SecureBytes(secret_key)
 
-    def encapsulate(self, public_key: bytes) -> Tuple[bytes, bytes]:
-        return self._kem.encap_secret(public_key)
+    def encapsulate(self, public_key: bytes) -> Tuple[bytes, SecureBytes]:
+        ciphertext, shared_secret = self._kem.encap_secret(public_key)
+        return ciphertext, SecureBytes(shared_secret)
+    def decapsulate(self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]) -> SecureBytes:
+        # Convert SecureBytes to bytes for library
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
-    def decapsulate(self, ciphertext: bytes, secret_key: bytes) -> bytes:
-        kem = oqs.KeyEncapsulation("HQC-256", secret_key)
-        return kem.decap_secret(ciphertext)
+        try:
+            # Load secret key and decapsulate
+            kem = oqs.KeyEncapsulation("HQC-256", secret_key_bytes)
+            shared_secret = kem.decap_secret(ciphertext)
+            return SecureBytes(shared_secret)
+        finally:
+            # Zero secret key copy if original was SecureBytes
+            if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
+                secure_memzero(bytearray(secret_key_bytes))
+
 
 
 # ============================================================================
