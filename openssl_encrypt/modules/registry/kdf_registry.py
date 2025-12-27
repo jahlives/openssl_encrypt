@@ -11,7 +11,7 @@ All code in English as per project requirements.
 from abc import abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, ClassVar
+from typing import Optional, ClassVar, Union
 
 from .base import (
     AlgorithmBase,
@@ -21,6 +21,19 @@ from .base import (
     RegistryBase,
     ValidationError,
 )
+
+# Import secure memory handling
+try:
+    from ..secure_memory import SecureBytes, secure_memzero
+    SECURE_MEMORY_AVAILABLE = True
+except ImportError:
+    # Fallback if secure_memory not available
+    SecureBytes = bytes
+    SECURE_MEMORY_AVAILABLE = False
+
+    def secure_memzero(data):
+        """Fallback no-op."""
+        pass
 
 
 class Argon2Type(Enum):
@@ -151,23 +164,34 @@ class KDFBase(AlgorithmBase):
     @abstractmethod
     def derive(
         self,
-        password: bytes,
+        password: Union[bytes, 'SecureBytes'],
         salt: bytes,
         params: Optional[KDFParams] = None
-    ) -> bytes:
+    ) -> 'SecureBytes':
         """
         Derives a key from a password and salt.
 
         Args:
-            password: Password to derive key from
+            password: Password to derive key from (bytes or SecureBytes)
             salt: Random salt
             params: KDF-specific parameters (None = use defaults)
 
         Returns:
-            Derived key bytes
+            Derived key as SecureBytes (MUST be zeroed after use)
 
         Raises:
             ValidationError: If parameters are invalid
+
+        Security:
+            - Accepts both bytes and SecureBytes for backward compatibility
+            - Returns SecureBytes which will be zeroed when deleted
+            - Caller MUST explicitly zero the returned key after use:
+              >>> key = kdf.derive(password, salt)
+              >>> try:
+              >>>     # Use key...
+              >>> finally:
+              >>>     secure_memzero(key)
+              >>>     del key
         """
         pass
 
@@ -250,10 +274,10 @@ class Argon2id(KDFBase):
 
     def derive(
         self,
-        password: bytes,
+        password: Union[bytes, SecureBytes],
         salt: bytes,
         params: Optional[Argon2Params] = None
-    ) -> bytes:
+    ) -> SecureBytes:
         self.check_available()
 
         if params is None:
@@ -263,6 +287,9 @@ class Argon2id(KDFBase):
 
         import argon2
         from argon2.low_level import Type
+
+        # Convert password to bytes if needed (SecureBytes is a bytearray subclass)
+        password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
 
         # Map variant string to Type enum
         type_map = {
@@ -276,15 +303,22 @@ class Argon2id(KDFBase):
 
         argon2_type = type_map[params.variant]
 
-        return argon2.low_level.hash_secret_raw(
-            secret=password,
-            salt=salt,
-            time_cost=params.time_cost,
-            memory_cost=params.memory_cost,
-            parallelism=params.parallelism,
-            hash_len=params.output_length,
-            type=argon2_type,
-        )
+        try:
+            derived_key = argon2.low_level.hash_secret_raw(
+                secret=password_bytes,
+                salt=salt,
+                time_cost=params.time_cost,
+                memory_cost=params.memory_cost,
+                parallelism=params.parallelism,
+                hash_len=params.output_length,
+                type=argon2_type,
+            )
+            # Wrap result in SecureBytes for automatic cleanup
+            return SecureBytes(derived_key)
+        finally:
+            # Zero out password_bytes if we created a copy
+            if isinstance(password, SecureBytes) and password_bytes != password:
+                secure_memzero(bytearray(password_bytes))
 
 
 class Argon2i(KDFBase):
@@ -319,17 +353,17 @@ class Argon2i(KDFBase):
 
     def derive(
         self,
-        password: bytes,
+        password: Union[bytes, SecureBytes],
         salt: bytes,
         params: Optional[Argon2Params] = None
-    ) -> bytes:
+    ) -> SecureBytes:
         if params is None:
             params = self.default_params()
         else:
             # Force variant to 'i'
             params.variant = "i"
 
-        # Delegate to Argon2id with forced variant
+        # Delegate to Argon2id with forced variant (already returns SecureBytes)
         return Argon2id().derive(password, salt, params)
 
 
@@ -365,17 +399,17 @@ class Argon2d(KDFBase):
 
     def derive(
         self,
-        password: bytes,
+        password: Union[bytes, SecureBytes],
         salt: bytes,
         params: Optional[Argon2Params] = None
-    ) -> bytes:
+    ) -> SecureBytes:
         if params is None:
             params = self.default_params()
         else:
             # Force variant to 'd'
             params.variant = "d"
 
-        # Delegate to Argon2id with forced variant
+        # Delegate to Argon2id with forced variant (already returns SecureBytes)
         return Argon2id().derive(password, salt, params)
 
 
@@ -416,10 +450,10 @@ class PBKDF2(KDFBase):
 
     def derive(
         self,
-        password: bytes,
+        password: Union[bytes, SecureBytes],
         salt: bytes,
         params: Optional[PBKDF2Params] = None
-    ) -> bytes:
+    ) -> SecureBytes:
         if params is None:
             params = self.default_params()
 
@@ -431,6 +465,9 @@ class PBKDF2(KDFBase):
         from cryptography.hazmat.primitives import hashes
         from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
         from cryptography.hazmat.backends import default_backend
+
+        # Convert password to bytes if needed
+        password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
 
         # Map hash function name to cryptography hash algorithm
         hash_map = {
@@ -451,7 +488,12 @@ class PBKDF2(KDFBase):
             backend=default_backend(),
         )
 
-        return kdf.derive(password)
+        try:
+            derived_key = kdf.derive(password_bytes)
+            return SecureBytes(derived_key)
+        finally:
+            if isinstance(password, SecureBytes) and password_bytes != password:
+                secure_memzero(bytearray(password_bytes))
 
 
 # ============================================================================
@@ -502,10 +544,10 @@ class Scrypt(KDFBase):
 
     def derive(
         self,
-        password: bytes,
+        password: Union[bytes, SecureBytes],
         salt: bytes,
         params: Optional[ScryptParams] = None
-    ) -> bytes:
+    ) -> SecureBytes:
         self.check_available()
 
         if params is None:
@@ -524,6 +566,9 @@ class Scrypt(KDFBase):
         from cryptography.hazmat.primitives.kdf.scrypt import Scrypt as CryptoScrypt
         from cryptography.hazmat.backends import default_backend
 
+        # Convert password to bytes if needed
+        password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
+
         kdf = CryptoScrypt(
             salt=salt,
             length=params.output_length,
@@ -533,7 +578,12 @@ class Scrypt(KDFBase):
             backend=default_backend(),
         )
 
-        return kdf.derive(password)
+        try:
+            derived_key = kdf.derive(password_bytes)
+            return SecureBytes(derived_key)
+        finally:
+            if isinstance(password, SecureBytes) and password_bytes != password:
+                secure_memzero(bytearray(password_bytes))
 
 
 # ============================================================================
@@ -584,10 +634,10 @@ class Balloon(KDFBase):
 
     def derive(
         self,
-        password: bytes,
+        password: Union[bytes, SecureBytes],
         salt: bytes,
         params: Optional[BalloonParams] = None
-    ) -> bytes:
+    ) -> SecureBytes:
         self.check_available()
 
         if params is None:
@@ -597,25 +647,32 @@ class Balloon(KDFBase):
 
         from openssl_encrypt.modules.balloon import balloon_m
 
-        # Balloon expects salt as string
-        result = balloon_m(
-            password=password,
-            salt=str(salt.hex()),  # Convert to hex string
-            time_cost=params.time_cost,
-            space_cost=params.space_cost,
-            parallel_cost=params.parallelism,
-        )
+        # Convert password to bytes if needed
+        password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
 
-        # Truncate or pad to desired length
-        if len(result) >= params.output_length:
-            return result[:params.output_length]
-        else:
-            # Pad with additional hashing if needed
-            import hashlib
-            padded = result
-            while len(padded) < params.output_length:
-                padded += hashlib.sha256(padded).digest()
-            return padded[:params.output_length]
+        try:
+            # Balloon expects salt as string
+            result = balloon_m(
+                password=password_bytes,
+                salt=str(salt.hex()),  # Convert to hex string
+                time_cost=params.time_cost,
+                space_cost=params.space_cost,
+                parallel_cost=params.parallelism,
+            )
+
+            # Truncate or pad to desired length
+            if len(result) >= params.output_length:
+                return SecureBytes(result[:params.output_length])
+            else:
+                # Pad with additional hashing if needed
+                import hashlib
+                padded = result
+                while len(padded) < params.output_length:
+                    padded += hashlib.sha256(padded).digest()
+                return SecureBytes(padded[:params.output_length])
+        finally:
+            if isinstance(password, SecureBytes) and password_bytes != password:
+                secure_memzero(bytearray(password_bytes))
 
 
 # ============================================================================
@@ -665,10 +722,10 @@ class HKDF(KDFBase):
 
     def derive(
         self,
-        password: bytes,
+        password: Union[bytes, SecureBytes],
         salt: bytes,
         params: Optional[HKDFParams] = None
-    ) -> bytes:
+    ) -> SecureBytes:
         self.check_available()
 
         if params is None:
@@ -679,6 +736,9 @@ class HKDF(KDFBase):
         from cryptography.hazmat.primitives import hashes
         from cryptography.hazmat.primitives.kdf.hkdf import HKDF as CryptoHKDF
         from cryptography.hazmat.backends import default_backend
+
+        # Convert password to bytes if needed
+        password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
 
         # Map hash function name
         hash_map = {
@@ -698,7 +758,12 @@ class HKDF(KDFBase):
             backend=default_backend(),
         )
 
-        return kdf.derive(password)
+        try:
+            derived_key = kdf.derive(password_bytes)
+            return SecureBytes(derived_key)
+        finally:
+            if isinstance(password, SecureBytes) and password_bytes != password:
+                secure_memzero(bytearray(password_bytes))
 
 
 # ============================================================================
@@ -749,10 +814,10 @@ class RandomX(KDFBase):
 
     def derive(
         self,
-        password: bytes,
+        password: Union[bytes, SecureBytes],
         salt: bytes,
         params: Optional[RandomXParams] = None
-    ) -> bytes:
+    ) -> SecureBytes:
         self.check_available()
 
         if params is None:
@@ -763,28 +828,35 @@ class RandomX(KDFBase):
         import pyrx
         import hashlib
 
-        # Initial hash with salt
-        hash_func = getattr(hashlib, params.hash)
-        initial = hash_func(password + salt).digest()
+        # Convert password to bytes if needed
+        password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
 
-        # Apply RandomX
-        derived = initial
-        for _ in range(params.passes):
-            derived = pyrx.get_rx_hash(
-                key=derived[:16],  # RandomX key (16 bytes)
-                data=derived,
-                height=params.init_rounds,
-            )
+        try:
+            # Initial hash with salt
+            hash_func = getattr(hashlib, params.hash)
+            initial = hash_func(password_bytes + salt).digest()
 
-        # Ensure correct output length
-        if len(derived) >= params.output_length:
-            return derived[:params.output_length]
-        else:
-            # Expand with hashing if needed
-            expanded = derived
-            while len(expanded) < params.output_length:
-                expanded += hashlib.sha256(expanded).digest()
-            return expanded[:params.output_length]
+            # Apply RandomX
+            derived = initial
+            for _ in range(params.passes):
+                derived = pyrx.get_rx_hash(
+                    key=derived[:16],  # RandomX key (16 bytes)
+                    data=derived,
+                    height=params.init_rounds,
+                )
+
+            # Ensure correct output length
+            if len(derived) >= params.output_length:
+                return SecureBytes(derived[:params.output_length])
+            else:
+                # Expand with hashing if needed
+                expanded = derived
+                while len(expanded) < params.output_length:
+                    expanded += hashlib.sha256(expanded).digest()
+                return SecureBytes(expanded[:params.output_length])
+        finally:
+            if isinstance(password, SecureBytes) and password_bytes != password:
+                secure_memzero(bytearray(password_bytes))
 
 
 # ============================================================================
