@@ -909,19 +909,19 @@ def validate_algorithm_availability(args):
 
         # Check hash algorithms
         hash_algorithms = []
-        if getattr(args, "sha256_rounds", 0) > 0:
+        if (getattr(args, "sha256_rounds", 0) or 0) > 0:
             hash_algorithms.append("sha256")
-        if getattr(args, "sha512_rounds", 0) > 0:
+        if (getattr(args, "sha512_rounds", 0) or 0) > 0:
             hash_algorithms.append("sha512")
-        if getattr(args, "sha384_rounds", 0) > 0:
+        if (getattr(args, "sha384_rounds", 0) or 0) > 0:
             hash_algorithms.append("sha384")
-        if getattr(args, "blake2b_rounds", 0) > 0:
+        if (getattr(args, "blake2b_rounds", 0) or 0) > 0:
             hash_algorithms.append("blake2b")
-        if getattr(args, "blake3_rounds", 0) > 0:
+        if (getattr(args, "blake3_rounds", 0) or 0) > 0:
             hash_algorithms.append("blake3")
-        if getattr(args, "shake256_rounds", 0) > 0:
+        if (getattr(args, "shake256_rounds", 0) or 0) > 0:
             hash_algorithms.append("shake256")
-        if getattr(args, "whirlpool_rounds", 0) > 0:
+        if (getattr(args, "whirlpool_rounds", 0) or 0) > 0:
             hash_algorithms.append("whirlpool")
 
         for algo in hash_algorithms:
