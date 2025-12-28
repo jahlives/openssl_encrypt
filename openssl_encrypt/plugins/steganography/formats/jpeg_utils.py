@@ -14,13 +14,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
-# Import secure memory functions for handling sensitive data
-try:
-    from ..secure_memory import SecureBytes, secure_memzero
-except ImportError:
-    # Fallback for standalone testing
-    from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
-
 try:
     from PIL import Image, ImageFile
     from PIL.ExifTags import TAGS
@@ -32,7 +25,7 @@ except ImportError:
     ImageFile = None
     TAGS = None
 
-from .stego_core import CoverMediaError, SteganographyError
+from ..core import CoverMediaError, SteganographyError
 
 # Set up module logger
 logger = logging.getLogger(__name__)
@@ -97,41 +90,30 @@ class JPEGAnalyzer:
             Dictionary containing JPEG structure information
         """
         try:
-            # Use secure memory for analysis
-            secure_data = None
+            if not self._is_valid_jpeg(jpeg_data):
+                raise CoverMediaError("Invalid JPEG format")
 
-            try:
-                secure_data = SecureBytes(jpeg_data)
+            # Parse JPEG segments
+            segments = self._parse_jpeg_segments(jpeg_data)
 
-                if not self._is_valid_jpeg(secure_data):
-                    raise CoverMediaError("Invalid JPEG format")
+            # Analyze quantization tables
+            quality_info = self._analyze_quality(segments)
 
-                # Parse JPEG segments
-                segments = self._parse_jpeg_segments(secure_data)
+            # Analyze image properties
+            image_info = self._analyze_image_properties(jpeg_data)
 
-                # Analyze quantization tables
-                quality_info = self._analyze_quality(segments)
+            # Calculate steganography suitability
+            suitability = self._assess_stego_suitability(quality_info, image_info)
 
-                # Analyze image properties
-                image_info = self._analyze_image_properties(secure_data)
-
-                # Calculate steganography suitability
-                suitability = self._assess_stego_suitability(quality_info, image_info)
-
-                return {
-                    "format": "JPEG",
-                    "valid": True,
-                    "segments": len(segments),
-                    "quality_info": quality_info,
-                    "image_info": image_info,
-                    "steganography": suitability,
-                    "analysis_version": "1.0",
-                }
-
-            finally:
-                # Clean up secure memory
-                if secure_data:
-                    secure_memzero(secure_data)
+            return {
+                "format": "JPEG",
+                "valid": True,
+                "segments": len(segments),
+                "quality_info": quality_info,
+                "image_info": image_info,
+                "steganography": suitability,
+                "analysis_version": "1.0",
+            }
 
         except Exception as e:
             logger.error(f"JPEG analysis failed: {e}")
@@ -331,35 +313,28 @@ class DCTUtils:
             DCT coefficients
         """
         try:
-            # Use secure memory for DCT computation
-            secure_block = SecureBytes(block.tobytes())
+            # Simplified DCT implementation
+            # In production, would use optimized DCT library
+            N = 8
+            dct_block = np.zeros((N, N))
 
-            try:
-                # Simplified DCT implementation
-                # In production, would use optimized DCT library
-                N = 8
-                dct_block = np.zeros((N, N))
+            for u in range(N):
+                for v in range(N):
+                    cu = 1 / math.sqrt(2) if u == 0 else 1
+                    cv = 1 / math.sqrt(2) if v == 0 else 1
 
-                for u in range(N):
-                    for v in range(N):
-                        cu = 1 / math.sqrt(2) if u == 0 else 1
-                        cv = 1 / math.sqrt(2) if v == 0 else 1
+                    sum_val = 0
+                    for x in range(N):
+                        for y in range(N):
+                            sum_val += (
+                                block[x, y]
+                                * math.cos((2 * x + 1) * u * math.pi / (2 * N))
+                                * math.cos((2 * y + 1) * v * math.pi / (2 * N))
+                            )
 
-                        sum_val = 0
-                        for x in range(N):
-                            for y in range(N):
-                                sum_val += (
-                                    block[x, y]
-                                    * math.cos((2 * x + 1) * u * math.pi / (2 * N))
-                                    * math.cos((2 * y + 1) * v * math.pi / (2 * N))
-                                )
+                    dct_block[u, v] = (2 / N) * cu * cv * sum_val
 
-                        dct_block[u, v] = (2 / N) * cu * cv * sum_val
-
-                return dct_block
-
-            finally:
-                secure_memzero(secure_block)
+            return dct_block
 
         except Exception as e:
             logger.error(f"DCT computation failed: {e}")

@@ -11,21 +11,14 @@ import logging
 import os
 from typing import Optional
 
-# Import secure memory functions for handling sensitive data
-try:
-    from ..secure_memory import SecureBytes, secure_memzero
-except ImportError:
-    # Fallback for standalone testing
-    from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
-
-from .stego_core import CapacityError, CoverMediaError, SteganographyConfig, SteganographyError
-from .stego_flac import FLACSteganography
-from .stego_image import AdaptiveLSBStego, LSBImageStego
-from .stego_jpeg import JPEGSteganography
-from .stego_mp3 import MP3Steganography
-from .stego_tiff import TIFFSteganography
-from .stego_wav import WAVSteganography
-from .stego_webp import WEBPSteganography
+from .core import CapacityError, CoverMediaError, SteganographyConfig, SteganographyError
+from .formats.flac import FLACSteganography
+from .formats.image import AdaptiveLSBStego, LSBImageStego
+from .formats.jpeg import JPEGSteganography
+from .formats.mp3 import MP3Steganography
+from .formats.tiff import TIFFSteganography
+from .formats.wav import WAVSteganography
+from .formats.webp import WEBPSteganography
 
 # Set up module logger
 logger = logging.getLogger(__name__)

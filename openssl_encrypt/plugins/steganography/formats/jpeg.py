@@ -14,13 +14,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
-# Import secure memory functions for handling sensitive data
-try:
-    from ..secure_memory import SecureBytes, secure_memzero
-except ImportError:
-    # Fallback for standalone testing
-    from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
-
 try:
     from PIL import Image, ImageFile
     from PIL.ExifTags import TAGS
@@ -32,7 +25,7 @@ except ImportError:
     ImageFile = None
     TAGS = None
 
-from .stego_core import (
+from ..core import (
     CapacityError,
     CoverMediaError,
     ExtractionError,
@@ -177,51 +170,41 @@ class JPEGSteganography(SteganographyBase):
         self._validate_cover_data(cover_data, min_size=2048)  # JPEG needs more space
 
         try:
-            # Use secure memory for capacity analysis
-            secure_cover_data = None
-            try:
-                secure_cover_data = SecureBytes(cover_data)
+            # Load JPEG and analyze DCT structure
+            image = Image.open(io.BytesIO(cover_data))
 
-                # Load JPEG and analyze DCT structure
-                image = Image.open(io.BytesIO(secure_cover_data))
+            if image.format not in self.SUPPORTED_FORMATS:
+                raise CoverMediaError(f"Unsupported format: {image.format}")
 
-                if image.format not in self.SUPPORTED_FORMATS:
-                    raise CoverMediaError(f"Unsupported format: {image.format}")
+            # Get image dimensions and calculate DCT blocks
+            width, height = image.size
 
-                # Get image dimensions and calculate DCT blocks
-                width, height = image.size
+            # JPEG works in 8x8 blocks
+            blocks_h = width // DCT_BLOCK_SIZE
+            blocks_v = height // DCT_BLOCK_SIZE
+            total_blocks = blocks_h * blocks_v
 
-                # JPEG works in 8x8 blocks
-                blocks_h = width // DCT_BLOCK_SIZE
-                blocks_v = height // DCT_BLOCK_SIZE
-                total_blocks = blocks_h * blocks_v
+            # Estimate usable coefficients per block (conservative)
+            # F5 uses matrix encoding, so capacity is lower than raw bits
+            if self.dct_method == "f5":
+                # F5 with matrix encoding: ~0.5-1 bit per usable coefficient
+                usable_per_block = len(self.usable_coeffs) // 2
+            elif self.dct_method == "outguess":
+                # Outguess: ~0.3-0.7 bits per coefficient
+                usable_per_block = len(self.usable_coeffs) // 3
+            else:
+                # Basic method: 1 bit per coefficient
+                usable_per_block = len(self.usable_coeffs)
 
-                # Estimate usable coefficients per block (conservative)
-                # F5 uses matrix encoding, so capacity is lower than raw bits
-                if self.dct_method == "f5":
-                    # F5 with matrix encoding: ~0.5-1 bit per usable coefficient
-                    usable_per_block = len(self.usable_coeffs) // 2
-                elif self.dct_method == "outguess":
-                    # Outguess: ~0.3-0.7 bits per coefficient
-                    usable_per_block = len(self.usable_coeffs) // 3
-                else:
-                    # Basic method: 1 bit per coefficient
-                    usable_per_block = len(self.usable_coeffs)
+            # Calculate theoretical capacity
+            total_bits = total_blocks * usable_per_block
+            capacity_bytes = total_bits // 8
 
-                # Calculate theoretical capacity
-                total_bits = total_blocks * usable_per_block
-                capacity_bytes = total_bits // 8
+            # Apply safety margin for JPEG compression artifacts
+            safe_capacity = int(capacity_bytes * 0.7)  # More conservative than PNG
 
-                # Apply safety margin for JPEG compression artifacts
-                safe_capacity = int(capacity_bytes * 0.7)  # More conservative than PNG
-
-                # Reserve space for EOF marker and header
-                return max(0, safe_capacity - len(self.eof_marker) - 32)
-
-            finally:
-                # Clean up secure memory
-                if secure_cover_data:
-                    secure_memzero(secure_cover_data)
+            # Reserve space for EOF marker and header
+            return max(0, safe_capacity - len(self.eof_marker) - 32)
 
         except Exception as e:
             if isinstance(e, (CoverMediaError, CapacityError)):
@@ -238,48 +221,33 @@ class JPEGSteganography(SteganographyBase):
             raise CapacityError(len(secret_data), capacity, "JPEG")
 
         try:
-            # Use secure memory for data processing
-            secure_cover_data = None
-            secure_secret_data = None
+            # Load JPEG image
+            image = Image.open(io.BytesIO(cover_data))
 
-            try:
-                secure_cover_data = SecureBytes(cover_data)
-                secure_secret_data = SecureBytes(secret_data)
+            if image.format not in self.SUPPORTED_FORMATS:
+                raise CoverMediaError(f"Unsupported format: {image.format}")
 
-                # Load JPEG image
-                image = Image.open(io.BytesIO(secure_cover_data))
+            # Convert to RGB if needed (handle various JPEG modes)
+            if image.mode not in ["RGB", "YCbCr"]:
+                image = image.convert("RGB")
 
-                if image.format not in self.SUPPORTED_FORMATS:
-                    raise CoverMediaError(f"Unsupported format: {image.format}")
+            # Add EOF marker and convert to binary
+            data_with_eof = self._add_eof_marker(secret_data)
+            binary_data = SteganographyUtils.bytes_to_binary(data_with_eof)
 
-                # Convert to RGB if needed (handle various JPEG modes)
-                if image.mode not in ["RGB", "YCbCr"]:
-                    image = image.convert("RGB")
+            # Perform DCT-based hiding
+            modified_image = self._hide_in_dct(image, binary_data)
 
-                # Add EOF marker and convert to binary
-                data_with_eof = self._add_eof_marker(secure_secret_data)
-                binary_data = SteganographyUtils.bytes_to_binary(data_with_eof)
+            # Save as JPEG with specified quality
+            output_buffer = io.BytesIO()
+            modified_image.save(
+                output_buffer,
+                format="JPEG",
+                quality=self.quality_factor,
+                optimize=False,  # Avoid compression changes
+            )
 
-                # Perform DCT-based hiding
-                modified_image = self._hide_in_dct(image, binary_data)
-
-                # Save as JPEG with specified quality
-                output_buffer = io.BytesIO()
-                modified_image.save(
-                    output_buffer,
-                    format="JPEG",
-                    quality=self.quality_factor,
-                    optimize=False,  # Avoid compression changes
-                )
-
-                return output_buffer.getvalue()
-
-            finally:
-                # Clean up secure memory
-                if secure_cover_data:
-                    secure_memzero(secure_cover_data)
-                if secure_secret_data:
-                    secure_memzero(secure_secret_data)
+            return output_buffer.getvalue()
 
         except Exception as e:
             if isinstance(e, (CoverMediaError, CapacityError, SecurityError)):
@@ -291,33 +259,22 @@ class JPEGSteganography(SteganographyBase):
         self._validate_cover_data(stego_data, min_size=2048)
 
         try:
-            # Use secure memory for extraction
-            secure_stego_data = None
+            # Load JPEG image
+            image = Image.open(io.BytesIO(stego_data))
 
-            try:
-                secure_stego_data = SecureBytes(stego_data)
+            if image.format not in self.SUPPORTED_FORMATS:
+                raise CoverMediaError(f"Unsupported format: {image.format}")
 
-                # Load JPEG image
-                image = Image.open(io.BytesIO(secure_stego_data))
+            # Convert to RGB if needed
+            if image.mode not in ["RGB", "YCbCr"]:
+                image = image.convert("RGB")
 
-                if image.format not in self.SUPPORTED_FORMATS:
-                    raise CoverMediaError(f"Unsupported format: {image.format}")
+            # Extract data from DCT coefficients
+            binary_data = self._extract_from_dct(image)
 
-                # Convert to RGB if needed
-                if image.mode not in ["RGB", "YCbCr"]:
-                    image = image.convert("RGB")
-
-                # Extract data from DCT coefficients
-                binary_data = self._extract_from_dct(image)
-
-                # Convert binary to bytes and find EOF marker
-                extracted_bytes = SteganographyUtils.binary_to_bytes(binary_data)
-                return self._find_eof_marker(extracted_bytes)
-
-            finally:
-                # Clean up secure memory
-                if secure_stego_data:
-                    secure_memzero(secure_stego_data)
+            # Convert binary to bytes and find EOF marker
+            extracted_bytes = SteganographyUtils.binary_to_bytes(binary_data)
+            return self._find_eof_marker(extracted_bytes)
 
         except Exception as e:
             if isinstance(e, (CoverMediaError, ExtractionError)):
@@ -343,97 +300,73 @@ class JPEGSteganography(SteganographyBase):
             return self._extract_basic(image)
 
     def _hide_basic(self, image: Image.Image, binary_data: str) -> Image.Image:
-        """Basic DCT hiding using simple LSB of coefficients with secure memory"""
+        """Basic DCT hiding using simple LSB of coefficients"""
         try:
-            # Use secure memory for image processing
-            secure_binary_data = None
+            # Convert image to numpy array
+            img_array = np.array(image)
 
-            try:
-                # Convert image to numpy array
-                img_array = np.array(image)
+            # Simple implementation: modify pixel values slightly
+            # In a full implementation, this would work with actual DCT coefficients
+            flat_pixels = img_array.flatten()
 
-                # Store binary data in secure memory
-                secure_binary_data = SecureBytes(binary_data.encode("ascii"))
+            # Hide data in pixel LSBs (simplified approach)
+            data_index = 0
+            for i in range(min(len(binary_data), len(flat_pixels))):
+                if data_index < len(binary_data):
+                    # Modify LSB of pixel value
+                    bit_value = int(binary_data[data_index])
+                    flat_pixels[i] = (flat_pixels[i] & 0xFE) | bit_value
+                    data_index += 1
 
-                # Simple implementation: modify pixel values slightly
-                # In a full implementation, this would work with actual DCT coefficients
-                flat_pixels = img_array.flatten()
+            # Store data length at the beginning for extraction
+            # This is a simple approach - embed length in first 32 pixels
+            data_length = len(binary_data)
+            for i in range(32):
+                if i < len(flat_pixels):
+                    bit_value = (data_length >> i) & 1
+                    # Use bits 1 (second LSB) for length to avoid conflict
+                    flat_pixels[i] = (flat_pixels[i] & 0xFD) | (bit_value << 1)
 
-                # Hide data in pixel LSBs (simplified approach)
-                data_index = 0
-                for i in range(min(len(binary_data), len(flat_pixels))):
-                    if data_index < len(binary_data):
-                        # Modify LSB of pixel value
-                        bit_value = int(binary_data[data_index])
-                        flat_pixels[i] = (flat_pixels[i] & 0xFE) | bit_value
-                        data_index += 1
+            # Skip the length storage area when hiding actual data
+            data_index = 0
+            for i in range(32, min(32 + len(binary_data), len(flat_pixels))):
+                if data_index < len(binary_data):
+                    bit_value = int(binary_data[data_index])
+                    flat_pixels[i] = (flat_pixels[i] & 0xFE) | bit_value
+                    data_index += 1
 
-                # Store data length at the beginning for extraction
-                # This is a simple approach - embed length in first 32 pixels
-                data_length = len(binary_data)
-                for i in range(32):
-                    if i < len(flat_pixels):
-                        bit_value = (data_length >> i) & 1
-                        # Use bits 1 (second LSB) for length to avoid conflict
-                        flat_pixels[i] = (flat_pixels[i] & 0xFD) | (bit_value << 1)
-
-                # Skip the length storage area when hiding actual data
-                data_index = 0
-                for i in range(32, min(32 + len(binary_data), len(flat_pixels))):
-                    if data_index < len(binary_data):
-                        bit_value = int(binary_data[data_index])
-                        flat_pixels[i] = (flat_pixels[i] & 0xFE) | bit_value
-                        data_index += 1
-
-                # Reshape back to image
-                modified_array = flat_pixels.reshape(img_array.shape)
-                return Image.fromarray(modified_array.astype(np.uint8))
-
-            finally:
-                # Clean up secure memory
-                if secure_binary_data:
-                    secure_memzero(secure_binary_data)
+            # Reshape back to image
+            modified_array = flat_pixels.reshape(img_array.shape)
+            return Image.fromarray(modified_array.astype(np.uint8))
 
         except Exception as e:
             logger.error(f"Basic JPEG hiding failed: {e}")
             return image  # Return original on error
 
     def _extract_basic(self, image: Image.Image) -> str:
-        """Extract data using basic method with secure memory"""
+        """Extract data using basic method"""
         try:
-            # Use secure memory for extraction
-            secure_img_data = None
+            img_array = np.array(image)
+            flat_pixels = img_array.flatten()
 
-            try:
-                img_array = np.array(image)
-                flat_pixels = img_array.flatten()
+            # First, extract data length from first 32 pixels (second LSB)
+            data_length = 0
+            for i in range(32):
+                if i < len(flat_pixels):
+                    bit_value = (flat_pixels[i] >> 1) & 1
+                    data_length |= bit_value << i
 
-                # Store image data in secure memory
-                secure_img_data = SecureBytes(img_array.tobytes())
+            # Sanity check on data length
+            if data_length <= 0 or data_length > 100000:  # Max 100KB
+                logger.warning(f"Suspicious data length: {data_length}")
+                data_length = min(10000, len(flat_pixels) - 32)  # Fallback
 
-                # First, extract data length from first 32 pixels (second LSB)
-                data_length = 0
-                for i in range(32):
-                    if i < len(flat_pixels):
-                        bit_value = (flat_pixels[i] >> 1) & 1
-                        data_length |= bit_value << i
+            # Extract data bits from pixels 32 onwards
+            binary_bits = []
+            for i in range(32, min(32 + data_length, len(flat_pixels))):
+                binary_bits.append(str(flat_pixels[i] & 1))
 
-                # Sanity check on data length
-                if data_length <= 0 or data_length > 100000:  # Max 100KB
-                    logger.warning(f"Suspicious data length: {data_length}")
-                    data_length = min(10000, len(flat_pixels) - 32)  # Fallback
-
-                # Extract data bits from pixels 32 onwards
-                binary_bits = []
-                for i in range(32, min(32 + data_length, len(flat_pixels))):
-                    binary_bits.append(str(flat_pixels[i] & 1))
-
-                return "".join(binary_bits)
-
-            finally:
-                # Clean up secure memory
-                if secure_img_data:
-                    secure_memzero(secure_img_data)
+            return "".join(binary_bits)
 
         except Exception as e:
             logger.error(f"Basic JPEG extraction failed: {e}")
@@ -489,43 +422,24 @@ class JPEGSteganalysisResistance:
     def assess_jpeg_security(self, cover_jpeg: bytes, stego_jpeg: bytes) -> Dict[str, Any]:
         """Assess JPEG steganography security"""
         try:
-            # Use secure memory for security assessment
-            secure_cover = None
-            secure_stego = None
+            # Perform security analysis
+            results = {
+                "calibration_resistance": self._calibration_attack_test(cover_jpeg, stego_jpeg),
+                "blockiness_preservation": self._blockiness_analysis(cover_jpeg, stego_jpeg),
+                "histogram_preservation": self._histogram_analysis(cover_jpeg, stego_jpeg),
+                "dct_statistics": self._dct_analysis(cover_jpeg, stego_jpeg),
+            }
 
-            try:
-                secure_cover = SecureBytes(cover_jpeg)
-                secure_stego = SecureBytes(stego_jpeg)
+            # Calculate overall security score
+            scores = [r.get("score", 0.5) for r in results.values()]
+            overall_score = sum(scores) / len(scores) if scores else 0.0
 
-                # Perform security analysis
-                results = {
-                    "calibration_resistance": self._calibration_attack_test(
-                        secure_cover, secure_stego
-                    ),
-                    "blockiness_preservation": self._blockiness_analysis(
-                        secure_cover, secure_stego
-                    ),
-                    "histogram_preservation": self._histogram_analysis(secure_cover, secure_stego),
-                    "dct_statistics": self._dct_analysis(secure_cover, secure_stego),
-                }
-
-                # Calculate overall security score
-                scores = [r.get("score", 0.5) for r in results.values()]
-                overall_score = sum(scores) / len(scores) if scores else 0.0
-
-                return {
-                    "overall_score": overall_score,
-                    "security_level": self._determine_security_level(overall_score),
-                    "detailed_results": results,
-                    "recommendations": self._generate_recommendations(results),
-                }
-
-            finally:
-                # Clean up secure memory
-                if secure_cover:
-                    secure_memzero(secure_cover)
-                if secure_stego:
-                    secure_memzero(secure_stego)
+            return {
+                "overall_score": overall_score,
+                "security_level": self._determine_security_level(overall_score),
+                "detailed_results": results,
+                "recommendations": self._generate_recommendations(results),
+            }
 
         except Exception as e:
             logger.warning(f"JPEG security assessment failed: {e}")

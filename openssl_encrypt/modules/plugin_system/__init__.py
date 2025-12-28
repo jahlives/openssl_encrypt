@@ -170,6 +170,7 @@ PLUGIN_SYSTEM_METADATA = {
 DEFAULT_PLUGIN_DIRECTORIES = [
     "plugins",  # Main plugins directory
     "plugins/hsm",  # HSM (Hardware Security Module) plugins
+    "plugins/steganography",  # Steganography plugin
     "plugins/official",  # Official plugins
     "plugins/community",  # Community plugins
     "plugins/user",  # User-specific plugins

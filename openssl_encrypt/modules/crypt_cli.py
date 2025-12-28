@@ -2017,6 +2017,33 @@ def main():
         return main_with_args()
 
 
+def _get_steganography_plugin(quiet=False):
+    """
+    Get steganography plugin from plugin system.
+
+    Args:
+        quiet: If True, suppress error messages
+
+    Returns:
+        Plugin instance or None if not available
+    """
+    try:
+        # Import steganography plugin directly
+        from ..plugins.steganography import plugin_instance
+
+        return plugin_instance
+
+    except ImportError as e:
+        if not quiet:
+            print("Error: Steganography requires additional dependencies.")
+            print("Install with: pip install Pillow numpy")
+        return None
+    except Exception as e:
+        if not quiet:
+            print(f"Error loading steganography plugin: {e}")
+        return None
+
+
 def main_with_args(args=None):
     """Main logic with pre-parsed arguments (or None to parse from command line)"""
     # Original main function continues below...
@@ -5179,33 +5206,45 @@ def main_with_args(args=None):
                         # Handle steganography if requested
                         if hasattr(args, "stego_hide") and args.stego_hide:
                             try:
-                                from .steganography.stego_transport import (
-                                    create_steganography_transport,
-                                )
-
-                                # Create steganography transport with dedicated password
-                                stego_transport = create_steganography_transport(args)
-                                if stego_transport:
+                                # Get steganography plugin
+                                stego_plugin = _get_steganography_plugin(quiet=args.quiet)
+                                if stego_plugin:
                                     # Read encrypted data from temp file
                                     with open(temp_output, "rb") as f:
                                         encrypted_data = f.read()
 
-                                    # Hide in cover image and save to output file
-                                    stego_transport.hide_data_in_image(
-                                        encrypted_data,
-                                        args.stego_hide,  # cover image path
-                                        output_file,  # output path
+                                    # Extract steganography options from args
+                                    method = getattr(args, "stego_method", "lsb")
+                                    bits_per_channel = getattr(args, "stego_bits_per_channel", 1)
+                                    stego_password = getattr(args, "stego_password", None)
+
+                                    options = {
+                                        "randomize_pixels": getattr(args, "stego_randomize_pixels", False),
+                                        "decoy_data": getattr(args, "stego_decoy_data", False),
+                                        "preserve_stats": True,
+                                        "jpeg_quality": getattr(args, "jpeg_quality", 85),
+                                    }
+
+                                    # Hide data using plugin
+                                    result = stego_plugin.hide_data(
+                                        cover_path=args.stego_hide,
+                                        data=encrypted_data,
+                                        output_path=output_file,
+                                        method=method,
+                                        bits_per_channel=bits_per_channel,
+                                        password=stego_password,
+                                        **options
                                     )
 
-                                    if not args.quiet:
-                                        print(f"Data successfully hidden in image: {output_file}")
+                                    if result.success:
+                                        if not args.quiet:
+                                            print(f"Data successfully hidden in image: {output_file}")
+                                    else:
+                                        print(f"Steganography error: {result.message}")
+                                        return 1
                                 else:
                                     # Fallback to normal file output
                                     os.replace(temp_output, output_file)
-                            except ImportError:
-                                print("Error: Steganography requires additional dependencies.")
-                                print("Install with: pip install Pillow numpy")
-                                return 1
                             except Exception as e:
                                 print(f"Steganography error: {e}")
                                 return 1
@@ -5745,28 +5784,42 @@ def main_with_args(args=None):
                 # Handle steganography if requested
                 if success and hasattr(args, "stego_hide") and args.stego_hide:
                     try:
-                        from .steganography.stego_transport import create_steganography_transport
-
-                        # Create steganography transport
-                        stego_transport = create_steganography_transport(args)
-                        if stego_transport:
+                        # Get steganography plugin
+                        stego_plugin = _get_steganography_plugin(quiet=args.quiet)
+                        if stego_plugin:
                             # Read encrypted data from output file
                             with open(output_file, "rb") as f:
                                 encrypted_data = f.read()
 
-                            # Hide in cover image and overwrite output file
-                            stego_transport.hide_data_in_image(
-                                encrypted_data,
-                                args.stego_hide,  # cover image path
-                                output_file,  # output path (will be overwritten with stego image)
+                            # Extract steganography options from args
+                            method = getattr(args, "stego_method", "lsb")
+                            bits_per_channel = getattr(args, "stego_bits_per_channel", 1)
+                            stego_password = getattr(args, "stego_password", None)
+
+                            options = {
+                                "randomize_pixels": getattr(args, "stego_randomize_pixels", False),
+                                "decoy_data": getattr(args, "stego_decoy_data", False),
+                                "preserve_stats": True,
+                                "jpeg_quality": getattr(args, "jpeg_quality", 85),
+                            }
+
+                            # Hide data using plugin
+                            result = stego_plugin.hide_data(
+                                cover_path=args.stego_hide,
+                                data=encrypted_data,
+                                output_path=output_file,
+                                method=method,
+                                bits_per_channel=bits_per_channel,
+                                password=stego_password,
+                                **options
                             )
 
-                            if not args.quiet:
-                                print(f"Data successfully hidden in image: {output_file}")
-                    except ImportError:
-                        print("Error: Steganography requires additional dependencies.")
-                        print("Install with: pip install Pillow numpy")
-                        return 1
+                            if result.success:
+                                if not args.quiet:
+                                    print(f"Data successfully hidden in image: {output_file}")
+                            else:
+                                print(f"Steganography error: {result.message}")
+                                return 1
                     except Exception as e:
                         print(f"Steganography error: {e}")
                         return 1
@@ -6340,36 +6393,52 @@ def main_with_args(args=None):
                         try:
                             import tempfile
 
-                            from .steganography.stego_transport import (
-                                create_steganography_transport,
-                            )
-
                             if not args.quiet:
                                 print("Extracting encrypted data from steganographic image...")
 
-                            # Create steganography transport
-                            stego_transport = create_steganography_transport(args)
-                            if stego_transport:
-                                # Extract encrypted data from image
-                                encrypted_data = stego_transport.extract_data_from_image(args.input)
+                            # Get steganography plugin
+                            stego_plugin = _get_steganography_plugin(quiet=args.quiet)
+                            if stego_plugin:
+                                # Extract steganography options from args
+                                method = getattr(args, "stego_method", "lsb")
+                                bits_per_channel = getattr(args, "stego_bits_per_channel", 1)
+                                stego_password = getattr(args, "stego_password", None)
 
-                                # Create temporary file for extracted data
-                                with tempfile.NamedTemporaryFile(
-                                    delete=False, suffix=".enc"
-                                ) as temp_file:
-                                    temp_extracted_file = temp_file.name
-                                    temp_file.write(encrypted_data)
+                                options = {
+                                    "randomize_pixels": getattr(args, "stego_randomize_pixels", False),
+                                    "decoy_data": getattr(args, "stego_decoy_data", False),
+                                    "preserve_stats": True,
+                                    "jpeg_quality": getattr(args, "jpeg_quality", 85),
+                                }
 
-                                # Use extracted file as input for decryption
-                                actual_input_file = temp_extracted_file
-                                temp_files_to_cleanup.append(temp_extracted_file)
+                                # Extract data using plugin
+                                result = stego_plugin.extract_data(
+                                    stego_path=args.input,
+                                    method=method,
+                                    bits_per_channel=bits_per_channel,
+                                    password=stego_password,
+                                    **options
+                                )
 
-                                if not args.quiet:
-                                    print(f"Extracted {len(encrypted_data)} bytes from image")
-                        except ImportError:
-                            print("Error: Steganography requires additional dependencies.")
-                            print("Install with: pip install Pillow numpy")
-                            return 1
+                                if result.success:
+                                    encrypted_data = result.data.get("extracted_data", b"")
+
+                                    # Create temporary file for extracted data
+                                    with tempfile.NamedTemporaryFile(
+                                        delete=False, suffix=".enc"
+                                    ) as temp_file:
+                                        temp_extracted_file = temp_file.name
+                                        temp_file.write(encrypted_data)
+
+                                    # Use extracted file as input for decryption
+                                    actual_input_file = temp_extracted_file
+                                    temp_files_to_cleanup.append(temp_extracted_file)
+
+                                    if not args.quiet:
+                                        print(f"Extracted {len(encrypted_data)} bytes from image")
+                                else:
+                                    print(f"Steganography extraction error: {result.message}")
+                                    return 1
                         except Exception as e:
                             print(f"Steganography extraction error: {e}")
                             return 1
@@ -6652,34 +6721,52 @@ def main_with_args(args=None):
                     try:
                         import tempfile
 
-                        from .steganography.stego_transport import create_steganography_transport
-
                         if not args.quiet:
                             print("Extracting encrypted data from steganographic image...")
 
-                        # Create steganography transport
-                        stego_transport = create_steganography_transport(args)
-                        if stego_transport:
-                            # Extract encrypted data from image
-                            encrypted_data = stego_transport.extract_data_from_image(args.input)
+                        # Get steganography plugin
+                        stego_plugin = _get_steganography_plugin(quiet=args.quiet)
+                        if stego_plugin:
+                            # Extract steganography options from args
+                            method = getattr(args, "stego_method", "lsb")
+                            bits_per_channel = getattr(args, "stego_bits_per_channel", 1)
+                            stego_password = getattr(args, "stego_password", None)
 
-                            # Create temporary file for extracted data
-                            with tempfile.NamedTemporaryFile(
-                                delete=False, suffix=".enc"
-                            ) as temp_file:
-                                temp_extracted_file = temp_file.name
-                                temp_file.write(encrypted_data)
+                            options = {
+                                "randomize_pixels": getattr(args, "stego_randomize_pixels", False),
+                                "decoy_data": getattr(args, "stego_decoy_data", False),
+                                "preserve_stats": True,
+                                "jpeg_quality": getattr(args, "jpeg_quality", 85),
+                            }
 
-                            # Use extracted file as input for decryption
-                            actual_input_file = temp_extracted_file
-                            temp_files_to_cleanup.append(temp_extracted_file)
+                            # Extract data using plugin
+                            result = stego_plugin.extract_data(
+                                stego_path=args.input,
+                                method=method,
+                                bits_per_channel=bits_per_channel,
+                                password=stego_password,
+                                **options
+                            )
 
-                            if not args.quiet:
-                                print(f"Extracted {len(encrypted_data)} bytes from image")
-                    except ImportError:
-                        print("Error: Steganography requires additional dependencies.")
-                        print("Install with: pip install Pillow numpy")
-                        return 1
+                            if result.success:
+                                encrypted_data = result.data.get("extracted_data", b"")
+
+                                # Create temporary file for extracted data
+                                with tempfile.NamedTemporaryFile(
+                                    delete=False, suffix=".enc"
+                                ) as temp_file:
+                                    temp_extracted_file = temp_file.name
+                                    temp_file.write(encrypted_data)
+
+                                # Use extracted file as input for decryption
+                                actual_input_file = temp_extracted_file
+                                temp_files_to_cleanup.append(temp_extracted_file)
+
+                                if not args.quiet:
+                                    print(f"Extracted {len(encrypted_data)} bytes from image")
+                            else:
+                                print(f"Steganography extraction error: {result.message}")
+                                return 1
                     except Exception as e:
                         print(f"Steganography extraction error: {e}")
                         return 1

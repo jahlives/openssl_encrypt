@@ -37,14 +37,16 @@ class TestSteganographyCore(unittest.TestCase):
 
         # Import steganography modules
         try:
-            from openssl_encrypt.modules.steganography import (
-                JPEGSteganography,
-                LSBImageStego,
+            from openssl_encrypt.plugins.steganography.core import (
                 SteganographyConfig,
                 SteganographyUtils,
-                create_steganography_transport,
             )
-            from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
+            from openssl_encrypt.plugins.steganography.formats import (
+                JPEGSteganography,
+                LSBImageStego,
+            )
+            from openssl_encrypt.plugins.steganography.transport import create_steganography_transport
+            from openssl_encrypt.plugins.steganography.formats.jpeg_utils import create_jpeg_test_image
 
             self.stego_available = True
         except ImportError:
@@ -57,7 +59,7 @@ class TestSteganographyCore(unittest.TestCase):
 
     def test_steganography_utils_binary_conversion(self):
         """Test binary data conversion utilities."""
-        from openssl_encrypt.modules.steganography import SteganographyUtils
+        from openssl_encrypt.plugins.steganography.core import SteganographyUtils
 
         # Test bytes to binary conversion
         test_bytes = b"Hello"
@@ -74,7 +76,7 @@ class TestSteganographyCore(unittest.TestCase):
 
     def test_steganography_entropy_analysis(self):
         """Test entropy analysis functionality."""
-        from openssl_encrypt.modules.steganography import SteganographyUtils
+        from openssl_encrypt.plugins.steganography.core import SteganographyUtils
 
         # Test with random data (should have high entropy)
         random_data = os.urandom(1000)
@@ -88,7 +90,7 @@ class TestSteganographyCore(unittest.TestCase):
 
     def test_steganography_config(self):
         """Test steganography configuration."""
-        from openssl_encrypt.modules.steganography import SteganographyConfig
+        from openssl_encrypt.plugins.steganography.core import SteganographyConfig
 
         config = SteganographyConfig()
 
@@ -112,7 +114,7 @@ class TestSteganographyCore(unittest.TestCase):
         import numpy as np
         from PIL import Image
 
-        from openssl_encrypt.modules.steganography import LSBImageStego
+        from openssl_encrypt.plugins.steganography.formats import LSBImageStego
 
         # Create test PNG image
         img_array = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
@@ -138,7 +140,7 @@ class TestSteganographyCore(unittest.TestCase):
         import numpy as np
         from PIL import Image
 
-        from openssl_encrypt.modules.steganography import LSBImageStego
+        from openssl_encrypt.plugins.steganography.formats import LSBImageStego
 
         # Create test PNG image
         img_array = np.random.randint(0, 255, (200, 200, 3), dtype=np.uint8)
@@ -169,7 +171,8 @@ class TestSteganographyCore(unittest.TestCase):
         import numpy as np
         from PIL import Image
 
-        from openssl_encrypt.modules.steganography import LSBImageStego, SteganographyConfig
+        from openssl_encrypt.plugins.steganography.formats import LSBImageStego
+        from openssl_encrypt.plugins.steganography.core import SteganographyConfig
 
         # Create test PNG image
         img_array = np.random.randint(0, 255, (200, 200, 3), dtype=np.uint8)
@@ -212,8 +215,8 @@ class TestJPEGSteganography(unittest.TestCase):
 
         # Import JPEG steganography modules
         try:
-            from openssl_encrypt.modules.steganography import JPEGSteganography
-            from openssl_encrypt.modules.steganography.jpeg_utils import (
+            from openssl_encrypt.plugins.steganography.formats import JPEGSteganography
+            from openssl_encrypt.plugins.steganography.formats.jpeg_utils import (
                 JPEGAnalyzer,
                 create_jpeg_test_image,
                 is_jpeg_steganography_available,
@@ -232,7 +235,7 @@ class TestJPEGSteganography(unittest.TestCase):
 
     def test_jpeg_test_image_creation(self):
         """Test JPEG test image creation utility."""
-        from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
+        from openssl_encrypt.plugins.steganography.formats.jpeg_utils import create_jpeg_test_image
 
         # Create test JPEG
         jpeg_data = create_jpeg_test_image(width=400, height=300, quality=85)
@@ -244,7 +247,7 @@ class TestJPEGSteganography(unittest.TestCase):
 
     def test_jpeg_analyzer(self):
         """Test JPEG format analyzer."""
-        from openssl_encrypt.modules.steganography.jpeg_utils import (
+        from openssl_encrypt.plugins.steganography.formats.jpeg_utils import (
             JPEGAnalyzer,
             create_jpeg_test_image,
         )
@@ -269,8 +272,8 @@ class TestJPEGSteganography(unittest.TestCase):
 
     def test_jpeg_steganography_capacity(self):
         """Test JPEG steganography capacity calculation."""
-        from openssl_encrypt.modules.steganography import JPEGSteganography
-        from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
+        from openssl_encrypt.plugins.steganography.formats import JPEGSteganography
+        from openssl_encrypt.plugins.steganography.formats.jpeg_utils import create_jpeg_test_image
 
         # Create test JPEG
         jpeg_data = create_jpeg_test_image(width=800, height=600, quality=85)
@@ -285,8 +288,8 @@ class TestJPEGSteganography(unittest.TestCase):
 
     def test_jpeg_steganography_basic_method(self):
         """Test JPEG steganography basic DCT method."""
-        from openssl_encrypt.modules.steganography import JPEGSteganography
-        from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
+        from openssl_encrypt.plugins.steganography.formats import JPEGSteganography
+        from openssl_encrypt.plugins.steganography.formats.jpeg_utils import create_jpeg_test_image
 
         # Create test JPEG
         jpeg_data = create_jpeg_test_image(width=800, height=600, quality=85)
@@ -309,8 +312,8 @@ class TestJPEGSteganography(unittest.TestCase):
 
     def test_jpeg_quality_factors(self):
         """Test JPEG steganography with different quality factors."""
-        from openssl_encrypt.modules.steganography import JPEGSteganography
-        from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
+        from openssl_encrypt.plugins.steganography.formats import JPEGSteganography
+        from openssl_encrypt.plugins.steganography.formats.jpeg_utils import create_jpeg_test_image
 
         # Test different quality levels
         quality_levels = [70, 80, 90, 95]
@@ -340,11 +343,11 @@ class TestSteganographyTransport(unittest.TestCase):
             import numpy as np
             from PIL import Image
 
-            from openssl_encrypt.modules.steganography import (
+            from openssl_encrypt.plugins.steganography import (
                 SteganographyTransport,
                 create_steganography_transport,
             )
-            from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
+            from openssl_encrypt.plugins.steganography.formats.jpeg_utils import create_jpeg_test_image
 
             self.transport_available = True
         except ImportError:
@@ -360,8 +363,8 @@ class TestSteganographyTransport(unittest.TestCase):
         import numpy as np
         from PIL import Image
 
-        from openssl_encrypt.modules.steganography import SteganographyTransport
-        from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
+        from openssl_encrypt.plugins.steganography import SteganographyTransport
+        from openssl_encrypt.plugins.steganography.formats.jpeg_utils import create_jpeg_test_image
 
         transport = SteganographyTransport()
 
@@ -384,7 +387,7 @@ class TestSteganographyTransport(unittest.TestCase):
 
     def test_transport_create_steganography_instance(self):
         """Test dynamic steganography instance creation."""
-        from openssl_encrypt.modules.steganography import SteganographyTransport
+        from openssl_encrypt.plugins.steganography import SteganographyTransport
 
         # Test PNG/LSB instance creation
         transport = SteganographyTransport(method="lsb", bits_per_channel=1)
@@ -405,8 +408,8 @@ class TestSteganographyTransport(unittest.TestCase):
         import numpy as np
         from PIL import Image
 
-        from openssl_encrypt.modules.steganography import SteganographyTransport
-        from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
+        from openssl_encrypt.plugins.steganography import SteganographyTransport
+        from openssl_encrypt.plugins.steganography.formats.jpeg_utils import create_jpeg_test_image
 
         # Test PNG capacity
         transport = SteganographyTransport(method="lsb", bits_per_channel=1)
@@ -450,7 +453,7 @@ class TestSteganographyCLIIntegration(unittest.TestCase):
             import numpy as np
             from PIL import Image
 
-            from openssl_encrypt.modules.steganography.jpeg_utils import create_jpeg_test_image
+            from openssl_encrypt.plugins.steganography.formats.jpeg_utils import create_jpeg_test_image
 
             self.cli_available = True
         except ImportError:
@@ -465,7 +468,7 @@ class TestSteganographyCLIIntegration(unittest.TestCase):
         """Test steganography transport factory with CLI args."""
         from argparse import Namespace
 
-        from openssl_encrypt.modules.steganography import create_steganography_transport
+        from openssl_encrypt.plugins.steganography.transport import create_steganography_transport
 
         # Test PNG/LSB transport creation
         args = Namespace(
@@ -498,7 +501,7 @@ class TestSteganographyCLIIntegration(unittest.TestCase):
         """Test dedicated password integration with steganography."""
         from argparse import Namespace
 
-        from openssl_encrypt.modules.steganography import create_steganography_transport
+        from openssl_encrypt.plugins.steganography.transport import create_steganography_transport
 
         # Test with dedicated steganography password
         stego_password = "dedicated_stego_password_123"
@@ -526,7 +529,8 @@ class TestSteganographyCLIIntegration(unittest.TestCase):
 
     def test_steganography_parameters_validation(self):
         """Test steganography parameter validation."""
-        from openssl_encrypt.modules.steganography import JPEGSteganography, SteganographyTransport
+        from openssl_encrypt.plugins.steganography.formats import JPEGSteganography
+        from openssl_encrypt.plugins.steganography.transport import SteganographyTransport
 
         # Test valid parameters
         transport = SteganographyTransport(
@@ -555,7 +559,7 @@ class TestSteganographySecureMemory(unittest.TestCase):
         # Import secure memory modules
         try:
             from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
-            from openssl_encrypt.modules.steganography import SteganographyUtils
+            from openssl_encrypt.plugins.steganography.core import SteganographyUtils
 
             self.secure_available = True
         except ImportError:
@@ -565,7 +569,7 @@ class TestSteganographySecureMemory(unittest.TestCase):
     def test_secure_binary_conversion(self):
         """Test binary conversion with secure memory."""
         from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
-        from openssl_encrypt.modules.steganography import SteganographyUtils
+        from openssl_encrypt.plugins.steganography.core import SteganographyUtils
 
         # Test with secure memory
         test_data = b"Secure memory test"
@@ -585,7 +589,7 @@ class TestSteganographySecureMemory(unittest.TestCase):
     def test_secure_entropy_analysis(self):
         """Test entropy analysis with secure memory."""
         from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
-        from openssl_encrypt.modules.steganography import SteganographyUtils
+        from openssl_encrypt.plugins.steganography.core import SteganographyUtils
 
         # Test entropy analysis with secure memory
         test_data = os.urandom(1000)
@@ -608,7 +612,7 @@ class TestSteganographyErrorHandling(unittest.TestCase):
 
         # Import steganography modules
         try:
-            from openssl_encrypt.modules.steganography import (
+            from openssl_encrypt.plugins.steganography import (
                 CapacityError,
                 CoverMediaError,
                 JPEGSteganography,
@@ -631,7 +635,7 @@ class TestSteganographyErrorHandling(unittest.TestCase):
         import numpy as np
         from PIL import Image
 
-        from openssl_encrypt.modules.steganography import CapacityError, LSBImageStego
+        from openssl_encrypt.plugins.steganography import CapacityError, LSBImageStego
 
         # Create small image (large enough to pass minimum size but small capacity)
         img_array = np.random.randint(0, 255, (50, 50, 3), dtype=np.uint8)
@@ -654,7 +658,7 @@ class TestSteganographyErrorHandling(unittest.TestCase):
 
     def test_cover_media_error_handling(self):
         """Test cover media error handling."""
-        from openssl_encrypt.modules.steganography import CoverMediaError, LSBImageStego
+        from openssl_encrypt.plugins.steganography import CoverMediaError, LSBImageStego
 
         stego = LSBImageStego()
 
@@ -668,7 +672,7 @@ class TestSteganographyErrorHandling(unittest.TestCase):
 
     def test_transport_error_handling(self):
         """Test transport layer error handling."""
-        from openssl_encrypt.modules.steganography import CoverMediaError, SteganographyTransport
+        from openssl_encrypt.plugins.steganography import CoverMediaError, SteganographyTransport
 
         transport = SteganographyTransport()
 
@@ -682,7 +686,7 @@ class TestSteganographyErrorHandling(unittest.TestCase):
 
     def test_jpeg_parameter_validation(self):
         """Test JPEG parameter validation errors."""
-        from openssl_encrypt.modules.steganography import JPEGSteganography
+        from openssl_encrypt.plugins.steganography.formats import JPEGSteganography
 
         # Test invalid quality factor
         with self.assertRaises(ValueError):
@@ -706,7 +710,7 @@ class TestTIFFSteganography(unittest.TestCase):
 
         # Check if TIFF steganography is available
         try:
-            from openssl_encrypt.modules.steganography import (
+            from openssl_encrypt.plugins.steganography import (
                 TIFFSteganography,
                 is_tiff_steganography_available,
             )
@@ -732,7 +736,7 @@ class TestTIFFSteganography(unittest.TestCase):
         if not self.tiff_available:
             self.skipTest("TIFF steganography not available")
 
-        from openssl_encrypt.modules.steganography import (
+        from openssl_encrypt.plugins.steganography import (
             TIFFAnalyzer,
             TIFFSteganography,
             create_tiff_test_image,
@@ -751,7 +755,7 @@ class TestTIFFSteganography(unittest.TestCase):
         if not self.tiff_available:
             self.skipTest("TIFF steganography not available")
 
-        from openssl_encrypt.modules.steganography import (
+        from openssl_encrypt.plugins.steganography import (
             SteganographyTransport,
             create_tiff_test_image,
         )
@@ -777,7 +781,7 @@ class TestTIFFSteganography(unittest.TestCase):
         if not self.tiff_available:
             self.skipTest("TIFF steganography not available")
 
-        from openssl_encrypt.modules.steganography import TIFFSteganography, create_tiff_test_image
+        from openssl_encrypt.plugins.steganography import TIFFSteganography, create_tiff_test_image
 
         compression_tests = ["raw", "lzw", "packbits"]
         capacities = {}
@@ -810,7 +814,7 @@ class TestTIFFSteganography(unittest.TestCase):
         if not self.tiff_available:
             self.skipTest("TIFF steganography not available")
 
-        from openssl_encrypt.modules.steganography import TIFFSteganography, create_tiff_test_image
+        from openssl_encrypt.plugins.steganography import TIFFSteganography, create_tiff_test_image
 
         # Create test TIFF (uncompressed for best results)
         tiff_path = os.path.join(self.test_dir, "test_workflow.tiff")
@@ -847,7 +851,7 @@ class TestTIFFSteganography(unittest.TestCase):
         if not self.tiff_available:
             self.skipTest("TIFF steganography not available")
 
-        from openssl_encrypt.modules.steganography import (
+        from openssl_encrypt.plugins.steganography import (
             SteganographyTransport,
             create_tiff_test_image,
         )
@@ -892,7 +896,7 @@ class TestTIFFSteganography(unittest.TestCase):
         if not self.tiff_available:
             self.skipTest("TIFF steganography not available")
 
-        from openssl_encrypt.modules.steganography import TIFFAnalyzer, create_tiff_test_image
+        from openssl_encrypt.plugins.steganography import TIFFAnalyzer, create_tiff_test_image
 
         # Test different TIFF configurations
         test_configs = [
@@ -945,7 +949,7 @@ class TestWEBPSteganography(unittest.TestCase):
 
         # Check if WEBP steganography is available
         try:
-            from openssl_encrypt.modules.steganography import (
+            from openssl_encrypt.plugins.steganography import (
                 WEBPSteganography,
                 is_webp_steganography_available,
             )
@@ -971,7 +975,7 @@ class TestWEBPSteganography(unittest.TestCase):
         if not self.webp_available:
             self.skipTest("WEBP steganography not available")
 
-        from openssl_encrypt.modules.steganography import (
+        from openssl_encrypt.plugins.steganography import (
             WEBPAnalyzer,
             WEBPSteganography,
             create_webp_test_image,
@@ -990,7 +994,7 @@ class TestWEBPSteganography(unittest.TestCase):
         if not self.webp_available:
             self.skipTest("WEBP steganography not available")
 
-        from openssl_encrypt.modules.steganography import (
+        from openssl_encrypt.plugins.steganography import (
             SteganographyTransport,
             create_webp_test_image,
         )
@@ -1013,7 +1017,7 @@ class TestWEBPSteganography(unittest.TestCase):
         if not self.webp_available:
             self.skipTest("WEBP steganography not available")
 
-        from openssl_encrypt.modules.steganography import WEBPSteganography, create_webp_test_image
+        from openssl_encrypt.plugins.steganography import WEBPSteganography, create_webp_test_image
 
         # Test lossless WEBP
         lossless_webp = create_webp_test_image(width=60, height=60, lossless=True)
@@ -1038,7 +1042,7 @@ class TestWEBPSteganography(unittest.TestCase):
         if not self.webp_available:
             self.skipTest("WEBP steganography not available")
 
-        from openssl_encrypt.modules.steganography import WEBPSteganography, create_webp_test_image
+        from openssl_encrypt.plugins.steganography import WEBPSteganography, create_webp_test_image
 
         # Create test lossless WEBP
         webp_data = create_webp_test_image(width=80, height=80, lossless=True)
@@ -1067,7 +1071,7 @@ class TestWEBPSteganography(unittest.TestCase):
         if not self.webp_available:
             self.skipTest("WEBP steganography not available")
 
-        from openssl_encrypt.modules.steganography import WEBPSteganography, create_webp_test_image
+        from openssl_encrypt.plugins.steganography import WEBPSteganography, create_webp_test_image
 
         # Create test lossy WEBP
         webp_data = create_webp_test_image(width=120, height=120, lossless=False, quality=85)
@@ -1097,7 +1101,7 @@ class TestWEBPSteganography(unittest.TestCase):
         if not self.webp_available:
             self.skipTest("WEBP steganography not available")
 
-        from openssl_encrypt.modules.steganography import (
+        from openssl_encrypt.plugins.steganography import (
             SteganographyTransport,
             create_webp_test_image,
         )
@@ -1142,7 +1146,7 @@ class TestWEBPSteganography(unittest.TestCase):
         if not self.webp_available:
             self.skipTest("WEBP steganography not available")
 
-        from openssl_encrypt.modules.steganography import WEBPAnalyzer, create_webp_test_image
+        from openssl_encrypt.plugins.steganography import WEBPAnalyzer, create_webp_test_image
 
         # Test different WEBP configurations
         test_configs = [
@@ -1182,7 +1186,7 @@ class TestWEBPSteganography(unittest.TestCase):
         if not self.webp_available:
             self.skipTest("WEBP steganography not available")
 
-        from openssl_encrypt.modules.steganography import WEBPSteganography, create_webp_test_image
+        from openssl_encrypt.plugins.steganography import WEBPSteganography, create_webp_test_image
 
         # Create test WEBP
         webp_data = create_webp_test_image(width=50, height=50, lossless=True)
@@ -1214,7 +1218,7 @@ class TestWAVSteganography(unittest.TestCase):
 
         # Check if WAV steganography is available
         try:
-            from openssl_encrypt.modules.steganography import (
+            from openssl_encrypt.plugins.steganography import (
                 WAVSteganography,
                 is_wav_steganography_available,
             )
@@ -1240,7 +1244,7 @@ class TestWAVSteganography(unittest.TestCase):
         if not self.wav_available:
             self.skipTest("WAV steganography not available")
 
-        from openssl_encrypt.modules.steganography import (
+        from openssl_encrypt.plugins.steganography import (
             WAVAnalyzer,
             WAVSteganography,
             create_wav_test_audio,
@@ -1259,7 +1263,7 @@ class TestWAVSteganography(unittest.TestCase):
         if not self.wav_available:
             self.skipTest("WAV steganography not available")
 
-        from openssl_encrypt.modules.steganography import create_wav_test_audio
+        from openssl_encrypt.plugins.steganography import create_wav_test_audio
 
         # Test different audio configurations
         test_configs = [
@@ -1283,7 +1287,7 @@ class TestWAVSteganography(unittest.TestCase):
         if not self.wav_available:
             self.skipTest("WAV steganography not available")
 
-        from openssl_encrypt.modules.steganography import WAVSteganography, create_wav_test_audio
+        from openssl_encrypt.plugins.steganography import WAVSteganography, create_wav_test_audio
 
         # Test different configurations
         configs = [
@@ -1320,7 +1324,7 @@ class TestWAVSteganography(unittest.TestCase):
         if not self.wav_available:
             self.skipTest("WAV steganography not available")
 
-        from openssl_encrypt.modules.steganography import WAVSteganography, create_wav_test_audio
+        from openssl_encrypt.plugins.steganography import WAVSteganography, create_wav_test_audio
 
         # Create test WAV (longer duration for more capacity)
         wav_data = create_wav_test_audio(duration_seconds=3.0, sample_rate=44100, channels=2)
@@ -1354,7 +1358,7 @@ class TestWAVSteganography(unittest.TestCase):
         if not self.wav_available:
             self.skipTest("WAV steganography not available")
 
-        from openssl_encrypt.modules.steganography import WAVAnalyzer, create_wav_test_audio
+        from openssl_encrypt.plugins.steganography import WAVAnalyzer, create_wav_test_audio
 
         # Test different WAV configurations
         test_configs = [
@@ -1393,7 +1397,7 @@ class TestWAVSteganography(unittest.TestCase):
         if not self.wav_available:
             self.skipTest("WAV steganography not available")
 
-        from openssl_encrypt.modules.steganography import WAVSteganography, create_wav_test_audio
+        from openssl_encrypt.plugins.steganography import WAVSteganography, create_wav_test_audio
 
         # Create test WAV
         wav_data = create_wav_test_audio(duration_seconds=2.0, channels=1)
@@ -1421,7 +1425,7 @@ class TestWAVSteganography(unittest.TestCase):
         if not self.wav_available:
             self.skipTest("WAV steganography not available")
 
-        from openssl_encrypt.modules.steganography import WAVSteganography, create_wav_test_audio
+        from openssl_encrypt.plugins.steganography import WAVSteganography, create_wav_test_audio
 
         # Test 16-bit audio (most common)
         wav_16bit = create_wav_test_audio(duration_seconds=2.0, bits_per_sample=16)
@@ -1448,7 +1452,7 @@ class TestFLACSteganography(unittest.TestCase):
 
         # Check if FLAC steganography is available
         try:
-            from openssl_encrypt.modules.steganography import (
+            from openssl_encrypt.plugins.steganography import (
                 FLACSteganography,
                 is_flac_steganography_available,
             )
@@ -1474,7 +1478,7 @@ class TestFLACSteganography(unittest.TestCase):
         if not self.flac_available:
             self.skipTest("FLAC steganography not available")
 
-        from openssl_encrypt.modules.steganography import (
+        from openssl_encrypt.plugins.steganography import (
             FLACAnalyzer,
             FLACSteganography,
             create_flac_test_audio,
@@ -1493,7 +1497,7 @@ class TestFLACSteganography(unittest.TestCase):
         if not self.flac_available:
             self.skipTest("FLAC steganography not available")
 
-        from openssl_encrypt.modules.steganography import create_flac_test_audio
+        from openssl_encrypt.plugins.steganography import create_flac_test_audio
 
         # Test different audio configurations
         test_configs = [
@@ -1516,7 +1520,7 @@ class TestFLACSteganography(unittest.TestCase):
         if not self.flac_available:
             self.skipTest("FLAC steganography not available")
 
-        from openssl_encrypt.modules.steganography import FLACSteganography, create_flac_test_audio
+        from openssl_encrypt.plugins.steganography import FLACSteganography, create_flac_test_audio
 
         # Test different configurations
         configs = [
@@ -1553,7 +1557,7 @@ class TestFLACSteganography(unittest.TestCase):
         if not self.flac_available:
             self.skipTest("FLAC steganography not available")
 
-        from openssl_encrypt.modules.steganography import FLACSteganography, create_flac_test_audio
+        from openssl_encrypt.plugins.steganography import FLACSteganography, create_flac_test_audio
 
         # Create test FLAC (longer duration for more capacity)
         flac_data = create_flac_test_audio(duration_seconds=3.0, sample_rate=44100, channels=2)
@@ -1586,7 +1590,7 @@ class TestFLACSteganography(unittest.TestCase):
         if not self.flac_available:
             self.skipTest("FLAC steganography not available")
 
-        from openssl_encrypt.modules.steganography import FLACAnalyzer, create_flac_test_audio
+        from openssl_encrypt.plugins.steganography import FLACAnalyzer, create_flac_test_audio
 
         # Test different FLAC configurations
         test_configs = [
@@ -1624,7 +1628,7 @@ class TestFLACSteganography(unittest.TestCase):
         if not self.flac_available:
             self.skipTest("FLAC steganography not available")
 
-        from openssl_encrypt.modules.steganography import FLACSteganography, create_flac_test_audio
+        from openssl_encrypt.plugins.steganography import FLACSteganography, create_flac_test_audio
 
         # Create test FLAC
         flac_data = create_flac_test_audio(duration_seconds=2.0, channels=1)
@@ -1652,7 +1656,7 @@ class TestFLACSteganography(unittest.TestCase):
         if not self.flac_available:
             self.skipTest("FLAC steganography not available")
 
-        from openssl_encrypt.modules.steganography import FLACSteganography, create_flac_test_audio
+        from openssl_encrypt.plugins.steganography import FLACSteganography, create_flac_test_audio
 
         # Create test FLAC
         flac_data = create_flac_test_audio(duration_seconds=2.0, channels=2, bits_per_sample=16)
@@ -1678,7 +1682,7 @@ class TestFLACSteganography(unittest.TestCase):
         if not self.flac_available:
             self.skipTest("FLAC steganography not available")
 
-        from openssl_encrypt.modules.steganography import FLACSteganography, create_flac_test_audio
+        from openssl_encrypt.plugins.steganography import FLACSteganography, create_flac_test_audio
 
         # Create test FLAC
         flac_data = create_flac_test_audio(duration_seconds=1.0, sample_rate=44100, channels=1)
@@ -1709,7 +1713,7 @@ class TestMP3Steganography(unittest.TestCase):
 
         # Check if MP3 steganography is available
         try:
-            from openssl_encrypt.modules.steganography import (
+            from openssl_encrypt.plugins.steganography import (
                 MP3Steganography,
                 is_mp3_steganography_available,
             )
@@ -1735,7 +1739,7 @@ class TestMP3Steganography(unittest.TestCase):
         if not self.mp3_available:
             self.skipTest("MP3 steganography not available")
 
-        from openssl_encrypt.modules.steganography import (
+        from openssl_encrypt.plugins.steganography import (
             MP3Analyzer,
             MP3Steganography,
             create_mp3_test_audio,
@@ -1754,7 +1758,7 @@ class TestMP3Steganography(unittest.TestCase):
         if not self.mp3_available:
             self.skipTest("MP3 steganography not available")
 
-        from openssl_encrypt.modules.steganography import create_mp3_test_audio
+        from openssl_encrypt.plugins.steganography import create_mp3_test_audio
 
         # Test different MP3 configurations
         test_configs = [
@@ -1777,7 +1781,7 @@ class TestMP3Steganography(unittest.TestCase):
         if not self.mp3_available:
             self.skipTest("MP3 steganography not available")
 
-        from openssl_encrypt.modules.steganography import MP3Steganography, create_mp3_test_audio
+        from openssl_encrypt.plugins.steganography import MP3Steganography, create_mp3_test_audio
 
         # Test different configurations
         configs = [
@@ -1810,7 +1814,7 @@ class TestMP3Steganography(unittest.TestCase):
         if not self.mp3_available:
             self.skipTest("MP3 steganography not available")
 
-        from openssl_encrypt.modules.steganography import MP3Steganography, create_mp3_test_audio
+        from openssl_encrypt.plugins.steganography import MP3Steganography, create_mp3_test_audio
 
         # Create test MP3 (higher bitrate for better capacity)
         mp3_data = create_mp3_test_audio(duration_seconds=5.0, bitrate=192, sample_rate=44100)
@@ -1843,7 +1847,7 @@ class TestMP3Steganography(unittest.TestCase):
         if not self.mp3_available:
             self.skipTest("MP3 steganography not available")
 
-        from openssl_encrypt.modules.steganography import MP3Analyzer, create_mp3_test_audio
+        from openssl_encrypt.plugins.steganography import MP3Analyzer, create_mp3_test_audio
 
         # Test different MP3 configurations
         test_configs = [
@@ -1883,7 +1887,7 @@ class TestMP3Steganography(unittest.TestCase):
         if not self.mp3_available:
             self.skipTest("MP3 steganography not available")
 
-        from openssl_encrypt.modules.steganography import MP3Steganography, create_mp3_test_audio
+        from openssl_encrypt.plugins.steganography import MP3Steganography, create_mp3_test_audio
 
         # Create test MP3
         mp3_data = create_mp3_test_audio(duration_seconds=3.0, bitrate=128)
@@ -1911,7 +1915,7 @@ class TestMP3Steganography(unittest.TestCase):
         if not self.mp3_available:
             self.skipTest("MP3 steganography not available")
 
-        from openssl_encrypt.modules.steganography import MP3Steganography, create_mp3_test_audio
+        from openssl_encrypt.plugins.steganography import MP3Steganography, create_mp3_test_audio
 
         # Test different bitrates
         bitrates = [96, 128, 192, 256]
@@ -1936,7 +1940,7 @@ class TestMP3Steganography(unittest.TestCase):
         if not self.mp3_available:
             self.skipTest("MP3 steganography not available")
 
-        from openssl_encrypt.modules.steganography import MP3Steganography, create_mp3_test_audio
+        from openssl_encrypt.plugins.steganography import MP3Steganography, create_mp3_test_audio
 
         # Create high-quality MP3 for testing
         mp3_data = create_mp3_test_audio(duration_seconds=4.0, bitrate=256, sample_rate=44100)
@@ -1962,7 +1966,7 @@ class TestMP3Steganography(unittest.TestCase):
         if not self.mp3_available:
             self.skipTest("MP3 steganography not available")
 
-        from openssl_encrypt.modules.steganography import MP3Steganography, create_mp3_test_audio
+        from openssl_encrypt.plugins.steganography import MP3Steganography, create_mp3_test_audio
 
         # Create test MP3
         mp3_data = create_mp3_test_audio(duration_seconds=3.0, bitrate=192)
@@ -1986,7 +1990,7 @@ class TestMP3Steganography(unittest.TestCase):
         if not self.mp3_available:
             self.skipTest("MP3 steganography not available")
 
-        from openssl_encrypt.modules.steganography import MP3Steganography, create_mp3_test_audio
+        from openssl_encrypt.plugins.steganography import MP3Steganography, create_mp3_test_audio
 
         # Create test MP3
         mp3_data = create_mp3_test_audio(duration_seconds=2.0, bitrate=128)

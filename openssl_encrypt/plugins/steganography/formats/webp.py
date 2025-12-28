@@ -13,10 +13,9 @@ Key Features:
 - Comprehensive format analysis and capacity calculation
 
 Security Architecture:
-- SecureBytes containers for all sensitive data
-- Automatic memory cleanup after operations
 - Key-based pixel randomization for enhanced security
 - Format-aware hiding to prevent detection artifacts
+- Multiple security levels with configurable parameters
 
 Supported WEBP Features:
 - VP8 (lossy) and VP8L (lossless) codecs
@@ -33,14 +32,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from PIL import Image
 
-# Import secure memory functions for handling sensitive data
-try:
-    from ..secure_memory import SecureBytes, secure_memzero
-except ImportError:
-    # Fallback for standalone testing
-    from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
-
-from .stego_core import (
+from ..core import (
     CapacityError,
     CoverMediaError,
     ExtractionError,
@@ -129,36 +121,28 @@ class WEBPSteganography(SteganographyBase):
             CoverMediaError: If WEBP format is invalid
         """
         try:
-            # Use SecureBytes for cover data protection
-            secure_cover_data = SecureBytes(cover_data)
+            # Analyze WEBP structure
+            webp_info = self._analyze_webp_structure(cover_data)
 
-            try:
-                # Analyze WEBP structure
-                webp_info = self._analyze_webp_structure(secure_cover_data)
+            # Load WEBP image using PIL
+            image = Image.open(io.BytesIO(cover_data))
 
-                # Load WEBP image using PIL
-                image = Image.open(io.BytesIO(secure_cover_data))
+            if image.format != "WEBP":
+                raise CoverMediaError(f"Expected WEBP format, got {image.format}")
 
-                if image.format != "WEBP":
-                    raise CoverMediaError(f"Expected WEBP format, got {image.format}")
+            # Calculate capacity based on WEBP type
+            if webp_info["is_lossless"] or self.force_lossless:
+                # Lossless WEBP - use LSB method
+                capacity = self._calculate_lossless_capacity(image)
+            else:
+                # Lossy WEBP - more conservative capacity
+                capacity = self._calculate_lossy_capacity(image)
 
-                # Calculate capacity based on WEBP type
-                if webp_info["is_lossless"] or self.force_lossless:
-                    # Lossless WEBP - use LSB method
-                    capacity = self._calculate_lossless_capacity(image)
-                else:
-                    # Lossy WEBP - more conservative capacity
-                    capacity = self._calculate_lossy_capacity(image)
+            # Apply safety margin
+            capacity = int(capacity * 0.85)  # 15% safety margin
 
-                # Apply safety margin
-                capacity = int(capacity * 0.85)  # 15% safety margin
-
-                logger.debug(f"WEBP capacity: {capacity} bytes ({webp_info['codec']} format)")
-                return max(0, capacity)
-
-            finally:
-                # Secure cleanup
-                secure_memzero(secure_cover_data)
+            logger.debug(f"WEBP capacity: {capacity} bytes ({webp_info['codec']} format)")
+            return max(0, capacity)
 
         except Exception as e:
             logger.error(f"WEBP capacity calculation failed: {e}")
@@ -180,13 +164,9 @@ class WEBPSteganography(SteganographyBase):
             CoverMediaError: If cover image is invalid
             SteganographyError: If hiding operation fails
         """
-        # Use SecureBytes for sensitive data protection
-        secure_cover_data = SecureBytes(cover_data)
-        secure_secret_data = SecureBytes(secret_data)
-
         try:
             # Analyze WEBP structure
-            webp_info = self._analyze_webp_structure(secure_cover_data)
+            webp_info = self._analyze_webp_structure(cover_data)
             self.webp_info = webp_info
 
             # Check capacity
@@ -195,15 +175,15 @@ class WEBPSteganography(SteganographyBase):
                 raise CapacityError(len(secret_data), capacity, "WEBP image")
 
             # Load WEBP image
-            image = Image.open(io.BytesIO(secure_cover_data))
+            image = Image.open(io.BytesIO(cover_data))
 
             # Choose hiding method based on WEBP type
             if webp_info["is_lossless"] or self.force_lossless:
                 logger.debug("Using lossless WEBP steganography")
-                stego_image = self._hide_in_lossless_webp(image, secure_secret_data)
+                stego_image = self._hide_in_lossless_webp(image, secret_data)
             else:
                 logger.debug("Using lossy WEBP steganography")
-                stego_image = self._hide_in_lossy_webp(image, secure_secret_data)
+                stego_image = self._hide_in_lossy_webp(image, secret_data)
 
             # Convert back to WEBP bytes
             output_buffer = io.BytesIO()
@@ -224,10 +204,6 @@ class WEBPSteganography(SteganographyBase):
                 raise
             logger.error(f"WEBP hiding failed: {e}")
             raise SteganographyError(f"WEBP steganography failed: {e}")
-        finally:
-            # Secure cleanup
-            secure_memzero(secure_cover_data)
-            secure_memzero(secure_secret_data)
 
     def extract_data(self, stego_data: bytes) -> bytes:
         """
@@ -242,15 +218,12 @@ class WEBPSteganography(SteganographyBase):
         Raises:
             ExtractionError: If extraction fails
         """
-        # Use SecureBytes for data protection
-        secure_stego_data = SecureBytes(stego_data)
-
         try:
             # Analyze WEBP structure
-            webp_info = self._analyze_webp_structure(secure_stego_data)
+            webp_info = self._analyze_webp_structure(stego_data)
 
             # Load WEBP image
-            image = Image.open(io.BytesIO(secure_stego_data))
+            image = Image.open(io.BytesIO(stego_data))
 
             # Choose extraction method based on WEBP type
             if webp_info["is_lossless"] or self.force_lossless:
@@ -266,9 +239,6 @@ class WEBPSteganography(SteganographyBase):
         except Exception as e:
             logger.error(f"WEBP extraction failed: {e}")
             raise ExtractionError(f"WEBP extraction failed: {e}")
-        finally:
-            # Secure cleanup
-            secure_memzero(secure_stego_data)
 
     def _analyze_webp_structure(self, webp_data: bytes) -> Dict[str, Any]:
         """Analyze WEBP file structure and determine format details"""
@@ -377,57 +347,47 @@ class WEBPSteganography(SteganographyBase):
             # Prepare data for hiding (add length prefix and end marker)
             data_length = len(secret_data)
             length_bytes = struct.pack("<I", data_length)
-            data_to_hide = SecureBytes(
-                length_bytes + secret_data + b"\xFF\xFE"
-            )  # 2-byte end marker
+            data_to_hide = length_bytes + secret_data + b"\xFF\xFE"  # 2-byte end marker
 
-            try:
-                # Convert data to binary
-                binary_data = list(SteganographyUtils.bytes_to_binary(bytes(data_to_hide)))
+            # Convert data to binary
+            binary_data = list(SteganographyUtils.bytes_to_binary(data_to_hide))
 
-                # Flatten image array for processing
-                flat_image = img_array.flatten()
+            # Flatten image array for processing
+            flat_image = img_array.flatten()
 
-                # Generate pixel order (randomized if password provided)
-                pixel_indices = list(range(len(flat_image)))
-                if self.password:
-                    # Use password-based randomization
-                    np.random.seed(hash(self.password) & 0xFFFFFFFF)
-                    np.random.shuffle(pixel_indices)
+            # Generate pixel order (randomized if password provided)
+            pixel_indices = list(range(len(flat_image)))
+            if self.password:
+                # Use password-based randomization
+                np.random.seed(hash(self.password) & 0xFFFFFFFF)
+                np.random.shuffle(pixel_indices)
 
-                # Hide data using LSB
-                bit_index = 0
-                mask = (0xFF << self.bits_per_channel) & 0xFF
+            # Hide data using LSB
+            bit_index = 0
+            mask = (0xFF << self.bits_per_channel) & 0xFF
 
-                for i, pixel_idx in enumerate(pixel_indices):
-                    if bit_index >= len(binary_data):
-                        break
+            for i, pixel_idx in enumerate(pixel_indices):
+                if bit_index >= len(binary_data):
+                    break
 
-                    # Extract bits to hide
-                    bits_to_hide = 0
-                    for bit_offset in range(self.bits_per_channel):
-                        if bit_index + bit_offset < len(binary_data):
-                            bits_to_hide |= int(binary_data[bit_index + bit_offset]) << bit_offset
+                # Extract bits to hide
+                bits_to_hide = 0
+                for bit_offset in range(self.bits_per_channel):
+                    if bit_index + bit_offset < len(binary_data):
+                        bits_to_hide |= int(binary_data[bit_index + bit_offset]) << bit_offset
 
-                    # Modify pixel
-                    original_pixel = flat_image[pixel_idx]
-                    modified_pixel = (original_pixel & mask) | bits_to_hide
-                    flat_image[pixel_idx] = modified_pixel
+                # Modify pixel
+                original_pixel = flat_image[pixel_idx]
+                modified_pixel = (original_pixel & mask) | bits_to_hide
+                flat_image[pixel_idx] = modified_pixel
 
-                    bit_index += self.bits_per_channel
+                bit_index += self.bits_per_channel
 
-                # Reshape back to original shape
-                modified_array = flat_image.reshape(original_shape)
+            # Reshape back to original shape
+            modified_array = flat_image.reshape(original_shape)
 
-                # Create new image
-                return Image.fromarray(modified_array, mode=image.mode)
-
-            finally:
-                # Secure cleanup
-                secure_memzero(data_to_hide)
-                if "binary_data" in locals():
-                    # Clear binary data list
-                    binary_data.clear()
+            # Create new image
+            return Image.fromarray(modified_array, mode=image.mode)
 
         except Exception as e:
             logger.error(f"Lossless WEBP hiding failed: {e}")
@@ -450,50 +410,42 @@ class WEBPSteganography(SteganographyBase):
             length_bytes = struct.pack("<I", data_length)
 
             # Simple data format for lossy WEBP (no redundancy to avoid complexity)
-            data_to_hide = SecureBytes(
-                length_bytes + secret_data + b"\xFF\xFE"
-            )  # 2-byte end marker
+            data_to_hide = length_bytes + secret_data + b"\xFF\xFE"  # 2-byte end marker
 
-            try:
-                binary_data = list(SteganographyUtils.bytes_to_binary(bytes(data_to_hide)))
+            binary_data = list(SteganographyUtils.bytes_to_binary(data_to_hide))
 
-                height, width, channels = img_array.shape
-                total_pixels = height * width * channels
+            height, width, channels = img_array.shape
+            total_pixels = height * width * channels
 
-                # Check capacity considering spacing (every 4th pixel)
-                available_bits = total_pixels // 4
-                if len(binary_data) > available_bits:
-                    raise CapacityError(len(binary_data), available_bits, "lossy WEBP")
+            # Check capacity considering spacing (every 4th pixel)
+            available_bits = total_pixels // 4
+            if len(binary_data) > available_bits:
+                raise CapacityError(len(binary_data), available_bits, "lossy WEBP")
 
-                # Hide in LSB with spacing to reduce compression artifacts
-                bit_index = 0
-                pixel_index = 0
+            # Hide in LSB with spacing to reduce compression artifacts
+            bit_index = 0
+            pixel_index = 0
 
-                for y in range(height):
-                    for x in range(width):
-                        for c in range(channels):
-                            if bit_index >= len(binary_data):
-                                break
+            for y in range(height):
+                for x in range(width):
+                    for c in range(channels):
+                        if bit_index >= len(binary_data):
+                            break
 
-                            # Hide bit with spacing (every 4th pixel for robustness)
-                            if pixel_index % 4 == 0 and bit_index < len(binary_data):
-                                original_value = img_array[y, x, c]
-                                bit_to_hide = int(binary_data[bit_index])
+                        # Hide bit with spacing (every 4th pixel for robustness)
+                        if pixel_index % 4 == 0 and bit_index < len(binary_data):
+                            original_value = img_array[y, x, c]
+                            bit_to_hide = int(binary_data[bit_index])
 
-                                # Modify LSB
-                                modified_value = (original_value & 0xFE) | bit_to_hide
-                                img_array[y, x, c] = modified_value
+                            # Modify LSB
+                            modified_value = (original_value & 0xFE) | bit_to_hide
+                            img_array[y, x, c] = modified_value
 
-                                bit_index += 1
+                            bit_index += 1
 
-                            pixel_index += 1
+                        pixel_index += 1
 
-                return Image.fromarray(img_array, "RGB")
-
-            finally:
-                secure_memzero(data_to_hide)
-                if "binary_data" in locals():
-                    binary_data.clear()
+            return Image.fromarray(img_array, "RGB")
 
         except Exception as e:
             logger.error(f"Lossy WEBP hiding failed: {e}")
@@ -581,21 +533,14 @@ class WEBPSteganography(SteganographyBase):
                         bit_index += 1
 
             # Convert bits back to bytes
-            extracted_bytes = SecureBytes(
-                SteganographyUtils.binary_to_bytes("".join(map(str, extracted_bits)))
-            )
+            extracted_bytes = SteganographyUtils.binary_to_bytes("".join(map(str, extracted_bits)))
 
-            try:
-                # Extract the actual secret data (skip length prefix)
-                if len(extracted_bytes) < 4:
-                    raise ExtractionError("Insufficient data extracted")
+            # Extract the actual secret data (skip length prefix)
+            if len(extracted_bytes) < 4:
+                raise ExtractionError("Insufficient data extracted")
 
-                secret_data = extracted_bytes[4 : 4 + data_length]
-                return bytes(secret_data)
-
-            finally:
-                # Secure cleanup
-                secure_memzero(extracted_bytes)
+            secret_data = extracted_bytes[4 : 4 + data_length]
+            return bytes(secret_data)
 
         except Exception as e:
             logger.error(f"Lossless WEBP extraction failed: {e}")
@@ -649,27 +594,23 @@ class WEBPSteganography(SteganographyBase):
 
             # Convert all bits to bytes
             binary_string = "".join(str(bit) for bit in extracted_bits[:total_bits_needed])
-            extracted_bytes = SecureBytes(SteganographyUtils.binary_to_bytes(binary_string))
+            extracted_bytes = SteganographyUtils.binary_to_bytes(binary_string)
 
-            try:
-                # Skip the length field, get the actual data
-                if len(extracted_bytes) < 6:  # 4 bytes length + at least 2 bytes data + end marker
-                    raise ExtractionError("Extracted data too short")
+            # Skip the length field, get the actual data
+            if len(extracted_bytes) < 6:  # 4 bytes length + at least 2 bytes data + end marker
+                raise ExtractionError("Extracted data too short")
 
-                payload = extracted_bytes[4 : 4 + data_length]
+            payload = extracted_bytes[4 : 4 + data_length]
 
-                # Verify end marker if we have enough bytes
-                if len(extracted_bytes) >= 4 + data_length + 2:
-                    end_marker = extracted_bytes[4 + data_length : 4 + data_length + 2]
-                    if end_marker != b"\\xFF\\xFE":
-                        logger.warning(
-                            f"End marker mismatch: expected FF FE, got {end_marker.hex()}"
-                        )
+            # Verify end marker if we have enough bytes
+            if len(extracted_bytes) >= 4 + data_length + 2:
+                end_marker = extracted_bytes[4 + data_length : 4 + data_length + 2]
+                if end_marker != b"\\xFF\\xFE":
+                    logger.warning(
+                        f"End marker mismatch: expected FF FE, got {end_marker.hex()}"
+                    )
 
-                return bytes(payload)
-
-            finally:
-                secure_memzero(extracted_bytes)
+            return bytes(payload)
 
         except Exception as e:
             logger.error(f"Lossy WEBP extraction failed: {e}")

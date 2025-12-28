@@ -12,13 +12,6 @@ import logging
 import struct
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-# Import secure memory functions for handling sensitive data
-try:
-    from ..secure_memory import SecureBytes, secure_memzero
-except ImportError:
-    # Fallback for standalone testing
-    from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
-
 try:
     from PIL import Image, ImageFile
     from PIL.TiffTags import TAGS
@@ -32,7 +25,7 @@ except ImportError:
 
 import numpy as np
 
-from .stego_core import (
+from ..core import (
     CapacityError,
     CoverMediaError,
     ExtractionError,
@@ -130,67 +123,56 @@ class TIFFSteganography(SteganographyBase):
         self._validate_cover_data(cover_data, min_size=2048)
 
         try:
-            # Use secure memory for capacity analysis
-            secure_cover_data = None
+            # Analyze TIFF structure
+            tiff_info = self._analyze_tiff_structure(cover_data)
 
-            try:
-                secure_cover_data = SecureBytes(cover_data)
+            if not tiff_info["steganography_suitable"]:
+                raise CoverMediaError(
+                    f"TIFF compression method not suitable for steganography: "
+                    f"{tiff_info['compression_name']}"
+                )
 
-                # Analyze TIFF structure
-                tiff_info = self._analyze_tiff_structure(secure_cover_data)
+            # Load TIFF image for detailed analysis
+            image = Image.open(io.BytesIO(cover_data))
 
-                if not tiff_info["steganography_suitable"]:
-                    raise CoverMediaError(
-                        f"TIFF compression method not suitable for steganography: "
-                        f"{tiff_info['compression_name']}"
-                    )
+            if image.format not in self.SUPPORTED_FORMATS:
+                raise CoverMediaError(f"Unsupported format: {image.format}")
 
-                # Load TIFF image for detailed analysis
-                image = Image.open(io.BytesIO(secure_cover_data))
+            # Calculate theoretical capacity based on image properties
+            width, height = image.size
+            total_pixels = width * height
 
-                if image.format not in self.SUPPORTED_FORMATS:
-                    raise CoverMediaError(f"Unsupported format: {image.format}")
+            # Handle different TIFF configurations
+            samples_per_pixel = tiff_info.get("samples_per_pixel", 1)
+            bits_per_sample = tiff_info.get("bits_per_sample", 8)
 
-                # Calculate theoretical capacity based on image properties
-                width, height = image.size
-                total_pixels = width * height
+            # Calculate usable bits based on bit depth
+            if bits_per_sample == 16:
+                # For 16-bit, use only LSBs of lower byte to avoid visible artifacts
+                usable_bits_per_sample = min(self.bits_per_channel, 2)
+            else:
+                # For 8-bit, use standard LSB approach
+                usable_bits_per_sample = self.bits_per_channel
 
-                # Handle different TIFF configurations
-                samples_per_pixel = tiff_info.get("samples_per_pixel", 1)
-                bits_per_sample = tiff_info.get("bits_per_sample", 8)
+            # Calculate total capacity
+            total_bits = total_pixels * samples_per_pixel * usable_bits_per_sample
+            capacity_bytes = total_bits // 8
 
-                # Calculate usable bits based on bit depth
-                if bits_per_sample == 16:
-                    # For 16-bit, use only LSBs of lower byte to avoid visible artifacts
-                    usable_bits_per_sample = min(self.bits_per_channel, 2)
-                else:
-                    # For 8-bit, use standard LSB approach
-                    usable_bits_per_sample = self.bits_per_channel
+            # Apply compression-aware safety margin
+            compression_type = tiff_info.get("compression", TIFF_COMPRESSION_NONE)
+            if compression_type == TIFF_COMPRESSION_NONE:
+                safety_margin = 0.95  # High safety for uncompressed
+            elif compression_type == TIFF_COMPRESSION_LZW:
+                safety_margin = 0.85  # More conservative for LZW
+            elif compression_type == TIFF_COMPRESSION_PACKBITS:
+                safety_margin = 0.90  # Medium safety for PackBits
+            else:
+                safety_margin = 0.75  # Very conservative for unknown
 
-                # Calculate total capacity
-                total_bits = total_pixels * samples_per_pixel * usable_bits_per_sample
-                capacity_bytes = total_bits // 8
+            safe_capacity = int(capacity_bytes * safety_margin)
 
-                # Apply compression-aware safety margin
-                compression_type = tiff_info.get("compression", TIFF_COMPRESSION_NONE)
-                if compression_type == TIFF_COMPRESSION_NONE:
-                    safety_margin = 0.95  # High safety for uncompressed
-                elif compression_type == TIFF_COMPRESSION_LZW:
-                    safety_margin = 0.85  # More conservative for LZW
-                elif compression_type == TIFF_COMPRESSION_PACKBITS:
-                    safety_margin = 0.90  # Medium safety for PackBits
-                else:
-                    safety_margin = 0.75  # Very conservative for unknown
-
-                safe_capacity = int(capacity_bytes * safety_margin)
-
-                # Reserve space for EOF marker
-                return max(0, safe_capacity - len(self.eof_marker))
-
-            finally:
-                # Clean up secure memory
-                if secure_cover_data:
-                    secure_memzero(secure_cover_data)
+            # Reserve space for EOF marker
+            return max(0, safe_capacity - len(self.eof_marker))
 
         except Exception as e:
             if isinstance(e, (CoverMediaError, CapacityError)):
@@ -207,43 +189,28 @@ class TIFFSteganography(SteganographyBase):
             raise CapacityError(len(secret_data), capacity, "TIFF")
 
         try:
-            # Use secure memory for data processing
-            secure_cover_data = None
-            secure_secret_data = None
+            # Analyze TIFF structure
+            self.tiff_info = self._analyze_tiff_structure(cover_data)
 
-            try:
-                secure_cover_data = SecureBytes(cover_data)
-                secure_secret_data = SecureBytes(secret_data)
+            # Load TIFF image
+            image = Image.open(io.BytesIO(cover_data))
 
-                # Analyze TIFF structure
-                self.tiff_info = self._analyze_tiff_structure(secure_cover_data)
+            if image.format not in self.SUPPORTED_FORMATS:
+                raise CoverMediaError(f"Unsupported format: {image.format}")
 
-                # Load TIFF image
-                image = Image.open(io.BytesIO(secure_cover_data))
+            # Add EOF marker and convert to binary
+            data_with_eof = self._add_eof_marker(secret_data)
+            binary_data = SteganographyUtils.bytes_to_binary(data_with_eof)
 
-                if image.format not in self.SUPPORTED_FORMATS:
-                    raise CoverMediaError(f"Unsupported format: {image.format}")
+            # Perform LSB hiding adapted for TIFF
+            modified_image = self._hide_in_tiff(image, binary_data)
 
-                # Add EOF marker and convert to binary
-                data_with_eof = self._add_eof_marker(secure_secret_data)
-                binary_data = SteganographyUtils.bytes_to_binary(data_with_eof)
+            # Save with appropriate TIFF parameters
+            output_buffer = io.BytesIO()
+            save_params = self._get_tiff_save_parameters()
+            modified_image.save(output_buffer, format="TIFF", **save_params)
 
-                # Perform LSB hiding adapted for TIFF
-                modified_image = self._hide_in_tiff(image, binary_data)
-
-                # Save with appropriate TIFF parameters
-                output_buffer = io.BytesIO()
-                save_params = self._get_tiff_save_parameters()
-                modified_image.save(output_buffer, format="TIFF", **save_params)
-
-                return output_buffer.getvalue()
-
-            finally:
-                # Clean up secure memory
-                if secure_cover_data:
-                    secure_memzero(secure_cover_data)
-                if secure_secret_data:
-                    secure_memzero(secure_secret_data)
+            return output_buffer.getvalue()
 
         except Exception as e:
             if isinstance(e, (CoverMediaError, CapacityError, SecurityError)):
@@ -255,29 +222,18 @@ class TIFFSteganography(SteganographyBase):
         self._validate_cover_data(stego_data, min_size=2048)
 
         try:
-            # Use secure memory for extraction
-            secure_stego_data = None
+            # Load TIFF image
+            image = Image.open(io.BytesIO(stego_data))
 
-            try:
-                secure_stego_data = SecureBytes(stego_data)
+            if image.format not in self.SUPPORTED_FORMATS:
+                raise CoverMediaError(f"Unsupported format: {image.format}")
 
-                # Load TIFF image
-                image = Image.open(io.BytesIO(secure_stego_data))
+            # Extract data from TIFF
+            binary_data = self._extract_from_tiff(image)
 
-                if image.format not in self.SUPPORTED_FORMATS:
-                    raise CoverMediaError(f"Unsupported format: {image.format}")
-
-                # Extract data from TIFF
-                binary_data = self._extract_from_tiff(image)
-
-                # Convert binary to bytes and find EOF marker
-                extracted_bytes = SteganographyUtils.binary_to_bytes(binary_data)
-                return self._find_eof_marker(extracted_bytes)
-
-            finally:
-                # Clean up secure memory
-                if secure_stego_data:
-                    secure_memzero(secure_stego_data)
+            # Convert binary to bytes and find EOF marker
+            extracted_bytes = SteganographyUtils.binary_to_bytes(binary_data)
+            return self._find_eof_marker(extracted_bytes)
 
         except Exception as e:
             if isinstance(e, (CoverMediaError, ExtractionError)):
@@ -348,80 +304,68 @@ class TIFFSteganography(SteganographyBase):
     def _hide_in_tiff(self, image: Image.Image, binary_data: str) -> Image.Image:
         """Hide data in TIFF using LSB method adapted for TIFF characteristics"""
         try:
-            # Use secure memory for hiding process
-            secure_binary_data = None
+            # Convert image to numpy array for manipulation
+            img_array = np.array(image)
+            original_shape = img_array.shape
 
-            try:
-                # Store binary data in secure memory
-                secure_binary_data = SecureBytes(binary_data.encode("ascii"))
+            # Handle different TIFF bit depths
+            if img_array.dtype == np.uint16:
+                # For 16-bit TIFF, work with lower byte only
+                working_array = (img_array & 0xFF).astype(np.uint8)
+                is_16bit = True
+            else:
+                # For 8-bit TIFF, work directly
+                working_array = img_array.astype(np.uint8)
+                is_16bit = False
 
-                # Convert image to numpy array for manipulation
-                img_array = np.array(image)
-                original_shape = img_array.shape
+            # Flatten array for processing
+            if len(working_array.shape) == 3:
+                flat_pixels = working_array.flatten()
+            else:
+                flat_pixels = working_array.flatten()
 
-                # Handle different TIFF bit depths
-                if img_array.dtype == np.uint16:
-                    # For 16-bit TIFF, work with lower byte only
-                    working_array = (img_array & 0xFF).astype(np.uint8)
-                    is_16bit = True
-                else:
-                    # For 8-bit TIFF, work directly
-                    working_array = img_array.astype(np.uint8)
-                    is_16bit = False
+            # Generate pixel order (random if password provided)
+            pixel_indices = list(range(len(flat_pixels)))
+            if self.password and self.config.randomize_pixel_order:
+                import random
 
-                # Flatten array for processing
-                if len(working_array.shape) == 3:
-                    flat_pixels = working_array.flatten()
-                else:
-                    flat_pixels = working_array.flatten()
+                random.seed(self.seed)
+                random.shuffle(pixel_indices)
 
-                # Generate pixel order (random if password provided)
-                pixel_indices = list(range(len(flat_pixels)))
-                if self.password and self.config.randomize_pixel_order:
-                    import random
+            # Hide data in pixels
+            data_index = 0
+            for pixel_idx in pixel_indices:
+                if data_index >= len(binary_data):
+                    break
 
-                    random.seed(self.seed)
-                    random.shuffle(pixel_indices)
+                # Modify pixel LSB
+                bit_value = int(binary_data[data_index])
+                original_value = flat_pixels[pixel_idx]
+                modified_value = (original_value & self.clear_mask) | bit_value
+                flat_pixels[pixel_idx] = modified_value
+                data_index += 1
 
-                # Hide data in pixels
-                data_index = 0
-                for pixel_idx in pixel_indices:
-                    if data_index >= len(binary_data):
-                        break
+            # Reshape back to original dimensions
+            if len(original_shape) == 3:
+                modified_array = flat_pixels.reshape(original_shape)
+            else:
+                modified_array = flat_pixels.reshape(original_shape)
 
-                    # Modify pixel LSB
-                    bit_value = int(binary_data[data_index])
-                    original_value = flat_pixels[pixel_idx]
-                    modified_value = (original_value & self.clear_mask) | bit_value
-                    flat_pixels[pixel_idx] = modified_value
-                    data_index += 1
+            # Handle 16-bit reconstruction
+            if is_16bit:
+                # Reconstruct 16-bit array with modified lower bytes
+                final_array = (img_array & 0xFF00) | modified_array.astype(np.uint16)
+            else:
+                final_array = modified_array
 
-                # Reshape back to original dimensions
-                if len(original_shape) == 3:
-                    modified_array = flat_pixels.reshape(original_shape)
-                else:
-                    modified_array = flat_pixels.reshape(original_shape)
+            # Create modified image
+            if is_16bit:
+                # PIL handles 16-bit TIFF specially
+                modified_image = Image.fromarray(final_array, mode=image.mode)
+            else:
+                modified_image = Image.fromarray(final_array.astype(np.uint8), mode=image.mode)
 
-                # Handle 16-bit reconstruction
-                if is_16bit:
-                    # Reconstruct 16-bit array with modified lower bytes
-                    final_array = (img_array & 0xFF00) | modified_array.astype(np.uint16)
-                else:
-                    final_array = modified_array
-
-                # Create modified image
-                if is_16bit:
-                    # PIL handles 16-bit TIFF specially
-                    modified_image = Image.fromarray(final_array, mode=image.mode)
-                else:
-                    modified_image = Image.fromarray(final_array.astype(np.uint8), mode=image.mode)
-
-                return modified_image
-
-            finally:
-                # Clean up secure memory
-                if secure_binary_data:
-                    secure_memzero(secure_binary_data)
+            return modified_image
 
         except Exception as e:
             logger.error(f"TIFF hiding failed: {e}")
@@ -430,47 +374,35 @@ class TIFFSteganography(SteganographyBase):
     def _extract_from_tiff(self, image: Image.Image) -> str:
         """Extract data from TIFF using LSB analysis"""
         try:
-            # Use secure memory for extraction
-            secure_img_data = None
+            # Convert image to numpy array
+            img_array = np.array(image)
 
-            try:
-                # Convert image to numpy array
-                img_array = np.array(image)
+            # Handle different TIFF bit depths
+            if img_array.dtype == np.uint16:
+                # For 16-bit TIFF, extract from lower byte
+                working_array = (img_array & 0xFF).astype(np.uint8)
+            else:
+                # For 8-bit TIFF, work directly
+                working_array = img_array.astype(np.uint8)
 
-                # Store image data in secure memory
-                secure_img_data = SecureBytes(img_array.tobytes())
+            # Flatten array for processing
+            flat_pixels = working_array.flatten()
 
-                # Handle different TIFF bit depths
-                if img_array.dtype == np.uint16:
-                    # For 16-bit TIFF, extract from lower byte
-                    working_array = (img_array & 0xFF).astype(np.uint8)
-                else:
-                    # For 8-bit TIFF, work directly
-                    working_array = img_array.astype(np.uint8)
+            # Generate same pixel order as hiding
+            pixel_indices = list(range(len(flat_pixels)))
+            if self.password and self.config.randomize_pixel_order:
+                import random
 
-                # Flatten array for processing
-                flat_pixels = working_array.flatten()
+                random.seed(self.seed)
+                random.shuffle(pixel_indices)
 
-                # Generate same pixel order as hiding
-                pixel_indices = list(range(len(flat_pixels)))
-                if self.password and self.config.randomize_pixel_order:
-                    import random
+            # Extract LSBs
+            binary_bits = []
+            for pixel_idx in pixel_indices:
+                bit_value = flat_pixels[pixel_idx] & 1
+                binary_bits.append(str(bit_value))
 
-                    random.seed(self.seed)
-                    random.shuffle(pixel_indices)
-
-                # Extract LSBs
-                binary_bits = []
-                for pixel_idx in pixel_indices:
-                    bit_value = flat_pixels[pixel_idx] & 1
-                    binary_bits.append(str(bit_value))
-
-                return "".join(binary_bits)
-
-            finally:
-                # Clean up secure memory
-                if secure_img_data:
-                    secure_memzero(secure_img_data)
+            return "".join(binary_bits)
 
         except Exception as e:
             logger.error(f"TIFF extraction failed: {e}")
@@ -522,39 +454,28 @@ class TIFFAnalyzer:
             Dictionary containing TIFF analysis information
         """
         try:
-            # Use secure memory for analysis
-            secure_data = None
+            if not self._is_valid_tiff(tiff_data):
+                raise CoverMediaError("Invalid TIFF format")
 
-            try:
-                secure_data = SecureBytes(tiff_data)
+            # Basic header analysis
+            header_info = self._analyze_tiff_header(tiff_data)
 
-                if not self._is_valid_tiff(secure_data):
-                    raise CoverMediaError("Invalid TIFF format")
+            # Image properties analysis
+            image_info = self._analyze_tiff_properties(tiff_data)
 
-                # Basic header analysis
-                header_info = self._analyze_tiff_header(secure_data)
+            # Steganography suitability assessment
+            stego_assessment = self._assess_tiff_steganography_suitability(
+                header_info, image_info
+            )
 
-                # Image properties analysis
-                image_info = self._analyze_tiff_properties(secure_data)
-
-                # Steganography suitability assessment
-                stego_assessment = self._assess_tiff_steganography_suitability(
-                    header_info, image_info
-                )
-
-                return {
-                    "format": "TIFF",
-                    "valid": True,
-                    "header": header_info,
-                    "image": image_info,
-                    "steganography": stego_assessment,
-                    "analysis_version": "1.0",
-                }
-
-            finally:
-                # Clean up secure memory
-                if secure_data:
-                    secure_memzero(secure_data)
+            return {
+                "format": "TIFF",
+                "valid": True,
+                "header": header_info,
+                "image": image_info,
+                "steganography": stego_assessment,
+                "analysis_version": "1.0",
+            }
 
         except Exception as e:
             logger.error(f"TIFF analysis failed: {e}")

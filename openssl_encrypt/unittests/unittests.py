@@ -140,7 +140,7 @@ from openssl_encrypt.modules.secure_ops import (
 from openssl_encrypt.modules.security_scorer import SecurityLevel, SecurityScorer
 
 try:
-    from openssl_encrypt.modules.steganography.error_correction import (
+    from openssl_encrypt.plugins.steganography.error_correction import (
         AdaptiveErrorCorrection,
         BlockEncoder,
         ReedSolomonDecoder,

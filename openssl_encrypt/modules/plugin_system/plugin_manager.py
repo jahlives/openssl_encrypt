@@ -396,6 +396,30 @@ class PluginManager:
                 "enabled": registration.enabled,
             }
 
+    def get_plugin(self, plugin_id: str) -> Optional[Any]:
+        """
+        Get plugin instance by ID.
+
+        Args:
+            plugin_id: Plugin identifier
+
+        Returns:
+            Plugin instance or None if not found/disabled
+        """
+        with self.lock:
+            if plugin_id not in self.plugins:
+                return None
+
+            registration = self.plugins[plugin_id]
+            if not registration.enabled:
+                return None
+
+            # Update usage tracking
+            registration.last_used = time.time()
+            registration.usage_count += 1
+
+            return registration.plugin
+
     def list_plugins(self) -> List[Dict[str, Any]]:
         """List all registered plugins with their information."""
         with self.lock:

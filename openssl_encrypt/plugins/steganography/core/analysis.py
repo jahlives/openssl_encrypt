@@ -15,14 +15,9 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
-# Import secure memory functions for handling sensitive data
-try:
-    from ..secure_memory import SecureBytes, secure_memzero
-except ImportError:
-    # Fallback for standalone testing
-    from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
-
-from .stego_core import SteganographyError, SteganographyUtils
+# Import core steganography modules
+from .exceptions import SteganographyError
+from .utils import SteganographyUtils
 
 # Set up module logger
 logger = logging.getLogger(__name__)
@@ -57,13 +52,10 @@ class CapacityAnalyzer:
 
             from PIL import Image
 
-            # Use secure memory for image data processing
-            secure_image_data = None
+            # Load image from data
             try:
-                secure_image_data = SecureBytes(image_data)
-
                 # Load image
-                image = Image.open(io.BytesIO(secure_image_data))
+                image = Image.open(io.BytesIO(image_data))
                 width, height = image.size
                 channels = len(image.getbands())
 
@@ -116,10 +108,8 @@ class CapacityAnalyzer:
                         ),
                     },
                 }
-            finally:
-                # Clean up secure memory
-                if secure_image_data:
-                    secure_memzero(secure_image_data)
+            except Exception as inner_e:
+                raise SteganographyError(f"Image processing failed: {inner_e}")
 
         except ImportError:
             raise SteganographyError("PIL/Pillow required for image analysis")
@@ -397,83 +387,53 @@ class SteganalysisResistance:
     def _chi_square_test(self, cover_data: bytes, stego_data: bytes) -> Dict[str, Any]:
         """Chi-square test for LSB steganography detection"""
         try:
-            # Use secure memory for sensitive data analysis
-            secure_cover = None
-            secure_stego = None
+            # Simplified chi-square test implementation
+            # In practice, this would analyze pixel value distributions
+            cover_entropy = SteganographyUtils.analyze_entropy(cover_data)
+            stego_entropy = SteganographyUtils.analyze_entropy(stego_data)
 
-            try:
-                # Simplified chi-square test implementation
-                # In practice, this would analyze pixel value distributions
-                secure_cover = SecureBytes(cover_data)
-                secure_stego = SecureBytes(stego_data)
+            entropy_diff = abs(stego_entropy - cover_entropy)
 
-                cover_entropy = SteganographyUtils.analyze_entropy(secure_cover)
-                stego_entropy = SteganographyUtils.analyze_entropy(secure_stego)
+            # Lower entropy difference suggests better hiding
+            resistance_score = max(0.0, 1.0 - entropy_diff * 2)
 
-                entropy_diff = abs(stego_entropy - cover_entropy)
-
-                # Lower entropy difference suggests better hiding
-                resistance_score = max(0.0, 1.0 - entropy_diff * 2)
-
-                return {
-                    "status": "success",
-                    "test_name": "Chi-Square Analysis",
-                    "resistance_score": resistance_score,
-                    "cover_entropy": cover_entropy,
-                    "stego_entropy": stego_entropy,
-                    "entropy_difference": entropy_diff,
-                }
-            finally:
-                # Clean up secure memory
-                if secure_cover:
-                    secure_memzero(secure_cover)
-                if secure_stego:
-                    secure_memzero(secure_stego)
-
+            return {
+                "status": "success",
+                "test_name": "Chi-Square Analysis",
+                "resistance_score": resistance_score,
+                "cover_entropy": cover_entropy,
+                "stego_entropy": stego_entropy,
+                "entropy_difference": entropy_diff,
+            }
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
     def _histogram_pairs_test(self, cover_data: bytes, stego_data: bytes) -> Dict[str, Any]:
         """Histogram pairs analysis for LSB detection"""
         try:
-            # Use secure memory for sensitive histogram analysis
-            secure_cover = None
-            secure_stego = None
+            # Analyze byte value distributions
+            cover_hist = [0] * 256
+            stego_hist = [0] * 256
 
-            try:
-                secure_cover = SecureBytes(cover_data)
-                secure_stego = SecureBytes(stego_data)
+            for byte in cover_data:
+                cover_hist[byte] += 1
 
-                # Analyze byte value distributions
-                cover_hist = [0] * 256
-                stego_hist = [0] * 256
+            for byte in stego_data:
+                stego_hist[byte] += 1
 
-                for byte in secure_cover:
-                    cover_hist[byte] += 1
+            # Calculate histogram difference
+            hist_diff = sum(abs(c - s) for c, s in zip(cover_hist, stego_hist))
+            max_possible_diff = len(cover_data) + len(stego_data)
 
-                for byte in secure_stego:
-                    stego_hist[byte] += 1
+            normalized_diff = hist_diff / max_possible_diff if max_possible_diff > 0 else 1.0
+            resistance_score = max(0.0, 1.0 - normalized_diff * 2)
 
-                # Calculate histogram difference
-                hist_diff = sum(abs(c - s) for c, s in zip(cover_hist, stego_hist))
-                max_possible_diff = len(secure_cover) + len(secure_stego)
-
-                normalized_diff = hist_diff / max_possible_diff if max_possible_diff > 0 else 1.0
-                resistance_score = max(0.0, 1.0 - normalized_diff * 2)
-
-                return {
-                    "status": "success",
-                    "test_name": "Histogram Pairs Analysis",
-                    "resistance_score": resistance_score,
-                    "histogram_difference": normalized_diff,
-                }
-            finally:
-                # Clean up secure memory
-                if secure_cover:
-                    secure_memzero(secure_cover)
-                if secure_stego:
-                    secure_memzero(secure_stego)
-
+            return {
+                "status": "success",
+                "test_name": "Histogram Pairs Analysis",
+                "resistance_score": resistance_score,
+                "histogram_difference": normalized_diff,
+            }
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
@@ -497,38 +457,23 @@ class SteganalysisResistance:
     def _entropy_analysis(self, cover_data: bytes, stego_data: bytes) -> Dict[str, Any]:
         """Entropy-based steganalysis"""
         try:
-            # Use secure memory for entropy analysis
-            secure_cover = None
-            secure_stego = None
+            cover_entropy = SteganographyUtils.analyze_entropy(cover_data)
+            stego_entropy = SteganographyUtils.analyze_entropy(stego_data)
 
-            try:
-                secure_cover = SecureBytes(cover_data)
-                secure_stego = SecureBytes(stego_data)
+            # Good steganography should preserve entropy
+            entropy_preservation = 1.0 - abs(cover_entropy - stego_entropy) / max(
+                cover_entropy, 0.1
+            )
+            resistance_score = max(0.0, entropy_preservation)
 
-                cover_entropy = SteganographyUtils.analyze_entropy(secure_cover)
-                stego_entropy = SteganographyUtils.analyze_entropy(secure_stego)
-
-                # Good steganography should preserve entropy
-                entropy_preservation = 1.0 - abs(cover_entropy - stego_entropy) / max(
-                    cover_entropy, 0.1
-                )
-                resistance_score = max(0.0, entropy_preservation)
-
-                return {
-                    "status": "success",
-                    "test_name": "Entropy Analysis",
-                    "resistance_score": resistance_score,
-                    "cover_entropy": cover_entropy,
-                    "stego_entropy": stego_entropy,
-                    "entropy_preservation": entropy_preservation,
-                }
-            finally:
-                # Clean up secure memory
-                if secure_cover:
-                    secure_memzero(secure_cover)
-                if secure_stego:
-                    secure_memzero(secure_stego)
-
+            return {
+                "status": "success",
+                "test_name": "Entropy Analysis",
+                "resistance_score": resistance_score,
+                "cover_entropy": cover_entropy,
+                "stego_entropy": stego_entropy,
+                "entropy_preservation": entropy_preservation,
+            }
         except Exception as e:
             return {"status": "error", "message": str(e)}
 

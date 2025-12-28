@@ -17,7 +17,6 @@ Key Features:
 
 Security Features:
 - Password-based coefficient selection
-- Secure memory management with SecureBytes
 - Steganalysis resistance techniques
 - Integration with OpenSSL Encrypt security framework
 
@@ -34,9 +33,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
-# Import secure memory and core steganography components
-from ..secure_memory import SecureBytes, secure_memzero
-from .stego_core import (
+# Import core steganography components
+from ..core import (
     CapacityError,
     CoverMediaError,
     ExtractionError,
@@ -156,11 +154,8 @@ class MP3Steganography(SteganographyBase):
             Maximum capacity in bytes
         """
         try:
-            # Use SecureBytes for data protection
-            secure_mp3_data = SecureBytes(mp3_data)
-
             # Analyze MP3 structure
-            mp3_info = self._analyze_mp3_structure(secure_mp3_data)
+            mp3_info = self._analyze_mp3_structure(mp3_data)
 
             # Calculate capacity from frames and bit reservoir
             frame_capacity = self._calculate_frame_capacity(mp3_info)
@@ -196,25 +191,21 @@ class MP3Steganography(SteganographyBase):
         Returns:
             Steganographic MP3 data
         """
-        # Use SecureBytes for data protection
-        secure_cover_data = SecureBytes(mp3_data)
-        secure_secret_data = SecureBytes(secret_data)
-
         try:
             # Check capacity
-            capacity = self.calculate_capacity(secure_cover_data)
+            capacity = self.calculate_capacity(mp3_data)
             if len(secret_data) > capacity:
                 raise CapacityError(f"Secret data too large: {len(secret_data)} > {capacity}")
 
             # Analyze MP3 structure
-            mp3_info = self._analyze_mp3_structure(secure_cover_data)
+            mp3_info = self._analyze_mp3_structure(mp3_data)
 
             # Parse MP3 frames
-            frames = self._parse_mp3_frames(secure_cover_data)
+            frames = self._parse_mp3_frames(mp3_data)
 
             # Hide data using hybrid approach (DCT + bit reservoir)
             logger.debug("Hiding data in MP3 using DCT coefficient modification")
-            modified_frames = self._hide_in_mp3_frames(frames, secure_secret_data, mp3_info)
+            modified_frames = self._hide_in_mp3_frames(frames, secret_data, mp3_info)
 
             # Reconstruct MP3 file
             stego_mp3 = self._reconstruct_mp3_file(modified_frames, mp3_info)
@@ -225,13 +216,6 @@ class MP3Steganography(SteganographyBase):
         except Exception as e:
             logger.error(f"MP3 hiding failed: {e}")
             raise SteganographyError(f"MP3 steganography failed: {e}")
-        finally:
-            # Secure cleanup
-            try:
-                secure_memzero(secure_cover_data)
-                secure_memzero(secure_secret_data)
-            except:
-                pass
 
     def extract_data(self, stego_data: bytes) -> bytes:
         """
@@ -243,15 +227,12 @@ class MP3Steganography(SteganographyBase):
         Returns:
             Extracted secret data
         """
-        # Use SecureBytes for data protection
-        secure_stego_data = SecureBytes(stego_data)
-
         try:
             # Analyze MP3 structure
-            mp3_info = self._analyze_mp3_structure(secure_stego_data)
+            mp3_info = self._analyze_mp3_structure(stego_data)
 
             # Parse MP3 frames
-            frames = self._parse_mp3_frames(secure_stego_data)
+            frames = self._parse_mp3_frames(stego_data)
 
             # Extract data from frames
             logger.debug("Extracting data from MP3 DCT coefficients")
@@ -263,12 +244,6 @@ class MP3Steganography(SteganographyBase):
         except Exception as e:
             logger.error(f"MP3 extraction failed: {e}")
             raise ExtractionError(f"MP3 extraction failed: {e}")
-        finally:
-            # Secure cleanup
-            try:
-                secure_memzero(secure_stego_data)
-            except:
-                pass
 
     def _analyze_mp3_structure(self, mp3_data: bytes) -> Dict[str, Any]:
         """Analyze MP3 file structure"""

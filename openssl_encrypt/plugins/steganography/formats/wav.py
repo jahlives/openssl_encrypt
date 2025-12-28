@@ -9,15 +9,14 @@ Least Significant Bit (LSB) techniques.
 Key Features:
 - LSB steganography in audio samples (16-bit and 24-bit PCM)
 - Multi-channel audio support (mono, stereo, surround)
-- Secure memory management throughout operations
 - High-capacity hiding potential with audio data
 - Imperceptible modifications to original audio
+- Password-based sample randomization
 
 Security Architecture:
-- SecureBytes containers for all sensitive data
-- Automatic secure memory cleanup after operations
 - Key-based sample randomization for enhanced security
 - Audio-aware hiding to prevent audible artifacts
+- Configurable security levels for hiding quality
 
 Supported WAV Features:
 - Uncompressed PCM audio (16-bit, 24-bit, 32-bit)
@@ -35,14 +34,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
-# Import secure memory functions for handling sensitive data
-try:
-    from ..secure_memory import SecureBytes, secure_memzero
-except ImportError:
-    # Fallback for standalone testing
-    from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
-
-from .stego_core import (
+from ..core import (
     CapacityError,
     CoverMediaError,
     ExtractionError,
@@ -132,38 +124,30 @@ class WAVSteganography(SteganographyBase):
             CoverMediaError: If WAV format is invalid
         """
         try:
-            # Use SecureBytes for cover data protection
-            secure_cover_data = SecureBytes(cover_data)
+            # Analyze WAV structure
+            wav_info = self._analyze_wav_structure(cover_data)
 
-            try:
-                # Analyze WAV structure
-                wav_info = self._analyze_wav_structure(secure_cover_data)
-
-                if wav_info["format"] != self.PCM_FORMAT:
-                    raise CoverMediaError(
-                        f"Unsupported audio format: {wav_info['format']} (only PCM supported)"
-                    )
-
-                # Calculate capacity based on audio samples
-                total_samples = wav_info["total_samples"]
-                channels = wav_info["channels"]
-
-                # Total hiding capacity = samples * channels * bits_per_sample
-                total_bits = total_samples * channels * self.bits_per_sample
-                capacity = (total_bits // 8) - 64  # 64 bytes overhead for length and markers
-
-                # Apply quality preservation if enabled
-                if self.preserve_quality:
-                    capacity = int(capacity * 0.75)  # Use only 75% for quality preservation
-
-                logger.debug(
-                    f"WAV capacity: {capacity} bytes ({total_samples} samples, {channels} channels)"
+            if wav_info["format"] != self.PCM_FORMAT:
+                raise CoverMediaError(
+                    f"Unsupported audio format: {wav_info['format']} (only PCM supported)"
                 )
-                return max(0, capacity)
 
-            finally:
-                # Secure cleanup
-                secure_memzero(secure_cover_data)
+            # Calculate capacity based on audio samples
+            total_samples = wav_info["total_samples"]
+            channels = wav_info["channels"]
+
+            # Total hiding capacity = samples * channels * bits_per_sample
+            total_bits = total_samples * channels * self.bits_per_sample
+            capacity = (total_bits // 8) - 64  # 64 bytes overhead for length and markers
+
+            # Apply quality preservation if enabled
+            if self.preserve_quality:
+                capacity = int(capacity * 0.75)  # Use only 75% for quality preservation
+
+            logger.debug(
+                f"WAV capacity: {capacity} bytes ({total_samples} samples, {channels} channels)"
+            )
+            return max(0, capacity)
 
         except Exception as e:
             logger.error(f"WAV capacity calculation failed: {e}")
@@ -185,13 +169,9 @@ class WAVSteganography(SteganographyBase):
             CoverMediaError: If cover audio is invalid
             SteganographyError: If hiding operation fails
         """
-        # Use SecureBytes for sensitive data protection
-        secure_cover_data = SecureBytes(cover_data)
-        secure_secret_data = SecureBytes(secret_data)
-
         try:
             # Analyze WAV structure
-            wav_info = self._analyze_wav_structure(secure_cover_data)
+            wav_info = self._analyze_wav_structure(cover_data)
             self.wav_info = wav_info
 
             # Check capacity
@@ -200,24 +180,20 @@ class WAVSteganography(SteganographyBase):
                 raise CapacityError(len(secret_data), capacity, "WAV audio file")
 
             # Load WAV audio data
-            audio_samples = self._load_wav_samples(secure_cover_data, wav_info)
+            audio_samples = self._load_wav_samples(cover_data, wav_info)
 
             # Hide data in audio samples
             logger.debug("Hiding data in WAV audio using LSB method")
-            stego_samples = self._hide_in_wav_samples(audio_samples, secure_secret_data, wav_info)
+            stego_samples = self._hide_in_wav_samples(audio_samples, secret_data, wav_info)
 
             # Convert back to WAV bytes
-            return self._samples_to_wav_bytes(stego_samples, wav_info, secure_cover_data)
+            return self._samples_to_wav_bytes(stego_samples, wav_info, cover_data)
 
         except Exception as e:
             if isinstance(e, (CapacityError, CoverMediaError)):
                 raise
             logger.error(f"WAV hiding failed: {e}")
             raise SteganographyError(f"WAV steganography failed: {e}")
-        finally:
-            # Secure cleanup
-            secure_memzero(secure_cover_data)
-            secure_memzero(secure_secret_data)
 
     def extract_data(self, stego_data: bytes) -> bytes:
         """
@@ -232,15 +208,12 @@ class WAVSteganography(SteganographyBase):
         Raises:
             ExtractionError: If extraction fails
         """
-        # Use SecureBytes for data protection
-        secure_stego_data = SecureBytes(stego_data)
-
         try:
             # Analyze WAV structure
-            wav_info = self._analyze_wav_structure(secure_stego_data)
+            wav_info = self._analyze_wav_structure(stego_data)
 
             # Load WAV audio data
-            audio_samples = self._load_wav_samples(secure_stego_data, wav_info)
+            audio_samples = self._load_wav_samples(stego_data, wav_info)
 
             # Extract data from audio samples
             logger.debug("Extracting data from WAV audio using LSB method")
@@ -252,9 +225,6 @@ class WAVSteganography(SteganographyBase):
         except Exception as e:
             logger.error(f"WAV extraction failed: {e}")
             raise ExtractionError(f"WAV extraction failed: {e}")
-        finally:
-            # Secure cleanup
-            secure_memzero(secure_stego_data)
 
     def _analyze_wav_structure(self, wav_data: bytes) -> Dict[str, Any]:
         """Analyze WAV file structure and extract audio parameters"""
@@ -396,81 +366,74 @@ class WAVSteganography(SteganographyBase):
             # Prepare data for hiding (add length prefix and end marker)
             data_length = len(secret_data)
             length_bytes = struct.pack("<I", data_length)
-            data_to_hide = SecureBytes(
+            data_to_hide = (
                 length_bytes + secret_data + b"\x00\x01\x02\x03\x04\x05\x06\x07"
             )  # End marker
 
-            try:
-                # Convert data to binary
-                binary_data = list(SteganographyUtils.bytes_to_binary(bytes(data_to_hide)))
+            # Convert data to binary
+            binary_data = list(SteganographyUtils.bytes_to_binary(data_to_hide))
 
-                # Work with flattened samples for easier processing
-                original_shape = samples.shape
-                flat_samples = samples.flatten().copy()
+            # Work with flattened samples for easier processing
+            original_shape = samples.shape
+            flat_samples = samples.flatten().copy()
 
-                # Generate sample order (randomized if password provided)
-                sample_indices = list(range(len(flat_samples)))
-                if self.password:
-                    # Use password-based randomization
-                    np.random.seed(hash(self.password) & 0xFFFFFFFF)
-                    np.random.shuffle(sample_indices)
+            # Generate sample order (randomized if password provided)
+            sample_indices = list(range(len(flat_samples)))
+            if self.password:
+                # Use password-based randomization
+                np.random.seed(hash(self.password) & 0xFFFFFFFF)
+                np.random.shuffle(sample_indices)
 
-                # Hide data using LSB
-                bit_index = 0
-                bits_per_sample = self.bits_per_sample
-                # Create proper mask for the sample bit depth
+            # Hide data using LSB
+            bit_index = 0
+            bits_per_sample = self.bits_per_sample
+            # Create proper mask for the sample bit depth
+            if wav_info["bits_per_sample"] == 16:
+                max_value = 0x7FFF
+                min_value = -0x8000
+                sample_mask = (~((1 << bits_per_sample) - 1)) & 0xFFFF
+            elif wav_info["bits_per_sample"] == 24:
+                max_value = 0x7FFFFF
+                min_value = -0x800000
+                sample_mask = (~((1 << bits_per_sample) - 1)) & 0xFFFFFF
+            else:  # 32-bit
+                max_value = 0x7FFFFFFF
+                min_value = -0x80000000
+                sample_mask = (~((1 << bits_per_sample) - 1)) & 0xFFFFFFFF
+
+            for sample_idx in sample_indices:
+                if bit_index >= len(binary_data):
+                    break
+
+                # Extract bits to hide
+                bits_to_hide = 0
+                for bit_offset in range(bits_per_sample):
+                    if bit_index + bit_offset < len(binary_data):
+                        bits_to_hide |= int(binary_data[bit_index + bit_offset]) << bit_offset
+
+                # Modify sample with proper bounds checking
+                original_sample = int(flat_samples[sample_idx])
+                modified_sample = (original_sample & sample_mask) | bits_to_hide
+
+                # Ensure the result stays within valid range for the data type
                 if wav_info["bits_per_sample"] == 16:
-                    max_value = 0x7FFF
-                    min_value = -0x8000
-                    sample_mask = (~((1 << bits_per_sample) - 1)) & 0xFFFF
+                    if modified_sample > 0x7FFF:
+                        modified_sample -= 0x10000  # Convert to signed
+                    modified_sample = max(min_value, min(max_value, modified_sample))
                 elif wav_info["bits_per_sample"] == 24:
-                    max_value = 0x7FFFFF
-                    min_value = -0x800000
-                    sample_mask = (~((1 << bits_per_sample) - 1)) & 0xFFFFFF
-                else:  # 32-bit
-                    max_value = 0x7FFFFFFF
-                    min_value = -0x80000000
-                    sample_mask = (~((1 << bits_per_sample) - 1)) & 0xFFFFFFFF
+                    if modified_sample > 0x7FFFFF:
+                        modified_sample -= 0x1000000  # Convert to signed
+                    modified_sample = max(min_value, min(max_value, modified_sample))
+                # 32-bit handled automatically by numpy
 
-                for sample_idx in sample_indices:
-                    if bit_index >= len(binary_data):
-                        break
+                flat_samples[sample_idx] = modified_sample
 
-                    # Extract bits to hide
-                    bits_to_hide = 0
-                    for bit_offset in range(bits_per_sample):
-                        if bit_index + bit_offset < len(binary_data):
-                            bits_to_hide |= int(binary_data[bit_index + bit_offset]) << bit_offset
+                bit_index += bits_per_sample
 
-                    # Modify sample with proper bounds checking
-                    original_sample = int(flat_samples[sample_idx])
-                    modified_sample = (original_sample & sample_mask) | bits_to_hide
+            # Reshape back to original shape
+            modified_samples = flat_samples.reshape(original_shape)
 
-                    # Ensure the result stays within valid range for the data type
-                    if wav_info["bits_per_sample"] == 16:
-                        if modified_sample > 0x7FFF:
-                            modified_sample -= 0x10000  # Convert to signed
-                        modified_sample = max(min_value, min(max_value, modified_sample))
-                    elif wav_info["bits_per_sample"] == 24:
-                        if modified_sample > 0x7FFFFF:
-                            modified_sample -= 0x1000000  # Convert to signed
-                        modified_sample = max(min_value, min(max_value, modified_sample))
-                    # 32-bit handled automatically by numpy
-
-                    flat_samples[sample_idx] = modified_sample
-
-                    bit_index += bits_per_sample
-
-                # Reshape back to original shape
-                modified_samples = flat_samples.reshape(original_shape)
-
-                return modified_samples
-
-            finally:
-                # Secure cleanup
-                secure_memzero(data_to_hide)
-                if "binary_data" in locals():
-                    binary_data.clear()
+            return modified_samples
 
         except Exception as e:
             logger.error(f"WAV sample hiding failed: {e}")
@@ -535,21 +498,14 @@ class WAVSteganography(SteganographyBase):
                         bit_index += 1
 
             # Convert bits back to bytes
-            extracted_bytes = SecureBytes(
-                SteganographyUtils.binary_to_bytes("".join(map(str, extracted_bits)))
-            )
+            extracted_bytes = SteganographyUtils.binary_to_bytes("".join(map(str, extracted_bits)))
 
-            try:
-                # Extract the actual secret data (skip length prefix)
-                if len(extracted_bytes) < 4:
-                    raise ExtractionError("Insufficient data extracted")
+            # Extract the actual secret data (skip length prefix)
+            if len(extracted_bytes) < 4:
+                raise ExtractionError("Insufficient data extracted")
 
-                secret_data = extracted_bytes[4 : 4 + data_length]
-                return bytes(secret_data)
-
-            finally:
-                # Secure cleanup
-                secure_memzero(extracted_bytes)
+            secret_data = extracted_bytes[4 : 4 + data_length]
+            return bytes(secret_data)
 
         except Exception as e:
             logger.error(f"WAV sample extraction failed: {e}")

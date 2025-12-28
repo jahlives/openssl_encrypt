@@ -14,10 +14,10 @@ Key Features:
 - Secure memory management throughout operations
 
 Security Architecture:
-- SecureBytes containers for all sensitive data
-- Automatic secure memory cleanup after operations
 - Key-based sample randomization for enhanced security
 - FLAC-aware hiding to prevent compression artifacts
+- Password-protected data hiding with randomization
+- Quality-preserving steganographic techniques
 
 Supported FLAC Features:
 - Standard FLAC bitstreams with various bit depths (16-bit, 24-bit)
@@ -34,14 +34,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
-# Import secure memory functions for handling sensitive data
-try:
-    from ..secure_memory import SecureBytes, secure_memzero
-except ImportError:
-    # Fallback for standalone testing
-    from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
-
-from .stego_core import (
+from ..core import (
     CapacityError,
     CoverMediaError,
     ExtractionError,
@@ -148,42 +141,34 @@ class FLACSteganography(SteganographyBase):
             CoverMediaError: If FLAC format is invalid
         """
         try:
-            # Use SecureBytes for cover data protection
-            secure_cover_data = SecureBytes(cover_data)
+            # Analyze FLAC structure
+            flac_info = self._analyze_flac_structure(cover_data)
 
-            try:
-                # Analyze FLAC structure
-                flac_info = self._analyze_flac_structure(secure_cover_data)
+            # Calculate capacity from audio samples
+            total_samples = flac_info["total_samples"]
+            channels = flac_info["channels"]
 
-                # Calculate capacity from audio samples
-                total_samples = flac_info["total_samples"]
-                channels = flac_info["channels"]
+            # Audio hiding capacity
+            audio_capacity = 0
+            if total_samples > 0:
+                total_bits = total_samples * channels * self.bits_per_sample
+                audio_capacity = (total_bits // 8) - 64  # 64 bytes overhead
 
-                # Audio hiding capacity
-                audio_capacity = 0
-                if total_samples > 0:
-                    total_bits = total_samples * channels * self.bits_per_sample
-                    audio_capacity = (total_bits // 8) - 64  # 64 bytes overhead
+            # Metadata hiding capacity (if enabled)
+            metadata_capacity = 0
+            if self.use_metadata:
+                metadata_capacity = self._calculate_metadata_capacity(flac_info)
 
-                # Metadata hiding capacity (if enabled)
-                metadata_capacity = 0
-                if self.use_metadata:
-                    metadata_capacity = self._calculate_metadata_capacity(flac_info)
+            total_capacity = audio_capacity + metadata_capacity
 
-                total_capacity = audio_capacity + metadata_capacity
+            # Apply quality preservation if enabled
+            if self.preserve_quality:
+                total_capacity = int(total_capacity * 0.8)  # Use 80% for quality preservation
 
-                # Apply quality preservation if enabled
-                if self.preserve_quality:
-                    total_capacity = int(total_capacity * 0.8)  # Use 80% for quality preservation
-
-                logger.debug(
-                    f"FLAC capacity: {total_capacity} bytes (audio: {audio_capacity}, metadata: {metadata_capacity})"
-                )
-                return max(0, total_capacity)
-
-            finally:
-                # Secure cleanup
-                secure_memzero(secure_cover_data)
+            logger.debug(
+                f"FLAC capacity: {total_capacity} bytes (audio: {audio_capacity}, metadata: {metadata_capacity})"
+            )
+            return max(0, total_capacity)
 
         except Exception as e:
             logger.error(f"FLAC capacity calculation failed: {e}")
@@ -205,13 +190,9 @@ class FLACSteganography(SteganographyBase):
             CoverMediaError: If cover audio is invalid
             SteganographyError: If hiding operation fails
         """
-        # Use SecureBytes for sensitive data protection
-        secure_cover_data = SecureBytes(cover_data)
-        secure_secret_data = SecureBytes(secret_data)
-
         try:
             # Analyze FLAC structure
-            flac_info = self._analyze_flac_structure(secure_cover_data)
+            flac_info = self._analyze_flac_structure(cover_data)
             self.flac_info = flac_info
 
             # Check capacity
@@ -226,16 +207,16 @@ class FLACSteganography(SteganographyBase):
             logger.debug("Hiding data in FLAC using hybrid metadata/audio method")
 
             # Decode FLAC to access audio samples
-            audio_samples = self._decode_flac_samples(secure_cover_data, flac_info)
+            audio_samples = self._decode_flac_samples(cover_data, flac_info)
 
             # Hide data using hybrid method
             stego_samples, updated_metadata = self._hide_in_flac_hybrid(
-                audio_samples, secure_secret_data, flac_info
+                audio_samples, secret_data, flac_info
             )
 
             # Re-encode FLAC with modified data
             return self._encode_flac_with_modifications(
-                stego_samples, updated_metadata, flac_info, secure_cover_data
+                stego_samples, updated_metadata, flac_info, cover_data
             )
 
         except Exception as e:
@@ -243,10 +224,6 @@ class FLACSteganography(SteganographyBase):
                 raise
             logger.error(f"FLAC hiding failed: {e}")
             raise SteganographyError(f"FLAC steganography failed: {e}")
-        finally:
-            # Secure cleanup
-            secure_memzero(secure_cover_data)
-            secure_memzero(secure_secret_data)
 
     def extract_data(self, stego_data: bytes) -> bytes:
         """
@@ -261,15 +238,12 @@ class FLACSteganography(SteganographyBase):
         Raises:
             ExtractionError: If extraction fails
         """
-        # Use SecureBytes for data protection
-        secure_stego_data = SecureBytes(stego_data)
-
         try:
             # Analyze FLAC structure
-            flac_info = self._analyze_flac_structure(secure_stego_data)
+            flac_info = self._analyze_flac_structure(stego_data)
 
             # Decode FLAC to access audio samples
-            audio_samples = self._decode_flac_samples(secure_stego_data, flac_info)
+            audio_samples = self._decode_flac_samples(stego_data, flac_info)
 
             # Extract data using hybrid method
             logger.debug("Extracting data from FLAC using hybrid metadata/audio method")
@@ -281,9 +255,6 @@ class FLACSteganography(SteganographyBase):
         except Exception as e:
             logger.error(f"FLAC extraction failed: {e}")
             raise ExtractionError(f"FLAC extraction failed: {e}")
-        finally:
-            # Secure cleanup
-            secure_memzero(secure_stego_data)
 
     def _analyze_flac_structure(self, flac_data: bytes) -> Dict[str, Any]:
         """Analyze FLAC file structure and extract audio parameters"""
@@ -758,30 +729,26 @@ class FLACSteganography(SteganographyBase):
                 f"Total bits extracted: {len(extracted_bits)}, needed: {total_bits_needed}"
             )
             binary_string = "".join(str(bit) for bit in extracted_bits[:total_bits_needed])
-            extracted_bytes = SecureBytes(SteganographyUtils.binary_to_bytes(binary_string))
+            extracted_bytes = SteganographyUtils.binary_to_bytes(binary_string)
             logger.debug(f"Extracted bytes length: {len(extracted_bytes)}")
 
-            try:
-                # Verify and extract payload
-                if len(extracted_bytes) < 6:  # 4 bytes length + at least 2 bytes data + end marker
-                    raise ExtractionError("Extracted data too short")
+            # Verify and extract payload
+            if len(extracted_bytes) < 6:  # 4 bytes length + at least 2 bytes data + end marker
+                raise ExtractionError("Extracted data too short")
 
-                # Skip the length field, get the actual data
-                payload = extracted_bytes[4 : 4 + data_length]
+            # Skip the length field, get the actual data
+            payload = extracted_bytes[4 : 4 + data_length]
 
-                # Verify end marker if we have enough bytes
-                if len(extracted_bytes) >= 4 + data_length + 2:
-                    end_marker = extracted_bytes[4 + data_length : 4 + data_length + 2]
-                    if end_marker != b"\xFF\xFE":
-                        logger.warning(
-                            f"End marker mismatch: expected FF FE, got {end_marker.hex()}"
-                        )
+            # Verify end marker if we have enough bytes
+            if len(extracted_bytes) >= 4 + data_length + 2:
+                end_marker = extracted_bytes[4 + data_length : 4 + data_length + 2]
+                if end_marker != b"\xFF\xFE":
+                    logger.warning(
+                        f"End marker mismatch: expected FF FE, got {end_marker.hex()}"
+                    )
 
-                logger.debug(f"Successfully extracted {len(payload)} bytes from FLAC")
-                return bytes(payload)
-
-            finally:
-                secure_memzero(extracted_bytes)
+            logger.debug(f"Successfully extracted {len(payload)} bytes from FLAC")
+            return bytes(payload)
 
         except Exception as e:
             logger.error(f"FLAC sample extraction failed: {e}")

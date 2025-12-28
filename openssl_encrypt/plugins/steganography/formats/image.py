@@ -13,13 +13,6 @@ import math
 import os
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-# Import secure memory functions for handling sensitive data
-try:
-    from ..secure_memory import SecureBytes, secure_memzero
-except ImportError:
-    # Fallback for standalone testing
-    from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
-
 try:
     from PIL import Image, ImageStat
 
@@ -31,7 +24,7 @@ except ImportError:
 
 import numpy as np
 
-from .stego_core import (
+from ..core import (
     CapacityError,
     CoverMediaError,
     ExtractionError,
@@ -129,33 +122,24 @@ class ImageSteganography(SteganographyBase):
         if not pixels:
             return np.array([])
 
-        # Use secure memory for sensitive image analysis
-        try:
-            # Convert pixels to numpy array for efficient computation
-            pixel_array = np.array(pixels)
+        # Convert pixels to numpy array for efficient computation
+        pixel_array = np.array(pixels)
 
-            # Use secure memory for intermediate calculations
-            secure_pixel_data = SecureBytes(pixel_array.tobytes())
+        # Calculate local variance as complexity measure
+        complexity = np.zeros(len(pixels))
 
-            # Calculate local variance as complexity measure
-            complexity = np.zeros(len(pixels))
+        for i in range(len(pixels)):
+            start_idx = max(0, i - window_size)
+            end_idx = min(len(pixels), i + window_size + 1)
+            window = pixel_array[start_idx:end_idx]
 
-            for i in range(len(pixels)):
-                start_idx = max(0, i - window_size)
-                end_idx = min(len(pixels), i + window_size + 1)
-                window = pixel_array[start_idx:end_idx]
+            # Calculate variance across all channels
+            if len(window) > 1:
+                complexity[i] = np.var(window.flatten())
+            else:
+                complexity[i] = 0.0
 
-                # Calculate variance across all channels
-                if len(window) > 1:
-                    complexity[i] = np.var(window.flatten())
-                else:
-                    complexity[i] = 0.0
-
-            return complexity
-        finally:
-            # Clean up secure memory
-            if "secure_pixel_data" in locals():
-                secure_memzero(secure_pixel_data)
+        return complexity
 
 
 class LSBImageStego(ImageSteganography):
@@ -224,34 +208,21 @@ class LSBImageStego(ImageSteganography):
         image = self._load_image_from_bytes(cover_data)
         self._validate_image_format(image)
 
-        # Add EOF marker to data and convert to binary using secure memory
-        try:
-            data_with_eof = self._add_eof_marker(secret_data)
-            secure_data = SecureBytes(data_with_eof)
-            binary_data = SteganographyUtils.bytes_to_binary(secure_data)
-        except Exception:
-            # Cleanup on error
-            if "secure_data" in locals():
-                secure_memzero(secure_data)
-            raise
+        # Add EOF marker to data and convert to binary
+        data_with_eof = self._add_eof_marker(secret_data)
+        binary_data = SteganographyUtils.bytes_to_binary(data_with_eof)
 
         # Get pixel data
         pixels = self._get_image_pixels(image)
         channels = len(image.getbands())
 
-        # Generate pixel order (random if password provided) using secure memory
+        # Generate pixel order (random if password provided)
         pixel_indices = list(range(len(pixels)))
         if self.password and self.config.randomize_pixel_order:
-            try:
-                import random
+            import random
 
-                # Use secure memory for seed to prevent side-channel attacks
-                secure_seed = SecureBytes(self.seed.to_bytes(8, byteorder="big"))
-                random.seed(self.seed)
-                random.shuffle(pixel_indices)
-            finally:
-                if "secure_seed" in locals():
-                    secure_memzero(secure_seed)
+            random.seed(self.seed)
+            random.shuffle(pixel_indices)
 
         # Hide data in pixels
         modified_pixels = list(pixels)  # Copy pixel data
@@ -290,19 +261,9 @@ class LSBImageStego(ImageSteganography):
         # Create modified image
         stego_image = self._create_image_from_pixels(modified_pixels, image.size, image.mode)
 
-        try:
-            result_bytes = self._image_to_bytes(stego_image, image.format or "PNG")
+        result_bytes = self._image_to_bytes(stego_image, image.format or "PNG")
 
-            # Cleanup secure data from memory
-            if "secure_data" in locals():
-                secure_memzero(secure_data)
-
-            return result_bytes
-        except Exception:
-            # Cleanup on error
-            if "secure_data" in locals():
-                secure_memzero(secure_data)
-            raise
+        return result_bytes
 
     def extract_data(self, stego_data: bytes) -> bytes:
         """Extract hidden data using LSB technique"""
@@ -316,19 +277,13 @@ class LSBImageStego(ImageSteganography):
         pixels = self._get_image_pixels(image)
         channels = len(image.getbands())
 
-        # Generate same pixel order as hiding using secure memory
+        # Generate same pixel order as hiding
         pixel_indices = list(range(len(pixels)))
         if self.password and self.config.randomize_pixel_order:
-            try:
-                import random
+            import random
 
-                # Use secure memory for seed to prevent side-channel attacks
-                secure_seed = SecureBytes(self.seed.to_bytes(8, byteorder="big"))
-                random.seed(self.seed)
-                random.shuffle(pixel_indices)
-            finally:
-                if "secure_seed" in locals():
-                    secure_memzero(secure_seed)
+            random.seed(self.seed)
+            random.shuffle(pixel_indices)
 
         # Extract binary data
         binary_bits = []
@@ -345,13 +300,11 @@ class LSBImageStego(ImageSteganography):
                     bit_value = (channel_value >> bit_pos) & 1
                     binary_bits.append(str(bit_value))
 
-        # Convert to binary string and then to bytes using secure memory
+        # Convert to binary string and then to bytes
         binary_string = "".join(binary_bits)
 
         try:
-            # Use secure memory for extracted data processing
             extracted_bytes = SteganographyUtils.binary_to_bytes(binary_string)
-            secure_extracted = SecureBytes(extracted_bytes)
 
             # Check for wrong password scenario before looking for EOF marker
             if not extracted_bytes or len(set(extracted_bytes)) <= 2:
@@ -359,7 +312,7 @@ class LSBImageStego(ImageSteganography):
                 return b""
 
             # Find EOF marker and return result
-            result = self._find_eof_marker(secure_extracted)
+            result = self._find_eof_marker(extracted_bytes)
             return result
         except ExtractionError as e:
             # If it's an ExtractionError with EOF marker not found, check if it's wrong password
@@ -368,10 +321,6 @@ class LSBImageStego(ImageSteganography):
             raise ExtractionError(f"Failed to extract data: {e}")
         except Exception as e:
             raise ExtractionError(f"Failed to extract data: {e}")
-        finally:
-            # Clean up secure memory
-            if "secure_extracted" in locals():
-                secure_memzero(secure_extracted)
 
     def _add_decoy_data(
         self, pixels: List[Tuple[int, ...]], remaining_indices: List[int], channels: int
@@ -380,7 +329,6 @@ class LSBImageStego(ImageSteganography):
         import secrets
 
         try:
-            # Use secure memory for random data generation
             for pixel_idx in remaining_indices:
                 if pixel_idx >= len(pixels):
                     break
@@ -388,19 +336,15 @@ class LSBImageStego(ImageSteganography):
                 pixel = list(pixels[pixel_idx])
 
                 for channel in range(channels):
-                    # Generate random bits using secure memory
+                    # Generate random bits
                     random_bits = secrets.randbits(self.bits_per_channel)
-                    secure_random = SecureBytes(random_bits.to_bytes(1, byteorder="big"))
 
-                    try:
-                        # Modify pixel with random data
-                        original_value = pixel[channel]
-                        modified_value = (original_value & self.clear_mask) | (
-                            random_bits & self.bit_mask
-                        )
-                        pixel[channel] = modified_value
-                    finally:
-                        secure_memzero(secure_random)
+                    # Modify pixel with random data
+                    original_value = pixel[channel]
+                    modified_value = (original_value & self.clear_mask) | (
+                        random_bits & self.bit_mask
+                    )
+                    pixel[channel] = modified_value
 
                 pixels[pixel_idx] = tuple(pixel)
         except Exception as e:
