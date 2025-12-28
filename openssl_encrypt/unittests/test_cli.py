@@ -387,8 +387,8 @@ class CLITestBase(unittest.TestCase):
             pass
 
 
-class TestCLIBasicOperations(CLITestBase):
-    """Test basic CLI operations (encryption, decryption, password generation)."""
+class TestCLIEncryptDecrypt(CLITestBase):
+    """Test CLI encryption and decryption operations."""
 
     @mock.patch("getpass.getpass")
     def test_encrypt_decrypt_cli(self, mock_getpass):
@@ -462,6 +462,10 @@ class TestCLIBasicOperations(CLITestBase):
         with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
             self.assertEqual(original.read(), decrypted.read())
 
+
+class TestCLIPasswordGeneration(CLITestBase):
+    """Test CLI password generation functionality."""
+
     @mock.patch("builtins.print")
     def test_generate_password_cli(self, mock_print):
         """Test password generation without using CLI."""
@@ -490,6 +494,10 @@ class TestCLIBasicOperations(CLITestBase):
 
                 # Test passed if we get here
                 self.assertEqual(password, "MockedStrongPassword123!")
+
+
+class TestCLISecurityInfo(CLITestBase):
+    """Test CLI security information display."""
 
     def test_security_info_cli(self):
         """Test the security-info command."""
