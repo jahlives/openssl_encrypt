@@ -8,6 +8,8 @@ Supports: Argon2 family, PBKDF2, Scrypt, Balloon, HKDF, and RandomX.
 All code in English as per project requirements.
 """
 
+import subprocess
+import sys
 from abc import abstractmethod
 from dataclasses import dataclass
 from enum import Enum
@@ -795,10 +797,16 @@ class RandomX(KDFBase):
     @classmethod
     def is_available(cls) -> bool:
         if cls._available is None:
+            # Use subprocess to test import - randomx may cause SIGILL on unsupported CPUs
             try:
-                import randomx
-                cls._available = True
-            except ImportError:
+                result = subprocess.run(
+                    [sys.executable, "-c", "import randomx"],
+                    capture_output=True,
+                    timeout=2,
+                    check=False,
+                )
+                cls._available = result.returncode == 0
+            except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
                 cls._available = False
         return cls._available
 
