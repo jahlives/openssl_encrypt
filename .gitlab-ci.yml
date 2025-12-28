@@ -274,7 +274,7 @@ test:
     - cd threefish_native && PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 maturin build --release && cd ..
     - pip install threefish_native/target/wheels/*.whl --break-system-packages
   script:
-    - python3 -m pytest openssl_encrypt/unittests/ -n auto -v --cov=openssl_encrypt --cov-report=term --cov-report=html --cov-report=xml
+    - python3 -m pytest openssl_encrypt/unittests/ -n auto --dist=worksteal -v --cov=openssl_encrypt --cov-report=term --cov-report=html --cov-report=xml
   artifacts:
     reports:
       coverage_report:
@@ -335,7 +335,7 @@ test-fallback:
     - cd threefish_native && PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 maturin build --release && cd ..
     - pip install threefish_native/target/wheels/*.whl --break-system-packages
   script:
-    - python3 -m pytest openssl_encrypt/unittests/ -n auto -v --cov=openssl_encrypt --cov-report=term --cov-report=html --cov-report=xml
+    - python3 -m pytest openssl_encrypt/unittests/ -n auto --dist=worksteal -v --cov=openssl_encrypt --cov-report=term --cov-report=html --cov-report=xml
   rules:
     - if: $CI_COMMIT_BRANCH == "dev" && $DOCS_ONLY != "true"
       when: on_failure
