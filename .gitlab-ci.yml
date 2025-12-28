@@ -262,7 +262,7 @@ test:
   stage: test
   image: $DOCKER_IMAGE
   tags:
-    - amd64
+    - high-cpu  # Use the runner with most cores for faster test execution
   variables:
     PQC_QUIET: "true"  # Suppress PQC module initialization messages
   before_script:
@@ -304,7 +304,7 @@ test-fallback:
   stage: test
   image: python:3.13-alpine
   tags:
-    - amd64
+    - high-cpu  # Use the runner with most cores for faster test execution
   variables:
     PQC_QUIET: "true"  # Suppress PQC module initialization messages
   before_script:
