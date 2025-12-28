@@ -346,8 +346,8 @@ def generate_cli_argument_tests():
 generate_cli_argument_tests()
 
 
-class TestCLIInterface(unittest.TestCase):
-    """Test the command-line interface functionality."""
+class CLITestBase(unittest.TestCase):
+    """Base class for CLI tests with common setup/teardown."""
 
     def setUp(self):
         """Set up the test environment."""
@@ -385,6 +385,10 @@ class TestCLIInterface(unittest.TestCase):
             shutil.rmtree(self.test_dir, ignore_errors=True)
         except Exception:
             pass
+
+
+class TestCLIBasicOperations(CLITestBase):
+    """Test basic CLI operations (encryption, decryption, password generation)."""
 
     @mock.patch("getpass.getpass")
     def test_encrypt_decrypt_cli(self, mock_getpass):
@@ -511,6 +515,10 @@ class TestCLIInterface(unittest.TestCase):
             self.assertIn("SECURITY RECOMMENDATIONS", content)
             self.assertIn("Password Hashing Algorithm Recommendations", content)
             self.assertIn("Argon2", content)
+
+
+class TestCLIKDFConfiguration(CLITestBase):
+    """Test CLI KDF (Key Derivation Function) configuration options."""
 
     @mock.patch("getpass.getpass")
     def test_implicit_enable_kdf_from_rounds(self, mock_getpass):
@@ -746,6 +754,10 @@ class TestCLIInterface(unittest.TestCase):
 
         finally:
             sys.stdout = original_stdout
+
+
+class TestCLIAdvancedOperations(CLITestBase):
+    """Test advanced CLI operations (stdin, debugging)."""
 
     def test_stdin_decryption_cli(self):
         """Test decryption from stdin via CLI subprocess to prevent regression."""
