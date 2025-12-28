@@ -88,6 +88,8 @@ from .cipher_registry import (
     AESOCB3,
     ChaCha20Poly1305,
     XChaCha20Poly1305,
+    Threefish512,
+    Threefish1024,
 )
 
 __all__.extend([
@@ -102,6 +104,8 @@ __all__.extend([
     "AESOCB3",
     "ChaCha20Poly1305",
     "XChaCha20Poly1305",
+    "Threefish512",
+    "Threefish1024",
 ])
 
 # Hash registry

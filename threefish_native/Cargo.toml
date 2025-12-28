@@ -1,0 +1,30 @@
+[package]
+name = "openssl-encrypt-threefish"
+version = "1.0.0"
+edition = "2021"
+authors = ["OpenSSL Encrypt Team"]
+description = "Threefish-512 and Threefish-1024 AEAD ciphers for openssl-encrypt (256-bit and 512-bit PQ security)"
+license = "MIT"
+repository = "https://github.com/tobiasfaust/openssl_encrypt"
+
+[lib]
+name = "threefish_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module"] }
+threefish = "0.5"
+poly1305 = "0.8"
+crypto-common = "0.1"    # For KeyInit trait
+subtle = "2.5"           # Constant-time operations
+zeroize = { version = "1.7", features = ["zeroize_derive"] }
+rand = "0.8"
+
+[dev-dependencies]
+hex = "0.4"
+criterion = "0.5"
+
+[profile.release]
+lto = true              # Link-time optimization
+codegen-units = 1       # Better optimization
+strip = true            # Strip debug symbols

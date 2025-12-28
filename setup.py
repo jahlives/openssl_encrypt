@@ -122,6 +122,9 @@ setup(
                 and not prod_line.startswith("-")
             ]
         ],
+        "threefish": [
+            "openssl-encrypt-threefish>=1.0.0",
+        ],
     },
     project_urls={
         "Bug Tracker": "https://gitlab.rm-rf.ch/world/openssl_encrypt/-/issues",

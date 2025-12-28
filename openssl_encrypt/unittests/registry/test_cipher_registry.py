@@ -16,6 +16,8 @@ from openssl_encrypt.modules.registry import (
     AESOCB3,
     ChaCha20Poly1305,
     XChaCha20Poly1305,
+    Threefish512,
+    Threefish1024,
     ValidationError,
     AuthenticationError,
     AlgorithmCategory,
@@ -419,6 +421,237 @@ class TestCipherComparison:
 
             decrypted = cipher.decrypt(key, ciphertext)
             assert decrypted == plaintext, f"Failed for {cipher_name}"
+
+
+# Skip Threefish tests if extension not installed
+threefish_available = pytest.importorskip("threefish_native", reason="threefish_native extension not installed")
+
+
+@pytest.mark.skipif(not Threefish512.is_available(), reason="threefish_native not available")
+class TestThreefish512:
+    """Tests for Threefish-512 cipher."""
+
+    def test_metadata(self):
+        """Test algorithm metadata."""
+        info = Threefish512.info()
+        assert info.name == "threefish-512"
+        assert info.category == AlgorithmCategory.CIPHER
+        assert info.security_bits == 512
+        assert info.pq_security_bits == 256
+        assert info.security_level == SecurityLevel.HIGH
+        assert info.key_size == 64
+        assert info.nonce_size == 32
+        assert info.tag_size == 16
+
+    def test_encrypt_decrypt_roundtrip(self):
+        """Test encryption and decryption roundtrip."""
+        import threefish_native
+
+        cipher = Threefish512()
+        key = threefish_native.generate_key_512()
+        nonce = threefish_native.generate_nonce_512()
+        plaintext = b"Hello, Threefish-512! This is a test message."
+
+        # Encrypt
+        ciphertext = cipher.encrypt(key, plaintext, nonce=nonce)
+
+        # Should be: encrypted + tag (16), no nonce prepended
+        assert len(ciphertext) == len(plaintext) + 16
+
+        # Decrypt
+        decrypted = cipher.decrypt(key, ciphertext, nonce=nonce)
+        assert decrypted == plaintext
+
+    def test_encrypt_with_aad(self):
+        """Test encryption with associated data."""
+        import threefish_native
+
+        cipher = Threefish512()
+        key = threefish_native.generate_key_512()
+        nonce = threefish_native.generate_nonce_512()
+        plaintext = b"Secret message"
+        aad = b"Additional authenticated data"
+
+        ciphertext = cipher.encrypt(key, plaintext, nonce=nonce, associated_data=aad)
+        decrypted = cipher.decrypt(key, ciphertext, nonce=nonce, associated_data=aad)
+
+        assert decrypted == plaintext
+
+    def test_decrypt_with_wrong_key_fails(self):
+        """Test that decryption with wrong key fails."""
+        import threefish_native
+
+        cipher = Threefish512()
+        key = threefish_native.generate_key_512()
+        wrong_key = threefish_native.generate_key_512()
+        nonce = threefish_native.generate_nonce_512()
+
+        ciphertext = cipher.encrypt(key, b"Secret", nonce=nonce)
+
+        with pytest.raises(AuthenticationError):
+            cipher.decrypt(wrong_key, ciphertext, nonce=nonce)
+
+    def test_tampered_ciphertext_fails(self):
+        """Test that tampered ciphertext fails authentication."""
+        import threefish_native
+
+        cipher = Threefish512()
+        key = threefish_native.generate_key_512()
+        nonce = threefish_native.generate_nonce_512()
+
+        ciphertext = bytearray(cipher.encrypt(key, b"Important data", nonce=nonce))
+        ciphertext[0] ^= 0x01  # Flip one bit
+
+        with pytest.raises(AuthenticationError):
+            cipher.decrypt(key, bytes(ciphertext), nonce=nonce)
+
+    def test_invalid_key_size(self):
+        """Test that invalid key size raises error."""
+        cipher = Threefish512()
+        with pytest.raises(ValidationError, match="64-byte key"):
+            cipher.encrypt(b"short_key", b"test")
+
+    def test_invalid_nonce_size(self):
+        """Test that invalid nonce size raises error."""
+        cipher = Threefish512()
+        with pytest.raises(ValidationError, match="32 bytes"):
+            cipher.encrypt(b"K" * 64, b"test", nonce=b"short_nonce")
+
+    def test_nonce_required_for_decrypt(self):
+        """Test that decrypt requires explicit nonce."""
+        import threefish_native
+
+        cipher = Threefish512()
+        key = threefish_native.generate_key_512()
+        nonce = threefish_native.generate_nonce_512()
+
+        ciphertext = cipher.encrypt(key, b"test", nonce=nonce)
+
+        # Decrypt without nonce should fail
+        with pytest.raises(ValidationError, match="explicit nonce"):
+            cipher.decrypt(key, ciphertext)
+
+    def test_large_data(self):
+        """Test with 1MB of data."""
+        import threefish_native
+        import secrets
+
+        cipher = Threefish512()
+        key = threefish_native.generate_key_512()
+        nonce = threefish_native.generate_nonce_512()
+        plaintext = secrets.token_bytes(1024 * 1024)  # 1 MB
+
+        ciphertext = cipher.encrypt(key, plaintext, nonce=nonce)
+        decrypted = cipher.decrypt(key, ciphertext, nonce=nonce)
+
+        assert decrypted == plaintext
+
+
+@pytest.mark.skipif(not Threefish1024.is_available(), reason="threefish_native not available")
+class TestThreefish1024:
+    """Tests for Threefish-1024 cipher."""
+
+    def test_metadata(self):
+        """Test algorithm metadata."""
+        info = Threefish1024.info()
+        assert info.name == "threefish-1024"
+        assert info.category == AlgorithmCategory.CIPHER
+        assert info.security_bits == 1024
+        assert info.pq_security_bits == 512
+        assert info.security_level == SecurityLevel.PARANOID
+        assert info.key_size == 128
+        assert info.nonce_size == 64
+        assert info.tag_size == 16
+
+    def test_encrypt_decrypt_roundtrip(self):
+        """Test encryption and decryption roundtrip."""
+        import threefish_native
+
+        cipher = Threefish1024()
+        key = threefish_native.generate_key_1024()
+        nonce = threefish_native.generate_nonce_1024()
+        plaintext = b"Hello, Threefish-1024! Maximum security mode."
+
+        # Encrypt
+        ciphertext = cipher.encrypt(key, plaintext, nonce=nonce)
+
+        # Should be: encrypted + tag (16), no nonce prepended
+        assert len(ciphertext) == len(plaintext) + 16
+
+        # Decrypt
+        decrypted = cipher.decrypt(key, ciphertext, nonce=nonce)
+        assert decrypted == plaintext
+
+    def test_encrypt_with_aad(self):
+        """Test encryption with associated data."""
+        import threefish_native
+
+        cipher = Threefish1024()
+        key = threefish_native.generate_key_1024()
+        nonce = threefish_native.generate_nonce_1024()
+        plaintext = b"Top secret data"
+        aad = b"Header information"
+
+        ciphertext = cipher.encrypt(key, plaintext, nonce=nonce, associated_data=aad)
+        decrypted = cipher.decrypt(key, ciphertext, nonce=nonce, associated_data=aad)
+
+        assert decrypted == plaintext
+
+    def test_decrypt_with_wrong_aad_fails(self):
+        """Test that wrong AAD fails authentication."""
+        import threefish_native
+
+        cipher = Threefish1024()
+        key = threefish_native.generate_key_1024()
+        nonce = threefish_native.generate_nonce_1024()
+
+        ciphertext = cipher.encrypt(key, b"Secret", nonce=nonce, associated_data=b"correct_aad")
+
+        with pytest.raises(AuthenticationError):
+            cipher.decrypt(key, ciphertext, nonce=nonce, associated_data=b"wrong_aad")
+
+    def test_tampered_tag_fails(self):
+        """Test that tampered tag fails authentication."""
+        import threefish_native
+
+        cipher = Threefish1024()
+        key = threefish_native.generate_key_1024()
+        nonce = threefish_native.generate_nonce_1024()
+
+        ciphertext = bytearray(cipher.encrypt(key, b"test", nonce=nonce))
+
+        # Tamper with tag (last 16 bytes)
+        ciphertext[-1] ^= 0xFF
+
+        with pytest.raises(AuthenticationError):
+            cipher.decrypt(key, bytes(ciphertext), nonce=nonce)
+
+    def test_invalid_key_size(self):
+        """Test that invalid key size raises error."""
+        cipher = Threefish1024()
+        with pytest.raises(ValidationError, match="128-byte key"):
+            cipher.encrypt(b"short_key", b"test")
+
+    def test_invalid_nonce_size(self):
+        """Test that invalid nonce size raises error."""
+        cipher = Threefish1024()
+        with pytest.raises(ValidationError, match="64 bytes"):
+            cipher.encrypt(b"K" * 128, b"test", nonce=b"short_nonce")
+
+    def test_large_data(self):
+        """Test with 1MB of data."""
+        import threefish_native
+        import secrets
+
+        cipher = Threefish1024()
+        key = threefish_native.generate_key_1024()
+        nonce = threefish_native.generate_nonce_1024()
+        plaintext = secrets.token_bytes(1024 * 1024)  # 1 MB
+
+        ciphertext = cipher.encrypt(key, plaintext, nonce=nonce)
+        decrypted = cipher.decrypt(key, ciphertext, nonce=nonce)
+
+        assert decrypted == plaintext
 
 
 if __name__ == "__main__":
