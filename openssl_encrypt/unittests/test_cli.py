@@ -679,7 +679,7 @@ class TestCLIKDFConfiguration(CLITestBase):
                 "--enable-scrypt",
                 "--enable-balloon",
                 "--kdf-rounds",
-                "3",  # Global rounds value
+                "1",  # Global rounds value (1 for faster testing)
             ]
 
             with mock.patch("sys.exit") as mock_exit:
@@ -693,9 +693,9 @@ class TestCLIKDFConfiguration(CLITestBase):
             combined_output = stdout_output + log_output
 
             # Check output for global rounds messages
-            self.assertIn("Setting --argon2-rounds=3 (--kdf-rounds=3)", combined_output)
-            self.assertIn("Setting --scrypt-rounds=3 (--kdf-rounds=3)", combined_output)
-            self.assertIn("Setting --balloon-rounds=3 (--kdf-rounds=3)", combined_output)
+            self.assertIn("Setting --argon2-rounds=1 (--kdf-rounds=1)", combined_output)
+            self.assertIn("Setting --scrypt-rounds=1 (--kdf-rounds=1)", combined_output)
+            self.assertIn("Setting --balloon-rounds=1 (--kdf-rounds=1)", combined_output)
 
             # Verify the encrypted file was created
             self.assertTrue(os.path.exists(encrypted_file))
@@ -733,11 +733,11 @@ class TestCLIKDFConfiguration(CLITestBase):
                 "--force-password",
                 "--enable-argon2",
                 "--argon2-rounds",
-                "5",  # Specific value
+                "2",  # Specific value (reduced for faster testing)
                 "--enable-scrypt",  # Should use global value
                 "--enable-balloon",  # Should use global value
                 "--kdf-rounds",
-                "2",  # Global value
+                "1",  # Global value (1 for faster testing)
             ]
 
             with mock.patch("sys.exit") as mock_exit:
@@ -756,8 +756,8 @@ class TestCLIKDFConfiguration(CLITestBase):
             self.assertNotIn("Setting --argon2-rounds", combined_output)  # Already set explicitly
 
             # Global values for others
-            self.assertIn("Setting --scrypt-rounds=2 (--kdf-rounds=2)", combined_output)
-            self.assertIn("Setting --balloon-rounds=2 (--kdf-rounds=2)", combined_output)
+            self.assertIn("Setting --scrypt-rounds=1 (--kdf-rounds=1)", combined_output)
+            self.assertIn("Setting --balloon-rounds=1 (--kdf-rounds=1)", combined_output)
 
             # Verify the encrypted file was created
             self.assertTrue(os.path.exists(encrypted_file))
