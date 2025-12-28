@@ -354,11 +354,15 @@ class TestBalloon:
     @pytest.mark.skipif(not Balloon.is_available(), reason="Balloon not available")
     def test_basic_derivation(self):
         """Test basic key derivation."""
+        from openssl_encrypt.modules.registry.kdf_registry import BalloonParams
+
         kdf = Balloon()
         password = b"test password"
         salt = b"I" * 16
 
-        key = kdf.derive(password, salt)
+        # Use time_cost=1 for faster testing (default is 3)
+        params = BalloonParams(time_cost=1)
+        key = kdf.derive(password, salt, params)
         assert len(key) == 32
 
 
