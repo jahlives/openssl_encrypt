@@ -809,6 +809,271 @@ class XChaCha20Poly1305(CipherBase):
 
 
 # ============================================================================
+# Threefish Family
+# ============================================================================
+
+class Threefish512(CipherBase):
+    """
+    Threefish-512-CTR with Poly1305 authentication.
+
+    Recommended for paranoid post-quantum security with 256-bit PQ resistance
+    (vs 128-bit for AES-256). Requires optional threefish extension.
+    """
+
+    _available: ClassVar[Optional[bool]] = None
+
+    @classmethod
+    def is_available(cls) -> bool:
+        """Checks if threefish_native extension is installed."""
+        if cls._available is None:
+            try:
+                import threefish_native
+                cls._available = True
+            except ImportError:
+                cls._available = False
+        return cls._available
+
+    @classmethod
+    def info(cls) -> AlgorithmInfo:
+        return AlgorithmInfo(
+            name="threefish-512",
+            display_name="Threefish-512",
+            category=AlgorithmCategory.CIPHER,
+            security_bits=512,
+            pq_security_bits=256,
+            security_level=SecurityLevel.HIGH,
+            description="Threefish-512-CTR with Poly1305 - 256-bit PQ security",
+            key_size=64,
+            nonce_size=32,
+            tag_size=16,
+            block_size=64,
+            aliases=("tf512", "threefish512"),
+            references=("Skein Hash Function Submission to NIST",),
+        )
+
+    @classmethod
+    def get_key_size(cls) -> int:
+        return 64
+
+    def generate_nonce(self) -> bytes:
+        """Generates a 32-byte nonce (256 bits)."""
+        return generate_random_bytes(32)
+
+    def encrypt(
+        self,
+        key: Union[bytes, SecureBytes],
+        plaintext: Union[bytes, SecureBytes],
+        nonce: Optional[bytes] = None,
+        associated_data: Optional[bytes] = None,
+    ) -> bytes:
+        """
+        Encrypts with Threefish-512-CTR+Poly1305.
+
+        Returns:
+            ciphertext + tag (16 bytes)
+        """
+        self.check_available()
+
+        # Convert SecureBytes to bytes for library
+        key_bytes = _convert_to_bytes(key)
+        plaintext_bytes = _convert_to_bytes(plaintext)
+
+        try:
+            if len(key_bytes) != 64:
+                raise ValidationError(f"Threefish-512 requires 64-byte key, got {len(key_bytes)}")
+
+            if nonce is None:
+                nonce = self.generate_nonce()
+
+            if len(nonce) != 32:
+                raise ValidationError(f"Threefish-512 nonce must be 32 bytes, got {len(nonce)}")
+
+            import threefish_native
+
+            encrypted = threefish_native.encrypt_512(key_bytes, nonce, plaintext_bytes, associated_data)
+
+            # Return ciphertext+tag (nonce NOT prepended, unlike AES-GCM)
+            return encrypted
+        finally:
+            # Zero copies if originals were SecureBytes
+            _secure_cleanup(key, key_bytes)
+            _secure_cleanup(plaintext, plaintext_bytes)
+
+    def decrypt(
+        self,
+        key: Union[bytes, SecureBytes],
+        ciphertext: bytes,
+        nonce: Optional[bytes] = None,
+        associated_data: Optional[bytes] = None,
+    ) -> SecureBytes:
+        """
+        Decrypts Threefish-512-CTR+Poly1305 ciphertext.
+
+        Args:
+            ciphertext: encrypted_data + tag (16 bytes)
+            nonce: Required 32-byte nonce (NOT extracted from ciphertext)
+        """
+        self.check_available()
+
+        # Convert SecureBytes to bytes for library
+        key_bytes = _convert_to_bytes(key)
+
+        try:
+            if len(key_bytes) != 64:
+                raise ValidationError(f"Threefish-512 requires 64-byte key, got {len(key_bytes)}")
+
+            if nonce is None:
+                raise ValidationError("Threefish-512 requires explicit nonce (not embedded in ciphertext)")
+
+            if len(nonce) != 32:
+                raise ValidationError(f"Threefish-512 nonce must be 32 bytes, got {len(nonce)}")
+
+            import threefish_native
+
+            try:
+                plaintext = threefish_native.decrypt_512(key_bytes, nonce, ciphertext, associated_data)
+                return SecureBytes(plaintext)
+            except RuntimeError as e:
+                if "Authentication failed" in str(e):
+                    raise AuthenticationError("Authentication tag verification failed")
+                raise
+        finally:
+            # Zero key copy if original was SecureBytes
+            _secure_cleanup(key, key_bytes)
+
+
+class Threefish1024(CipherBase):
+    """
+    Threefish-1024-CTR with Poly1305 authentication.
+
+    Provides extreme post-quantum security with 512-bit PQ resistance.
+    This is overkill for most use cases - use Threefish-512 instead.
+    Requires optional threefish extension.
+    """
+
+    _available: ClassVar[Optional[bool]] = None
+
+    @classmethod
+    def is_available(cls) -> bool:
+        """Checks if threefish_native extension is installed."""
+        if cls._available is None:
+            try:
+                import threefish_native
+                cls._available = True
+            except ImportError:
+                cls._available = False
+        return cls._available
+
+    @classmethod
+    def info(cls) -> AlgorithmInfo:
+        return AlgorithmInfo(
+            name="threefish-1024",
+            display_name="Threefish-1024",
+            category=AlgorithmCategory.CIPHER,
+            security_bits=1024,
+            pq_security_bits=512,
+            security_level=SecurityLevel.PARANOID,
+            description="Threefish-1024-CTR with Poly1305 - 512-bit PQ security (overkill)",
+            key_size=128,
+            nonce_size=64,
+            tag_size=16,
+            block_size=128,
+            aliases=("tf1024", "threefish1024"),
+            references=("Skein Hash Function Submission to NIST",),
+        )
+
+    @classmethod
+    def get_key_size(cls) -> int:
+        return 128
+
+    def generate_nonce(self) -> bytes:
+        """Generates a 64-byte nonce (512 bits)."""
+        return generate_random_bytes(64)
+
+    def encrypt(
+        self,
+        key: Union[bytes, SecureBytes],
+        plaintext: Union[bytes, SecureBytes],
+        nonce: Optional[bytes] = None,
+        associated_data: Optional[bytes] = None,
+    ) -> bytes:
+        """
+        Encrypts with Threefish-1024-CTR+Poly1305.
+
+        Returns:
+            ciphertext + tag (16 bytes)
+        """
+        self.check_available()
+
+        # Convert SecureBytes to bytes for library
+        key_bytes = _convert_to_bytes(key)
+        plaintext_bytes = _convert_to_bytes(plaintext)
+
+        try:
+            if len(key_bytes) != 128:
+                raise ValidationError(f"Threefish-1024 requires 128-byte key, got {len(key_bytes)}")
+
+            if nonce is None:
+                nonce = self.generate_nonce()
+
+            if len(nonce) != 64:
+                raise ValidationError(f"Threefish-1024 nonce must be 64 bytes, got {len(nonce)}")
+
+            import threefish_native
+
+            encrypted = threefish_native.encrypt_1024(key_bytes, nonce, plaintext_bytes, associated_data)
+
+            # Return ciphertext+tag (nonce NOT prepended)
+            return encrypted
+        finally:
+            # Zero copies if originals were SecureBytes
+            _secure_cleanup(key, key_bytes)
+            _secure_cleanup(plaintext, plaintext_bytes)
+
+    def decrypt(
+        self,
+        key: Union[bytes, SecureBytes],
+        ciphertext: bytes,
+        nonce: Optional[bytes] = None,
+        associated_data: Optional[bytes] = None,
+    ) -> SecureBytes:
+        """
+        Decrypts Threefish-1024-CTR+Poly1305 ciphertext.
+
+        Args:
+            ciphertext: encrypted_data + tag (16 bytes)
+            nonce: Required 64-byte nonce (NOT extracted from ciphertext)
+        """
+        self.check_available()
+
+        # Convert SecureBytes to bytes for library
+        key_bytes = _convert_to_bytes(key)
+
+        try:
+            if len(key_bytes) != 128:
+                raise ValidationError(f"Threefish-1024 requires 128-byte key, got {len(key_bytes)}")
+
+            if nonce is None:
+                raise ValidationError("Threefish-1024 requires explicit nonce (not embedded in ciphertext)")
+
+            if len(nonce) != 64:
+                raise ValidationError(f"Threefish-1024 nonce must be 64 bytes, got {len(nonce)}")
+
+            import threefish_native
+
+            try:
+                plaintext = threefish_native.decrypt_1024(key_bytes, nonce, ciphertext, associated_data)
+                return SecureBytes(plaintext)
+            except RuntimeError as e:
+                if "Authentication failed" in str(e):
+                    raise AuthenticationError("Authentication tag verification failed")
+                raise
+        finally:
+            # Zero key copy if original was SecureBytes
+            _secure_cleanup(key, key_bytes)
+
+
+# ============================================================================
 # Registry and convenience functions
 # ============================================================================
 
@@ -826,6 +1091,8 @@ class CipherRegistry(RegistryBase[CipherBase]):
         self.register(AESOCB3)
         self.register(ChaCha20Poly1305)
         self.register(XChaCha20Poly1305)
+        self.register(Threefish512)
+        self.register(Threefish1024)
 
     @classmethod
     def default(cls) -> 'CipherRegistry':

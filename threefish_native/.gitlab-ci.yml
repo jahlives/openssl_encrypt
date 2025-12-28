@@ -1,0 +1,154 @@
+stages:
+  - build
+  - test
+  - publish
+
+variables:
+  CARGO_HOME: ${CI_PROJECT_DIR}/.cargo
+
+# Cache for Rust dependencies
+.rust-cache: &rust-cache
+  cache:
+    key: rust-${CI_COMMIT_REF_SLUG}
+    paths:
+      - .cargo/
+      - target/
+
+# ============================================================================
+# Build Jobs for Cross-Platform Wheels
+# ============================================================================
+
+build:linux:
+  stage: build
+  <<: *rust-cache
+  image: quay.io/pypa/manylinux2014_x86_64
+  script:
+    # Install Rust
+    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    - source $HOME/.cargo/env
+    # Install maturin
+    - pip install maturin
+    # Build for multiple Python versions
+    - cd threefish_native
+    - for PYVER in cp310 cp311 cp312 cp313; do
+        maturin build --release --strip -i /opt/python/${PYVER}-${PYVER}/bin/python -o dist;
+      done
+    - ls -la dist/
+  artifacts:
+    paths:
+      - threefish_native/dist/*.whl
+    expire_in: 1 week
+
+build:macos-x86:
+  stage: build
+  <<: *rust-cache
+  tags:
+    - macos
+    - x86_64
+  script:
+    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    - source $HOME/.cargo/env
+    - pip3 install maturin
+    - cd threefish_native
+    - maturin build --release --strip -o dist
+    - ls -la dist/
+  artifacts:
+    paths:
+      - threefish_native/dist/*.whl
+    expire_in: 1 week
+  only:
+    - tags
+    - main
+    - feature/threefish-cipher
+
+build:macos-arm:
+  stage: build
+  <<: *rust-cache
+  tags:
+    - macos
+    - arm64
+  script:
+    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    - source $HOME/.cargo/env
+    - pip3 install maturin
+    - cd threefish_native
+    - maturin build --release --strip -o dist
+    - ls -la dist/
+  artifacts:
+    paths:
+      - threefish_native/dist/*.whl
+    expire_in: 1 week
+  only:
+    - tags
+    - main
+    - feature/threefish-cipher
+
+build:windows:
+  stage: build
+  tags:
+    - windows
+  script:
+    - choco install rustup.install -y
+    - refreshenv
+    - rustup default stable
+    - pip install maturin
+    - cd threefish_native
+    - maturin build --release --strip -o dist
+    - dir dist
+  artifacts:
+    paths:
+      - threefish_native/dist/*.whl
+    expire_in: 1 week
+  only:
+    - tags
+    - main
+    - feature/threefish-cipher
+
+# ============================================================================
+# Test Jobs
+# ============================================================================
+
+test:rust:
+  stage: test
+  <<: *rust-cache
+  image: rust:latest
+  script:
+    - cd threefish_native
+    - cargo test --release --verbose
+    - cargo bench --no-run  # Just compile benchmarks
+
+test:python:
+  stage: test
+  image: python:3.11
+  needs:
+    - build:linux
+  script:
+    - pip install threefish_native/dist/*cp311*.whl
+    - pip install pytest
+    - python -c "import threefish_native; print('KEY_SIZE_512:', threefish_native.KEY_SIZE_512); print('KEY_SIZE_1024:', threefish_native.KEY_SIZE_1024)"
+    - cd openssl_encrypt/unittests/registry
+    - pytest test_cipher_registry.py::TestThreefish512 -v
+    - pytest test_cipher_registry.py::TestThreefish1024 -v
+
+# ============================================================================
+# Publish to PyPI
+# ============================================================================
+
+publish:pypi:
+  stage: publish
+  image: python:3.11
+  needs:
+    - build:linux
+    - build:macos-x86
+    - build:macos-arm
+    - build:windows
+    - test:rust
+    - test:python
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^threefish-v\d+\.\d+\.\d+$/
+  script:
+    - pip install twine
+    - twine upload threefish_native/dist/*.whl --verbose
+  variables:
+    TWINE_USERNAME: __token__
+    TWINE_PASSWORD: ${PYPI_TOKEN}
