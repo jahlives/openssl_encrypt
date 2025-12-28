@@ -2188,6 +2188,10 @@ def main_with_args(args=None):
             description = "post-quantum key exchange with AES-256-GCM, NIST level 3 (DEPRECATED - use ml-kem-768-hybrid)"
         elif algo == EncryptionAlgorithm.KYBER1024_HYBRID.value:
             description = "post-quantum key exchange with AES-256-GCM, NIST level 5 (DEPRECATED - use ml-kem-1024-hybrid)"
+        elif algo == EncryptionAlgorithm.THREEFISH_512.value:
+            description = "Threefish-512 with Poly1305 (256-bit PQ security, high security)"
+        elif algo == EncryptionAlgorithm.THREEFISH_1024.value:
+            description = "Threefish-1024 with Poly1305 (512-bit PQ security, paranoid)"
         else:
             description = "encryption algorithm"
 

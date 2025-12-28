@@ -96,6 +96,10 @@ def setup_encrypt_parser(subparser):
             description = "HQC-192 hybrid mode (post-quantum)"
         elif algo == "hqc-256-hybrid":
             description = "HQC-256 hybrid mode (post-quantum)"
+        elif algo == EncryptionAlgorithm.THREEFISH_512.value:
+            description = "Threefish-512 with Poly1305 (256-bit PQ security, high security)"
+        elif algo == EncryptionAlgorithm.THREEFISH_1024.value:
+            description = "Threefish-1024 with Poly1305 (512-bit PQ security, paranoid)"
         else:
             description = "encryption algorithm"
         algorithm_help_text += f"  {algo}: {description}\n"

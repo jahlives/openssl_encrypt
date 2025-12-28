@@ -526,6 +526,10 @@ class EncryptionAlgorithm(Enum):
     CROSS_192_HYBRID = "cross-192-hybrid"
     CROSS_256_HYBRID = "cross-256-hybrid"
 
+    # Threefish ciphers (post-quantum security via larger key sizes)
+    THREEFISH_512 = "threefish-512"
+    THREEFISH_1024 = "threefish-1024"
+
     @classmethod
     def from_string(cls, algorithm_str: str) -> "EncryptionAlgorithm":
         """

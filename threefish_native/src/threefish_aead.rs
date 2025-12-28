@@ -6,8 +6,8 @@
 //!
 //! Format: ciphertext || poly1305_tag (16 bytes)
 
-use threefish::Threefish512;
-use threefish::Threefish1024;
+use threefish::{Threefish512, Threefish1024};
+use threefish::cipher::{BlockEncrypt, KeyInit};
 use poly1305::{Poly1305, universal_hash::UniversalHash};
 use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -126,10 +126,9 @@ impl Threefish512Aead {
     }
 
     /// Convert nonce to Threefish tweak (first 16 bytes)
-    fn nonce_to_tweak(&self, nonce: &[u8]) -> [u64; 2] {
-        let mut tweak = [0u64; 2];
-        tweak[0] = u64::from_le_bytes(nonce[0..8].try_into().unwrap());
-        tweak[1] = u64::from_le_bytes(nonce[8..16].try_into().unwrap());
+    fn nonce_to_tweak(&self, nonce: &[u8]) -> [u8; 16] {
+        let mut tweak = [0u8; 16];
+        tweak.copy_from_slice(&nonce[0..16]);
         tweak
     }
 
@@ -138,7 +137,7 @@ impl Threefish512Aead {
         &self,
         plaintext: &[u8],
         nonce: &[u8],
-        tweak: &[u64; 2],
+        tweak: &[u8; 16],
     ) -> Result<Vec<u8>, AeadError> {
         let mut ciphertext = Vec::with_capacity(plaintext.len());
         let cipher = Threefish512::new_with_tweak(&self.key, tweak);
@@ -153,12 +152,13 @@ impl Threefish512Aead {
             counter[16..24].copy_from_slice(&block_num);
 
             // Encrypt counter block to get keystream
-            let mut keystream = counter.clone();
-            cipher.encrypt_block(&mut keystream);
+            use threefish::cipher::generic_array::GenericArray;
+            let mut keystream_block = GenericArray::clone_from_slice(&counter);
+            cipher.encrypt_block(&mut keystream_block);
 
             // XOR with plaintext
             for (i, byte) in chunk.iter().enumerate() {
-                ciphertext.push(byte ^ keystream[i]);
+                ciphertext.push(byte ^ keystream_block[i]);
             }
         }
 
@@ -170,7 +170,7 @@ impl Threefish512Aead {
         &self,
         ciphertext: &[u8],
         nonce: &[u8],
-        tweak: &[u64; 2],
+        tweak: &[u8; 16],
     ) -> Result<Vec<u8>, AeadError> {
         // CTR mode is symmetric
         self.ctr_encrypt(ciphertext, nonce, tweak)
@@ -180,7 +180,7 @@ impl Threefish512Aead {
     fn derive_poly_key(
         &self,
         nonce: &[u8],
-        tweak: &[u64; 2],
+        tweak: &[u8; 16],
     ) -> Result<[u8; 32], AeadError> {
         let cipher = Threefish512::new_with_tweak(&self.key, tweak);
 
@@ -189,10 +189,12 @@ impl Threefish512Aead {
         block[..32].copy_from_slice(nonce);
         block[32] = 0xFF;  // Domain separator
 
-        cipher.encrypt_block(&mut block);
+        use threefish::cipher::generic_array::GenericArray;
+        let mut block_array = GenericArray::clone_from_slice(&block);
+        cipher.encrypt_block(&mut block_array);
 
         let mut poly_key = [0u8; 32];
-        poly_key.copy_from_slice(&block[..32]);
+        poly_key.copy_from_slice(&block_array[..32]);
 
         block.zeroize();
 
@@ -224,9 +226,9 @@ impl Threefish512Aead {
         let mut len_block = [0u8; 16];
         len_block[..8].copy_from_slice(&(aad.len() as u64).to_le_bytes());
         len_block[8..].copy_from_slice(&(ciphertext.len() as u64).to_le_bytes());
-        mac.update(&len_block);
+        mac.update_padded(&len_block);
 
-        mac.finalize().into_bytes().into()
+        mac.finalize().into()
     }
 }
 
@@ -321,10 +323,9 @@ impl Threefish1024Aead {
     }
 
     /// Convert nonce to Threefish tweak (first 16 bytes)
-    fn nonce_to_tweak(&self, nonce: &[u8]) -> [u64; 2] {
-        let mut tweak = [0u64; 2];
-        tweak[0] = u64::from_le_bytes(nonce[0..8].try_into().unwrap());
-        tweak[1] = u64::from_le_bytes(nonce[8..16].try_into().unwrap());
+    fn nonce_to_tweak(&self, nonce: &[u8]) -> [u8; 16] {
+        let mut tweak = [0u8; 16];
+        tweak.copy_from_slice(&nonce[0..16]);
         tweak
     }
 
@@ -333,12 +334,12 @@ impl Threefish1024Aead {
         &self,
         plaintext: &[u8],
         nonce: &[u8],
-        tweak: &[u64; 2],
+        tweak: &[u8; 16],
     ) -> Result<Vec<u8>, AeadError> {
         let mut ciphertext = Vec::with_capacity(plaintext.len());
         let cipher = Threefish1024::new_with_tweak(&self.key, tweak);
 
-        // Use bytes 16-32 of nonce as counter base
+        // Use bytes 16-64 of nonce as counter base
         let mut counter = [0u8; Self::BLOCK_SIZE];
         counter[..48].copy_from_slice(&nonce[16..64]);
 
@@ -348,12 +349,13 @@ impl Threefish1024Aead {
             counter[48..56].copy_from_slice(&block_num);
 
             // Encrypt counter block to get keystream
-            let mut keystream = counter.clone();
-            cipher.encrypt_block(&mut keystream);
+            use threefish::cipher::generic_array::GenericArray;
+            let mut keystream_block = GenericArray::clone_from_slice(&counter);
+            cipher.encrypt_block(&mut keystream_block);
 
             // XOR with plaintext
             for (i, byte) in chunk.iter().enumerate() {
-                ciphertext.push(byte ^ keystream[i]);
+                ciphertext.push(byte ^ keystream_block[i]);
             }
         }
 
@@ -365,7 +367,7 @@ impl Threefish1024Aead {
         &self,
         ciphertext: &[u8],
         nonce: &[u8],
-        tweak: &[u64; 2],
+        tweak: &[u8; 16],
     ) -> Result<Vec<u8>, AeadError> {
         // CTR mode is symmetric
         self.ctr_encrypt(ciphertext, nonce, tweak)
@@ -375,7 +377,7 @@ impl Threefish1024Aead {
     fn derive_poly_key(
         &self,
         nonce: &[u8],
-        tweak: &[u64; 2],
+        tweak: &[u8; 16],
     ) -> Result<[u8; 32], AeadError> {
         let cipher = Threefish1024::new_with_tweak(&self.key, tweak);
 
@@ -384,10 +386,12 @@ impl Threefish1024Aead {
         block[..64].copy_from_slice(nonce);
         block[64] = 0xFF;  // Domain separator
 
-        cipher.encrypt_block(&mut block);
+        use threefish::cipher::generic_array::GenericArray;
+        let mut block_array = GenericArray::clone_from_slice(&block);
+        cipher.encrypt_block(&mut block_array);
 
         let mut poly_key = [0u8; 32];
-        poly_key.copy_from_slice(&block[..32]);
+        poly_key.copy_from_slice(&block_array[..32]);
 
         block.zeroize();
 
@@ -414,9 +418,9 @@ impl Threefish1024Aead {
         let mut len_block = [0u8; 16];
         len_block[..8].copy_from_slice(&(aad.len() as u64).to_le_bytes());
         len_block[8..].copy_from_slice(&(ciphertext.len() as u64).to_le_bytes());
-        mac.update(&len_block);
+        mac.update_padded(&len_block);
 
-        mac.finalize().into_bytes().into()
+        mac.finalize().into()
     }
 }
 

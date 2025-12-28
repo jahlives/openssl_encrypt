@@ -42,13 +42,14 @@ fn aead_error_to_py(err: AeadError) -> PyErr {
 /// Returns:
 ///     ciphertext + 16-byte Poly1305 tag
 #[pyfunction]
-fn encrypt_512(
-    py: Python<'_>,
+#[pyo3(signature = (key, nonce, plaintext, associated_data=None))]
+fn encrypt_512<'py>(
+    py: Python<'py>,
     key: &[u8],
     nonce: &[u8],
     plaintext: &[u8],
     associated_data: Option<&[u8]>,
-) -> PyResult<Py<PyBytes>> {
+) -> PyResult<Bound<'py, PyBytes>> {
     // Validate inputs
     if key.len() != 64 {
         return Err(PyValueError::new_err(
@@ -68,7 +69,7 @@ fn encrypt_512(
     let ciphertext = cipher.encrypt(nonce, plaintext, aad)
         .map_err(aead_error_to_py)?;
 
-    Ok(PyBytes::new(py, &ciphertext).into())
+    Ok(PyBytes::new_bound(py, &ciphertext))
 }
 
 /// Threefish-512 AEAD Decryption
@@ -86,13 +87,14 @@ fn encrypt_512(
 ///     ValueError: Invalid key/nonce size
 ///     RuntimeError: Authentication failed (tampered data)
 #[pyfunction]
-fn decrypt_512(
-    py: Python<'_>,
+#[pyo3(signature = (key, nonce, ciphertext, associated_data=None))]
+fn decrypt_512<'py>(
+    py: Python<'py>,
     key: &[u8],
     nonce: &[u8],
     ciphertext: &[u8],
     associated_data: Option<&[u8]>,
-) -> PyResult<Py<PyBytes>> {
+) -> PyResult<Bound<'py, PyBytes>> {
     // Validate inputs
     if key.len() != 64 {
         return Err(PyValueError::new_err(
@@ -117,27 +119,27 @@ fn decrypt_512(
     let plaintext = cipher.decrypt(nonce, ciphertext, aad)
         .map_err(aead_error_to_py)?;
 
-    Ok(PyBytes::new(py, &plaintext).into())
+    Ok(PyBytes::new_bound(py, &plaintext))
 }
 
 /// Generate a random 64-byte key for Threefish-512
 #[pyfunction]
-fn generate_key_512(py: Python<'_>) -> PyResult<Py<PyBytes>> {
+fn generate_key_512<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
     use rand::RngCore;
     let mut key = [0u8; 64];
     rand::thread_rng().fill_bytes(&mut key);
-    let result = PyBytes::new(py, &key).into();
+    let result = PyBytes::new_bound(py, &key);
     key.zeroize();
     Ok(result)
 }
 
 /// Generate a random 32-byte nonce for Threefish-512
 #[pyfunction]
-fn generate_nonce_512(py: Python<'_>) -> PyResult<Py<PyBytes>> {
+fn generate_nonce_512<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
     use rand::RngCore;
     let mut nonce = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut nonce);
-    Ok(PyBytes::new(py, &nonce).into())
+    Ok(PyBytes::new_bound(py, &nonce))
 }
 
 // ============================================================================
@@ -155,13 +157,14 @@ fn generate_nonce_512(py: Python<'_>) -> PyResult<Py<PyBytes>> {
 /// Returns:
 ///     ciphertext + 16-byte Poly1305 tag
 #[pyfunction]
-fn encrypt_1024(
-    py: Python<'_>,
+#[pyo3(signature = (key, nonce, plaintext, associated_data=None))]
+fn encrypt_1024<'py>(
+    py: Python<'py>,
     key: &[u8],
     nonce: &[u8],
     plaintext: &[u8],
     associated_data: Option<&[u8]>,
-) -> PyResult<Py<PyBytes>> {
+) -> PyResult<Bound<'py, PyBytes>> {
     // Validate inputs
     if key.len() != 128 {
         return Err(PyValueError::new_err(
@@ -181,7 +184,7 @@ fn encrypt_1024(
     let ciphertext = cipher.encrypt(nonce, plaintext, aad)
         .map_err(aead_error_to_py)?;
 
-    Ok(PyBytes::new(py, &ciphertext).into())
+    Ok(PyBytes::new_bound(py, &ciphertext))
 }
 
 /// Threefish-1024 AEAD Decryption
@@ -199,13 +202,14 @@ fn encrypt_1024(
 ///     ValueError: Invalid key/nonce size
 ///     RuntimeError: Authentication failed (tampered data)
 #[pyfunction]
-fn decrypt_1024(
-    py: Python<'_>,
+#[pyo3(signature = (key, nonce, ciphertext, associated_data=None))]
+fn decrypt_1024<'py>(
+    py: Python<'py>,
     key: &[u8],
     nonce: &[u8],
     ciphertext: &[u8],
     associated_data: Option<&[u8]>,
-) -> PyResult<Py<PyBytes>> {
+) -> PyResult<Bound<'py, PyBytes>> {
     // Validate inputs
     if key.len() != 128 {
         return Err(PyValueError::new_err(
@@ -230,27 +234,27 @@ fn decrypt_1024(
     let plaintext = cipher.decrypt(nonce, ciphertext, aad)
         .map_err(aead_error_to_py)?;
 
-    Ok(PyBytes::new(py, &plaintext).into())
+    Ok(PyBytes::new_bound(py, &plaintext))
 }
 
 /// Generate a random 128-byte key for Threefish-1024
 #[pyfunction]
-fn generate_key_1024(py: Python<'_>) -> PyResult<Py<PyBytes>> {
+fn generate_key_1024<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
     use rand::RngCore;
     let mut key = [0u8; 128];
     rand::thread_rng().fill_bytes(&mut key);
-    let result = PyBytes::new(py, &key).into();
+    let result = PyBytes::new_bound(py, &key);
     key.zeroize();
     Ok(result)
 }
 
 /// Generate a random 64-byte nonce for Threefish-1024
 #[pyfunction]
-fn generate_nonce_1024(py: Python<'_>) -> PyResult<Py<PyBytes>> {
+fn generate_nonce_1024<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
     use rand::RngCore;
     let mut nonce = [0u8; 64];
     rand::thread_rng().fill_bytes(&mut nonce);
-    Ok(PyBytes::new(py, &nonce).into())
+    Ok(PyBytes::new_bound(py, &nonce))
 }
 
 // ============================================================================
@@ -259,7 +263,7 @@ fn generate_nonce_1024(py: Python<'_>) -> PyResult<Py<PyBytes>> {
 
 /// Python module definition
 #[pymodule]
-fn threefish_native(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn threefish_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Threefish-512 functions
     m.add_function(wrap_pyfunction!(encrypt_512, m)?)?;
     m.add_function(wrap_pyfunction!(decrypt_512, m)?)?;
