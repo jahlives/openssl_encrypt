@@ -870,7 +870,7 @@ class Threefish512(CipherBase):
         Encrypts with Threefish-512-CTR+Poly1305.
 
         Returns:
-            ciphertext + tag (16 bytes)
+            nonce (32 bytes) + ciphertext + tag (16 bytes)
         """
         self.check_available()
 
@@ -892,8 +892,8 @@ class Threefish512(CipherBase):
 
             encrypted = threefish_native.encrypt_512(key_bytes, nonce, plaintext_bytes, associated_data)
 
-            # Return ciphertext+tag (nonce NOT prepended, unlike AES-GCM)
-            return encrypted
+            # Return nonce + ciphertext+tag (same pattern as AES-GCM)
+            return nonce + encrypted
         finally:
             # Zero copies if originals were SecureBytes
             _secure_cleanup(key, key_bytes)
@@ -910,8 +910,8 @@ class Threefish512(CipherBase):
         Decrypts Threefish-512-CTR+Poly1305 ciphertext.
 
         Args:
-            ciphertext: encrypted_data + tag (16 bytes)
-            nonce: Required 32-byte nonce (NOT extracted from ciphertext)
+            ciphertext: nonce (32 bytes) + encrypted_data + tag (16 bytes)
+            nonce: Optional 32-byte nonce (extracted from ciphertext if not provided)
         """
         self.check_available()
 
@@ -922,8 +922,12 @@ class Threefish512(CipherBase):
             if len(key_bytes) != 64:
                 raise ValidationError(f"Threefish-512 requires 64-byte key, got {len(key_bytes)}")
 
+            # Extract nonce if not provided separately
             if nonce is None:
-                raise ValidationError("Threefish-512 requires explicit nonce (not embedded in ciphertext)")
+                if len(ciphertext) < 32 + 16:  # nonce + minimum tag
+                    raise ValidationError("Ciphertext too short")
+                nonce = ciphertext[:32]
+                ciphertext = ciphertext[32:]
 
             if len(nonce) != 32:
                 raise ValidationError(f"Threefish-512 nonce must be 32 bytes, got {len(nonce)}")
@@ -1001,7 +1005,7 @@ class Threefish1024(CipherBase):
         Encrypts with Threefish-1024-CTR+Poly1305.
 
         Returns:
-            ciphertext + tag (16 bytes)
+            nonce (64 bytes) + ciphertext + tag (16 bytes)
         """
         self.check_available()
 
@@ -1023,8 +1027,8 @@ class Threefish1024(CipherBase):
 
             encrypted = threefish_native.encrypt_1024(key_bytes, nonce, plaintext_bytes, associated_data)
 
-            # Return ciphertext+tag (nonce NOT prepended)
-            return encrypted
+            # Return nonce + ciphertext+tag (same pattern as AES-GCM)
+            return nonce + encrypted
         finally:
             # Zero copies if originals were SecureBytes
             _secure_cleanup(key, key_bytes)
@@ -1041,8 +1045,8 @@ class Threefish1024(CipherBase):
         Decrypts Threefish-1024-CTR+Poly1305 ciphertext.
 
         Args:
-            ciphertext: encrypted_data + tag (16 bytes)
-            nonce: Required 64-byte nonce (NOT extracted from ciphertext)
+            ciphertext: nonce (64 bytes) + encrypted_data + tag (16 bytes)
+            nonce: Optional 64-byte nonce (extracted from ciphertext if not provided)
         """
         self.check_available()
 
@@ -1053,8 +1057,12 @@ class Threefish1024(CipherBase):
             if len(key_bytes) != 128:
                 raise ValidationError(f"Threefish-1024 requires 128-byte key, got {len(key_bytes)}")
 
+            # Extract nonce if not provided separately
             if nonce is None:
-                raise ValidationError("Threefish-1024 requires explicit nonce (not embedded in ciphertext)")
+                if len(ciphertext) < 64 + 16:  # nonce + minimum tag
+                    raise ValidationError("Ciphertext too short")
+                nonce = ciphertext[:64]
+                ciphertext = ciphertext[64:]
 
             if len(nonce) != 64:
                 raise ValidationError(f"Threefish-1024 nonce must be 64 bytes, got {len(nonce)}")

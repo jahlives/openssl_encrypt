@@ -405,6 +405,10 @@ class TestCipherComparison:
         for cipher_name in registry.list_names():
             if cipher_name == "aes-256-siv":
                 key = b"L" * 64  # SIV needs 64 bytes
+            elif cipher_name == "threefish-512":
+                key = b"M" * 64  # Threefish-512 needs 64 bytes
+            elif cipher_name == "threefish-1024":
+                key = b"M" * 128  # Threefish-1024 needs 128 bytes
             else:
                 key = b"M" * 32
 
@@ -455,11 +459,11 @@ class TestThreefish512:
         # Encrypt
         ciphertext = cipher.encrypt(key, plaintext, nonce=nonce)
 
-        # Should be: encrypted + tag (16), no nonce prepended
-        assert len(ciphertext) == len(plaintext) + 16
+        # Should be: nonce (32) + encrypted + tag (16)
+        assert len(ciphertext) == 32 + len(plaintext) + 16
 
-        # Decrypt
-        decrypted = cipher.decrypt(key, ciphertext, nonce=nonce)
+        # Decrypt (nonce is extracted from ciphertext)
+        decrypted = cipher.decrypt(key, ciphertext)
         assert decrypted == plaintext
 
     def test_encrypt_with_aad(self):
@@ -473,7 +477,7 @@ class TestThreefish512:
         aad = b"Additional authenticated data"
 
         ciphertext = cipher.encrypt(key, plaintext, nonce=nonce, associated_data=aad)
-        decrypted = cipher.decrypt(key, ciphertext, nonce=nonce, associated_data=aad)
+        decrypted = cipher.decrypt(key, ciphertext, associated_data=aad)
 
         assert decrypted == plaintext
 
@@ -489,7 +493,7 @@ class TestThreefish512:
         ciphertext = cipher.encrypt(key, b"Secret", nonce=nonce)
 
         with pytest.raises(AuthenticationError):
-            cipher.decrypt(wrong_key, ciphertext, nonce=nonce)
+            cipher.decrypt(wrong_key, ciphertext)
 
     def test_tampered_ciphertext_fails(self):
         """Test that tampered ciphertext fails authentication."""
@@ -503,7 +507,7 @@ class TestThreefish512:
         ciphertext[0] ^= 0x01  # Flip one bit
 
         with pytest.raises(AuthenticationError):
-            cipher.decrypt(key, bytes(ciphertext), nonce=nonce)
+            cipher.decrypt(key, bytes(ciphertext))
 
     def test_invalid_key_size(self):
         """Test that invalid key size raises error."""
@@ -517,8 +521,8 @@ class TestThreefish512:
         with pytest.raises(ValidationError, match="32 bytes"):
             cipher.encrypt(b"K" * 64, b"test", nonce=b"short_nonce")
 
-    def test_nonce_required_for_decrypt(self):
-        """Test that decrypt requires explicit nonce."""
+    def test_nonce_embedded_in_ciphertext(self):
+        """Test that nonce is embedded in ciphertext and can be extracted."""
         import threefish_native
 
         cipher = Threefish512()
@@ -527,9 +531,9 @@ class TestThreefish512:
 
         ciphertext = cipher.encrypt(key, b"test", nonce=nonce)
 
-        # Decrypt without nonce should fail
-        with pytest.raises(ValidationError, match="explicit nonce"):
-            cipher.decrypt(key, ciphertext)
+        # Nonce should be embedded, so decrypt works without explicit nonce
+        decrypted = cipher.decrypt(key, ciphertext)
+        assert decrypted == b"test"
 
     def test_large_data(self):
         """Test with 1MB of data."""
@@ -542,7 +546,7 @@ class TestThreefish512:
         plaintext = secrets.token_bytes(1024 * 1024)  # 1 MB
 
         ciphertext = cipher.encrypt(key, plaintext, nonce=nonce)
-        decrypted = cipher.decrypt(key, ciphertext, nonce=nonce)
+        decrypted = cipher.decrypt(key, ciphertext)
 
         assert decrypted == plaintext
 
@@ -575,11 +579,11 @@ class TestThreefish1024:
         # Encrypt
         ciphertext = cipher.encrypt(key, plaintext, nonce=nonce)
 
-        # Should be: encrypted + tag (16), no nonce prepended
-        assert len(ciphertext) == len(plaintext) + 16
+        # Should be: nonce (64) + encrypted + tag (16)
+        assert len(ciphertext) == 64 + len(plaintext) + 16
 
-        # Decrypt
-        decrypted = cipher.decrypt(key, ciphertext, nonce=nonce)
+        # Decrypt (nonce is extracted from ciphertext)
+        decrypted = cipher.decrypt(key, ciphertext)
         assert decrypted == plaintext
 
     def test_encrypt_with_aad(self):
@@ -593,7 +597,7 @@ class TestThreefish1024:
         aad = b"Header information"
 
         ciphertext = cipher.encrypt(key, plaintext, nonce=nonce, associated_data=aad)
-        decrypted = cipher.decrypt(key, ciphertext, nonce=nonce, associated_data=aad)
+        decrypted = cipher.decrypt(key, ciphertext, associated_data=aad)
 
         assert decrypted == plaintext
 
@@ -608,7 +612,7 @@ class TestThreefish1024:
         ciphertext = cipher.encrypt(key, b"Secret", nonce=nonce, associated_data=b"correct_aad")
 
         with pytest.raises(AuthenticationError):
-            cipher.decrypt(key, ciphertext, nonce=nonce, associated_data=b"wrong_aad")
+            cipher.decrypt(key, ciphertext, associated_data=b"wrong_aad")
 
     def test_tampered_tag_fails(self):
         """Test that tampered tag fails authentication."""
@@ -624,7 +628,7 @@ class TestThreefish1024:
         ciphertext[-1] ^= 0xFF
 
         with pytest.raises(AuthenticationError):
-            cipher.decrypt(key, bytes(ciphertext), nonce=nonce)
+            cipher.decrypt(key, bytes(ciphertext))
 
     def test_invalid_key_size(self):
         """Test that invalid key size raises error."""
@@ -649,7 +653,7 @@ class TestThreefish1024:
         plaintext = secrets.token_bytes(1024 * 1024)  # 1 MB
 
         ciphertext = cipher.encrypt(key, plaintext, nonce=nonce)
-        decrypted = cipher.decrypt(key, ciphertext, nonce=nonce)
+        decrypted = cipher.decrypt(key, ciphertext)
 
         assert decrypted == plaintext
 
