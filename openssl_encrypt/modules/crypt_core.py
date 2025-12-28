@@ -526,6 +526,10 @@ class EncryptionAlgorithm(Enum):
     CROSS_192_HYBRID = "cross-192-hybrid"
     CROSS_256_HYBRID = "cross-256-hybrid"
 
+    # Threefish ciphers (post-quantum security via larger key sizes)
+    THREEFISH_512 = "threefish-512"
+    THREEFISH_1024 = "threefish-1024"
+
     @classmethod
     def from_string(cls, algorithm_str: str) -> "EncryptionAlgorithm":
         """
@@ -1839,40 +1843,43 @@ def generate_key(
         # Check if this is from decryption metadata (skip warning for decryption)
         is_decryption = hash_config and hash_config.get("_is_from_decryption_metadata", False)
         if not is_decryption:
-            enabled_kdfs = []
-            if use_argon2:
-                enabled_kdfs.append("Argon2")
-            if use_randomx:
-                enabled_kdfs.append("RandomX")
-            if use_balloon:
-                enabled_kdfs.append("Balloon")
-            if use_hkdf:
-                enabled_kdfs.append("HKDF")
-            if use_scrypt:
-                enabled_kdfs.append("Scrypt")
-
-            print("\n⚠️  WARNING: Security Risk Detected")
-            print(
-                f"KDFs ({', '.join(enabled_kdfs)}) will operate directly on your password without prior hashing."
-            )
-            print("This may be insecure if your password is short or has low entropy.")
-            print(
-                "Consider adding hash rounds (--sha256-rounds, --blake2b-rounds, etc.) for better security."
-            )
-            print("Continue anyway? [y/N]: ", end="", flush=True)
-
-            # Get user confirmation
             import sys
 
-            try:
-                response = input().strip().lower()
-                if response not in ["y", "yes"]:
-                    print("Operation cancelled by user.")
+            # Only prompt if stdin is a TTY (interactive terminal)
+            # In non-interactive mode (pytest, pipes, etc.), skip the prompt
+            if sys.stdin.isatty():
+                enabled_kdfs = []
+                if use_argon2:
+                    enabled_kdfs.append("Argon2")
+                if use_randomx:
+                    enabled_kdfs.append("RandomX")
+                if use_balloon:
+                    enabled_kdfs.append("Balloon")
+                if use_hkdf:
+                    enabled_kdfs.append("HKDF")
+                if use_scrypt:
+                    enabled_kdfs.append("Scrypt")
+
+                print("\n⚠️  WARNING: Security Risk Detected")
+                print(
+                    f"KDFs ({', '.join(enabled_kdfs)}) will operate directly on your password without prior hashing."
+                )
+                print("This may be insecure if your password is short or has low entropy.")
+                print(
+                    "Consider adding hash rounds (--sha256-rounds, --blake2b-rounds, etc.) for better security."
+                )
+                print("Continue anyway? [y/N]: ", end="", flush=True)
+
+                # Get user confirmation
+                try:
+                    response = input().strip().lower()
+                    if response not in ["y", "yes"]:
+                        print("Operation cancelled by user.")
+                        sys.exit(1)
+                    print()  # Add blank line after confirmation
+                except (KeyboardInterrupt, EOFError):
+                    print("\nOperation cancelled by user.")
                     sys.exit(1)
-                print()  # Add blank line after confirmation
-            except (KeyboardInterrupt, EOFError):
-                print("\nOperation cancelled by user.")
-                sys.exit(1)
 
     # If hash_config has argon2 section with enabled explicitly set to False, honor that
     # if hash_config and 'argon2' in hash_config and 'enabled' in hash_config['argon2']:
@@ -3078,6 +3085,8 @@ def create_metadata_v7(
     encrypted_hash: str = None,
     include_encrypted_hash: bool = True,
     aad_mode: bool = False,
+    quiet: bool = False,
+    verbose: bool = False,
 ):
     """
     Create metadata in format version 7 for asymmetric encryption.
@@ -3178,10 +3187,20 @@ def create_metadata_v7(
         metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {"rounds": pbkdf2_iterations}
 
     # Move KDF configurations from hash_config if present
+    if not quiet and verbose:
+        print(f"  DEBUG: hash_config keys before KDF copy: {list(hash_config.keys())}")
+
     kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf", "randomx"]
     for kdf in kdf_algorithms:
         if kdf in hash_config:
+            if not quiet and verbose:
+                print(f"  DEBUG: Copying KDF '{kdf}' to metadata: {hash_config[kdf]}")
             metadata["derivation_config"]["kdf_config"][kdf] = hash_config[kdf]
+        elif not quiet and verbose:
+            print(f"  DEBUG: KDF '{kdf}' NOT found in hash_config")
+
+    if not quiet and verbose:
+        print(f"  DEBUG: Final kdf_config in metadata: {metadata['derivation_config']['kdf_config']}")
 
     # Add signature (this is added AFTER metadata is created, but before returning)
     metadata["signature"] = {
@@ -3289,20 +3308,22 @@ def decrypt_file_asymmetric(
         print(f"Decrypting {input_file} for {recipient.name}...")
 
     # Step 1: Parse file and metadata
-    with open(input_file, "r") as f:
+    with open(input_file, "rb") as f:
         content = f.read()
 
-    if "---ENCRYPTED_DATA---" not in content:
-        raise ValueError("Invalid encrypted file format")
+    # Parse format: base64(metadata):base64(encrypted_data)
+    if b":" not in content:
+        raise ValueError("Invalid encrypted file format - missing colon separator")
 
-    parts = content.split("---ENCRYPTED_DATA---")
-    metadata_str = parts[0]
-    encrypted_data_b64 = parts[1].strip()
+    colon_pos = content.index(b":")
+    metadata_b64 = content[:colon_pos]
+    encrypted_data_b64 = content[colon_pos + 1:]
 
     try:
-        metadata = json.loads(metadata_str)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid metadata JSON: {e}")
+        metadata_json = base64.b64decode(metadata_b64)
+        metadata = json.loads(metadata_json)
+    except (ValueError, json.JSONDecodeError) as e:
+        raise ValueError(f"Invalid metadata format: {e}")
 
     # Verify format version
     if metadata.get("format_version") != 7:
@@ -3325,7 +3346,7 @@ def decrypt_file_asymmetric(
         )
 
     if not quiet:
-        print(f"  Found entry for: {recipient.name}")
+        print(f"Found entry for: {recipient.name}")
 
     # Step 3: **CRITICAL - VERIFY SIGNATURE BEFORE KDF**
     # This is the DoS protection - signature verification is fast (~1-5ms)
@@ -3372,11 +3393,11 @@ def decrypt_file_asymmetric(
 
         if not quiet:
             sender_id = metadata["asymmetric"]["sender"]["key_id"]
-            print(f"  ✓ Signature verified from: {sender_id[:16]}...")
+            print(f"Signature verified from: {sender_id} ✅")
 
     else:
         if not quiet:
-            print("  ⚠️ WARNING: Signature verification SKIPPED!")
+            print("⚠️ WARNING: Signature verification SKIPPED!")
 
     # Step 4: Unwrap password (fast)
     try:
@@ -3387,24 +3408,32 @@ def decrypt_file_asymmetric(
 
     wrapper = PasswordWrapper(recipient_entry["kem_algorithm"])
 
-    with recipient.encryption_private_key as priv_key:
-        password_raw = wrapper.decapsulate(encapsulated_key, priv_key.get_bytes())
-
+    # Unwrap password (store in password_unwrapped temporarily)
+    password_unwrapped = None
     try:
-        with SecureBytes(password_raw) as password_secure:
-            # Unwrap password
-            password = wrapper.unwrap_password(encrypted_password, bytes(password_secure))
+        with recipient.encryption_private_key as priv_key:
+            password_raw = wrapper.decapsulate(encapsulated_key, priv_key.get_bytes())
 
+        try:
+            with SecureBytes(password_raw) as password_secure:
+                # Unwrap password
+                password_unwrapped = wrapper.unwrap_password(encrypted_password, bytes(password_secure))
+
+        finally:
+            secure_memzero(password_raw)
     finally:
-        secure_memzero(password_raw)
+        # Clean up cryptographic material
+        secure_memzero(encapsulated_key)
+        secure_memzero(encrypted_password)
 
     if not quiet:
-        print("  ✓ Password unwrapped successfully")
+        print("Password unwrapped successfully ✅")
 
     # Step 5: NOW it's safe to run expensive KDF
     # (signature has been verified, so we know this is legitimate)
+    # SECURITY: Immediately wrap unwrapped password in SecureBytes to protect it in memory
     try:
-        with SecureBytes(password) as secure_password:
+        with SecureBytes(password_unwrapped) as secure_password:
             # Extract derivation config
             derivation_config = metadata["derivation_config"]
             salt = base64.b64decode(derivation_config["salt"])
@@ -3425,7 +3454,7 @@ def decrypt_file_asymmetric(
                     hash_config["pbkdf2_iterations"] = kdf_params.get("rounds", 0)
 
             if not quiet:
-                print("  Running KDF chain (this may take a while)...")
+                print("Running KDF chain (this may take a while)...")
 
             # Derive key
             derived_key, _, _ = generate_key(
@@ -3437,7 +3466,7 @@ def decrypt_file_asymmetric(
             )
 
             if not quiet:
-                print("  ✓ Key derived successfully")
+                print("Key derived successfully ✅")
 
             # Step 6: Decrypt data
             encrypted_data = base64.b64decode(encrypted_data_b64)
@@ -3459,27 +3488,31 @@ def decrypt_file_asymmetric(
                 raise ValueError("Hash verification failed! File may be corrupted.")
 
             if not quiet:
-                print("  ✓ Hash verified")
+                print("Hash verified ✅")
 
             # Write output
             with open(output_file, "wb") as f:
                 f.write(plaintext)
 
             if not quiet:
-                print(f"✓ File decrypted successfully: {output_file}")
+                print(f"File decrypted successfully: {output_file} ✅")
                 print(
-                    f"  File size: {len(encrypted_data)} bytes (encrypted) → {len(plaintext)} bytes"
+                    f"File size: {len(encrypted_data)} bytes (encrypted) → {len(plaintext)} bytes"
                 )
+
+            # Make a copy of plaintext to return before zeroing
+            plaintext_copy = bytes(plaintext)
 
             # Secure cleanup
             secure_memzero(derived_key)
             secure_memzero(plaintext)
 
-            return original_hash_computed.encode("utf-8")
+            return plaintext_copy
 
     finally:
         # Ensure password is zeroed
-        secure_memzero(password)
+        if password_unwrapped is not None:
+            secure_memzero(password_unwrapped)
 
 
 def encrypt_file_asymmetric(
@@ -3581,7 +3614,7 @@ def encrypt_file_asymmetric(
 
             # Derive encryption key using KDF chain
             derived_key, _, _ = generate_key(
-                password=bytes(secure_password), salt=salt, hash_config=hash_config, quiet=quiet
+                password=bytes(secure_password), salt=salt, hash_config=hash_config, quiet=quiet, progress=progress
             )
 
             # Encrypt data
@@ -3622,7 +3655,7 @@ def encrypt_file_asymmetric(
 
                     if not quiet:
                         print(
-                            f"  Wrapped password for: {recipient.name} ({recipient.fingerprint[:16]}...)"
+                            f"Wrapped password for: {recipient.name} ({recipient.fingerprint}) ✅"
                         )
 
                 finally:
@@ -3687,6 +3720,12 @@ def encrypt_file_asymmetric(
                     "rounds": pbkdf2_iterations
                 }
 
+            # Copy KDF configurations from hash_config if present
+            kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf", "randomx"]
+            for kdf in kdf_algorithms:
+                if kdf in hash_config:
+                    metadata_unsigned["derivation_config"]["kdf_config"][kdf] = hash_config[kdf]
+
             # Canonicalize and sign metadata
             canonical_metadata = MetadataCanonicalizer.canonicalize(metadata_unsigned)
 
@@ -3701,33 +3740,41 @@ def encrypt_file_asymmetric(
             }
 
             if not quiet:
-                print(f"  Signed with: {sender.name} ({sender.fingerprint[:16]}...)")
+                print(f"Signed with: {sender.name} ({sender.fingerprint}) ✅")
 
-            # Step 6: Write encrypted file
-            metadata_json = json.dumps(metadata_unsigned, indent=2)
-            encrypted_data_b64 = base64.b64encode(nonce + ciphertext).decode("utf-8")
+            # Step 6: Write encrypted file in proper format: base64(metadata):base64(data)
+            metadata_json = json.dumps(metadata_unsigned)
+            metadata_b64 = base64.b64encode(metadata_json.encode("utf-8"))
+            encrypted_data_b64 = base64.b64encode(nonce + ciphertext)
 
-            with open(output_file, "w") as f:
-                f.write(metadata_json)
-                f.write("\n---ENCRYPTED_DATA---\n")
-                f.write(encrypted_data_b64)
+            with open(output_file, "wb") as f:
+                f.write(metadata_b64 + b":" + encrypted_data_b64)
 
             if not quiet:
-                print(f"✓ File encrypted successfully: {output_file}")
-                print(f"  Recipients: {len(recipients)}")
-                print(
-                    f"  File size: {len(plaintext)} bytes → {len(nonce + ciphertext)} bytes (encrypted)"
-                )
+                print(f"File encrypted successfully: {output_file} ✅")
+
+            # Store sizes before cleanup
+            original_size = len(plaintext)
+            encrypted_size = len(nonce + ciphertext)
 
             # Secure cleanup
             secure_memzero(derived_key)
             secure_memzero(plaintext)
+            secure_memzero(nonce)
+            secure_memzero(ciphertext)
+
+            # Clean up cryptographic material from recipients_data
+            for recipient_data in recipients_data:
+                secure_memzero(recipient_data["encapsulated_key"])
+                secure_memzero(recipient_data["encrypted_password"])
 
             return {
                 "success": True,
                 "output_file": output_file,
                 "recipients": len(recipients),
                 "sender": sender.fingerprint,
+                "original_size": original_size,
+                "encrypted_size": encrypted_size,
             }
 
     finally:

@@ -19,6 +19,19 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .security_scorer import SecurityLevel, SecurityScorer
 
+# Import registry helper functions for algorithm discovery
+try:
+    from .registry import (
+        get_available_ciphers,
+        get_available_hashes,
+        get_available_kdfs,
+        get_cipher_info_dict,
+        get_kdf_info_dict,
+    )
+    REGISTRY_AVAILABLE = True
+except ImportError:
+    REGISTRY_AVAILABLE = False
+
 
 class UserExpertise(Enum):
     """User expertise levels for configuration guidance."""
@@ -263,12 +276,30 @@ class ConfigurationWizard:
 
     def _add_hash_algorithms(self):
         """Add additional hash algorithms."""
-        available_hashes = {
-            "blake3": "Ultra-fast modern hash with parallel processing",
-            "sha3_256": "NIST-standardized SHA-3 family hash",
-            "sha3_512": "SHA-3 with 512-bit output for maximum security",
-            "blake2b": "High-performance cryptographic hash",
-        }
+        # Use registry if available, otherwise fall back to hardcoded list
+        if REGISTRY_AVAILABLE:
+            from .registry import get_available_hashes, HashRegistry
+
+            registry = HashRegistry.default()
+            available_hashes = {}
+
+            for hash_name in get_available_hashes():
+                try:
+                    info = registry.get_info(hash_name)
+                    if registry.is_available(hash_name):
+                        # Convert registry name to config format (e.g., sha3-256 -> sha3_256)
+                        config_name = hash_name.replace("-", "_")
+                        available_hashes[config_name] = info.description
+                except Exception:
+                    continue
+        else:
+            # Fallback to hardcoded list
+            available_hashes = {
+                "blake3": "Ultra-fast modern hash with parallel processing",
+                "sha3_256": "NIST-standardized SHA-3 family hash",
+                "sha3_512": "SHA-3 with 512-bit output for maximum security",
+                "blake2b": "High-performance cryptographic hash",
+            }
 
         current_hashes = set(self.config["hash_algorithms"].keys())
         available = {k: v for k, v in available_hashes.items() if k not in current_hashes}
@@ -365,6 +396,9 @@ class ConfigurationWizard:
         print("2. Add secondary KDF (Scrypt)")
         print("3. Fine-tune Argon2 parameters")
 
+        if REGISTRY_AVAILABLE:
+            print("\n(Tip: Use 'list-algorithms --category=kdfs' to see all available KDFs)")
+
         try:
             choice = input("Enter your choice (1-3): ").strip()
 
@@ -408,18 +442,39 @@ class ConfigurationWizard:
         current_alg = self.config["encryption"]["algorithm"]
         print(f"Current algorithm: {current_alg.upper()}")
 
-        algorithms = {
-            "aes-gcm": "AES-GCM - Industry standard, widely trusted",
-            "aes-gcm-siv": "AES-GCM-SIV - Nonce-misuse resistant",
-            "xchacha20-poly1305": "XChaCha20-Poly1305 - Modern, extended nonce",
-            "chacha20-poly1305": "ChaCha20-Poly1305 - Fast, modern alternative to AES",
-        }
+        # Use registry if available for cipher information
+        if REGISTRY_AVAILABLE:
+            from .registry import CipherRegistry
+
+            registry = CipherRegistry.default()
+            algorithms = {}
+
+            # Get cipher info from registry
+            for cipher_name in get_available_ciphers():
+                try:
+                    info = registry.get_info(cipher_name)
+                    if registry.is_available(cipher_name):
+                        # Format: "cipher-name": "Display Name - Description"
+                        algorithms[cipher_name] = f"{info.display_name} - {info.description[:50]}"
+                except Exception:
+                    continue
+        else:
+            # Fallback to hardcoded list
+            algorithms = {
+                "aes-gcm": "AES-GCM - Industry standard, widely trusted",
+                "aes-gcm-siv": "AES-GCM-SIV - Nonce-misuse resistant",
+                "xchacha20-poly1305": "XChaCha20-Poly1305 - Modern, extended nonce",
+                "chacha20-poly1305": "ChaCha20-Poly1305 - Fast, modern alternative to AES",
+            }
 
         print("\nAvailable encryption algorithms:")
         alg_list = list(algorithms.items())
         for i, (alg, desc) in enumerate(alg_list, 1):
             marker = " (current)" if alg == current_alg else ""
             print(f"{i}. {desc}{marker}")
+
+        if REGISTRY_AVAILABLE:
+            print("\n(Tip: Use 'list-algorithms --category=ciphers' for detailed cipher information)")
 
         try:
             choice = input(

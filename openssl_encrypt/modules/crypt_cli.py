@@ -93,6 +93,103 @@ from .template_manager import TemplateCategory, TemplateFormat, TemplateManager
 logger = logging.getLogger(__name__)
 
 
+def resolve_identity_store_path(args):
+    """Resolve identity store path from args with proper priority.
+
+    Priority (lowest to highest):
+    1. Default (handled by get_identity_store)
+    2. Environment variable (handled by get_identity_store)
+    3. Global --identity-store parameter
+    4. Command-specific --identity-store parameter
+
+    Args:
+        args: Parsed command-line arguments
+
+    Returns:
+        Path or None: Resolved path if explicitly provided, None to use default resolution
+    """
+    from pathlib import Path
+
+    # Command-specific overrides global
+    path = getattr(args, "identity_store", None)
+    if path:
+        return Path(path).expanduser()
+    return None
+
+
+def detect_encryption_type(input_file: str) -> dict:
+    """
+    Read file and detect encryption type from metadata.
+
+    Args:
+        input_file: Path to encrypted file
+
+    Returns:
+        Dictionary with:
+            - type: "symmetric" or "asymmetric"
+            - format_version: int (format version number)
+            - recipient_fingerprints: List[str] (only for asymmetric)
+            - sender_fingerprint: str (only for asymmetric)
+
+    Returns {"type": "symmetric", "format_version": 0} if detection fails.
+    """
+    import base64
+    import json
+
+    try:
+        with open(input_file, "rb") as f:
+            content = f.read()
+
+        metadata = None
+
+        # Try new format: base64(metadata):base64(data)
+        if b":" in content:
+            colon_pos = content.index(b":")
+            metadata_b64 = content[:colon_pos]
+            try:
+                metadata_json = base64.b64decode(metadata_b64)
+                metadata = json.loads(metadata_json)
+            except (ValueError, json.JSONDecodeError):
+                pass
+
+        # Try old format: ---ENCRYPTED_DATA---
+        if metadata is None and b"---ENCRYPTED_DATA---" in content:
+            try:
+                content_str = content.decode("utf-8", errors="ignore")
+                metadata_str = content_str.split("---ENCRYPTED_DATA---")[0]
+                metadata = json.loads(metadata_str)
+            except (json.JSONDecodeError, UnicodeDecodeError, IndexError):
+                pass
+
+        # Check if asymmetric
+        if metadata:
+            format_version = metadata.get("format_version", 0)
+            mode = metadata.get("mode", "symmetric")
+
+            if format_version == 7 and mode == "asymmetric":
+                # Extract recipient and sender info
+                asymmetric_data = metadata.get("asymmetric", {})
+                recipients = asymmetric_data.get("recipients", [])
+                sender = asymmetric_data.get("sender", {})
+
+                recipient_fingerprints = [r.get("key_id", "") for r in recipients]
+                sender_fingerprint = sender.get("key_id", "")
+
+                return {
+                    "type": "asymmetric",
+                    "format_version": format_version,
+                    "recipient_fingerprints": recipient_fingerprints,
+                    "sender_fingerprint": sender_fingerprint,
+                }
+
+        # Default to symmetric
+        return {"type": "symmetric", "format_version": 0}
+
+    except (FileNotFoundError, IOError, Exception):
+        # If we can't read the file, assume symmetric
+        return {"type": "symmetric", "format_version": 0}
+
+
 class ReconstructedStdinStream:
     """
     A file-like object that replays consumed data followed by remaining stdin stream.
@@ -790,6 +887,150 @@ def analyze_current_security_configuration(args):
     except Exception as e:
         print(f"Error analyzing security configuration: {e}")
         print("Please check your configuration parameters.")
+
+
+def validate_algorithm_availability(args):
+    """
+    Validate that specified algorithms are available on this system.
+
+    Checks hash and KDF algorithms specified via CLI flags and warns
+    if they're not available (e.g., missing optional dependencies).
+
+    Args:
+        args: Parsed command line arguments
+
+    Returns:
+        List of warning messages for unavailable algorithms
+    """
+    warnings = []
+
+    try:
+        from .registry import validate_algorithm_name
+
+        # Check hash algorithms
+        hash_algorithms = []
+        if (getattr(args, "sha256_rounds", 0) or 0) > 0:
+            hash_algorithms.append("sha256")
+        if (getattr(args, "sha512_rounds", 0) or 0) > 0:
+            hash_algorithms.append("sha512")
+        if (getattr(args, "sha384_rounds", 0) or 0) > 0:
+            hash_algorithms.append("sha384")
+        if (getattr(args, "blake2b_rounds", 0) or 0) > 0:
+            hash_algorithms.append("blake2b")
+        if (getattr(args, "blake3_rounds", 0) or 0) > 0:
+            hash_algorithms.append("blake3")
+        if (getattr(args, "shake256_rounds", 0) or 0) > 0:
+            hash_algorithms.append("shake256")
+        if (getattr(args, "whirlpool_rounds", 0) or 0) > 0:
+            hash_algorithms.append("whirlpool")
+
+        for algo in hash_algorithms:
+            is_valid, error_msg = validate_algorithm_name(algo, "hash")
+            if not is_valid:
+                warnings.append(f"Hash algorithm '{algo}': {error_msg}")
+
+        # Check KDF algorithms
+        if getattr(args, "enable_argon2", False):
+            is_valid, error_msg = validate_algorithm_name("argon2id", "kdf")
+            if not is_valid:
+                warnings.append(f"Argon2: {error_msg}")
+
+        if getattr(args, "enable_scrypt", False):
+            is_valid, error_msg = validate_algorithm_name("scrypt", "kdf")
+            if not is_valid:
+                warnings.append(f"Scrypt: {error_msg}")
+
+        if getattr(args, "enable_randomx", False):
+            is_valid, error_msg = validate_algorithm_name("randomx", "kdf")
+            if not is_valid:
+                warnings.append(f"RandomX: {error_msg}")
+
+        if getattr(args, "enable_balloon", False):
+            is_valid, error_msg = validate_algorithm_name("balloon", "kdf")
+            if not is_valid:
+                warnings.append(f"Balloon: {error_msg}")
+
+        if getattr(args, "enable_hkdf", False):
+            is_valid, error_msg = validate_algorithm_name("hkdf", "kdf")
+            if not is_valid:
+                warnings.append(f"HKDF: {error_msg}")
+
+    except ImportError:
+        # Registry not available, skip validation
+        pass
+    except Exception as e:
+        # Don't fail on validation errors
+        logger.debug(f"Algorithm validation error: {e}")
+
+    return warnings
+
+
+def show_algorithm_registry(args):
+    """
+    Display available algorithms from the registry system.
+
+    Args:
+        args: Parsed command line arguments with category and format options
+    """
+    try:
+        from .registry import format_algorithm_help
+
+        category = getattr(args, "category", "all")
+        output_format = getattr(args, "format", "detailed")
+
+        if category == "all":
+            # Show all categories
+            categories = ["cipher", "hash", "kdf", "kem", "signature"]
+        else:
+            # Map plural form to singular
+            category_map = {
+                "ciphers": "cipher",
+                "hashes": "hash",
+                "kdfs": "kdf",
+                "kems": "kem",
+                "signatures": "signature",
+            }
+            categories = [category_map.get(category, category)]
+
+        if output_format == "detailed":
+            # Show detailed information with descriptions
+            for cat in categories:
+                print(format_algorithm_help(cat))
+                print()  # Blank line between categories
+        else:
+            # Simple format - just list names
+            from .registry import (
+                get_available_ciphers,
+                get_available_hashes,
+                get_available_kdfs,
+                get_available_kems,
+                get_available_signatures,
+            )
+
+            getters = {
+                "cipher": ("Ciphers", get_available_ciphers),
+                "hash": ("Hash Functions", get_available_hashes),
+                "kdf": ("Key Derivation Functions", get_available_kdfs),
+                "kem": ("KEMs (Post-Quantum)", get_available_kems),
+                "signature": ("Signatures (Post-Quantum)", get_available_signatures),
+            }
+
+            for cat in categories:
+                if cat in getters:
+                    title, getter = getters[cat]
+                    algorithms = getter()
+                    print(f"\n{title}:")
+                    print("=" * len(title))
+                    for algo in algorithms:
+                        print(f"  {algo}")
+
+    except ImportError:
+        print("Error: Registry system not available.")
+        print("The algorithm registry module could not be imported.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error displaying algorithms: {e}")
+        sys.exit(1)
 
 
 def run_config_wizard(args):
@@ -1721,6 +1962,7 @@ def main():
         "decrypt",
         "shred",
         "generate-password",
+        "list-algorithms",
         "security-info",
         "analyze-security",
         "config-wizard",
@@ -1733,11 +1975,31 @@ def main():
         "check-pqc",
         "version",
         "show-version-file",
+        "create-usb",
+        "verify-usb",
+        "list-plugins",
+        "plugin-info",
+        "enable-plugin",
+        "disable-plugin",
+        "reload-plugin",
     ]
 
-    # Use subparser only if position 1 is a subcommand
+    # Use subparser only if a subcommand is present
     # (after global flags have been moved to the front by preprocess_global_args)
-    if len(sys.argv) > 1 and sys.argv[1] in subparser_commands:
+    # Find the first non-flag argument (skip global flags)
+    global_flags = {"--progress", "--verbose", "--debug", "--quiet"}
+    first_command = None
+    for i in range(1, len(sys.argv)):
+        arg = sys.argv[i]
+        # Skip global flags
+        if arg in global_flags:
+            continue
+        # Found a non-flag argument
+        if not arg.startswith("-"):
+            first_command = arg
+            break
+
+    if first_command in subparser_commands:
         # Use subparser for all command-specific operations
         from .crypt_cli_subparser import create_subparser_main
 
@@ -1926,6 +2188,10 @@ def main_with_args(args=None):
             description = "post-quantum key exchange with AES-256-GCM, NIST level 3 (DEPRECATED - use ml-kem-768-hybrid)"
         elif algo == EncryptionAlgorithm.KYBER1024_HYBRID.value:
             description = "post-quantum key exchange with AES-256-GCM, NIST level 5 (DEPRECATED - use ml-kem-1024-hybrid)"
+        elif algo == EncryptionAlgorithm.THREEFISH_512.value:
+            description = "Threefish-512 with Poly1305 (256-bit PQ security, high security)"
+        elif algo == EncryptionAlgorithm.THREEFISH_1024.value:
+            description = "Threefish-1024 with Poly1305 (512-bit PQ security, paranoid)"
         else:
             description = "encryption algorithm"
 
@@ -2646,7 +2912,7 @@ def main_with_args(args=None):
         "keystore_password": None,
         "dual_encrypt_key": None,
         "encryption_data": None,
-        "enable_plugins": True,
+        "enable_plugins": False,
         "disable_plugins": False,
         "plugin_dir": None,
         "plugin_config_dir": None,
@@ -3022,6 +3288,10 @@ def main_with_args(args=None):
         from .identity_cli import main as identity_main
 
         sys.exit(identity_main(args))
+
+    elif args.action == "list-algorithms":
+        show_algorithm_registry(args)
+        sys.exit(0)
 
     elif args.action == "check-argon2":
         argon2_available, version, supported_types = check_argon2_support()
@@ -3410,8 +3680,93 @@ def main_with_args(args=None):
     ]:
         parser.error("the following arguments are required: --input/-i")
 
+    # Handle stdin input FIRST - convert to temp file to avoid multiple reads
+    # This must happen BEFORE detect_encryption_type() which would consume stdin
+    if args.action == "decrypt" and getattr(args, "input", None) == "/dev/stdin":
+        import tempfile
+
+        # Read stdin once into a temp file
+        stdin_temp_file_early = tempfile.NamedTemporaryFile(delete=False)
+        os.chmod(stdin_temp_file_early.name, 0o600)  # Security: Restrict to user read/write only
+        temp_files_to_cleanup.append(stdin_temp_file_early.name)
+
+        # Copy all data from stdin to temp file
+        stdin_data = sys.stdin.buffer.read()
+        if args.debug:
+            print(f"DEBUG: Read {len(stdin_data)} bytes from stdin (early)", file=sys.stderr)
+        stdin_temp_file_early.write(stdin_data)
+        stdin_temp_file_early.close()
+
+        # Update args.input to point to the temp file for all subsequent operations
+        args.input = stdin_temp_file_early.name
+        if args.debug:
+            print(f"DEBUG: Converted stdin to temp file: {args.input}", file=sys.stderr)
+
+    # Auto-detect encryption type for decrypt operations
+    # Only run auto-detection if user didn't explicitly provide --with-key
+    # This avoids potential interference with symmetric HSM decryption
+    encryption_info = None
+    if args.action == "decrypt" and getattr(args, "input", None) and not getattr(args, "key_identity", None):
+        try:
+            encryption_info = detect_encryption_type(args.input)
+        except Exception as e:
+            # If detection fails, assume symmetric and continue
+            if args.debug:
+                print(f"DEBUG: Auto-detection failed: {e}")
+            encryption_info = {"type": "symmetric", "format_version": 0}
+
+        if encryption_info and encryption_info["type"] == "asymmetric":
+            # Find matching identity in keystore
+            from .identity_cli import get_identity_store
+
+            store_path = resolve_identity_store_path(args)
+            store = get_identity_store(store_path)
+
+            matching = store.find_by_fingerprints(encryption_info["recipient_fingerprints"])
+
+            if len(matching) == 0:
+                # No matching identity found
+                print("ERROR: This file is encrypted asymmetrically but no matching identity found.", file=sys.stderr)
+                print("\nFile was encrypted for:", file=sys.stderr)
+                for fp in encryption_info["recipient_fingerprints"]:
+                    print(f"  • {fp}", file=sys.stderr)
+                print(
+                    "\nTo decrypt, you need one of these identities in your keystore.",
+                    file=sys.stderr,
+                )
+                print(
+                    "Import the private key or use --with-key to specify an identity.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            else:
+                # Use first matching identity
+                args.key_identity = matching[0].name
+                if not args.quiet:
+                    print(f"Using identity '{args.key_identity}' for decryption")
+
     # Get password (only for encrypt/decrypt actions)
+    # Skip password prompt for asymmetric encryption/decryption (uses identity-based keys)
+    is_asymmetric_encrypt = args.action == "encrypt" and hasattr(args, "for_identity") and args.for_identity
+
+    # Check if this is asymmetric decryption
+    is_asymmetric_decrypt = False
+    if args.action == "decrypt":
+        # Explicit --with-key provided OR auto-detected asymmetric file
+        if (hasattr(args, "key_identity") and args.key_identity) or (encryption_info and encryption_info.get("type") == "asymmetric"):
+            is_asymmetric_decrypt = True
+
+    # Validate algorithm availability before encryption/decryption
     if args.action in ["encrypt", "decrypt"]:
+        validation_warnings = validate_algorithm_availability(args)
+        if validation_warnings and not args.quiet:
+            print("\nWARNING: Some requested algorithms are not available:")
+            for warning in validation_warnings:
+                print(f"  ⚠ {warning}")
+            print("\nUse 'list-algorithms' command to see available algorithms.")
+            print("Install required packages or choose different algorithms.\n")
+
+    if args.action in ["encrypt", "decrypt"] and not (is_asymmetric_encrypt or is_asymmetric_decrypt):
         password = None
         generated_password = None
 
@@ -4052,7 +4407,11 @@ def main_with_args(args=None):
     try:
         # Initialize plugin system if not disabled
         plugin_manager = None
-        enable_plugins = args.enable_plugins and not args.disable_plugins
+        # Auto-enable plugins if HSM is requested
+        if hasattr(args, 'hsm') and args.hsm:
+            enable_plugins = True
+        else:
+            enable_plugins = args.enable_plugins and not args.disable_plugins
         if enable_plugins:
             try:
                 from .plugin_system import create_default_plugin_manager
@@ -4122,48 +4481,125 @@ def main_with_args(args=None):
             # Check if asymmetric mode (--for flag present)
             if hasattr(args, "for_identity") and args.for_identity:
                 # Asymmetric encryption mode
-                import getpass
-
                 from .crypt_core import encrypt_file_asymmetric
-                from .identity import IdentityStore
+                from .identity_cli import get_identity_store
 
-                store = IdentityStore()
+                store = get_identity_store(resolve_identity_store_path(args))
 
                 # Load recipients
                 recipients = []
                 for recipient_name in args.for_identity:
-                    recipient = store.get_by_name(
-                        recipient_name, passphrase=None, load_private_keys=False
-                    )
-                    if recipient is None:
-                        print(
-                            f"ERROR: Recipient identity '{recipient_name}' not found",
-                            file=sys.stderr,
+                    try:
+                        recipient = store.get_by_name(
+                            recipient_name, passphrase=None, load_private_keys=False
                         )
+                        if recipient is None:
+                            print(
+                                f"ERROR: Recipient identity '{recipient_name}' not found ❌",
+                                file=sys.stderr,
+                            )
+                            sys.exit(1)
+                        recipients.append(recipient)
+                    except Exception as e:
+                        error_msg = f"ERROR: Failed to load identity '{recipient_name}'"
+                        if str(e):
+                            error_msg += f": {e}"
+                        error_msg += " ❌"
+                        print(error_msg, file=sys.stderr)
                         sys.exit(1)
-                    recipients.append(recipient)
 
                 # Load sender
                 if not hasattr(args, "sign_with") or not args.sign_with:
                     print("ERROR: --sign-with required for asymmetric encryption", file=sys.stderr)
                     sys.exit(1)
 
-                sender_passphrase = getpass.getpass(
-                    f"Passphrase for sender identity '{args.sign_with}': "
-                )
-                sender = store.get_by_name(
-                    args.sign_with, passphrase=sender_passphrase, load_private_keys=True
-                )
-                if sender is None:
-                    print(f"ERROR: Sender identity '{args.sign_with}' not found", file=sys.stderr)
+                # First load identity metadata to check protection level
+                sender_metadata = store.get_by_name(args.sign_with, load_private_keys=False)
+                if sender_metadata is None:
+                    print(f"ERROR: Sender identity '{args.sign_with}' not found ❌", file=sys.stderr)
                     sys.exit(1)
 
-                # Build hash config (simplified for now, can be extended)
-                hash_config = {}
-                if hasattr(args, "sha512_rounds") and args.sha512_rounds > 0:
-                    hash_config["sha512"] = args.sha512_rounds
-                if hasattr(args, "blake2b_rounds") and args.blake2b_rounds > 0:
-                    hash_config["blake2b"] = args.blake2b_rounds
+                # Determine if passphrase is needed
+                from .identity_protection import ProtectionLevel
+                sender_passphrase = None
+                if not sender_metadata.protection or sender_metadata.protection.level != ProtectionLevel.HSM_ONLY:
+                    sender_passphrase = getpass.getpass(
+                        f"Passphrase for sender identity '{args.sign_with}': "
+                    )
+
+                try:
+                    sender = store.get_by_name(
+                        args.sign_with, passphrase=sender_passphrase, load_private_keys=True
+                    )
+                    if sender is None:
+                        print(f"ERROR: Sender identity '{args.sign_with}' not found ❌", file=sys.stderr)
+                        sys.exit(1)
+                except Exception as e:
+                    error_msg = f"ERROR: Failed to load identity '{args.sign_with}'"
+                    if str(e):
+                        error_msg += f": {e}"
+                    error_msg += " ❌"
+                    print(error_msg, file=sys.stderr)
+                    sys.exit(1)
+                finally:
+                    # Clean up passphrase from memory
+                    if 'sender_passphrase' in locals() and sender_passphrase:
+                        from .secure_memory import secure_memzero
+                        secure_memzero(sender_passphrase)
+
+                # Build hash config from CLI arguments
+                # Use the same hash_config building logic as symmetric encryption (around line 4009)
+                hash_config = {
+                    "sha512": getattr(args, "sha512_rounds", 0) or 0,
+                    "sha384": getattr(args, "sha384_rounds", 0) or 0,
+                    "sha256": getattr(args, "sha256_rounds", 0) or 0,
+                    "sha224": getattr(args, "sha224_rounds", 0) or 0,
+                    "sha3_512": getattr(args, "sha3_512_rounds", 0) or 0,
+                    "sha3_384": getattr(args, "sha3_384_rounds", 0) or 0,
+                    "sha3_256": getattr(args, "sha3_256_rounds", 0) or 0,
+                    "sha3_224": getattr(args, "sha3_224_rounds", 0) or 0,
+                    "blake2b": getattr(args, "blake2b_rounds", 0) or 0,
+                    "blake3": getattr(args, "blake3_rounds", 0) or 0,
+                    "shake256": getattr(args, "shake256_rounds", 0) or 0,
+                    "shake128": getattr(args, "shake128_rounds", 0) or 0,
+                    "whirlpool": 0,
+                    "scrypt": {
+                        "enabled": getattr(args, "enable_scrypt", False),
+                        "n": getattr(args, "scrypt_n", 0) or 0,
+                        "r": getattr(args, "scrypt_r", 8) if hasattr(args, "scrypt_r") else 8,
+                        "p": getattr(args, "scrypt_p", 1) if hasattr(args, "scrypt_p") else 1,
+                        "rounds": getattr(args, "scrypt_rounds", 1) if hasattr(args, "scrypt_rounds") else 1,
+                    },
+                    "argon2": {
+                        "enabled": getattr(args, "enable_argon2", False),
+                        "time_cost": getattr(args, "argon2_time", 3) if hasattr(args, "argon2_time") else 3,
+                        "memory_cost": getattr(args, "argon2_memory", 65536) if hasattr(args, "argon2_memory") else 65536,
+                        "parallelism": getattr(args, "argon2_parallelism", 4) if hasattr(args, "argon2_parallelism") else 4,
+                        "hash_len": getattr(args, "argon2_hash_len", 32) if hasattr(args, "argon2_hash_len") else 32,
+                        "type": ARGON2_TYPE_INT_MAP.get(getattr(args, "argon2_type", "id"), 2),
+                        "rounds": getattr(args, "argon2_rounds", 0) or 0,
+                    },
+                    "balloon": {
+                        "enabled": getattr(args, "enable_balloon", False) or getattr(args, "use_balloon", False),
+                        "space_cost": getattr(args, "balloon_space_cost", 1024) if hasattr(args, "balloon_space_cost") else 1024,
+                        "time_cost": getattr(args, "balloon_time_cost", 1) if hasattr(args, "balloon_time_cost") else 1,
+                        "parallelism": getattr(args, "balloon_parallelism", 1) if hasattr(args, "balloon_parallelism") else 1,
+                        "rounds": getattr(args, "balloon_rounds", 1) if hasattr(args, "balloon_rounds") else 1,
+                    },
+                    "hkdf": {
+                        "enabled": getattr(args, "enable_hkdf", False),
+                        "rounds": getattr(args, "hkdf_rounds", 1) if hasattr(args, "hkdf_rounds") else 1,
+                    },
+                    "randomx": {
+                        "enabled": getattr(args, "enable_randomx", False),
+                        "mode": getattr(args, "randomx_mode", "light") if hasattr(args, "randomx_mode") else "light",
+                        "height": getattr(args, "randomx_height", 1) if hasattr(args, "randomx_height") else 1,
+                        "hash_len": getattr(args, "randomx_hash_len", 32) if hasattr(args, "randomx_hash_len") else 32,
+                        "rounds": getattr(args, "randomx_rounds", 1) if hasattr(args, "randomx_rounds") else 1,
+                    },
+                }
+
+                # Add pbkdf2_iterations separately
                 if hasattr(args, "pbkdf2_iterations") and args.pbkdf2_iterations > 0:
                     hash_config["pbkdf2_iterations"] = args.pbkdf2_iterations
 
@@ -4201,10 +4637,9 @@ def main_with_args(args=None):
                         shutil.move(temp_output, output_file)
 
                     if not args.quiet:
-                        print("\nAsymmetric encryption successful!")
-                        print(f"Recipients: {result['recipients']}")
-                        print(f"Sender: {result['sender']}")
-                        print(f"Output: {output_file}")
+                        print("\nAsymmetric encryption successful! ✅")
+                        print(f"File size: {result['original_size']} bytes → {result['encrypted_size']} bytes (encrypted)")
+                        print(f"Encrypted file: {output_file}")
 
                     # Shred original if requested
                     if args.shred:
@@ -5437,45 +5872,227 @@ def main_with_args(args=None):
             # Check if asymmetric mode by reading metadata
             try:
                 import json
+                import base64
 
-                with open(args.input, "r") as f:
+                with open(args.input, "rb") as f:
                     content = f.read()
-                    if "---ENCRYPTED_DATA---" in content:
-                        metadata_str = content.split("---ENCRYPTED_DATA---")[0]
+                    # Check if it's the new format: base64(metadata):base64(data)
+                    if b":" in content:
+                        colon_pos = content.index(b":")
+                        metadata_b64 = content[:colon_pos]
+                        try:
+                            metadata_json = base64.b64decode(metadata_b64)
+                            metadata = json.loads(metadata_json)
+                            format_version = metadata.get("format_version", 0)
+
+                            if format_version == 7 and metadata.get("mode") == "asymmetric":
+                                # Asymmetric decryption mode (new format)
+                                from .crypt_core import decrypt_file_asymmetric
+                                from .identity_cli import get_identity_store
+
+                                store = get_identity_store(resolve_identity_store_path(args))
+
+                                # Load recipient (decrypt with this identity)
+                                # Note: key_identity should already be set by auto-detection
+                                if not hasattr(args, "key_identity") or not args.key_identity:
+                                    print(
+                                        "ERROR: No matching identity found. This should not happen after auto-detection.",
+                                        file=sys.stderr,
+                                    )
+                                    sys.exit(1)
+
+                                # First load identity metadata to check protection level
+                                recipient_metadata = store.get_by_name(args.key_identity, load_private_keys=False)
+                                if recipient_metadata is None:
+                                    print(
+                                        f"ERROR: Identity '{args.key_identity}' not found ❌",
+                                        file=sys.stderr,
+                                    )
+                                    sys.exit(1)
+
+                                # Determine if passphrase is needed
+                                from .identity_protection import ProtectionLevel
+                                recipient_passphrase = None
+                                if not recipient_metadata.protection or recipient_metadata.protection.level != ProtectionLevel.HSM_ONLY:
+                                    recipient_passphrase = getpass.getpass(
+                                        f"Passphrase for identity '{args.key_identity}': "
+                                    )
+
+                                # Clear passphrase prompt line immediately in quiet mode
+                                if args.quiet and recipient_passphrase:
+                                    sys.stdout.write("\033[F\033[K")
+                                    sys.stdout.flush()
+
+                                try:
+                                    recipient = store.get_by_name(
+                                        args.key_identity,
+                                        passphrase=recipient_passphrase,
+                                        load_private_keys=True,
+                                    )
+                                    if recipient is None:
+                                        print(
+                                            f"ERROR: Identity '{args.key_identity}' not found ❌",
+                                            file=sys.stderr,
+                                        )
+                                        sys.exit(1)
+                                except Exception as e:
+                                    error_msg = f"ERROR: Failed to load identity '{args.key_identity}'"
+                                    if str(e):
+                                        error_msg += f": {e}"
+                                    error_msg += " ❌"
+                                    print(error_msg, file=sys.stderr)
+                                    sys.exit(1)
+                                finally:
+                                    # Clean up passphrase from memory
+                                    if 'recipient_passphrase' in locals() and recipient_passphrase:
+                                        from .secure_memory import secure_memzero
+                                        secure_memzero(recipient_passphrase)
+
+                                # Load sender public key for verification
+                                sender_public_key = None
+                                skip_verification = getattr(args, "skip_verification", False)
+
+                                if not skip_verification:
+                                    if hasattr(args, "verify_from") and args.verify_from:
+                                        sender = store.get_by_name(
+                                            args.verify_from, passphrase=None, load_private_keys=False
+                                        )
+                                        if sender is None:
+                                            print(
+                                                f"ERROR: Sender identity '{args.verify_from}' not found ❌",
+                                                file=sys.stderr,
+                                            )
+                                            sys.exit(1)
+                                        sender_public_key = sender.signing_public_key
+                                    else:
+                                        # Try to load sender from metadata
+                                        sender_key_id = (
+                                            metadata.get("asymmetric", {})
+                                            .get("sender", {})
+                                            .get("key_id")
+                                        )
+                                        if sender_key_id:
+                                            sender = store.get_by_fingerprint(
+                                                sender_key_id, passphrase=None, load_private_keys=False
+                                            )
+                                            if sender:
+                                                sender_public_key = sender.signing_public_key
+
+                                # Determine output file
+                                if args.overwrite:
+                                    output_file = args.input
+                                elif args.output:
+                                    output_file = args.output
+                                else:
+                                    output_file = args.input.rsplit(".", 1)[0] if "." in args.input else args.input + ".dec"
+
+                                # Decrypt
+                                try:
+                                    plaintext = decrypt_file_asymmetric(
+                                        input_file=args.input,
+                                        output_file=output_file,
+                                        recipient=recipient,
+                                        sender_public_key=sender_public_key,
+                                        skip_verification=skip_verification,
+                                        quiet=args.quiet,
+                                        progress=args.progress,
+                                        verbose=args.verbose,
+                                    )
+
+                                    try:
+                                        if not args.quiet:
+                                            print("\nAsymmetric decryption successful! ✅")
+                                            # Show decrypted content as last line with blank line before
+                                            print()
+                                            print(plaintext.decode("utf-8", errors="replace"))
+                                        else:
+                                            # In quiet mode, show only decrypted content
+                                            print(plaintext.decode("utf-8", errors="replace"))
+
+                                        # Shred original if requested
+                                        if args.shred:
+                                            secure_shred_file(args.input, args.shred_passes, args.quiet)
+                                    finally:
+                                        # Clean up plaintext from memory
+                                        from .secure_memory import secure_memzero
+                                        secure_memzero(plaintext)
+
+                                    sys.exit(0)
+                                except Exception as e:
+                                    print(f"ERROR: Asymmetric decryption failed: {e}", file=sys.stderr)
+                                    sys.exit(1)
+                        except Exception:
+                            # Not asymmetric format, continue with normal decryption
+                            pass
+                    # Also check old format for backward compatibility (deprecated)
+                    elif b"---ENCRYPTED_DATA---" in content:
+                        content_str = content.decode("utf-8", errors="ignore")
+                        metadata_str = content_str.split("---ENCRYPTED_DATA---")[0]
                         metadata = json.loads(metadata_str)
                         format_version = metadata.get("format_version", 0)
 
                         if format_version == 7 and metadata.get("mode") == "asymmetric":
-                            # Asymmetric decryption mode
-                            import getpass
-
+                            # Asymmetric decryption mode (old format)
                             from .crypt_core import decrypt_file_asymmetric
-                            from .identity import IdentityStore
+                            from .identity_cli import get_identity_store
 
-                            store = IdentityStore()
+                            store = get_identity_store(resolve_identity_store_path(args))
 
                             # Load recipient (decrypt with this identity)
+                            # Note: key_identity should already be set by auto-detection
                             if not hasattr(args, "key_identity") or not args.key_identity:
                                 print(
-                                    "ERROR: --key required for asymmetric decryption",
+                                    "ERROR: No matching identity found. This should not happen after auto-detection.",
                                     file=sys.stderr,
                                 )
                                 sys.exit(1)
 
-                            recipient_passphrase = getpass.getpass(
-                                f"Passphrase for identity '{args.key_identity}': "
-                            )
-                            recipient = store.get_by_name(
-                                args.key_identity,
-                                passphrase=recipient_passphrase,
-                                load_private_keys=True,
-                            )
-                            if recipient is None:
+                            # First load identity metadata to check protection level
+                            recipient_metadata = store.get_by_name(args.key_identity, load_private_keys=False)
+                            if recipient_metadata is None:
                                 print(
-                                    f"ERROR: Identity '{args.key_identity}' not found",
+                                    f"ERROR: Identity '{args.key_identity}' not found ❌",
                                     file=sys.stderr,
                                 )
                                 sys.exit(1)
+
+                            # Determine if passphrase is needed
+                            from .identity_protection import ProtectionLevel
+                            recipient_passphrase = None
+                            if not recipient_metadata.protection or recipient_metadata.protection.level != ProtectionLevel.HSM_ONLY:
+                                recipient_passphrase = getpass.getpass(
+                                    f"Passphrase for identity '{args.key_identity}': "
+                                )
+
+                            # Clear passphrase prompt line immediately in quiet mode
+                            if args.quiet and recipient_passphrase:
+                                sys.stdout.write("\033[F\033[K")
+                                sys.stdout.flush()
+
+                            try:
+                                recipient = store.get_by_name(
+                                    args.key_identity,
+                                    passphrase=recipient_passphrase,
+                                    load_private_keys=True,
+                                )
+                                if recipient is None:
+                                    print(
+                                        f"ERROR: Identity '{args.key_identity}' not found ❌",
+                                        file=sys.stderr,
+                                    )
+                                    sys.exit(1)
+                            except Exception as e:
+                                error_msg = f"ERROR: Failed to load identity '{args.key_identity}'"
+                                if str(e):
+                                    error_msg += f": {e}"
+                                error_msg += " ❌"
+                                print(error_msg, file=sys.stderr)
+                                sys.exit(1)
+                            finally:
+                                # Clean up passphrase from memory
+                                if 'recipient_passphrase' in locals() and recipient_passphrase:
+                                    from .secure_memory import secure_memzero
+                                    secure_memzero(recipient_passphrase)
 
                             # Load sender public key for verification
                             sender_public_key = None
@@ -5488,7 +6105,7 @@ def main_with_args(args=None):
                                     )
                                     if sender is None:
                                         print(
-                                            f"ERROR: Sender identity '{args.verify_from}' not found",
+                                            f"ERROR: Sender identity '{args.verify_from}' not found ❌",
                                             file=sys.stderr,
                                         )
                                         sys.exit(1)
@@ -5538,7 +6155,7 @@ def main_with_args(args=None):
 
                             # Decrypt
                             try:
-                                decrypt_file_asymmetric(
+                                plaintext = decrypt_file_asymmetric(
                                     input_file=args.input,
                                     output_file=temp_output,
                                     recipient=recipient,
@@ -5555,15 +6172,25 @@ def main_with_args(args=None):
 
                                     shutil.move(temp_output, output_file)
 
-                                if not args.quiet:
-                                    print("\nAsymmetric decryption successful!")
-                                    print(f"Output: {output_file}")
+                                try:
+                                    if not args.quiet:
+                                        print("\nAsymmetric decryption successful! ✅")
+                                        # Show decrypted content as last line with blank line before
+                                        print()
+                                        print(plaintext.decode("utf-8", errors="replace"))
+                                    else:
+                                        # In quiet mode, show only decrypted content
+                                        print(plaintext.decode("utf-8", errors="replace"))
 
-                                # Shred original if requested
-                                if args.shred:
-                                    from .crypt_utils import shred_file
+                                    # Shred original if requested
+                                    if args.shred:
+                                        from .crypt_utils import shred_file
 
-                                    shred_file(args.input, passes=args.shred_passes)
+                                        shred_file(args.input, passes=args.shred_passes)
+                                finally:
+                                    # Clean up plaintext from memory
+                                    from .secure_memory import secure_memzero
+                                    secure_memzero(plaintext)
 
                                 sys.exit(0)
 

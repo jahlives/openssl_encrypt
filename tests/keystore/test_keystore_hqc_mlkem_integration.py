@@ -349,7 +349,7 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
         ]
 
         for level in security_levels:
-            with self.subTest(security_level=level):
+            with self.subTest(security_level=level.value):  # Use .value for pytest-xdist serialization
                 # Create temporary keystore with specific security level
                 temp_keystore_path = os.path.join(self.temp_dir, f"security_test_{level.value}.pqc")
                 temp_keystore = PQCKeystore(temp_keystore_path)

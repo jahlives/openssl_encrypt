@@ -11,6 +11,20 @@ import argparse
 from .crypt_cli_helper import add_extended_algorithm_help
 from .crypt_core import EncryptionAlgorithm
 
+# Import registry helper functions
+try:
+    from .registry import (
+        format_algorithm_help,
+        get_available_ciphers,
+        get_available_hashes,
+        get_available_kdfs,
+        get_available_kems,
+        get_available_signatures,
+    )
+    REGISTRY_AVAILABLE = True
+except ImportError:
+    REGISTRY_AVAILABLE = False
+
 
 def get_available_algorithms_1_0():
     """Get only algorithms available in 1.0.0 (excludes MAYO and CROSS)."""
@@ -39,6 +53,8 @@ def setup_encrypt_parser(subparser):
 
     # Build help text with deprecated warnings (only for 1.0.0 algorithms)
     algorithm_help_text = "Encryption algorithm to use:\n"
+    if REGISTRY_AVAILABLE:
+        algorithm_help_text += "(Use 'list-algorithms' command to see available ciphers, KDFs, and hashes)\n\n"
     for algo in sorted(all_algorithms):
         if algo == EncryptionAlgorithm.FERNET.value:
             description = "default, AES-128-CBC with authentication"
@@ -80,6 +96,10 @@ def setup_encrypt_parser(subparser):
             description = "HQC-192 hybrid mode (post-quantum)"
         elif algo == "hqc-256-hybrid":
             description = "HQC-256 hybrid mode (post-quantum)"
+        elif algo == EncryptionAlgorithm.THREEFISH_512.value:
+            description = "Threefish-512 with Poly1305 (256-bit PQ security, high security)"
+        elif algo == EncryptionAlgorithm.THREEFISH_1024.value:
+            description = "Threefish-1024 with Poly1305 (512-bit PQ security, paranoid)"
         else:
             description = "encryption algorithm"
         algorithm_help_text += f"  {algo}: {description}\n"
@@ -163,6 +183,10 @@ def setup_encrypt_parser(subparser):
 
     # Advanced encryption options
     hash_group = subparser.add_argument_group("Hash options")
+
+    # Add note about available algorithms if registry is available
+    if REGISTRY_AVAILABLE:
+        hash_group.description = "Hash algorithm configuration. Use 'list-algorithms --category=hashes' to see all available hash functions."
 
     # Add global KDF rounds parameter
     hash_group.add_argument(
@@ -275,12 +299,71 @@ def setup_encrypt_parser(subparser):
     scrypt_group.add_argument(
         "--enable-scrypt", action="store_true", help="Use Scrypt password hashing"
     )
+    scrypt_group.add_argument(
+        "--scrypt-rounds",
+        type=int,
+        default=0,
+        help="Use scrypt rounds for iterating (default when enabled: 10)",
+    )
     scrypt_group.add_argument("--scrypt-n", type=int, help="Scrypt N parameter (CPU/memory cost)")
     scrypt_group.add_argument(
         "--scrypt-r", type=int, default=8, help="Scrypt r parameter (block size)"
     )
     scrypt_group.add_argument(
         "--scrypt-p", type=int, default=1, help="Scrypt p parameter (parallelization factor)"
+    )
+
+    # Argon2 options for encryption
+    argon2_description = "Configure Argon2 memory-hard function parameters"
+    if REGISTRY_AVAILABLE:
+        argon2_description += ". Use 'list-algorithms --category=kdfs' to see all available KDF algorithms."
+    argon2_group = subparser.add_argument_group("Argon2 Options", argon2_description)
+    argon2_group.add_argument(
+        "--enable-argon2",
+        action="store_true",
+        default=False,
+        help="Use Argon2 password hashing (requires argon2-cffi package)",
+    )
+    argon2_group.add_argument(
+        "--argon2-rounds",
+        type=int,
+        default=0,
+        help="Argon2 time cost parameter / rounds (default when enabled: 10)",
+    )
+    argon2_group.add_argument(
+        "--argon2-time",
+        type=int,
+        default=3,
+        help="Argon2 time cost parameter (default: 3)",
+    )
+    argon2_group.add_argument(
+        "--argon2-memory",
+        type=int,
+        default=65536,
+        help="Argon2 memory cost in KB (default: 65536 - 64MB)",
+    )
+    argon2_group.add_argument(
+        "--argon2-parallelism",
+        type=int,
+        default=4,
+        help="Argon2 parallelism factor (default: 4)",
+    )
+    argon2_group.add_argument(
+        "--argon2-hash-len",
+        type=int,
+        default=32,
+        help="Argon2 hash length in bytes (default: 32)",
+    )
+    argon2_group.add_argument(
+        "--argon2-type",
+        choices=["id", "i", "d"],
+        default="id",
+        help="Argon2 variant to use: id (recommended), i, or d",
+    )
+    argon2_group.add_argument(
+        "--argon2-preset",
+        choices=["low", "medium", "high", "paranoid"],
+        help="Use predefined Argon2 parameters (overrides other Argon2 settings)",
     )
 
     # RandomX options for encryption
@@ -294,8 +377,8 @@ def setup_encrypt_parser(subparser):
     randomx_group.add_argument(
         "--randomx-rounds",
         type=int,
-        default=1,
-        help="Number of RandomX rounds (default: 1)",
+        default=0,
+        help="Number of RandomX rounds (default when enabled: 10)",
     )
     randomx_group.add_argument(
         "--randomx-mode",
@@ -316,6 +399,87 @@ def setup_encrypt_parser(subparser):
         help="RandomX output hash length in bytes (default: 32)",
     )
 
+    # PBKDF2 options
+    pbkdf2_group = subparser.add_argument_group("PBKDF2 options")
+    pbkdf2_group.add_argument(
+        "--pbkdf2-iterations",
+        type=int,
+        default=0,
+        help="Number of PBKDF2 iterations (default: 100000)",
+    )
+
+    # Balloon Hashing options
+    balloon_group = subparser.add_argument_group("Balloon Hashing options")
+    balloon_group.add_argument(
+        "--enable-balloon",
+        action="store_true",
+        help="Enable Balloon Hashing KDF",
+    )
+    balloon_group.add_argument(
+        "--balloon-time-cost",
+        type=int,
+        default=3,
+        help="Time cost parameter for Balloon hashing - controls computational complexity. Higher values increase security but also processing time.",
+    )
+    balloon_group.add_argument(
+        "--balloon-space-cost",
+        type=int,
+        default=65536,
+        help="Space cost parameter for Balloon hashing in bytes - controls memory usage. Higher values increase security but require more memory.",
+    )
+    balloon_group.add_argument(
+        "--balloon-parallelism",
+        type=int,
+        default=4,
+        help="Parallelism parameter for Balloon hashing - controls number of parallel threads. Higher values can improve performance on multi-core systems.",
+    )
+    balloon_group.add_argument(
+        "--balloon-rounds",
+        type=int,
+        default=0,
+        help="Number of rounds for Balloon hashing (default when enabled: 10). More rounds increase security but also processing time.",
+    )
+    balloon_group.add_argument(
+        "--balloon-hash-len",
+        type=int,
+        default=32,
+        help="Length of the final hash output in bytes for Balloon hashing.",
+    )
+    balloon_group.add_argument(
+        "--use-balloon",
+        action="store_true",
+        help=argparse.SUPPRESS,  # Hidden legacy option
+    )
+
+    # HKDF options
+    hkdf_group = subparser.add_argument_group(
+        "HKDF Options", "Configure HMAC-based Key Derivation Function"
+    )
+    hkdf_group.add_argument(
+        "--enable-hkdf",
+        action="store_true",
+        help="Enable HKDF key derivation",
+        default=False,
+    )
+    hkdf_group.add_argument(
+        "--hkdf-rounds",
+        type=int,
+        default=1,
+        help="Number of HKDF chained rounds (default: 1)",
+    )
+    hkdf_group.add_argument(
+        "--hkdf-algorithm",
+        choices=["sha224", "sha256", "sha384", "sha512"],
+        default="sha256",
+        help="Hash algorithm for HKDF (default: sha256)",
+    )
+    hkdf_group.add_argument(
+        "--hkdf-info",
+        type=str,
+        default="openssl_encrypt_hkdf",
+        help="HKDF info string for context (default: openssl_encrypt_hkdf)",
+    )
+
     # PQC options for encryption
     pqc_group = subparser.add_argument_group("Post-Quantum Cryptography options")
     pqc_group.add_argument("--pqc-keyfile", help="Path to save/load the PQC key file")
@@ -330,7 +494,7 @@ def setup_encrypt_parser(subparser):
         "Asymmetric Encryption (Post-Quantum Identity-Based)"
     )
     asymmetric_group.add_argument(
-        "--for",
+        "--for-identity",
         dest="for_identity",
         action="append",
         metavar="IDENTITY",
@@ -343,6 +507,12 @@ def setup_encrypt_parser(subparser):
         metavar="IDENTITY",
         help="Sign with sender identity (required for asymmetric mode). "
         "Uses post-quantum ML-DSA-65 digital signatures.",
+    )
+    asymmetric_group.add_argument(
+        "--identity-store",
+        dest="identity_store",
+        metavar="PATH",
+        help="Path to identity store directory (overrides global --identity-store)",
     )
 
     # Keystore options
@@ -538,7 +708,7 @@ def setup_decrypt_parser(subparser):
         "Asymmetric Decryption (Post-Quantum Identity-Based)"
     )
     asymmetric_group.add_argument(
-        "--key",
+        "--with-key",
         dest="key_identity",
         metavar="IDENTITY",
         help="Decrypt using this identity's private key (for asymmetric mode)",
@@ -555,6 +725,12 @@ def setup_decrypt_parser(subparser):
         dest="skip_verification",
         action="store_true",
         help="Skip signature verification (DANGEROUS! Only use if you trust the source)",
+    )
+    asymmetric_group.add_argument(
+        "--identity-store",
+        dest="identity_store",
+        metavar="PATH",
+        help="Path to identity store directory (overrides global --identity-store)",
     )
 
     # Steganography options
@@ -764,6 +940,18 @@ def setup_analyze_security_parser(subparser):
     kdf_group = subparser.add_argument_group("Key Derivation Function options")
 
     # Argon2 options
+    kdf_group.add_argument(
+        "--enable-argon2",
+        action="store_true",
+        default=False,
+        help="Enable Argon2 password hashing (requires argon2-cffi package)",
+    )
+    kdf_group.add_argument(
+        "--argon2-rounds",
+        type=int,
+        default=0,
+        help="Argon2 rounds/iterations (default when enabled: 10)",
+    )
     kdf_group.add_argument(
         "--argon2-memory-cost",
         type=int,
@@ -1099,6 +1287,14 @@ def setup_smart_recommendations_parser(subparser):
 
 def setup_identity_parser(subparser):
     """Set up arguments for the identity command."""
+    # Global identity store option
+    subparser.add_argument(
+        "--identity-store",
+        dest="identity_store",
+        metavar="PATH",
+        help="Path to identity store directory (default: ~/.openssl_encrypt/identities/)",
+    )
+
     # Create subparsers for identity subcommands
     identity_subparsers = subparser.add_subparsers(
         dest="identity_action", help="Identity management operations", metavar="operation"
@@ -1122,6 +1318,26 @@ def setup_identity_parser(subparser):
     )
     create_parser.add_argument(
         "--overwrite", action="store_true", help="Overwrite existing identity"
+    )
+    create_parser.add_argument(
+        "--hsm",
+        choices=["none", "yubikey", "yubikey-only"],
+        default="none",
+        help="HSM protection for private keys: "
+        "'none' (default, password only), "
+        "'yubikey' (password + Yubikey required), "
+        "'yubikey-only' (Yubikey only, no password)",
+    )
+    create_parser.add_argument(
+        "--hsm-slot",
+        type=int,
+        choices=[1, 2],
+        help="Yubikey slot (1 or 2, default: auto-detect)",
+    )
+    create_parser.add_argument(
+        "--no-touch",
+        action="store_true",
+        help="Disable Yubikey touch requirement (less secure)",
     )
 
     # List identities
@@ -1247,6 +1463,22 @@ def setup_test_parser(subparser):
         parser.add_argument("--quiet", action="store_true", help="Suppress test progress output")
 
 
+def setup_list_algorithms_parser(subparser):
+    """Set up arguments for list-algorithms command (registry-based)."""
+    subparser.add_argument(
+        "--category",
+        choices=["ciphers", "hashes", "kdfs", "kems", "signatures", "all"],
+        default="all",
+        help="Algorithm category to list (default: all)",
+    )
+    subparser.add_argument(
+        "--format",
+        choices=["simple", "detailed"],
+        default="detailed",
+        help="Output format (default: detailed)",
+    )
+
+
 def create_subparser_main():
     """
     Create a main function that uses subparsers instead of the monolithic approach.
@@ -1272,6 +1504,13 @@ def create_subparser_main():
         "-q",
         action="store_true",
         help="Suppress all output except decrypted content and exit code",
+    )
+    parser.add_argument(
+        "--identity-store",
+        dest="identity_store",
+        metavar="PATH",
+        help="Path to identity store directory (default: ~/.openssl_encrypt/identities/). "
+             "Can also be set via OPENSSL_ENCRYPT_IDENTITY_STORE environment variable.",
     )
 
     # Create subparsers for each command
@@ -1393,6 +1632,15 @@ def create_subparser_main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_simple_parser(show_version_file_parser)
+
+    # Registry-based algorithm listing command
+    if REGISTRY_AVAILABLE:
+        list_algorithms_parser = subparsers.add_parser(
+            "list-algorithms",
+            help="List available cryptographic algorithms (ciphers, hashes, KDFs, KEMs, signatures)",
+            formatter_class=argparse.RawTextHelpFormatter,
+        )
+        setup_list_algorithms_parser(list_algorithms_parser)
 
     # Note: Steganography is now integrated into encrypt/decrypt commands
     # rather than separate commands

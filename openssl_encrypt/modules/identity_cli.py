@@ -14,18 +14,43 @@ Provides CLI commands for managing identities:
 
 import getpass
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Optional
 
 from .identity import Identity, IdentityError, IdentityStore
+from .identity_protection import (
+    ProtectionLevel,
+    IdentityKeyProtectionService,
+    HSMNotAvailableError,
+)
 from .pqc_signing import LIBOQS_AVAILABLE
 
 
 def get_identity_store(base_path: Optional[Path] = None) -> IdentityStore:
-    """Get IdentityStore instance with default or custom path."""
+    """Get IdentityStore instance with path resolution.
+
+    Priority (lowest to highest):
+    1. Default: ~/.openssl_encrypt/identities/
+    2. Environment variable: OPENSSL_ENCRYPT_IDENTITY_STORE
+    3. Explicit base_path parameter
+
+    Args:
+        base_path: Optional path to identity store. Can be Path or str.
+
+    Returns:
+        IdentityStore instance
+    """
     if base_path is None:
-        base_path = Path.home() / ".openssl_encrypt" / "identities"
+        # Check environment variable
+        env_path = os.environ.get("OPENSSL_ENCRYPT_IDENTITY_STORE")
+        if env_path:
+            base_path = Path(env_path).expanduser()
+        else:
+            base_path = Path.home() / ".openssl_encrypt" / "identities"
+    elif isinstance(base_path, str):
+        base_path = Path(base_path).expanduser()
     return IdentityStore(base_path=base_path)
 
 
@@ -71,15 +96,50 @@ def cmd_create(args) -> int:
         return 1
 
     try:
-        # Get passphrase
-        passphrase = prompt_passphrase("Passphrase for new identity: ", confirm=True)
-
-        if len(passphrase) < 8:
-            print(
-                "ERROR: Passphrase must be at least 8 characters",
-                file=sys.stderr,
-            )
+        # Determine protection level from --hsm argument
+        hsm_option = getattr(args, "hsm", "none")
+        if hsm_option == "none" or hsm_option is None:
+            protection_level = ProtectionLevel.PASSWORD_ONLY
+        elif hsm_option == "yubikey":
+            protection_level = ProtectionLevel.PASSWORD_AND_HSM
+        elif hsm_option == "yubikey-only":
+            protection_level = ProtectionLevel.HSM_ONLY
+        else:
+            print(f"ERROR: Unknown HSM option: {hsm_option}", file=sys.stderr)
             return 1
+
+        # Check HSM availability if required
+        if protection_level in (ProtectionLevel.PASSWORD_AND_HSM, ProtectionLevel.HSM_ONLY):
+            protection_service = IdentityKeyProtectionService()
+            if not protection_service.is_hsm_available():
+                print("ERROR: Yubikey not found. Please insert your Yubikey.", file=sys.stderr)
+                return 1
+
+            detected_slot = protection_service.detect_hsm_slot()
+            if detected_slot is None:
+                print(
+                    "ERROR: No Challenge-Response slot configured on Yubikey.\n"
+                    "Please configure slot 1 or 2 for HMAC-SHA1 Challenge-Response.",
+                    file=sys.stderr,
+                )
+                return 1
+
+            hsm_slot = getattr(args, "hsm_slot", None)
+            if hsm_slot is None:
+                hsm_slot = detected_slot
+                print(f"Using Yubikey slot {hsm_slot} (auto-detected)")
+
+        # Get passphrase (not required for HSM_ONLY)
+        passphrase = None
+        if protection_level != ProtectionLevel.HSM_ONLY:
+            passphrase = prompt_passphrase("Passphrase for new identity: ", confirm=True)
+
+            if len(passphrase) < 8:
+                print(
+                    "ERROR: Passphrase must be at least 8 characters",
+                    file=sys.stderr,
+                )
+                return 1
 
         # Get algorithms
         kem_algo = getattr(args, "kem_algorithm", "ML-KEM-768")
@@ -87,12 +147,22 @@ def cmd_create(args) -> int:
 
         # Generate identity
         print(f"Generating identity for '{args.name}'...")
+
+        if protection_level in (ProtectionLevel.PASSWORD_AND_HSM, ProtectionLevel.HSM_ONLY):
+            print("Touch your Yubikey to generate keys...")
+
+        hsm_slot_arg = getattr(args, "hsm_slot", None)
+        require_touch = not getattr(args, "no_touch", False)
+
         identity = Identity.generate(
             name=args.name,
             email=args.email,
             passphrase=passphrase,
             kem_algorithm=kem_algo,
             sig_algorithm=sig_algo,
+            protection_level=protection_level,
+            hsm_slot=hsm_slot_arg,
+            require_touch=require_touch,
         )
 
         # Save to store
@@ -107,12 +177,25 @@ def cmd_create(args) -> int:
         print(f"Encryption: {identity.encryption_algorithm}")
         print(f"Signing: {identity.signing_algorithm}")
 
+        # Show protection level
+        if identity.protection:
+            print(f"\nProtection: {identity.protection.level.value}")
+            if protection_level == ProtectionLevel.PASSWORD_AND_HSM:
+                print("  → Both password AND Yubikey required for decryption")
+            elif protection_level == ProtectionLevel.HSM_ONLY:
+                print("  → Only Yubikey required (no password)")
+        else:
+            print("\nProtection: password_only (default)")
+
         return 0
 
     except IdentityError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
     except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    except HSMNotAvailableError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
     except Exception as e:
@@ -208,7 +291,7 @@ def cmd_show(args) -> int:
 
         if identity is None:
             print(
-                f"ERROR: Identity '{args.identity_name}' not found",
+                f"ERROR: Identity '{args.identity_name}' not found ❌",
                 file=sys.stderr,
             )
             return 1
@@ -241,6 +324,22 @@ def cmd_show(args) -> int:
             print()
             print("Private Keys: YES (encrypted on disk)")
 
+            # Show protection information
+            if identity.protection:
+                print()
+                print("Protection:")
+                print(f"  Level: {identity.protection.level.value}")
+                if identity.protection.requires_password():
+                    print("  Password: Required")
+                if identity.protection.requires_hsm():
+                    print(f"  HSM: Required ({identity.protection.hsm_config.hsm_type})")
+                    if identity.protection.hsm_config.slot:
+                        print(f"    Slot: {identity.protection.hsm_config.slot}")
+                    print(f"    Touch required: {identity.protection.hsm_config.require_touch}")
+            else:
+                print()
+                print("Protection: password_only (default)")
+
         return 0
 
     except Exception as e:
@@ -266,7 +365,7 @@ def cmd_export(args) -> int:
 
         if identity is None:
             print(
-                f"ERROR: Identity '{args.identity_name}' not found",
+                f"ERROR: Identity '{args.identity_name}' not found ❌",
                 file=sys.stderr,
             )
             return 1
@@ -371,7 +470,7 @@ def cmd_delete(args) -> int:
 
         if identity is None:
             print(
-                f"ERROR: Identity '{args.identity_name}' not found",
+                f"ERROR: Identity '{args.identity_name}' not found ❌",
                 file=sys.stderr,
             )
             return 1
@@ -426,7 +525,7 @@ def cmd_change_password(args) -> int:
 
         if identity_check is None:
             print(
-                f"ERROR: Identity '{args.identity_name}' not found",
+                f"ERROR: Identity '{args.identity_name}' not found ❌",
                 file=sys.stderr,
             )
             return 1
