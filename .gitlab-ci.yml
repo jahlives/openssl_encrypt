@@ -269,7 +269,7 @@ test:
     - pip install -r requirements.txt --break-system-packages
     - pip install setuptools pytest-xdist pytest-cov --break-system-packages  # Provides pkg_resources, parallel testing, and coverage
     # Build Threefish Rust extension
-    - apk add --no-cache rust cargo
+    - apk add --no-cache rust cargo patchelf
     - pip install maturin --break-system-packages
     - cd threefish_native && PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 maturin build --release && cd ..
     - pip install threefish_native/target/wheels/*.whl --break-system-packages
@@ -317,7 +317,7 @@ test-fallback:
     - pip install pytest pytest-xdist pytest-cov pytest-order setuptools --break-system-packages  # setuptools provides pkg_resources, parallel testing, and coverage
     # Explicitly pin cryptography version to match the tests
     # Install dependencies for building liboqs and Threefish (Alpine Linux packages)
-    - apk add git gcc g++ cmake ninja make go python3-dev openssl-dev musl-dev rust cargo
+    - apk add git gcc g++ cmake ninja make go python3-dev openssl-dev musl-dev rust cargo patchelf
     # Clone liboqs repository with submodules
     - git clone --recurse-submodules https://github.com/open-quantum-safe/liboqs.git
     # Build and install liboqs
