@@ -1267,16 +1267,26 @@ class TestPostQuantumCrypto(unittest.TestCase):
             self.assertEqual(original_content, decrypted_content)
 
 
+# Helper function to get testfiles directory
+def get_testfiles_dir():
+    """Get the absolute path to the testfiles directory."""
+    return Path(__file__).parent / "testfiles"
+
+
 # Generate dynamic pytest tests for each test file
 def get_test_files_v3():
     """Get list of all test files in the testfiles directory."""
-    test_dir = "./openssl_encrypt/unittests/testfiles/v3"
+    test_dir = Path(__file__).parent / "testfiles" / "v3"
+    if not test_dir.exists():
+        return []
     return [name for name in os.listdir(test_dir) if name.startswith("test1_")]
 
 
 def get_test_files_v4():
     """Get list of all test files in the testfiles directory."""
-    test_dir = "./openssl_encrypt/unittests/testfiles/v4"
+    test_dir = Path(__file__).parent / "testfiles" / "v4"
+    if not test_dir.exists():
+        return []
     return [name for name in os.listdir(test_dir) if name.startswith("test1_")]
 
 
@@ -1303,7 +1313,7 @@ def test_file_decryption_v3(filename):
 
     try:
         decrypted_data = decrypt_file(
-            input_file=f"./openssl_encrypt/unittests/testfiles/v3/{filename}",
+            input_file=f"{get_testfiles_dir()}/v3/{filename}",
             output_file=None,
             password=b"1234",
             pqc_private_key=pqc_private_key,
@@ -1345,7 +1355,7 @@ def test_file_decryption_wrong_pw_v3(filename):
 
     try:
         decrypted_data = decrypt_file(
-            input_file=f"./openssl_encrypt/unittests/testfiles/v3/{filename}",
+            input_file=f"{get_testfiles_dir()}/v3/{filename}",
             output_file=None,
             password=b"12345",
             pqc_private_key=pqc_private_key,
@@ -1372,7 +1382,7 @@ def test_file_decryption_wrong_algorithm_v3(filename):
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
     # Read the file content and extract metadata to find current algorithm
-    with open(f"./openssl_encrypt/unittests/testfiles/v3/{filename}", "r") as f:
+    with open(f"{get_testfiles_dir()}/v3/{filename}", "r") as f:
         content = f.read()
 
     # Split file content by colon to get the metadata part
@@ -1419,7 +1429,7 @@ def test_file_decryption_wrong_algorithm_v3(filename):
         # For this test, we expect failure due to hash/MAC validation
         # So we just use a wrong password which achieves the same goal
         decrypted_data = decrypt_file(
-            input_file=f"./openssl_encrypt/unittests/testfiles/v3/{filename}",
+            input_file=f"{get_testfiles_dir()}/v3/{filename}",
             output_file=None,
             password=b"wrong_password",  # Wrong password to simulate algorithm mismatch
             pqc_private_key=pqc_private_key,
@@ -1461,7 +1471,7 @@ def test_file_decryption_v4(filename):
 
     try:
         decrypted_data = decrypt_file(
-            input_file=f"./openssl_encrypt/unittests/testfiles/v4/{filename}",
+            input_file=f"{get_testfiles_dir()}/v4/{filename}",
             output_file=None,
             password=b"1234",
             pqc_private_key=pqc_private_key,
@@ -1501,7 +1511,7 @@ def test_file_decryption_wrong_pw_v4(filename):
     try:
         # Try to decrypt with an incorrect password (correct is '1234' but we use '12345')
         decrypted_data = decrypt_file(
-            input_file=f"./openssl_encrypt/unittests/testfiles/v4/{filename}",
+            input_file=f"{get_testfiles_dir()}/v4/{filename}",
             output_file=None,
             password=b"12345",  # Wrong password
             pqc_private_key=None,
@@ -1533,7 +1543,7 @@ def test_file_decryption_wrong_algorithm_v4(filename):
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
     # Read the file content and extract metadata to find current algorithm
-    with open(f"./openssl_encrypt/unittests/testfiles/v4/{filename}", "r") as f:
+    with open(f"{get_testfiles_dir()}/v4/{filename}", "r") as f:
         content = f.read()
 
     # Split file content by colon to get the metadata part
@@ -1578,7 +1588,7 @@ def test_file_decryption_wrong_algorithm_v4(filename):
     try:
         # Try to decrypt with wrong password (simulating wrong algorithm)
         decrypted_data = decrypt_file(
-            input_file=f"./openssl_encrypt/unittests/testfiles/v4/{filename}",
+            input_file=f"{get_testfiles_dir()}/v4/{filename}",
             output_file=None,
             password=b"wrong_password",  # Wrong password to simulate algorithm mismatch
             pqc_private_key=pqc_private_key,
@@ -1601,7 +1611,7 @@ def test_file_decryption_wrong_algorithm_v4(filename):
 def get_test_files_v5():
     """Get a list of test files for v5 format."""
     try:
-        files = os.listdir("./openssl_encrypt/unittests/testfiles/v5")
+        files = os.listdir(get_testfiles_dir() / "v5")
         return [f for f in files if f.startswith("test1_")]
     except:
         return []
@@ -1630,7 +1640,7 @@ def test_file_decryption_v5(filename):
 
     try:
         decrypted_data = decrypt_file(
-            input_file=f"./openssl_encrypt/unittests/testfiles/v5/{filename}",
+            input_file=f"{get_testfiles_dir()}/v5/{filename}",
             output_file=None,
             password=b"1234",
             pqc_private_key=pqc_private_key,
@@ -1670,7 +1680,7 @@ def test_file_decryption_wrong_pw_v5(filename):
     try:
         # Try to decrypt with an incorrect password (correct is '1234' but we use '12345')
         decrypted_data = decrypt_file(
-            input_file=f"./openssl_encrypt/unittests/testfiles/v5/{filename}",
+            input_file=f"{get_testfiles_dir()}/v5/{filename}",
             output_file=None,
             password=b"12345",  # Wrong password
             pqc_private_key=None,
@@ -1692,7 +1702,7 @@ def test_file_decryption_wrong_pw_v5(filename):
 def get_pqc_test_files_v5():
     """Get a list of PQC test files for v5 format (Kyber, HQC, MAYO, CROSS, ML-KEM)."""
     try:
-        files = os.listdir("./openssl_encrypt/unittests/testfiles/v5")
+        files = os.listdir(get_testfiles_dir() / "v5")
         pqc_prefixes = ["test1_kyber", "test1_hqc", "test1_mayo-", "test1_cross-", "test1_ml-kem-"]
         return [f for f in files if any(f.startswith(prefix) for prefix in pqc_prefixes)]
     except Exception as e:
@@ -1715,7 +1725,7 @@ def test_file_decryption_wrong_algorithm_v5(filename):
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
     # Read the file content and extract metadata to find current algorithm
-    with open(f"./openssl_encrypt/unittests/testfiles/v5/{filename}", "r") as f:
+    with open(f"{get_testfiles_dir()}/v5/{filename}", "r") as f:
         content = f.read()
 
     # Split file content by colon to get the metadata part
@@ -1760,7 +1770,7 @@ def test_file_decryption_wrong_algorithm_v5(filename):
     try:
         # Try to decrypt with wrong password (simulating wrong algorithm)
         decrypted_data = decrypt_file(
-            input_file=f"./openssl_encrypt/unittests/testfiles/v5/{filename}",
+            input_file=f"{get_testfiles_dir()}/v5/{filename}",
             output_file=None,
             password=b"wrong_password",  # Wrong password to simulate algorithm mismatch
             pqc_private_key=pqc_private_key,
@@ -1794,7 +1804,7 @@ def test_file_decryption_wrong_encryption_data_v5(filename):
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
     # Read the file content and extract metadata to find current encryption_data
-    with open(f"./openssl_encrypt/unittests/testfiles/v5/{filename}", "r") as f:
+    with open(f"{get_testfiles_dir()}/v5/{filename}", "r") as f:
         content = f.read()
 
     # Split file content by colon to get the metadata part
@@ -1834,7 +1844,7 @@ def test_file_decryption_wrong_encryption_data_v5(filename):
     try:
         # Try to decrypt with wrong password (simulating wrong encryption_data)
         decrypted_data = decrypt_file(
-            input_file=f"./openssl_encrypt/unittests/testfiles/v5/{filename}",
+            input_file=f"{get_testfiles_dir()}/v5/{filename}",
             output_file=None,
             password=b"wrong_password",  # Wrong password to simulate encryption_data mismatch
             encryption_data=wrong_encryption_data,  # Wrong encryption_data
