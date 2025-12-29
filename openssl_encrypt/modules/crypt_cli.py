@@ -5179,6 +5179,94 @@ def main_with_args(args=None):
                             pqc_dual_encryption=getattr(args, "pqc_dual_encrypt_key", False),
                         )
                     else:
+                        # Handle cascade encryption parameters
+                        cascade_mode = False
+                        cipher_names = None
+                        cascade_hash_func = "sha256"
+
+                        if hasattr(args, "cascade") and args.cascade is not None:
+                            from .crypt_cli_subparser import CASCADE_PRESETS
+
+                            cascade_mode = True
+
+                            # Import registry to check cipher availability
+                            try:
+                                from .registry import CipherRegistry
+
+                                registry = CipherRegistry.default()
+                            except ImportError:
+                                if not args.quiet:
+                                    print(
+                                        "Error: Cipher registry not available for cascade mode",
+                                        file=sys.stderr,
+                                    )
+                                return 1
+
+                            # Determine cipher chain (preset or custom)
+                            if args.cascade is True:
+                                # Boolean flag: parse comma-separated algorithms from --algorithm
+                                if "," in args.algorithm:
+                                    cipher_names = [c.strip() for c in args.algorithm.split(",")]
+                                else:
+                                    if not args.quiet:
+                                        print(
+                                            "Error: --cascade requires comma-separated algorithms "
+                                            "(e.g., --cascade --algorithm aes-256-gcm,chacha20-poly1305) "
+                                            "or a preset (e.g., --cascade=standard)",
+                                            file=sys.stderr,
+                                        )
+                                    return 1
+                            elif args.cascade in CASCADE_PRESETS:
+                                # Preset mode
+                                cipher_names = CASCADE_PRESETS[args.cascade]
+                                if not args.quiet:
+                                    print(
+                                        f"Using cascade preset '{args.cascade}': {' → '.join(cipher_names)}"
+                                    )
+                            else:
+                                if not args.quiet:
+                                    available_presets = ", ".join(CASCADE_PRESETS.keys())
+                                    print(
+                                        f"Error: Unknown cascade preset '{args.cascade}'. "
+                                        f"Available: {available_presets}",
+                                        file=sys.stderr,
+                                    )
+                                return 1
+
+                            # Validate minimum 2 ciphers
+                            if len(cipher_names) < 2:
+                                if not args.quiet:
+                                    print(
+                                        "Error: Cascade mode requires at least 2 ciphers",
+                                        file=sys.stderr,
+                                    )
+                                return 1
+
+                            # Validate that all ciphers exist and are available
+                            for cipher_name in cipher_names:
+                                if not registry.exists(cipher_name):
+                                    available = ", ".join(registry.list_names())
+                                    if not args.quiet:
+                                        print(
+                                            f"Error: Unknown cipher '{cipher_name}'. "
+                                            f"Available: {available}",
+                                            file=sys.stderr,
+                                        )
+                                    return 1
+
+                                if not registry.is_available(cipher_name):
+                                    if not args.quiet:
+                                        print(
+                                            f"Error: Cipher '{cipher_name}' not available. "
+                                            "Install required dependencies.",
+                                            file=sys.stderr,
+                                        )
+                                    return 1
+
+                            # Get cascade hash function
+                            if hasattr(args, "cascade_hash"):
+                                cascade_hash_func = args.cascade_hash
+
                         # Use standard encryption
                         success = encrypt_file(
                             args.input,
@@ -5197,6 +5285,9 @@ def main_with_args(args=None):
                             enable_plugins=enable_plugins,
                             plugin_manager=plugin_manager,
                             hsm_plugin=hsm_plugin_instance,
+                            cascade=cascade_mode,
+                            cipher_names=cipher_names,
+                            cascade_hash=cascade_hash_func,
                         )
 
                     if success:
@@ -5290,6 +5381,84 @@ def main_with_args(args=None):
                 ) as temp_file:
                     temp_output_file = temp_file.name
 
+                # Handle cascade encryption parameters for stdout path
+                cascade_mode = False
+                cipher_names = None
+                cascade_hash_func = "sha256"
+
+                if hasattr(args, "cascade") and args.cascade is not None:
+                    from .crypt_cli_subparser import CASCADE_PRESETS
+
+                    cascade_mode = True
+
+                    # Import registry to check cipher availability
+                    try:
+                        from .registry import CipherRegistry
+
+                        registry = CipherRegistry.default()
+                    except ImportError:
+                        print(
+                            "Error: Cipher registry not available for cascade mode",
+                            file=sys.stderr,
+                        )
+                        sys.exit(1)
+
+                    # Determine cipher chain (preset or custom)
+                    if args.cascade is True:
+                        # Boolean flag: parse comma-separated algorithms from --algorithm
+                        if "," in args.algorithm:
+                            cipher_names = [c.strip() for c in args.algorithm.split(",")]
+                        else:
+                            print(
+                                "Error: --cascade requires comma-separated algorithms "
+                                "(e.g., --cascade --algorithm aes-256-gcm,chacha20-poly1305) "
+                                "or a preset (e.g., --cascade=standard)",
+                                file=sys.stderr,
+                            )
+                            sys.exit(1)
+                    elif args.cascade in CASCADE_PRESETS:
+                        # Preset mode
+                        cipher_names = CASCADE_PRESETS[args.cascade]
+                    else:
+                        available_presets = ", ".join(CASCADE_PRESETS.keys())
+                        print(
+                            f"Error: Unknown cascade preset '{args.cascade}'. "
+                            f"Available: {available_presets}",
+                            file=sys.stderr,
+                        )
+                        sys.exit(1)
+
+                    # Validate minimum 2 ciphers
+                    if len(cipher_names) < 2:
+                        print(
+                            "Error: Cascade mode requires at least 2 ciphers",
+                            file=sys.stderr,
+                        )
+                        sys.exit(1)
+
+                    # Validate that all ciphers exist and are available
+                    for cipher_name in cipher_names:
+                        if not registry.exists(cipher_name):
+                            available = ", ".join(registry.list_names())
+                            print(
+                                f"Error: Unknown cipher '{cipher_name}'. "
+                                f"Available: {available}",
+                                file=sys.stderr,
+                            )
+                            sys.exit(1)
+
+                        if not registry.is_available(cipher_name):
+                            print(
+                                f"Error: Cipher '{cipher_name}' not available. "
+                                "Install required dependencies.",
+                                file=sys.stderr,
+                            )
+                            sys.exit(1)
+
+                    # Get cascade hash function
+                    if hasattr(args, "cascade_hash"):
+                        cascade_hash_func = args.cascade_hash
+
                 # Use standard encryption to temporary file
                 success = encrypt_file(
                     args.input,
@@ -5306,6 +5475,9 @@ def main_with_args(args=None):
                     enable_plugins=enable_plugins,
                     plugin_manager=plugin_manager,
                     hsm_plugin=hsm_plugin_instance,
+                    cascade=cascade_mode,
+                    cipher_names=cipher_names,
+                    cascade_hash=cascade_hash_func,
                 )
 
                 if success:
@@ -5761,6 +5933,94 @@ def main_with_args(args=None):
                         pqc_store_private_key=args.pqc_store_key,
                     )
                 else:
+                    # Handle cascade encryption parameters
+                    cascade_mode = False
+                    cipher_names = None
+                    cascade_hash_func = "sha256"
+
+                    if hasattr(args, "cascade") and args.cascade is not None:
+                        from .crypt_cli_subparser import CASCADE_PRESETS
+
+                        cascade_mode = True
+
+                        # Import registry to check cipher availability
+                        try:
+                            from .registry import CipherRegistry
+
+                            registry = CipherRegistry.default()
+                        except ImportError:
+                            if not args.quiet:
+                                print(
+                                    "Error: Cipher registry not available for cascade mode",
+                                    file=sys.stderr,
+                                )
+                            return 1
+
+                        # Determine cipher chain (preset or custom)
+                        if args.cascade is True:
+                            # Boolean flag: parse comma-separated algorithms from --algorithm
+                            if "," in args.algorithm:
+                                cipher_names = [c.strip() for c in args.algorithm.split(",")]
+                            else:
+                                if not args.quiet:
+                                    print(
+                                        "Error: --cascade requires comma-separated algorithms "
+                                        "(e.g., --cascade --algorithm aes-256-gcm,chacha20-poly1305) "
+                                        "or a preset (e.g., --cascade=standard)",
+                                        file=sys.stderr,
+                                    )
+                                return 1
+                        elif args.cascade in CASCADE_PRESETS:
+                            # Preset mode
+                            cipher_names = CASCADE_PRESETS[args.cascade]
+                            if not args.quiet:
+                                print(
+                                    f"Using cascade preset '{args.cascade}': {' → '.join(cipher_names)}"
+                                )
+                        else:
+                            if not args.quiet:
+                                available_presets = ", ".join(CASCADE_PRESETS.keys())
+                                print(
+                                    f"Error: Unknown cascade preset '{args.cascade}'. "
+                                    f"Available: {available_presets}",
+                                    file=sys.stderr,
+                                )
+                            return 1
+
+                        # Validate minimum 2 ciphers
+                        if len(cipher_names) < 2:
+                            if not args.quiet:
+                                print(
+                                    "Error: Cascade mode requires at least 2 ciphers",
+                                    file=sys.stderr,
+                                )
+                            return 1
+
+                        # Validate that all ciphers exist and are available
+                        for cipher_name in cipher_names:
+                            if not registry.exists(cipher_name):
+                                available = ", ".join(registry.list_names())
+                                if not args.quiet:
+                                    print(
+                                        f"Error: Unknown cipher '{cipher_name}'. "
+                                        f"Available: {available}",
+                                        file=sys.stderr,
+                                    )
+                                return 1
+
+                            if not registry.is_available(cipher_name):
+                                if not args.quiet:
+                                    print(
+                                        f"Error: Cipher '{cipher_name}' not available. "
+                                        "Install required dependencies.",
+                                        file=sys.stderr,
+                                    )
+                                return 1
+
+                        # Get cascade hash function
+                        if hasattr(args, "cascade_hash"):
+                            cascade_hash_func = args.cascade_hash
+
                     # Use standard encryption
                     success = encrypt_file(
                         args.input,
@@ -5779,6 +6039,9 @@ def main_with_args(args=None):
                         enable_plugins=enable_plugins,
                         plugin_manager=plugin_manager,
                         hsm_plugin=hsm_plugin_instance,
+                        cascade=cascade_mode,
+                        cipher_names=cipher_names,
+                        cascade_hash=cascade_hash_func,
                     )
 
                 # Handle steganography if requested
