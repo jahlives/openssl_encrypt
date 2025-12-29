@@ -27,6 +27,7 @@ try:
         get_available_kems,
         get_available_signatures,
     )
+
     REGISTRY_AVAILABLE = True
 except ImportError:
     REGISTRY_AVAILABLE = False
@@ -60,7 +61,9 @@ def setup_encrypt_parser(subparser):
     # Build help text with deprecated warnings (only for 1.0.0 algorithms)
     algorithm_help_text = "Encryption algorithm to use:\n"
     if REGISTRY_AVAILABLE:
-        algorithm_help_text += "(Use 'list-algorithms' command to see available ciphers, KDFs, and hashes)\n\n"
+        algorithm_help_text += (
+            "(Use 'list-algorithms' command to see available ciphers, KDFs, and hashes)\n\n"
+        )
     for algo in sorted(all_algorithms):
         if algo == EncryptionAlgorithm.FERNET.value:
             description = "default, AES-128-CBC with authentication"
@@ -212,7 +215,16 @@ def setup_encrypt_parser(subparser):
         "--cascade-hash",
         type=str,
         default="sha256",
-        choices=["sha256", "sha384", "sha512", "sha3-256", "sha3-384", "sha3-512", "blake2b", "blake2s"],
+        choices=[
+            "sha256",
+            "sha384",
+            "sha512",
+            "sha3-256",
+            "sha3-384",
+            "sha3-512",
+            "blake2b",
+            "blake2s",
+        ],
         help="Hash function for HKDF key derivation in cascade mode (default: sha256)",
     )
 
@@ -363,7 +375,9 @@ def setup_encrypt_parser(subparser):
     # Argon2 options for encryption
     argon2_description = "Configure Argon2 memory-hard function parameters"
     if REGISTRY_AVAILABLE:
-        argon2_description += ". Use 'list-algorithms --category=kdfs' to see all available KDF algorithms."
+        argon2_description += (
+            ". Use 'list-algorithms --category=kdfs' to see all available KDF algorithms."
+        )
     argon2_group = subparser.add_argument_group("Argon2 Options", argon2_description)
     argon2_group.add_argument(
         "--enable-argon2",
@@ -1557,7 +1571,7 @@ def create_subparser_main():
         dest="identity_store",
         metavar="PATH",
         help="Path to identity store directory (default: ~/.openssl_encrypt/identities/). "
-             "Can also be set via OPENSSL_ENCRYPT_IDENTITY_STORE environment variable.",
+        "Can also be set via OPENSSL_ENCRYPT_IDENTITY_STORE environment variable.",
     )
 
     # Create subparsers for each command
