@@ -1740,6 +1740,10 @@ def generate_key(
         EncryptionAlgorithm.CROSS_256_HYBRID.value,
     ]:
         key_length = 32  # PQC hybrid modes use AES-256-GCM internally, requiring 32 bytes
+    elif algorithm == "cascade":
+        # For cascade mode, use 32 bytes as master key
+        # HKDF will derive individual cipher keys from this master key
+        key_length = 32
     else:
         raise ValueError(f"Unsupported algorithm: {algorithm}")
 
@@ -5562,7 +5566,11 @@ def decrypt_file(
                 print(f"   HKDF hash: {cascade_hkdf_hash}")
                 print(f"   Layers: {len(cascade_cipher_chain)}")
 
-        algorithm = encryption.get("algorithm", EncryptionAlgorithm.FERNET.value)
+        # For cascade mode, set algorithm to indicate cascade
+        if is_cascade:
+            algorithm = "cascade"
+        else:
+            algorithm = encryption.get("algorithm", EncryptionAlgorithm.FERNET.value)
 
         # For v5+ format, extract encryption_data from metadata (overrides parameter)
         if format_version >= 5 and "encryption_data" in encryption:

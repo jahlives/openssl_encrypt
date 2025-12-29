@@ -113,7 +113,8 @@ def setup_encrypt_parser(subparser):
     subparser.add_argument(
         "--algorithm",
         type=str,
-        choices=all_algorithms,
+        # Note: choices validation removed to allow comma-separated algorithms for cascade mode
+        # Validation is performed in CLI logic for both cascade and non-cascade modes
         default=EncryptionAlgorithm.FERNET.value,
         help=algorithm_help_text,
     )
