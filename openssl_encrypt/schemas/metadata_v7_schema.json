@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensslencrypt.com/schemas/metadata-v7.json",
+  "title": "OpenSSL Encrypt Metadata Schema Version 7",
+  "description": "Schema for validating encrypted file metadata format version 7 (adds PQC signature support for asymmetric mode)",
+  "type": "object",
+  "required": ["format_version", "mode", "derivation_config", "encryption"],
+  "additionalProperties": true,
+  "properties": {
+    "format_version": {
+      "type": "integer",
+      "const": 7,
+      "description": "Metadata format version (must be 7)"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["symmetric", "asymmetric"],
+      "description": "Encryption mode (symmetric or asymmetric)"
+    },
+    "derivation_config": {
+      "type": "object",
+      "required": ["salt"],
+      "additionalProperties": true,
+      "properties": {
+        "salt": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9+/]+=*$",
+          "description": "Base64-encoded salt"
+        },
+        "hash_config": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "kdf_config": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "asymmetric": {
+      "type": "object",
+      "description": "Asymmetric encryption metadata (for mode=asymmetric)",
+      "additionalProperties": true,
+      "properties": {
+        "recipients": {
+          "type": "array",
+          "description": "List of recipient public keys and encrypted symmetric keys",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "sender": {
+          "type": "object",
+          "description": "Sender signature information",
+          "additionalProperties": true,
+          "properties": {
+            "key_id": {
+              "type": "string",
+              "description": "Sender key identifier"
+            },
+            "sig_algorithm": {
+              "type": "string",
+              "description": "Signature algorithm used"
+            }
+          }
+        }
+      }
+    },
+    "aead_binding": {
+      "type": "boolean",
+      "description": "Indicates metadata is cryptographically bound via AEAD AAD"
+    },
+    "hashes": {
+      "type": "object",
+      "required": ["original_hash"],
+      "additionalProperties": true,
+      "properties": {
+        "original_hash": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-fA-F0-9]*$",
+          "description": "Hexadecimal hash of original file"
+        }
+      }
+    },
+    "encryption": {
+      "type": "object",
+      "required": ["algorithm"],
+      "additionalProperties": true,
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "description": "Encryption algorithm used"
+        },
+        "encryption_data": {
+          "type": "string",
+          "description": "Data encryption algorithm"
+        }
+      }
+    }
+  }
+}

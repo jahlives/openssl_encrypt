@@ -78,6 +78,8 @@ class SecureJSONValidator:
                 "metadata_v4": "metadata_v4_schema.json",
                 "metadata_v5": "metadata_v5_schema.json",
                 "metadata_v6": "metadata_v6_schema.json",
+                "metadata_v7": "metadata_v7_schema.json",
+                "metadata_v8": "metadata_v8_schema.json",
             }
 
             for schema_name, filename in schema_files.items():
@@ -273,12 +275,10 @@ class SecureJSONValidator:
             schema_name = "metadata_v5"
         elif format_version == 6:
             schema_name = "metadata_v6"
-        elif format_version in [7, 8]:
-            # V7 and V8 formats are valid but don't have dedicated schemas yet
-            # V7: Added PQC signature support (MAYO/CROSS)
-            # V8: Added cascade encryption support
-            # TODO: Create metadata_v7_schema.json and metadata_v8_schema.json
-            return data
+        elif format_version == 7:
+            schema_name = "metadata_v7"
+        elif format_version == 8:
+            schema_name = "metadata_v8"
         else:
             # For unknown versions, perform basic validation without schema
             print(
