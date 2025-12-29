@@ -11,6 +11,12 @@ import argparse
 from .crypt_cli_helper import add_extended_algorithm_help
 from .crypt_core import EncryptionAlgorithm
 
+# Cascade presets for multi-layer encryption
+CASCADE_PRESETS = {
+    "standard": ["aes-256-gcm", "chacha20-poly1305"],
+    "paranoia": ["aes-256-gcm", "chacha20-poly1305", "threefish-512"],
+}
+
 # Import registry helper functions
 try:
     from .registry import (
@@ -179,6 +185,46 @@ def setup_encrypt_parser(subparser):
         type=int,
         default=3,
         help="Number of passes for secure deletion (default: 3)",
+    )
+
+    # Cascade encryption options
+    cascade_group = subparser.add_argument_group("Cascade encryption (multi-layer)")
+    cascade_group.description = (
+        "Cascade encryption applies multiple cipher layers sequentially for defense-in-depth. "
+        "Use presets or specify custom cipher chains with comma-separated algorithms."
+    )
+
+    cascade_group.add_argument(
+        "--cascade",
+        nargs="?",
+        const=True,
+        default=None,
+        metavar="PRESET",
+        help=(
+            "Enable cascade encryption. Use with --algorithm for custom chain "
+            "(e.g., --cascade --algorithm aes-256-gcm,chacha20-poly1305), "
+            "or specify preset: 'standard' (AES+ChaCha), 'paranoia' (AES+ChaCha+Threefish)"
+        ),
+    )
+
+    cascade_group.add_argument(
+        "--cascade-hash",
+        type=str,
+        default="sha256",
+        choices=["sha256", "sha384", "sha512", "sha3-256", "sha3-384", "sha3-512", "blake2b", "blake2s"],
+        help="Hash function for HKDF key derivation in cascade mode (default: sha256)",
+    )
+
+    cascade_group.add_argument(
+        "--no-diversity-check",
+        action="store_true",
+        help="Disable cipher diversity validation warnings",
+    )
+
+    cascade_group.add_argument(
+        "--strict-diversity",
+        action="store_true",
+        help="Treat cipher diversity warnings as errors (abort on weak combinations)",
     )
 
     # Advanced encryption options
