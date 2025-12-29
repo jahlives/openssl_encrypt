@@ -24,11 +24,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Import secure memory modules
-from openssl_encrypt.modules.crypt_errors import (
-    ErrorCategory,
-    MemoryError as SecureMemoryError,
-    SecureError,
-)
+from openssl_encrypt.modules.crypt_errors import ErrorCategory
+from openssl_encrypt.modules.crypt_errors import MemoryError as SecureMemoryError
+from openssl_encrypt.modules.crypt_errors import SecureError
 from openssl_encrypt.modules.crypto_secure_memory import (
     CryptoKey,
     CryptoSecureBuffer,
@@ -470,5 +468,3 @@ class TestThreadedErrorHandling(unittest.TestCase):
 
         # Check if any errors were reported
         self.assertEqual(errors, [], f"Errors occurred during parallel allocation: {errors}")
-
-

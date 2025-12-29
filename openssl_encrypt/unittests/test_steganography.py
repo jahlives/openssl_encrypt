@@ -45,8 +45,12 @@ class TestSteganographyCore(unittest.TestCase):
                 JPEGSteganography,
                 LSBImageStego,
             )
-            from openssl_encrypt.plugins.steganography.transport import create_steganography_transport
-            from openssl_encrypt.plugins.steganography.formats.jpeg_utils import create_jpeg_test_image
+            from openssl_encrypt.plugins.steganography.formats.jpeg_utils import (
+                create_jpeg_test_image,
+            )
+            from openssl_encrypt.plugins.steganography.transport import (
+                create_steganography_transport,
+            )
 
             self.stego_available = True
         except ImportError:
@@ -171,8 +175,8 @@ class TestSteganographyCore(unittest.TestCase):
         import numpy as np
         from PIL import Image
 
-        from openssl_encrypt.plugins.steganography.formats import LSBImageStego
         from openssl_encrypt.plugins.steganography.core import SteganographyConfig
+        from openssl_encrypt.plugins.steganography.formats import LSBImageStego
 
         # Create test PNG image
         img_array = np.random.randint(0, 255, (200, 200, 3), dtype=np.uint8)
@@ -347,7 +351,9 @@ class TestSteganographyTransport(unittest.TestCase):
                 SteganographyTransport,
                 create_steganography_transport,
             )
-            from openssl_encrypt.plugins.steganography.formats.jpeg_utils import create_jpeg_test_image
+            from openssl_encrypt.plugins.steganography.formats.jpeg_utils import (
+                create_jpeg_test_image,
+            )
 
             self.transport_available = True
         except ImportError:
@@ -453,7 +459,9 @@ class TestSteganographyCLIIntegration(unittest.TestCase):
             import numpy as np
             from PIL import Image
 
-            from openssl_encrypt.plugins.steganography.formats.jpeg_utils import create_jpeg_test_image
+            from openssl_encrypt.plugins.steganography.formats.jpeg_utils import (
+                create_jpeg_test_image,
+            )
 
             self.cli_available = True
         except ImportError:
@@ -2009,5 +2017,3 @@ class TestMP3Steganography(unittest.TestCase):
             # Should be able to extract
             extracted_data = mp3_stego.extract_data(stego_data)
             self.assertTrue(extracted_data.startswith(test_data))
-
-

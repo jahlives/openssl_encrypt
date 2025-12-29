@@ -8,11 +8,7 @@ from .reed_solomon import (
     ReedSolomonDecoder,
     ReedSolomonEncoder,
 )
-from .simple import (
-    AdaptiveSimpleErrorCorrection,
-    HammingEncoder,
-    SimpleRepetitionEncoder,
-)
+from .simple import AdaptiveSimpleErrorCorrection, HammingEncoder, SimpleRepetitionEncoder
 
 __all__ = [
     # Reed-Solomon classes

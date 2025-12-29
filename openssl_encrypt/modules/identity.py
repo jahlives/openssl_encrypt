@@ -31,18 +31,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
-# Import protection classes
-from .identity_protection import (
-    IdentityKeyProtectionService,
-    IdentityProtection,
-    ProtectionLevel,
-    InvalidCredentialsError,
-    HSMNotAvailableError,
-)
-
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .crypto_secure_memory import CryptoKey
+
+# Import protection classes
+from .identity_protection import (
+    HSMNotAvailableError,
+    IdentityKeyProtectionService,
+    IdentityProtection,
+    InvalidCredentialsError,
+    ProtectionLevel,
+)
 from .pqc import PQCipher
 from .pqc_signing import PQCSigner, calculate_fingerprint
 from .secure_memory import secure_memzero
@@ -250,7 +250,9 @@ class Identity:
             protection = IdentityProtection.from_dict(data["protection"])
         elif "version" in data and data["version"] >= 2:
             # Version 2+ should always have protection field
-            logger.warning(f"Identity version {data['version']} missing protection field, assuming PASSWORD_ONLY")
+            logger.warning(
+                f"Identity version {data['version']} missing protection field, assuming PASSWORD_ONLY"
+            )
         # If no version or version 1, assume PASSWORD_ONLY (backward compatible)
 
         # Load public keys
@@ -372,7 +374,9 @@ class Identity:
         # Save private keys if available
         if self.encryption_private_key or self.signing_private_key:
             # Allow None passphrase for HSM_ONLY protection
-            if not passphrase and (not self.protection or self.protection.level != ProtectionLevel.HSM_ONLY):
+            if not passphrase and (
+                not self.protection or self.protection.level != ProtectionLevel.HSM_ONLY
+            ):
                 raise ValueError("Passphrase required to save private keys")
 
             if self.encryption_private_key:

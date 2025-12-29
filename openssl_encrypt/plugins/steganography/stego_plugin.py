@@ -7,7 +7,7 @@ within various media formats (images and audio files).
 """
 
 import logging
-from typing import Any, Dict, Set, Optional
+from typing import Any, Dict, Optional, Set
 
 from ...modules.plugin_system.plugin_base import (
     BasePlugin,
@@ -16,8 +16,8 @@ from ...modules.plugin_system.plugin_base import (
     PluginSecurityContext,
     PluginType,
 )
-from .transport import SteganographyTransport
 from .core import CapacityError, CoverMediaError, SteganographyError
+from .transport import SteganographyTransport
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +39,7 @@ class SteganographyPlugin(BasePlugin):
     """
 
     def __init__(self):
-        super().__init__(
-            plugin_id="steganography",
-            name="Steganography",
-            version="1.0.0"
-        )
+        super().__init__(plugin_id="steganography", name="Steganography", version="1.0.0")
         self._transport = None
 
     def get_plugin_type(self) -> PluginType:
@@ -149,7 +145,7 @@ class SteganographyPlugin(BasePlugin):
         method: str = "lsb",
         bits_per_channel: int = 1,
         password: Optional[str] = None,
-        **options
+        **options,
     ) -> PluginResult:
         """
         Embed encrypted data into cover media.
@@ -171,10 +167,7 @@ class SteganographyPlugin(BasePlugin):
 
             # Create transport with specified options
             transport = SteganographyTransport(
-                method=method,
-                bits_per_channel=bits_per_channel,
-                password=password,
-                **options
+                method=method, bits_per_channel=bits_per_channel, password=password, **options
             )
 
             # Hide data in media
@@ -187,7 +180,7 @@ class SteganographyPlugin(BasePlugin):
                     "output_path": output_path,
                     "data_size": len(data),
                     "method": method,
-                }
+                },
             )
         except (CapacityError, CoverMediaError, SteganographyError) as e:
             self.logger.error(f"Failed to hide data: {e}")
@@ -202,7 +195,7 @@ class SteganographyPlugin(BasePlugin):
         method: str = "lsb",
         bits_per_channel: int = 1,
         password: Optional[str] = None,
-        **options
+        **options,
     ) -> PluginResult:
         """
         Extract hidden data from stego media.
@@ -222,10 +215,7 @@ class SteganographyPlugin(BasePlugin):
 
             # Create transport with specified options
             transport = SteganographyTransport(
-                method=method,
-                bits_per_channel=bits_per_channel,
-                password=password,
-                **options
+                method=method, bits_per_channel=bits_per_channel, password=password, **options
             )
 
             # Extract data from media
@@ -238,7 +228,7 @@ class SteganographyPlugin(BasePlugin):
                     "method": method,
                     "data_size": len(extracted_data),
                     "extracted_data": extracted_data,
-                }
+                },
             )
         except (CoverMediaError, SteganographyError) as e:
             self.logger.error(f"Failed to extract data: {e}")
@@ -247,12 +237,7 @@ class SteganographyPlugin(BasePlugin):
             self.logger.error(f"Unexpected error extracting data: {e}")
             return PluginResult.error_result(f"Extract operation failed: {e}")
 
-    def analyze_media(
-        self,
-        media_path: str,
-        method: str = "lsb",
-        **options
-    ) -> PluginResult:
+    def analyze_media(self, media_path: str, method: str = "lsb", **options) -> PluginResult:
         """
         Analyze capacity and security of cover media.
 
@@ -272,10 +257,7 @@ class SteganographyPlugin(BasePlugin):
             password = options.get("password", None)
 
             transport = SteganographyTransport(
-                method=method,
-                bits_per_channel=bits_per_channel,
-                password=password,
-                **options
+                method=method, bits_per_channel=bits_per_channel, password=password, **options
             )
 
             # Get capacity
@@ -290,7 +272,7 @@ class SteganographyPlugin(BasePlugin):
                     "method": method,
                     "capacity_bytes": capacity,
                     "bits_per_channel": bits_per_channel,
-                }
+                },
             )
         except (CoverMediaError, SteganographyError) as e:
             self.logger.error(f"Failed to analyze media: {e}")
@@ -319,10 +301,7 @@ class SteganographyPlugin(BasePlugin):
             password = options.get("password", None)
 
             transport = SteganographyTransport(
-                method=method,
-                bits_per_channel=bits_per_channel,
-                password=password,
-                **options
+                method=method, bits_per_channel=bits_per_channel, password=password, **options
             )
 
             # Get capacity
@@ -334,7 +313,7 @@ class SteganographyPlugin(BasePlugin):
                     "media_path": media_path,
                     "method": method,
                     "capacity_bytes": capacity,
-                }
+                },
             )
         except (CoverMediaError, SteganographyError) as e:
             self.logger.error(f"Failed to calculate capacity: {e}")
@@ -366,12 +345,11 @@ class SteganographyPlugin(BasePlugin):
             if missing_deps:
                 return PluginResult.error_result(
                     f"Missing dependencies: {', '.join(missing_deps)}",
-                    {"missing": missing_deps, "available": False}
+                    {"missing": missing_deps, "available": False},
                 )
 
             return PluginResult.success_result(
-                "All dependencies available",
-                {"available": True, "missing": []}
+                "All dependencies available", {"available": True, "missing": []}
             )
         except Exception as e:
             return PluginResult.error_result(f"Availability check failed: {e}")

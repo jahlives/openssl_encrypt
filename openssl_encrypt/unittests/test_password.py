@@ -20,10 +20,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Import the modules to test
-from openssl_encrypt.modules.asymmetric_core import (
-    PasswordWrapper,
-    PasswordWrapperError,
-)
+from openssl_encrypt.modules.asymmetric_core import PasswordWrapper, PasswordWrapperError
 from openssl_encrypt.modules.crypt_utils import generate_strong_password
 from openssl_encrypt.modules.pqc import LIBOQS_AVAILABLE, PQCipher
 
@@ -32,6 +29,7 @@ try:
     from openssl_encrypt.modules.crypt_core import PQC_AVAILABLE
 except ImportError:
     PQC_AVAILABLE = False
+
 
 class TestPasswordGeneration(unittest.TestCase):
     """Test password generation functionality in depth."""

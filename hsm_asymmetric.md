@@ -180,7 +180,7 @@ Touch your Yubikey...  ← Neuer HSM-Touch (neuer Prozess)
 ✓ 1 file(s) encrypted
 ```
 
-**Sicherheitsprinzip:** 
+**Sicherheitsprinzip:**
 - Keys sind **NUR** während der Verarbeitung im RAM
 - Nach Prozess-Ende: `secure_memzero()` löscht alle Keys
 - Kein Session-Management, keine persistenten Keys
@@ -200,21 +200,21 @@ Touch your Yubikey...  ← Neuer HSM-Touch (neuer Prozess)
   "name": "Alice",
   "email": "alice@example.com",
   "created_at": "2025-12-25T10:00:00Z",
-  
+
   "encryption_key": {
     "algorithm": "ML-KEM-768",
     "public_key_file": "encryption_public.pem",
     "private_key_file": "encryption_private.pem",
     "fingerprint": "a1b2c3d4e5f6..."
   },
-  
+
   "signing_key": {
     "algorithm": "ML-DSA-65",
     "public_key_file": "signing_public.pem",
     "private_key_file": "signing_private.pem",
     "fingerprint": "f6e5d4c3b2a1..."
   },
-  
+
   "protection": {
     "level": "password_and_hsm",
     "password": {
@@ -249,13 +249,13 @@ from pathlib import Path
 
 class ProtectionLevel(Enum):
     """Schutz-Level für Identity-Keys."""
-    
+
     PASSWORD_ONLY = "password_only"
     """Nur Passwort - Standard, keine Hardware erforderlich."""
-    
+
     PASSWORD_AND_HSM = "password_and_hsm"
     """Passwort + HSM - Maximale Sicherheit, beide Faktoren erforderlich."""
-    
+
     HSM_ONLY = "hsm_only"
     """Nur HSM - Für Automation, kein Passwort-Prompt."""
 
@@ -263,13 +263,13 @@ class ProtectionLevel(Enum):
 @dataclass
 class PasswordProtectionConfig:
     """Konfiguration für Passwort-basierten Schutz."""
-    
+
     kdf: str = "argon2id"
     time_cost: int = 3
     memory_cost: int = 65536  # 64 MB
     parallelism: int = 4
     salt: bytes = field(default_factory=lambda: b"")
-    
+
     def to_dict(self) -> Dict[str, Any]:
         import base64
         return {
@@ -281,7 +281,7 @@ class PasswordProtectionConfig:
             },
             "salt": base64.b64encode(self.salt).decode("ascii")
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "PasswordProtectionConfig":
         import base64
@@ -298,12 +298,12 @@ class PasswordProtectionConfig:
 @dataclass
 class HSMProtectionConfig:
     """Konfiguration für HSM-basierten Schutz."""
-    
+
     hsm_type: str = "yubikey"
     slot: Optional[int] = None  # None = Auto-Detect
     challenge_salt: bytes = field(default_factory=lambda: b"")
     require_touch: bool = True
-    
+
     def to_dict(self) -> Dict[str, Any]:
         import base64
         return {
@@ -312,7 +312,7 @@ class HSMProtectionConfig:
             "challenge_salt": base64.b64encode(self.challenge_salt).decode("ascii"),
             "require_touch": self.require_touch
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "HSMProtectionConfig":
         import base64
@@ -327,19 +327,19 @@ class HSMProtectionConfig:
 @dataclass
 class IdentityProtection:
     """Vollständige Schutz-Konfiguration für eine Identity."""
-    
+
     level: ProtectionLevel
     password_config: Optional[PasswordProtectionConfig] = None
     hsm_config: Optional[HSMProtectionConfig] = None
-    
+
     def requires_password(self) -> bool:
         """Prüft ob ein Passwort erforderlich ist."""
         return self.level in (ProtectionLevel.PASSWORD_ONLY, ProtectionLevel.PASSWORD_AND_HSM)
-    
+
     def requires_hsm(self) -> bool:
         """Prüft ob ein HSM erforderlich ist."""
         return self.level in (ProtectionLevel.HSM_ONLY, ProtectionLevel.PASSWORD_AND_HSM)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         result = {"level": self.level.value}
         if self.password_config:
@@ -347,19 +347,19 @@ class IdentityProtection:
         if self.hsm_config:
             result["hsm"] = self.hsm_config.to_dict()
         return result
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "IdentityProtection":
         level = ProtectionLevel(data.get("level", "password_only"))
-        
+
         password_config = None
         if "password" in data:
             password_config = PasswordProtectionConfig.from_dict(data["password"])
-        
+
         hsm_config = None
         if "hsm" in data:
             hsm_config = HSMProtectionConfig.from_dict(data["hsm"])
-        
+
         return cls(
             level=level,
             password_config=password_config,
@@ -375,12 +375,12 @@ class IdentityProtection:
 @dataclass
 class KeyPairInfo:
     """Informationen über ein Schlüsselpaar."""
-    
+
     algorithm: str
     public_key_file: str
     private_key_file: str
     fingerprint: str
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "algorithm": self.algorithm,
@@ -388,7 +388,7 @@ class KeyPairInfo:
             "private_key_file": self.private_key_file,
             "fingerprint": self.fingerprint
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "KeyPairInfo":
         return cls(
@@ -403,25 +403,25 @@ class KeyPairInfo:
 class Identity:
     """
     Repräsentiert eine kryptographische Identität.
-    
+
     Eine Identity besteht aus:
     - Einem Encryption-Keypair (ML-KEM) für Passwort-Wrapping
     - Einem Signing-Keypair (ML-DSA) für Metadaten-Signaturen
     - Schutz-Konfiguration (Passwort und/oder HSM)
     """
-    
+
     name: str
     email: Optional[str]
     created_at: str
-    
+
     encryption_key: KeyPairInfo
     signing_key: KeyPairInfo
-    
+
     protection: IdentityProtection
-    
+
     # Runtime (nicht persistiert)
     base_path: Optional[Path] = field(default=None, repr=False)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "version": 1,
@@ -432,7 +432,7 @@ class Identity:
             "signing_key": self.signing_key.to_dict(),
             "protection": self.protection.to_dict()
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any], base_path: Optional[Path] = None) -> "Identity":
         return cls(
@@ -444,25 +444,25 @@ class Identity:
             protection=IdentityProtection.from_dict(data["protection"]),
             base_path=base_path
         )
-    
+
     def get_encryption_public_key_path(self) -> Path:
         """Pfad zum Encryption Public Key."""
         if not self.base_path:
             raise ValueError("Identity base_path not set")
         return self.base_path / self.encryption_key.public_key_file
-    
+
     def get_encryption_private_key_path(self) -> Path:
         """Pfad zum verschlüsselten Encryption Private Key."""
         if not self.base_path:
             raise ValueError("Identity base_path not set")
         return self.base_path / self.encryption_key.private_key_file
-    
+
     def get_signing_public_key_path(self) -> Path:
         """Pfad zum Signing Public Key."""
         if not self.base_path:
             raise ValueError("Identity base_path not set")
         return self.base_path / self.signing_key.public_key_file
-    
+
     def get_signing_private_key_path(self) -> Path:
         """Pfad zum verschlüsselten Signing Private Key."""
         if not self.base_path:
@@ -526,41 +526,41 @@ class InvalidCredentialsError(IdentityProtectionError):
 class IdentityKeyProtection:
     """
     Service für HSM-geschützte Identity-Keys.
-    
+
     SICHERHEITSMODELL:
-    
+
     1. PASSWORD_ONLY:
        key = Argon2id(password, salt)
-    
+
     2. PASSWORD_AND_HSM:
        hsm_pepper = HMAC-SHA1(yubikey_secret, challenge)
        key = Argon2id(password + hsm_pepper, salt)
-    
+
     3. HSM_ONLY:
        hsm_pepper = HMAC-SHA1(yubikey_secret, challenge)
        key = Argon2id(hsm_pepper, salt)
-    
+
     Der abgeleitete Key wird verwendet um die Private Keys
     mit AES-256-GCM zu verschlüsseln.
     """
-    
+
     # Konstanten
     SALT_SIZE = 16
     CHALLENGE_SALT_SIZE = 32
     NONCE_SIZE = 12
     KEY_SIZE = 32  # AES-256
-    
+
     def __init__(self, hsm_plugin=None):
         """
         Initialisiert den Protection Service.
-        
+
         Args:
             hsm_plugin: Optional - Yubikey Plugin Instanz.
                         Wird lazy geladen wenn nicht angegeben.
         """
         self._hsm_plugin = hsm_plugin
         self._hsm_checked = False
-    
+
     def _get_hsm_plugin(self):
         """Lazy-Load des HSM-Plugins."""
         if self._hsm_plugin is None and not self._hsm_checked:
@@ -573,21 +573,21 @@ class IdentityKeyProtection:
             except ImportError:
                 pass
         return self._hsm_plugin
-    
+
     def is_hsm_available(self) -> bool:
         """Prüft ob ein HSM verfügbar ist."""
         plugin = self._get_hsm_plugin()
         if plugin is None:
             return False
         return plugin.is_available()
-    
+
     def detect_hsm_slot(self) -> Optional[int]:
         """Erkennt den konfigurierten HSM-Slot."""
         plugin = self._get_hsm_plugin()
         if plugin is None:
             return None
         return plugin.detect_slot()
-    
+
     def _generate_hsm_challenge(
         self,
         challenge_salt: bytes,
@@ -595,15 +595,15 @@ class IdentityKeyProtection:
     ) -> bytes:
         """
         Generiert den HSM-Challenge.
-        
+
         Challenge = SHA256(challenge_salt || "identity" || identity_name)
-        
+
         Dies stellt sicher, dass jede Identity einen einzigartigen
         Challenge hat, selbst wenn der gleiche Yubikey verwendet wird.
         """
         challenge_input = challenge_salt + b"identity" + identity_name.encode("utf-8")
         return hashlib.sha256(challenge_input).digest()
-    
+
     def _get_hsm_pepper(
         self,
         hsm_config: HSMProtectionConfig,
@@ -611,14 +611,14 @@ class IdentityKeyProtection:
     ) -> bytes:
         """
         Holt den HSM-Pepper via Challenge-Response.
-        
+
         Args:
             hsm_config: HSM-Konfiguration
             identity_name: Name der Identity (Teil des Challenges)
-            
+
         Returns:
             20-Byte HMAC-SHA1 Response vom Yubikey
-            
+
         Raises:
             HSMNotAvailableError: Yubikey nicht gefunden
             HSMTouchTimeoutError: Touch-Timeout
@@ -626,18 +626,18 @@ class IdentityKeyProtection:
         plugin = self._get_hsm_plugin()
         if plugin is None:
             raise HSMNotAvailableError("Yubikey plugin not available")
-        
+
         if not plugin.is_available():
             raise HSMNotAvailableError(
                 "No Yubikey detected. Please insert your Yubikey."
             )
-        
+
         # Challenge generieren
         challenge = self._generate_hsm_challenge(
             hsm_config.challenge_salt,
             identity_name
         )
-        
+
         # Slot bestimmen
         slot = hsm_config.slot
         if slot is None:
@@ -647,11 +647,11 @@ class IdentityKeyProtection:
                     "No Challenge-Response slot configured on Yubikey. "
                     "Please configure slot 1 or 2 for HMAC-SHA1 Challenge-Response."
                 )
-        
+
         # Challenge-Response durchführen
         if hsm_config.require_touch:
             print("Touch your Yubikey to continue...", flush=True)
-        
+
         try:
             response = plugin.challenge_response(
                 challenge=challenge,
@@ -662,9 +662,9 @@ class IdentityKeyProtection:
             raise HSMTouchTimeoutError(
                 "Yubikey touch timeout. Please try again and touch your Yubikey."
             )
-        
+
         return response
-    
+
     def _derive_key(
         self,
         password: Optional[str],
@@ -673,27 +673,27 @@ class IdentityKeyProtection:
     ) -> bytes:
         """
         Leitet den Encryption-Key ab.
-        
+
         Args:
             password: User-Passwort (oder None bei HSM_ONLY)
             hsm_pepper: HSM-Response (oder None bei PASSWORD_ONLY)
             password_config: KDF-Parameter
-            
+
         Returns:
             32-Byte Key für AES-256-GCM
         """
         # Input zusammenbauen
         key_material = b""
-        
+
         if password:
             key_material += password.encode("utf-8")
-        
+
         if hsm_pepper:
             key_material += hsm_pepper
-        
+
         if not key_material:
             raise ValueError("Either password or HSM pepper must be provided")
-        
+
         # Argon2id KDF
         derived = hash_secret_raw(
             secret=key_material,
@@ -704,9 +704,9 @@ class IdentityKeyProtection:
             hash_len=self.KEY_SIZE,
             type=Type.ID
         )
-        
+
         return derived
-    
+
     def encrypt_private_key(
         self,
         private_key_data: bytes,
@@ -716,13 +716,13 @@ class IdentityKeyProtection:
     ) -> bytes:
         """
         Verschlüsselt einen Private Key.
-        
+
         Args:
             private_key_data: Roher Private Key (PEM oder DER)
             password: User-Passwort (falls erforderlich)
             protection: Schutz-Konfiguration
             identity_name: Name der Identity (für HSM-Challenge)
-            
+
         Returns:
             Verschlüsselte Daten: nonce (12) + ciphertext + tag (16)
         """
@@ -732,24 +732,24 @@ class IdentityKeyProtection:
             if protection.hsm_config is None:
                 raise ValueError("HSM protection requires hsm_config")
             hsm_pepper = self._get_hsm_pepper(protection.hsm_config, identity_name)
-        
+
         # Key ableiten
         if protection.password_config is None:
             raise ValueError("Password config required")
-        
+
         encryption_key = self._derive_key(
             password=password if protection.requires_password() else None,
             hsm_pepper=hsm_pepper,
             password_config=protection.password_config
         )
-        
+
         # AES-256-GCM Encryption
         nonce = secrets.token_bytes(self.NONCE_SIZE)
         aesgcm = AESGCM(encryption_key)
         ciphertext = aesgcm.encrypt(nonce, private_key_data, None)
-        
+
         return nonce + ciphertext
-    
+
     def decrypt_private_key(
         self,
         encrypted_data: bytes,
@@ -759,16 +759,16 @@ class IdentityKeyProtection:
     ) -> bytes:
         """
         Entschlüsselt einen Private Key.
-        
+
         Args:
             encrypted_data: Verschlüsselte Daten (nonce + ciphertext + tag)
             password: User-Passwort (falls erforderlich)
             protection: Schutz-Konfiguration
             identity_name: Name der Identity (für HSM-Challenge)
-            
+
         Returns:
             Entschlüsselter Private Key
-            
+
         Raises:
             InvalidCredentialsError: Passwort oder HSM-Response falsch
         """
@@ -778,21 +778,21 @@ class IdentityKeyProtection:
             if protection.hsm_config is None:
                 raise ValueError("HSM protection requires hsm_config")
             hsm_pepper = self._get_hsm_pepper(protection.hsm_config, identity_name)
-        
+
         # Key ableiten
         if protection.password_config is None:
             raise ValueError("Password config required")
-        
+
         encryption_key = self._derive_key(
             password=password if protection.requires_password() else None,
             hsm_pepper=hsm_pepper,
             password_config=protection.password_config
         )
-        
+
         # AES-256-GCM Decryption
         nonce = encrypted_data[:self.NONCE_SIZE]
         ciphertext = encrypted_data[self.NONCE_SIZE:]
-        
+
         aesgcm = AESGCM(encryption_key)
         try:
             plaintext = aesgcm.decrypt(nonce, ciphertext, None)
@@ -801,9 +801,9 @@ class IdentityKeyProtection:
                 "Failed to decrypt private key. "
                 "Invalid password or HSM response."
             )
-        
+
         return plaintext
-    
+
     def create_protection_config(
         self,
         level: ProtectionLevel,
@@ -812,12 +812,12 @@ class IdentityKeyProtection:
     ) -> IdentityProtection:
         """
         Erstellt eine neue Protection-Konfiguration.
-        
+
         Args:
             level: Gewünschtes Schutz-Level
             hsm_slot: HSM-Slot (None = Auto-Detect)
             require_touch: Ob Touch für HSM erforderlich ist
-            
+
         Returns:
             Neue IdentityProtection-Instanz
         """
@@ -825,7 +825,7 @@ class IdentityKeyProtection:
         password_config = PasswordProtectionConfig(
             salt=secrets.token_bytes(self.SALT_SIZE)
         )
-        
+
         # HSM-Config falls erforderlich
         hsm_config = None
         if level in (ProtectionLevel.PASSWORD_AND_HSM, ProtectionLevel.HSM_ONLY):
@@ -833,14 +833,14 @@ class IdentityKeyProtection:
                 raise HSMNotAvailableError(
                     "HSM protection requested but no Yubikey available"
                 )
-            
+
             hsm_config = HSMProtectionConfig(
                 hsm_type="yubikey",
                 slot=hsm_slot or self.detect_hsm_slot(),
                 challenge_salt=secrets.token_bytes(self.CHALLENGE_SALT_SIZE),
                 require_touch=require_touch
             )
-        
+
         return IdentityProtection(
             level=level,
             password_config=password_config,
@@ -892,7 +892,7 @@ class IdentityNotFoundError(Exception):
 class IdentityStore:
     """
     Verwaltet lokale Identities.
-    
+
     Struktur:
     ~/.openssl_encrypt/identities/
     ├── alice/
@@ -904,9 +904,9 @@ class IdentityStore:
     └── bob/
         └── ...
     """
-    
+
     DEFAULT_BASE_PATH = Path("~/.openssl_encrypt/identities").expanduser()
-    
+
     def __init__(
         self,
         base_path: Optional[Path] = None,
@@ -914,10 +914,10 @@ class IdentityStore:
     ):
         self.base_path = base_path or self.DEFAULT_BASE_PATH
         self.protection = protection_service or IdentityKeyProtection()
-        
+
         # Verzeichnis erstellen falls nötig
         self.base_path.mkdir(parents=True, exist_ok=True)
-    
+
     def _get_identity_path(self, name: str) -> Path:
         """Gibt den Pfad zum Identity-Verzeichnis zurück."""
         # Sicherstellen dass der Name sicher ist
@@ -925,12 +925,12 @@ class IdentityStore:
         if not safe_name:
             raise ValueError(f"Invalid identity name: {name}")
         return self.base_path / safe_name
-    
+
     def exists(self, name: str) -> bool:
         """Prüft ob eine Identity existiert."""
         identity_path = self._get_identity_path(name)
         return (identity_path / "identity.json").exists()
-    
+
     def list_identities(self) -> List[str]:
         """Listet alle vorhandenen Identities."""
         identities = []
@@ -938,7 +938,7 @@ class IdentityStore:
             if path.is_dir() and (path / "identity.json").exists():
                 identities.append(path.name)
         return sorted(identities)
-    
+
     def create(
         self,
         name: str,
@@ -951,7 +951,7 @@ class IdentityStore:
     ) -> Identity:
         """
         Erstellt eine neue Identity.
-        
+
         Args:
             name: Eindeutiger Name der Identity
             email: Optionale E-Mail-Adresse
@@ -960,39 +960,39 @@ class IdentityStore:
             hsm_slot: HSM-Slot (None = Auto-Detect)
             encryption_algorithm: PQC-KEM-Algorithmus
             signing_algorithm: PQC-Signing-Algorithmus
-            
+
         Returns:
             Neue Identity-Instanz
         """
         # Prüfen ob Identity bereits existiert
         if self.exists(name):
             raise IdentityExistsError(f"Identity '{name}' already exists")
-        
+
         # Passwort-Validierung
         if protection_level != ProtectionLevel.HSM_ONLY and not password:
             raise ValueError("Password required for this protection level")
-        
+
         # Protection-Config erstellen
         protection = self.protection.create_protection_config(
             level=protection_level,
             hsm_slot=hsm_slot
         )
-        
+
         # Verzeichnis erstellen
         identity_path = self._get_identity_path(name)
         identity_path.mkdir(parents=True, exist_ok=True)
-        
+
         try:
             # Encryption-Keypair generieren (ML-KEM)
             enc_generator = PQCKeyGenerator(encryption_algorithm)
             enc_public, enc_private = enc_generator.generate_keypair()
             enc_fingerprint = self._calculate_fingerprint(enc_public)
-            
+
             # Signing-Keypair generieren (ML-DSA)
             sign_generator = PQCSigner(signing_algorithm)
             sign_public, sign_private = sign_generator.generate_keypair()
             sign_fingerprint = self._calculate_fingerprint(sign_public)
-            
+
             # Private Keys verschlüsseln
             enc_private_encrypted = self.protection.encrypt_private_key(
                 private_key_data=enc_private,
@@ -1000,24 +1000,24 @@ class IdentityStore:
                 protection=protection,
                 identity_name=name
             )
-            
+
             sign_private_encrypted = self.protection.encrypt_private_key(
                 private_key_data=sign_private,
                 password=password,
                 protection=protection,
                 identity_name=name
             )
-            
+
             # Keys speichern
             (identity_path / "encryption_public.pem").write_bytes(enc_public)
             (identity_path / "encryption_private.pem").write_bytes(enc_private_encrypted)
             (identity_path / "signing_public.pem").write_bytes(sign_public)
             (identity_path / "signing_private.pem").write_bytes(sign_private_encrypted)
-            
+
             # Berechtigungen setzen (nur User)
             for key_file in identity_path.glob("*.pem"):
                 key_file.chmod(0o600)
-            
+
             # Identity-Objekt erstellen
             identity = Identity(
                 name=name,
@@ -1038,43 +1038,43 @@ class IdentityStore:
                 protection=protection,
                 base_path=identity_path
             )
-            
+
             # identity.json speichern
             with open(identity_path / "identity.json", "w") as f:
                 json.dump(identity.to_dict(), f, indent=2)
-            
+
             (identity_path / "identity.json").chmod(0o600)
-            
+
             return identity
-            
+
         except Exception as e:
             # Cleanup bei Fehler
             import shutil
             if identity_path.exists():
                 shutil.rmtree(identity_path)
             raise
-    
+
     def load(self, name: str) -> Identity:
         """
         Lädt eine Identity (ohne Private Keys zu entschlüsseln).
-        
+
         Args:
             name: Name der Identity
-            
+
         Returns:
             Identity-Instanz (nur Metadaten und Public Keys)
         """
         identity_path = self._get_identity_path(name)
         config_file = identity_path / "identity.json"
-        
+
         if not config_file.exists():
             raise IdentityNotFoundError(f"Identity '{name}' not found")
-        
+
         with open(config_file, "r") as f:
             data = json.load(f)
-        
+
         return Identity.from_dict(data, base_path=identity_path)
-    
+
     def unlock_private_keys(
         self,
         identity: Identity,
@@ -1082,21 +1082,21 @@ class IdentityStore:
     ) -> Tuple[bytes, bytes]:
         """
         Entschlüsselt die Private Keys einer Identity.
-        
+
         Args:
             identity: Geladene Identity
             password: Passwort (falls erforderlich)
-            
+
         Returns:
             Tuple von (encryption_private_key, signing_private_key)
         """
         if identity.protection.requires_password() and not password:
             raise ValueError("Password required for this identity")
-        
+
         # Verschlüsselte Keys laden
         enc_private_encrypted = identity.get_encryption_private_key_path().read_bytes()
         sign_private_encrypted = identity.get_signing_private_key_path().read_bytes()
-        
+
         # Entschlüsseln (HSM-Touch passiert hier falls konfiguriert)
         enc_private = self.protection.decrypt_private_key(
             encrypted_data=enc_private_encrypted,
@@ -1104,7 +1104,7 @@ class IdentityStore:
             protection=identity.protection,
             identity_name=identity.name
         )
-        
+
         # Zweiter Key: Kein erneuter HSM-Touch nötig (gleicher Pepper)
         # ABER: Wir müssen den Pepper cachen oder erneut holen
         # Für Sicherheit: Jeden Key separat entschlüsseln
@@ -1114,58 +1114,58 @@ class IdentityStore:
             protection=identity.protection,
             identity_name=identity.name
         )
-        
+
         return enc_private, sign_private
-    
+
     def get_public_keys(self, identity: Identity) -> Tuple[bytes, bytes]:
         """
         Gibt die Public Keys einer Identity zurück.
-        
+
         Args:
             identity: Geladene Identity
-            
+
         Returns:
             Tuple von (encryption_public_key, signing_public_key)
         """
         enc_public = identity.get_encryption_public_key_path().read_bytes()
         sign_public = identity.get_signing_public_key_path().read_bytes()
         return enc_public, sign_public
-    
+
     def _calculate_fingerprint(self, public_key: bytes) -> str:
         """Berechnet den Fingerprint eines Public Keys."""
         digest = hashlib.sha256(public_key).hexdigest()
         # Format: xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx
         return ":".join(digest[i:i+4] for i in range(0, 32, 4))
-    
+
     def delete(self, name: str, confirm: bool = False) -> None:
         """
         Löscht eine Identity.
-        
+
         Args:
             name: Name der Identity
             confirm: Muss True sein um zu löschen
         """
         if not confirm:
             raise ValueError("Must confirm deletion with confirm=True")
-        
+
         identity_path = self._get_identity_path(name)
         if not identity_path.exists():
             raise IdentityNotFoundError(f"Identity '{name}' not found")
-        
+
         import shutil
         shutil.rmtree(identity_path)
-    
+
     def export_public_keys(self, name: str, output_path: Path) -> None:
         """
         Exportiert die Public Keys einer Identity für Sharing.
-        
+
         Args:
             name: Name der Identity
             output_path: Ziel-Datei (.pubkeys)
         """
         identity = self.load(name)
         enc_public, sign_public = self.get_public_keys(identity)
-        
+
         export_data = {
             "version": 1,
             "name": identity.name,
@@ -1181,10 +1181,10 @@ class IdentityStore:
                 "fingerprint": identity.signing_key.fingerprint
             }
         }
-        
+
         with open(output_path, "w") as f:
             json.dump(export_data, f, indent=2)
-    
+
     def import_public_keys(
         self,
         input_path: Path,
@@ -1193,12 +1193,12 @@ class IdentityStore:
     ) -> Identity:
         """
         Importiert Public Keys einer externen Identity.
-        
+
         Args:
             input_path: Pfad zur .pubkeys-Datei
             name: Optionaler Override für den Namen
             trust: Muss True sein (TOFU-Bestätigung)
-            
+
         Returns:
             Importierte Identity (nur Public Keys)
         """
@@ -1207,28 +1207,28 @@ class IdentityStore:
                 "Must confirm trust with trust=True. "
                 "Verify fingerprints before trusting!"
             )
-        
+
         with open(input_path, "r") as f:
             data = json.load(f)
-        
+
         import_name = name or data["name"]
-        
+
         if self.exists(import_name):
             raise IdentityExistsError(
                 f"Identity '{import_name}' already exists"
             )
-        
+
         # Verzeichnis erstellen
         identity_path = self._get_identity_path(import_name)
         identity_path.mkdir(parents=True, exist_ok=True)
-        
+
         # Public Keys speichern
         enc_public = data["encryption_key"]["public_key"].encode("utf-8")
         sign_public = data["signing_key"]["public_key"].encode("utf-8")
-        
+
         (identity_path / "encryption_public.pem").write_bytes(enc_public)
         (identity_path / "signing_public.pem").write_bytes(sign_public)
-        
+
         # Identity-Config (ohne Private Keys, ohne Protection)
         identity = Identity(
             name=import_name,
@@ -1253,15 +1253,15 @@ class IdentityStore:
             ),
             base_path=identity_path
         )
-        
+
         # identity.json speichern
         identity_data = identity.to_dict()
         identity_data["imported"] = True  # Markieren als importiert
         identity_data["imported_from"] = str(input_path)
-        
+
         with open(identity_path / "identity.json", "w") as f:
             json.dump(identity_data, f, indent=2)
-        
+
         return identity
 ```
 
@@ -1301,7 +1301,7 @@ def identity():
 @click.option("--name", "-n", required=True, help="Name der Identity")
 @click.option("--email", "-e", help="E-Mail-Adresse (optional)")
 @click.option(
-    "--hsm", 
+    "--hsm",
     type=click.Choice(["none", "yubikey", "yubikey-only"]),
     default="none",
     help="HSM-Schutz: none=nur Passwort, yubikey=Passwort+Yubikey, yubikey-only=nur Yubikey"
@@ -1310,9 +1310,9 @@ def identity():
 @click.option("--no-touch", is_flag=True, help="Kein Touch erforderlich (weniger sicher)")
 def identity_create(name: str, email: str, hsm: str, hsm_slot: int, no_touch: bool):
     """Erstellt eine neue Identity."""
-    
+
     store = IdentityStore()
-    
+
     # Protection Level bestimmen
     if hsm == "none":
         protection_level = ProtectionLevel.PASSWORD_ONLY
@@ -1320,13 +1320,13 @@ def identity_create(name: str, email: str, hsm: str, hsm_slot: int, no_touch: bo
         protection_level = ProtectionLevel.PASSWORD_AND_HSM
     elif hsm == "yubikey-only":
         protection_level = ProtectionLevel.HSM_ONLY
-    
+
     # HSM-Verfügbarkeit prüfen
     if protection_level in (ProtectionLevel.PASSWORD_AND_HSM, ProtectionLevel.HSM_ONLY):
         if not store.protection.is_hsm_available():
             click.echo("Error: Yubikey not found. Please insert your Yubikey.", err=True)
             raise SystemExit(1)
-        
+
         detected_slot = store.protection.detect_hsm_slot()
         if detected_slot is None:
             click.echo(
@@ -1335,31 +1335,31 @@ def identity_create(name: str, email: str, hsm: str, hsm_slot: int, no_touch: bo
                 err=True
             )
             raise SystemExit(1)
-        
+
         if hsm_slot is None:
             hsm_slot = detected_slot
             click.echo(f"Using Yubikey slot {hsm_slot} (auto-detected)")
-    
+
     # Passwort abfragen
     password = None
     if protection_level != ProtectionLevel.HSM_ONLY:
         password = getpass.getpass("Enter password for identity: ")
         password_confirm = getpass.getpass("Confirm password: ")
-        
+
         if password != password_confirm:
             click.echo("Error: Passwords do not match.", err=True)
             raise SystemExit(1)
-        
+
         if len(password) < 8:
             click.echo("Warning: Password is very short. Consider using a stronger password.", err=True)
-    
+
     try:
         # Identity erstellen
         click.echo(f"Creating identity '{name}'...")
-        
+
         if protection_level in (ProtectionLevel.PASSWORD_AND_HSM, ProtectionLevel.HSM_ONLY):
             click.echo("Touch your Yubikey to generate keys...")
-        
+
         identity = store.create(
             name=name,
             email=email,
@@ -1367,22 +1367,22 @@ def identity_create(name: str, email: str, hsm: str, hsm_slot: int, no_touch: bo
             protection_level=protection_level,
             hsm_slot=hsm_slot
         )
-        
+
         click.echo(f"\n✓ Identity '{name}' created successfully!\n")
         click.echo("Encryption Key Fingerprint:")
         click.echo(f"  {identity.encryption_key.fingerprint}")
         click.echo("\nSigning Key Fingerprint:")
         click.echo(f"  {identity.signing_key.fingerprint}")
-        
+
         click.echo(f"\nProtection: {protection_level.value}")
         if protection_level == ProtectionLevel.PASSWORD_AND_HSM:
             click.echo("  → Both password AND Yubikey required for decryption")
         elif protection_level == ProtectionLevel.HSM_ONLY:
             click.echo("  → Only Yubikey required (no password)")
-        
+
         click.echo(f"\nTo share your public keys:")
         click.echo(f"  openssl_encrypt identity export --name {name} --output {name}.pubkeys")
-        
+
     except IdentityExistsError:
         click.echo(f"Error: Identity '{name}' already exists.", err=True)
         raise SystemExit(1)
@@ -1398,20 +1398,20 @@ def identity_create(name: str, email: str, hsm: str, hsm_slot: int, no_touch: bo
 @click.option("--verbose", "-v", is_flag=True, help="Zeige Details")
 def identity_list(verbose: bool):
     """Listet alle Identities auf."""
-    
+
     store = IdentityStore()
     identities = store.list_identities()
-    
+
     if not identities:
         click.echo("No identities found.")
         click.echo("Create one with: openssl_encrypt identity create --name <name>")
         return
-    
+
     click.echo(f"Found {len(identities)} identity/identities:\n")
-    
+
     for name in identities:
         identity = store.load(name)
-        
+
         if verbose:
             click.echo(f"─── {name} ───")
             if identity.email:
@@ -1421,7 +1421,7 @@ def identity_list(verbose: bool):
             click.echo(f"    Fingerprint: {identity.encryption_key.fingerprint[:24]}...")
             click.echo(f"  Signing: {identity.signing_key.algorithm}")
             click.echo(f"    Fingerprint: {identity.signing_key.fingerprint[:24]}...")
-            
+
             # Prüfen ob importiert
             config_file = identity.base_path / "identity.json"
             import json
@@ -1436,7 +1436,7 @@ def identity_list(verbose: bool):
                 protection_marker = " [HSM+PW]"
             elif identity.protection.level == ProtectionLevel.HSM_ONLY:
                 protection_marker = " [HSM]"
-            
+
             click.echo(f"  • {name}{protection_marker}")
 
 
@@ -1445,15 +1445,15 @@ def identity_list(verbose: bool):
 @click.option("--output", "-o", required=True, type=click.Path(), help="Ausgabe-Datei (.pubkeys)")
 def identity_export(name: str, output: str):
     """Exportiert Public Keys zum Teilen."""
-    
+
     store = IdentityStore()
-    
+
     try:
         identity = store.load(name)
         output_path = Path(output)
-        
+
         store.export_public_keys(name, output_path)
-        
+
         click.echo(f"✓ Public keys exported to: {output_path}")
         click.echo(f"\nEncryption Key Fingerprint:")
         click.echo(f"  {identity.encryption_key.fingerprint}")
@@ -1461,7 +1461,7 @@ def identity_export(name: str, output: str):
         click.echo(f"  {identity.signing_key.fingerprint}")
         click.echo("\n⚠️  Share these fingerprints via a separate channel (e.g., Signal)")
         click.echo("    so recipients can verify the keys.")
-        
+
     except IdentityNotFoundError:
         click.echo(f"Error: Identity '{name}' not found.", err=True)
         raise SystemExit(1)
@@ -1473,28 +1473,28 @@ def identity_export(name: str, output: str):
 @click.option("--yes", "-y", is_flag=True, help="Fingerprints bereits verifiziert")
 def identity_import(file: str, name: str, yes: bool):
     """Importiert Public Keys einer anderen Person."""
-    
+
     import json
-    
+
     store = IdentityStore()
     input_path = Path(file)
-    
+
     # Datei lesen um Fingerprints anzuzeigen
     with open(input_path) as f:
         data = json.load(f)
-    
+
     import_name = name or data["name"]
-    
+
     click.echo(f"Importing identity: {import_name}")
     if data.get("email"):
         click.echo(f"Email: {data['email']}")
-    
+
     click.echo(f"\nEncryption Key ({data['encryption_key']['algorithm']}):")
     click.echo(f"  Fingerprint: {data['encryption_key']['fingerprint']}")
-    
+
     click.echo(f"\nSigning Key ({data['signing_key']['algorithm']}):")
     click.echo(f"  Fingerprint: {data['signing_key']['fingerprint']}")
-    
+
     if not yes:
         click.echo("\n" + "="*60)
         click.echo("⚠️  TRUST ON FIRST USE (TOFU)")
@@ -1503,22 +1503,22 @@ def identity_import(file: str, name: str, yes: bool):
         click.echo("(e.g., phone call, Signal message, in person)")
         click.echo("before trusting this identity!")
         click.echo("="*60 + "\n")
-        
+
         if not click.confirm("Have you verified the fingerprints?"):
             click.echo("Import cancelled.")
             raise SystemExit(0)
-    
+
     try:
         identity = store.import_public_keys(
             input_path=input_path,
             name=name,
             trust=True
         )
-        
+
         click.echo(f"\n✓ Identity '{identity.name}' imported successfully!")
         click.echo(f"\nYou can now encrypt files for {identity.name}:")
         click.echo(f"  openssl_encrypt encrypt --for {identity.name} --input file.txt")
-        
+
     except IdentityExistsError:
         click.echo(f"Error: Identity '{import_name}' already exists.", err=True)
         raise SystemExit(1)
@@ -1528,43 +1528,43 @@ def identity_import(file: str, name: str, yes: bool):
 @click.option("--name", "-n", required=True, help="Name der Identity")
 def identity_show(name: str):
     """Zeigt Details einer Identity."""
-    
+
     import json
-    
+
     store = IdentityStore()
-    
+
     try:
         identity = store.load(name)
-        
+
         config_file = identity.base_path / "identity.json"
         with open(config_file) as f:
             data = json.load(f)
-        
+
         click.echo(f"Identity: {identity.name}")
         click.echo(f"Created: {identity.created_at}")
         if identity.email:
             click.echo(f"Email: {identity.email}")
-        
+
         click.echo(f"\nProtection Level: {identity.protection.level.value}")
         if identity.protection.requires_hsm():
             hsm = identity.protection.hsm_config
             click.echo(f"  HSM Type: {hsm.hsm_type}")
             click.echo(f"  HSM Slot: {hsm.slot or 'auto'}")
             click.echo(f"  Require Touch: {hsm.require_touch}")
-        
+
         click.echo(f"\nEncryption Key:")
         click.echo(f"  Algorithm: {identity.encryption_key.algorithm}")
         click.echo(f"  Fingerprint: {identity.encryption_key.fingerprint}")
-        
+
         click.echo(f"\nSigning Key:")
         click.echo(f"  Algorithm: {identity.signing_key.algorithm}")
         click.echo(f"  Fingerprint: {identity.signing_key.fingerprint}")
-        
+
         if data.get("imported"):
             click.echo(f"\n[IMPORTED]")
             click.echo(f"  Source: {data.get('imported_from', 'unknown')}")
             click.echo(f"  Note: No private keys available")
-        
+
     except IdentityNotFoundError:
         click.echo(f"Error: Identity '{name}' not found.", err=True)
         raise SystemExit(1)
@@ -1575,21 +1575,21 @@ def identity_show(name: str):
 @click.option("--yes", "-y", is_flag=True, help="Ohne Bestätigung löschen")
 def identity_delete(name: str, yes: bool):
     """Löscht eine Identity."""
-    
+
     store = IdentityStore()
-    
+
     if not store.exists(name):
         click.echo(f"Error: Identity '{name}' not found.", err=True)
         raise SystemExit(1)
-    
+
     if not yes:
         click.echo(f"⚠️  This will permanently delete identity '{name}'!")
         click.echo("    All private keys will be lost!")
-        
+
         if not click.confirm(f"Delete identity '{name}'?"):
             click.echo("Deletion cancelled.")
             raise SystemExit(0)
-    
+
     store.delete(name, confirm=True)
     click.echo(f"✓ Identity '{name}' deleted.")
 
@@ -1598,37 +1598,37 @@ def identity_delete(name: str, yes: bool):
 @click.option("--name", "-n", required=True, help="Name der Identity")
 def identity_test_unlock(name: str):
     """Testet ob die Identity entsperrt werden kann."""
-    
+
     store = IdentityStore()
-    
+
     try:
         identity = store.load(name)
-        
+
         # Prüfen ob importiert
         config_file = identity.base_path / "identity.json"
         import json
         with open(config_file) as f:
             data = json.load(f)
-        
+
         if data.get("imported"):
             click.echo(f"Identity '{name}' is imported (no private keys).")
             raise SystemExit(0)
-        
+
         # Passwort abfragen
         password = None
         if identity.protection.requires_password():
             password = getpass.getpass(f"Enter password for '{name}': ")
-        
+
         if identity.protection.requires_hsm():
             click.echo("Touch your Yubikey...")
-        
+
         # Unlock versuchen
         enc_key, sign_key = store.unlock_private_keys(identity, password)
-        
+
         click.echo(f"\n✓ Identity '{name}' unlocked successfully!")
         click.echo(f"  Encryption key: {len(enc_key)} bytes")
         click.echo(f"  Signing key: {len(sign_key)} bytes")
-        
+
     except IdentityNotFoundError:
         click.echo(f"Error: Identity '{name}' not found.", err=True)
         raise SystemExit(1)
@@ -1730,13 +1730,13 @@ from typing import Optional
 class SecureBytes:
     """
     Wrapper für sensitive Bytes mit garantierter Löschung.
-    
+
     Verwendung:
         with SecureBytes(private_key_data) as key:
             # key.data verwenden
             do_crypto_operation(key.data)
         # Nach dem Block: Daten sind sicher gelöscht
-    
+
     ODER:
         key = SecureBytes(private_key_data)
         try:
@@ -1744,33 +1744,33 @@ class SecureBytes:
         finally:
             key.clear()  # Explizit löschen
     """
-    
+
     def __init__(self, data: bytes):
         # Kopie als bytearray (mutable, kann überschrieben werden)
         self._data = bytearray(data)
         self._cleared = False
-    
+
     @property
     def data(self) -> bytes:
         """Gibt die Daten als bytes zurück."""
         if self._cleared:
             raise ValueError("SecureBytes already cleared")
         return bytes(self._data)
-    
+
     def clear(self) -> None:
         """Löscht die Daten sicher aus dem RAM."""
         if self._cleared:
             return
-        
+
         secure_memzero(self._data)
         self._cleared = True
-    
+
     def __enter__(self) -> "SecureBytes":
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.clear()
-    
+
     def __del__(self) -> None:
         """Fallback: Löschen wenn Objekt garbage collected wird."""
         if not self._cleared:
@@ -1780,30 +1780,30 @@ class SecureBytes:
 def secure_memzero(data: bytearray) -> None:
     """
     Überschreibt einen bytearray sicher mit Nullen.
-    
+
     Verwendet ctypes.memset um sicherzustellen, dass der Compiler
     die Operation nicht wegoptimiert.
     """
     if not isinstance(data, bytearray):
         raise TypeError("secure_memzero requires bytearray")
-    
+
     if len(data) == 0:
         return
-    
+
     # Pointer zum ersten Element
     ptr = (ctypes.c_char * len(data)).from_buffer(data)
-    
+
     # Mit Nullen überschreiben
     ctypes.memset(ctypes.addressof(ptr), 0, len(data))
-    
+
     # Memory barrier (verhindert Compiler-Optimierungen)
     # In Python nicht direkt möglich, aber ctypes.memset ist "opaque" genug
-    
+
 
 def secure_memzero_string(s: str) -> None:
     """
     Versucht einen String zu löschen (best effort).
-    
+
     WARNUNG: Python Strings sind immutable und können vom
     Interpreter gecached werden. Diese Funktion bietet
     KEINE Garantie, ist aber besser als nichts.
@@ -1815,7 +1815,7 @@ def secure_memzero_string(s: str) -> None:
             # CPython-spezifisch: Direkt in den String-Buffer schreiben
             str_ptr = ctypes.cast(id(s), ctypes.POINTER(ctypes.c_char))
             # Offset zum String-Inhalt (CPython 3.x)
-            offset = sys.getsizeof("") 
+            offset = sys.getsizeof("")
             for i in range(len(s)):
                 str_ptr[offset + i] = b'\x00'
         except Exception:
@@ -1824,27 +1824,27 @@ def secure_memzero_string(s: str) -> None:
 
 class SecureKeyPair:
     """Container für ein Keypair mit sicherer Löschung."""
-    
+
     def __init__(self, encryption_key: bytes, signing_key: bytes):
         self._encryption = SecureBytes(encryption_key)
         self._signing = SecureBytes(signing_key)
-    
+
     @property
     def encryption_private(self) -> bytes:
         return self._encryption.data
-    
+
     @property
     def signing_private(self) -> bytes:
         return self._signing.data
-    
+
     def clear(self) -> None:
         """Löscht beide Keys sicher."""
         self._encryption.clear()
         self._signing.clear()
-    
+
     def __enter__(self) -> "SecureKeyPair":
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.clear()
 ```
@@ -1860,27 +1860,27 @@ def unlock_and_process(
 ) -> T:
     """
     Entsperrt Identity, führt Operation aus, löscht Keys sofort.
-    
+
     Args:
         identity: Die Identity
         password: Passwort (falls erforderlich)
         processor: Funktion die mit den Keys arbeitet
-        
+
     Returns:
         Ergebnis der processor-Funktion
     """
     # Keys entschlüsseln
     enc_private, sign_private = self._decrypt_private_keys(identity, password)
-    
+
     # In SecureKeyPair wrappen
     with SecureKeyPair(enc_private, sign_private) as keys:
         # Originale sofort löschen
         secure_memzero(bytearray(enc_private))
         secure_memzero(bytearray(sign_private))
-        
+
         # Operation ausführen
         return processor(keys)
-    
+
     # Nach dem with-Block: Keys sind sicher gelöscht
 ```
 
@@ -1893,18 +1893,18 @@ def unlock_and_process(
 @click.argument("files", nargs=-1)
 def encrypt_asymmetric(recipient: str, signer: str, files: tuple):
     """Verschlüsselt Dateien für einen Empfänger."""
-    
+
     store = IdentityStore()
     signer_identity = store.load(signer)
-    
+
     # Passwort abfragen
     password = None
     if signer_identity.protection.requires_password():
         password = getpass.getpass(f"Password for '{signer}': ")
-    
+
     if signer_identity.protection.requires_hsm():
         click.echo("Touch your Yubikey...")
-    
+
     def process_files(keys: SecureKeyPair) -> int:
         """Verarbeitet alle Dateien mit den unlocked Keys."""
         encrypted_count = 0
@@ -1917,14 +1917,14 @@ def encrypt_asymmetric(recipient: str, signer: str, files: tuple):
             )
             encrypted_count += 1
         return encrypted_count
-    
+
     # Keys sind NUR während process_files im RAM
     count = store.unlock_and_process(
         identity=signer_identity,
         password=password,
         processor=process_files
     )
-    
+
     # Hier sind die Keys bereits gelöscht!
     click.echo(f"✓ {count} file(s) encrypted")
 ```
@@ -1985,9 +1985,9 @@ def test_password_only_roundtrip():
             salt=secrets.token_bytes(16)
         )
     )
-    
+
     service = IdentityKeyProtection()
-    
+
     original = b"secret private key data"
     encrypted = service.encrypt_private_key(
         private_key_data=original,
@@ -1995,14 +1995,14 @@ def test_password_only_roundtrip():
         protection=protection,
         identity_name="alice"
     )
-    
+
     decrypted = service.decrypt_private_key(
         encrypted_data=encrypted,
         password="test123",
         protection=protection,
         identity_name="alice"
     )
-    
+
     assert decrypted == original
 
 
@@ -2024,9 +2024,9 @@ def test_hsm_required_but_missing():
         level=ProtectionLevel.PASSWORD_AND_HSM,
         # ...
     )
-    
+
     service = IdentityKeyProtection(hsm_plugin=None)  # Kein HSM
-    
+
     with pytest.raises(HSMNotAvailableError):
         service.encrypt_private_key(...)
 ```
@@ -2038,20 +2038,20 @@ def test_hsm_required_but_missing():
 def test_hsm_roundtrip():
     """Test: HSM+Password Schutz (benötigt echten Yubikey)."""
     store = IdentityStore()
-    
+
     # Identity erstellen
     identity = store.create(
         name="test_hsm",
         password="test123",
         protection_level=ProtectionLevel.PASSWORD_AND_HSM
     )
-    
+
     # Unlock
     enc_key, sign_key = store.unlock_private_keys(identity, "test123")
-    
+
     assert len(enc_key) > 0
     assert len(sign_key) > 0
-    
+
     # Cleanup
     store.delete("test_hsm", confirm=True)
 ```
@@ -2077,6 +2077,6 @@ def test_hsm_roundtrip():
 **Erstellt**: 25. Dezember 2025
 **Für**: Claude Code Implementation
 **Version**: 1.0
-**Abhängigkeiten**: 
+**Abhängigkeiten**:
 - v1.4.0 Asymmetric Mode
 - v1.3.1 Yubikey Plugin (bestehend)

@@ -7,21 +7,22 @@ All code in English as per project requirements.
 """
 
 import pytest
+
 from openssl_encrypt.modules.registry import (
-    CipherRegistry,
-    get_cipher,
     AES256GCM,
     AESGCMSIV,
-    AESSIV,
     AESOCB3,
+    AESSIV,
+    AlgorithmCategory,
+    AuthenticationError,
     ChaCha20Poly1305,
-    XChaCha20Poly1305,
+    CipherRegistry,
+    SecurityLevel,
     Threefish512,
     Threefish1024,
     ValidationError,
-    AuthenticationError,
-    AlgorithmCategory,
-    SecurityLevel,
+    XChaCha20Poly1305,
+    get_cipher,
 )
 
 
@@ -417,6 +418,7 @@ class TestCipherComparison:
             # Skip deprecation warning for OCB3
             if cipher_name == "aes-256-ocb3":
                 import warnings
+
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     ciphertext = cipher.encrypt(key, plaintext)
@@ -428,7 +430,9 @@ class TestCipherComparison:
 
 
 # Skip Threefish tests if extension not installed
-threefish_available = pytest.importorskip("threefish_native", reason="threefish_native extension not installed")
+threefish_available = pytest.importorskip(
+    "threefish_native", reason="threefish_native extension not installed"
+)
 
 
 @pytest.mark.skipif(not Threefish512.is_available(), reason="threefish_native not available")
@@ -537,8 +541,9 @@ class TestThreefish512:
 
     def test_large_data(self):
         """Test with 1MB of data."""
-        import threefish_native
         import secrets
+
+        import threefish_native
 
         cipher = Threefish512()
         key = threefish_native.generate_key_512()
@@ -644,8 +649,9 @@ class TestThreefish1024:
 
     def test_large_data(self):
         """Test with 1MB of data."""
-        import threefish_native
         import secrets
+
+        import threefish_native
 
         cipher = Threefish1024()
         key = threefish_native.generate_key_1024()

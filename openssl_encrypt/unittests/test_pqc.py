@@ -39,18 +39,14 @@ from openssl_encrypt.modules.crypt_errors import (
     EncryptionError,
     ValidationError,
 )
-from openssl_encrypt.modules.pqc import (
-    LIBOQS_AVAILABLE,
-    PQCAlgorithm,
-    PQCipher,
-    check_pqc_support,
-)
+from openssl_encrypt.modules.pqc import LIBOQS_AVAILABLE, PQCAlgorithm, PQCipher, check_pqc_support
 
 # Try to import PQC support
 try:
     from openssl_encrypt.modules.crypt_core import PQC_AVAILABLE
 except ImportError:
     PQC_AVAILABLE = False
+
 
 class TestPostQuantumCrypto(unittest.TestCase):
     """Test cases for post-quantum cryptography functionality."""
@@ -2465,5 +2461,3 @@ class TestConcurrentPQCExecutionSafety(unittest.TestCase):
                 pass
 
         print("✅ PQC concurrent execution best practices validated")
-
-

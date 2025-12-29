@@ -11,23 +11,24 @@ All code in English as per project requirements.
 
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Optional, ClassVar, Dict, Union
+from typing import ClassVar, Dict, Optional, Union
 
 from .base import (
     AlgorithmBase,
-    AlgorithmInfo,
     AlgorithmCategory,
-    SecurityLevel,
-    RegistryBase,
+    AlgorithmInfo,
     AlgorithmNotAvailableError,
-    ValidationError,
     AuthenticationError,
+    RegistryBase,
+    SecurityLevel,
+    ValidationError,
 )
 from .utils import generate_random_bytes
 
 # Import secure memory handling
 try:
     from ..secure_memory import SecureBytes, secure_memzero
+
     SECURE_MEMORY_AVAILABLE = True
 except ImportError:
     # Fallback if secure_memory not available
@@ -40,7 +41,7 @@ except ImportError:
 
 
 # Helper functions for secure memory handling
-def _convert_to_bytes(data: Union[bytes, 'SecureBytes']) -> bytes:
+def _convert_to_bytes(data: Union[bytes, "SecureBytes"]) -> bytes:
     """Convert SecureBytes to bytes for library calls."""
     return bytes(data) if isinstance(data, SecureBytes) else data
 
@@ -61,6 +62,7 @@ class CipherParams:
         tag_size: Authentication tag size in bytes (None = algorithm default)
         associated_data: Additional authenticated data (AEAD only)
     """
+
     nonce_size: Optional[int] = None
     tag_size: Optional[int] = None
     associated_data: Optional[bytes] = None
@@ -77,8 +79,8 @@ class CipherBase(AlgorithmBase):
     @abstractmethod
     def encrypt(
         self,
-        key: Union[bytes, 'SecureBytes'],
-        plaintext: Union[bytes, 'SecureBytes'],
+        key: Union[bytes, "SecureBytes"],
+        plaintext: Union[bytes, "SecureBytes"],
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> bytes:
@@ -109,11 +111,11 @@ class CipherBase(AlgorithmBase):
     @abstractmethod
     def decrypt(
         self,
-        key: Union[bytes, 'SecureBytes'],
+        key: Union[bytes, "SecureBytes"],
         ciphertext: bytes,
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
-    ) -> 'SecureBytes':
+    ) -> "SecureBytes":
         """
         Decrypts ciphertext and verifies authentication.
 
@@ -161,6 +163,7 @@ class CipherBase(AlgorithmBase):
 # ============================================================================
 # AES Family
 # ============================================================================
+
 
 class AES256GCM(CipherBase):
     """
@@ -271,8 +274,8 @@ class AES256GCM(CipherBase):
                 nonce = ciphertext[:12]
                 ciphertext = ciphertext[12:]
 
-            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
             import cryptography.exceptions
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
             cipher = AESGCM(key_bytes)
             try:
@@ -318,7 +321,10 @@ class AESGCMSIV(CipherBase):
     def generate_nonce(self) -> bytes:
         return generate_random_bytes(12)
 
-    def encrypt(self, key: Union[bytes, SecureBytes], plaintext: Union[bytes, SecureBytes],
+    def encrypt(
+        self,
+        key: Union[bytes, SecureBytes],
+        plaintext: Union[bytes, SecureBytes],
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> bytes:
@@ -349,7 +355,10 @@ class AESGCMSIV(CipherBase):
             _secure_cleanup(key, key_bytes)
             _secure_cleanup(plaintext, plaintext_bytes)
 
-    def decrypt(self, key: Union[bytes, SecureBytes], ciphertext: bytes,
+    def decrypt(
+        self,
+        key: Union[bytes, SecureBytes],
+        ciphertext: bytes,
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> SecureBytes:
@@ -368,8 +377,8 @@ class AESGCMSIV(CipherBase):
                 nonce = ciphertext[:12]
                 ciphertext = ciphertext[12:]
 
-            from cryptography.hazmat.primitives.ciphers.aead import AESGCMSIV
             import cryptography.exceptions
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCMSIV
 
             cipher = AESGCMSIV(key_bytes)
             try:
@@ -416,7 +425,10 @@ class AESSIV(CipherBase):
         """SIV is deterministic, no nonce needed."""
         return b""
 
-    def encrypt(self, key: Union[bytes, SecureBytes], plaintext: Union[bytes, SecureBytes],
+    def encrypt(
+        self,
+        key: Union[bytes, SecureBytes],
+        plaintext: Union[bytes, SecureBytes],
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> bytes:
@@ -441,7 +453,10 @@ class AESSIV(CipherBase):
             _secure_cleanup(key, key_bytes)
             _secure_cleanup(plaintext, plaintext_bytes)
 
-    def decrypt(self, key: Union[bytes, SecureBytes], ciphertext: bytes,
+    def decrypt(
+        self,
+        key: Union[bytes, SecureBytes],
+        ciphertext: bytes,
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> SecureBytes:
@@ -454,8 +469,8 @@ class AESSIV(CipherBase):
             if len(key_bytes) != 64:
                 raise ValidationError(f"AES-256-SIV requires 64-byte key, got {len(key_bytes)}")
 
-            from cryptography.hazmat.primitives.ciphers.aead import AESSIV
             import cryptography.exceptions
+            from cryptography.hazmat.primitives.ciphers.aead import AESSIV
 
             cipher = AESSIV(key_bytes)
             aad_list = [associated_data] if associated_data else None
@@ -503,7 +518,10 @@ class AESOCB3(CipherBase):
     def generate_nonce(self) -> bytes:
         return generate_random_bytes(12)
 
-    def encrypt(self, key: Union[bytes, SecureBytes], plaintext: Union[bytes, SecureBytes],
+    def encrypt(
+        self,
+        key: Union[bytes, SecureBytes],
+        plaintext: Union[bytes, SecureBytes],
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> bytes:
@@ -511,10 +529,11 @@ class AESOCB3(CipherBase):
 
         # Issue deprecation warning
         import warnings
+
         warnings.warn(
             "AES-OCB3 is deprecated due to security concerns. Use AES-GCM instead.",
             DeprecationWarning,
-            stacklevel=2
+            stacklevel=2,
         )
 
         # Convert SecureBytes to bytes for library
@@ -542,7 +561,10 @@ class AESOCB3(CipherBase):
             _secure_cleanup(key, key_bytes)
             _secure_cleanup(plaintext, plaintext_bytes)
 
-    def decrypt(self, key: Union[bytes, SecureBytes], ciphertext: bytes,
+    def decrypt(
+        self,
+        key: Union[bytes, SecureBytes],
+        ciphertext: bytes,
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> SecureBytes:
@@ -561,8 +583,8 @@ class AESOCB3(CipherBase):
                 nonce = ciphertext[:12]
                 ciphertext = ciphertext[12:]
 
-            from cryptography.hazmat.primitives.ciphers.aead import AESOCB3
             import cryptography.exceptions
+            from cryptography.hazmat.primitives.ciphers.aead import AESOCB3
 
             cipher = AESOCB3(key_bytes)
             try:
@@ -578,6 +600,7 @@ class AESOCB3(CipherBase):
 # ============================================================================
 # ChaCha20 Family
 # ============================================================================
+
 
 class ChaCha20Poly1305(CipherBase):
     """
@@ -612,7 +635,10 @@ class ChaCha20Poly1305(CipherBase):
     def generate_nonce(self) -> bytes:
         return generate_random_bytes(12)
 
-    def encrypt(self, key: Union[bytes, SecureBytes], plaintext: Union[bytes, SecureBytes],
+    def encrypt(
+        self,
+        key: Union[bytes, SecureBytes],
+        plaintext: Union[bytes, SecureBytes],
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> bytes:
@@ -624,7 +650,9 @@ class ChaCha20Poly1305(CipherBase):
 
         try:
             if len(key_bytes) != 32:
-                raise ValidationError(f"ChaCha20-Poly1305 requires 32-byte key, got {len(key_bytes)}")
+                raise ValidationError(
+                    f"ChaCha20-Poly1305 requires 32-byte key, got {len(key_bytes)}"
+                )
 
             if nonce is None:
                 nonce = self.generate_nonce()
@@ -632,7 +660,9 @@ class ChaCha20Poly1305(CipherBase):
             if len(nonce) != 12:
                 raise ValidationError(f"ChaCha20-Poly1305 nonce must be 12 bytes, got {len(nonce)}")
 
-            from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305 as CryptoChaChaCipher
+            from cryptography.hazmat.primitives.ciphers.aead import (
+                ChaCha20Poly1305 as CryptoChaChaCipher,
+            )
 
             cipher = CryptoChaChaCipher(key_bytes)
             encrypted = cipher.encrypt(nonce, plaintext_bytes, associated_data)
@@ -643,7 +673,10 @@ class ChaCha20Poly1305(CipherBase):
             _secure_cleanup(key, key_bytes)
             _secure_cleanup(plaintext, plaintext_bytes)
 
-    def decrypt(self, key: Union[bytes, SecureBytes], ciphertext: bytes,
+    def decrypt(
+        self,
+        key: Union[bytes, SecureBytes],
+        ciphertext: bytes,
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> SecureBytes:
@@ -654,7 +687,9 @@ class ChaCha20Poly1305(CipherBase):
 
         try:
             if len(key_bytes) != 32:
-                raise ValidationError(f"ChaCha20-Poly1305 requires 32-byte key, got {len(key_bytes)}")
+                raise ValidationError(
+                    f"ChaCha20-Poly1305 requires 32-byte key, got {len(key_bytes)}"
+                )
 
             if nonce is None:
                 if len(ciphertext) < 12 + 16:
@@ -662,8 +697,10 @@ class ChaCha20Poly1305(CipherBase):
                 nonce = ciphertext[:12]
                 ciphertext = ciphertext[12:]
 
-            from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305 as CryptoChaChaCipher
             import cryptography.exceptions
+            from cryptography.hazmat.primitives.ciphers.aead import (
+                ChaCha20Poly1305 as CryptoChaChaCipher,
+            )
 
             cipher = CryptoChaChaCipher(key_bytes)
             try:
@@ -719,9 +756,9 @@ class XChaCha20Poly1305(CipherBase):
         Uses HKDF with SHA256 for secure nonce derivation.
         """
         if len(nonce) == 24:
+            from cryptography.hazmat.backends import default_backend
             from cryptography.hazmat.primitives import hashes
             from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-            from cryptography.hazmat.backends import default_backend
 
             hkdf = HKDF(
                 algorithm=hashes.SHA256(),
@@ -739,7 +776,10 @@ class XChaCha20Poly1305(CipherBase):
                 f"XChaCha20 nonce must be 24 bytes (or 12 for compat), got {len(nonce)}"
             )
 
-    def encrypt(self, key: Union[bytes, SecureBytes], plaintext: Union[bytes, SecureBytes],
+    def encrypt(
+        self,
+        key: Union[bytes, SecureBytes],
+        plaintext: Union[bytes, SecureBytes],
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> bytes:
@@ -751,7 +791,9 @@ class XChaCha20Poly1305(CipherBase):
 
         try:
             if len(key_bytes) != 32:
-                raise ValidationError(f"XChaCha20-Poly1305 requires 32-byte key, got {len(key_bytes)}")
+                raise ValidationError(
+                    f"XChaCha20-Poly1305 requires 32-byte key, got {len(key_bytes)}"
+                )
 
             if nonce is None:
                 nonce = self.generate_nonce()
@@ -772,7 +814,10 @@ class XChaCha20Poly1305(CipherBase):
             _secure_cleanup(key, key_bytes)
             _secure_cleanup(plaintext, plaintext_bytes)
 
-    def decrypt(self, key: Union[bytes, SecureBytes], ciphertext: bytes,
+    def decrypt(
+        self,
+        key: Union[bytes, SecureBytes],
+        ciphertext: bytes,
         nonce: Optional[bytes] = None,
         associated_data: Optional[bytes] = None,
     ) -> SecureBytes:
@@ -783,7 +828,9 @@ class XChaCha20Poly1305(CipherBase):
 
         try:
             if len(key_bytes) != 32:
-                raise ValidationError(f"XChaCha20-Poly1305 requires 32-byte key, got {len(key_bytes)}")
+                raise ValidationError(
+                    f"XChaCha20-Poly1305 requires 32-byte key, got {len(key_bytes)}"
+                )
 
             # Extract nonce if not provided
             if nonce is None:
@@ -794,8 +841,8 @@ class XChaCha20Poly1305(CipherBase):
 
             processed_nonce = self._process_nonce(key_bytes, nonce)
 
-            from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
             import cryptography.exceptions
+            from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
             cipher = ChaCha20Poly1305(key_bytes)
             try:
@@ -811,6 +858,7 @@ class XChaCha20Poly1305(CipherBase):
 # ============================================================================
 # Threefish Family
 # ============================================================================
+
 
 class Threefish512(CipherBase):
     """
@@ -828,6 +876,7 @@ class Threefish512(CipherBase):
         if cls._available is None:
             try:
                 import threefish_native
+
                 cls._available = True
             except ImportError:
                 cls._available = False
@@ -890,7 +939,9 @@ class Threefish512(CipherBase):
 
             import threefish_native
 
-            encrypted = threefish_native.encrypt_512(key_bytes, nonce, plaintext_bytes, associated_data)
+            encrypted = threefish_native.encrypt_512(
+                key_bytes, nonce, plaintext_bytes, associated_data
+            )
 
             # Return nonce + ciphertext+tag (same pattern as AES-GCM)
             return nonce + encrypted
@@ -935,7 +986,9 @@ class Threefish512(CipherBase):
             import threefish_native
 
             try:
-                plaintext = threefish_native.decrypt_512(key_bytes, nonce, ciphertext, associated_data)
+                plaintext = threefish_native.decrypt_512(
+                    key_bytes, nonce, ciphertext, associated_data
+                )
                 return SecureBytes(plaintext)
             except RuntimeError as e:
                 if "Authentication failed" in str(e):
@@ -963,6 +1016,7 @@ class Threefish1024(CipherBase):
         if cls._available is None:
             try:
                 import threefish_native
+
                 cls._available = True
             except ImportError:
                 cls._available = False
@@ -1025,7 +1079,9 @@ class Threefish1024(CipherBase):
 
             import threefish_native
 
-            encrypted = threefish_native.encrypt_1024(key_bytes, nonce, plaintext_bytes, associated_data)
+            encrypted = threefish_native.encrypt_1024(
+                key_bytes, nonce, plaintext_bytes, associated_data
+            )
 
             # Return nonce + ciphertext+tag (same pattern as AES-GCM)
             return nonce + encrypted
@@ -1070,7 +1126,9 @@ class Threefish1024(CipherBase):
             import threefish_native
 
             try:
-                plaintext = threefish_native.decrypt_1024(key_bytes, nonce, ciphertext, associated_data)
+                plaintext = threefish_native.decrypt_1024(
+                    key_bytes, nonce, ciphertext, associated_data
+                )
                 return SecureBytes(plaintext)
             except RuntimeError as e:
                 if "Authentication failed" in str(e):
@@ -1085,10 +1143,11 @@ class Threefish1024(CipherBase):
 # Registry and convenience functions
 # ============================================================================
 
+
 class CipherRegistry(RegistryBase[CipherBase]):
     """Registry for symmetric cipher algorithms."""
 
-    _default_instance: ClassVar[Optional['CipherRegistry']] = None
+    _default_instance: ClassVar[Optional["CipherRegistry"]] = None
 
     def __init__(self):
         super().__init__()
@@ -1103,7 +1162,7 @@ class CipherRegistry(RegistryBase[CipherBase]):
         self.register(Threefish1024)
 
     @classmethod
-    def default(cls) -> 'CipherRegistry':
+    def default(cls) -> "CipherRegistry":
         """Returns the default singleton registry instance."""
         if cls._default_instance is None:
             cls._default_instance = cls()

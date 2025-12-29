@@ -7,24 +7,25 @@ All code in English as per project requirements.
 """
 
 import pytest
+
 from openssl_encrypt.modules.registry import (
-    HashRegistry,
-    get_hash,
-    SHA256,
-    SHA384,
-    SHA512,
+    BLAKE3,
     SHA3_256,
     SHA3_384,
     SHA3_512,
-    BLAKE2b,
-    BLAKE2s,
-    BLAKE3,
+    SHA256,
+    SHA384,
+    SHA512,
     SHAKE128,
     SHAKE256,
-    Whirlpool,
-    ValidationError,
     AlgorithmCategory,
+    BLAKE2b,
+    BLAKE2s,
+    HashRegistry,
     SecurityLevel,
+    ValidationError,
+    Whirlpool,
+    get_hash,
 )
 
 
@@ -42,10 +43,17 @@ class TestHashRegistry:
         registry = HashRegistry.default()
 
         expected_hashes = [
-            "sha256", "sha384", "sha512",
-            "sha3-256", "sha3-384", "sha3-512",
-            "blake2b", "blake2s", "blake3",
-            "shake128", "shake256",
+            "sha256",
+            "sha384",
+            "sha512",
+            "sha3-256",
+            "sha3-384",
+            "sha3-512",
+            "blake2b",
+            "blake2s",
+            "blake3",
+            "shake128",
+            "shake256",
             "whirlpool",
         ]
 
@@ -61,6 +69,7 @@ class TestHashRegistry:
 # ============================================================================
 # SHA-2 Family Tests
 # ============================================================================
+
 
 class TestSHA256:
     """Tests for SHA-256."""
@@ -96,9 +105,7 @@ class TestSHA256:
         # SHA-256("abc") = ba7816bf...
         data = b"abc"
         digest = hasher.hash(data)
-        expected = bytes.fromhex(
-            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-        )
+        expected = bytes.fromhex("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
         assert digest == expected
 
     def test_fixed_output_length(self):
@@ -147,6 +154,7 @@ class TestSHA512:
 # ============================================================================
 # SHA-3 Family Tests
 # ============================================================================
+
 
 class TestSHA3_256:
     """Tests for SHA3-256."""
@@ -208,6 +216,7 @@ class TestSHA3_512:
 # ============================================================================
 # BLAKE2 Family Tests
 # ============================================================================
+
 
 class TestBLAKE2b:
     """Tests for BLAKE2b."""
@@ -367,6 +376,7 @@ class TestBLAKE3:
 # SHAKE (XOF) Tests
 # ============================================================================
 
+
 class TestSHAKE128:
     """Tests for SHAKE-128."""
 
@@ -435,6 +445,7 @@ class TestSHAKE256:
 # Whirlpool Tests
 # ============================================================================
 
+
 class TestWhirlpool:
     """Tests for Whirlpool."""
 
@@ -471,6 +482,7 @@ class TestWhirlpool:
 # Comparative Tests
 # ============================================================================
 
+
 class TestHashComparison:
     """Comparative tests across different hash functions."""
 
@@ -480,8 +492,12 @@ class TestHashComparison:
         test_data = b"Test data for all hashes"
 
         standard_hashes = [
-            "sha256", "sha384", "sha512",
-            "sha3-256", "sha3-384", "sha3-512",
+            "sha256",
+            "sha384",
+            "sha512",
+            "sha3-256",
+            "sha3-384",
+            "sha3-512",
         ]
 
         for hash_name in standard_hashes:
@@ -529,7 +545,7 @@ class TestHashEdgeCases:
         """Test that unicode strings are handled properly."""
         hasher = SHA256()
         # Should work with bytes
-        digest = hasher.hash("test".encode('utf-8'))
+        digest = hasher.hash("test".encode("utf-8"))
         assert len(digest) == 32
 
 

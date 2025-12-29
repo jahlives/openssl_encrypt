@@ -743,9 +743,7 @@ class FLACSteganography(SteganographyBase):
             if len(extracted_bytes) >= 4 + data_length + 2:
                 end_marker = extracted_bytes[4 + data_length : 4 + data_length + 2]
                 if end_marker != b"\xFF\xFE":
-                    logger.warning(
-                        f"End marker mismatch: expected FF FE, got {end_marker.hex()}"
-                    )
+                    logger.warning(f"End marker mismatch: expected FF FE, got {end_marker.hex()}")
 
             logger.debug(f"Successfully extracted {len(payload)} bytes from FLAC")
             return bytes(payload)

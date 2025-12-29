@@ -28,6 +28,7 @@ try:
         get_cipher_info_dict,
         get_kdf_info_dict,
     )
+
     REGISTRY_AVAILABLE = True
 except ImportError:
     REGISTRY_AVAILABLE = False
@@ -278,7 +279,7 @@ class ConfigurationWizard:
         """Add additional hash algorithms."""
         # Use registry if available, otherwise fall back to hardcoded list
         if REGISTRY_AVAILABLE:
-            from .registry import get_available_hashes, HashRegistry
+            from .registry import HashRegistry, get_available_hashes
 
             registry = HashRegistry.default()
             available_hashes = {}
@@ -474,7 +475,9 @@ class ConfigurationWizard:
             print(f"{i}. {desc}{marker}")
 
         if REGISTRY_AVAILABLE:
-            print("\n(Tip: Use 'list-algorithms --category=ciphers' for detailed cipher information)")
+            print(
+                "\n(Tip: Use 'list-algorithms --category=ciphers' for detailed cipher information)"
+            )
 
         try:
             choice = input(
