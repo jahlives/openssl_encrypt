@@ -226,21 +226,26 @@ class TestCryptCliArguments(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up the test class by reading the source code once."""
-        # Get the source code of both CLI modules
+        # Get the source code of CLI modules
         cli_module_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "modules", "crypt_cli.py")
         )
         subparser_module_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "modules", "crypt_cli_subparser.py")
         )
+        aliases_module_path = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "modules", "cli_aliases.py")
+        )
 
-        # Read both files and combine the source code
+        # Read all three files and combine the source code
         with open(cli_module_path, "r") as f:
             main_cli_code = f.read()
         with open(subparser_module_path, "r") as f:
             subparser_code = f.read()
+        with open(aliases_module_path, "r") as f:
+            aliases_code = f.read()
 
-        cls.source_code = main_cli_code + "\n" + subparser_code
+        cls.source_code = main_cli_code + "\n" + subparser_code + "\n" + aliases_code
 
     def _argument_exists(self, arg):
         """Check if an argument exists in the source code."""
