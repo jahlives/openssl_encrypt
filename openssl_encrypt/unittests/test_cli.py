@@ -163,6 +163,55 @@ REQUIRED_ARGUMENT_GROUPS = {
         "force-password",
         "custom-password-list",
     ],
+    "Cascade Encryption": [
+        "cascade",  # Cascade encryption mode
+        "cascade-hash",  # Hash function for HKDF in cascade
+        "no-diversity-check",  # Disable diversity validation
+        "strict-diversity",  # Treat diversity warnings as errors
+    ],
+    "Plugin System": [
+        "enable-plugins",  # Enable plugin system
+        "disable-plugins",  # Disable plugin system
+        "plugin-dir",  # Plugin directory
+        "plugin-config-dir",  # Plugin configuration directory
+        "plugin-id",  # Specific plugin ID
+    ],
+    "Security Profiles": [
+        "security-profile",  # Security profile selection
+        "for-personal",  # Personal use profile
+        "for-business",  # Business use profile
+        "for-compliance",  # Compliance profile
+        "for-archival",  # Archival profile
+        "max-security",  # Maximum security profile
+        "quantum-safe",  # Quantum-safe profile
+        "secure",  # Secure mode
+        "fast",  # Fast mode (lower security)
+    ],
+    "HSM (Hardware Security Module)": [
+        "hsm",  # Enable HSM support
+        "hsm-slot",  # HSM slot number
+        "usb-path",  # USB device path for HSM
+    ],
+    "Manifest Options": [
+        "manifest-password",  # Manifest password
+        "manifest-security-profile",  # Manifest security profile
+        "keystore-to-include",  # Keystore to include in manifest
+        "include-logs",  # Include logs in manifest
+    ],
+    "RandomX KDF": [
+        "enable-randomx",  # Enable RandomX KDF
+        "randomx-rounds",  # RandomX rounds
+        "randomx-mode",  # RandomX mode
+        "randomx-height",  # RandomX height
+        "randomx-hash-len",  # RandomX hash length
+    ],
+    "Decryption Options": [
+        "no-estimate",  # Disable decryption cost estimate
+    ],
+    "Advanced Options": [
+        "crypto-family",  # Cryptographic family selection
+        "executable-path",  # Path to executable for plugins
+    ],
 }
 
 
@@ -1262,5 +1311,3 @@ class TestEnvironmentPasswordHandling(unittest.TestCase):
         # Test with no environment variable
         self.assertFalse("CRYPT_PASSWORD" in os.environ)
         self.assertIsNone(os.environ.get("CRYPT_PASSWORD"))
-
-

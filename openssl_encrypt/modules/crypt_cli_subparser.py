@@ -11,6 +11,12 @@ import argparse
 from .crypt_cli_helper import add_extended_algorithm_help
 from .crypt_core import EncryptionAlgorithm
 
+# Cascade presets for multi-layer encryption
+CASCADE_PRESETS = {
+    "standard": ["aes-256-gcm", "chacha20-poly1305"],
+    "paranoia": ["aes-256-gcm", "chacha20-poly1305", "threefish-512"],
+}
+
 # Import registry helper functions
 try:
     from .registry import (
@@ -21,6 +27,7 @@ try:
         get_available_kems,
         get_available_signatures,
     )
+
     REGISTRY_AVAILABLE = True
 except ImportError:
     REGISTRY_AVAILABLE = False
@@ -54,7 +61,9 @@ def setup_encrypt_parser(subparser):
     # Build help text with deprecated warnings (only for 1.0.0 algorithms)
     algorithm_help_text = "Encryption algorithm to use:\n"
     if REGISTRY_AVAILABLE:
-        algorithm_help_text += "(Use 'list-algorithms' command to see available ciphers, KDFs, and hashes)\n\n"
+        algorithm_help_text += (
+            "(Use 'list-algorithms' command to see available ciphers, KDFs, and hashes)\n\n"
+        )
     for algo in sorted(all_algorithms):
         if algo == EncryptionAlgorithm.FERNET.value:
             description = "default, AES-128-CBC with authentication"
@@ -107,7 +116,8 @@ def setup_encrypt_parser(subparser):
     subparser.add_argument(
         "--algorithm",
         type=str,
-        choices=all_algorithms,
+        # Note: choices validation removed to allow comma-separated algorithms for cascade mode
+        # Validation is performed in CLI logic for both cascade and non-cascade modes
         default=EncryptionAlgorithm.FERNET.value,
         help=algorithm_help_text,
     )
@@ -179,6 +189,55 @@ def setup_encrypt_parser(subparser):
         type=int,
         default=3,
         help="Number of passes for secure deletion (default: 3)",
+    )
+
+    # Cascade encryption options
+    cascade_group = subparser.add_argument_group("Cascade encryption (multi-layer)")
+    cascade_group.description = (
+        "Cascade encryption applies multiple cipher layers sequentially for defense-in-depth. "
+        "Use presets or specify custom cipher chains with comma-separated algorithms."
+    )
+
+    cascade_group.add_argument(
+        "--cascade",
+        nargs="?",
+        const=True,
+        default=None,
+        metavar="PRESET",
+        help=(
+            "Enable cascade encryption. Use with --algorithm for custom chain "
+            "(e.g., --cascade --algorithm aes-256-gcm,chacha20-poly1305), "
+            "or specify preset: 'standard' (AES+ChaCha), 'paranoia' (AES+ChaCha+Threefish)"
+        ),
+    )
+
+    cascade_group.add_argument(
+        "--cascade-hash",
+        type=str,
+        default="sha256",
+        choices=[
+            "sha256",
+            "sha384",
+            "sha512",
+            "sha3-256",
+            "sha3-384",
+            "sha3-512",
+            "blake2b",
+            "blake2s",
+        ],
+        help="Hash function for HKDF key derivation in cascade mode (default: sha256)",
+    )
+
+    cascade_group.add_argument(
+        "--no-diversity-check",
+        action="store_true",
+        help="Disable cipher diversity validation warnings",
+    )
+
+    cascade_group.add_argument(
+        "--strict-diversity",
+        action="store_true",
+        help="Treat cipher diversity warnings as errors (abort on weak combinations)",
     )
 
     # Advanced encryption options
@@ -316,7 +375,9 @@ def setup_encrypt_parser(subparser):
     # Argon2 options for encryption
     argon2_description = "Configure Argon2 memory-hard function parameters"
     if REGISTRY_AVAILABLE:
-        argon2_description += ". Use 'list-algorithms --category=kdfs' to see all available KDF algorithms."
+        argon2_description += (
+            ". Use 'list-algorithms --category=kdfs' to see all available KDF algorithms."
+        )
     argon2_group = subparser.add_argument_group("Argon2 Options", argon2_description)
     argon2_group.add_argument(
         "--enable-argon2",
@@ -1510,7 +1571,7 @@ def create_subparser_main():
         dest="identity_store",
         metavar="PATH",
         help="Path to identity store directory (default: ~/.openssl_encrypt/identities/). "
-             "Can also be set via OPENSSL_ENCRYPT_IDENTITY_STORE environment variable.",
+        "Can also be set via OPENSSL_ENCRYPT_IDENTITY_STORE environment variable.",
     )
 
     # Create subparsers for each command

@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensslencrypt.com/schemas/metadata-v8.json",
+  "title": "OpenSSL Encrypt Metadata Schema Version 8",
+  "description": "Schema for validating encrypted file metadata format version 8 (adds cascade encryption support)",
+  "type": "object",
+  "required": ["format_version", "mode", "derivation_config", "encryption"],
+  "additionalProperties": true,
+  "properties": {
+    "format_version": {
+      "type": "integer",
+      "const": 8,
+      "description": "Metadata format version (must be 8)"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["symmetric", "asymmetric"],
+      "description": "Encryption mode"
+    },
+    "derivation_config": {
+      "type": "object",
+      "required": ["salt"],
+      "additionalProperties": true,
+      "properties": {
+        "salt": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9+/]+=*$",
+          "description": "Base64-encoded salt"
+        },
+        "hash_config": {
+          "type": "object",
+          "additionalProperties": true,
+          "patternProperties": {
+            "^(sha512|sha384|sha256|sha224|sha3_512|sha3_384|sha3_256|sha3_224|blake2b|blake3|shake256|shake128|whirlpool)$": {
+              "type": "object",
+              "required": ["rounds"],
+              "additionalProperties": true,
+              "properties": {
+                "rounds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Number of hash rounds (0 = disabled)"
+                }
+              }
+            }
+          }
+        },
+        "kdf_config": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "aead_binding": {
+      "type": "boolean",
+      "description": "Indicates metadata is cryptographically bound via AEAD AAD"
+    },
+    "hashes": {
+      "type": "object",
+      "required": ["original_hash"],
+      "additionalProperties": true,
+      "properties": {
+        "original_hash": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-fA-F0-9]*$",
+          "description": "Hexadecimal hash of original file"
+        },
+        "encrypted_hash": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-fA-F0-9]*$",
+          "description": "Hexadecimal hash of encrypted content (optional for AEAD-bound files)"
+        }
+      }
+    },
+    "encryption": {
+      "type": "object",
+      "additionalProperties": true,
+      "oneOf": [
+        {
+          "description": "Cascade encryption mode",
+          "required": ["cascade", "cipher_chain", "hkdf_hash", "cascade_salt", "layer_info"],
+          "properties": {
+            "cascade": {
+              "type": "boolean",
+              "const": true,
+              "description": "Indicates cascade encryption is used"
+            },
+            "cipher_chain": {
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "aes-256-gcm",
+                  "aes-gcm",
+                  "aes-gcm-siv",
+                  "aes-ocb3",
+                  "aes-siv",
+                  "chacha20-poly1305",
+                  "xchacha20-poly1305",
+                  "threefish-512",
+                  "threefish-1024"
+                ]
+              },
+              "description": "Ordered list of ciphers in the cascade"
+            },
+            "hkdf_hash": {
+              "type": "string",
+              "enum": ["sha256", "sha384", "sha512", "sha3-256", "blake2b"],
+              "description": "Hash function used for HKDF key derivation"
+            },
+            "cascade_salt": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9+/]+=*$",
+              "description": "Base64-encoded cascade salt (32 bytes)"
+            },
+            "layer_info": {
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "type": "object",
+                "required": ["cipher", "key_size", "tag_size"],
+                "properties": {
+                  "cipher": {
+                    "type": "string",
+                    "description": "Cipher name for this layer"
+                  },
+                  "key_size": {
+                    "type": "integer",
+                    "minimum": 16,
+                    "maximum": 128,
+                    "description": "Key size in bytes"
+                  },
+                  "tag_size": {
+                    "type": "integer",
+                    "minimum": 8,
+                    "maximum": 64,
+                    "description": "Authentication tag size in bytes"
+                  }
+                }
+              },
+              "description": "Information about each layer in the cascade"
+            },
+            "total_overhead": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Total overhead in bytes from all authentication tags"
+            },
+            "pq_security_bits": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Post-quantum security level in bits"
+            }
+          }
+        },
+        {
+          "description": "Single cipher mode",
+          "required": ["algorithm"],
+          "properties": {
+            "cascade": {
+              "type": "boolean",
+              "const": false,
+              "description": "Indicates single cipher mode"
+            },
+            "algorithm": {
+              "type": "string",
+              "enum": [
+                "fernet",
+                "aes-gcm",
+                "aes-gcm-siv",
+                "aes-ocb3",
+                "aes-siv",
+                "chacha20-poly1305",
+                "xchacha20-poly1305",
+                "cascade"
+              ],
+              "description": "Encryption algorithm used"
+            },
+            "nonce": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9+/]+=*$",
+              "description": "Base64-encoded nonce/IV"
+            },
+            "key_size": {
+              "type": "integer",
+              "description": "Key size in bytes"
+            },
+            "tag_size": {
+              "type": "integer",
+              "description": "Authentication tag size in bytes"
+            },
+            "pq_security_bits": {
+              "type": "integer",
+              "description": "Post-quantum security level in bits"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
