@@ -230,3 +230,9 @@ flatpak/openssl-encrypt
 # Mobile app development (moved to separate repository)
 mobile_app/
 mobile.md
+
+# Test coverage reports
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
