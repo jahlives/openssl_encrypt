@@ -3072,6 +3072,215 @@ def create_metadata_v6(
     return metadata
 
 
+def create_metadata_v8(
+    salt: bytes,
+    hash_config: dict,
+    original_hash: str,
+    algorithm: str,
+    pbkdf2_iterations: int = 0,
+    encryption_data: str = "aes-gcm",
+    cascade: bool = False,
+    cipher_chain: list = None,
+    hkdf_hash: str = None,
+    cascade_salt: bytes = None,
+    layer_info: list = None,
+    total_overhead: int = None,
+    pq_security_bits: int = None,
+    include_encrypted_hash: bool = True,
+    encrypted_hash: str = None,
+    aad_mode: bool = False,
+    pqc_info: dict = None,
+    hsm_plugin_name: str = None,
+    hsm_slot_used: int = None,
+    keystore_id: str = None,
+):
+    """
+    Create metadata in format version 8 with cascade encryption support.
+
+    V8 adds cascade encryption support:
+    - Cascade mode with multiple cipher layers
+    - Single-cipher mode with improved structure
+    - Maintains backward compatibility for decryption
+
+    Args:
+        salt: Salt used for key derivation
+        hash_config: Hash configuration dictionary
+        original_hash: Hash of original content
+        algorithm: Encryption algorithm (single cipher or first in chain)
+        pbkdf2_iterations: PBKDF2 iterations if used
+        encryption_data: Symmetric algorithm for data encryption
+        cascade: Whether cascade encryption is enabled
+        cipher_chain: List of cipher names in cascade order
+        hkdf_hash: Hash function for HKDF in cascade mode
+        cascade_salt: Salt for cascade key derivation
+        layer_info: Information about each cascade layer
+        total_overhead: Total overhead from all layers
+        pq_security_bits: Post-quantum security level
+        include_encrypted_hash: Whether to include encrypted_hash
+        encrypted_hash: Hash of encrypted content
+        aad_mode: Whether metadata will be used as AAD
+        pqc_info: Post-quantum cryptography information
+        hsm_plugin_name: HSM plugin identifier
+        hsm_slot_used: HSM slot number used
+        keystore_id: PQC keystore key ID
+
+    Returns:
+        dict: Metadata in format version 8
+    """
+    import re
+
+    # Encode salt to base64
+    salt_b64 = base64.b64encode(salt).decode("utf-8")
+
+    # Create hashes dictionary
+    if include_encrypted_hash and encrypted_hash is not None:
+        hashes_dict = {"original_hash": original_hash, "encrypted_hash": encrypted_hash}
+    else:
+        hashes_dict = {"original_hash": original_hash}
+
+    # Create encryption metadata based on cascade mode
+    if cascade and cipher_chain:
+        # Cascade mode
+        encryption_metadata = {
+            "cascade": True,
+            "cipher_chain": cipher_chain,
+            "hkdf_hash": hkdf_hash or "sha256",
+            "cascade_salt": base64.b64encode(cascade_salt).decode("ascii"),
+            "layer_info": layer_info or [],
+            "total_overhead": total_overhead or 0,
+            "pq_security_bits": pq_security_bits or 128,
+        }
+    else:
+        # Single-cipher mode
+        encryption_metadata = {
+            "cascade": False,
+            "algorithm": algorithm,
+            "encryption_data": encryption_data,
+            "pq_security_bits": pq_security_bits or 128,
+        }
+
+    # Create basic metadata structure
+    metadata = {
+        "format_version": 8,
+        "mode": "symmetric",
+        "derivation_config": {"salt": salt_b64, "hash_config": {}, "kdf_config": {}},
+        "hashes": hashes_dict,
+        "encryption": encryption_metadata,
+    }
+
+    # Add AAD binding marker if in AAD mode
+    if aad_mode:
+        metadata["aead_binding"] = True
+
+    # Process hash algorithms
+    hash_algorithms = [
+        "sha512",
+        "sha384",
+        "sha256",
+        "sha224",
+        "sha3_512",
+        "sha3_384",
+        "sha3_256",
+        "sha3_224",
+        "blake2b",
+        "blake3",
+        "shake256",
+        "shake128",
+        "whirlpool",
+    ]
+    for algo in hash_algorithms:
+        if algo in hash_config:
+            metadata["derivation_config"]["hash_config"][algo] = {"rounds": hash_config[algo]}
+
+    # Add PBKDF2 config if used
+    effective_pbkdf2_iterations = hash_config.get("pbkdf2_iterations", pbkdf2_iterations)
+    if effective_pbkdf2_iterations > 0:
+        metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {
+            "rounds": effective_pbkdf2_iterations
+        }
+
+    # Move KDF configurations from hash_config
+    kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf", "randomx"]
+    for kdf in kdf_algorithms:
+        if kdf in hash_config:
+            metadata["derivation_config"]["kdf_config"][kdf] = hash_config[kdf]
+
+    # Copy dual encryption flag if present
+    if "dual_encryption" in hash_config:
+        metadata["derivation_config"]["kdf_config"]["dual_encryption"] = hash_config[
+            "dual_encryption"
+        ]
+
+    # Copy password verification hashes for dual encryption
+    if "pqc_dual_encrypt_verify" in hash_config:
+        metadata["derivation_config"]["kdf_config"]["pqc_dual_encrypt_verify"] = hash_config[
+            "pqc_dual_encrypt_verify"
+        ]
+    if "pqc_dual_encrypt_verify_salt" in hash_config:
+        metadata["derivation_config"]["kdf_config"]["pqc_dual_encrypt_verify_salt"] = hash_config[
+            "pqc_dual_encrypt_verify_salt"
+        ]
+
+    # Add PQC information if present
+    if pqc_info:
+        if "public_key" in pqc_info:
+            metadata["encryption"]["pqc_public_key"] = base64.b64encode(
+                pqc_info["public_key"]
+            ).decode("utf-8")
+
+        if "private_key" in pqc_info and pqc_info["private_key"]:
+            metadata["encryption"]["pqc_private_key"] = base64.b64encode(
+                pqc_info["private_key"]
+            ).decode("utf-8")
+
+        if "key_salt" in pqc_info:
+            metadata["encryption"]["pqc_key_salt"] = base64.b64encode(pqc_info["key_salt"]).decode(
+                "utf-8"
+            )
+
+        if "key_encrypted" in pqc_info:
+            metadata["encryption"]["pqc_key_encrypted"] = pqc_info["key_encrypted"]
+
+        if "dual_encrypt_key" in pqc_info:
+            metadata["encryption"]["pqc_dual_encrypt_key"] = pqc_info["dual_encrypt_key"]
+
+    # Add HSM configuration with validation
+    if hsm_plugin_name:
+        # Validate plugin name format
+        if not re.match(r"^[a-zA-Z0-9_-]+$", hsm_plugin_name):
+            raise ValueError(
+                f"Invalid HSM plugin name '{hsm_plugin_name}': "
+                f"must contain only alphanumeric characters, underscores, and hyphens"
+            )
+
+        # Validate plugin name length
+        if len(hsm_plugin_name) < 1 or len(hsm_plugin_name) > 64:
+            raise ValueError(
+                f"Invalid HSM plugin name '{hsm_plugin_name}': "
+                f"must be between 1 and 64 characters"
+            )
+
+        metadata["encryption"]["hsm_plugin"] = hsm_plugin_name
+
+        if hsm_slot_used is not None:
+            # Validate slot is a non-negative integer
+            if not isinstance(hsm_slot_used, int):
+                raise ValueError(f"Invalid HSM slot '{hsm_slot_used}': must be an integer")
+
+            if hsm_slot_used < 0 or hsm_slot_used > 1000000:
+                raise ValueError(
+                    f"Invalid HSM slot '{hsm_slot_used}': must be between 0 and 1000000"
+                )
+
+            metadata["encryption"]["hsm_config"] = {"slot": hsm_slot_used}
+
+    # Add keystore ID if present
+    if keystore_id:
+        metadata["derivation_config"]["keystore_id"] = keystore_id
+
+    return metadata
+
+
 def create_metadata_v7(
     salt: bytes,
     hash_config: dict,
@@ -3200,7 +3409,9 @@ def create_metadata_v7(
             print(f"  DEBUG: KDF '{kdf}' NOT found in hash_config")
 
     if not quiet and verbose:
-        print(f"  DEBUG: Final kdf_config in metadata: {metadata['derivation_config']['kdf_config']}")
+        print(
+            f"  DEBUG: Final kdf_config in metadata: {metadata['derivation_config']['kdf_config']}"
+        )
 
     # Add signature (this is added AFTER metadata is created, but before returning)
     metadata["signature"] = {
@@ -3317,7 +3528,7 @@ def decrypt_file_asymmetric(
 
     colon_pos = content.index(b":")
     metadata_b64 = content[:colon_pos]
-    encrypted_data_b64 = content[colon_pos + 1:]
+    encrypted_data_b64 = content[colon_pos + 1 :]
 
     try:
         metadata_json = base64.b64decode(metadata_b64)
@@ -3417,7 +3628,9 @@ def decrypt_file_asymmetric(
         try:
             with SecureBytes(password_raw) as password_secure:
                 # Unwrap password
-                password_unwrapped = wrapper.unwrap_password(encrypted_password, bytes(password_secure))
+                password_unwrapped = wrapper.unwrap_password(
+                    encrypted_password, bytes(password_secure)
+                )
 
         finally:
             secure_memzero(password_raw)
@@ -3614,7 +3827,11 @@ def encrypt_file_asymmetric(
 
             # Derive encryption key using KDF chain
             derived_key, _, _ = generate_key(
-                password=bytes(secure_password), salt=salt, hash_config=hash_config, quiet=quiet, progress=progress
+                password=bytes(secure_password),
+                salt=salt,
+                hash_config=hash_config,
+                quiet=quiet,
+                progress=progress,
             )
 
             # Encrypt data
@@ -3654,9 +3871,7 @@ def encrypt_file_asymmetric(
                     )
 
                     if not quiet:
-                        print(
-                            f"Wrapped password for: {recipient.name} ({recipient.fingerprint}) ✅"
-                        )
+                        print(f"Wrapped password for: {recipient.name} ({recipient.fingerprint}) ✅")
 
                 finally:
                     secure_memzero(shared_secret_raw)
@@ -3802,6 +4017,9 @@ def encrypt_file(
     plugin_manager=None,
     secure_mode=False,
     hsm_plugin=None,
+    cascade=False,
+    cipher_names=None,
+    cascade_hash="sha256",
 ):
     """
     Encrypt a file with a password using the specified algorithm.
@@ -3823,6 +4041,9 @@ def encrypt_file(
         enable_plugins (bool): Whether to enable plugin execution (default: True)
         plugin_manager (PluginManager, optional): Plugin manager instance for plugin execution
         secure_mode (bool): If True, use O_NOFOLLOW to reject symlinks (default: False)
+        cascade (bool): Enable cascade encryption with multiple cipher layers (default: False)
+        cipher_names (list, optional): List of cipher names for cascade mode (e.g., ["aes-256-gcm", "chacha20-poly1305"])
+        cascade_hash (str): Hash function for HKDF in cascade mode (default: "sha256")
 
     Returns:
         bool: True if encryption was successful
@@ -4194,6 +4415,28 @@ def encrypt_file(
             logger.debug(
                 f"ENCRYPT:DATA Input data (first 64 bytes): {data[:64].hex() if len(data) >= 64 else data.hex()}"
             )
+
+        # Handle cascade encryption
+        if cascade and cipher_names:
+            if debug:
+                logger.debug("ENCRYPT:CASCADE Using cascade encryption")
+                logger.debug(f"ENCRYPT:CASCADE Cipher chain: {cipher_names}")
+                logger.debug(f"ENCRYPT:CASCADE HKDF hash: {cascade_hash}")
+                logger.debug(f"ENCRYPT:CASCADE Master key length: {len(key)} bytes")
+                logger.debug(
+                    f"ENCRYPT:CASCADE Cascade salt length: {len(cascade_salt_bytes)} bytes"
+                )
+
+            # Use cascade encryption
+            encrypted_data = cascade_enc.encrypt(data, key, cascade_salt_bytes, associated_data=aad)
+
+            if debug:
+                logger.debug(f"ENCRYPT:CASCADE Encrypted data length: {len(encrypted_data)} bytes")
+                logger.debug(
+                    f"ENCRYPT:CASCADE Encrypted data (first 64 bytes): {encrypted_data[:64].hex() if len(encrypted_data) >= 64 else encrypted_data.hex()}"
+                )
+
+            return encrypted_data
 
         if algorithm == EncryptionAlgorithm.FERNET:
             if debug:
@@ -4656,22 +4899,98 @@ def encrypt_file(
             hash_config.get("pqc_keystore_key_id") if isinstance(hash_config, dict) else None
         )
 
+        # Prepare cascade encryption if enabled
+        cascade_salt_bytes = None
+        layer_info_list = None
+        total_overhead_bytes = None
+        pq_security_level = None
+
+        if cascade and cipher_names:
+            # Import cascade module
+            from .cascade import CascadeConfig, CascadeEncryption
+
+            # Validate cascade configuration
+            if len(cipher_names) < 2:
+                raise ValidationError("Cascade mode requires at least 2 ciphers")
+
+            # Create cascade configuration
+            cascade_config = CascadeConfig(cipher_names=cipher_names, hkdf_hash=cascade_hash)
+
+            # Create cascade encryption instance
+            cascade_enc = CascadeEncryption(cascade_config)
+
+            # Generate cascade salt
+            cascade_salt_bytes = secrets.token_bytes(32)
+
+            # Get security information
+            security_info = cascade_enc.get_security_info()
+            pq_security_level = security_info["pq_security_bits"]
+
+            # Build layer_info for metadata
+            layer_info_list = []
+            for cipher in cascade_enc.ciphers:
+                info = cipher.info()
+                layer_info_list.append(
+                    {
+                        "cipher": info.name,
+                        "key_size": info.key_size,
+                        "tag_size": info.tag_size,
+                    }
+                )
+
+            # Calculate total overhead
+            total_overhead_bytes = cascade_enc.get_total_overhead()
+
+            if verbose:
+                print("🔗 Cascade encryption enabled:")
+                print(f"   Cipher chain: {' → '.join(cipher_names)}")
+                print(f"   HKDF hash: {cascade_hash}")
+                print(f"   Total layers: {len(cipher_names)}")
+                print(f"   Post-quantum security: {pq_security_level} bits")
+
         # Create metadata WITHOUT encrypted_hash (before encryption)
-        metadata = create_metadata_v6(
-            salt=salt,
-            hash_config=hash_config,
-            original_hash=original_hash,
-            encrypted_hash=None,  # Not available yet - will be protected by AAD
-            algorithm=algorithm.value,
-            pbkdf2_iterations=pbkdf2_iterations,
-            pqc_info=pqc_info,
-            encryption_data=encryption_data,
-            hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
-            hsm_slot_used=hsm_slot_used,
-            include_encrypted_hash=False,  # AEAD mode: no encrypted_hash
-            aad_mode=True,  # Mark as AEAD binding
-            keystore_id=keystore_id,  # Pass keystore ID if present
-        )
+        # Use V8 format if cascade is enabled, otherwise use V6 for backward compatibility
+        if cascade and cipher_names:
+            # V8 format with cascade support
+            metadata = create_metadata_v8(
+                salt=salt,
+                hash_config=hash_config,
+                original_hash=original_hash,
+                algorithm=algorithm.value,
+                pbkdf2_iterations=pbkdf2_iterations,
+                encryption_data=encryption_data,
+                cascade=True,
+                cipher_chain=cipher_names,
+                hkdf_hash=cascade_hash,
+                cascade_salt=cascade_salt_bytes,
+                layer_info=layer_info_list,
+                total_overhead=total_overhead_bytes,
+                pq_security_bits=pq_security_level,
+                include_encrypted_hash=False,
+                encrypted_hash=None,
+                aad_mode=True,
+                pqc_info=pqc_info,
+                hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
+                hsm_slot_used=hsm_slot_used,
+                keystore_id=keystore_id,
+            )
+        else:
+            # V6 format for backward compatibility
+            metadata = create_metadata_v6(
+                salt=salt,
+                hash_config=hash_config,
+                original_hash=original_hash,
+                encrypted_hash=None,  # Not available yet - will be protected by AAD
+                algorithm=algorithm.value,
+                pbkdf2_iterations=pbkdf2_iterations,
+                pqc_info=pqc_info,
+                encryption_data=encryption_data,
+                hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
+                hsm_slot_used=hsm_slot_used,
+                include_encrypted_hash=False,  # AEAD mode: no encrypted_hash
+                aad_mode=True,  # Mark as AEAD binding
+                keystore_id=keystore_id,  # Pass keystore ID if present
+            )
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_b64 = base64.b64encode(metadata_json)
 
@@ -5158,9 +5477,9 @@ def decrypt_file(
     # Extract necessary information from metadata
     format_version = metadata.get("format_version", 1)
 
-    # For format_version 4, 5, 6, or 7, set correct hash_config for printing purposes
+    # For format_version 4, 5, 6, 7, or 8, set correct hash_config for printing purposes
     # This doesn't change the actual metadata, just passes the right info to print_hash_config
-    if format_version in [4, 5, 6, 7]:
+    if format_version in [4, 5, 6, 7, 8]:
         # If verbose, pass the full metadata to print_hash_config for proper display
         if verbose:
             print_hash_config_metadata = metadata
@@ -5169,8 +5488,8 @@ def decrypt_file(
     else:
         print_hash_config_metadata = metadata.get("hash_config", {})
 
-    # Handle format version 4, 5, 6, or 7
-    if format_version in [4, 5, 6, 7]:
+    # Handle format version 4, 5, 6, 7, or 8
+    if format_version in [4, 5, 6, 7, 8]:
         # Extract information from new hierarchical structure
         derivation_config = metadata["derivation_config"]
         salt = base64.b64decode(derivation_config["salt"])
@@ -5222,6 +5541,27 @@ def decrypt_file(
 
         # Get encryption information
         encryption = metadata["encryption"]
+
+        # Check if this is V8 cascade format
+        is_cascade = encryption.get("cascade", False)
+        cascade_cipher_chain = None
+        cascade_hkdf_hash = None
+        cascade_salt_decrypt = None
+
+        if format_version == 8 and is_cascade:
+            # Extract cascade information
+            cascade_cipher_chain = encryption.get("cipher_chain", [])
+            cascade_hkdf_hash = encryption.get("hkdf_hash", "sha256")
+            cascade_salt_b64 = encryption.get("cascade_salt")
+            if cascade_salt_b64:
+                cascade_salt_decrypt = base64.b64decode(cascade_salt_b64)
+
+            if verbose:
+                print("🔗 Detected cascade encryption:")
+                print(f"   Cipher chain: {' → '.join(cascade_cipher_chain)}")
+                print(f"   HKDF hash: {cascade_hkdf_hash}")
+                print(f"   Layers: {len(cascade_cipher_chain)}")
+
         algorithm = encryption.get("algorithm", EncryptionAlgorithm.FERNET.value)
 
         # For v5+ format, extract encryption_data from metadata (overrides parameter)
@@ -5711,6 +6051,41 @@ def decrypt_file(
                 f"DECRYPT:DATA Encrypted data (first 64 bytes): {encrypted_data[:64].hex() if len(encrypted_data) >= 64 else encrypted_data.hex()}"
             )
 
+        # Handle cascade decryption for V8 format
+        if is_cascade and cascade_cipher_chain:
+            if debug:
+                logger.debug("DECRYPT:CASCADE Using cascade decryption")
+                logger.debug(f"DECRYPT:CASCADE Cipher chain: {cascade_cipher_chain}")
+                logger.debug(f"DECRYPT:CASCADE HKDF hash: {cascade_hkdf_hash}")
+                logger.debug(f"DECRYPT:CASCADE Master key length: {len(key)} bytes")
+                logger.debug(
+                    f"DECRYPT:CASCADE Cascade salt length: {len(cascade_salt_decrypt)} bytes"
+                )
+
+            # Import and use cascade decryption
+            from .cascade import CascadeConfig, CascadeEncryption
+
+            cascade_config = CascadeConfig(
+                cipher_names=cascade_cipher_chain, hkdf_hash=cascade_hkdf_hash
+            )
+            cascade_dec = CascadeEncryption(cascade_config)
+
+            # Decrypt using cascade
+            decrypted_data = cascade_dec.decrypt(
+                encrypted_data,
+                key,
+                cascade_salt_decrypt,
+                associated_data=aad_for_decrypt,
+            )
+
+            if debug:
+                logger.debug(f"DECRYPT:CASCADE Decrypted data length: {len(decrypted_data)} bytes")
+                logger.debug(
+                    f"DECRYPT:CASCADE Decrypted data (first 64 bytes): {decrypted_data[:64].hex() if len(decrypted_data) >= 64 else decrypted_data.hex()}"
+                )
+
+            return decrypted_data
+
         if algorithm == EncryptionAlgorithm.FERNET.value:
             if debug:
                 logger.debug(f"DECRYPT:FERNET Key length: {len(key)} bytes")
@@ -5900,10 +6275,10 @@ def decrypt_file(
                     # Since we're in a negative test, we should enforce failure
                     if not quiet:
                         print(
-                            f"Encryption data validation failed: wrong_encryption_data test should not reach PQC decryption"
+                            "Encryption data validation failed: wrong_encryption_data test should not reach PQC decryption"
                         )
                     raise ValueError(
-                        f"Security validation: wrong_encryption_data test bypassed earlier validation - this should not succeed"
+                        "Security validation: wrong_encryption_data test bypassed earlier validation - this should not succeed"
                     )
 
                 # Initialize PQC cipher and decrypt
