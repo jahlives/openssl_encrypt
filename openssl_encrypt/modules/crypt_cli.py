@@ -2098,7 +2098,7 @@ def main_with_args(args=None):
         "  --fast, --secure, --max-security (security levels)\n"
         "  --crypto-family aes|chacha|xchacha|fernet (algorithms)\n"
         "  --quantum-safe pq-standard|pq-high|pq-alternative (post-quantum)\n"
-        "  --for-personal|business|archival|compliance (use cases)\n\n"
+        "  --for-personal | --for-business | --for-archival | --for-compliance (use cases)\n\n"
         "COMMANDS:\n"
         "  encrypt, decrypt, shred, generate-password, security-info, analyze-security, config-wizard, analyze-config, template, smart-recommendations, check-argon2, check-pqc, version\n\n"
         "EXAMPLES:\n"
