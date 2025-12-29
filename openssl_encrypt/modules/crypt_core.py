@@ -5498,6 +5498,12 @@ def decrypt_file(
     # Extract necessary information from metadata
     format_version = metadata.get("format_version", 1)
 
+    # Initialize cascade variables (will be set later for V8 format)
+    is_cascade = False
+    cascade_cipher_chain = None
+    cascade_hkdf_hash = None
+    cascade_salt_decrypt = None
+
     # For format_version 4, 5, 6, 7, or 8, set correct hash_config for printing purposes
     # This doesn't change the actual metadata, just passes the right info to print_hash_config
     if format_version in [4, 5, 6, 7, 8]:
@@ -5565,9 +5571,6 @@ def decrypt_file(
 
         # Check if this is V8 cascade format
         is_cascade = encryption.get("cascade", False)
-        cascade_cipher_chain = None
-        cascade_hkdf_hash = None
-        cascade_salt_decrypt = None
 
         if format_version == 8 and is_cascade:
             # Extract cascade information
