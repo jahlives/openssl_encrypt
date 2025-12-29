@@ -214,9 +214,7 @@ class IdentityKeyProtectionService:
         if self._hsm_plugin is None and not self._hsm_checked:
             self._hsm_checked = True
             try:
-                from openssl_encrypt.plugins.hsm.yubikey_challenge_response import (
-                    YubikeyHSMPlugin,
-                )
+                from openssl_encrypt.plugins.hsm.yubikey_challenge_response import YubikeyHSMPlugin
 
                 self._hsm_plugin = YubikeyHSMPlugin()
             except ImportError:
@@ -314,8 +312,8 @@ class IdentityKeyProtectionService:
         # Perform Challenge-Response
         try:
             from openssl_encrypt.modules.plugin_system.plugin_base import (
-                PluginSecurityContext,
                 PluginCapability,
+                PluginSecurityContext,
             )
 
             context = PluginSecurityContext(

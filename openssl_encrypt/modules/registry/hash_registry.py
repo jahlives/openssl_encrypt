@@ -10,14 +10,14 @@ All code in English as per project requirements.
 
 import hashlib
 from abc import abstractmethod
-from typing import Optional, ClassVar
+from typing import ClassVar, Optional
 
 from .base import (
     AlgorithmBase,
-    AlgorithmInfo,
     AlgorithmCategory,
-    SecurityLevel,
+    AlgorithmInfo,
     RegistryBase,
+    SecurityLevel,
     ValidationError,
 )
 
@@ -71,6 +71,7 @@ class HashBase(AlgorithmBase):
 # ============================================================================
 # SHA-2 Family (FIPS 180-4)
 # ============================================================================
+
 
 class SHA256(HashBase):
     """SHA-256 - 256-bit SHA-2 hash function."""
@@ -154,6 +155,7 @@ class SHA512(HashBase):
 # SHA-3 Family (FIPS 202)
 # ============================================================================
 
+
 class SHA3_256(HashBase):
     """SHA3-256 - 256-bit Keccak-based hash function."""
 
@@ -235,6 +237,7 @@ class SHA3_512(HashBase):
 # ============================================================================
 # BLAKE2 Family (RFC 7693)
 # ============================================================================
+
 
 class BLAKE2b(HashBase):
     """
@@ -380,6 +383,7 @@ class BLAKE3(HashBase):
         if cls._available is None:
             try:
                 import blake3
+
                 cls._available = True
             except ImportError:
                 cls._available = False
@@ -427,6 +431,7 @@ class BLAKE3(HashBase):
 # ============================================================================
 # SHAKE Family - Extendable Output Functions (FIPS 202)
 # ============================================================================
+
 
 class SHAKE128(HashBase):
     """
@@ -500,6 +505,7 @@ class SHAKE256(HashBase):
 # Legacy Hash Functions
 # ============================================================================
 
+
 class Whirlpool(HashBase):
     """
     Whirlpool - 512-bit hash function (LEGACY).
@@ -539,6 +545,7 @@ class Whirlpool(HashBase):
             # Try modern whirlpool package
             try:
                 import whirlpool
+
                 cls._available = True
                 return True
             except ImportError:
@@ -547,6 +554,7 @@ class Whirlpool(HashBase):
             # Try legacy pywhirlpool package
             try:
                 import pywhirlpool
+
                 cls._available = True
                 return True
             except ImportError:
@@ -555,6 +563,7 @@ class Whirlpool(HashBase):
             # Python 3.13+ special handling
             try:
                 import sys
+
                 python_version = sys.version_info
 
                 if python_version.major == 3 and python_version.minor >= 13:
@@ -594,6 +603,7 @@ class Whirlpool(HashBase):
         # Try whirlpool package
         try:
             import whirlpool
+
             return whirlpool.new(data).digest()
         except ImportError:
             pass
@@ -601,6 +611,7 @@ class Whirlpool(HashBase):
         # Try pywhirlpool package
         try:
             import pywhirlpool
+
             return pywhirlpool.whirlpool(data).digest()
         except ImportError:
             pass
@@ -613,10 +624,11 @@ class Whirlpool(HashBase):
 # Registry and convenience functions
 # ============================================================================
 
+
 class HashRegistry(RegistryBase[HashBase]):
     """Registry for cryptographic hash functions."""
 
-    _default_instance: ClassVar[Optional['HashRegistry']] = None
+    _default_instance: ClassVar[Optional["HashRegistry"]] = None
 
     def __init__(self):
         super().__init__()
@@ -644,7 +656,7 @@ class HashRegistry(RegistryBase[HashBase]):
         self.register(Whirlpool)
 
     @classmethod
-    def default(cls) -> 'HashRegistry':
+    def default(cls) -> "HashRegistry":
         """Returns the default singleton registry instance."""
         if cls._default_instance is None:
             cls._default_instance = cls()

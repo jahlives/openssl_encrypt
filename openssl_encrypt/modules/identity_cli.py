@@ -20,11 +20,7 @@ from pathlib import Path
 from typing import Optional
 
 from .identity import Identity, IdentityError, IdentityStore
-from .identity_protection import (
-    ProtectionLevel,
-    IdentityKeyProtectionService,
-    HSMNotAvailableError,
-)
+from .identity_protection import HSMNotAvailableError, IdentityKeyProtectionService, ProtectionLevel
 from .pqc_signing import LIBOQS_AVAILABLE
 
 

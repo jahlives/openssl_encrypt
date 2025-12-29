@@ -7,26 +7,27 @@ All code in English as per project requirements.
 """
 
 import pytest
+
 from openssl_encrypt.modules.registry import (
-    KDFRegistry,
-    get_kdf,
-    Argon2id,
-    Argon2i,
-    Argon2d,
-    PBKDF2,
-    Scrypt,
-    Balloon,
     HKDF,
-    RandomX,
+    PBKDF2,
+    AlgorithmCategory,
+    Argon2d,
+    Argon2i,
+    Argon2id,
     Argon2Params,
-    PBKDF2Params,
-    ScryptParams,
+    Balloon,
     BalloonParams,
     HKDFParams,
+    KDFRegistry,
+    PBKDF2Params,
+    RandomX,
     RandomXParams,
-    ValidationError,
-    AlgorithmCategory,
+    Scrypt,
+    ScryptParams,
     SecurityLevel,
+    ValidationError,
+    get_kdf,
 )
 
 
@@ -44,9 +45,14 @@ class TestKDFRegistry:
         registry = KDFRegistry.default()
 
         expected_kdfs = [
-            "argon2id", "argon2i", "argon2d",
-            "pbkdf2", "scrypt", "balloon",
-            "hkdf", "randomx",
+            "argon2id",
+            "argon2i",
+            "argon2d",
+            "pbkdf2",
+            "scrypt",
+            "balloon",
+            "hkdf",
+            "randomx",
         ]
 
         for kdf_name in expected_kdfs:
@@ -61,6 +67,7 @@ class TestKDFRegistry:
 # ============================================================================
 # Argon2 Family Tests
 # ============================================================================
+
 
 class TestArgon2id:
     """Tests for Argon2id."""
@@ -195,6 +202,7 @@ class TestArgon2d:
 # PBKDF2 Tests
 # ============================================================================
 
+
 class TestPBKDF2:
     """Tests for PBKDF2."""
 
@@ -271,6 +279,7 @@ class TestPBKDF2:
 # Scrypt Tests
 # ============================================================================
 
+
 class TestScrypt:
     """Tests for Scrypt."""
 
@@ -337,6 +346,7 @@ class TestScrypt:
 # Balloon Tests
 # ============================================================================
 
+
 class TestBalloon:
     """Tests for Balloon hashing."""
 
@@ -369,6 +379,7 @@ class TestBalloon:
 # ============================================================================
 # HKDF Tests
 # ============================================================================
+
 
 class TestHKDF:
     """Tests for HKDF."""
@@ -425,6 +436,7 @@ class TestHKDF:
 # RandomX Tests
 # ============================================================================
 
+
 class TestRandomX:
     """Tests for RandomX."""
 
@@ -457,6 +469,7 @@ class TestRandomX:
 # ============================================================================
 # Parameter Tests
 # ============================================================================
+
 
 class TestKDFParams:
     """Tests for KDF parameter classes."""
@@ -498,6 +511,7 @@ class TestKDFParams:
 # ============================================================================
 # Comparative Tests
 # ============================================================================
+
 
 class TestKDFComparison:
     """Comparative tests across different KDFs."""

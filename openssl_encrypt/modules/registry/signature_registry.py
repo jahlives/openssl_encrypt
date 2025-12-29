@@ -27,24 +27,24 @@ from .base import (
 # Import SecureBytes for secure memory handling of secret keys
 try:
     from ..secure_memory import SecureBytes, secure_memzero
+
     SECURE_MEMORY_AVAILABLE = True
 except ImportError:
     # Fallback if secure_memory module not available
     SecureBytes = bytes
     SECURE_MEMORY_AVAILABLE = False
+
     def secure_memzero(data):
         """Fallback no-op if secure_memory not available."""
         pass
 
+
 # Import existing PQC implementation
 try:
-    from ..pqc_liboqs import (
-        LIBOQS_AVAILABLE,
-        PQAlgorithm,
-        check_liboqs_support,
-    )
     # Import oqs directly to avoid incorrect mapping in PQSigner
     import oqs
+
+    from ..pqc_liboqs import LIBOQS_AVAILABLE, PQAlgorithm, check_liboqs_support
 except ImportError:
     LIBOQS_AVAILABLE = False
     PQAlgorithm = None
@@ -60,7 +60,7 @@ class SignatureBase(AlgorithmBase):
     """
 
     @abstractmethod
-    def generate_keypair(self) -> Tuple[bytes, 'SecureBytes']:
+    def generate_keypair(self) -> Tuple[bytes, "SecureBytes"]:
         """
         Generate a signature keypair.
 
@@ -76,7 +76,7 @@ class SignatureBase(AlgorithmBase):
         pass
 
     @abstractmethod
-    def sign(self, message: bytes, secret_key: Union[bytes, 'SecureBytes']) -> bytes:
+    def sign(self, message: bytes, secret_key: Union[bytes, "SecureBytes"]) -> bytes:
         """
         Sign a message using the secret key.
 
@@ -127,6 +127,7 @@ class SignatureBase(AlgorithmBase):
 # ============================================================================
 # ML-DSA (NIST FIPS 204) - formerly Dilithium
 # ============================================================================
+
 
 class MLDSA44(SignatureBase):
     """
@@ -307,6 +308,7 @@ class MLDSA87(SignatureBase):
 # SLH-DSA (NIST FIPS 205) - formerly SPHINCS+
 # ============================================================================
 
+
 class SLHDSASHA2128F(SignatureBase):
     """
     SLH-DSA-SHA2-128F (NIST FIPS 205).
@@ -485,6 +487,7 @@ class SLHDSASHA2256F(SignatureBase):
 # FN-DSA (NIST FIPS 206 forthcoming) - formerly Falcon
 # ============================================================================
 
+
 class FNDSA512(SignatureBase):
     """
     FN-DSA-512 (NIST FIPS 206 forthcoming).
@@ -507,7 +510,7 @@ class FNDSA512(SignatureBase):
             public_key_size=897,
             secret_key_size=1281,
             signature_size=666,
-            aliases=('fn_dsa_512', 'fndsa512', 'fndsa-512', 'falcon512', 'falcon-512'),
+            aliases=("fn_dsa_512", "fndsa512", "fndsa-512", "falcon512", "falcon-512"),
         )
 
     @classmethod
@@ -565,7 +568,7 @@ class FNDSA1024(SignatureBase):
             public_key_size=1793,
             secret_key_size=2305,
             signature_size=1280,
-            aliases=('fn_dsa_1024', 'fndsa1024', 'fndsa-1024', 'falcon1024', 'falcon-1024'),
+            aliases=("fn_dsa_1024", "fndsa1024", "fndsa-1024", "falcon1024", "falcon-1024"),
         )
 
     @classmethod
@@ -605,6 +608,7 @@ class FNDSA1024(SignatureBase):
 # MAYO (NIST Round 2 Candidate)
 # ============================================================================
 
+
 class MAYO1(SignatureBase):
     """
     MAYO-1 (NIST Round 2).
@@ -627,7 +631,7 @@ class MAYO1(SignatureBase):
             public_key_size=1168,
             secret_key_size=24,
             signature_size=321,
-            aliases=('mayo_1', 'mayo1'),
+            aliases=("mayo_1", "mayo1"),
         )
 
     @classmethod
@@ -685,7 +689,7 @@ class MAYO3(SignatureBase):
             public_key_size=2656,
             secret_key_size=32,
             signature_size=577,
-            aliases=('mayo_3', 'mayo3'),
+            aliases=("mayo_3", "mayo3"),
         )
 
     @classmethod
@@ -743,7 +747,7 @@ class MAYO5(SignatureBase):
             public_key_size=5488,
             secret_key_size=40,
             signature_size=838,
-            aliases=('mayo_5', 'mayo5'),
+            aliases=("mayo_5", "mayo5"),
         )
 
     @classmethod
@@ -783,6 +787,7 @@ class MAYO5(SignatureBase):
 # CROSS (NIST Round 2 Candidate)
 # ============================================================================
 
+
 class CROSS128(SignatureBase):
     """
     CROSS-128 (NIST Round 2).
@@ -805,7 +810,7 @@ class CROSS128(SignatureBase):
             public_key_size=77,
             secret_key_size=32,
             signature_size=12852,
-            aliases=('cross_128', 'cross128'),
+            aliases=("cross_128", "cross128"),
         )
 
     @classmethod
@@ -863,7 +868,7 @@ class CROSS192(SignatureBase):
             public_key_size=115,
             secret_key_size=48,
             signature_size=28036,
-            aliases=('cross_192', 'cross192'),
+            aliases=("cross_192", "cross192"),
         )
 
     @classmethod
@@ -921,7 +926,7 @@ class CROSS256(SignatureBase):
             public_key_size=153,
             secret_key_size=64,
             signature_size=51044,
-            aliases=('cross_256', 'cross256'),
+            aliases=("cross_256", "cross256"),
         )
 
     @classmethod
@@ -960,6 +965,7 @@ class CROSS256(SignatureBase):
 # ============================================================================
 # Signature Registry
 # ============================================================================
+
 
 class SignatureRegistry(RegistryBase[SignatureBase]):
     """

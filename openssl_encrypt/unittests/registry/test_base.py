@@ -7,15 +7,16 @@ All code in English as per project requirements.
 """
 
 import pytest
+
 from openssl_encrypt.modules.registry.base import (
     AlgorithmBase,
-    AlgorithmInfo,
     AlgorithmCategory,
-    SecurityLevel,
-    RegistryBase,
     AlgorithmError,
+    AlgorithmInfo,
     AlgorithmNotAvailableError,
     AlgorithmNotFoundError,
+    RegistryBase,
+    SecurityLevel,
     ValidationError,
 )
 

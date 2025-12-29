@@ -17,14 +17,15 @@ from .base import (
     AlgorithmBase,
     AlgorithmCategory,
     AlgorithmInfo,
+    AlgorithmNotAvailableError,
     RegistryBase,
     SecurityLevel,
-    AlgorithmNotAvailableError,
 )
 
 # Import secure memory handling
 try:
     from ..secure_memory import SecureBytes, secure_memzero
+
     SECURE_MEMORY_AVAILABLE = True
 except ImportError:
     SecureBytes = bytes
@@ -34,15 +35,13 @@ except ImportError:
         """Fallback no-op."""
         pass
 
+
 # Import existing PQC implementation
 try:
-    from ..pqc_liboqs import (
-        LIBOQS_AVAILABLE,
-        PQAlgorithm,
-        check_liboqs_support,
-    )
     # Import oqs directly to avoid incorrect mapping in PQEncapsulator
     import oqs
+
+    from ..pqc_liboqs import LIBOQS_AVAILABLE, PQAlgorithm, check_liboqs_support
 except ImportError:
     LIBOQS_AVAILABLE = False
     PQAlgorithm = None
@@ -59,7 +58,7 @@ class KEMBase(AlgorithmBase):
     """
 
     @abstractmethod
-    def generate_keypair(self) -> Tuple[bytes, 'SecureBytes']:
+    def generate_keypair(self) -> Tuple[bytes, "SecureBytes"]:
         """
         Generate a KEM keypair.
 
@@ -75,7 +74,7 @@ class KEMBase(AlgorithmBase):
         pass
 
     @abstractmethod
-    def encapsulate(self, public_key: bytes) -> Tuple[bytes, 'SecureBytes']:
+    def encapsulate(self, public_key: bytes) -> Tuple[bytes, "SecureBytes"]:
         """
         Encapsulate a shared secret using a public key.
 
@@ -94,7 +93,9 @@ class KEMBase(AlgorithmBase):
         pass
 
     @abstractmethod
-    def decapsulate(self, ciphertext: bytes, secret_key: Union[bytes, 'SecureBytes']) -> 'SecureBytes':
+    def decapsulate(
+        self, ciphertext: bytes, secret_key: Union[bytes, "SecureBytes"]
+    ) -> "SecureBytes":
         """
         Decapsulate the shared secret using the secret key.
 
@@ -136,6 +137,7 @@ class KEMBase(AlgorithmBase):
 # ============================================================================
 # ML-KEM (NIST FIPS 203) - formerly Kyber
 # ============================================================================
+
 
 class MLKEM512(KEMBase):
     """
@@ -244,6 +246,7 @@ class MLKEM768(KEMBase):
     def encapsulate(self, public_key: bytes) -> Tuple[bytes, SecureBytes]:
         ciphertext, shared_secret = self._kem.encap_secret(public_key)
         return ciphertext, SecureBytes(shared_secret)
+
     def decapsulate(self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]) -> SecureBytes:
         # Convert SecureBytes to bytes for library
         secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
@@ -257,7 +260,6 @@ class MLKEM768(KEMBase):
             # Zero secret key copy if original was SecureBytes
             if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
                 secure_memzero(bytearray(secret_key_bytes))
-
 
 
 class MLKEM1024(KEMBase):
@@ -305,6 +307,7 @@ class MLKEM1024(KEMBase):
     def encapsulate(self, public_key: bytes) -> Tuple[bytes, SecureBytes]:
         ciphertext, shared_secret = self._kem.encap_secret(public_key)
         return ciphertext, SecureBytes(shared_secret)
+
     def decapsulate(self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]) -> SecureBytes:
         # Convert SecureBytes to bytes for library
         secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
@@ -320,10 +323,10 @@ class MLKEM1024(KEMBase):
                 secure_memzero(bytearray(secret_key_bytes))
 
 
-
 # ============================================================================
 # HQC (NIST Round 4 Candidate)
 # ============================================================================
+
 
 class HQC128(KEMBase):
     """
@@ -370,6 +373,7 @@ class HQC128(KEMBase):
     def encapsulate(self, public_key: bytes) -> Tuple[bytes, SecureBytes]:
         ciphertext, shared_secret = self._kem.encap_secret(public_key)
         return ciphertext, SecureBytes(shared_secret)
+
     def decapsulate(self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]) -> SecureBytes:
         # Convert SecureBytes to bytes for library
         secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
@@ -383,7 +387,6 @@ class HQC128(KEMBase):
             # Zero secret key copy if original was SecureBytes
             if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
                 secure_memzero(bytearray(secret_key_bytes))
-
 
 
 class HQC192(KEMBase):
@@ -431,6 +434,7 @@ class HQC192(KEMBase):
     def encapsulate(self, public_key: bytes) -> Tuple[bytes, SecureBytes]:
         ciphertext, shared_secret = self._kem.encap_secret(public_key)
         return ciphertext, SecureBytes(shared_secret)
+
     def decapsulate(self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]) -> SecureBytes:
         # Convert SecureBytes to bytes for library
         secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
@@ -444,7 +448,6 @@ class HQC192(KEMBase):
             # Zero secret key copy if original was SecureBytes
             if isinstance(secret_key, SecureBytes) and secret_key_bytes != secret_key:
                 secure_memzero(bytearray(secret_key_bytes))
-
 
 
 class HQC256(KEMBase):
@@ -492,6 +495,7 @@ class HQC256(KEMBase):
     def encapsulate(self, public_key: bytes) -> Tuple[bytes, SecureBytes]:
         ciphertext, shared_secret = self._kem.encap_secret(public_key)
         return ciphertext, SecureBytes(shared_secret)
+
     def decapsulate(self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]) -> SecureBytes:
         # Convert SecureBytes to bytes for library
         secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
@@ -507,10 +511,10 @@ class HQC256(KEMBase):
                 secure_memzero(bytearray(secret_key_bytes))
 
 
-
 # ============================================================================
 # KEM Registry
 # ============================================================================
+
 
 class KEMRegistry(RegistryBase[KEMBase]):
     """

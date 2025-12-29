@@ -4364,7 +4364,12 @@ def encrypt_file(
 
     # Encrypt the data
     if not quiet:
-        print("Encrypting content with " + algorithm_value, end=" ")
+        if cascade and cipher_names:
+            # Show all algorithms in the cascade chain
+            cipher_list = " → ".join(cipher_names)
+            print(f"Encrypting content with cascade ({cipher_list})", end=" ")
+        else:
+            print("Encrypting content with " + algorithm_value, end=" ")
 
     # Helper function to get appropriate nonce for each algorithm
     def get_algorithm_nonce(alg, test_mode=False):
@@ -6062,7 +6067,12 @@ def decrypt_file(
                 print(f"Error processing PQC private key: {str(e)}")
             # If there's an error, we'll continue without a private key    # Decrypt the data
     if not quiet:
-        print("Decrypting content with " + algorithm, end=" ")
+        if is_cascade and cascade_cipher_chain:
+            # Show all algorithms in the cascade chain (in reverse order for decryption)
+            cipher_list = " → ".join(reversed(cascade_cipher_chain))
+            print(f"Decrypting content with cascade ({cipher_list})", end=" ")
+        else:
+            print("Decrypting content with " + algorithm, end=" ")
 
     # For AEAD algorithms, prepare AAD from metadata
     if aead_binding:

@@ -77,6 +77,7 @@ class LogCapture(logging.Handler):
         self.records = []
         self.output = StringIO()
 
+
 class TestCamelliaImplementation(unittest.TestCase):
     """Test cases for the Camellia cipher implementation with focus on timing side channels."""
 

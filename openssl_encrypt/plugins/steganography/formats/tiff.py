@@ -464,9 +464,7 @@ class TIFFAnalyzer:
             image_info = self._analyze_tiff_properties(tiff_data)
 
             # Steganography suitability assessment
-            stego_assessment = self._assess_tiff_steganography_suitability(
-                header_info, image_info
-            )
+            stego_assessment = self._assess_tiff_steganography_suitability(header_info, image_info)
 
             return {
                 "format": "TIFF",

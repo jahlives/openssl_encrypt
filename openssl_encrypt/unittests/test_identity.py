@@ -381,7 +381,7 @@ class TestAsymmetricDecryption(unittest.TestCase):
         # Corrupt one byte in the signature (format: base64(metadata):base64(data))
         colon_pos = content.index(b":")
         metadata_b64 = content[:colon_pos]
-        encrypted_data_b64 = content[colon_pos + 1:]
+        encrypted_data_b64 = content[colon_pos + 1 :]
 
         metadata_json = base64.b64decode(metadata_b64)
         metadata = json.loads(metadata_json)

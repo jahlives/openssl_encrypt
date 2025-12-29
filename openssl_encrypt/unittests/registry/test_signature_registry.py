@@ -7,26 +7,27 @@ All code in English as per project requirements.
 """
 
 import pytest
+
 from openssl_encrypt.modules.registry import (
-    SignatureRegistry,
-    get_signature,
+    CROSS128,
+    CROSS192,
+    CROSS256,
+    FNDSA512,
+    FNDSA1024,
+    MAYO1,
+    MAYO3,
+    MAYO5,
     MLDSA44,
     MLDSA65,
     MLDSA87,
     SLHDSASHA2128F,
     SLHDSASHA2192F,
     SLHDSASHA2256F,
-    FNDSA512,
-    FNDSA1024,
-    MAYO1,
-    MAYO3,
-    MAYO5,
-    CROSS128,
-    CROSS192,
-    CROSS256,
     AlgorithmCategory,
-    SecurityLevel,
     AlgorithmNotAvailableError,
+    SecurityLevel,
+    SignatureRegistry,
+    get_signature,
 )
 from openssl_encrypt.modules.secure_memory import SecureBytes
 
@@ -103,6 +104,7 @@ class TestSignatureRegistry:
 # ============================================================================
 # ML-DSA Tests
 # ============================================================================
+
 
 class TestMLDSA44:
     """Tests for ML-DSA-44."""
@@ -237,6 +239,7 @@ class TestMLDSA87:
 # SLH-DSA Tests
 # ============================================================================
 
+
 class TestSLHDSASHA2128F:
     """Tests for SLH-DSA-SHA2-128F."""
 
@@ -317,6 +320,7 @@ class TestSLHDSASHA2256F:
 # FN-DSA Tests
 # ============================================================================
 
+
 class TestFNDSA512:
     """Tests for FN-DSA-512."""
 
@@ -368,6 +372,7 @@ class TestFNDSA1024:
 # ============================================================================
 # MAYO Tests
 # ============================================================================
+
 
 class TestMAYO1:
     """Tests for MAYO-1."""
@@ -443,6 +448,7 @@ class TestMAYO5:
 # CROSS Tests
 # ============================================================================
 
+
 class TestCROSS128:
     """Tests for CROSS-128."""
 
@@ -517,6 +523,7 @@ class TestCROSS256:
 # Comparative Tests
 # ============================================================================
 
+
 class TestSignatureComparison:
     """Comparative tests across different signature algorithms."""
 
@@ -579,6 +586,7 @@ class TestSignatureComparison:
 # ============================================================================
 # Error Handling Tests
 # ============================================================================
+
 
 class TestSignatureErrorHandling:
     """Tests for signature error handling."""

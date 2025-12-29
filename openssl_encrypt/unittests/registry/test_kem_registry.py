@@ -7,18 +7,19 @@ All code in English as per project requirements.
 """
 
 import pytest
+
 from openssl_encrypt.modules.registry import (
-    KEMRegistry,
-    get_kem,
-    MLKEM512,
-    MLKEM768,
-    MLKEM1024,
     HQC128,
     HQC192,
     HQC256,
+    MLKEM512,
+    MLKEM768,
+    MLKEM1024,
     AlgorithmCategory,
-    SecurityLevel,
     AlgorithmNotAvailableError,
+    KEMRegistry,
+    SecurityLevel,
+    get_kem,
 )
 from openssl_encrypt.modules.secure_memory import SecureBytes
 
@@ -81,6 +82,7 @@ class TestKEMRegistry:
 # ============================================================================
 # ML-KEM Tests
 # ============================================================================
+
 
 class TestMLKEM512:
     """Tests for ML-KEM-512."""
@@ -202,6 +204,7 @@ class TestMLKEM1024:
 # HQC Tests
 # ============================================================================
 
+
 class TestHQC128:
     """Tests for HQC-128."""
 
@@ -275,6 +278,7 @@ class TestHQC256:
 # Comparative Tests
 # ============================================================================
 
+
 class TestKEMComparison:
     """Comparative tests across different KEMs."""
 
@@ -318,6 +322,7 @@ class TestKEMComparison:
 # ============================================================================
 # Error Handling Tests
 # ============================================================================
+
 
 class TestKEMErrorHandling:
     """Tests for KEM error handling."""

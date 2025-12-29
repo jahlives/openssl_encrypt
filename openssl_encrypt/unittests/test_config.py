@@ -1849,7 +1849,9 @@ class TestConfigurationWizard(unittest.TestCase):
         ]
 
         for expertise, use_case in test_cases:
-            with self.subTest(expertise=expertise.value, use_case=use_case.value):  # Use .value for pytest-xdist serialization
+            with self.subTest(
+                expertise=expertise.value, use_case=use_case.value
+            ):  # Use .value for pytest-xdist serialization
                 self.wizard.user_expertise = expertise
                 self.wizard.use_case = use_case
 
@@ -3034,5 +3036,3 @@ class TestSmartRecommendations(unittest.TestCase):
 
                 # Current should have higher or equal priority
                 self.assertGreaterEqual(current_priority, next_priority)
-
-

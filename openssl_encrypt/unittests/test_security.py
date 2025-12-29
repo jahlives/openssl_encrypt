@@ -45,7 +45,9 @@ from openssl_encrypt.modules.crypt_errors import (
     InternalError,
     KeyDerivationError,
     KeystoreError,
-    MemoryError as SecureMemoryError,
+)
+from openssl_encrypt.modules.crypt_errors import MemoryError as SecureMemoryError
+from openssl_encrypt.modules.crypt_errors import (
     PermissionError,
     PlatformError,
     SecureError,
@@ -87,9 +89,7 @@ from openssl_encrypt.modules.secure_memory import (
     allocate_secure_buffer,
     free_secure_buffer,
 )
-from openssl_encrypt.modules.secure_memory import (
-    secure_memzero as memory_secure_memzero,
-)
+from openssl_encrypt.modules.secure_memory import secure_memzero as memory_secure_memzero
 from openssl_encrypt.modules.secure_memory import verify_memory_zeroed
 from openssl_encrypt.modules.secure_ops import (
     SecureContainer,
@@ -113,6 +113,7 @@ except ImportError:
     PQC_AVAILABLE = False
     PQCipher = None
     PQCAlgorithm = None
+
 
 class TestSecureErrorHandling(unittest.TestCase):
     """Test cases for secure error handling functionality."""
@@ -1523,5 +1524,3 @@ class TestSecurityLogger(unittest.TestCase):
             log_content = f.read()
             self.assertIn("[truncated]", log_content)
             self.assertNotIn("x" * 500, log_content)
-
-

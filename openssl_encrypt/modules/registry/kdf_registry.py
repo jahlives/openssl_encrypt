@@ -13,20 +13,21 @@ import sys
 from abc import abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, ClassVar, Union
+from typing import ClassVar, Optional, Union
 
 from .base import (
     AlgorithmBase,
-    AlgorithmInfo,
     AlgorithmCategory,
-    SecurityLevel,
+    AlgorithmInfo,
     RegistryBase,
+    SecurityLevel,
     ValidationError,
 )
 
 # Import secure memory handling
 try:
     from ..secure_memory import SecureBytes, secure_memzero
+
     SECURE_MEMORY_AVAILABLE = True
 except ImportError:
     # Fallback if secure_memory not available
@@ -40,16 +41,18 @@ except ImportError:
 
 class Argon2Type(Enum):
     """Argon2 variant types."""
-    ARGON2D = 0   # Data-dependent (GPU-resistant)
-    ARGON2I = 1   # Data-independent (side-channel resistant)
+
+    ARGON2D = 0  # Data-dependent (GPU-resistant)
+    ARGON2I = 1  # Data-independent (side-channel resistant)
     ARGON2ID = 2  # Hybrid (recommended)
 
 
 @dataclass
 class KDFParams:
     """Base class for KDF parameters."""
+
     output_length: int = 32  # Default key length in bytes
-    salt_length: int = 16    # Default salt length in bytes
+    salt_length: int = 16  # Default salt length in bytes
 
 
 @dataclass
@@ -65,6 +68,7 @@ class Argon2Params(KDFParams):
         parallelism: Number of parallel threads (default: 4)
         variant: Argon2 variant (id/i/d, default: id)
     """
+
     time_cost: int = 3
     memory_cost: int = 65536  # 64 MB in KiB
     parallelism: int = 4
@@ -82,6 +86,7 @@ class PBKDF2Params(KDFParams):
         iterations: Number of iterations (default: 100000)
         hash_function: Hash function name (default: "sha256")
     """
+
     iterations: int = 100000
     hash_function: str = "sha256"  # "sha256", "sha512", etc.
 
@@ -98,9 +103,10 @@ class ScryptParams(KDFParams):
         r: Block size (default: 8)
         p: Parallelization factor (default: 1)
     """
+
     n: int = 16384  # CPU/memory cost
-    r: int = 8      # Block size
-    p: int = 1      # Parallelization
+    r: int = 8  # Block size
+    p: int = 1  # Parallelization
 
 
 @dataclass
@@ -115,6 +121,7 @@ class BalloonParams(KDFParams):
         space_cost: Memory usage (default: 65536)
         parallelism: Parallel cost (default: 4)
     """
+
     time_cost: int = 3
     space_cost: int = 65536
     parallelism: int = 4
@@ -133,6 +140,7 @@ class HKDFParams(KDFParams):
         hash_function: Hash function name (default: "sha256")
         info: Context-specific info bytes (default: b"")
     """
+
     hash_function: str = "sha256"
     info: bytes = b""
 
@@ -151,6 +159,7 @@ class RandomXParams(KDFParams):
         init_rounds: Number of initialization rounds (default: 1)
         passes: Number of RandomX passes (default: 1)
     """
+
     hash: str = "sha256"
     init_rounds: int = 1
     passes: int = 1
@@ -165,11 +174,8 @@ class KDFBase(AlgorithmBase):
 
     @abstractmethod
     def derive(
-        self,
-        password: Union[bytes, 'SecureBytes'],
-        salt: bytes,
-        params: Optional[KDFParams] = None
-    ) -> 'SecureBytes':
+        self, password: Union[bytes, "SecureBytes"], salt: bytes, params: Optional[KDFParams] = None
+    ) -> "SecureBytes":
         """
         Derives a key from a password and salt.
 
@@ -229,6 +235,7 @@ class KDFBase(AlgorithmBase):
 # Argon2 Family
 # ============================================================================
 
+
 class Argon2id(KDFBase):
     """
     Argon2id - Hybrid Argon2 variant (recommended).
@@ -258,6 +265,7 @@ class Argon2id(KDFBase):
         if cls._available is None:
             try:
                 import argon2
+
                 cls._available = True
             except ImportError:
                 cls._available = False
@@ -278,7 +286,7 @@ class Argon2id(KDFBase):
         self,
         password: Union[bytes, SecureBytes],
         salt: bytes,
-        params: Optional[Argon2Params] = None
+        params: Optional[Argon2Params] = None,
     ) -> SecureBytes:
         self.check_available()
 
@@ -357,7 +365,7 @@ class Argon2i(KDFBase):
         self,
         password: Union[bytes, SecureBytes],
         salt: bytes,
-        params: Optional[Argon2Params] = None
+        params: Optional[Argon2Params] = None,
     ) -> SecureBytes:
         if params is None:
             params = self.default_params()
@@ -403,7 +411,7 @@ class Argon2d(KDFBase):
         self,
         password: Union[bytes, SecureBytes],
         salt: bytes,
-        params: Optional[Argon2Params] = None
+        params: Optional[Argon2Params] = None,
     ) -> SecureBytes:
         if params is None:
             params = self.default_params()
@@ -418,6 +426,7 @@ class Argon2d(KDFBase):
 # ============================================================================
 # PBKDF2
 # ============================================================================
+
 
 class PBKDF2(KDFBase):
     """
@@ -454,7 +463,7 @@ class PBKDF2(KDFBase):
         self,
         password: Union[bytes, SecureBytes],
         salt: bytes,
-        params: Optional[PBKDF2Params] = None
+        params: Optional[PBKDF2Params] = None,
     ) -> SecureBytes:
         if params is None:
             params = self.default_params()
@@ -464,9 +473,9 @@ class PBKDF2(KDFBase):
         if params.iterations < 1:
             raise ValidationError("PBKDF2 iterations must be at least 1")
 
+        from cryptography.hazmat.backends import default_backend
         from cryptography.hazmat.primitives import hashes
         from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-        from cryptography.hazmat.backends import default_backend
 
         # Convert password to bytes if needed
         password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
@@ -502,6 +511,7 @@ class PBKDF2(KDFBase):
 # Scrypt
 # ============================================================================
 
+
 class Scrypt(KDFBase):
     """
     Scrypt - Memory-hard KDF (RFC 7914).
@@ -529,6 +539,7 @@ class Scrypt(KDFBase):
         if cls._available is None:
             try:
                 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt as CryptoScrypt
+
                 cls._available = True
             except ImportError:
                 cls._available = False
@@ -540,15 +551,15 @@ class Scrypt(KDFBase):
             output_length=32,
             salt_length=16,
             n=16384,  # CPU/memory cost
-            r=8,       # Block size
-            p=1,       # Parallelization
+            r=8,  # Block size
+            p=1,  # Parallelization
         )
 
     def derive(
         self,
         password: Union[bytes, SecureBytes],
         salt: bytes,
-        params: Optional[ScryptParams] = None
+        params: Optional[ScryptParams] = None,
     ) -> SecureBytes:
         self.check_available()
 
@@ -565,8 +576,8 @@ class Scrypt(KDFBase):
         if params.p < 1:
             raise ValidationError("Scrypt p must be at least 1")
 
-        from cryptography.hazmat.primitives.kdf.scrypt import Scrypt as CryptoScrypt
         from cryptography.hazmat.backends import default_backend
+        from cryptography.hazmat.primitives.kdf.scrypt import Scrypt as CryptoScrypt
 
         # Convert password to bytes if needed
         password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
@@ -591,6 +602,7 @@ class Scrypt(KDFBase):
 # ============================================================================
 # Balloon Hashing
 # ============================================================================
+
 
 class Balloon(KDFBase):
     """
@@ -619,6 +631,7 @@ class Balloon(KDFBase):
         if cls._available is None:
             try:
                 from openssl_encrypt.modules.balloon import balloon_m
+
                 cls._available = True
             except ImportError:
                 cls._available = False
@@ -638,7 +651,7 @@ class Balloon(KDFBase):
         self,
         password: Union[bytes, SecureBytes],
         salt: bytes,
-        params: Optional[BalloonParams] = None
+        params: Optional[BalloonParams] = None,
     ) -> SecureBytes:
         self.check_available()
 
@@ -664,14 +677,15 @@ class Balloon(KDFBase):
 
             # Truncate or pad to desired length
             if len(result) >= params.output_length:
-                return SecureBytes(result[:params.output_length])
+                return SecureBytes(result[: params.output_length])
             else:
                 # Pad with additional hashing if needed
                 import hashlib
+
                 padded = result
                 while len(padded) < params.output_length:
                     padded += hashlib.sha256(padded).digest()
-                return SecureBytes(padded[:params.output_length])
+                return SecureBytes(padded[: params.output_length])
         finally:
             if isinstance(password, SecureBytes) and password_bytes != password:
                 secure_memzero(bytearray(password_bytes))
@@ -680,6 +694,7 @@ class Balloon(KDFBase):
 # ============================================================================
 # HKDF
 # ============================================================================
+
 
 class HKDF(KDFBase):
     """
@@ -708,6 +723,7 @@ class HKDF(KDFBase):
         if cls._available is None:
             try:
                 from cryptography.hazmat.primitives.kdf.hkdf import HKDF as CryptoHKDF
+
                 cls._available = True
             except ImportError:
                 cls._available = False
@@ -723,10 +739,7 @@ class HKDF(KDFBase):
         )
 
     def derive(
-        self,
-        password: Union[bytes, SecureBytes],
-        salt: bytes,
-        params: Optional[HKDFParams] = None
+        self, password: Union[bytes, SecureBytes], salt: bytes, params: Optional[HKDFParams] = None
     ) -> SecureBytes:
         self.check_available()
 
@@ -735,9 +748,9 @@ class HKDF(KDFBase):
 
         self.validate_params(params)
 
+        from cryptography.hazmat.backends import default_backend
         from cryptography.hazmat.primitives import hashes
         from cryptography.hazmat.primitives.kdf.hkdf import HKDF as CryptoHKDF
-        from cryptography.hazmat.backends import default_backend
 
         # Convert password to bytes if needed
         password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
@@ -771,6 +784,7 @@ class HKDF(KDFBase):
 # ============================================================================
 # RandomX
 # ============================================================================
+
 
 class RandomX(KDFBase):
     """
@@ -824,7 +838,7 @@ class RandomX(KDFBase):
         self,
         password: Union[bytes, SecureBytes],
         salt: bytes,
-        params: Optional[RandomXParams] = None
+        params: Optional[RandomXParams] = None,
     ) -> SecureBytes:
         self.check_available()
 
@@ -833,8 +847,9 @@ class RandomX(KDFBase):
 
         self.validate_params(params)
 
-        import randomx
         import hashlib
+
+        import randomx
 
         # Convert password to bytes if needed
         password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
@@ -855,13 +870,13 @@ class RandomX(KDFBase):
 
             # Ensure correct output length
             if len(derived) >= params.output_length:
-                return SecureBytes(derived[:params.output_length])
+                return SecureBytes(derived[: params.output_length])
             else:
                 # Expand with hashing if needed
                 expanded = derived
                 while len(expanded) < params.output_length:
                     expanded += hashlib.sha256(expanded).digest()
-                return SecureBytes(expanded[:params.output_length])
+                return SecureBytes(expanded[: params.output_length])
         finally:
             if isinstance(password, SecureBytes) and password_bytes != password:
                 secure_memzero(bytearray(password_bytes))
@@ -871,10 +886,11 @@ class RandomX(KDFBase):
 # Registry and convenience functions
 # ============================================================================
 
+
 class KDFRegistry(RegistryBase[KDFBase]):
     """Registry for key derivation functions."""
 
-    _default_instance: ClassVar[Optional['KDFRegistry']] = None
+    _default_instance: ClassVar[Optional["KDFRegistry"]] = None
 
     def __init__(self):
         super().__init__()
@@ -894,7 +910,7 @@ class KDFRegistry(RegistryBase[KDFBase]):
         self.register(RandomX)
 
     @classmethod
-    def default(cls) -> 'KDFRegistry':
+    def default(cls) -> "KDFRegistry":
         """Returns the default singleton registry instance."""
         if cls._default_instance is None:
             cls._default_instance = cls()

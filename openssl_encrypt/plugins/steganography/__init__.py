@@ -17,8 +17,6 @@ Security:
 - Sandboxed execution with whitelisted dependencies
 """
 
-from .stego_plugin import SteganographyPlugin, plugin_instance
-
 # Export core components for backward compatibility and testing
 from .core import (
     CapacityError,
@@ -27,6 +25,14 @@ from .core import (
     SteganographyConfig,
     SteganographyError,
     SteganographyUtils,
+)
+
+# Export error correction
+from .error_correction import (
+    AdaptiveErrorCorrection,
+    AdaptiveSimpleErrorCorrection,
+    ReedSolomonDecoder,
+    ReedSolomonEncoder,
 )
 
 # Export format handlers
@@ -44,22 +50,19 @@ from .formats import (
 
 # Export analyzer classes
 from .formats.flac import FLACAnalyzer, create_flac_test_audio, is_flac_steganography_available
-from .formats.jpeg_utils import JPEGAnalyzer, create_jpeg_test_image, is_jpeg_steganography_available
+from .formats.jpeg_utils import (
+    JPEGAnalyzer,
+    create_jpeg_test_image,
+    is_jpeg_steganography_available,
+)
 from .formats.mp3 import MP3Analyzer, create_mp3_test_audio, is_mp3_steganography_available
 from .formats.tiff import TIFFAnalyzer, create_tiff_test_image, is_tiff_steganography_available
 from .formats.wav import WAVAnalyzer, create_wav_test_audio, is_wav_steganography_available
 from .formats.webp import WEBPAnalyzer, create_webp_test_image, is_webp_steganography_available
+from .stego_plugin import SteganographyPlugin, plugin_instance
 
 # Export transport layer
 from .transport import SteganographyTransport, create_steganography_transport
-
-# Export error correction
-from .error_correction import (
-    AdaptiveErrorCorrection,
-    AdaptiveSimpleErrorCorrection,
-    ReedSolomonDecoder,
-    ReedSolomonEncoder,
-)
 
 __all__ = [
     # Plugin interface

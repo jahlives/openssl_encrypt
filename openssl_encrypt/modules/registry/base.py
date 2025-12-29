@@ -11,28 +11,27 @@ All code in English as per project requirements.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import (
-    Optional, Dict, List, Any, Type, TypeVar, Generic,
-    Callable, Tuple, ClassVar
-)
+from typing import Any, Callable, ClassVar, Dict, Generic, List, Optional, Tuple, Type, TypeVar
 
 
 class AlgorithmCategory(Enum):
     """Category of cryptographic algorithm."""
-    CIPHER = auto()      # Symmetric encryption (AES, ChaCha20)
-    HASH = auto()        # Hash functions (SHA, BLAKE)
-    KDF = auto()         # Key derivation functions (Argon2, PBKDF2)
-    KEM = auto()         # Key encapsulation mechanisms (ML-KEM, HQC)
-    SIGNATURE = auto()   # Digital signatures (ML-DSA, FN-DSA)
-    HYBRID = auto()      # Hybrid encryption (KEM + Symmetric)
+
+    CIPHER = auto()  # Symmetric encryption (AES, ChaCha20)
+    HASH = auto()  # Hash functions (SHA, BLAKE)
+    KDF = auto()  # Key derivation functions (Argon2, PBKDF2)
+    KEM = auto()  # Key encapsulation mechanisms (ML-KEM, HQC)
+    SIGNATURE = auto()  # Digital signatures (ML-DSA, FN-DSA)
+    HYBRID = auto()  # Hybrid encryption (KEM + Symmetric)
 
 
 class SecurityLevel(Enum):
     """Security level classification for algorithms."""
-    LEGACY = "legacy"           # Not recommended, compatibility only
-    STANDARD = "standard"       # Recommended for normal use
-    HIGH = "high"               # Enhanced security
-    PARANOID = "paranoid"       # Maximum security (e.g., PQ-256)
+
+    LEGACY = "legacy"  # Not recommended, compatibility only
+    STANDARD = "standard"  # Recommended for normal use
+    HIGH = "high"  # Enhanced security
+    PARANOID = "paranoid"  # Maximum security (e.g., PQ-256)
 
 
 @dataclass(frozen=True)
@@ -86,6 +85,7 @@ class AlgorithmInfo:
         references: Standards, RFCs, papers, etc.
         nist_standard: NIST standard designation (e.g., "FIPS 203")
     """
+
     # Common identification
     name: str
     display_name: str
@@ -138,26 +138,31 @@ class AlgorithmInfo:
 
 class AlgorithmError(Exception):
     """Base exception for algorithm errors."""
+
     pass
 
 
 class AlgorithmNotAvailableError(AlgorithmError):
     """Algorithm is not available (missing dependency)."""
+
     pass
 
 
 class AlgorithmNotFoundError(AlgorithmError):
     """Algorithm was not found in registry."""
+
     pass
 
 
 class ValidationError(AlgorithmError):
     """Parameter validation failed."""
+
     pass
 
 
 class AuthenticationError(AlgorithmError):
     """Authentication failed (for AEAD ciphers)."""
+
     pass
 
 
@@ -208,8 +213,7 @@ class AlgorithmBase(ABC):
         if not cls.is_available():
             info = cls.info()
             raise AlgorithmNotAvailableError(
-                f"Algorithm '{info.name}' is not available. "
-                f"Install required dependencies."
+                f"Algorithm '{info.name}' is not available. " f"Install required dependencies."
             )
 
     @classmethod
@@ -225,7 +229,7 @@ class AlgorithmBase(ABC):
 
 
 # Type variable for generic registry
-T = TypeVar('T', bound=AlgorithmBase)
+T = TypeVar("T", bound=AlgorithmBase)
 
 
 class RegistryBase(Generic[T]):
@@ -407,9 +411,7 @@ class RegistryBase(Generic[T]):
         return self.list_names(include_aliases=True)
 
     def by_security_level(
-        self,
-        level: SecurityLevel,
-        only_available: bool = True
+        self, level: SecurityLevel, only_available: bool = True
     ) -> List[AlgorithmInfo]:
         """
         Filters algorithms by security level.
@@ -431,9 +433,7 @@ class RegistryBase(Generic[T]):
         return result
 
     def by_category(
-        self,
-        category: AlgorithmCategory,
-        only_available: bool = True
+        self, category: AlgorithmCategory, only_available: bool = True
     ) -> List[AlgorithmInfo]:
         """
         Filters algorithms by category.

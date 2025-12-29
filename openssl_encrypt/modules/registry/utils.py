@@ -117,6 +117,7 @@ def derive_salt_for_round(base_salt: bytes, round_number: int) -> bytes:
         Derived salt (16 bytes)
     """
     import hashlib
+
     salt_material = hashlib.sha256(base_salt + str(round_number).encode()).digest()
     return salt_material[:16]
 
@@ -167,14 +168,12 @@ def split_buffer(data: bytes, *sizes: int) -> tuple:
     """
     total_size = sum(sizes)
     if total_size > len(data):
-        raise ValueError(
-            f"Total size {total_size} exceeds data length {len(data)}"
-        )
+        raise ValueError(f"Total size {total_size} exceeds data length {len(data)}")
 
     result = []
     offset = 0
     for size in sizes:
-        result.append(data[offset:offset + size])
+        result.append(data[offset : offset + size])
         offset += size
 
     return tuple(result)
