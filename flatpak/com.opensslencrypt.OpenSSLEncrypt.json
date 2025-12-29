@@ -3,6 +3,9 @@
   "runtime": "org.freedesktop.Platform",
   "runtime-version": "24.08",
   "sdk": "org.freedesktop.Sdk",
+  "sdk-extensions": [
+    "org.freedesktop.Sdk.Extension.rust-stable"
+  ],
   "command": "openssl-encrypt",
   "finish-args": [
     "--share=ipc",
@@ -19,6 +22,13 @@
     "--env=PYTHONPATH=/app/lib/python3.12/site-packages",
     "--env=GDK_BACKEND=wayland,x11"
   ],
+  "build-options": {
+    "append-path": "/usr/lib/sdk/rust-stable/bin",
+    "env": {
+      "CARGO_HOME": "/run/build/openssl-encrypt/cargo",
+      "RUST_BACKTRACE": "1"
+    }
+  },
   "modules": [
     {
       "name": "cmake",
@@ -127,6 +137,20 @@
       "sources": []
     },
     {
+      "name": "maturin",
+      "buildsystem": "simple",
+      "build-options": {
+        "build-args": [
+          "--share=network"
+        ],
+        "append-path": "/usr/lib/sdk/rust-stable/bin"
+      },
+      "build-commands": [
+        "pip3 install --prefix=${FLATPAK_DEST} 'maturin>=1.4,<2.0'"
+      ],
+      "sources": []
+    },
+    {
       "name": "flutter-desktop-gui",
       "buildsystem": "simple",
       "build-commands": [
@@ -143,7 +167,19 @@
     {
       "name": "openssl-encrypt",
       "buildsystem": "simple",
+      "build-options": {
+        "append-path": "/usr/lib/sdk/rust-stable/bin",
+        "build-args": [
+          "--share=network"
+        ],
+        "env": {
+          "CARGO_HOME": "/run/build/openssl-encrypt/cargo",
+          "RUST_BACKTRACE": "1"
+        }
+      },
       "build-commands": [
+        "echo '🦀 Building Threefish Rust extension...'",
+        "if [ -d threefish_native ]; then echo '✅ Found threefish_native directory' && cd threefish_native && maturin build --release --strip --manylinux off && pip3 install --prefix=${FLATPAK_DEST} target/wheels/*.whl && cd .. && echo '✅ Threefish extension built and installed'; else echo '⚠️  No threefish_native directory found, skipping Threefish build'; fi",
         "pip3 install --verbose --exists-action=i --no-index --find-links=\"file://${PWD}\" --prefix=${FLATPAK_DEST} . --no-build-isolation"
       ],
       "post-install": [

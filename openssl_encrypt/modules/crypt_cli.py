@@ -3733,7 +3733,11 @@ def main_with_args(args=None):
     # Only run auto-detection if user didn't explicitly provide --with-key
     # This avoids potential interference with symmetric HSM decryption
     encryption_info = None
-    if args.action == "decrypt" and getattr(args, "input", None) and not getattr(args, "key_identity", None):
+    if (
+        args.action == "decrypt"
+        and getattr(args, "input", None)
+        and not getattr(args, "key_identity", None)
+    ):
         try:
             encryption_info = detect_encryption_type(args.input)
         except Exception as e:
@@ -3753,7 +3757,10 @@ def main_with_args(args=None):
 
             if len(matching) == 0:
                 # No matching identity found
-                print("ERROR: This file is encrypted asymmetrically but no matching identity found.", file=sys.stderr)
+                print(
+                    "ERROR: This file is encrypted asymmetrically but no matching identity found.",
+                    file=sys.stderr,
+                )
                 print("\nFile was encrypted for:", file=sys.stderr)
                 for fp in encryption_info["recipient_fingerprints"]:
                     print(f"  • {fp}", file=sys.stderr)
@@ -3774,13 +3781,17 @@ def main_with_args(args=None):
 
     # Get password (only for encrypt/decrypt actions)
     # Skip password prompt for asymmetric encryption/decryption (uses identity-based keys)
-    is_asymmetric_encrypt = args.action == "encrypt" and hasattr(args, "for_identity") and args.for_identity
+    is_asymmetric_encrypt = (
+        args.action == "encrypt" and hasattr(args, "for_identity") and args.for_identity
+    )
 
     # Check if this is asymmetric decryption
     is_asymmetric_decrypt = False
     if args.action == "decrypt":
         # Explicit --with-key provided OR auto-detected asymmetric file
-        if (hasattr(args, "key_identity") and args.key_identity) or (encryption_info and encryption_info.get("type") == "asymmetric"):
+        if (hasattr(args, "key_identity") and args.key_identity) or (
+            encryption_info and encryption_info.get("type") == "asymmetric"
+        ):
             is_asymmetric_decrypt = True
 
     # Validate algorithm availability before encryption/decryption
@@ -3793,7 +3804,9 @@ def main_with_args(args=None):
             print("\nUse 'list-algorithms' command to see available algorithms.")
             print("Install required packages or choose different algorithms.\n")
 
-    if args.action in ["encrypt", "decrypt"] and not (is_asymmetric_encrypt or is_asymmetric_decrypt):
+    if args.action in ["encrypt", "decrypt"] and not (
+        is_asymmetric_encrypt or is_asymmetric_decrypt
+    ):
         password = None
         generated_password = None
 
@@ -4326,15 +4339,19 @@ def main_with_args(args=None):
         elif args.standard:
             hash_config = get_template_config(SecurityTemplate.STANDARD)
             hash_config["hash_config"]["algorithm"] = "aes-gcm-siv"
-        setattr(args, "algorithm", hash_config["hash_config"]["algorithm"])
+        # Only apply template's algorithm if user didn't explicitly provide one
+        if args.algorithm == "fernet":  # Default value, user didn't provide --algorithm
+            setattr(args, "algorithm", hash_config["hash_config"]["algorithm"])
         hash_config = hash_config["hash_config"]
     elif args.template:
         hash_config = get_template_config(args.template)
-        if hash_config["hash_config"]["algorithm"]:
-            setattr(args, "algorithm", hash_config["hash_config"]["algorithm"])
-        else:
-            hash_config["hash_config"]["algorithm"] = "fernet"
-            setattr(args, "algorithm", "fernet")
+        # Only apply template's algorithm if user didn't explicitly provide one
+        if args.algorithm == "fernet":  # Default value, user didn't provide --algorithm
+            if hash_config["hash_config"]["algorithm"]:
+                setattr(args, "algorithm", hash_config["hash_config"]["algorithm"])
+            else:
+                hash_config["hash_config"]["algorithm"] = "fernet"
+                setattr(args, "algorithm", "fernet")
         hash_config = hash_config["hash_config"]
     else:
         # Check if all values are at their defaults (no arguments provided)
@@ -4366,7 +4383,9 @@ def main_with_args(args=None):
         if all_hash_rounds_zero and all_kdfs_disabled:
             hash_config = get_template_config(SecurityTemplate.STANDARD)
             hash_config["hash_config"]["algorithm"] = "aes-gcm-siv"
-            setattr(args, "algorithm", hash_config["hash_config"]["algorithm"])
+            # Only apply template's algorithm if user didn't explicitly provide one
+            if args.algorithm == "fernet":  # Default value, user didn't provide --algorithm
+                setattr(args, "algorithm", hash_config["hash_config"]["algorithm"])
             hash_config = hash_config["hash_config"]
         else:
             # User provided specific arguments, build custom configuration
@@ -4435,7 +4454,7 @@ def main_with_args(args=None):
         # Initialize plugin system if not disabled
         plugin_manager = None
         # Auto-enable plugins if HSM is requested
-        if hasattr(args, 'hsm') and args.hsm:
+        if hasattr(args, "hsm") and args.hsm:
             enable_plugins = True
         else:
             enable_plugins = args.enable_plugins and not args.disable_plugins
@@ -4548,8 +4567,12 @@ def main_with_args(args=None):
 
                 # Determine if passphrase is needed
                 from .identity_protection import ProtectionLevel
+
                 sender_passphrase = None
-                if not sender_metadata.protection or sender_metadata.protection.level != ProtectionLevel.HSM_ONLY:
+                if (
+                    not sender_metadata.protection
+                    or sender_metadata.protection.level != ProtectionLevel.HSM_ONLY
+                ):
                     sender_passphrase = getpass.getpass(
                         f"Passphrase for sender identity '{args.sign_with}': "
                     )
@@ -4559,7 +4582,10 @@ def main_with_args(args=None):
                         args.sign_with, passphrase=sender_passphrase, load_private_keys=True
                     )
                     if sender is None:
-                        print(f"ERROR: Sender identity '{args.sign_with}' not found ❌", file=sys.stderr)
+                        print(
+                            f"ERROR: Sender identity '{args.sign_with}' not found ❌",
+                            file=sys.stderr,
+                        )
                         sys.exit(1)
                 except Exception as e:
                     error_msg = f"ERROR: Failed to load identity '{args.sign_with}'"
@@ -4570,8 +4596,9 @@ def main_with_args(args=None):
                     sys.exit(1)
                 finally:
                     # Clean up passphrase from memory
-                    if 'sender_passphrase' in locals() and sender_passphrase:
+                    if "sender_passphrase" in locals() and sender_passphrase:
                         from .secure_memory import secure_memzero
+
                         secure_memzero(sender_passphrase)
 
                 # Build hash config from CLI arguments
@@ -4595,34 +4622,63 @@ def main_with_args(args=None):
                         "n": getattr(args, "scrypt_n", 0) or 0,
                         "r": getattr(args, "scrypt_r", 8) if hasattr(args, "scrypt_r") else 8,
                         "p": getattr(args, "scrypt_p", 1) if hasattr(args, "scrypt_p") else 1,
-                        "rounds": getattr(args, "scrypt_rounds", 1) if hasattr(args, "scrypt_rounds") else 1,
+                        "rounds": getattr(args, "scrypt_rounds", 1)
+                        if hasattr(args, "scrypt_rounds")
+                        else 1,
                     },
                     "argon2": {
                         "enabled": getattr(args, "enable_argon2", False),
-                        "time_cost": getattr(args, "argon2_time", 3) if hasattr(args, "argon2_time") else 3,
-                        "memory_cost": getattr(args, "argon2_memory", 65536) if hasattr(args, "argon2_memory") else 65536,
-                        "parallelism": getattr(args, "argon2_parallelism", 4) if hasattr(args, "argon2_parallelism") else 4,
-                        "hash_len": getattr(args, "argon2_hash_len", 32) if hasattr(args, "argon2_hash_len") else 32,
+                        "time_cost": getattr(args, "argon2_time", 3)
+                        if hasattr(args, "argon2_time")
+                        else 3,
+                        "memory_cost": getattr(args, "argon2_memory", 65536)
+                        if hasattr(args, "argon2_memory")
+                        else 65536,
+                        "parallelism": getattr(args, "argon2_parallelism", 4)
+                        if hasattr(args, "argon2_parallelism")
+                        else 4,
+                        "hash_len": getattr(args, "argon2_hash_len", 32)
+                        if hasattr(args, "argon2_hash_len")
+                        else 32,
                         "type": ARGON2_TYPE_INT_MAP.get(getattr(args, "argon2_type", "id"), 2),
                         "rounds": getattr(args, "argon2_rounds", 0) or 0,
                     },
                     "balloon": {
-                        "enabled": getattr(args, "enable_balloon", False) or getattr(args, "use_balloon", False),
-                        "space_cost": getattr(args, "balloon_space_cost", 1024) if hasattr(args, "balloon_space_cost") else 1024,
-                        "time_cost": getattr(args, "balloon_time_cost", 1) if hasattr(args, "balloon_time_cost") else 1,
-                        "parallelism": getattr(args, "balloon_parallelism", 1) if hasattr(args, "balloon_parallelism") else 1,
-                        "rounds": getattr(args, "balloon_rounds", 1) if hasattr(args, "balloon_rounds") else 1,
+                        "enabled": getattr(args, "enable_balloon", False)
+                        or getattr(args, "use_balloon", False),
+                        "space_cost": getattr(args, "balloon_space_cost", 1024)
+                        if hasattr(args, "balloon_space_cost")
+                        else 1024,
+                        "time_cost": getattr(args, "balloon_time_cost", 1)
+                        if hasattr(args, "balloon_time_cost")
+                        else 1,
+                        "parallelism": getattr(args, "balloon_parallelism", 1)
+                        if hasattr(args, "balloon_parallelism")
+                        else 1,
+                        "rounds": getattr(args, "balloon_rounds", 1)
+                        if hasattr(args, "balloon_rounds")
+                        else 1,
                     },
                     "hkdf": {
                         "enabled": getattr(args, "enable_hkdf", False),
-                        "rounds": getattr(args, "hkdf_rounds", 1) if hasattr(args, "hkdf_rounds") else 1,
+                        "rounds": getattr(args, "hkdf_rounds", 1)
+                        if hasattr(args, "hkdf_rounds")
+                        else 1,
                     },
                     "randomx": {
                         "enabled": getattr(args, "enable_randomx", False),
-                        "mode": getattr(args, "randomx_mode", "light") if hasattr(args, "randomx_mode") else "light",
-                        "height": getattr(args, "randomx_height", 1) if hasattr(args, "randomx_height") else 1,
-                        "hash_len": getattr(args, "randomx_hash_len", 32) if hasattr(args, "randomx_hash_len") else 32,
-                        "rounds": getattr(args, "randomx_rounds", 1) if hasattr(args, "randomx_rounds") else 1,
+                        "mode": getattr(args, "randomx_mode", "light")
+                        if hasattr(args, "randomx_mode")
+                        else "light",
+                        "height": getattr(args, "randomx_height", 1)
+                        if hasattr(args, "randomx_height")
+                        else 1,
+                        "hash_len": getattr(args, "randomx_hash_len", 32)
+                        if hasattr(args, "randomx_hash_len")
+                        else 32,
+                        "rounds": getattr(args, "randomx_rounds", 1)
+                        if hasattr(args, "randomx_rounds")
+                        else 1,
                     },
                 }
 
@@ -4665,7 +4721,9 @@ def main_with_args(args=None):
 
                     if not args.quiet:
                         print("\nAsymmetric encryption successful! ✅")
-                        print(f"File size: {result['original_size']} bytes → {result['encrypted_size']} bytes (encrypted)")
+                        print(
+                            f"File size: {result['original_size']} bytes → {result['encrypted_size']} bytes (encrypted)"
+                        )
                         print(f"Encrypted file: {output_file}")
 
                     # Shred original if requested
@@ -5275,7 +5333,7 @@ def main_with_args(args=None):
                             hash_config,
                             args.pbkdf2_iterations,
                             args.quiet,
-                            algorithm=args.algorithm,
+                            algorithm="cascade" if cascade_mode else args.algorithm,
                             progress=args.progress,
                             verbose=args.verbose,
                             debug=args.debug,
@@ -5310,7 +5368,9 @@ def main_with_args(args=None):
                                     stego_password = getattr(args, "stego_password", None)
 
                                     options = {
-                                        "randomize_pixels": getattr(args, "stego_randomize_pixels", False),
+                                        "randomize_pixels": getattr(
+                                            args, "stego_randomize_pixels", False
+                                        ),
                                         "decoy_data": getattr(args, "stego_decoy_data", False),
                                         "preserve_stats": True,
                                         "jpeg_quality": getattr(args, "jpeg_quality", 85),
@@ -5324,12 +5384,14 @@ def main_with_args(args=None):
                                         method=method,
                                         bits_per_channel=bits_per_channel,
                                         password=stego_password,
-                                        **options
+                                        **options,
                                     )
 
                                     if result.success:
                                         if not args.quiet:
-                                            print(f"Data successfully hidden in image: {output_file}")
+                                            print(
+                                                f"Data successfully hidden in image: {output_file}"
+                                            )
                                     else:
                                         print(f"Steganography error: {result.message}")
                                         return 1
@@ -5467,7 +5529,7 @@ def main_with_args(args=None):
                     hash_config,
                     args.pbkdf2_iterations,
                     quiet=True,  # Suppress normal output for stdout
-                    algorithm=args.algorithm,
+                    algorithm="cascade" if cascade_mode else args.algorithm,
                     progress=False,  # No progress bar for stdout
                     verbose=False,  # No verbose output for stdout
                     debug=args.debug,
@@ -6029,7 +6091,7 @@ def main_with_args(args=None):
                         hash_config,
                         args.pbkdf2_iterations,
                         args.quiet,
-                        algorithm=args.algorithm,
+                        algorithm="cascade" if cascade_mode else args.algorithm,
                         progress=args.progress,
                         verbose=args.verbose,
                         debug=args.debug,
@@ -6074,7 +6136,7 @@ def main_with_args(args=None):
                                 method=method,
                                 bits_per_channel=bits_per_channel,
                                 password=stego_password,
-                                **options
+                                **options,
                             )
 
                             if result.success:
@@ -6187,8 +6249,8 @@ def main_with_args(args=None):
         elif args.action == "decrypt":
             # Check if asymmetric mode by reading metadata
             try:
-                import json
                 import base64
+                import json
 
                 with open(args.input, "rb") as f:
                     content = f.read()
@@ -6218,7 +6280,9 @@ def main_with_args(args=None):
                                     sys.exit(1)
 
                                 # First load identity metadata to check protection level
-                                recipient_metadata = store.get_by_name(args.key_identity, load_private_keys=False)
+                                recipient_metadata = store.get_by_name(
+                                    args.key_identity, load_private_keys=False
+                                )
                                 if recipient_metadata is None:
                                     print(
                                         f"ERROR: Identity '{args.key_identity}' not found ❌",
@@ -6228,8 +6292,13 @@ def main_with_args(args=None):
 
                                 # Determine if passphrase is needed
                                 from .identity_protection import ProtectionLevel
+
                                 recipient_passphrase = None
-                                if not recipient_metadata.protection or recipient_metadata.protection.level != ProtectionLevel.HSM_ONLY:
+                                if (
+                                    not recipient_metadata.protection
+                                    or recipient_metadata.protection.level
+                                    != ProtectionLevel.HSM_ONLY
+                                ):
                                     recipient_passphrase = getpass.getpass(
                                         f"Passphrase for identity '{args.key_identity}': "
                                     )
@@ -6252,7 +6321,9 @@ def main_with_args(args=None):
                                         )
                                         sys.exit(1)
                                 except Exception as e:
-                                    error_msg = f"ERROR: Failed to load identity '{args.key_identity}'"
+                                    error_msg = (
+                                        f"ERROR: Failed to load identity '{args.key_identity}'"
+                                    )
                                     if str(e):
                                         error_msg += f": {e}"
                                     error_msg += " ❌"
@@ -6260,8 +6331,9 @@ def main_with_args(args=None):
                                     sys.exit(1)
                                 finally:
                                     # Clean up passphrase from memory
-                                    if 'recipient_passphrase' in locals() and recipient_passphrase:
+                                    if "recipient_passphrase" in locals() and recipient_passphrase:
                                         from .secure_memory import secure_memzero
+
                                         secure_memzero(recipient_passphrase)
 
                                 # Load sender public key for verification
@@ -6271,7 +6343,9 @@ def main_with_args(args=None):
                                 if not skip_verification:
                                     if hasattr(args, "verify_from") and args.verify_from:
                                         sender = store.get_by_name(
-                                            args.verify_from, passphrase=None, load_private_keys=False
+                                            args.verify_from,
+                                            passphrase=None,
+                                            load_private_keys=False,
                                         )
                                         if sender is None:
                                             print(
@@ -6289,7 +6363,9 @@ def main_with_args(args=None):
                                         )
                                         if sender_key_id:
                                             sender = store.get_by_fingerprint(
-                                                sender_key_id, passphrase=None, load_private_keys=False
+                                                sender_key_id,
+                                                passphrase=None,
+                                                load_private_keys=False,
                                             )
                                             if sender:
                                                 sender_public_key = sender.signing_public_key
@@ -6300,7 +6376,11 @@ def main_with_args(args=None):
                                 elif args.output:
                                     output_file = args.output
                                 else:
-                                    output_file = args.input.rsplit(".", 1)[0] if "." in args.input else args.input + ".dec"
+                                    output_file = (
+                                        args.input.rsplit(".", 1)[0]
+                                        if "." in args.input
+                                        else args.input + ".dec"
+                                    )
 
                                 # Decrypt
                                 try:
@@ -6327,15 +6407,20 @@ def main_with_args(args=None):
 
                                         # Shred original if requested
                                         if args.shred:
-                                            secure_shred_file(args.input, args.shred_passes, args.quiet)
+                                            secure_shred_file(
+                                                args.input, args.shred_passes, args.quiet
+                                            )
                                     finally:
                                         # Clean up plaintext from memory
                                         from .secure_memory import secure_memzero
+
                                         secure_memzero(plaintext)
 
                                     sys.exit(0)
                                 except Exception as e:
-                                    print(f"ERROR: Asymmetric decryption failed: {e}", file=sys.stderr)
+                                    print(
+                                        f"ERROR: Asymmetric decryption failed: {e}", file=sys.stderr
+                                    )
                                     sys.exit(1)
                         except Exception:
                             # Not asymmetric format, continue with normal decryption
@@ -6364,7 +6449,9 @@ def main_with_args(args=None):
                                 sys.exit(1)
 
                             # First load identity metadata to check protection level
-                            recipient_metadata = store.get_by_name(args.key_identity, load_private_keys=False)
+                            recipient_metadata = store.get_by_name(
+                                args.key_identity, load_private_keys=False
+                            )
                             if recipient_metadata is None:
                                 print(
                                     f"ERROR: Identity '{args.key_identity}' not found ❌",
@@ -6374,8 +6461,12 @@ def main_with_args(args=None):
 
                             # Determine if passphrase is needed
                             from .identity_protection import ProtectionLevel
+
                             recipient_passphrase = None
-                            if not recipient_metadata.protection or recipient_metadata.protection.level != ProtectionLevel.HSM_ONLY:
+                            if (
+                                not recipient_metadata.protection
+                                or recipient_metadata.protection.level != ProtectionLevel.HSM_ONLY
+                            ):
                                 recipient_passphrase = getpass.getpass(
                                     f"Passphrase for identity '{args.key_identity}': "
                                 )
@@ -6406,8 +6497,9 @@ def main_with_args(args=None):
                                 sys.exit(1)
                             finally:
                                 # Clean up passphrase from memory
-                                if 'recipient_passphrase' in locals() and recipient_passphrase:
+                                if "recipient_passphrase" in locals() and recipient_passphrase:
                                     from .secure_memory import secure_memzero
+
                                     secure_memzero(recipient_passphrase)
 
                             # Load sender public key for verification
@@ -6506,6 +6598,7 @@ def main_with_args(args=None):
                                 finally:
                                     # Clean up plaintext from memory
                                     from .secure_memory import secure_memzero
+
                                     secure_memzero(plaintext)
 
                                 sys.exit(0)
@@ -6668,7 +6761,9 @@ def main_with_args(args=None):
                                 stego_password = getattr(args, "stego_password", None)
 
                                 options = {
-                                    "randomize_pixels": getattr(args, "stego_randomize_pixels", False),
+                                    "randomize_pixels": getattr(
+                                        args, "stego_randomize_pixels", False
+                                    ),
                                     "decoy_data": getattr(args, "stego_decoy_data", False),
                                     "preserve_stats": True,
                                     "jpeg_quality": getattr(args, "jpeg_quality", 85),
@@ -6680,7 +6775,7 @@ def main_with_args(args=None):
                                     method=method,
                                     bits_per_channel=bits_per_channel,
                                     password=stego_password,
-                                    **options
+                                    **options,
                                 )
 
                                 if result.success:
@@ -7008,7 +7103,7 @@ def main_with_args(args=None):
                                 method=method,
                                 bits_per_channel=bits_per_channel,
                                 password=stego_password,
-                                **options
+                                **options,
                             )
 
                             if result.success:

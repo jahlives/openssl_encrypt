@@ -496,6 +496,8 @@ class EncryptionAlgorithm(Enum):
     AES_GCM_SIV = "aes-gcm-siv"
     AES_OCB3 = "aes-ocb3"
     CAMELLIA = "camellia"
+    # Cascade encryption (multi-layer encryption)
+    CASCADE = "cascade"
     # NIST FIPS 203 standardized naming (ML-KEM)
     ML_KEM_512_HYBRID = "ml-kem-512-hybrid"
     ML_KEM_768_HYBRID = "ml-kem-768-hybrid"
@@ -4151,13 +4153,24 @@ def encrypt_file(
             pass  # Plugin system not available
 
     # Enforce deprecation policy: Block encryption with deprecated algorithms in version 1.2.0
-    algorithm_value = algorithm.value if isinstance(algorithm, EncryptionAlgorithm) else algorithm
-    if is_encryption_blocked_for_algorithm(algorithm_value):
-        error_message = get_encryption_block_message(algorithm_value)
-        raise ValidationError(error_message)
+    if cascade and cipher_names:
+        # In cascade mode, validate each cipher in the chain individually
+        for cipher_name in cipher_names:
+            if is_encryption_blocked_for_algorithm(cipher_name):
+                error_message = get_encryption_block_message(cipher_name)
+                raise ValidationError(error_message)
+    else:
+        # Single algorithm validation
+        algorithm_value = (
+            algorithm.value if isinstance(algorithm, EncryptionAlgorithm) else algorithm
+        )
+        if is_encryption_blocked_for_algorithm(algorithm_value):
+            error_message = get_encryption_block_message(algorithm_value)
+            raise ValidationError(error_message)
 
     # Determine if this algorithm uses AEAD with metadata binding
-    use_aead_binding = is_aead_algorithm(algorithm)
+    # Cascade mode always uses AEAD binding since all cascade ciphers are AEAD
+    use_aead_binding = is_aead_algorithm(algorithm) or (cascade and cipher_names)
     metadata_b64 = None  # Will be set before encryption for AEAD algorithms
 
     # Handle signature algorithms (MAYO/CROSS) - generate keypair if not provided
@@ -4410,6 +4423,10 @@ def encrypt_file(
         else:
             # Default for unknown algorithms
             return secrets.token_bytes(16), 16
+
+    # Initialize cascade variables (will be set later if cascade mode is enabled)
+    cascade_enc = None
+    cascade_salt_bytes = None
 
     # For large files, use progress bar for encryption
     def do_encrypt(aad=None):
