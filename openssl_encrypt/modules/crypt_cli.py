@@ -5321,6 +5321,62 @@ def main_with_args(args=None):
                                         )
                                     return 1
 
+                            # Run diversity validation (if not disabled)
+                            if not getattr(args, "no_diversity_check", False):
+                                try:
+                                    from .cascade_validator import (
+                                        CascadeDiversityValidator,
+                                        DiversityWarningLevel,
+                                    )
+
+                                    strict_mode = getattr(args, "strict_diversity", False)
+                                    validator = CascadeDiversityValidator(strict=strict_mode)
+                                    diversity_warnings = validator.validate(cipher_names)
+
+                                    # Display warnings
+                                    has_error = False
+                                    has_warning = False
+
+                                    for warning in diversity_warnings:
+                                        if warning.level == DiversityWarningLevel.ERROR:
+                                            has_error = True
+                                            if not args.quiet:
+                                                print(
+                                                    f"\033[91mERROR:\033[0m {warning.message}",
+                                                    file=sys.stderr,
+                                                )
+                                        elif warning.level == DiversityWarningLevel.WARNING:
+                                            has_warning = True
+                                            if not args.quiet:
+                                                print(
+                                                    f"\033[93mWARNING:\033[0m {warning.message}",
+                                                    file=sys.stderr,
+                                                )
+                                        else:  # INFO
+                                            if not args.quiet:
+                                                print(
+                                                    f"\033[94mINFO:\033[0m {warning.message}",
+                                                    file=sys.stderr,
+                                                )
+
+                                        # Display suggestion if available
+                                        if warning.suggestion and not args.quiet:
+                                            print(f"  → {warning.suggestion}", file=sys.stderr)
+
+                                    # Abort if errors or strict mode with warnings
+                                    if has_error or (strict_mode and has_warning):
+                                        if not args.quiet:
+                                            print(
+                                                "\nCascade diversity validation failed. "
+                                                "Use --no-diversity-check to bypass.",
+                                                file=sys.stderr,
+                                            )
+                                        return 1
+
+                                except ImportError:
+                                    # Validator not available, skip
+                                    pass
+
                             # Get cascade hash function
                             if hasattr(args, "cascade_hash"):
                                 cascade_hash_func = args.cascade_hash
@@ -5516,6 +5572,58 @@ def main_with_args(args=None):
                                 file=sys.stderr,
                             )
                             sys.exit(1)
+
+                    # Run diversity validation (if not disabled)
+                    if not getattr(args, "no_diversity_check", False):
+                        try:
+                            from .cascade_validator import (
+                                CascadeDiversityValidator,
+                                DiversityWarningLevel,
+                            )
+
+                            strict_mode = getattr(args, "strict_diversity", False)
+                            validator = CascadeDiversityValidator(strict=strict_mode)
+                            diversity_warnings = validator.validate(cipher_names)
+
+                            # Display warnings
+                            has_error = False
+                            has_warning = False
+
+                            for warning in diversity_warnings:
+                                if warning.level == DiversityWarningLevel.ERROR:
+                                    has_error = True
+                                    print(
+                                        f"\033[91mERROR:\033[0m {warning.message}",
+                                        file=sys.stderr,
+                                    )
+                                elif warning.level == DiversityWarningLevel.WARNING:
+                                    has_warning = True
+                                    print(
+                                        f"\033[93mWARNING:\033[0m {warning.message}",
+                                        file=sys.stderr,
+                                    )
+                                else:  # INFO
+                                    print(
+                                        f"\033[94mINFO:\033[0m {warning.message}",
+                                        file=sys.stderr,
+                                    )
+
+                                # Display suggestion if available
+                                if warning.suggestion:
+                                    print(f"  → {warning.suggestion}", file=sys.stderr)
+
+                            # Abort if errors or strict mode with warnings
+                            if has_error or (strict_mode and has_warning):
+                                print(
+                                    "\nCascade diversity validation failed. "
+                                    "Use --no-diversity-check to bypass.",
+                                    file=sys.stderr,
+                                )
+                                sys.exit(1)
+
+                        except ImportError:
+                            # Validator not available, skip
+                            pass
 
                     # Get cascade hash function
                     if hasattr(args, "cascade_hash"):
@@ -6078,6 +6186,62 @@ def main_with_args(args=None):
                                         file=sys.stderr,
                                     )
                                 return 1
+
+                        # Run diversity validation (if not disabled)
+                        if not getattr(args, "no_diversity_check", False):
+                            try:
+                                from .cascade_validator import (
+                                    CascadeDiversityValidator,
+                                    DiversityWarningLevel,
+                                )
+
+                                strict_mode = getattr(args, "strict_diversity", False)
+                                validator = CascadeDiversityValidator(strict=strict_mode)
+                                diversity_warnings = validator.validate(cipher_names)
+
+                                # Display warnings
+                                has_error = False
+                                has_warning = False
+
+                                for warning in diversity_warnings:
+                                    if warning.level == DiversityWarningLevel.ERROR:
+                                        has_error = True
+                                        if not args.quiet:
+                                            print(
+                                                f"\033[91mERROR:\033[0m {warning.message}",
+                                                file=sys.stderr,
+                                            )
+                                    elif warning.level == DiversityWarningLevel.WARNING:
+                                        has_warning = True
+                                        if not args.quiet:
+                                            print(
+                                                f"\033[93mWARNING:\033[0m {warning.message}",
+                                                file=sys.stderr,
+                                            )
+                                    else:  # INFO
+                                        if not args.quiet:
+                                            print(
+                                                f"\033[94mINFO:\033[0m {warning.message}",
+                                                file=sys.stderr,
+                                            )
+
+                                    # Display suggestion if available
+                                    if warning.suggestion and not args.quiet:
+                                        print(f"  → {warning.suggestion}", file=sys.stderr)
+
+                                # Abort if errors or strict mode with warnings
+                                if has_error or (strict_mode and has_warning):
+                                    if not args.quiet:
+                                        print(
+                                            "\nCascade diversity validation failed. "
+                                            "Use --no-diversity-check to bypass.",
+                                            file=sys.stderr,
+                                        )
+                                    return 1
+
+                            except ImportError:
+                                # Validator not available, skip
+                                pass
 
                         # Get cascade hash function
                         if hasattr(args, "cascade_hash"):

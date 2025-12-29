@@ -547,5 +547,317 @@ class TestDifferentHashFunctions(unittest.TestCase):
         self.assertNotEqual(ciphertext_sha256, ciphertext_sha512)
 
 
+@pytest.mark.skipif(not REGISTRY_AVAILABLE, reason="Cipher registry not available")
+class TestCipherFamilies(unittest.TestCase):
+    """Test cases for cipher family definitions and helper functions."""
+
+    def test_get_cipher_family_for_aes(self):
+        """Test getting cipher family for AES variants."""
+        from openssl_encrypt.modules.registry.cipher_families import get_cipher_family
+
+        family = get_cipher_family("aes-256-gcm")
+        self.assertIsNotNone(family)
+        self.assertEqual(family.name, "aes")
+        self.assertEqual(family.design_type.name, "SPN")
+
+    def test_get_cipher_family_for_chacha(self):
+        """Test getting cipher family for ChaCha variants."""
+        from openssl_encrypt.modules.registry.cipher_families import get_cipher_family
+
+        family = get_cipher_family("chacha20-poly1305")
+        self.assertIsNotNone(family)
+        self.assertEqual(family.name, "chacha")
+        self.assertEqual(family.design_type.name, "ARX")
+
+    def test_get_cipher_family_for_threefish(self):
+        """Test getting cipher family for Threefish."""
+        from openssl_encrypt.modules.registry.cipher_families import get_cipher_family
+
+        family = get_cipher_family("threefish-512")
+        self.assertIsNotNone(family)
+        self.assertEqual(family.name, "threefish")
+        self.assertEqual(family.design_type.name, "ARX")
+
+    def test_get_cipher_family_for_unknown_cipher(self):
+        """Test that unknown cipher returns None."""
+        from openssl_encrypt.modules.registry.cipher_families import get_cipher_family
+
+        family = get_cipher_family("nonexistent-cipher")
+        self.assertIsNone(family)
+
+    def test_get_family_name(self):
+        """Test getting family name string."""
+        from openssl_encrypt.modules.registry.cipher_families import get_family_name
+
+        self.assertEqual(get_family_name("aes-256-gcm"), "aes")
+        self.assertEqual(get_family_name("chacha20-poly1305"), "chacha")
+        self.assertEqual(get_family_name("threefish-512"), "threefish")
+        self.assertIsNone(get_family_name("unknown"))
+
+    def test_are_related_families(self):
+        """Test checking if families are related."""
+        from openssl_encrypt.modules.registry.cipher_families import are_related_families
+
+        # AES and Fernet are related (Fernet uses AES)
+        self.assertTrue(are_related_families("aes", "fernet"))
+        self.assertTrue(are_related_families("fernet", "aes"))
+
+        # AES and ChaCha are not related
+        self.assertFalse(are_related_families("aes", "chacha"))
+
+        # Same family should return False (not "related")
+        self.assertFalse(are_related_families("aes", "aes"))
+
+    def test_get_design_type(self):
+        """Test getting design type for ciphers."""
+        from openssl_encrypt.modules.registry.cipher_families import DesignType, get_design_type
+
+        self.assertEqual(get_design_type("aes-256-gcm"), DesignType.SPN)
+        self.assertEqual(get_design_type("chacha20-poly1305"), DesignType.ARX)
+        self.assertEqual(get_design_type("threefish-512"), DesignType.ARX)
+        self.assertIsNone(get_design_type("unknown"))
+
+    def test_normalize_cipher_name(self):
+        """Test cipher name normalization."""
+        from openssl_encrypt.modules.registry.cipher_families import normalize_cipher_name
+
+        self.assertEqual(normalize_cipher_name("AES-256-GCM"), "aes-256-gcm")
+        self.assertEqual(normalize_cipher_name("  ChaCha20-Poly1305  "), "chacha20-poly1305")
+        self.assertEqual(normalize_cipher_name("aes-256-gcm"), "aes-256-gcm")
+
+    def test_list_all_families(self):
+        """Test listing all cipher families."""
+        from openssl_encrypt.modules.registry.cipher_families import list_all_families
+
+        families = list_all_families()
+        self.assertIn("aes", families)
+        self.assertIn("chacha", families)
+        self.assertIn("threefish", families)
+        self.assertIn("fernet", families)
+
+    def test_list_family_members(self):
+        """Test listing members of a family."""
+        from openssl_encrypt.modules.registry.cipher_families import list_family_members
+
+        aes_members = list_family_members("aes")
+        self.assertIn("aes-256-gcm", aes_members)
+        self.assertIn("aes-gcm-siv", aes_members)
+
+        chacha_members = list_family_members("chacha")
+        self.assertIn("chacha20-poly1305", chacha_members)
+
+
+@pytest.mark.skipif(not REGISTRY_AVAILABLE, reason="Cipher registry not available")
+class TestCascadeDiversityValidator(unittest.TestCase):
+    """Test cases for cascade diversity validation."""
+
+    def test_good_diversity_aes_chacha(self):
+        """Test that AES + ChaCha shows good diversity."""
+        from openssl_encrypt.modules.cascade_validator import (
+            CascadeDiversityValidator,
+            DiversityWarningLevel,
+        )
+
+        validator = CascadeDiversityValidator(strict=False)
+        warnings = validator.validate(["aes-256-gcm", "chacha20-poly1305"])
+
+        # Should have one INFO message about good design diversity
+        self.assertEqual(len(warnings), 1)
+        self.assertEqual(warnings[0].level, DiversityWarningLevel.INFO)
+        self.assertIn("Good design diversity", warnings[0].message)
+        self.assertIn("SPN", warnings[0].message)
+        self.assertIn("ARX", warnings[0].message)
+
+    def test_same_family_warning(self):
+        """Test that multiple ciphers from same family produces warning."""
+        from openssl_encrypt.modules.cascade_validator import (
+            CascadeDiversityValidator,
+            DiversityWarningLevel,
+        )
+
+        validator = CascadeDiversityValidator(strict=False)
+        warnings = validator.validate(["aes-256-gcm", "aes-gcm-siv"])
+
+        # Should have WARNING about same family and INFO about design
+        warning_levels = [w.level for w in warnings]
+        self.assertIn(DiversityWarningLevel.WARNING, warning_levels)
+
+        # Find the same family warning
+        same_family_warning = [
+            w
+            for w in warnings
+            if w.level == DiversityWarningLevel.WARNING and "same 'aes' family" in w.message
+        ][0]
+
+        self.assertIn("aes-256-gcm", same_family_warning.ciphers_involved)
+        self.assertIn("aes-gcm-siv", same_family_warning.ciphers_involved)
+        self.assertIsNotNone(same_family_warning.suggestion)
+
+    def test_all_same_design_type(self):
+        """Test that all ciphers with same design type produces info."""
+        from openssl_encrypt.modules.cascade_validator import (
+            CascadeDiversityValidator,
+            DiversityWarningLevel,
+        )
+
+        validator = CascadeDiversityValidator(strict=False)
+        warnings = validator.validate(["chacha20-poly1305", "threefish-512"])
+
+        # Should have INFO about all ARX design
+        info_warnings = [w for w in warnings if w.level == DiversityWarningLevel.INFO]
+        self.assertTrue(len(info_warnings) > 0)
+
+        design_warning = [w for w in info_warnings if "same design paradigm" in w.message][0]
+        self.assertIn("ARX", design_warning.message)
+
+    def test_related_families_info(self):
+        """Test that related families produces info message."""
+        from openssl_encrypt.modules.cascade_validator import (
+            CascadeDiversityValidator,
+            DiversityWarningLevel,
+        )
+
+        validator = CascadeDiversityValidator(strict=False)
+        warnings = validator.validate(["aes-256-gcm", "fernet"])
+
+        # Should have INFO about related families (AES and Fernet)
+        info_warnings = [w for w in warnings if w.level == DiversityWarningLevel.INFO]
+        related_warning = [w for w in info_warnings if "related families" in w.message.lower()]
+
+        self.assertTrue(len(related_warning) > 0)
+
+    def test_strict_mode_upgrades_warnings_to_errors(self):
+        """Test that strict mode converts warnings to errors."""
+        from openssl_encrypt.modules.cascade_validator import (
+            CascadeDiversityValidator,
+            DiversityWarningLevel,
+        )
+
+        validator = CascadeDiversityValidator(strict=True)
+        warnings = validator.validate(["aes-256-gcm", "aes-gcm-siv"])
+
+        # Should have ERROR (upgraded from WARNING) about same family
+        error_warnings = [w for w in warnings if w.level == DiversityWarningLevel.ERROR]
+        self.assertTrue(len(error_warnings) > 0)
+
+        error = error_warnings[0]
+        self.assertIn("same 'aes' family", error.message)
+
+    def test_strict_mode_keeps_info_as_info(self):
+        """Test that strict mode doesn't upgrade INFO messages."""
+        from openssl_encrypt.modules.cascade_validator import (
+            CascadeDiversityValidator,
+            DiversityWarningLevel,
+        )
+
+        validator = CascadeDiversityValidator(strict=True)
+        warnings = validator.validate(["aes-256-gcm", "chacha20-poly1305"])
+
+        # Should still have INFO about good diversity
+        info_warnings = [w for w in warnings if w.level == DiversityWarningLevel.INFO]
+        self.assertTrue(len(info_warnings) > 0)
+
+    def test_three_cipher_validation(self):
+        """Test diversity validation with three ciphers."""
+        from openssl_encrypt.modules.cascade_validator import CascadeDiversityValidator
+
+        validator = CascadeDiversityValidator(strict=False)
+        warnings = validator.validate(["aes-256-gcm", "chacha20-poly1305", "threefish-512"])
+
+        # Should have at least one INFO about design diversity
+        self.assertTrue(len(warnings) > 0)
+
+    def test_multiple_same_family_warnings(self):
+        """Test that multiple same-family combinations produce multiple warnings."""
+        from openssl_encrypt.modules.cascade_validator import (
+            CascadeDiversityValidator,
+            DiversityWarningLevel,
+        )
+
+        validator = CascadeDiversityValidator(strict=False)
+        # Two AES ciphers, two ChaCha variants (if available)
+        warnings = validator.validate(
+            ["aes-256-gcm", "aes-gcm-siv", "chacha20-poly1305", "xchacha20-poly1305"]
+        )
+
+        # Should have WARNING for AES family and WARNING for ChaCha family
+        warning_count = len([w for w in warnings if w.level == DiversityWarningLevel.WARNING])
+        self.assertGreaterEqual(warning_count, 2)
+
+    def test_validate_with_empty_list(self):
+        """Test validation with empty cipher list."""
+        from openssl_encrypt.modules.cascade_validator import CascadeDiversityValidator
+
+        validator = CascadeDiversityValidator(strict=False)
+        warnings = validator.validate([])
+
+        # Should return empty list or handle gracefully
+        self.assertIsInstance(warnings, list)
+
+    def test_validate_with_single_cipher(self):
+        """Test validation with single cipher."""
+        from openssl_encrypt.modules.cascade_validator import CascadeDiversityValidator
+
+        validator = CascadeDiversityValidator(strict=False)
+        warnings = validator.validate(["aes-256-gcm"])
+
+        # Should handle gracefully (no diversity warnings for single cipher)
+        self.assertIsInstance(warnings, list)
+
+    def test_validate_with_unknown_ciphers(self):
+        """Test validation with unknown cipher names."""
+        from openssl_encrypt.modules.cascade_validator import CascadeDiversityValidator
+
+        validator = CascadeDiversityValidator(strict=False)
+        # Should not crash with unknown ciphers
+        warnings = validator.validate(["aes-256-gcm", "unknown-cipher"])
+
+        # Should still validate known ciphers
+        self.assertIsInstance(warnings, list)
+
+    def test_warning_has_all_fields(self):
+        """Test that DiversityWarning has all required fields."""
+        from openssl_encrypt.modules.cascade_validator import CascadeDiversityValidator
+
+        validator = CascadeDiversityValidator(strict=False)
+        warnings = validator.validate(["aes-256-gcm", "aes-gcm-siv"])
+
+        for warning in warnings:
+            self.assertTrue(hasattr(warning, "level"))
+            self.assertTrue(hasattr(warning, "message"))
+            self.assertTrue(hasattr(warning, "ciphers_involved"))
+            self.assertTrue(hasattr(warning, "suggestion"))
+            self.assertIsInstance(warning.message, str)
+            self.assertIsInstance(warning.ciphers_involved, list)
+
+    def test_convenience_function(self):
+        """Test convenience function for diversity validation."""
+        from openssl_encrypt.modules.cascade_validator import validate_cascade_diversity
+
+        warnings = validate_cascade_diversity(["aes-256-gcm", "chacha20-poly1305"])
+        self.assertIsInstance(warnings, list)
+
+        # Test with strict mode
+        warnings_strict = validate_cascade_diversity(["aes-256-gcm", "aes-gcm-siv"], strict=True)
+        error_count = len([w for w in warnings_strict if w.level.name == "ERROR"])
+        self.assertGreater(error_count, 0)
+
+    def test_paranoia_preset_validation(self):
+        """Test diversity validation on paranoia preset (3 ciphers)."""
+        from openssl_encrypt.modules.cascade_validator import (
+            CascadeDiversityValidator,
+            DiversityWarningLevel,
+        )
+
+        validator = CascadeDiversityValidator(strict=False)
+        # Paranoia preset: AES + ChaCha + Threefish
+        warnings = validator.validate(["aes-256-gcm", "chacha20-poly1305", "threefish-512"])
+
+        # Should show good design diversity (SPN + ARX)
+        info_warnings = [w for w in warnings if w.level == DiversityWarningLevel.INFO]
+        good_diversity = [w for w in info_warnings if "Good design diversity" in w.message]
+        self.assertTrue(len(good_diversity) > 0)
+
+
 if __name__ == "__main__":
     unittest.main()
