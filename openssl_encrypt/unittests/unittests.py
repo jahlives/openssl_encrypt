@@ -210,6 +210,7 @@ from openssl_encrypt.modules.crypt_errors import (
     KeystoreError,
     KeystorePasswordError,
     KeystoreVersionError,
+    MemoryError,
     ValidationError,
     constant_time_compare,
     constant_time_pkcs7_unpad,
@@ -2538,7 +2539,7 @@ class TestErrorMessageConsistency(unittest.TestCase):
         # Create errors of different types
         validation_error = ValidationError("debug details")
         crypto_error = EncryptionError("debug details")
-        memory_error = SecureMemoryError("debug details")
+        memory_error = MemoryError("debug details")
 
         # Check that error messages follow the standardized format
         self.assertTrue(str(validation_error).startswith("Security validation check failed"))
