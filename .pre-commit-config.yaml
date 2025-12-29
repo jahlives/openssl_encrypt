@@ -102,15 +102,27 @@ repos:
       - id: yamllint
         args: ['-d', 'relaxed']
 
-  # Dependency vulnerability scanning (client-side)
+  # Local hooks for project-specific checks
   - repo: local
     hooks:
+      # Dependency vulnerability scanning
       - id: pip-audit
         name: pip-audit vulnerability scan
         entry: bash -c 'pip-audit --requirement requirements-prod.txt --format json --output pip-audit-local.json || (echo "Vulnerabilities found, check pip-audit-local.json" && exit 1)'
         language: system
         files: 'requirements.*\.txt$'
         pass_filenames: false
+
+      # Plan file enforcement hook
+      - id: check-plan-files
+        name: Check plan files on restricted branches
+        entry: .pre-commit-hooks/check-plan-files.py
+        language: python
+        types: [markdown]
+        pass_filenames: true
+        stages: [pre-commit]
+        always_run: false
+        files: '(?i).*(plan|implementation).*\.md$'
 
 # Configuration for specific checks
 default_install_hook_types: [pre-commit, pre-push]
