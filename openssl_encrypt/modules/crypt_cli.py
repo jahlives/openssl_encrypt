@@ -1944,6 +1944,153 @@ def _get_security_icon(security_level: str) -> str:
     return icons.get(security_level, "🔒")
 
 
+def handle_telemetry_command(args):
+    """
+    Handle telemetry management commands.
+
+    Args:
+        args: Parsed command-line arguments
+    """
+    try:
+        # Import telemetry plugin
+        from ..plugins.telemetry import OpenSSLEncryptTelemetryPlugin
+    except ImportError as e:
+        print("Error: Telemetry plugin not available.")
+        print(f"Details: {e}")
+        return
+
+    # Get or create telemetry plugin instance
+    try:
+        plugin = OpenSSLEncryptTelemetryPlugin()
+    except Exception as e:
+        print(f"Error: Failed to initialize telemetry plugin: {e}")
+        return
+
+    # Handle subcommands
+    action = args.telemetry_action
+
+    if action == "status":
+        # Show telemetry status
+        status = plugin.get_status()
+        print("\nTELEMETRY STATUS")
+        print("=" * 60)
+        print(f"Enabled: {'Yes' if status['enabled'] else 'No'}")
+        print(f"Pending Events: {status['pending_events']}")
+        print(f"Server URL: {status['server_url']}")
+        print(f"API Key: {'Present' if status['has_api_key'] else 'Not registered'}")
+        print(
+            f"Upload Interval: {status['upload_interval']} seconds ({status['upload_interval'] // 3600} hours)"
+        )
+        print(f"Background Upload: {'Running' if status['upload_thread_alive'] else 'Stopped'}")
+        print("=" * 60)
+
+    elif action == "show-pending":
+        # Show pending events (transparency)
+        events = plugin.get_pending_events(limit=args.limit)
+
+        if not events:
+            print("No pending telemetry events.")
+            return
+
+        if args.json:
+            # JSON output
+            import json
+
+            print(json.dumps(events, indent=2))
+        else:
+            # Human-readable output
+            print(f"\nPENDING TELEMETRY EVENTS (showing {min(len(events), args.limit)} events)")
+            print("=" * 80)
+
+            for i, event in enumerate(events[: args.limit], 1):
+                print(f"\n--- Event {i} (ID: {event.get('id', 'N/A')}) ---")
+                print(f"  Timestamp: {event.get('timestamp', 'N/A')}")
+                print(f"  Operation: {event.get('operation', 'N/A')}")
+                print(f"  Mode: {event.get('mode', 'N/A')}")
+                print(f"  Format Version: {event.get('format_version', 'N/A')}")
+                print(f"  Encryption: {event.get('encryption_algorithm', 'N/A')}")
+                print(f"  Hash Algorithms: {', '.join(event.get('hash_algorithms', []))}")
+                print(f"  KDF Algorithms: {', '.join(event.get('kdf_algorithms', []))}")
+
+                if event.get("cascade_enabled"):
+                    print(f"  Cascade: Enabled ({event.get('cascade_cipher_count', 0)} ciphers)")
+
+                if event.get("pqc_kem_algorithm"):
+                    print(f"  PQC KEM: {event.get('pqc_kem_algorithm')}")
+
+                if event.get("pqc_signing_algorithm"):
+                    print(f"  PQC Signing: {event.get('pqc_signing_algorithm')}")
+
+                if event.get("hsm_plugin_used"):
+                    print(f"  HSM Plugin: {event.get('hsm_plugin_used')}")
+
+                print(f"  Success: {event.get('success', True)}")
+
+                if event.get("error_category"):
+                    print(f"  Error Category: {event.get('error_category')}")
+
+                print(f"  Retry Count: {event.get('retry_count', 0)}")
+
+            print("\n" + "=" * 80)
+            print(f"Total pending events: {plugin.buffer.get_pending_count()}")
+
+    elif action == "flush":
+        # Upload all pending events immediately
+        print("Uploading pending telemetry events...")
+        result = plugin.flush()
+
+        if result.success:
+            print(f"✓ {result.message}")
+        else:
+            print(f"✗ {result.message}")
+
+    elif action == "clear":
+        # Delete all pending events without uploading
+        pending_count = plugin.buffer.get_pending_count()
+
+        if pending_count == 0:
+            print("No pending events to clear.")
+            return
+
+        if not args.force:
+            response = input(f"Delete {pending_count} pending events without uploading? (yes/no): ")
+            if response.lower() not in ["yes", "y"]:
+                print("Cancelled.")
+                return
+
+        deleted = plugin.buffer.clear_all()
+        print(f"✓ Deleted {deleted} pending events.")
+
+    elif action == "opt-out":
+        # Complete opt-out: disable telemetry and delete all data
+        pending_count = plugin.buffer.get_pending_count()
+
+        if not args.force:
+            print("\n⚠️  OPT-OUT WARNING ⚠️")
+            print("This will:")
+            print("  1. Disable telemetry collection")
+            print(f"  2. Delete {pending_count} pending events")
+            print("  3. Delete your API key")
+            print("  4. Stop background uploads")
+            print()
+            response = input("Are you sure you want to opt out? (yes/no): ")
+            if response.lower() not in ["yes", "y"]:
+                print("Cancelled.")
+                return
+
+        result = plugin.opt_out()
+
+        if result.success:
+            print(f"✓ {result.message}")
+            print("\nTelemetry has been completely disabled.")
+            print("To re-enable, use: --telemetry flag or set OPENSSL_ENCRYPT_TELEMETRY=1")
+        else:
+            print(f"✗ {result.message}")
+
+    else:
+        print(f"Unknown telemetry action: {action}")
+
+
 def main():
     """
     Main function that handles the command-line interface.
@@ -1982,6 +2129,7 @@ def main():
         "enable-plugin",
         "disable-plugin",
         "reload-plugin",
+        "telemetry",
     ]
 
     # Use subparser only if a subcommand is present
@@ -3315,6 +3463,10 @@ def main_with_args(args=None):
         from .identity_cli import main as identity_main
 
         sys.exit(identity_main(args))
+
+    elif args.action == "telemetry":
+        handle_telemetry_command(args)
+        sys.exit(0)
 
     elif args.action == "list-algorithms":
         show_algorithm_registry(args)

@@ -46,6 +46,9 @@ class PluginCapability(enum.Enum):
     # Process execution (highly restricted)
     EXECUTE_PROCESSES = "execute_processes"
 
+    # Telemetry event reception (receives filtered telemetry events)
+    TELEMETRY = "telemetry"
+
 
 class PluginType(enum.Enum):
     """
@@ -73,6 +76,9 @@ class PluginType(enum.Enum):
 
     # HSM plugins (hardware security module integration)
     HSM = "hsm"
+
+    # Telemetry plugins (collect anonymous usage statistics)
+    TELEMETRY = "telemetry"
 
 
 class PluginSecurityContext:
@@ -618,3 +624,124 @@ class HSMPlugin(BasePlugin):
             return PluginResult.error_result("Salt must be bytes")
 
         return self.get_hsm_pepper(salt, context)
+
+
+class TelemetryPlugin(BasePlugin):
+    """
+    Base class for telemetry plugins.
+
+    SECURITY:
+    - Receives ONLY TelemetryEvent objects (already filtered by TelemetryDataFilter)
+    - Has NO access to:
+      - Passwords, keys (public/private/symmetric), salts
+      - Filenames, file sizes, file paths
+      - Fingerprints, key IDs
+      - IP addresses, user identifiers
+      - Plaintext or ciphertext data
+
+    PRIVACY:
+    - Opt-in by default (disabled unless explicitly enabled)
+    - User can inspect all pending events before upload
+    - Full opt-out with complete data deletion
+    - Anonymous usage statistics only
+
+    Telemetry plugins collect anonymous algorithm usage statistics to help
+    prioritize future development. All data collection is strictly controlled
+    through TelemetryDataFilter whitelisting.
+    """
+
+    def get_plugin_type(self) -> PluginType:
+        return PluginType.TELEMETRY
+
+    def get_required_capabilities(self) -> Set[PluginCapability]:
+        """Telemetry plugins require network access and logging."""
+        return {
+            PluginCapability.TELEMETRY,
+            PluginCapability.NETWORK_ACCESS,
+            PluginCapability.ACCESS_CONFIG,
+            PluginCapability.WRITE_LOGS,
+        }
+
+    @abc.abstractmethod
+    def on_telemetry_event(self, event: "TelemetryEvent") -> None:
+        """
+        Called after each encrypt/decrypt operation with filtered telemetry data.
+
+        SECURITY GUARANTEE: The event has already been filtered by
+        TelemetryDataFilter and contains ONLY whitelisted, non-sensitive data.
+
+        Args:
+            event: TelemetryEvent instance (immutable, already filtered)
+
+        Implementation Notes:
+            - This method should be non-blocking (buffer locally, upload async)
+            - Should NOT raise exceptions (catch and log errors internally)
+            - Should NOT block the main encryption/decryption operation
+        """
+        pass
+
+    @abc.abstractmethod
+    def flush(self) -> PluginResult:
+        """
+        Sends all buffered telemetry events to the server immediately.
+
+        Returns:
+            PluginResult indicating success/failure of the flush operation
+
+        Implementation Notes:
+            - This is called by the CLI command "telemetry flush"
+            - Should attempt to upload all pending events
+            - Should return success if most/all events uploaded
+            - Failed events should be kept in buffer for retry
+        """
+        pass
+
+    @abc.abstractmethod
+    def get_status(self) -> Dict[str, Any]:
+        """
+        Returns plugin status for CLI display.
+
+        Returns:
+            Dictionary with status information:
+                - enabled: bool (whether telemetry is active)
+                - pending_events: int (number of buffered events)
+                - server_url: str (telemetry server URL)
+                - has_api_key: bool (whether registered with server)
+                - upload_interval: int (seconds between uploads)
+                - last_upload: Optional[str] (ISO 8601 timestamp)
+
+        Implementation Notes:
+            - Called by CLI command "telemetry status"
+            - Should be fast (no network calls)
+            - Should provide useful info for debugging
+        """
+        pass
+
+    @abc.abstractmethod
+    def get_pending_events(self) -> List[Dict[str, Any]]:
+        """
+        Returns all buffered events for user inspection (transparency).
+
+        Returns:
+            List of event dictionaries (serialized TelemetryEvents)
+
+        Implementation Notes:
+            - Called by CLI command "telemetry show-pending"
+            - Allows user to see what data would be sent before upload
+            - Critical for transparency and user trust
+            - Should return events in chronological order
+        """
+        pass
+
+    def execute(self, context: PluginSecurityContext) -> PluginResult:
+        """
+        Execute telemetry plugin (called by plugin manager).
+
+        For telemetry plugins, the main execution happens via on_telemetry_event()
+        callbacks rather than through execute(). This method exists to satisfy
+        the BasePlugin interface.
+
+        Returns:
+            PluginResult indicating plugin is active
+        """
+        return PluginResult.success_result("Telemetry plugin active")

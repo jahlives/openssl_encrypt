@@ -1540,6 +1540,46 @@ def setup_list_algorithms_parser(subparser):
     )
 
 
+def setup_telemetry_parser(subparser):
+    """Set up arguments for the telemetry command."""
+    telemetry_subparsers = subparser.add_subparsers(
+        dest="telemetry_action",
+        help="Telemetry management action",
+        required=True,
+    )
+
+    # Status subcommand
+    status_parser = telemetry_subparsers.add_parser(
+        "status", help="Show telemetry status and statistics"
+    )
+
+    # Show pending events subcommand
+    show_pending_parser = telemetry_subparsers.add_parser(
+        "show-pending", help="Show pending telemetry events (transparency)"
+    )
+    show_pending_parser.add_argument("--json", action="store_true", help="Output in JSON format")
+    show_pending_parser.add_argument(
+        "--limit", type=int, default=100, help="Maximum number of events to show (default: 100)"
+    )
+
+    # Flush subcommand
+    flush_parser = telemetry_subparsers.add_parser(
+        "flush", help="Upload all pending events immediately"
+    )
+
+    # Clear subcommand
+    clear_parser = telemetry_subparsers.add_parser(
+        "clear", help="Delete all pending events without uploading"
+    )
+    clear_parser.add_argument("--force", action="store_true", help="Skip confirmation prompt")
+
+    # Opt-out subcommand
+    opt_out_parser = telemetry_subparsers.add_parser(
+        "opt-out", help="Completely disable telemetry and delete all data"
+    )
+    opt_out_parser.add_argument("--force", action="store_true", help="Skip confirmation prompt")
+
+
 def create_subparser_main():
     """
     Create a main function that uses subparsers instead of the monolithic approach.
@@ -1702,6 +1742,14 @@ def create_subparser_main():
             formatter_class=argparse.RawTextHelpFormatter,
         )
         setup_list_algorithms_parser(list_algorithms_parser)
+
+    # Telemetry management command
+    telemetry_parser = subparsers.add_parser(
+        "telemetry",
+        help="Manage telemetry settings and view pending events",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_telemetry_parser(telemetry_parser)
 
     # Note: Steganography is now integrated into encrypt/decrypt commands
     # rather than separate commands

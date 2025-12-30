@@ -76,6 +76,139 @@ F = TypeVar("F", bound=Callable[..., Any])
 logger = logging.getLogger(__name__)
 
 
+# Global variable to track telemetry enablement (set by CLI/config)
+_telemetry_enabled = False
+_plugin_manager_instance = None
+
+
+def set_telemetry_enabled(enabled: bool) -> None:
+    """Set telemetry enablement status (called by CLI/config)."""
+    global _telemetry_enabled
+    _telemetry_enabled = enabled
+
+
+def set_plugin_manager(plugin_manager) -> None:
+    """Set plugin manager instance (called during initialization)."""
+    global _plugin_manager_instance
+    _plugin_manager_instance = plugin_manager
+
+
+def _is_telemetry_enabled() -> bool:
+    """
+    Check if telemetry is enabled.
+
+    Priority: Runtime flag > Environment variable > Config file
+    Default: DISABLED (opt-in)
+
+    Returns:
+        True if telemetry is enabled, False otherwise
+    """
+    global _telemetry_enabled
+
+    # Check runtime flag (set by CLI)
+    if _telemetry_enabled:
+        return True
+
+    # Check environment variable
+    if os.getenv("OPENSSL_ENCRYPT_TELEMETRY") == "1":
+        return True
+
+    # Check config file
+    try:
+        from .config import get_config
+
+        config = get_config()
+        if config.get("telemetry", {}).get("enabled", False):
+            return True
+    except Exception:
+        pass  # Config not available or error reading it
+
+    return False  # Default: disabled
+
+
+def _get_plugin_manager():
+    """Get the global plugin manager instance."""
+    global _plugin_manager_instance
+    return _plugin_manager_instance
+
+
+def _emit_telemetry_event(
+    metadata: dict,
+    operation: str,
+    success: bool = True,
+    error_category: Optional[str] = None,
+) -> None:
+    """
+    Emit a telemetry event (if telemetry is enabled).
+
+    SECURITY: Uses TelemetryDataFilter for strict whitelisting.
+    This function NEVER blocks or crashes the main operation.
+
+    Args:
+        metadata: Full metadata from encryption/decryption (will be filtered)
+        operation: "encrypt" or "decrypt"
+        success: Whether the operation succeeded
+        error_category: Error category if failed (optional)
+
+    Implementation Notes:
+        - Telemetry is OPT-IN (disabled by default)
+        - All exceptions are caught and logged only (never crash main operation)
+        - Uses TelemetryDataFilter to ensure NO sensitive data leaks
+        - Sends filtered events to all registered telemetry plugins
+    """
+    # Quick check: is telemetry enabled?
+    if not _is_telemetry_enabled():
+        return
+
+    try:
+        # Import telemetry components (lazy import to avoid overhead when disabled)
+        from .plugin_system.plugin_base import PluginType
+        from .telemetry_filter import TelemetryDataFilter, TelemetryEvent
+
+        # CRITICAL: Filter creates safe event (THE security boundary)
+        event = TelemetryDataFilter.filter_metadata(
+            metadata=metadata,
+            operation=operation,
+            success=success,
+            error_category=error_category,
+        )
+
+        # Get plugin manager
+        plugin_manager = _get_plugin_manager()
+        if not plugin_manager:
+            # Plugin manager not initialized yet
+            logger.debug("Telemetry: Plugin manager not available")
+            return
+
+        # Send to all registered telemetry plugins
+        try:
+            # Get telemetry plugins
+            telemetry_plugins = []
+            all_plugins = getattr(plugin_manager, "plugins", {})
+
+            for plugin_registration in all_plugins.values():
+                plugin = plugin_registration.plugin
+                if hasattr(plugin, "get_plugin_type"):
+                    if plugin.get_plugin_type() == PluginType.TELEMETRY:
+                        telemetry_plugins.append(plugin)
+
+            # Call on_telemetry_event for each telemetry plugin
+            for plugin in telemetry_plugins:
+                try:
+                    if hasattr(plugin, "on_telemetry_event"):
+                        plugin.on_telemetry_event(event)
+                except Exception as e:
+                    # Plugin errors must never affect main operation
+                    logger.debug(f"Telemetry plugin error ({plugin.plugin_id}): {e}")
+
+        except Exception as e:
+            logger.debug(f"Telemetry: Error accessing plugins: {e}")
+
+    except Exception as e:
+        # Telemetry failures must NEVER crash the main operation
+        logger.debug(f"Telemetry emission failed: {e}")
+
+
 def deprecated_algorithm(algorithm: str, context: Optional[str] = None) -> Callable[[F], F]:
     """
     Decorator to mark functions using deprecated algorithms.
@@ -5211,6 +5344,12 @@ def encrypt_file(
     if not quiet:
         print("✅")
 
+    # Emit telemetry event (if enabled)
+    try:
+        _emit_telemetry_event(metadata, "encrypt", success=True)
+    except Exception as e:
+        logger.debug(f"Telemetry emission failed: {e}")
+
     # Execute post-processing plugins
     if plugin_context and plugin_manager:
         try:
@@ -6648,6 +6787,12 @@ def decrypt_file(
                         raise AuthenticationError("Content integrity verification failed")
             elif not quiet:
                 print("✅")  # Green check symbol
+
+    # Emit telemetry event (if enabled) - successful decryption
+    try:
+        _emit_telemetry_event(metadata, "decrypt", success=True)
+    except Exception as e:
+        logger.debug(f"Telemetry emission failed: {e}")
 
     # If no output file is specified, return the decrypted data
     if output_file is None:
