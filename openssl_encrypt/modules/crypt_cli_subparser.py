@@ -19,7 +19,7 @@ CASCADE_PRESETS = {
 
 # Import registry helper functions
 try:
-    from .registry import (
+    from .registry import (  # noqa: F401
         format_algorithm_help,
         get_available_ciphers,
         get_available_hashes,
@@ -574,6 +574,12 @@ def setup_encrypt_parser(subparser):
         dest="identity_store",
         metavar="PATH",
         help="Path to identity store directory (overrides global --identity-store)",
+    )
+    asymmetric_group.add_argument(
+        "--use-keyserver",
+        action="store_true",
+        help="Enable keyserver lookup for recipient keys (opt-in). "
+        "Fetches public keys from configured keyserver if not found locally.",
     )
 
     # Keystore options
@@ -1540,6 +1546,70 @@ def setup_list_algorithms_parser(subparser):
     )
 
 
+def setup_keyserver_parser(subparser):
+    """Set up arguments for the keyserver command."""
+    keyserver_subparsers = subparser.add_subparsers(
+        dest="keyserver_action",
+        help="Keyserver management action",
+        required=True,
+    )
+
+    # Enable subcommand
+    keyserver_subparsers.add_parser("enable", help="Enable keyserver plugin (opt-in)")
+
+    # Disable subcommand
+    keyserver_subparsers.add_parser("disable", help="Disable keyserver plugin")
+
+    # Status subcommand
+    keyserver_subparsers.add_parser("status", help="Show keyserver status and configuration")
+
+    # Search subcommand (public, no auth)
+    search_parser = keyserver_subparsers.add_parser(
+        "search", help="Search for public key on keyserver"
+    )
+    search_parser.add_argument("identifier", help="Fingerprint, name, or email to search for")
+    search_parser.add_argument("--json", action="store_true", help="Output in JSON format")
+
+    # Import subcommand (public, no auth)
+    import_parser = keyserver_subparsers.add_parser(
+        "import", help="Import public key from keyserver to local store"
+    )
+    import_parser.add_argument("identifier", help="Fingerprint, name, or email to import")
+    import_parser.add_argument(
+        "--no-trust-prompt", action="store_true", help="Skip trust confirmation (dangerous)"
+    )
+
+    # Upload subcommand (requires API token)
+    upload_parser = keyserver_subparsers.add_parser(
+        "upload", help="Upload public key to keyserver (requires API token)"
+    )
+    upload_parser.add_argument("identity_name", help="Name of identity to upload")
+
+    # Revoke subcommand (requires API token)
+    revoke_parser = keyserver_subparsers.add_parser(
+        "revoke", help="Revoke key on keyserver (requires API token)"
+    )
+    revoke_parser.add_argument("fingerprint", help="Fingerprint of key to revoke")
+
+    # Token management subcommands
+    set_token_parser = keyserver_subparsers.add_parser(
+        "set-token", help="Set API token for uploads (stored securely)"
+    )
+    set_token_parser.add_argument("token", help="API token (Bearer token)")
+
+    keyserver_subparsers.add_parser("show-token", help="Show current API token (masked)")
+
+    keyserver_subparsers.add_parser("clear-token", help="Delete API token")
+
+    # Cache management
+    cache_clear_parser = keyserver_subparsers.add_parser(
+        "cache-clear", help="Clear local keyserver cache"
+    )
+    cache_clear_parser.add_argument("--force", action="store_true", help="Skip confirmation prompt")
+
+    keyserver_subparsers.add_parser("cache-stats", help="Show cache statistics")
+
+
 def setup_telemetry_parser(subparser):
     """Set up arguments for the telemetry command."""
     telemetry_subparsers = subparser.add_subparsers(
@@ -1549,9 +1619,7 @@ def setup_telemetry_parser(subparser):
     )
 
     # Status subcommand
-    status_parser = telemetry_subparsers.add_parser(
-        "status", help="Show telemetry status and statistics"
-    )
+    telemetry_subparsers.add_parser("status", help="Show telemetry status and statistics")
 
     # Show pending events subcommand
     show_pending_parser = telemetry_subparsers.add_parser(
@@ -1563,9 +1631,7 @@ def setup_telemetry_parser(subparser):
     )
 
     # Flush subcommand
-    flush_parser = telemetry_subparsers.add_parser(
-        "flush", help="Upload all pending events immediately"
-    )
+    telemetry_subparsers.add_parser("flush", help="Upload all pending events immediately")
 
     # Clear subcommand
     clear_parser = telemetry_subparsers.add_parser(
@@ -1750,6 +1816,14 @@ def create_subparser_main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_telemetry_parser(telemetry_parser)
+
+    # Keyserver management command
+    keyserver_parser = subparsers.add_parser(
+        "keyserver",
+        help="Manage keyserver settings and fetch/upload public keys",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_keyserver_parser(keyserver_parser)
 
     # Note: Steganography is now integrated into encrypt/decrypt commands
     # rather than separate commands

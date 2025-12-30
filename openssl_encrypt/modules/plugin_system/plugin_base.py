@@ -49,6 +49,9 @@ class PluginCapability(enum.Enum):
     # Telemetry event reception (receives filtered telemetry events)
     TELEMETRY = "telemetry"
 
+    # Keyserver access (fetch public keys from remote server)
+    KEYSERVER = "keyserver"
+
 
 class PluginType(enum.Enum):
     """
@@ -79,6 +82,9 @@ class PluginType(enum.Enum):
 
     # Telemetry plugins (collect anonymous usage statistics)
     TELEMETRY = "telemetry"
+
+    # Keyserver plugins (fetch public keys from remote server)
+    KEYSERVER = "keyserver"
 
 
 class PluginSecurityContext:

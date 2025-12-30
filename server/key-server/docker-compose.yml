@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  # PostgreSQL database
+  db:
+    image: postgres:16-alpine
+    container_name: keyserver-db
+    environment:
+      POSTGRES_USER: keyserver
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-keyserver_password_change_me}
+      POSTGRES_DB: keyserver
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - keyserver-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keyserver"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Keyserver API
+  api:
+    build: .
+    container_name: keyserver-api
+    ports:
+      - "${API_PORT:-8080}:8080"
+    environment:
+      DATABASE_URL: postgresql://keyserver:${DB_PASSWORD:-keyserver_password_change_me}@db:5432/keyserver
+      API_TOKEN_SALT: ${API_TOKEN_SALT:-change_me_in_production}
+      DEBUG: ${DEBUG:-false}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - keyserver-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import requests; requests.get(\"http://localhost:8080/health\")'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  postgres_data:
+    name: keyserver-postgres-data
+
+networks:
+  keyserver-network:
+    name: keyserver-network
+    driver: bridge

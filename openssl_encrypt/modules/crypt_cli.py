@@ -185,7 +185,7 @@ def detect_encryption_type(input_file: str) -> dict:
         # Default to symmetric
         return {"type": "symmetric", "format_version": 0}
 
-    except (FileNotFoundError, IOError, Exception):
+    except Exception:
         # If we can't read the file, assume symmetric
         return {"type": "symmetric", "format_version": 0}
 
@@ -1944,6 +1944,273 @@ def _get_security_icon(security_level: str) -> str:
     return icons.get(security_level, "🔒")
 
 
+def handle_keyserver_command(args):
+    """
+    Handle keyserver management commands.
+
+    Args:
+        args: Parsed command-line arguments
+    """
+    import json
+
+    # Import keyserver components
+    try:
+        from ..plugins.keyserver import KeyserverConfig, KeyserverPlugin
+        from .identity import IdentityStore
+        from .identity_cli import resolve_identity_store_path
+    except ImportError as e:
+        print(f"Error: Keyserver plugin not available: {e}")
+        return
+
+    # Get configuration
+    try:
+        config = KeyserverConfig.from_file()
+    except Exception as e:
+        print(f"Error: Failed to load keyserver configuration: {e}")
+        return
+
+    # Handle subcommands
+    action = args.keyserver_action
+
+    if action == "enable":
+        # Enable keyserver
+        config.enabled = True
+        try:
+            config.to_file()
+            print("✓ Keyserver plugin enabled")
+            print(f"  Servers: {', '.join(config.servers)}")
+            print("  Use 'openssl-encrypt keyserver status' to verify configuration")
+        except Exception as e:
+            print(f"✗ Failed to enable keyserver: {e}")
+
+    elif action == "disable":
+        # Disable keyserver
+        config.enabled = False
+        try:
+            config.to_file()
+            print("✓ Keyserver plugin disabled")
+        except Exception as e:
+            print(f"✗ Failed to disable keyserver: {e}")
+
+    elif action == "status":
+        # Show keyserver status
+        plugin = KeyserverPlugin(config)
+        cache_stats = plugin.get_cache_stats()
+
+        print("\nKEYSERVER STATUS")
+        print("=" * 60)
+        print(f"Enabled: {'Yes' if config.enabled else 'No'}")
+        print(f"Servers: {', '.join(config.servers)}")
+        print(
+            f"Cache TTL: {config.cache_ttl_seconds} seconds ({config.cache_ttl_seconds // 3600} hours)"
+        )
+        print(f"Cache Max Entries: {config.cache_max_entries}")
+        print(f"Upload Enabled: {'Yes' if config.upload_enabled else 'No'}")
+        print(f"API Token: {'Present' if config.load_api_token() else 'Not set'}")
+        print()
+        print("CACHE STATISTICS")
+        print("-" * 60)
+        print(f"Total Entries: {cache_stats['total_entries']}")
+        print(f"Valid Entries: {cache_stats['valid_entries']}")
+        print(f"Expired Entries: {cache_stats['expired_entries']}")
+        print(f"Total Accesses: {cache_stats['total_accesses']}")
+        if cache_stats["most_accessed"]:
+            print(
+                f"Most Accessed: {cache_stats['most_accessed']['name']} ({cache_stats['most_accessed']['count']} times)"
+            )
+        print("=" * 60)
+
+    elif action == "search":
+        # Search for key on keyserver
+        if not config.enabled:
+            print("✗ Keyserver plugin is disabled. Enable with: openssl-encrypt keyserver enable")
+            return
+
+        plugin = KeyserverPlugin(config)
+        identifier = args.identifier
+
+        print(f"Searching for '{identifier}' on keyserver...")
+        bundle = plugin.fetch_key(identifier)
+
+        if bundle:
+            if args.json:
+                print(json.dumps(bundle.to_dict(), indent=2))
+            else:
+                print("\n✓ Key found")
+                print("-" * 60)
+                print(f"Name:        {bundle.name}")
+                print(f"Email:       {bundle.email or 'N/A'}")
+                print(f"Fingerprint: {bundle.fingerprint}")
+                print(f"Algorithms:  {bundle.encryption_algorithm} / {bundle.signing_algorithm}")
+                print(f"Created:     {bundle.created_at}")
+                print("-" * 60)
+        else:
+            print(f"✗ Key not found for '{identifier}'")
+
+    elif action == "import":
+        # Import key from keyserver
+        if not config.enabled:
+            print("✗ Keyserver plugin is disabled. Enable with: openssl-encrypt keyserver enable")
+            return
+
+        from .key_resolver import (
+            KeyNotFoundError,
+            KeyResolver,
+            TrustDeclinedError,
+            silent_trust_callback,
+        )
+
+        plugin = KeyserverPlugin(config)
+        store = IdentityStore(resolve_identity_store_path(args))
+
+        # Use silent trust if --no-trust-prompt is set
+        trust_callback = silent_trust_callback if args.no_trust_prompt else None
+        resolver = KeyResolver(store, plugin, trust_callback)
+
+        try:
+            identity = resolver.resolve(args.identifier, load_private_keys=False)
+            print(f"✓ Successfully imported '{identity.name}' to local store")
+            print(f"  Fingerprint: {identity.fingerprint}")
+        except KeyNotFoundError:
+            print(f"✗ Key not found for '{args.identifier}'")
+        except TrustDeclinedError:
+            print("✗ Import cancelled (user declined to trust key)")
+        except Exception as e:
+            print(f"✗ Failed to import key: {e}")
+
+    elif action == "upload":
+        # Upload key to keyserver
+        if not config.enabled:
+            print("✗ Keyserver plugin is disabled. Enable with: openssl-encrypt keyserver enable")
+            return
+
+        from .key_bundle import PublicKeyBundle
+
+        plugin = KeyserverPlugin(config)
+        store = IdentityStore(resolve_identity_store_path(args))
+
+        # Load identity (with private keys for signing)
+        identity_name = args.identity_name
+
+        # Prompt for passphrase
+        import getpass
+
+        passphrase = getpass.getpass(f"Enter passphrase for '{identity_name}': ")
+
+        try:
+            identity = store.get_by_name(
+                identity_name, passphrase=passphrase, load_private_keys=True
+            )
+
+            if not identity:
+                print(f"✗ Identity '{identity_name}' not found")
+                return
+
+            if not identity.is_own_identity:
+                print(f"✗ Cannot upload '{identity_name}': not your own identity (no private keys)")
+                return
+
+            # Create bundle
+            bundle = PublicKeyBundle.from_identity(identity)
+
+            # Upload
+            print(f"Uploading '{identity_name}' to keyserver...")
+            success = plugin.upload_key(bundle)
+
+            if success:
+                print(f"✓ Successfully uploaded '{identity_name}'")
+                print(f"  Fingerprint: {bundle.fingerprint}")
+            else:
+                print(f"✗ Failed to upload '{identity_name}'")
+
+        except Exception as e:
+            print(f"✗ Failed to upload key: {e}")
+
+    elif action == "revoke":
+        # Revoke key on keyserver
+        print("✗ Key revocation not yet implemented")
+        print("  (Requires revocation signature generation)")
+
+    elif action == "set-token":
+        # Set API token
+        token = args.token
+        try:
+            config.save_api_token(token)
+            print("✓ API token saved securely")
+            print(f"  Token file: {config.api_token_file}")
+            print("  Permissions: 0600 (owner read/write only)")
+        except Exception as e:
+            print(f"✗ Failed to save API token: {e}")
+
+    elif action == "show-token":
+        # Show API token (masked)
+        token = config.load_api_token()
+        if token:
+            # Mask token (show first 8 and last 4 characters)
+            if len(token) > 12:
+                masked = token[:8] + "*" * (len(token) - 12) + token[-4:]
+            else:
+                masked = "*" * len(token)
+            print(f"API Token: {masked}")
+            print(f"Token file: {config.api_token_file}")
+        else:
+            print("✗ No API token set")
+            print("  Use: openssl-encrypt keyserver set-token <token>")
+
+    elif action == "clear-token":
+        # Delete API token
+        try:
+            if config.clear_api_token():
+                print("✓ API token deleted")
+            else:
+                print("No API token to delete")
+        except Exception as e:
+            print(f"✗ Failed to delete API token: {e}")
+
+    elif action == "cache-clear":
+        # Clear cache
+        plugin = KeyserverPlugin(config)
+        count = plugin.cache.get_pending_count()
+
+        if count == 0:
+            print("Cache is already empty")
+            return
+
+        if not args.force:
+            response = input(f"Clear {count} cached keys? (yes/no): ")
+            if response.lower() not in ["yes", "y"]:
+                print("Cancelled")
+                return
+
+        cleared = plugin.clear_cache()
+        print(f"✓ Cleared {cleared} cached keys")
+
+    elif action == "cache-stats":
+        # Show cache statistics
+        plugin = KeyserverPlugin(config)
+        stats = plugin.get_cache_stats()
+
+        print("\nKEYSERVER CACHE STATISTICS")
+        print("=" * 60)
+        print(f"Total Entries: {stats['total_entries']}")
+        print(f"Valid Entries: {stats['valid_entries']}")
+        print(f"Expired Entries: {stats['expired_entries']}")
+        print(f"Max Entries: {stats['max_entries']}")
+        print(f"TTL: {stats['ttl_seconds']} seconds ({stats['ttl_seconds'] // 3600} hours)")
+        print(f"Total Accesses: {stats['total_accesses']}")
+
+        if stats["most_accessed"]:
+            print(
+                f"Most Accessed Key: {stats['most_accessed']['name']} ({stats['most_accessed']['count']} times)"
+            )
+
+        print(f"Cache Path: {stats['cache_path']}")
+        print("=" * 60)
+
+    else:
+        print(f"Unknown keyserver action: {action}")
+
+
 def handle_telemetry_command(args):
     """
     Handle telemetry management commands.
@@ -2130,6 +2397,7 @@ def main():
         "disable-plugin",
         "reload-plugin",
         "telemetry",
+        "keyserver",
     ]
 
     # Use subparser only if a subcommand is present
@@ -2181,7 +2449,7 @@ def _get_steganography_plugin(quiet=False):
 
         return plugin_instance
 
-    except ImportError as e:
+    except ImportError:
         if not quiet:
             print("Error: Steganography requires additional dependencies.")
             print("Install with: pip install Pillow numpy")
@@ -3468,6 +3736,10 @@ def main_with_args(args=None):
         handle_telemetry_command(args)
         sys.exit(0)
 
+    elif args.action == "keyserver":
+        handle_keyserver_command(args)
+        sys.exit(0)
+
     elif args.action == "list-algorithms":
         show_algorithm_registry(args)
         sys.exit(0)
@@ -4684,20 +4956,67 @@ def main_with_args(args=None):
 
                 store = get_identity_store(resolve_identity_store_path(args))
 
-                # Load recipients
+                # Initialize KeyResolver for keyserver support (if enabled)
+                keyserver_plugin = None
+                if hasattr(args, "use_keyserver") and args.use_keyserver:
+                    try:
+                        from ..plugins.keyserver import KeyserverConfig, KeyserverPlugin
+
+                        config = KeyserverConfig.from_file()
+                        if config.enabled:
+                            keyserver_plugin = KeyserverPlugin(config)
+                            if not args.quiet:
+                                print(
+                                    "🔑 Keyserver enabled: will fetch public keys from remote if not found locally"
+                                )
+                        else:
+                            if not args.quiet:
+                                print(
+                                    "⚠️  Keyserver is disabled. Enable with: openssl-encrypt keyserver enable"
+                                )
+                    except ImportError:
+                        if not args.quiet:
+                            print("⚠️  Keyserver plugin not available")
+                    except Exception as e:
+                        if not args.quiet:
+                            print(f"⚠️  Failed to initialize keyserver: {e}")
+
+                # Load recipients (with KeyResolver support)
                 recipients = []
                 for recipient_name in args.for_identity:
                     try:
-                        recipient = store.get_by_name(
-                            recipient_name, passphrase=None, load_private_keys=False
-                        )
-                        if recipient is None:
-                            print(
-                                f"ERROR: Recipient identity '{recipient_name}' not found ❌",
-                                file=sys.stderr,
+                        if keyserver_plugin:
+                            # Use KeyResolver for keyserver support
+                            from .key_resolver import (
+                                KeyNotFoundError,
+                                KeyResolver,
+                                TrustDeclinedError,
                             )
-                            sys.exit(1)
+
+                            resolver = KeyResolver(store, keyserver_plugin)
+                            recipient = resolver.resolve(recipient_name, load_private_keys=False)
+                        else:
+                            # Use direct store lookup (legacy behavior)
+                            recipient = store.get_by_name(
+                                recipient_name, passphrase=None, load_private_keys=False
+                            )
+                            if recipient is None:
+                                raise KeyError(f"Recipient identity '{recipient_name}' not found")
+
                         recipients.append(recipient)
+
+                    except KeyNotFoundError:
+                        print(
+                            f"ERROR: Recipient identity '{recipient_name}' not found ❌",
+                            file=sys.stderr,
+                        )
+                        sys.exit(1)
+                    except TrustDeclinedError:
+                        print(f"ERROR: Trust declined for '{recipient_name}' ❌", file=sys.stderr)
+                        sys.exit(1)
+                    except KeyError as e:
+                        print(f"ERROR: {e} ❌", file=sys.stderr)
+                        sys.exit(1)
                     except Exception as e:
                         error_msg = f"ERROR: Failed to load identity '{recipient_name}'"
                         if str(e):
