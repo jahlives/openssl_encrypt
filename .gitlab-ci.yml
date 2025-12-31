@@ -262,14 +262,23 @@ test:
   stage: test
   image: $DOCKER_IMAGE
   tags:
-    - amd64
+    - high-cpu  # Use the runner with most cores for faster test execution
   variables:
     PQC_QUIET: "true"  # Suppress PQC module initialization messages
   before_script:
     - pip install -r requirements.txt --break-system-packages
-    - pip install setuptools --break-system-packages  # Provides pkg_resources
+    - pip install setuptools pytest-xdist pytest-cov --break-system-packages  # Provides pkg_resources, parallel testing, and coverage
   script:
-    - python3 -m pytest openssl_encrypt/unittests/unittests.py -v
+    - python3 -m pytest openssl_encrypt/unittests/unittests.py -n auto --dist=worksteal -v --durations=20 --cov=openssl_encrypt --cov-report=term --cov-report=html --cov-report=xml
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    paths:
+      - htmlcov/
+      - coverage.xml
+    expire_in: 1 week
   rules:
     # Run tests on dev, testing, and release branches, and for tags
     - if: $CI_COMMIT_BRANCH == "dev" && $DOCS_ONLY != "true"
@@ -295,12 +304,12 @@ test-fallback:
   stage: test
   image: python:3.13-alpine
   tags:
-    - amd64
+    - high-cpu  # Use the runner with most cores for faster test execution
   variables:
     PQC_QUIET: "true"  # Suppress PQC module initialization messages
   before_script:
     - pip install -r requirements.txt --break-system-packages
-    - pip install pytest pytest-order setuptools --break-system-packages  # setuptools provides pkg_resources
+    - pip install pytest pytest-xdist pytest-cov pytest-order setuptools --break-system-packages  # setuptools provides pkg_resources, parallel testing, and coverage
     # Explicitly pin cryptography version to match the tests
     # Install dependencies for building liboqs (Alpine Linux packages)
     - apk add git gcc g++ cmake ninja make go python3-dev openssl-dev musl-dev
@@ -317,7 +326,7 @@ test-fallback:
     # Install liboqs Python bindings
     - pip install --user git+https://github.com/open-quantum-safe/liboqs-python.git
   script:
-    - python3 -m pytest openssl_encrypt/unittests/unittests.py -v
+    - python3 -m pytest openssl_encrypt/unittests/unittests.py -n auto --dist=worksteal -v --durations=20 --cov=openssl_encrypt --cov-report=term --cov-report=html --cov-report=xml
   rules:
     - if: $CI_COMMIT_BRANCH == "dev" && $DOCS_ONLY != "true"
       when: on_failure
