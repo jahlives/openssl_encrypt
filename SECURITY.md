@@ -7,11 +7,11 @@ We take security seriously and provide security updates for the following versio
 | Version | Supported          | End of Life    |
 | ------- | ------------------ | -------------- |
 | 1.4.x   | :white_check_mark: | TBD            |
-| 1.3.x   | :white_check_mark: | June 2026      |
+| 1.3.x   | :white_check_mark: | TBD            |
 | 1.2.x   | :x:                | December 2024  |
 | < 1.2   | :x:                | -              |
 
-**Note:** We maintain security support for the current major version (1.4.x) and the previous major version (1.3.x) for 6 months after a new major release.
+**Note:** We provide extended security support for both the current major version (1.4.x) and the previous major version (1.3.x). End of life dates will be announced well in advance.
 
 ## Reporting a Vulnerability
 
