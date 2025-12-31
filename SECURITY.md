@@ -8,7 +8,7 @@ We take security seriously and provide security updates for the following versio
 | ------- | ------------------ | -------------- |
 | 1.4.x   | :white_check_mark: | TBD            |
 | 1.3.x   | :white_check_mark: | TBD            |
-| 1.2.x   | :x:                | December 2024  |
+| 1.2.x   | :x:                | December 2025  |
 | < 1.2   | :x:                | -              |
 
 **Note:** We provide extended security support for both the current major version (1.4.x) and the previous major version (1.3.x). End of life dates will be announced well in advance.
