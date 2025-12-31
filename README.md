@@ -43,52 +43,111 @@ For deep-dives into the cryptographic design and security policies of this proje
 * **Metadata Integrity**: Cryptographic binding of headers to prevent tampering (on AEAD-supported ciphers).
 * **Hardware-Resistant KDF**: Sequential Argon2id and RandomX hashing to neutralize ASIC/GPU brute-force clusters.
 ---
-## What's New in v1.3.0
+## What's New in v1.4.0
 
-   Version 1.3.0 delivers security fixes and enterprise-grade hardware security:
+### Cascade Encryption (Multi-Layer Defense)
 
-  **SECURITY FIX: AEAD Additional Authenticated Data (AAD) Implementation**
+Sequential encryption using multiple cipher algorithms with chained HKDF key derivation.
 
-  - **Fixed documentation discrepancy**: AEAD algorithms (AES-GCM, ChaCha20-Poly1305, etc.) were passing `None` for the AAD parameter despite documentation claiming metadata was cryptographically bound
-  - **Actual impact**: Limited - metadata tampering would fail decryption regardless due to key derivation chain dependency. Without AAD, detection only occurred after both expensive KDF operations and decryption attempts
-  - **Resolution**: Proper AAD implementation now binds metadata to ciphertext, enabling detection of tampering through authentication failure
-  - **Limitation**: AAD does not prevent DoS attacks - metadata parsing and KDF chain execution (the expensive operations) occur before AAD validation during decryption. An attacker with write access can still modify the `rounds` parameter to trigger resource exhaustion
-  - **Affects**: AES-GCM, AES-GCM-SIV, AES-SIV, AES-OCB3, ChaCha20-Poly1305, XChaCha20-Poly1305, and all PQC hybrid variants (24 algorithms total)
+- Attacker must break all ciphers to decrypt data
+- Minimum 2 ciphers required, supports unlimited cascade depth
+- Each layer adds entropy to the next layer's key derivation
+- CLI support: `--cascade "aes-256-gcm,chacha20-poly1305,xcha-poly1305"`
+- Automatic cipher diversity validation
+- New metadata format V8
 
-  **Key Point**: This fixes an implementation gap where documented behavior didn't match actual behavior. The encryption itself was never vulnerable - the metadata is cryptographically bound through the key derivation chain, ensuring any tampering causes decryption failure. AAD provides better integrity guarantees but cannot prevent DoS via metadata manipulation since the expensive KDF chain executes before AAD validation.
+**Example:**
+```bash
+python -m openssl_encrypt.crypt encrypt -i file.txt \
+    --cascade "aes-256-gcm,chacha20-poly1305,xcha-poly1305"
+```
 
-  ### Hardware Security Module (HSM) Support
+### Threefish Post-Quantum Ciphers
 
-  - **YubiKey HSM Plugin**: Native support for YubiKey 5 series hardware security modules
-  - **PKCS#11 Integration**: Generic HSM support via PKCS#11 interface for enterprise HSMs
-  - **Pepper Protection**: Cryptographic peppers stored in tamper-resistant hardware with PIN protection
-  - **Plugin Architecture**: Extensible system for additional HSM vendors (Nitrokey, SoftHSM, etc.)
-  - **Metadata Format v6**: Enhanced metadata structure with HSM validation and auto-detection
+Rust-based implementation of Threefish AEAD ciphers with memory-hard construction resistant to quantum attacks.
 
-  ### Testing & Quality Assurance
+- Threefish-512: 256-bit post-quantum security level
+- Threefish-1024: 512-bit post-quantum security level
+- Native AEAD mode with embedded nonce
+- Maturin-based Rust/Python integration
 
-  - Comprehensive test suite (`crypt test`) with fuzzing, side-channel analysis, and benchmarking
-  - 960+ tests passing with 8.8/10 security score (independent review)
-  - Zero vulnerable dependencies
+### Post-Quantum Keyserver
 
-  ### Security Hardening
+FastAPI-based keyserver for public key distribution with PostgreSQL backend.
 
-  - O_NOFOLLOW symlink attack prevention in D-Bus service
-  - Audit logging and debug mode warnings
-  - Enhanced validation and tamper detection
+- ML-DSA signature verification for uploaded keys
+- Public key upload, search, and revocation endpoints
+- Bearer token authentication, rate limiting, CORS protection
+- Docker deployment with liboqs 0.12.0
+- Available at: https://keyserver.rm-rf.ch
 
-  ### Advanced Features
+### Privacy-Preserving Telemetry
 
-  - Steganography support for covert data transport
-  - Enhanced plugin system with process isolation
-  - Improved RandomX KDF performance
-  - Dual encryption support for PQC keys (keystore + file password)
+Opt-in anonymous telemetry infrastructure with user consent and data minimization.
 
-  ### Backward Compatibility
+- Anonymous client identifiers
+- Configurable data collection scopes
+- PostgreSQL backend with FastAPI REST API
+- Docker deployment with automated migrations
+- Available at: https://telemetry.rm-rf.ch
 
-  - Fully compatible with v3, v4, and v5 encrypted files
-  - Automatic format detection and migration
-  - **Warning**: Files encrypted with v1.3.0 AEAD algorithms cannot be decrypted by older versions (forward-breaking due to security fix)
+### Identity-Based Asymmetric Encryption
+
+Enhanced asymmetric key handling with improved format and HSM integration.
+
+- Updated asymmetric encryption format (Format V7)
+- KEM-based password wrapping using ML-KEM for post-quantum security
+- Identity management system for recipient-based encryption
+- Seamless integration with HSM-protected identities
+- Skip interactive prompts in non-TTY environments
+
+### Algorithm Registry System
+
+Centralized cryptographic algorithm registration and validation framework.
+
+- Cipher Registry: 12+ symmetric encryption algorithms
+- Hash Registry: 15+ cryptographic hash functions
+- KDF Registry: 8 key derivation functions
+- KEM Registry: 9 Key Encapsulation Mechanisms (Kyber, ML-KEM, HQC)
+- Signature Registry: 15 post-quantum signature algorithms
+- CLI command: `crypt list-algorithms`
+- Security level indicators and validation
+
+### HSM Integration Improvements
+
+- CLI arguments for HSM-protected identity creation: `--hsm`, `--hsm-slot`, `--hsm-pin`
+- HSM_ONLY identities skip password prompts during encryption/decryption
+- Automatic HSM identity detection with `--with-key`
+- Save/load HSM identities without password requirements
+
+### Security Enhancements
+
+- SecureBytes implementation across all cryptographic registries (KDF, Cipher, Signature, KEM)
+- Automatic zeroing of sensitive data after use
+- Thread-safe secure memory operations
+- SECURITY.md policy added to all 20 branches with vulnerability reporting guidelines
+- PGP key: C8E4 C58E 83AB B314 74C0 E108 0271 3C63 792B 8986
+- 48-hour initial response commitment for security issues
+
+### Performance & Testing
+
+- Modularized test suite with domain-specific organization
+- Parallel test execution with high-CPU runner tags
+- Optimized KDF parameters for faster CI/CD
+- Test duration diagnostics
+
+### Infrastructure
+
+- Rust extension integration via Maturin build system
+- Docker multi-stage builds with liboqs 0.12.0
+- Enhanced Flatpak build with Threefish wheel handling
+- CI/CD pipeline improvements
+
+### Backward Compatibility
+
+- Compatible with v3, v4, v5, v6, and v7 encrypted files
+- Automatic format detection and migration
+- New V8 metadata format for cascade encryption
 ---
 ## Known Issues
 ### HQC Support in v1.2.x
