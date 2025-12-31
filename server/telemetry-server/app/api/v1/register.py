@@ -34,11 +34,6 @@ def register_client(request: RegistrationRequest, db: Session = Depends(get_db))
         )
 
     # Check if client_id already exists
-    existing = (
-        db.query(KeyService.get_key_by_hash.__self__).filter_by(client_id=request.client_id).first()
-    )
-
-    # Actually need to import the model
     from ...models import APIKey
 
     existing = db.query(APIKey).filter(APIKey.client_id == request.client_id).first()
