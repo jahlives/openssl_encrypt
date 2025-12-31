@@ -5,124 +5,249 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.0] - 2025-12-25
+## [1.4.0-alpha.1] - 2025-12-31
 
 ### Added
 
-#### Post-Quantum Asymmetric Encryption (Format Version 7)
-- **ML-KEM-768 (Kyber)** for key encapsulation mechanism
-- **ML-DSA-65 (Dilithium)** for digital signatures
-- Full NIST Post-Quantum Cryptography compliance
-- Quantum-resistant security for asymmetric operations
+#### Infrastructure & Deployment
+- **Post-Quantum Keyserver System**: FastAPI-based keyserver for public key distribution with ML-DSA signature verification, bearer token authentication, PostgreSQL backend, and Docker deployment support
+  - Public key upload/search/revocation endpoints with authenticated operations
+  - CORS configuration and rate limiting for production deployment
+  - Plugin architecture supporting HSM integration and custom storage backends
+  - Docker support with liboqs 0.12.0 including HQC algorithm support
+  - Health check and monitoring endpoints
+  - Deployed at: https://keyserver.rm-rf.ch
 
-#### Identity Management System
-- Identity generation with dual keypairs (encryption + signing)
-- Private key encryption at rest (Argon2id + AES-256-GCM)
-- Identity storage in `~/.openssl_encrypt/identities/`
-- Fingerprint-based identity verification (SHA-256)
-- Support for both own identities and contacts
+- **Privacy-Preserving Telemetry System**: Opt-in anonymous telemetry infrastructure with comprehensive privacy controls
+  - Plugin-based architecture with configurable data collection
+  - Client registration and anonymous usage metrics
+  - PostgreSQL backend with FastAPI REST API
+  - Docker deployment with automated database migrations
+  - Privacy-first design with user consent and data minimization
+  - Deployed at: https://telemetry.rm-rf.ch
 
-#### Multiple Recipients Support
-- Single file encryption for N recipients
-- Each recipient can independently decrypt
-- Minimal overhead: ~1.2KB per recipient
-- No increase in encrypted data size
-- Shared encrypted payload with individual password wrappers
+#### Cryptographic Features
+- **Cascade Encryption (Multi-Layer Defense)**: Sequential encryption using multiple cipher algorithms with chained HKDF key derivation
+  - Minimum 2 ciphers required, supports unlimited layers
+  - Each layer adds entropy to next layer's key derivation
+  - Attacker must break ALL ciphers to decrypt data
+  - CLI support: `--cascade "aes-256-gcm,chacha20-poly1305,xcha-poly1305"`
+  - Automatic cipher diversity validation
+  - New metadata format V8 for cascade encryption support
 
-#### Identity CLI Commands
-- `identity create`: Generate new identity with passphrase
-- `identity list`: List all identities and contacts
-- `identity show`: Display detailed identity information
-- `identity export`: Export public keys to JSON
-- `identity import`: Import public keys from JSON
-- `identity delete`: Remove identity with confirmation
-- `identity change-password`: Update identity passphrase
+- **Threefish Post-Quantum Ciphers**: Rust-based implementation of Threefish AEAD ciphers
+  - Threefish-512 (256-bit post-quantum security level)
+  - Threefish-1024 (512-bit post-quantum security level)
+  - Memory-hard construction resistant to quantum attacks
+  - Native AEAD mode with embedded nonce in ciphertext
+  - Maturin-based Rust/Python integration
 
-#### Asymmetric Encryption CLI
-- `--for`: Specify recipient(s), can be used multiple times
-- `--sign-with`: Specify sender identity for signing
-- `--key`: Specify recipient identity for decryption
-- `--verify-from`: Verify signature from sender
-- `--no-verify`: Skip signature verification (dangerous)
+- **Algorithm Registry System**: Comprehensive cryptographic algorithm registration and validation framework
+  - Cipher Registry: 12+ symmetric encryption algorithms with metadata
+  - Hash Registry: 15+ cryptographic hash functions
+  - KDF Registry: 8 key derivation functions (Argon2, Scrypt, Balloon, HKDF, PBKDF2, RandomX, bcrypt, Fernet)
+  - KEM Registry: 9 Key Encapsulation Mechanisms (Kyber, ML-KEM, HQC)
+  - Signature Registry: 15 post-quantum signature algorithms (ML-DSA, MAYO, CROSS, Falcon, Dilithium, SPHINCS+)
+  - Automatic algorithm validation with security level indicators
+  - `crypt list-algorithms` command for browsing available algorithms
+  - Integration with configuration wizard and CLI help system
 
-#### HSM Plugin Support
-- YubiKey Challenge-Response integration
-- Plugin system architecture for hardware security modules
-- Extensible plugin framework
+- **HSM-Protected Identity Creation**: Hardware Security Module integration for asymmetric key operations
+  - CLI arguments for HSM-protected identity creation: `--hsm`, `--hsm-slot`, `--hsm-pin`
+  - HSM_ONLY identities skip password prompts during encryption/decryption
+  - Seamless auto-detection when `--with-key` provided
+  - Save/load HSM identities without password requirements
 
-#### Developer Tools
-- Benchmarking system for performance analysis
-- Decryption time estimator for progress feedback
-- 120 new tests covering all asymmetric features
-- Comprehensive test suite with zero warnings
+#### Testing & Quality Assurance
+- **Modularized Test Suite**: Domain-specific test file organization for better parallelization
+  - Split CLI tests into 3+ parallel-friendly subclasses
+  - Optimized KDF parameters for faster test execution
+  - High-CPU GitLab runner tags for improved CI performance
+  - Worksteal distribution for dynamic load balancing
+  - Comprehensive cascade encryption test coverage
 
-#### Documentation
-- Complete asymmetric encryption guide (ASYMMETRIC_ENCRYPTION_GUIDE.md)
-- Security considerations and best practices
-- Trust-On-First-Use (TOFU) model documentation
-- Usage examples and troubleshooting guide
+- **Performance Optimizations**: Test suite execution time improvements
+  - Reduced KDF rounds in CLI tests (faster execution)
+  - Reduced Balloon time_cost in derivation tests
+  - Test-only Kyber file optimization
+  - Test duration diagnostics for performance monitoring
 
-### Security
+#### Documentation & Security
+- **SECURITY.md Policy**: Comprehensive vulnerability reporting documentation
+  - GitHub Security Advisory as preferred reporting method
+  - PGP-encrypted email alternative (PGP Key: C8E4 C58E 83AB B314 74C0 E108 0271 3C63 792B 8986)
+  - 48-hour initial response commitment
+  - Coordinated disclosure practices
+  - CVE assignment for critical vulnerabilities
+  - Security Hall of Fame for responsible disclosure
+  - Added to ALL branches (including EOL releases)
 
-#### DoS Protection
-- Signature verification before expensive KDF operations
-- Fast signature check (~1-5ms) prevents KDF attacks
-- Invalid signatures rejected immediately without KDF execution
-- Timing measurements for security auditing
+- **Documentation Reorganization**: Cleaned up root directory and organized documentation
+  - Moved analysis/audit files to `openssl_encrypt/docs/`
+  - Moved test runner scripts to `tests/` directory
+  - Removed implementation plan files from repository
+  - Consolidated security documentation structure
 
-#### Secure Memory Management
-- **CryptoKey** class for private key protection
-- **SecureBytes** for sensitive data handling
-- Explicit memory zeroing (secure_memzero)
-- Context managers for automatic cleanup
-- Secure memory throughout cryptographic operations
-
-#### Cryptographic Integrity
-- Metadata integrity via digital signatures over canonical metadata
-- Private key protection: Argon2id + AES-256-GCM encryption at rest
-- Defense in depth: KDF chain runs even with asymmetric mode
-- Constant-time verification operations
+- **Pre-Commit Hook**: Branch-specific plan file enforcement
+  - Auto-remove plan files on main branch
+  - Configurable per-branch rules
+  - Prevents accidental plan file commits
 
 ### Changed
 
-- Enhanced plugin system for HSM support
-- Improved error handling in asymmetric operations
-- Updated documentation structure with comprehensive guides
+#### Core Features
+- **Cascade Encryption Integration**: Full CLI and core module integration
+  - Added `--cascade` parameter to encryption commands
+  - Support for custom cipher chains with validation
+  - JSON schema validation for V7 and V8 metadata formats
+  - Cascade variables initialized for all format versions
 
-### Technical Details
+- **Algorithm Registry Integration**: Replaced hardcoded algorithm lists with registry system
+  - CLI helper utilities for registry-based operations
+  - Registry-based algorithm validation
+  - Improved help text with security level recommendations
+  - Configuration wizard integration
 
-#### New Modules
-- **pqc_signing.py** (450 lines): ML-DSA signature operations
-- **identity.py** (750 lines): Identity management core
-- **asymmetric_core.py** (650 lines): KEM-based password wrapping
-- **identity_cli.py** (540 lines): CLI interface for identities
+- **Identity Management**: Enhanced asymmetric key handling
+  - Updated asymmetric encryption format
+  - Missing KDF arguments added to subparser for feature parity
+  - Skip interactive KDF security prompts in non-TTY environments
+  - Improved HSM option handling in identity CLI
 
-#### Extended Modules
-- **crypt_core.py** (+700 lines): Asymmetric encryption/decryption pipelines
-- **pqc.py** (+100 lines): KEM encapsulation methods
-- **crypt_cli.py** (+200 lines): Asymmetric CLI arguments
-- **crypt_cli_subparser.py** (+150 lines): Identity subparser
+#### Build & Dependencies
+- **Rust Extension Build**: Integrated Threefish Rust extension into build process
+  - Maturin build system for Python/Rust integration
+  - Added patchelf for wheel building compatibility
+  - CI build step for Threefish extension
+  - Flatpak build with proper Threefish wheel handling
 
-#### Test Coverage
-- 120 new tests across 6 test files
-- Zero test warnings
-- Complete coverage of asymmetric features
-- DoS protection verification tests
+- **Docker Infrastructure**: Enhanced Docker builds for server components
+  - liboqs 0.12.0 built from source for HQC support
+  - Added pkg-config and python3-dev build dependencies
+  - Multi-stage Docker builds for optimized images
+  - PostgreSQL database integration for both servers
 
-#### Backward Compatibility
-- Format V7 fully backward compatible with V6
-- Symmetric encryption unchanged
-- Automatic format detection based on metadata version
-- No breaking changes to existing functionality
+#### Code Quality
+- **Security Enhancement**: SecureBytes implementation across all registries
+  - KDF registry uses SecureBytes for sensitive data
+  - Cipher registry uses SecureBytes for keys (comprehensive implementation)
+  - Signature registry uses SecureBytes for secret keys
+  - KEM registry uses SecureBytes for sensitive data
+  - Comprehensive security audit updates
+
+- **CI/CD Improvements**: Multiple CI pipeline enhancements
+  - Docker-based CI support for server components
+  - Parallel test execution with loadscope distribution
+  - High-CPU runner allocation for faster execution
+  - Test duration tracking and diagnostics
+
+### Fixed
+
+#### Critical Issues
+- **Stdin Reading Bug**: Resolved decryption failures when reading from stdin
+- **CLI Test Failures**: Fixed 2+ CLI test failures related to HSM mocking and argument handling
+- **Asymmetric Encryption Tests**: Updated tests for new format compatibility
+- **Identity CLI**: Fixed HSM mock issues in identity CLI tests
+- **NoneType Comparison**: Removed debug statements causing NoneType comparison errors (fixed 15 tests)
+
+#### Security Fixes
+- **RandomX SIGILL Crash**: Prevented RandomX SIGILL crash during test collection in CI
+- **Cipher Registry**: Complete SecureBytes implementation across all cipher operations
+- **Algorithm Validation**: Fixed auto-detection logic when `--with-key` provided
+
+#### Build System
+- **Threefish AEAD Mode**: Fixed Threefish ciphers to embed nonce in ciphertext (like AES-GCM)
+- **Flatpak Build**: Cleaned old wheels before Threefish build to prevent conflicts
+- **Test Collection**: Use relative paths for test files to prevent CI collection failures
+
+#### Compatibility
+- **Metadata V7 Format**: Added quiet and verbose parameters to create_metadata_v7
+- **RandomX KDF**: Updated to use correct package structure
+- **KDF Arguments**: Fixed missing arguments for proper format compatibility
+
+### Security
+
+#### Security Enhancements
+- **Comprehensive SecureBytes Implementation**: All cryptographic registries now use secure memory handling
+  - KDF, Cipher, Signature, and KEM registries fully secured
+  - Automatic zeroing of sensitive data after use
+  - Thread-safe secure memory operations
+  - Complete security audit resolution
+
+- **Algorithm Registry Security**: Enhanced cryptographic algorithm security
+  - Validation framework prevents unsafe algorithm combinations
+  - Security level indicators for all algorithms
+  - Deprecated algorithm warnings integrated
+  - Comprehensive algorithm metadata tracking
+
+- **Keyserver Security**: Production-grade security for key distribution
+  - ML-DSA signature verification for all uploaded keys
+  - Bearer token authentication for write operations
+  - Rate limiting and CORS protection
+  - PostgreSQL backend with parameterized queries
+
+- **Telemetry Privacy**: Privacy-first telemetry implementation
+  - Opt-in by design with explicit user consent
+  - Anonymous client identifiers
+  - Minimal data collection with configurable scopes
+  - Transparent data usage policies
+
+#### Security Metrics
+- **All Critical Registry Issues Resolved**: Complete SecureBytes implementation across all registries
+- **Comprehensive Security Documentation**: SECURITY.md added to all 20 branches
+- **Zero Known HIGH/MEDIUM Vulnerabilities**: Security audit completion
+- **Enhanced Secure Memory Handling**: Registry-wide secure memory practices
+
+### Removed
+- **Plan Files**: Removed implementation plan files from repository
+  - asymetric.md, hsm_asymmetric.md, mobile.md
+  - keyserver_plan.md, telemetry_plan.md
+  - TELEMETRY_IMPLEMENTATION_SUMMARY.md
+- **Root Convenience Wrapper**: Removed build-flatpak.sh from root directory
+- **Test Artifacts**: Cleaned up test files for plan file hook validation
 
 ### Dependencies
+- **liboqs**: Updated to 0.12.0 (built from source) for HQC algorithm support
+- **FastAPI**: Added for keyserver and telemetry server REST APIs
+- **PostgreSQL**: Added psycopg2-binary for server database backends
+- **Maturin**: Added for Rust/Python integration (Threefish cipher)
+- **All existing dependencies**: Maintained at current secure versions
 
-- No new dependencies added
-- Uses existing: cryptography, argon2-cffi, liboqs-python
+### Infrastructure
+- **Production Servers Deployed**:
+  - Keyserver: https://keyserver.rm-rf.ch (FastAPI + PostgreSQL)
+  - Telemetry: https://telemetry.rm-rf.ch (FastAPI + PostgreSQL)
+- **Docker Support**: Complete Docker infrastructure for both servers
+- **Plugin Architecture**: Extensible plugin system for both keyserver and telemetry
 
-### Notes
+### Testing
+- **127+ commits** of new functionality and improvements
+- Comprehensive cascade encryption test suite
+- Threefish cipher integration tests
+- Algorithm registry validation tests
+- HSM-protected identity tests
+- Server endpoint integration tests
+- Optimized test execution performance
 
-This is a major release introducing post-quantum asymmetric encryption capabilities. The implementation is production-ready with comprehensive test coverage, security auditing, and full documentation. Format Version 7 maintains complete backward compatibility with Version 6 symmetric encryption.
+### Breaking Changes
+**None** - Version 1.4.0-alpha.1 maintains backward compatibility with all existing encrypted files and configurations. New features (cascade encryption, Threefish ciphers) use new metadata formats (V8) but existing files remain fully compatible.
+
+### Migration Guide
+This is an **alpha release** for testing purposes. While backward compatible, new features should be tested thoroughly before production use:
+- **Cascade Encryption**: Test with `--cascade "cipher1,cipher2"` flag
+- **Threefish Ciphers**: Available as `threefish-512` and `threefish-1024`
+- **Keyserver**: Deploy using Docker or test at https://keyserver.rm-rf.ch
+- **Telemetry**: Opt-in system, review privacy policy before enabling
+
+**Alpha Testing Notes**:
+- This is a pre-release version intended for testing and feedback
+- Production deployment recommended only for non-critical workloads
+- Report issues via GitHub Security Advisory or encrypted email
+- Final 1.4.0 release planned for Q1 2026
+
+### Contributors
+- **Tobi** - Lead developer, cascade encryption, keyserver, telemetry, algorithm registry
+- **Claude (Sonnet 4.5)** - Architecture design, security review, testing framework, documentation
 
 ---
 

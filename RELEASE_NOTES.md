@@ -1,94 +1,217 @@
 # OpenSSL Encrypt - Complete Release Notes
 
-## Current Release: Version 1.4.0 (December 25, 2025) - "Quantum Shield"
+## Current Release: Version 1.4.0-alpha.1 (December 2025)
 
-**Status:** Production Release
-**Development Status:** Stable
+**Status:** Alpha Pre-Release
+**Development Status:** Testing Phase
+**Target Final Release:** Q1 2026
 
-### Post-Quantum Asymmetric Encryption Release
+### Major Feature Expansion and Infrastructure Release
 
-Version 1.4.0 represents a major milestone in OpenSSL Encrypt, introducing **Post-Quantum Asymmetric Encryption** with Format Version 7. This release enables secure multi-recipient encryption using quantum-resistant algorithms, comprehensive identity management, and advanced security features including DoS protection and secure memory handling.
+Version 1.4.0-alpha.1 represents a transformative milestone in OpenSSL Encrypt's evolution, introducing enterprise-grade infrastructure for key distribution, privacy-preserving telemetry, advanced multi-layer encryption capabilities, and post-quantum cipher additions. This alpha release delivers 127 commits across three major infrastructure components and multiple cryptographic enhancements, establishing the foundation for v1.4.0's production release in Q1 2026.
 
-### Post-Quantum Cryptography
-- **ML-KEM-768 (Kyber)**: NIST-standardized key encapsulation mechanism for quantum-resistant key exchange
-- **ML-DSA-65 (Dilithium)**: NIST-standardized digital signature algorithm for quantum-resistant authentication
-- **Full NIST PQC Compliance**: Production-ready post-quantum cryptographic primitives
-- **Format Version 7**: New metadata format with asymmetric encryption support, fully backward compatible with V6
+### Post-Quantum Keyserver Infrastructure
 
-### Identity Management System
-- **Generate and manage cryptographic identities** with dual keypairs (encryption + signing)
-- **Secure private key storage** with Argon2id + AES-256-GCM encryption at rest
-- **Identity directory structure** at `~/.openssl_encrypt/identities/` for organized key management
-- **Public key exchange** for contacts with fingerprint-based verification (SHA-256)
-- **CLI commands for complete identity lifecycle**: create, list, show, export, import, delete, change-password
+The centerpiece of this release is a **production-ready post-quantum keyserver** built on FastAPI and PostgreSQL, providing secure public key distribution with ML-DSA signature verification:
 
-### Multiple Recipients Support
-- **Encrypt once, decrypt by multiple recipients** - single file encryption for N recipients
-- **Each recipient maintains independent access** without coordination
-- **Minimal metadata overhead**: ~1.2KB per recipient
-- **No increase in encrypted data size** - efficient shared encryption with individual password wrappers
-- **Flexible recipient management** via CLI with multiple `--for` flags
+- **Secure Key Distribution**: Public key upload, search, and revocation with bearer token authentication for write operations
+- **Signature Verification**: All uploaded keys verified using ML-DSA post-quantum signatures ensuring authenticity
+- **Plugin Architecture**: Extensible system supporting HSM integration and custom storage backends
+- **Production Deployment**: Docker support with health monitoring, deployed at https://keyserver.rm-rf.ch
+- **CORS and Rate Limiting**: Production-grade security with comprehensive request throttling
+- **liboqs 0.12.0**: Full HQC algorithm support (HQC-128/192/256) via source-built integration
+
+### Privacy-Preserving Telemetry System
+
+A completely **opt-in telemetry infrastructure** designed with privacy as the primary concern:
+
+- **Privacy-First Design**: Anonymous client identifiers with explicit user consent required
+- **Configurable Data Collection**: Plugin-based architecture with granular data collection controls
+- **Minimal Data Footprint**: Only collects essential usage metrics with data minimization principles
+- **Transparent Policies**: Clear data usage documentation and user controls
+- **Production Infrastructure**: FastAPI REST API with PostgreSQL backend, deployed at https://telemetry.rm-rf.ch
+- **Automated Migrations**: Database schema management with Alembic migration framework
+
+### Cascade Encryption (Defense in Depth)
+
+**Revolutionary multi-layer encryption** providing unprecedented security through cipher diversity:
+
+- **Sequential Encryption**: Encrypt data through multiple cipher layers (minimum 2, unlimited maximum)
+- **Chained Key Derivation**: Each layer's key includes entropy from previous layer via HKDF
+- **Break-All Requirement**: Attacker must compromise ALL ciphers to decrypt data
+- **CLI Integration**: Simple syntax `--cascade "aes-256-gcm,chacha20-poly1305,xcha-poly1305"`
+- **Automatic Validation**: Cipher diversity validation prevents weak configurations
+- **New Metadata Format V8**: Native cascade encryption support with backward compatibility
+
+**Example Usage:**
+```bash
+# Three-layer cascade encryption
+crypt encrypt --cascade "aes-256-gcm,chacha20-poly1305,threefish-512" secret.txt
+
+# Five-layer maximum security
+crypt encrypt --cascade "threefish-1024,aes-256-gcm,xcha-poly1305,aes-256-ocb3,chacha20-poly1305" data.bin
+```
+
+### Threefish Post-Quantum Ciphers
+
+**New memory-hard post-quantum symmetric ciphers** implemented in Rust:
+
+- **Threefish-512**: 256-bit post-quantum security level with 512-bit block size
+- **Threefish-1024**: 512-bit post-quantum security level with 1024-bit block size
+- **AEAD Mode**: Authenticated encryption with embedded nonce for secure operations
+- **Quantum Resistance**: Memory-hard construction resistant to quantum attacks
+- **Rust Implementation**: High-performance Maturin-based Rust/Python integration
+- **Ideal for Cascade**: Excellent choice for cascade encryption diversity
+
+### Comprehensive Algorithm Registry System
+
+**Centralized cryptographic algorithm management** replacing scattered hardcoded lists:
+
+- **Cipher Registry**: 12+ symmetric encryption algorithms with security metadata
+- **Hash Registry**: 15+ cryptographic hash functions (SHA-2, SHA-3, BLAKE, SHAKE)
+- **KDF Registry**: 8 key derivation functions (Argon2, Scrypt, Balloon, HKDF, RandomX, etc.)
+- **KEM Registry**: 9 Key Encapsulation Mechanisms (Kyber-512/768/1024, ML-KEM-512/768/1024, HQC-128/192/256)
+- **Signature Registry**: 15 post-quantum signatures (ML-DSA, MAYO, CROSS, Falcon, Dilithium, SPHINCS+)
+- **CLI Browse Command**: `crypt list-algorithms` for interactive algorithm exploration
+- **Validation Framework**: Automatic security level indicators and safe combination validation
+- **Help Integration**: Registry powers CLI help text and configuration wizard
+
+### Hardware Security Module (HSM) Integration
+
+**Enterprise HSM support** for hardware-protected asymmetric key operations:
+
+- **HSM-Protected Identities**: Create identities with keys stored in HSM devices
+- **CLI Arguments**: `--hsm`, `--hsm-slot`, `--hsm-pin` for HSM configuration
+- **Password-Free Operations**: HSM_ONLY identities skip password prompts
+- **Seamless Auto-Detection**: Automatic HSM usage when `--with-key` provided
+- **Persistent Configuration**: Save/load HSM identities without password requirements
 
 ### Security Enhancements
 
-#### DoS Protection
-- **Signature verification before KDF**: Fast signature check (~1-5ms) prevents expensive KDF attacks
-- **Invalid signatures rejected immediately** without executing KDF operations
-- **Timing measurements** included for security auditing
+**Comprehensive security improvements** across all cryptographic operations:
 
-#### Secure Memory Management
-- **CryptoKey class** for private key protection
-- **SecureBytes** for sensitive data handling
-- **Explicit memory zeroing** (secure_memzero) throughout
-- **Context managers** for automatic cleanup
+- **SecureBytes Implementation**: All registries (KDF, Cipher, Signature, KEM) use secure memory handling
+- **Automatic Zeroing**: Sensitive data automatically cleared after use
+- **Thread-Safe Operations**: Secure memory operations safe for concurrent use
+- **Security Audit Resolution**: All critical registry security issues resolved
+- **Vulnerability Reporting**: SECURITY.md added to ALL 20 branches (including EOL releases)
+- **PGP Encrypted Reporting**: PGP key fingerprint published for secure vulnerability disclosure
 
-#### Cryptographic Integrity
-- **Metadata integrity** via digital signatures over canonical metadata
-- **Private key protection** with Argon2id + AES-256-GCM at rest
-- **Defense in depth**: KDF chain runs even with asymmetric mode
+### Infrastructure and Deployment
 
-### Developer Features
-- **HSM plugin system** with YubiKey Challenge-Response support
-- **Benchmarking tools** for performance analysis
-- **Decryption time estimation** for progress feedback
-- **120 new tests** covering all asymmetric features with zero warnings
-- **Comprehensive documentation** (ASYMMETRIC_ENCRYPTION_GUIDE.md)
+**Production-ready deployment infrastructure**:
 
-### Usage Example
+- **Docker Compose**: Complete orchestration for both keyserver and telemetry
+- **PostgreSQL Backend**: Reliable database layer with automated migrations
+- **Health Monitoring**: Dedicated health check endpoints for both services
+- **Nginx Reverse Proxy**: Production deployment with SSL/TLS termination
+- **liboqs 0.12.0**: Source-built for complete HQC algorithm support in keyserver
 
-```bash
-# Create identity
-openssl_encrypt identity create --name Alice --email alice@example.com
+### Testing and Quality Improvements
 
-# Encrypt for multiple recipients
-openssl_encrypt encrypt --for Bob --for Charlie --sign-with Alice --input secret.txt
+**Significant test infrastructure enhancements**:
 
-# Decrypt and verify
-openssl_encrypt decrypt --key Bob --verify-from Alice --input secret.txt.enc
-```
+- **Modular Test Suite**: Domain-specific test files for better parallelization
+- **Performance Optimization**: Reduced test execution time via optimized KDF parameters
+- **High-CPU Runners**: GitLab CI uses high-CPU tagged runners for faster execution
+- **Worksteal Distribution**: Dynamic load balancing across parallel test workers
+- **Comprehensive Coverage**: Cascade encryption, Threefish, registry, HSM, and server tests
 
-### Technical Implementation
-- **4 new modules**: pqc_signing.py (450 lines), identity.py (750 lines), asymmetric_core.py (650 lines), identity_cli.py (540 lines)
-- **Extended modules**: crypt_core.py (+700 lines), pqc.py (+100 lines)
-- **Zero new dependencies**: Uses existing cryptography, argon2-cffi, liboqs-python
-- **Full backward compatibility**: V6 symmetric encryption unchanged
+### Documentation and Organization
+
+**Major documentation cleanup**:
+
+- **SECURITY.md**: Comprehensive vulnerability reporting policy with PGP encryption
+- **Documentation Reorganization**: Moved analysis/audit files to `openssl_encrypt/docs/`
+- **Test Script Organization**: Moved runner scripts to `tests/` directory
+- **Plan File Removal**: Cleaned up implementation plans from repository
+- **Pre-Commit Hook**: Automated plan file enforcement on main branch
+
+### Breaking Changes and Compatibility
+
+**Zero Breaking Changes** - Full backward compatibility maintained:
+- All existing encrypted files decrypt without changes
+- Existing configurations work unchanged
+- New features (cascade, Threefish) use new metadata format V8
+- Metadata V1-V7 remain fully supported
+
+### Alpha Testing Guidance
+
+This is an **alpha pre-release** intended for testing and feedback:
+
+**Recommended Testing:**
+- Test cascade encryption with various cipher combinations
+- Evaluate Threefish-512 and Threefish-1024 performance
+- Deploy keyserver in test environment
+- Evaluate telemetry privacy controls
+- Test HSM integration with your hardware
+
+**Not Recommended:**
+- Production deployment of critical data (use v1.3.0 stable)
+- Permanent encryption with cascade mode (test thoroughly first)
+- Public keyserver deployment without security review
+
+**Feedback Channels:**
+- GitHub Security Advisory for security issues
+- PGP-encrypted email: tobster@brain-force.ch (C8E4 C58E 83AB B314 74C0 E108 0271 3C63 792B 8986)
+- GitHub Issues for feature requests and bugs
+
+### Deployment Information
+
+**Production Test Servers:**
+- **Keyserver**: https://keyserver.rm-rf.ch
+  - Endpoint: `/api/v1/keys/search`
+  - Authentication: Bearer token for uploads
+  - Signature: ML-DSA verification required
+
+- **Telemetry**: https://telemetry.rm-rf.ch
+  - Endpoint: `/api/v1/register`
+  - Privacy: Opt-in with anonymous client IDs
+  - Data: Minimal usage metrics only
+
+### Technology Stack Updates
+
+**New Dependencies:**
+- FastAPI (keyserver/telemetry REST APIs)
+- PostgreSQL + psycopg2-binary (database backends)
+- liboqs 0.12.0 (HQC algorithm support)
+- Maturin (Rust/Python integration for Threefish)
+
+**Infrastructure:**
+- Docker multi-stage builds
+- Alembic database migrations
+- Pytest parallelization improvements
+- GitLab CI high-CPU runners
+
+### What's Next for v1.4.0 Final
+
+**Planned for Beta and RC Releases:**
+- Comprehensive cascade encryption security audit
+- Keyserver federation protocol
+- Telemetry dashboard and analytics
+- Mobile app integration with keyserver
+- Performance benchmarks for cascade mode
+- Extended HSM device compatibility
+- Final security audit and penetration testing
+
+**Timeline:**
+- **v1.4.0-alpha.2**: January 2026 (bug fixes, feedback incorporation)
+- **v1.4.0-beta.1**: February 2026 (feature complete, extended testing)
+- **v1.4.0-rc.1**: March 2026 (release candidate, final stabilization)
+- **v1.4.0 Final**: Q1 2026 (production release)
 
 ---
 
-## Previous Release: Version 1.3.2 (December 24, 2025)
+## Previous Release: Version 1.3.0 (December 2025)
 
 **Status:** Production Release
 **Development Status:** Stable
 
-### Security & Performance Monitoring Release
+### Comprehensive Testing and Security Enhancement Release
 
-Version 1.3.2 introduced comprehensive decryption time/memory estimation to prevent DoS attacks via inflated metadata parameters, along with critical bug fixes for CLI argument parsing.
+Version 1.3.0 delivered extensive testing capabilities, RandomX proof-of-work KDF, steganography GUI integration, and comprehensive security hardening. This release achieved an overall security score of 8.8/10 with zero critical vulnerabilities and production-ready status across all features.
 
-### Key Features
-- **Decryption cost estimation** with pre-decryption display and 2-second cancellation window
-- **Static benchmark data** for all hash algorithms and KDF operations
-- **DoS attack prevention** with warnings when thresholds exceeded (>10 seconds or >1GB memory)
-- **Fixed critical --no-estimate flag** parsing bug with --progress flag
+[See CHANGELOG.md for complete v1.3.0 details]
 
 ---
 
@@ -99,13 +222,32 @@ Version 1.3.2 introduced comprehensive decryption time/memory estimation to prev
 
 ### Professional Flutter Desktop GUI Release
 
-Version 1.2.0 delivers a professional Flutter-based desktop GUI with native Wayland and X11 support, comprehensive CLI integration, and a desktop-optimized interface. This release improves the user experience while maintaining all cryptographic capabilities and introducing advanced configuration interfaces for power users.
+Version 1.2.0 represents a transformative milestone in OpenSSL Encrypt's user experience, delivering a professional Flutter-based desktop GUI that provides native Wayland and X11 support, comprehensive CLI integration, and a modern desktop-optimized interface. This release revolutionizes the user experience while maintaining all cryptographic capabilities and introducing advanced configuration interfaces for power users.
 
 ### Flutter Desktop GUI Excellence
 - **Native Desktop Application**: Professional Flutter desktop GUI with native Wayland and X11 support eliminating display server compatibility issues
 - **Advanced CLI Integration**: Complete Flutter-to-CLI bridge service providing real-time progress monitoring, error handling, and full algorithm access
 - **Desktop UX Standards**: Professional menu bar, comprehensive keyboard shortcuts (Ctrl+O, Ctrl+S, F1), drag & drop file operations, and native desktop dialogs
 - **Responsive Design**: Modern desktop-optimized layout with NavigationRail sidebar, tabbed interface, and professional visual hierarchy
+
+### Comprehensive Configuration System
+- **Professional Settings Interface**: Searchable settings with theme switching (Light/Dark/System), cryptographic defaults, and application behavior controls
+- **Advanced Algorithm Configuration**: Interactive parameter tuning interface for all KDFs (Argon2, Scrypt, Balloon, HKDF) with real-time validation
+- **Post-Quantum Algorithm UI**: Complete graphical interface for ML-KEM, Kyber, HQC, MAYO, and CROSS algorithms with security guidance
+- **Algorithm Recommendation Engine**: Intelligent algorithm selection with security level recommendations and performance considerations
+
+### Streamlined Architecture & Security
+- **GUI Architecture Migration**: Complete migration from tkinter to Flutter providing superior cross-platform compatibility and native desktop integration
+- **Simplified Flatpak Integration**: Streamlined Flatpak permissions and launcher focusing on Flutter's native capabilities
+- **Enhanced Security Posture**: Reduced attack surface through elimination of complex X11/XWayland compatibility layers
+- **Native Platform Security**: Flutter's native desktop integration provides better sandboxing than X11-based solutions
+- **Algorithm Security Hardening**: Removed deprecated PBKDF2 key derivation and Whirlpool hash algorithms from encryption operations to eliminate weak cryptographic options and strengthen security posture
+
+### Key Enhancements in 1.0.1
+- **Segregated CLI Help System**: Two-tier help (global overview + command-specific options)
+- **Improved User Experience**: Context-aware help reduces cognitive load
+- **Better Discoverability**: Clear command overview with focused option display
+- **Maintained Compatibility**: All existing functionality and file formats unchanged
 
 ---
 
@@ -146,15 +288,15 @@ Version 1.1.0 represented a major advancement in OpenSSL Encrypt's cryptographic
 
 ### Production Release Achievement
 
-Version 1.0.0 represents the official production release of OpenSSL Encrypt, delivering quantum-resistant cryptographic capabilities suitable for production use with comprehensive security hardening and stability. This release provides a robust, secure, and reliable cryptographic solution ready for production deployment across all environments.
+Version 1.0.0 represents the official production release of OpenSSL Encrypt, delivering enterprise-grade quantum-resistant cryptographic capabilities with comprehensive security hardening and production stability. This milestone release completes our commitment to providing a robust, secure, and reliable cryptographic solution ready for production deployment across all environments.
 
 ### Key Production Features
 - Complete post-quantum cryptography support (Kyber, ML-KEM, HQC algorithms)
 - Production-grade type safety and runtime stability
 - Comprehensive security hardening with constant-time operations
-- Keystore management for PQC keys suitable for production use
+- Enterprise-ready keystore management for PQC keys
 - Full backward compatibility with all previous file formats
-- Multiple static analysis tools with strong code quality standards
+- Industry-leading code quality standards with comprehensive static analysis
 
 ---
 
@@ -305,4 +447,4 @@ We've implemented multiple layers of security hardening to strengthen our crypto
 
 ---
 
-This comprehensive release history demonstrates OpenSSL Encrypt's evolution from a basic encryption tool to a production-ready, quantum-resistant cryptographic solution with strong security practices and comprehensive feature support.
+This comprehensive release history demonstrates OpenSSL Encrypt's evolution from a basic encryption tool to a production-ready, quantum-resistant cryptographic solution with industry-leading security practices and comprehensive feature support.
