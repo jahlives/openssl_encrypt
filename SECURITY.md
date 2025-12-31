@@ -19,9 +19,21 @@ We appreciate responsible disclosure of security vulnerabilities. If you discove
 
 ### How to Report
 
+**Preferred Method:** Use GitHub's private security advisory feature
+- Go to the repository's **Security** tab
+- Click **"Report a vulnerability"**
+- Fill out the private advisory form
+
+**Alternative Method:** Send an encrypted email
+- Email: **tobster@brain-force.ch**
+- **Strongly recommended:** Use PGP encryption for sensitive details
+- PGP Key Fingerprint: `C8E4 C58E 83AB B314 74C0  E108 0271 3C63 792B 8986`
+- Key Type: RSA 4096-bit (expires 2029-09-08)
+- Download from: `keys.openpgp.org` or `gpg --recv-keys C8E4C58E83ABB31474C0E10802713C63792B8986`
+
+**Important:**
 1. **DO NOT** create a public GitHub issue for security vulnerabilities
-2. Send an email to: **tobster@brain-force.ch**
-3. Include the following information:
+2. Include the following information in your report:
    - Description of the vulnerability
    - Steps to reproduce the issue
    - Affected versions
