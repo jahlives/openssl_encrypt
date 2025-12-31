@@ -10,11 +10,13 @@ RUN apt-get update && apt-get install -y \
     git \
     ninja-build \
     libssl-dev \
+    pkg-config \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Build liboqs
 WORKDIR /opt
-RUN git clone --depth 1 --branch 0.10.0 https://github.com/open-quantum-safe/liboqs.git
+RUN git clone --depth 1 --branch 0.12.0 https://github.com/open-quantum-safe/liboqs.git
 WORKDIR /opt/liboqs
 RUN mkdir build && cd build && \
     cmake -GNinja \
@@ -24,18 +26,33 @@ RUN mkdir build && cd build && \
     ninja && \
     ninja install
 
+# Update library cache for liboqs
+RUN ldconfig
+
+# Clone liboqs-python source (we'll build it in the final stage)
+WORKDIR /opt
+RUN git clone --depth 1 --branch 0.12.0 https://github.com/open-quantum-safe/liboqs-python.git
+
 # Stage 2: Application
 FROM python:3.11-slim
 
-# Install runtime dependencies
+# Install runtime and build dependencies
 RUN apt-get update && apt-get install -y \
     libssl3 \
+    git \
+    python3-dev \
+    gcc \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy liboqs from builder
 COPY --from=liboqs-builder /usr/local/lib/liboqs.so* /usr/local/lib/
 COPY --from=liboqs-builder /usr/local/include/oqs /usr/local/include/oqs
+
 RUN ldconfig
+
+# Copy and install liboqs-python from builder
+COPY --from=liboqs-builder /opt/liboqs-python /opt/liboqs-python
+RUN pip install --no-cache-dir /opt/liboqs-python && rm -rf /opt/liboqs-python
 
 # Set working directory
 WORKDIR /app
