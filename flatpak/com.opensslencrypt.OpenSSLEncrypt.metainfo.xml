@@ -2,7 +2,7 @@
 <component type="desktop-application">
   <id>com.opensslencrypt.OpenSSLEncrypt</id>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>MIT</project_license>
+  <project_license>Hippocratic-3.0</project_license>
   <name>OpenSSL Encrypt</name>
   <summary>Military-grade encryption with post-quantum cryptography</summary>
   <description>
