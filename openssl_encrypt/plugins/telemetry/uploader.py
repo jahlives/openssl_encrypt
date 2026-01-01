@@ -83,7 +83,7 @@ class TelemetryUploader:
         for attempt in range(self.max_retries):
             try:
                 response = requests.post(
-                    f"{self.server_url}/api/v1/telemetry",
+                    f"{self.server_url}/api/v1/telemetry/events",
                     json=payload,
                     headers=headers,
                     timeout=self.timeout,

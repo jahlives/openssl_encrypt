@@ -1,0 +1,23 @@
+# FastAPI and ASGI server
+fastapi>=0.109.0,<0.110.0
+uvicorn[standard]>=0.27.0,<0.28.0
+
+# Pydantic for settings and validation
+pydantic>=2.0,<3.0
+pydantic-settings>=2.0,<3.0
+
+# Async SQLAlchemy and PostgreSQL
+sqlalchemy>=2.0.25,<2.1.0
+asyncpg>=0.29.0,<0.30.0
+
+# Database migrations
+alembic>=1.13.0,<1.14.0
+
+# JWT tokens
+pyjwt>=2.8.0,<3.0.0
+
+# Post-Quantum Cryptography
+# liboqs-python is built from source in Dockerfile (v0.12.0)
+
+# Date parsing
+python-dateutil>=2.8.2,<3.0.0

@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.pytest_cache
+.mypy_cache
+.coverage
+htmlcov
+
+# Environment
+.env
+.env.local
+*.env.local
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Docker
+docker-compose.override.yml
+
+# Documentation
+README.md
+*.md
+
+# Other
+.DS_Store
