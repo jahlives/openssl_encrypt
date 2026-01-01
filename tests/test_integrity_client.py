@@ -29,10 +29,22 @@ def test_integrity_client():
     print()
 
     # Try to load configuration from standard location
-    config_path = Path.home() / ".openssl_encrypt" / "plugins" / "integrity.json"
-
     print("Configuration Loading:")
     print("-" * 70)
+
+    # Try to determine config path
+    try:
+        import os
+        home = os.environ.get('HOME') or os.environ.get('USERPROFILE')
+        if home:
+            config_path = Path(home) / ".openssl_encrypt" / "plugins" / "integrity.json"
+        else:
+            config_path = Path.home() / ".openssl_encrypt" / "plugins" / "integrity.json"
+    except Exception:
+        # Fallback if home directory cannot be determined
+        config_path = Path("/tmp/.openssl_encrypt/plugins/integrity.json")
+        print(f"⚠ Could not determine home directory, using: {config_path}")
+
     try:
         if config_path.exists():
             config = IntegrityConfig.from_file(config_path)

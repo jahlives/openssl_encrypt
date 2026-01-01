@@ -29,10 +29,22 @@ def test_pepper_client():
     print()
 
     # Try to load configuration from standard location
-    config_path = Path.home() / ".openssl_encrypt" / "plugins" / "pepper.json"
-
     print("Configuration Loading:")
     print("-" * 70)
+
+    # Try to determine config path
+    try:
+        import os
+        home = os.environ.get('HOME') or os.environ.get('USERPROFILE')
+        if home:
+            config_path = Path(home) / ".openssl_encrypt" / "plugins" / "pepper.json"
+        else:
+            config_path = Path.home() / ".openssl_encrypt" / "plugins" / "pepper.json"
+    except Exception:
+        # Fallback if home directory cannot be determined
+        config_path = Path("/tmp/.openssl_encrypt/plugins/pepper.json")
+        print(f"⚠ Could not determine home directory, using: {config_path}")
+
     try:
         if config_path.exists():
             config = PepperConfig.from_file(config_path)
