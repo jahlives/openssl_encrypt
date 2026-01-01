@@ -357,7 +357,7 @@ The server is designed to run behind a reverse proxy (e.g., Nginx):
 2. Proxy handles TLS termination
 3. Proxy forwards to backend on `http://172.28.0.3:8080`
 
-Example Nginx config:
+Example Nginx config (basic):
 
 ```nginx
 upstream openssl_encrypt_api {
@@ -380,6 +380,47 @@ server {
     }
 }
 ```
+
+### mTLS Configuration for Pepper/Integrity Modules
+
+For modules requiring client certificate authentication (pepper, integrity), configure Nginx to pass the raw certificate:
+
+```nginx
+upstream openssl_encrypt_api {
+    server 172.28.0.3:8080;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name pepper.example.com integrity.example.com;
+
+    # Server certificate (Let's Encrypt or your own)
+    ssl_certificate /etc/ssl/certs/server.crt;
+    ssl_certificate_key /etc/ssl/private/server.key;
+
+    # Client certificate verification (your self-signed CA)
+    ssl_client_certificate /path/to/your/ca.crt;
+    ssl_verify_client optional;  # Optional so keyserver/telemetry still work
+
+    location / {
+        proxy_pass http://openssl_encrypt_api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Pass raw client certificate (URL-encoded PEM)
+        # Backend will compute SHA-256 fingerprint from this
+        proxy_set_header X-Client-Cert $ssl_client_escaped_cert;
+    }
+}
+```
+
+**Key points:**
+- Use `$ssl_client_escaped_cert` to pass the URL-encoded PEM certificate
+- Backend server computes SHA-256 fingerprint from the certificate
+- This works with Nginx's default SHA-1 fingerprint variable
+- `ssl_verify_client optional` allows non-mTLS endpoints to work on same domain
 
 ## Future Modules
 

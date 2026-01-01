@@ -12,10 +12,14 @@ SECURITY:
 - Returns appropriate HTTP status codes for auth failures
 """
 
+import hashlib
 import ipaddress
 import logging
+import urllib.parse
 from typing import List, Optional
 
+from cryptography import x509
+from cryptography.hazmat.backends import default_backend
 from fastapi import HTTPException, Request, status
 
 logger = logging.getLogger(__name__)
@@ -39,6 +43,7 @@ class ProxyAuth:
     def __init__(
         self,
         fingerprint_header: str = "X-Client-Cert-Fingerprint",
+        cert_header: str = "X-Client-Cert",
         trusted_proxies: Optional[List[str]] = None,
         dn_header: Optional[str] = None,
         verify_header: Optional[str] = None,
@@ -48,11 +53,13 @@ class ProxyAuth:
 
         Args:
             fingerprint_header: Header name for certificate SHA-256 fingerprint
+            cert_header: Header name for raw certificate (PEM, URL-encoded)
             trusted_proxies: List of trusted proxy IPs/networks (CIDR notation)
             dn_header: Optional header for certificate DN
             verify_header: Optional header for verification status check
         """
         self.fingerprint_header = fingerprint_header
+        self.cert_header = cert_header
         self.dn_header = dn_header
         self.verify_header = verify_header
 
@@ -98,6 +105,37 @@ class ProxyAuth:
             logger.warning(f"Invalid IP address: {client_ip}")
             return False
 
+    def _compute_fingerprint_from_cert(self, cert_pem: str) -> str:
+        """
+        Compute SHA-256 fingerprint from PEM-encoded certificate.
+
+        Args:
+            cert_pem: PEM-encoded certificate (may be URL-encoded)
+
+        Returns:
+            SHA-256 fingerprint as lowercase hex string (64 chars)
+
+        Raises:
+            ValueError: If certificate cannot be parsed
+        """
+        try:
+            # URL-decode if needed (Nginx uses $ssl_client_escaped_cert)
+            cert_data = urllib.parse.unquote(cert_pem)
+
+            # Parse PEM certificate
+            cert = x509.load_pem_x509_certificate(cert_data.encode(), default_backend())
+
+            # Compute SHA-256 of DER-encoded certificate
+            cert_der = cert.public_bytes(encoding=x509.Encoding.DER)
+            fingerprint = hashlib.sha256(cert_der).hexdigest().lower()
+
+            logger.debug(f"Computed fingerprint from certificate: {fingerprint[:16]}...")
+            return fingerprint
+
+        except Exception as e:
+            logger.error(f"Failed to parse certificate: {e}")
+            raise ValueError(f"Invalid certificate format: {e}")
+
     def _normalize_fingerprint(self, fingerprint: str) -> str:
         """
         Normalize certificate fingerprint.
@@ -132,6 +170,12 @@ class ProxyAuth:
     async def get_client_fingerprint(self, request: Request) -> str:
         """
         Extract and validate client certificate fingerprint from proxy headers.
+
+        This method supports two modes:
+        1. Raw certificate (X-Client-Cert): Computes SHA-256 from PEM certificate
+        2. Pre-computed fingerprint (X-Client-Cert-Fingerprint): Uses provided hash
+
+        Mode 1 is preferred as it allows Nginx to send SHA-1 while we compute SHA-256.
 
         Args:
             request: FastAPI Request object
@@ -169,19 +213,33 @@ class ProxyAuth:
                     detail="Client certificate verification failed"
                 )
 
-        # Extract fingerprint
+        # Try to get raw certificate first (preferred method)
+        cert_pem = request.headers.get(self.cert_header)
+        if cert_pem:
+            try:
+                fingerprint = self._compute_fingerprint_from_cert(cert_pem)
+                logger.debug(f"Authenticated via proxy (raw cert): {fingerprint[:16]}...")
+                return fingerprint
+            except ValueError as e:
+                logger.error(f"Failed to compute fingerprint from certificate: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail=f"Invalid client certificate: {e}"
+                )
+
+        # Fall back to pre-computed fingerprint header
         fingerprint = request.headers.get(self.fingerprint_header)
         if not fingerprint:
-            logger.warning(f"Missing header: {self.fingerprint_header}")
+            logger.warning(f"Missing headers: {self.cert_header} and {self.fingerprint_header}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Client certificate fingerprint not provided"
+                detail="Client certificate or fingerprint not provided"
             )
 
         # Normalize and validate fingerprint
         try:
             normalized = self._normalize_fingerprint(fingerprint)
-            logger.debug(f"Authenticated via proxy: {normalized[:16]}...")
+            logger.debug(f"Authenticated via proxy (fingerprint): {normalized[:16]}...")
             return normalized
         except ValueError as e:
             logger.error(f"Invalid fingerprint format: {e}")
@@ -194,16 +252,34 @@ class ProxyAuth:
         """
         Extract client certificate Distinguished Name (DN) from proxy headers.
 
+        Tries two methods:
+        1. Extract from raw certificate (X-Client-Cert)
+        2. Read from DN header (X-Client-Cert-DN)
+
         Args:
             request: FastAPI Request object
 
         Returns:
             Certificate DN if available, None otherwise
         """
-        if not self.dn_header:
-            return None
+        # Try to extract DN from raw certificate first
+        cert_pem = request.headers.get(self.cert_header)
+        if cert_pem:
+            try:
+                cert_data = urllib.parse.unquote(cert_pem)
+                cert = x509.load_pem_x509_certificate(cert_data.encode(), default_backend())
+                # Format DN as string (e.g., "CN=example.com,O=Example,C=US")
+                dn = cert.subject.rfc4514_string()
+                logger.debug(f"Client DN (from cert): {dn}")
+                return dn
+            except Exception as e:
+                logger.warning(f"Could not extract DN from certificate: {e}")
 
-        dn = request.headers.get(self.dn_header)
-        if dn:
-            logger.debug(f"Client DN: {dn}")
-        return dn
+        # Fall back to DN header
+        if self.dn_header:
+            dn = request.headers.get(self.dn_header)
+            if dn:
+                logger.debug(f"Client DN (from header): {dn}")
+                return dn
+
+        return None
