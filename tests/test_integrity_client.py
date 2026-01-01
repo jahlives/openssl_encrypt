@@ -28,30 +28,37 @@ def test_integrity_client():
     print("=" * 70)
     print()
 
-    # Configure plugin (disabled for testing without actual certs)
-    # For real usage, set enabled=True and provide actual certificate paths
-    cert_dir = Path("/tmp/integrity_test_certs")
-    config = IntegrityConfig(
-        enabled=False,  # Disabled for testing without mTLS certs
-        server_url="https://localhost:8080",  # Test server (HTTPS required)
-        client_cert=cert_dir / "client.crt",
-        client_key=cert_dir / "client.key",
-        ca_cert=None,  # Use system CA bundle
-    )
+    # Try to load configuration from standard location
+    config_path = Path.home() / ".openssl_encrypt" / "plugins" / "integrity.json"
+
+    print("Configuration Loading:")
+    print("-" * 70)
+    try:
+        if config_path.exists():
+            config = IntegrityConfig.from_file(config_path)
+            print(f"✓ Loaded config from: {config_path}")
+            print(f"  Enabled: {config.enabled}")
+            print(f"  Server: {config.server_url}")
+            if config.client_cert:
+                print(f"  Client Cert: {config.client_cert}")
+                print(f"  Client Key: {config.client_key}")
+            print()
+        else:
+            print(f"⚠ Config file not found: {config_path}")
+            print("  Using default configuration (disabled)")
+            print()
+            # Use default disabled config for testing
+            config = IntegrityConfig()
+    except Exception as e:
+        print(f"⚠ Could not load config: {e}")
+        print("  Using default configuration (disabled)")
+        print()
+        config = IntegrityConfig()
 
     # Note: For local testing without actual mTLS, we can't use the plugin directly
     # because it requires proper mTLS setup. Instead, let's demonstrate the API structure.
-    # To test with actual server: Set enabled=True and provide real certificate paths
-
-    print("Plugin Configuration:")
-    print(f"  Server URL: {config.server_url}")
-    print(f"  Client Cert: {config.client_cert}")
-    print(f"  Client Key: {config.client_key}")
-    print(f"  CA Cert: {config.ca_cert or 'System CA bundle'}")
-    print(f"  Enabled: {config.enabled}")
-    print(f"  Connect Timeout: {config.connect_timeout_seconds}s")
-    print(f"  Read Timeout: {config.read_timeout_seconds}s")
-    print()
+    # To test with actual server: Create config at ~/.openssl_encrypt/plugins/integrity.json
+    # with enabled=True and provide real certificate paths
 
     # Initialize plugin (will fail if disabled, which is expected for testing)
     print("Test 0: Plugin Initialization")
@@ -64,14 +71,6 @@ def test_integrity_client():
         print(f"⚠ Cannot initialize plugin (expected without mTLS setup): {e}")
         print("  This is normal for testing without actual certificates.")
         print()
-        # Create a mock config for remaining tests
-        config_for_tests = IntegrityConfig(
-            enabled=False,
-            server_url="https://localhost:8080",
-            client_cert=cert_dir / "client.crt",
-            client_key=cert_dir / "client.key",
-            ca_cert=None,
-        )
         # We'll skip tests that require actual plugin instance
         plugin = None
     except Exception as e:
@@ -129,6 +128,8 @@ def test_integrity_client():
         print(f"  Server URL: {loaded_config.server_url}")
         print(f"  Enabled: {loaded_config.enabled}")
         print(f"  Timeouts: {loaded_config.connect_timeout_seconds}s / {loaded_config.read_timeout_seconds}s")
+        print()
+        print(f"  Note: Standard config location is {config_path}")
         print()
     except Exception as e:
         print(f"✗ Configuration save/load failed: {e}")

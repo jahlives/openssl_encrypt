@@ -28,22 +28,37 @@ def test_pepper_client():
     print("=" * 70)
     print()
 
-    # Configure plugin
-    config = PepperConfig(
-        enabled=True,
-        server_url="https://localhost:8080",  # Test server (HTTPS required)
-        client_cert=Path("/tmp/pepper_test_certs/client.crt"),
-        client_key=Path("/tmp/pepper_test_certs/client.key"),
-        ca_cert=None,
-    )
+    # Try to load configuration from standard location
+    config_path = Path.home() / ".openssl_encrypt" / "plugins" / "pepper.json"
+
+    print("Configuration Loading:")
+    print("-" * 70)
+    try:
+        if config_path.exists():
+            config = PepperConfig.from_file(config_path)
+            print(f"✓ Loaded config from: {config_path}")
+            print(f"  Enabled: {config.enabled}")
+            print(f"  Server: {config.server_url}")
+            if config.client_cert:
+                print(f"  Client Cert: {config.client_cert}")
+                print(f"  Client Key: {config.client_key}")
+            print()
+        else:
+            print(f"⚠ Config file not found: {config_path}")
+            print("  Using default configuration (disabled)")
+            print()
+            # Use default disabled config for testing
+            config = PepperConfig()
+    except Exception as e:
+        print(f"⚠ Could not load config: {e}")
+        print("  Using default configuration (disabled)")
+        print()
+        config = PepperConfig()
 
     # Note: For local testing without actual mTLS, we can't use the plugin directly
     # because it requires proper mTLS setup. Instead, let's demonstrate the API structure.
-
-    print("Plugin Configuration:")
-    print(f"  Server URL: {config.server_url}")
-    print(f"  Client Cert: {config.client_cert}")
-    print(f"  Enabled: {config.enabled}")
+    # To test with actual server: Create config at ~/.openssl_encrypt/plugins/pepper.json
+    # with enabled=True and provide real certificate paths
     print()
 
     # Initialize plugin
@@ -99,6 +114,8 @@ def test_pepper_client():
         print(f"✓ Configuration loaded from {test_config_path}")
         print(f"  Server URL: {loaded_config.server_url}")
         print(f"  Enabled: {loaded_config.enabled}")
+        print()
+        print(f"  Note: Standard config location is {config_path}")
         print()
     except Exception as e:
         print(f"✗ Configuration save/load failed: {e}")
