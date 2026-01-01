@@ -20,6 +20,7 @@ from typing import List, Optional
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
 from fastapi import HTTPException, Request, status
 
 logger = logging.getLogger(__name__)
@@ -126,7 +127,7 @@ class ProxyAuth:
             cert = x509.load_pem_x509_certificate(cert_data.encode(), default_backend())
 
             # Compute SHA-256 of DER-encoded certificate
-            cert_der = cert.public_bytes(encoding=x509.Encoding.DER)
+            cert_der = cert.public_bytes(encoding=serialization.Encoding.DER)
             fingerprint = hashlib.sha256(cert_der).hexdigest().lower()
 
             logger.debug(f"Computed fingerprint from certificate: {fingerprint[:16]}...")
