@@ -1,0 +1,14 @@
+# Private Keys - NEVER COMMIT!
+*.key
+*.csr
+
+# Client bundles
+*.tar.gz
+*.zip
+
+# CA serial number tracker
+*.srl
+
+# Keep only example files and documentation
+!README.md
+!.gitignore

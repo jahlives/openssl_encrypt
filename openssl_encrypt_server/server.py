@@ -55,6 +55,8 @@ async def lifespan(app: FastAPI):
         from .modules.telemetry import models as tm_models  # noqa: F401
     if settings.pepper_enabled:
         from .modules.pepper import models as pp_models  # noqa: F401
+    if settings.integrity_enabled:
+        from .modules.integrity import models as in_models  # noqa: F401
 
     # Initialize database
     try:
@@ -167,6 +169,14 @@ def create_app() -> FastAPI:
                 "telemetry": {
                     "enabled": settings.telemetry_enabled,
                     "endpoints": ["/api/v1/telemetry/*"],
+                },
+                "pepper": {
+                    "enabled": settings.pepper_enabled,
+                    "endpoints": ["/api/v1/pepper/*"],
+                },
+                "integrity": {
+                    "enabled": settings.integrity_enabled,
+                    "endpoints": ["/api/v1/integrity/*"],
                 },
             },
         }

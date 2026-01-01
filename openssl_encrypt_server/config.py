@@ -80,6 +80,37 @@ class PepperConfig(BaseSettings):
     max_peppers_per_client: int = 100
 
 
+class IntegrityProxyConfig(BaseSettings):
+    """Integrity proxy mode configuration (same as Pepper)"""
+    fingerprint_header: str = "X-Client-Cert-Fingerprint"
+    dn_header: Optional[str] = "X-Client-Cert-DN"
+    verify_header: Optional[str] = "X-Client-Cert-Verify"
+    trusted_proxies: List[str] = [
+        "127.0.0.1",
+        "::1",
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16"
+    ]
+
+
+class IntegrityMTLSConfig(BaseSettings):
+    """Integrity mTLS mode configuration"""
+    host: str = "0.0.0.0"
+    port: int = 8445
+    cert: str = "/certs/integrity-server.crt"
+    key: str = "/certs/integrity-server.key"
+    client_ca: str = "/certs/client-ca.crt"
+
+
+class IntegrityConfig(BaseSettings):
+    """Integrity module configuration"""
+    enabled: bool = False  # OPT-IN by default
+    auth_mode: Literal["proxy", "mtls"] = "proxy"
+    proxy: IntegrityProxyConfig = IntegrityProxyConfig()
+    mtls: IntegrityMTLSConfig = IntegrityMTLSConfig()
+
+
 class Settings(BaseSettings):
     """
     Server settings with environment variable support.
@@ -129,6 +160,13 @@ class Settings(BaseSettings):
     pepper_mtls_cert: str = Field(default="/certs/pepper-server.crt", validation_alias="PEPPER_MTLS_CERT")
     pepper_mtls_key: str = Field(default="/certs/pepper-server.key", validation_alias="PEPPER_MTLS_KEY")
     pepper_mtls_client_ca: str = Field(default="/certs/client-ca.crt", validation_alias="PEPPER_MTLS_CLIENT_CA")
+
+    integrity_enabled: bool = Field(default=False, validation_alias="INTEGRITY_ENABLED")
+    integrity_auth_mode: str = Field(default="proxy", validation_alias="INTEGRITY_AUTH_MODE")
+    integrity_mtls_port: int = Field(default=8445, validation_alias="INTEGRITY_MTLS_PORT")
+    integrity_mtls_cert: str = Field(default="/certs/integrity-server.crt", validation_alias="INTEGRITY_MTLS_CERT")
+    integrity_mtls_key: str = Field(default="/certs/integrity-server.key", validation_alias="INTEGRITY_MTLS_KEY")
+    integrity_mtls_client_ca: str = Field(default="/certs/client-ca.crt", validation_alias="INTEGRITY_MTLS_CLIENT_CA")
 
     def get_cors_origins_list(self) -> List[str]:
         """Parse CORS origins string into list"""
@@ -183,6 +221,19 @@ class Settings(BaseSettings):
             ),
             totp_secret_encryption_key=self.pepper_totp_secret_key,
             deadman_enabled=self.pepper_deadman_enabled,
+        )
+
+    def get_integrity_config(self) -> IntegrityConfig:
+        """Get integrity configuration"""
+        return IntegrityConfig(
+            enabled=self.integrity_enabled,
+            auth_mode=self.integrity_auth_mode,  # type: ignore
+            mtls=IntegrityMTLSConfig(
+                port=self.integrity_mtls_port,
+                cert=self.integrity_mtls_cert,
+                key=self.integrity_mtls_key,
+                client_ca=self.integrity_mtls_client_ca
+            ),
         )
 
     class Config:

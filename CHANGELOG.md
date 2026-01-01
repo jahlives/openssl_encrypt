@@ -26,6 +26,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Privacy-first design with user consent and data minimization
   - Deployed at: https://telemetry.rm-rf.ch
 
+- **Unified Server Architecture**: Modular FastAPI server with dual authentication system supporting both public and private modules
+  - JWT authentication for public modules (keyserver, telemetry)
+  - mTLS authentication with self-signed CA for private modules (pepper, integrity)
+  - Module isolation with independent enable flags and configuration
+  - Docker Compose deployment with PostgreSQL backend
+  - Nginx reverse proxy support for production deployments
+
+- **Pepper Module (mTLS-Protected)**: Secure pepper storage system for password hardening with TOTP 2FA
+  - 20 REST API endpoints for pepper management
+  - Client-side encrypted pepper storage (server stores encrypted blobs)
+  - TOTP 2FA with QR code generation (pyotp integration)
+  - Deadman switch with configurable check-in intervals and grace periods
+  - Panic wipe for emergency pepper deletion (all or single pepper)
+  - Auto-registration on first mTLS connection
+  - 5 database tables: clients, peppers, deadman, panic_log, totp_backup_codes
+  - Access tracking (last_accessed_at, access_count)
+  - Fernet encryption for TOTP secrets at rest
+  - Argon2 hashing for backup codes
+
+- **Integrity Module (mTLS-Protected)**: Encrypted file metadata hash verification system
+  - 12 REST API endpoints for hash management and verification
+  - SHA-256 hash storage for encrypted file metadata
+  - Integrity violation detection with comprehensive audit logging
+  - Batch verification support (up to 100 files per request)
+  - Statistics tracking (success rate, verification counts, last verification)
+  - Auto-registration on first mTLS connection
+  - 3 database tables: clients, metadata_hashes, verification_log
+  - Tamper detection with detailed mismatch warnings
+  - Support for multiple algorithm types (symmetric, hybrid, PQC)
+
+- **mTLS Authentication Infrastructure**: Certificate-based authentication for pepper and integrity modules
+  - Self-signed CA requirement (public CAs explicitly rejected)
+  - Certificate fingerprint authentication (SHA-256)
+  - Proxy mode: Nginx terminates mTLS, passes X-Client-Cert-Fingerprint header
+  - Direct mTLS mode: Server terminates TLS on dedicated ports (8444, 8445)
+  - Trusted proxy IP validation with configurable network ranges
+  - Reusable auth handlers: ProxyAuth and MTLSAuth classes
+  - Certificate DN extraction for client identification
+  - Automatic certificate fingerprint normalization
+
+- **Certificate Management Tools**: Automated scripts for self-signed CA and client certificate generation
+  - `setup_ca.sh`: Create self-signed CA with passphrase-protected private key
+  - `create_client_cert.sh`: Generate client certificates signed by CA
+  - Certificate validity: 825 days (~2 years, Apple/Google recommended max)
+  - Automated certificate bundle creation for distribution
+  - SHA-256 fingerprint calculation and normalization
+  - Comprehensive documentation in docs/MTLS_SETUP.md
+  - Security best practices and troubleshooting guides
+  - Scripts in openssl_encrypt_server/scripts/ directory
+
 #### Cryptographic Features
 - **Cascade Encryption (Multi-Layer Defense)**: Sequential encryption using multiple cipher algorithms with chained HKDF key derivation
   - Minimum 2 ciphers required, supports unlimited layers
@@ -165,6 +215,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **RandomX KDF**: Updated to use correct package structure
 - **KDF Arguments**: Fixed missing arguments for proper format compatibility
 
+#### Server Infrastructure
+- **SQLAlchemy Reserved Name**: Fixed integrity module INClient model using reserved 'metadata' column name
+  - Renamed to 'client_metadata' to avoid SQLAlchemy DeclarativeAPI conflicts
+  - Prevents "Attribute name 'metadata' is reserved" error during table creation
+- **Environment Protection**: Added .gitignore to openssl_encrypt_server/ to protect sensitive files
+  - Excludes .env files from version control
+  - Excludes private keys (*.key, *.pem, *.p12, *.pfx)
+  - Prevents accidental exposure of credentials and certificates
+- **Server Info Endpoint**: Updated /info endpoint to include pepper and integrity module status
+  - Shows enabled/disabled status for all four modules (keyserver, telemetry, pepper, integrity)
+  - Displays endpoint paths for each module
+
 ### Security
 
 #### Security Enhancements
@@ -191,6 +253,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Anonymous client identifiers
   - Minimal data collection with configurable scopes
   - Transparent data usage policies
+
+- **Pepper Module Security**: Hardened pepper storage with multiple layers of protection
+  - mTLS certificate authentication (self-signed CA only, public CAs rejected)
+  - TOTP 2FA for destructive operations (panic wipe, account deletion)
+  - Client-side encryption (server never sees plaintext peppers)
+  - Fernet encryption for TOTP secrets at rest
+  - Argon2 hashing for backup codes
+  - Deadman switch with grace periods to prevent accidents
+  - Comprehensive audit logging (panic events, access tracking)
+  - Opt-in by design (disabled by default)
+
+- **Integrity Module Security**: Tamper detection for encrypted file metadata
+  - mTLS certificate authentication (self-signed CA only, public CAs rejected)
+  - SHA-256 hash verification with integrity violation detection
+  - Comprehensive audit logging (all verification attempts tracked)
+  - Batch verification with result aggregation
+  - Statistics tracking for security monitoring
+  - Support for detecting metadata tampering before decryption
+  - Opt-in by design (disabled by default)
+
+- **mTLS Authentication Security**: Certificate-based authentication for private modules
+  - Self-signed CA requirement prevents unauthorized certificate issuance
+  - Public CAs explicitly rejected (Let's Encrypt, DigiCert, etc.)
+  - Certificate fingerprint (SHA-256) as unique client identifier
+  - Trusted proxy IP validation prevents header injection attacks
+  - Certificate DN extraction for client identification
+  - Automatic certificate fingerprint normalization
+  - No pre-registration required (auto-register on first connection)
 
 #### Security Metrics
 - **All Critical Registry Issues Resolved**: Complete SecureBytes implementation across all registries
