@@ -242,11 +242,64 @@ class KeyserverPlugin(BasePlugin):
         except Exception as e:
             raise NetworkError(f"Unexpected error: {e}")
 
+    def register(self, server_url: Optional[str] = None) -> dict:
+        """
+        Register with keyserver and obtain JWT token.
+
+        This creates a new client registration on the keyserver and returns
+        a JWT token that can be used for authenticated operations (upload/revoke).
+
+        Args:
+            server_url: Optional specific server URL. If None, uses first configured server.
+
+        Returns:
+            dict with keys: client_id, token, expires_at, token_type
+
+        Raises:
+            NetworkError: If network request fails
+            ValueError: If no servers configured
+        """
+        if not self.config.enabled:
+            raise ValueError("Keyserver plugin disabled")
+
+        # Determine which server to register with
+        if server_url is None:
+            if not self.config.servers:
+                raise ValueError("No keyservers configured")
+            server_url = self.config.servers[0]
+
+        register_url = f"{server_url}/api/v1/keys/register"
+
+        try:
+            # HTTP POST (no authentication required for registration)
+            response = requests.post(
+                register_url,
+                timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                # Save JWT token to token file
+                self.config.save_api_token(data["token"])
+                logger.info(f"Registered with keyserver, client_id={data['client_id']}")
+                return data
+            else:
+                raise NetworkError(
+                    f"Registration failed with status {response.status_code}: {response.text}"
+                )
+
+        except requests.exceptions.Timeout:
+            raise NetworkError("Request timeout")
+        except requests.exceptions.ConnectionError as e:
+            raise NetworkError(f"Connection failed: {e}")
+        except requests.exceptions.RequestException as e:
+            raise NetworkError(f"Request failed: {e}")
+
     def upload_key(self, bundle: PublicKeyBundle) -> bool:
         """
         Upload public key bundle to keyserver.
 
-        SECURITY: Requires API token for authentication (Bearer token).
+        SECURITY: Requires JWT token for authentication (Bearer token).
 
         Args:
             bundle: PublicKeyBundle to upload
@@ -255,7 +308,7 @@ class KeyserverPlugin(BasePlugin):
             True if uploaded successfully, False otherwise
 
         Raises:
-            AuthenticationError: If API token not set or invalid
+            AuthenticationError: If JWT token not set or invalid
             NetworkError: If network request fails
         """
         if not self.config.enabled:
@@ -266,11 +319,11 @@ class KeyserverPlugin(BasePlugin):
             logger.error("Uploads disabled in configuration")
             return False
 
-        # Get API token
+        # Get JWT token
         api_token = self.config.load_api_token()
         if not api_token:
             raise AuthenticationError(
-                "API token not set. Use 'openssl-encrypt keyserver set-token' to set token."
+                "JWT token not set. Use 'openssl-encrypt keyserver register' to register and obtain token."
             )
 
         # Verify bundle signature before uploading
@@ -355,7 +408,7 @@ class KeyserverPlugin(BasePlugin):
         """
         Revoke key on keyserver.
 
-        SECURITY: Requires API token for authentication (Bearer token).
+        SECURITY: Requires JWT token for authentication (Bearer token).
         Also requires revocation signature to prove ownership.
 
         Args:
@@ -366,18 +419,18 @@ class KeyserverPlugin(BasePlugin):
             True if revoked successfully
 
         Raises:
-            AuthenticationError: If API token not set or invalid
+            AuthenticationError: If JWT token not set or invalid
             NetworkError: If network request fails
         """
         if not self.config.enabled:
             logger.error("Keyserver plugin disabled")
             return False
 
-        # Get API token
+        # Get JWT token
         api_token = self.config.load_api_token()
         if not api_token:
             raise AuthenticationError(
-                "API token not set. Use 'openssl-encrypt keyserver set-token' to set token."
+                "JWT token not set. Use 'openssl-encrypt keyserver register' to register and obtain token."
             )
 
         # Revoke on all configured servers

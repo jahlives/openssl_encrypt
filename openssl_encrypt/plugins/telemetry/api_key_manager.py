@@ -50,21 +50,6 @@ class APIKeyManager:
         self.key_file = config.buffer_path.parent / "api_key.json"
         self._cached_key_data = None
 
-    def _generate_client_id(self) -> str:
-        """
-        Generates anonymous client ID.
-
-        IMPORTANT: NO hardware IDs, NO user IDs, NO IP hashes!
-        Just a random identifier for rate limiting on the server.
-
-        This is NOT a tracking identifier - it's purely random and
-        cannot be correlated to a specific user or machine.
-
-        Returns:
-            str: Random 32-character hex string
-        """
-        return secrets.token_hex(16)  # 16 bytes = 32 hex chars
-
     def _ensure_key_file_permissions(self) -> None:
         """
         Ensures API key file has secure permissions (0600).
@@ -89,9 +74,17 @@ class APIKeyManager:
             with open(self.key_file, "r") as f:
                 data = json.load(f)
 
-            # Validate required fields
-            if not all(k in data for k in ["client_id", "api_key", "expires"]):
+            # Validate required fields (backward compatible with both "api_key" and "token")
+            if "client_id" not in data:
                 return None
+            if "token" not in data and "api_key" not in data:
+                return None
+            if "expires" not in data:
+                return None
+
+            # Normalize old "api_key" to new "token" format
+            if "api_key" in data and "token" not in data:
+                data["token"] = data["api_key"]
 
             return data
         except (json.JSONDecodeError, IOError, KeyError):
@@ -157,62 +150,44 @@ class APIKeyManager:
 
     def get_api_key(self) -> Optional[str]:
         """
-        Returns valid API key, registering or refreshing if necessary.
+        Returns valid JWT token, registering if necessary.
 
         Returns:
-            str or None: API key if successful, None on failure
+            str or None: JWT token if successful, None on failure
         """
         # Check if we have a valid cached key
         if self._cached_key_data and not self._is_key_expired(
             self._cached_key_data.get("expires", "")
         ):
-            return self._cached_key_data["api_key"]
+            return self._cached_key_data.get("token") or self._cached_key_data.get("api_key")
 
         # Load from disk
         data = self._load_key_data()
         if data and not self._is_key_expired(data.get("expires", "")):
             self._cached_key_data = data
-            return data["api_key"]
+            return data.get("token") or data.get("api_key")
 
-        # Key expired or doesn't exist - register new client
+        # Token expired or doesn't exist - register new client
         if self.register():
-            return self._cached_key_data["api_key"]
+            return self._cached_key_data.get("token")
 
         return None
 
     def register(self) -> bool:
         """
-        Registers with server and obtains API key.
+        Registers with server and obtains JWT token.
 
-        PRIVACY: Only sends anonymous client_id and platform info.
-        NO IP addresses, NO hardware IDs.
+        PRIVACY: Server generates client_id. NO identifying information sent.
+        NO IP addresses, NO hardware IDs, NO platform info.
 
         Returns:
             bool: True if registration successful, False otherwise
         """
         try:
-            # Generate anonymous client ID
-            client_id = self._generate_client_id()
-
-            # Determine platform (generic only - linux/macos/windows/other)
-            platform = self._get_generic_platform()
-
-            # Get client version
-            client_version = self._get_client_version()
-
-            # Registration payload (NO identifying information!)
-            payload = {
-                "client_id": client_id,
-                "platform": platform,  # Generic: "linux", "macos", "windows", "other"
-                "client_version": client_version,  # e.g., "1.4.0"
-            }
-
-            # Send registration request
+            # Send registration request (empty POST, server generates client_id)
             response = requests.post(
-                f"{self.server_url}/api/v1/register",
-                json=payload,
+                f"{self.server_url}/api/v1/telemetry/register",
                 timeout=10,
-                headers={"Content-Type": "application/json"},
             )
 
             if response.status_code != 200:
@@ -221,11 +196,11 @@ class APIKeyManager:
             # Parse response
             result = response.json()
 
-            # Save key data
+            # Save JWT token data
             key_data = {
-                "client_id": client_id,
-                "api_key": result["api_key"],
-                "expires": result["expires"],
+                "client_id": result["client_id"],  # Server-generated
+                "token": result["token"],  # JWT token
+                "expires": result["expires_at"],  # ISO 8601 datetime
                 "registered_at": datetime.now(timezone.utc).isoformat(),
             }
 
@@ -237,84 +212,15 @@ class APIKeyManager:
 
     def refresh_key(self) -> bool:
         """
-        Refreshes API key using current key for authentication.
+        Refreshes JWT token by re-registering.
+
+        Note: JWT tokens don't have a refresh endpoint. Just re-register to get a new token.
+        This method is kept for backward compatibility.
 
         Returns:
-            bool: True if refresh successful, False otherwise
+            bool: True if registration successful, False otherwise
         """
-        try:
-            # Load current key
-            data = self._load_key_data()
-            if not data or "api_key" not in data:
-                # No current key - need to register
-                return self.register()
-
-            # Send refresh request with current key
-            response = requests.post(
-                f"{self.server_url}/api/v1/key/refresh",
-                headers={
-                    "Authorization": f"Bearer {data['api_key']}",
-                    "Content-Type": "application/json",
-                },
-                timeout=10,
-            )
-
-            if response.status_code == 401:
-                # Unauthorized - current key invalid, need to re-register
-                return self.register()
-
-            if response.status_code != 200:
-                return False
-
-            # Parse response
-            result = response.json()
-
-            # Update key data
-            data["api_key"] = result["api_key"]
-            data["expires"] = result["expires"]
-            data["refreshed_at"] = datetime.now(timezone.utc).isoformat()
-
-            self._save_key_data(data)
-            return True
-
-        except (requests.RequestException, KeyError, json.JSONDecodeError):
-            return False
-
-    def _get_generic_platform(self) -> str:
-        """
-        Returns generic platform identifier.
-
-        PRIVACY: Only returns generic values (linux/macos/windows/other).
-        NO version numbers, NO specific distributions.
-
-        Returns:
-            str: Generic platform string
-        """
-        platform = sys.platform.lower()
-
-        if platform.startswith("linux"):
-            return "linux"
-        elif platform.startswith("darwin"):
-            return "macos"
-        elif platform.startswith("win"):
-            return "windows"
-        else:
-            return "other"
-
-    def _get_client_version(self) -> str:
-        """
-        Returns client version.
-
-        Returns:
-            str: Client version (e.g., "1.4.0")
-        """
-        try:
-            # Try to import version from main module
-            from openssl_encrypt import __version__
-
-            return __version__
-        except (ImportError, AttributeError):
-            return "unknown"
+        return self.register()
 
     def delete_key(self) -> None:
         """
