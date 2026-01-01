@@ -91,6 +91,32 @@ Opt-in anonymous telemetry infrastructure with user consent and data minimizatio
 - Docker deployment with automated migrations
 - Available at: https://telemetry.rm-rf.ch
 
+### Pepper Storage Plugin
+
+Client plugin for secure pepper storage with password hardening and mTLS authentication.
+
+- Client-side encrypted pepper storage (server never sees plaintext)
+- TOTP 2FA with QR code generation for destructive operations
+- Deadman switch with configurable check-in intervals and grace periods
+- Panic wipe for emergency pepper deletion (all or single pepper)
+- mTLS authentication with self-signed CA (client certificates required)
+- Profile management with access tracking
+- OPT-IN by default (disabled until explicitly enabled)
+- Configuration: `~/.openssl_encrypt/plugins/pepper.json`
+
+### Integrity Verification Plugin
+
+Client plugin for encrypted file metadata hash verification with mTLS authentication.
+
+- Store SHA-256 hashes of encrypted file metadata on remote server
+- Verify file integrity before decryption (detect tampering)
+- Batch verification support (up to 100 files per request)
+- Tamper detection with comprehensive audit logging
+- mTLS authentication with self-signed CA (client certificates required)
+- Profile management and verification statistics
+- OPT-IN by default (disabled until explicitly enabled)
+- Configuration: `~/.openssl_encrypt/plugins/integrity.json`
+
 ### Identity-Based Asymmetric Encryption
 
 Enhanced asymmetric key handling with improved format and HSM integration.

@@ -236,3 +236,5 @@ mobile.md
 .coverage.*
 coverage.xml
 htmlcov/
+# Plugin config files
+openssl_encrypt/plugins/*.json
