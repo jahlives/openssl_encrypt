@@ -93,4 +93,23 @@ def load_modules(app: FastAPI, settings) -> list[str]:
             logger.error(f"Failed to load Pepper module: {e}")
             raise
 
+    # Load Integrity
+    if settings.integrity_enabled:
+        try:
+            from .integrity import auth as in_auth
+            from .integrity import routes as in_routes
+
+            # Initialize auth
+            integrity_config = settings.get_integrity_config()
+            in_auth.init_integrity_auth(integrity_config)
+
+            # Include router
+            app.include_router(in_routes.router)
+
+            loaded.append("integrity")
+            logger.info(f"Integrity module loaded (auth mode: {integrity_config.auth_mode})")
+        except Exception as e:
+            logger.error(f"Failed to load Integrity module: {e}")
+            raise
+
     return loaded

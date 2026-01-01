@@ -1,15 +1,22 @@
 # OpenSSL Encrypt Server
 
-Unified FastAPI server for Keyserver and Telemetry modules. This is Phase 1 of the server consolidation from `SERVER_CONSOLIDATION_SPEC_v3.md`.
+Unified FastAPI server with modular architecture for encryption key management, telemetry, pepper storage, and integrity verification.
 
 ## Features
 
+### Public Modules (JWT Authentication)
 - **Keyserver Module**: Post-quantum public key distribution with ML-KEM and ML-DSA support
 - **Telemetry Module**: Anonymous usage statistics collection
-- **JWT Authentication**: Module-isolated tokens with issuer claims
+
+### Private Modules (mTLS Authentication)
+- **Pepper Module**: Secure pepper storage with TOTP 2FA and deadman switch (opt-in)
+- **Integrity Module**: Encrypted file metadata hash verification (opt-in)
+
+### Infrastructure
+- **Dual Authentication**: JWT tokens (keyserver/telemetry) + mTLS certificates (pepper/integrity)
 - **Async Architecture**: AsyncIO + asyncpg for high concurrency
 - **Docker Ready**: Complete Docker Compose setup with fixed IPs
-- **Modular Design**: Enable/disable modules via configuration
+- **Modular Design**: Enable/disable modules independently via configuration
 
 ## Quick Start
 
@@ -80,7 +87,55 @@ curl http://localhost:8080/info
 - `POST /api/v1/telemetry/register` - Register and get token
 - `POST /api/v1/telemetry/events` - Submit telemetry events
 
-## Token Isolation
+### Pepper Module (`/api/v1/pepper`) - **Requires mTLS**
+
+**Status**: Opt-in (disabled by default)
+
+**Authentication**: Client certificate signed by your self-signed CA
+
+#### All Endpoints (require mTLS client certificate)
+- `GET /profile` - Get client profile (auto-registers on first connection)
+- `PUT /profile` - Update profile name
+- `DELETE /profile` - Delete account [TOTP required]
+- `POST /totp/setup` - Setup TOTP 2FA
+- `POST /totp/verify` - Verify TOTP setup
+- `DELETE /totp` - Disable TOTP [TOTP required]
+- `POST /peppers` - Store pepper
+- `GET /peppers` - List peppers
+- `GET /peppers/{name}` - Get pepper
+- `PUT /peppers/{name}` - Update pepper
+- `DELETE /peppers/{name}` - Delete pepper
+- `GET /deadman` - Get deadman switch status
+- `PUT /deadman` - Configure deadman switch
+- `POST /deadman/checkin` - Check in (reset timer)
+- `POST /panic` - Wipe all peppers [TOTP required]
+
+**Setup**: See [docs/MTLS_SETUP.md](docs/MTLS_SETUP.md) and [scripts/README.md](scripts/README.md)
+
+### Integrity Module (`/api/v1/integrity`) - **Requires mTLS**
+
+**Status**: Opt-in (disabled by default)
+
+**Authentication**: Client certificate signed by your self-signed CA
+
+#### All Endpoints (require mTLS client certificate)
+- `GET /profile` - Get client profile (auto-registers on first connection)
+- `PUT /profile` - Update profile name
+- `POST /hashes` - Store metadata hash
+- `GET /hashes` - List all hashes
+- `GET /hashes/{file_id}` - Get specific hash
+- `PUT /hashes/{file_id}` - Update hash
+- `DELETE /hashes/{file_id}` - Delete specific hash
+- `DELETE /hashes` - Delete all hashes
+- `POST /verify` - Verify single hash (detects tampering)
+- `POST /verify/batch` - Batch verify multiple hashes
+- `GET /stats` - Get verification statistics
+
+**Setup**: See [docs/MTLS_SETUP.md](docs/MTLS_SETUP.md) and [scripts/README.md](scripts/README.md)
+
+## Authentication
+
+### JWT Tokens (Keyserver & Telemetry)
 
 Tokens are **module-specific** and cannot be used across modules:
 
@@ -88,6 +143,38 @@ Tokens are **module-specific** and cannot be used across modules:
 2. **Telemetry token** has issuer: `openssl_encrypt_telemetry`
 
 This prevents a Keyserver token from being used for Telemetry endpoints and vice versa.
+
+### mTLS Certificates (Pepper & Integrity)
+
+**Security Model**: Self-signed CA only (public CAs are NOT accepted)
+
+These modules are **non-public** and require client certificates signed by YOUR private Certificate Authority:
+
+1. **One-time setup**: Create your self-signed CA
+2. **Per client/device**: Generate client certificates signed by your CA
+3. **Server verification**: Server only trusts certificates from your CA
+4. **Auto-registration**: Clients auto-register on first connection
+
+**Quick Start**:
+```bash
+# 1. Create CA (one-time)
+cd scripts
+./setup_ca.sh
+
+# 2. Generate client certificate
+./create_client_cert.sh alice
+
+# 3. Distribute to client
+tar czf alice-bundle.tar.gz certs/alice.{key,crt} certs/ca.crt
+
+# 4. Client connects
+curl --cert alice.crt --key alice.key --cacert ca.crt \
+  https://server/api/v1/pepper/profile
+```
+
+**See detailed documentation**:
+- [mTLS Setup Guide](docs/MTLS_SETUP.md) - Complete setup instructions
+- [Certificate Management Scripts](scripts/README.md) - Helper scripts usage
 
 ## Example Usage
 

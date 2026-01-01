@@ -143,6 +143,45 @@ Centralized cryptographic algorithm registration and validation framework.
 - Enhanced Flatpak build with Threefish wheel handling
 - CI/CD pipeline improvements
 
+### Unified Server Architecture
+
+Modular FastAPI server with dual authentication system supporting both public and private modules.
+
+**Public Modules (JWT Authentication):**
+- Keyserver: Post-quantum public key distribution
+- Telemetry: Privacy-preserving usage statistics
+
+**Private Modules (mTLS Authentication with Self-Signed CA):**
+- **Pepper Module**: Secure pepper storage for password hardening
+  - Client-side encrypted pepper storage (20 endpoints)
+  - TOTP 2FA with QR code generation
+  - Deadman switch with configurable check-in intervals
+  - Panic wipe for emergency pepper deletion
+  - Auto-registration on first mTLS connection
+  - Database: 5 tables (clients, peppers, deadman, panic log, TOTP backup codes)
+
+- **Integrity Module**: Encrypted file metadata hash verification
+  - SHA-256 hash storage for encrypted file metadata (12 endpoints)
+  - Integrity violation detection with audit logging
+  - Batch verification support (up to 100 files)
+  - Statistics tracking (success rate, verification counts)
+  - Auto-registration on first mTLS connection
+  - Database: 3 tables (clients, hashes, verification log)
+
+**Security Features:**
+- Self-signed CA requirement (public CAs rejected)
+- Certificate fingerprint authentication (SHA-256)
+- Trusted proxy IP validation
+- Comprehensive audit logging
+- Automated certificate management scripts
+
+**Deployment:**
+- Docker Compose with PostgreSQL backend
+- Nginx reverse proxy support (recommended)
+- Direct mTLS mode available
+- Helper scripts: `setup_ca.sh`, `create_client_cert.sh`
+- Full documentation: `openssl_encrypt_server/docs/MTLS_SETUP.md`
+
 ### Backward Compatibility
 
 - Compatible with v3, v4, v5, v6, and v7 encrypted files
