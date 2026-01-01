@@ -76,6 +76,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Security best practices and troubleshooting guides
   - Scripts in openssl_encrypt_server/scripts/ directory
 
+#### Client Plugins
+- **Pepper Storage Plugin**: Client plugin for secure pepper storage with mTLS authentication
+  - Client-side encrypted pepper storage (server never sees plaintext peppers)
+  - mTLS authentication with client certificates
+  - TOTP 2FA integration for destructive operations
+  - Deadman switch with configurable check-in intervals
+  - Panic wipe functionality (all or single pepper)
+  - Profile management with access tracking
+  - Configuration: `~/.openssl_encrypt/plugins/pepper.json`
+  - OPT-IN by default (enabled=false)
+  - Python API: `from openssl_encrypt.plugins.pepper import PepperPlugin, PepperConfig`
+
+- **Integrity Verification Plugin**: Client plugin for encrypted file metadata hash verification
+  - Store SHA-256 hashes of encrypted file metadata on remote server
+  - Verify file integrity before decryption (tamper detection)
+  - Batch verification support (up to 100 files per request)
+  - Comprehensive audit logging and statistics tracking
+  - mTLS authentication with client certificates
+  - Profile management and verification history
+  - Utility methods: `compute_metadata_hash()`, `compute_file_id()`
+  - Configuration: `~/.openssl_encrypt/plugins/integrity.json`
+  - OPT-IN by default (enabled=false)
+  - Python API: `from openssl_encrypt.plugins.integrity import IntegrityPlugin, IntegrityConfig`
+
+- **Keyserver Plugin**: Client plugin for post-quantum public key distribution
+  - Public key upload, search, and retrieval
+  - Local SQLite caching with configurable TTL
+  - Bearer token authentication for write operations
+  - HTTPS-only connections with timeout configuration
+  - Configuration: `~/.openssl_encrypt/plugins/keyserver.json`
+  - OPT-IN by default (enabled=false)
+
+- **Telemetry Plugin**: Client plugin for anonymous usage metrics collection
+  - Anonymous client identifiers (no personal data)
+  - Local SQLite buffering before upload
+  - Configurable data collection scopes
+  - Background upload with batch processing
+  - Full opt-out with data deletion
+  - Activation: `--telemetry` flag, `OPENSSL_ENCRYPT_TELEMETRY=1` env, or config
+  - OPT-IN by default (disabled)
+
 #### Cryptographic Features
 - **Cascade Encryption (Multi-Layer Defense)**: Sequential encryption using multiple cipher algorithms with chained HKDF key derivation
   - Minimum 2 ciphers required, supports unlimited layers
