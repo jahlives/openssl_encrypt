@@ -53,6 +53,8 @@ async def lifespan(app: FastAPI):
         from .modules.keyserver import models as ks_models  # noqa: F401
     if settings.telemetry_enabled:
         from .modules.telemetry import models as tm_models  # noqa: F401
+    if settings.pepper_enabled:
+        from .modules.pepper import models as pp_models  # noqa: F401
 
     # Initialize database
     try:

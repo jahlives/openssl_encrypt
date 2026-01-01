@@ -61,4 +61,36 @@ def load_modules(app: FastAPI, settings) -> list[str]:
             logger.error(f"Failed to load Telemetry module: {e}")
             raise
 
+    # Load Pepper
+    if settings.pepper_enabled:
+        try:
+            from .pepper import auth as pp_auth
+            from .pepper import routes as pp_routes
+            from .pepper.deadman import DeadmanWatcher
+
+            # Initialize auth
+            pp_auth.init_pepper_auth(settings.get_pepper_config())
+
+            # Include router
+            app.include_router(pp_routes.router)
+
+            # Start deadman watcher if enabled
+            pepper_config = settings.get_pepper_config()
+            if pepper_config.deadman_enabled:
+                watcher = DeadmanWatcher(pepper_config.deadman_check_interval)
+
+                @app.on_event("startup")
+                async def start_deadman_watcher():
+                    await watcher.start()
+
+                @app.on_event("shutdown")
+                async def stop_deadman_watcher():
+                    await watcher.stop()
+
+            loaded.append("pepper")
+            logger.info(f"Pepper module loaded (auth mode: {pepper_config.auth_mode})")
+        except Exception as e:
+            logger.error(f"Failed to load Pepper module: {e}")
+            raise
+
     return loaded
