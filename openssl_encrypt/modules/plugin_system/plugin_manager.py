@@ -52,6 +52,7 @@ class PluginRegistration:
     def __init__(self, plugin: BasePlugin, file_path: str, enabled: bool = True):
         self.plugin = plugin
         self.file_path = file_path
+        self.file_directory = os.path.dirname(os.path.abspath(file_path))  # Directory where plugin code is located
         self.enabled = enabled
         self.load_time = time.time()
         self.last_used = None
@@ -319,6 +320,12 @@ class PluginManager:
                 return PluginResult.error_result(f"Plugin is disabled: {plugin_id}")
 
         plugin = registration.plugin
+
+        # Set plugin file directory in context if not already set
+        # This allows the sandbox to determine which code directory the plugin can read from
+        if not context.plugin_file_directory:
+            context.plugin_file_directory = registration.file_directory
+            logger.debug(f"Set plugin_file_directory for {plugin_id}: {registration.file_directory}")
 
         # Validate security context
         if not plugin.validate_security_context(context):

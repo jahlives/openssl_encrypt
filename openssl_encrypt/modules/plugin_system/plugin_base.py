@@ -93,13 +93,14 @@ class PluginSecurityContext:
     This is the ONLY data interface plugins can access.
     """
 
-    def __init__(self, plugin_id: str, capabilities: Set[PluginCapability]):
+    def __init__(self, plugin_id: str, capabilities: Set[PluginCapability], plugin_file_directory: str = None):
         self.plugin_id = plugin_id
         self.capabilities = capabilities
         self.metadata = {}  # Only non-sensitive metadata
         self.file_paths = []  # Only paths to encrypted files or safe temp files
         self.config = {}  # Plugin-specific configuration only
         self.timestamp = time.time()
+        self.plugin_file_directory = plugin_file_directory  # Directory where plugin code is located
 
     def has_capability(self, capability: PluginCapability) -> bool:
         """Check if plugin has specific capability."""

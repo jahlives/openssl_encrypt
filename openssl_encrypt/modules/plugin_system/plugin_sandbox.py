@@ -415,15 +415,12 @@ class PluginSandbox:
             if abs_path.startswith(config_dir):
                 return True
 
-            # Plugin code directory: openssl_encrypt/plugins/<plugin_id>/
+            # Plugin code directory: Use actual file location from context
             # Allow read-only access (deny writes)
-            # Find the openssl_encrypt package base directory
-            try:
-                import openssl_encrypt
-                package_dir = os.path.dirname(os.path.dirname(openssl_encrypt.__file__))
-                plugin_code_dir = os.path.abspath(
-                    os.path.join(package_dir, "openssl_encrypt", "plugins", plugin_id)
-                )
+            # This allows plugins to read from the directory where they are located
+            # e.g., plugins/hsm/fido2_pepper.py can read plugins/hsm/*
+            if context.plugin_file_directory:
+                plugin_code_dir = os.path.abspath(context.plugin_file_directory)
                 if abs_path.startswith(plugin_code_dir):
                     if is_write:
                         # Deny write access to plugin code directory
@@ -431,9 +428,9 @@ class PluginSandbox:
                             f"Plugin '{plugin_id}' attempted to write to code directory: {abs_path}"
                         )
                         return False
+                    # Allow read access
+                    logger.debug(f"Plugin '{plugin_id}' reading from code directory: {abs_path}")
                     return True
-            except Exception as e:
-                logger.debug(f"Could not determine plugin code directory: {e}")
 
         # Deny access to everything else
         return False
