@@ -145,21 +145,48 @@ class PluginManager:
                     f"Plugin file failed security validation: {file_path}"
                 )
 
-            # Load module
+            # Load module with proper package name to support relative imports
             # Add project root to sys.path to ensure plugins can import correctly
+            # __file__ is at: .../openssl_encrypt/openssl_encrypt/modules/plugin_system/plugin_manager.py
+            # We need: .../openssl_encrypt (repo root)
+            # So go up 4 levels: plugin_system -> modules -> openssl_encrypt (package) -> openssl_encrypt (repo)
             project_root = os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             )
             original_path = sys.path.copy()
             if project_root not in sys.path:
                 sys.path.insert(0, project_root)
 
             try:
-                spec = importlib.util.spec_from_file_location("plugin_module", file_path)
+                # Generate proper module name from file path
+                # e.g., /path/to/openssl_encrypt/plugins/hsm/fido2_pepper.py
+                # -> openssl_encrypt.plugins.hsm.fido2_pepper
+                abs_path = os.path.abspath(file_path)
+                module_name = self._file_path_to_module_name(abs_path, project_root)
+
+                spec = importlib.util.spec_from_file_location(module_name, file_path)
                 if spec is None or spec.loader is None:
                     return PluginResult.error_result(f"Could not load plugin spec: {file_path}")
 
                 module = importlib.util.module_from_spec(spec)
+
+                # Set up ALL parent packages recursively (for relative imports)
+                # e.g., for 'openssl_encrypt.plugins.hsm.fido2_pepper', we need:
+                #   - openssl_encrypt
+                #   - openssl_encrypt.plugins
+                #   - openssl_encrypt.plugins.hsm
+                if '.' in module_name:
+                    parts = module_name.split('.')
+                    for i in range(1, len(parts)):
+                        parent_name = '.'.join(parts[:i])
+                        if parent_name not in sys.modules:
+                            try:
+                                __import__(parent_name)
+                            except ImportError:
+                                # Parent package might not exist as importable module, that's OK
+                                logger.debug(f"Could not import parent package: {parent_name}")
+
+                sys.modules[module_name] = module
                 spec.loader.exec_module(module)
             finally:
                 # Restore original sys.path
@@ -694,6 +721,28 @@ class PluginManager:
         except Exception as e:
             logger.error(f"Error validating plugin file {file_path}: {e}")
             return False
+
+    def _file_path_to_module_name(self, file_path: str, project_root: str) -> str:
+        """Convert file path to proper Python module name.
+
+        Args:
+            file_path: Absolute path to plugin file
+            project_root: Project root directory
+
+        Returns:
+            Module name (e.g., 'openssl_encrypt.plugins.hsm.fido2_pepper')
+        """
+        # Remove project root from path
+        rel_path = os.path.relpath(file_path, project_root)
+
+        # Remove .py extension
+        if rel_path.endswith('.py'):
+            rel_path = rel_path[:-3]
+
+        # Convert path separators to dots
+        module_name = rel_path.replace(os.sep, '.')
+
+        return module_name
 
     def _find_plugin_class(self, module) -> Optional[Type[BasePlugin]]:
         """Find BasePlugin subclass in module."""
