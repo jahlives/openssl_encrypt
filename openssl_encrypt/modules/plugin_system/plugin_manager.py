@@ -626,47 +626,26 @@ class PluginManager:
                     "compile(",
                 ]
 
-                # Check if this is a built-in plugin (shipped with the application)
-                # Built-in plugins are trusted to access their own config/code directories
-                is_builtin_plugin = "/openssl_encrypt/plugins/" in file_path.replace("\\", "/")
+                # Remove 'open(' from dangerous patterns - all plugins need file access
+                # The sandbox will enforce that plugins can only access:
+                #  - Read/write: ~/.openssl_encrypt/plugins/<plugin_id>/
+                #  - Read-only: openssl_encrypt/plugins/<plugin_id>/
+                safe_patterns = ["open("]  # Patterns that are allowed by sandbox at runtime
+                truly_dangerous_patterns = [p for p in dangerous_patterns if p not in safe_patterns]
 
-                # Validate ALL plugins for dangerous patterns (for auditing)
+                # Validate ALL plugins equally for truly dangerous patterns
                 found_dangerous = False
-                for pattern in dangerous_patterns:
+                for pattern in truly_dangerous_patterns:
                     if pattern in content:
                         found_dangerous = True
 
-                        if is_builtin_plugin:
-                            # Built-in plugins are allowed to use dangerous patterns
-                            # They're trusted to only access their own directories:
-                            #  - ~/.openssl_encrypt/plugins/<plugin_id>/ (config)
-                            #  - openssl_encrypt/plugins/<plugin_id>/ (code)
-                            logger.debug(
-                                f"Built-in plugin allowed to use '{pattern}': {file_path}"
-                            )
-
-                            # Audit log for tracking (not blocking)
-                            if security_logger:
-                                security_logger.log_event(
-                                    "builtin_plugin_dangerous_pattern",
-                                    "info",
-                                    {
-                                        "file_path": file_path,
-                                        "dangerous_pattern": pattern,
-                                        "action": "allowed_builtin",
-                                    },
-                                )
-                            # Don't block built-in plugins
-                            continue
-
-                        # Third-party plugin with dangerous pattern
                         if self.strict_security_mode:
-                            # In strict mode, block third-party plugins with dangerous patterns
+                            # In strict mode, block plugins with dangerous patterns
                             logger.error(
                                 f"SECURITY BLOCKED: Plugin contains dangerous pattern '{pattern}': {file_path}"
                             )
                             logger.error(
-                                "Third-party plugin rejected in strict security mode."
+                                "Plugin rejected in strict security mode. Dangerous patterns not allowed."
                             )
 
                             # Security audit log for blocked plugin
@@ -677,7 +656,7 @@ class PluginManager:
                                     {
                                         "file_path": file_path,
                                         "dangerous_pattern": pattern,
-                                        "reason": "third_party_strict_mode",
+                                        "reason": "strict_security_mode",
                                     },
                                 )
 
@@ -705,9 +684,9 @@ class PluginManager:
                                 )
 
                 # Audit log for dangerous patterns (even if allowed)
-                if found_dangerous and not is_builtin_plugin:
+                if found_dangerous:
                     self._audit_log(
-                        f"Third-party plugin with dangerous patterns {'blocked' if self.strict_security_mode else 'allowed'}: {file_path}"
+                        f"Plugin with dangerous patterns {'blocked' if self.strict_security_mode else 'allowed'}: {file_path}"
                     )
 
             return True
