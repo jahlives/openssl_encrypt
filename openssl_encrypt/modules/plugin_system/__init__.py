@@ -199,6 +199,9 @@ def create_default_plugin_manager(config_dir: str = None) -> PluginManager:
     config_manager = PluginConfigManager(config_dir)
     plugin_manager = PluginManager(config_manager)
 
+    # Built-in plugins are automatically trusted (no whitelist needed)
+    # All plugins under openssl_encrypt/plugins/ can read their own config and code files
+
     # Add default plugin directories (if they exist)
     import os
 

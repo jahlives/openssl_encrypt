@@ -626,45 +626,47 @@ class PluginManager:
                     "compile(",
                 ]
 
+                # Check if this is a built-in plugin (shipped with the application)
+                # Built-in plugins are trusted to access their own config/code directories
+                is_builtin_plugin = "/openssl_encrypt/plugins/" in file_path.replace("\\", "/")
+
+                # Validate ALL plugins for dangerous patterns (for auditing)
                 found_dangerous = False
                 for pattern in dangerous_patterns:
                     if pattern in content:
                         found_dangerous = True
 
-                        # Check if plugin is whitelisted by checking file path or plugin_id in content
-                        is_whitelisted = False
-                        for whitelisted_id in self.allowed_unsafe_plugins:
-                            # Method 1: Check if file is in whitelisted plugin's directory
-                            # e.g., /plugins/steganography/ or /plugins/hsm/fido2_pepper.py
-                            if f"/plugins/{whitelisted_id}/" in file_path or f"/{whitelisted_id}_" in os.path.basename(file_path):
-                                is_whitelisted = True
-                                logger.info(f"Plugin '{whitelisted_id}' is whitelisted by path, allowing dangerous pattern '{pattern}'")
-                                break
+                        if is_builtin_plugin:
+                            # Built-in plugins are allowed to use dangerous patterns
+                            # They're trusted to only access their own directories:
+                            #  - ~/.openssl_encrypt/plugins/<plugin_id>/ (config)
+                            #  - openssl_encrypt/plugins/<plugin_id>/ (code)
+                            logger.debug(
+                                f"Built-in plugin allowed to use '{pattern}': {file_path}"
+                            )
 
-                            # Method 2: Check if plugin_id appears in a plugin class definition (with or without spaces)
-                            patterns_to_check = [
-                                f'plugin_id = "{whitelisted_id}"',
-                                f"plugin_id = '{whitelisted_id}'",
-                                f'plugin_id="{whitelisted_id}"',
-                                f"plugin_id='{whitelisted_id}'",
-                            ]
-                            if any(p in content for p in patterns_to_check):
-                                is_whitelisted = True
-                                logger.info(f"Plugin '{whitelisted_id}' is whitelisted by plugin_id, allowing dangerous pattern '{pattern}'")
-                                break
-
-                        if is_whitelisted:
-                            # Plugin is whitelisted, allow it
+                            # Audit log for tracking (not blocking)
+                            if security_logger:
+                                security_logger.log_event(
+                                    "builtin_plugin_dangerous_pattern",
+                                    "info",
+                                    {
+                                        "file_path": file_path,
+                                        "dangerous_pattern": pattern,
+                                        "action": "allowed_builtin",
+                                    },
+                                )
+                            # Don't block built-in plugins
                             continue
 
+                        # Third-party plugin with dangerous pattern
                         if self.strict_security_mode:
-                            # In strict mode, block dangerous patterns
+                            # In strict mode, block third-party plugins with dangerous patterns
                             logger.error(
                                 f"SECURITY BLOCKED: Plugin contains dangerous pattern '{pattern}': {file_path}"
                             )
                             logger.error(
-                                "Plugin rejected in strict security mode. "
-                                "Use allow_unsafe_plugin() to whitelist if trusted."
+                                "Third-party plugin rejected in strict security mode."
                             )
 
                             # Security audit log for blocked plugin
@@ -675,7 +677,7 @@ class PluginManager:
                                     {
                                         "file_path": file_path,
                                         "dangerous_pattern": pattern,
-                                        "reason": "strict_security_mode",
+                                        "reason": "third_party_strict_mode",
                                     },
                                 )
 
@@ -703,9 +705,9 @@ class PluginManager:
                                 )
 
                 # Audit log for dangerous patterns (even if allowed)
-                if found_dangerous:
+                if found_dangerous and not is_builtin_plugin:
                     self._audit_log(
-                        f"Plugin with dangerous patterns {'blocked' if self.strict_security_mode else 'allowed'}: {file_path}"
+                        f"Third-party plugin with dangerous patterns {'blocked' if self.strict_security_mode else 'allowed'}: {file_path}"
                     )
 
             return True
