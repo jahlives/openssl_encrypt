@@ -630,6 +630,33 @@ class PluginManager:
                 for pattern in dangerous_patterns:
                     if pattern in content:
                         found_dangerous = True
+
+                        # Check if plugin is whitelisted by checking file path or plugin_id in content
+                        is_whitelisted = False
+                        for whitelisted_id in self.allowed_unsafe_plugins:
+                            # Method 1: Check if file is in whitelisted plugin's directory
+                            # e.g., /plugins/steganography/ or /plugins/hsm/fido2_pepper.py
+                            if f"/plugins/{whitelisted_id}/" in file_path or f"/{whitelisted_id}_" in os.path.basename(file_path):
+                                is_whitelisted = True
+                                logger.info(f"Plugin '{whitelisted_id}' is whitelisted by path, allowing dangerous pattern '{pattern}'")
+                                break
+
+                            # Method 2: Check if plugin_id appears in a plugin class definition (with or without spaces)
+                            patterns_to_check = [
+                                f'plugin_id = "{whitelisted_id}"',
+                                f"plugin_id = '{whitelisted_id}'",
+                                f'plugin_id="{whitelisted_id}"',
+                                f"plugin_id='{whitelisted_id}'",
+                            ]
+                            if any(p in content for p in patterns_to_check):
+                                is_whitelisted = True
+                                logger.info(f"Plugin '{whitelisted_id}' is whitelisted by plugin_id, allowing dangerous pattern '{pattern}'")
+                                break
+
+                        if is_whitelisted:
+                            # Plugin is whitelisted, allow it
+                            continue
+
                         if self.strict_security_mode:
                             # In strict mode, block dangerous patterns
                             logger.error(
