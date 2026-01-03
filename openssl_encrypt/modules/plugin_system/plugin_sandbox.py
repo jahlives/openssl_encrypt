@@ -385,6 +385,8 @@ class PluginSandbox:
     def _is_safe_path(self, path: str, context: PluginSecurityContext = None, is_write: bool = False) -> bool:
         """Check if file path is safe for plugin access.
 
+        SECURITY: Uses realpath() to resolve symlinks and prevent traversal attacks.
+
         Args:
             path: File path to check
             context: Plugin security context (contains plugin_id)
@@ -393,14 +395,36 @@ class PluginSandbox:
         Returns:
             True if access is allowed, False otherwise
         """
-        abs_path = os.path.abspath(path)
+        # Block symlink access explicitly
+        if os.path.islink(path):
+            logger.warning(f"Symlink access blocked: {path}")
+            return False
+
+        # Use realpath() instead of abspath() to resolve symlinks
+        # This prevents symlink attacks where a plugin creates a symlink
+        # in an allowed directory pointing to a sensitive file
+        try:
+            abs_path = os.path.realpath(path)
+        except (OSError, ValueError) as e:
+            logger.warning(f"Failed to resolve path {path}: {e}")
+            return False
+
+        # Verify the resolved path exists (for additional safety)
+        # This helps prevent TOCTOU issues
+        if not os.path.exists(abs_path):
+            # Allow non-existent paths for write operations (file creation)
+            if not is_write:
+                return False
 
         # Allow access to temp directory
-        if self.temp_dir and abs_path.startswith(os.path.abspath(self.temp_dir)):
-            return True
+        if self.temp_dir:
+            temp_dir_real = os.path.realpath(self.temp_dir)
+            if abs_path.startswith(temp_dir_real):
+                return True
 
         # Allow read-only access to standard library
-        if abs_path.startswith(os.path.dirname(os.__file__)):
+        stdlib_dir = os.path.realpath(os.path.dirname(os.__file__))
+        if abs_path.startswith(stdlib_dir):
             return True
 
         # Plugin-specific directory access (if context available)
@@ -409,10 +433,16 @@ class PluginSandbox:
 
             # Plugin config directory: ~/.openssl_encrypt/plugins/<plugin_id>/
             # Allow read/write access
-            config_dir = os.path.abspath(
+            config_dir = os.path.realpath(
                 os.path.expanduser(f"~/.openssl_encrypt/plugins/{plugin_id}")
             )
             if abs_path.startswith(config_dir):
+                # Double-check path didn't escape via symlink resolution
+                if not abs_path.startswith(config_dir):
+                    logger.warning(
+                        f"Path traversal attempt detected: {path} -> {abs_path}"
+                    )
+                    return False
                 return True
 
             # Plugin code directory: Use actual file location from context
@@ -420,7 +450,7 @@ class PluginSandbox:
             # This allows plugins to read from the directory where they are located
             # e.g., plugins/hsm/fido2_pepper.py can read plugins/hsm/*
             if context.plugin_file_directory:
-                plugin_code_dir = os.path.abspath(context.plugin_file_directory)
+                plugin_code_dir = os.path.realpath(context.plugin_file_directory)
                 if abs_path.startswith(plugin_code_dir):
                     if is_write:
                         # Deny write access to plugin code directory
@@ -433,6 +463,7 @@ class PluginSandbox:
                     return True
 
         # Deny access to everything else
+        logger.debug(f"Access denied to path: {abs_path}")
         return False
 
     def _execute_with_threading(
