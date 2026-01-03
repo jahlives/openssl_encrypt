@@ -122,14 +122,20 @@ def create_app() -> FastAPI:
     limiter = Limiter(key_func=get_remote_address)
     app.state.limiter = limiter
 
-    # Add CORS middleware
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.get_cors_origins_list(),
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # Add CORS middleware - SECURITY: Only if origins are configured
+    cors_origins = settings.get_cors_origins_list()
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_credentials=settings.cors_allow_credentials,
+            allow_methods=settings.get_cors_methods_list(),
+            allow_headers=settings.get_cors_headers_list(),
+            max_age=settings.cors_max_age,
+        )
+        logger.info(f"CORS enabled for origins: {cors_origins}")
+    else:
+        logger.info("CORS disabled (no origins configured)")
 
     # Add exception handlers
     app.add_exception_handler(ServerException, server_exception_handler)
