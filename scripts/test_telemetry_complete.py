@@ -8,20 +8,54 @@ Tests the full telemetry workflow:
 3. Query public statistics
 4. Verify data was stored correctly
 
+Configuration:
+    The script uses the following priority for server URL:
+    1. --server command line argument
+    2. TELEMETRY_SERVER_URL environment variable
+    3. ~/.openssl_encrypt/plugins/telemetry/config.json
+
+    At least one of the above must be configured.
+
 Usage:
     python3 test_telemetry_complete.py [--server URL]
 
 Options:
-    --server URL    Telemetry server URL (default: https://keyserver.rm-rf.ch)
+    --server URL    Telemetry server URL (overrides env/config)
+
+Environment Variables:
+    TELEMETRY_SERVER_URL    Server URL for telemetry
 """
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime, timezone
-from typing import Dict, List
+from pathlib import Path
+from typing import Dict, List, Optional
 
 import requests
+
+
+def load_telemetry_config() -> Optional[str]:
+    """
+    Load telemetry config from standard location.
+
+    Returns:
+        Server URL from config, or None if config doesn't exist
+    """
+    config_path = Path.home() / ".openssl_encrypt" / "plugins" / "telemetry" / "config.json"
+
+    if not config_path.exists():
+        return None
+
+    try:
+        with open(config_path, "r") as f:
+            config = json.load(f)
+            return config.get("server_url")
+    except Exception as e:
+        print(f"Warning: Failed to load config from {config_path}: {e}")
+        return None
 
 
 def print_section(title: str):
@@ -267,15 +301,33 @@ def main():
     parser = argparse.ArgumentParser(description="Test telemetry server endpoints")
     parser.add_argument(
         "--server",
-        default="https://keyserver.rm-rf.ch",
-        help="Telemetry server URL (default: https://keyserver.rm-rf.ch)",
+        default=None,
+        help="Telemetry server URL (overrides env/config)",
     )
 
     args = parser.parse_args()
-    base_url = args.server.rstrip("/")
+
+    # Determine server URL with priority: CLI > ENV > Config
+    if args.server:
+        base_url = args.server.rstrip("/")
+        source = "command line"
+    elif os.getenv("TELEMETRY_SERVER_URL"):
+        base_url = os.getenv("TELEMETRY_SERVER_URL").rstrip("/")
+        source = "environment variable (TELEMETRY_SERVER_URL)"
+    elif (config_url := load_telemetry_config()):
+        base_url = config_url.rstrip("/")
+        source = "config file (~/.openssl_encrypt/plugins/telemetry/config.json)"
+    else:
+        print("✗ No telemetry server URL configured")
+        print("  Specify via:")
+        print("    --server URL")
+        print("    TELEMETRY_SERVER_URL environment variable")
+        print("    ~/.openssl_encrypt/plugins/telemetry/config.json")
+        sys.exit(1)
 
     print_section("TELEMETRY SERVER COMPLETE TEST")
     print(f"Server: {base_url}")
+    print(f"Source: {source}")
 
     all_passed = True
 
