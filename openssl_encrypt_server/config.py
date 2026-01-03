@@ -44,16 +44,19 @@ class TelemetryConfig(BaseSettings):
 
 
 class PepperProxyConfig(BaseSettings):
-    """Pepper proxy mode configuration"""
+    """Pepper proxy mode configuration
+
+    SECURITY: trusted_proxies must be explicitly configured with specific IPs.
+    Defaults only include localhost. Broad network ranges (< /24) are rejected.
+    """
     fingerprint_header: str = "X-Client-Cert-Fingerprint"
     dn_header: Optional[str] = "X-Client-Cert-DN"
     verify_header: Optional[str] = "X-Client-Cert-Verify"
     trusted_proxies: List[str] = [
-        "127.0.0.1",
-        "::1",
-        "10.0.0.0/8",
-        "172.16.0.0/12",
-        "192.168.0.0/16"
+        "127.0.0.1",  # IPv4 localhost only
+        "::1",        # IPv6 localhost only
+        # IMPORTANT: Add your reverse proxy IPs here explicitly
+        # Do NOT use broad network ranges - specify exact IPs or small subnets (/24 or smaller)
     ]
 
 

@@ -70,18 +70,41 @@ class ProxyAuth:
             for proxy in trusted_proxies:
                 try:
                     # Support both individual IPs and CIDR notation
-                    self.trusted_networks.append(ipaddress.ip_network(proxy, strict=False))
+                    network = ipaddress.ip_network(proxy, strict=False)
+
+                    # SECURITY: Reject networks larger than /24 to prevent broad trust
+                    # Exception: Allow localhost ranges (127.0.0.0/8, ::1/128)
+                    if network.prefixlen < 24:
+                        # Allow localhost ranges
+                        localhost_v4 = ipaddress.ip_network("127.0.0.0/8")
+                        localhost_v6 = ipaddress.ip_network("::1/128")
+
+                        if network != localhost_v4 and network != localhost_v6:
+                            logger.error(
+                                f"Rejected overly broad proxy network: {proxy} "
+                                f"(prefix length {network.prefixlen} < 24). "
+                                f"Please specify exact IPs or smaller subnets."
+                            )
+                            raise ValueError(
+                                f"Proxy network {proxy} is too broad (must be /24 or smaller). "
+                                f"Specify exact IPs or use smaller CIDR ranges for security."
+                            )
+
+                    self.trusted_networks.append(network)
+                    logger.info(f"Added trusted proxy network: {proxy}")
                 except ValueError as e:
                     logger.error(f"Invalid proxy address: {proxy} - {e}")
                     raise ValueError(f"Invalid trusted proxy address: {proxy}")
         else:
-            # Default: trust localhost and private networks
+            # No proxies configured - use minimal defaults (localhost only)
+            logger.warning(
+                "No trusted_proxies configured! Using localhost-only defaults. "
+                "If using a reverse proxy, you MUST configure trusted_proxies explicitly "
+                "in the configuration file to include your proxy's IP address."
+            )
             self.trusted_networks = [
-                ipaddress.ip_network("127.0.0.0/8"),
-                ipaddress.ip_network("::1/128"),
-                ipaddress.ip_network("10.0.0.0/8"),
-                ipaddress.ip_network("172.16.0.0/12"),
-                ipaddress.ip_network("192.168.0.0/16"),
+                ipaddress.ip_network("127.0.0.1/32"),  # IPv4 localhost only
+                ipaddress.ip_network("::1/128"),        # IPv6 localhost only
             ]
 
         logger.info(f"ProxyAuth initialized with {len(self.trusted_networks)} trusted networks")
