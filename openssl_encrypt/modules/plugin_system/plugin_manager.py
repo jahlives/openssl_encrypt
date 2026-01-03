@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Type
 
+from .plugin_ast_analyzer import analyze_plugin_code
 from .plugin_base import (
     BasePlugin,
     PluginCapability,
@@ -678,42 +679,33 @@ class PluginManager:
                 logger.warning(f"Plugin file too large: {file_path} ({file_size} bytes)")
                 return False
 
-            # Basic content validation
+            # AST-based content validation
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
-                # Check for dangerous imports/operations
-                dangerous_patterns = [
-                    "import os.system",
-                    "exec(",
-                    "eval(",
-                    "__import__",
-                    "open(",  # Should use context-provided safe paths
-                    "subprocess",
-                    "ctypes",
-                    "compile(",
-                ]
+                # Use AST-based analysis to detect dangerous patterns
+                is_safe, violations = analyze_plugin_code(
+                    content,
+                    file_path,
+                    strict_mode=self.strict_security_mode
+                )
 
-                # Remove 'open(' from dangerous patterns - all plugins need file access
-                # The sandbox will enforce that plugins can only access:
-                #  - Read/write: ~/.openssl_encrypt/plugins/<plugin_id>/
-                #  - Read-only: openssl_encrypt/plugins/<plugin_id>/
-                safe_patterns = ["open("]  # Patterns that are allowed by sandbox at runtime
-                truly_dangerous_patterns = [p for p in dangerous_patterns if p not in safe_patterns]
+                # Log and handle any violations found
+                if violations:
+                    for violation in violations:
+                        violation_msg = (
+                            f"Line {violation.line}:{violation.col} - "
+                            f"{violation.violation_type}: {violation.description}"
+                        )
 
-                # Validate ALL plugins equally for truly dangerous patterns
-                found_dangerous = False
-                for pattern in truly_dangerous_patterns:
-                    if pattern in content:
-                        found_dangerous = True
-
-                        if self.strict_security_mode:
-                            # In strict mode, block plugins with dangerous patterns
+                        if self.strict_security_mode and violation.severity == "critical":
+                            # In strict mode, block plugins with critical violations
                             logger.error(
-                                f"SECURITY BLOCKED: Plugin contains dangerous pattern '{pattern}': {file_path}"
+                                f"SECURITY BLOCKED: Plugin contains security violation: {file_path}"
                             )
+                            logger.error(f"  {violation_msg}")
                             logger.error(
-                                "Plugin rejected in strict security mode. Dangerous patterns not allowed."
+                                "Plugin rejected in strict security mode. Security violations not allowed."
                             )
 
                             # Security audit log for blocked plugin
@@ -723,39 +715,44 @@ class PluginManager:
                                     "critical",
                                     {
                                         "file_path": file_path,
-                                        "dangerous_pattern": pattern,
+                                        "violation_type": violation.violation_type,
+                                        "line": violation.line,
+                                        "description": violation.description,
                                         "reason": "strict_security_mode",
                                     },
                                 )
-
-                            return False
                         else:
-                            # In permissive mode, only warn
+                            # In permissive mode or for non-critical violations, only warn
                             logger.warning(
-                                f"Plugin file contains potentially dangerous pattern '{pattern}': {file_path}"
+                                f"Plugin file contains security violation: {file_path}"
                             )
+                            logger.warning(f"  {violation_msg}")
                             logger.warning(
-                                "Dangerous pattern allowed (strict_security_mode=False). "
+                                "Security violation allowed (strict_security_mode=False). "
                                 "Use with caution!"
                             )
 
-                            # Security audit log for dangerous pattern warning
+                            # Security audit log for violation warning
                             if security_logger:
                                 security_logger.log_event(
-                                    "dangerous_pattern_detected",
+                                    "security_violation_detected",
                                     "warning",
                                     {
                                         "file_path": file_path,
-                                        "dangerous_pattern": pattern,
+                                        "violation_type": violation.violation_type,
+                                        "line": violation.line,
+                                        "description": violation.description,
                                         "action": "allowed_permissive_mode",
                                     },
                                 )
 
-                # Audit log for dangerous patterns (even if allowed)
-                if found_dangerous:
-                    self._audit_log(
-                        f"Plugin with dangerous patterns {'blocked' if self.strict_security_mode else 'allowed'}: {file_path}"
-                    )
+                # In strict mode, block if not safe
+                if self.strict_security_mode and not is_safe:
+                    self._audit_log(f"Plugin with security violations blocked: {file_path}")
+                    return False
+                elif violations:
+                    # In permissive mode, warn but allow
+                    self._audit_log(f"Plugin with security violations allowed: {file_path}")
 
             return True
 
