@@ -118,6 +118,31 @@ class KeyserverPlugin(BasePlugin):
         """
         return PluginType.KEYSERVER
 
+    def get_description(self) -> str:
+        """
+        Return human-readable description of plugin functionality.
+
+        Returns:
+            Plugin description string
+        """
+        return (
+            "Keyserver plugin for fetching and uploading public keys. "
+            "Supports caching, API token authentication, and key verification."
+        )
+
+    def execute(self, context: PluginSecurityContext) -> PluginResult:
+        """
+        Execute keyserver plugin based on context.
+
+        For keyserver plugins, the main operations (fetch, upload, revoke)
+        are called directly rather than through execute(). This method exists
+        to satisfy the BasePlugin interface.
+
+        Returns:
+            PluginResult indicating plugin is active
+        """
+        return PluginResult.success_result("Keyserver plugin active")
+
     def fetch_key(self, identifier: str) -> Optional[PublicKeyBundle]:
         """
         Fetch public key bundle by identifier.

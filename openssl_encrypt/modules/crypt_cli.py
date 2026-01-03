@@ -2182,7 +2182,6 @@ def handle_keyserver_command(args):
     try:
         from ..plugins.keyserver import KeyserverConfig, KeyserverPlugin
         from .identity import IdentityStore
-        from .identity_cli import resolve_identity_store_path
     except ImportError as e:
         print(f"Error: Keyserver plugin not available: {e}")
         return
