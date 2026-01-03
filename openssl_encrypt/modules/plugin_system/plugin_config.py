@@ -183,11 +183,24 @@ def ensure_plugin_data_dir(plugin_id: str, subdir: str = "") -> Optional[Path]:
             if hasattr(os, "chmod"):
                 current_perms = stat.S_IMODE(os.stat(data_dir).st_mode)
                 if current_perms != 0o700:
-                    logger.warning(
-                        f"Failed to set secure permissions (0o700) on {data_dir}, "
-                        f"current permissions: {oct(current_perms)}"
-                    )
-                    return None
+                    # Try to fix permissions if they're wrong
+                    try:
+                        os.chmod(data_dir, 0o700)
+                        logger.info(f"Fixed permissions on {data_dir} from {oct(current_perms)} to 0o700")
+
+                        # Verify fix was successful
+                        fixed_perms = stat.S_IMODE(os.stat(data_dir).st_mode)
+                        if fixed_perms != 0o700:
+                            logger.warning(
+                                f"Failed to fix permissions on {data_dir}, "
+                                f"current permissions: {oct(fixed_perms)}"
+                            )
+                            return None
+                    except (OSError, PermissionError) as e:
+                        logger.warning(
+                            f"Could not fix permissions on {data_dir}: {e}"
+                        )
+                        return None
 
                 # Also ensure parent is secured if we created a subdirectory
                 if subdir and base_dir.exists():
