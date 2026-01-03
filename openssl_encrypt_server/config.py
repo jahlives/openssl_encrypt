@@ -12,7 +12,7 @@ Environment variables (see .env.example):
 
 import os
 from typing import List, Literal, Optional
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, ConfigDict
 from pydantic_settings import BaseSettings
 
 
@@ -296,9 +296,11 @@ class Settings(BaseSettings):
             ),
         )
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    model_config = ConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        populate_by_name=True,  # Allow both field names and aliases
+    )
 
 
 def validate_config(settings: Settings):
