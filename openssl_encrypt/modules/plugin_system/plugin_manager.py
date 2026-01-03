@@ -30,7 +30,7 @@ from .plugin_base import (
     PluginSecurityContext,
     PluginType,
 )
-from .plugin_config import PluginConfigManager
+from .plugin_config import PluginConfigManager, ensure_plugin_data_dir
 from .plugin_sandbox import PluginSandbox
 
 # Import security logger
@@ -52,6 +52,7 @@ class PluginRegistration:
     def __init__(self, plugin: BasePlugin, file_path: str, enabled: bool = True):
         self.plugin = plugin
         self.file_path = file_path
+        self.file_directory = os.path.dirname(os.path.abspath(file_path))  # Directory where plugin code is located
         self.enabled = enabled
         self.load_time = time.time()
         self.last_used = None
@@ -109,23 +110,35 @@ class PluginManager:
 
     def discover_plugins(self) -> List[str]:
         """
-        Discover plugin files in registered directories.
+        Discover plugin files and packages in registered directories.
 
         Returns:
-            List of plugin file paths found
+            List of plugin file paths found (includes __init__.py for packages)
         """
         discovered = []
 
         for directory in self.plugin_directories:
             try:
-                for file_path in Path(directory).glob("*.py"):
+                dir_path = Path(directory)
+
+                # Discover .py files (existing logic)
+                for file_path in dir_path.glob("*.py"):
                     if not file_path.name.startswith("_"):  # Skip private files
                         discovered.append(str(file_path))
                         logger.debug(f"Discovered plugin file: {file_path}")
+
+                # Discover packages (directories with __init__.py)
+                for subdir in dir_path.iterdir():
+                    if subdir.is_dir() and not subdir.name.startswith("_"):
+                        init_file = subdir / "__init__.py"
+                        if init_file.exists():
+                            discovered.append(str(init_file))
+                            logger.debug(f"Discovered plugin package: {subdir}")
+
             except Exception as e:
                 logger.error(f"Error scanning plugin directory {directory}: {e}")
 
-        logger.info(f"Discovered {len(discovered)} plugin files")
+        logger.info(f"Discovered {len(discovered)} plugin files/packages")
         return discovered
 
     def load_plugin(self, file_path: str) -> PluginResult:
@@ -145,21 +158,52 @@ class PluginManager:
                     f"Plugin file failed security validation: {file_path}"
                 )
 
-            # Load module
+            # Load module with proper package name to support relative imports
             # Add project root to sys.path to ensure plugins can import correctly
+            # __file__ is at: .../openssl_encrypt/openssl_encrypt/modules/plugin_system/plugin_manager.py
+            # We need: .../openssl_encrypt (repo root)
+            # So go up 4 levels: plugin_system -> modules -> openssl_encrypt (package) -> openssl_encrypt (repo)
             project_root = os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             )
             original_path = sys.path.copy()
             if project_root not in sys.path:
                 sys.path.insert(0, project_root)
 
             try:
-                spec = importlib.util.spec_from_file_location("plugin_module", file_path)
+                # Generate proper module name from file path
+                # e.g., /path/to/openssl_encrypt/plugins/hsm/fido2_pepper.py
+                # -> openssl_encrypt.plugins.hsm.fido2_pepper
+                abs_path = os.path.abspath(file_path)
+                module_name = self._file_path_to_module_name(abs_path, project_root)
+
+                spec = importlib.util.spec_from_file_location(module_name, file_path)
                 if spec is None or spec.loader is None:
                     return PluginResult.error_result(f"Could not load plugin spec: {file_path}")
 
                 module = importlib.util.module_from_spec(spec)
+
+                # Set up ALL parent packages recursively (for relative imports)
+                # e.g., for 'openssl_encrypt.plugins.hsm.fido2_pepper', we need:
+                #   - openssl_encrypt
+                #   - openssl_encrypt.plugins
+                #   - openssl_encrypt.plugins.hsm
+                if '.' in module_name:
+                    parts = module_name.split('.')
+                    for i in range(1, len(parts)):
+                        parent_name = '.'.join(parts[:i])
+                        # Skip empty parent names or names that start with dots
+                        # (can occur with paths outside project root)
+                        if not parent_name or not parent_name.strip('.') or parent_name.startswith('.'):
+                            continue
+                        if parent_name not in sys.modules:
+                            try:
+                                __import__(parent_name)
+                            except ImportError:
+                                # Parent package might not exist as importable module, that's OK
+                                logger.debug(f"Could not import parent package: {parent_name}")
+
+                sys.modules[module_name] = module
                 spec.loader.exec_module(module)
             finally:
                 # Restore original sys.path
@@ -178,11 +222,25 @@ class PluginManager:
             if not validation_result.success:
                 return validation_result
 
+            # Security check: Verify plugin config directory permissions
+            # If permissions cannot be set to 0o700, skip plugin loading
+            if hasattr(os, "chmod"):
+                config_dir_path = ensure_plugin_data_dir(plugin.plugin_id, "")
+                if config_dir_path is None:
+                    error_msg = (
+                        f"Plugin {plugin.plugin_id} not loaded: "
+                        f"Plugin config directory has insecure permissions and cannot be secured"
+                    )
+                    logger.warning(error_msg)
+                    return PluginResult.error_result(error_msg)
+
             # Register plugin
             with self.lock:
                 if plugin.plugin_id in self.plugins:
                     logger.warning(f"Plugin {plugin.plugin_id} already registered, replacing")
 
+                # Pass file_path as-is to PluginRegistration
+                # For packages (__init__.py), PluginRegistration will correctly extract the package directory
                 registration = PluginRegistration(plugin, file_path)
                 self.plugins[plugin.plugin_id] = registration
 
@@ -217,8 +275,10 @@ class PluginManager:
             )
 
         except Exception as e:
+            import traceback
             error_msg = f"Error loading plugin from {file_path}: {str(e)}"
             logger.error(error_msg)
+            logger.debug(f"Traceback: {traceback.format_exc()}")
 
             # Security audit log for failed plugin load
             if security_logger:
@@ -292,6 +352,12 @@ class PluginManager:
                 return PluginResult.error_result(f"Plugin is disabled: {plugin_id}")
 
         plugin = registration.plugin
+
+        # Set plugin file directory in context if not already set
+        # This allows the sandbox to determine which code directory the plugin can read from
+        if not context.plugin_file_directory:
+            context.plugin_file_directory = registration.file_directory
+            logger.debug(f"Set plugin_file_directory for {plugin_id}: {registration.file_directory}")
 
         # Validate security context
         if not plugin.validate_security_context(context):
@@ -626,18 +692,26 @@ class PluginManager:
                     "compile(",
                 ]
 
+                # Remove 'open(' from dangerous patterns - all plugins need file access
+                # The sandbox will enforce that plugins can only access:
+                #  - Read/write: ~/.openssl_encrypt/plugins/<plugin_id>/
+                #  - Read-only: openssl_encrypt/plugins/<plugin_id>/
+                safe_patterns = ["open("]  # Patterns that are allowed by sandbox at runtime
+                truly_dangerous_patterns = [p for p in dangerous_patterns if p not in safe_patterns]
+
+                # Validate ALL plugins equally for truly dangerous patterns
                 found_dangerous = False
-                for pattern in dangerous_patterns:
+                for pattern in truly_dangerous_patterns:
                     if pattern in content:
                         found_dangerous = True
+
                         if self.strict_security_mode:
-                            # In strict mode, block dangerous patterns
+                            # In strict mode, block plugins with dangerous patterns
                             logger.error(
                                 f"SECURITY BLOCKED: Plugin contains dangerous pattern '{pattern}': {file_path}"
                             )
                             logger.error(
-                                "Plugin rejected in strict security mode. "
-                                "Use allow_unsafe_plugin() to whitelist if trusted."
+                                "Plugin rejected in strict security mode. Dangerous patterns not allowed."
                             )
 
                             # Security audit log for blocked plugin
@@ -686,6 +760,28 @@ class PluginManager:
         except Exception as e:
             logger.error(f"Error validating plugin file {file_path}: {e}")
             return False
+
+    def _file_path_to_module_name(self, file_path: str, project_root: str) -> str:
+        """Convert file path to proper Python module name.
+
+        Args:
+            file_path: Absolute path to plugin file
+            project_root: Project root directory
+
+        Returns:
+            Module name (e.g., 'openssl_encrypt.plugins.hsm.fido2_pepper')
+        """
+        # Remove project root from path
+        rel_path = os.path.relpath(file_path, project_root)
+
+        # Remove .py extension
+        if rel_path.endswith('.py'):
+            rel_path = rel_path[:-3]
+
+        # Convert path separators to dots
+        module_name = rel_path.replace(os.sep, '.')
+
+        return module_name
 
     def _find_plugin_class(self, module) -> Optional[Type[BasePlugin]]:
         """Find BasePlugin subclass in module."""

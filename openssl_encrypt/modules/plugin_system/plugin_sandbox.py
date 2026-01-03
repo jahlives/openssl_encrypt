@@ -132,6 +132,7 @@ class PluginSandbox:
     def __init__(self):
         self.temp_dir = None
         self.monitor = ResourceMonitor()
+        self.current_context = None  # Store current plugin context for file access checks
 
     def execute_plugin(
         self,
@@ -212,6 +213,9 @@ class PluginSandbox:
             max_memory_mb: Maximum memory in MB
             use_process_isolation: If False, skip strict memory limits (threading needs more memory)
         """
+        # Store context for file access validation
+        self.current_context = context
+
         original_cwd = os.getcwd()
         temp_dir = None
         memory_limit_set = False
@@ -296,12 +300,18 @@ class PluginSandbox:
         # Store original function
         original_open = builtins.open
 
+        # Capture context for use in restricted_open
+        context = self.current_context
+
         def restricted_open(file, mode="r", **kwargs):
             # Only allow access to temp directory and explicitly safe paths
             abs_path = os.path.abspath(file)
 
-            if not self._is_safe_path(abs_path):
-                raise SandboxViolationError(f"File access denied: {file}")
+            # Check if this is a write operation
+            is_write = any(c in mode for c in ['w', 'a', '+', 'x'])
+
+            if not self._is_safe_path(abs_path, context, is_write):
+                raise SandboxViolationError(f"File access denied: {file} (mode: {mode})")
 
             return original_open(file, mode, **kwargs)
 
@@ -372,8 +382,17 @@ class PluginSandbox:
 
             subprocess.Popen = saved_state["subprocess"]
 
-    def _is_safe_path(self, path: str) -> bool:
-        """Check if file path is safe for plugin access."""
+    def _is_safe_path(self, path: str, context: PluginSecurityContext = None, is_write: bool = False) -> bool:
+        """Check if file path is safe for plugin access.
+
+        Args:
+            path: File path to check
+            context: Plugin security context (contains plugin_id)
+            is_write: True if this is a write operation
+
+        Returns:
+            True if access is allowed, False otherwise
+        """
         abs_path = os.path.abspath(path)
 
         # Allow access to temp directory
@@ -383,6 +402,35 @@ class PluginSandbox:
         # Allow read-only access to standard library
         if abs_path.startswith(os.path.dirname(os.__file__)):
             return True
+
+        # Plugin-specific directory access (if context available)
+        if context and context.plugin_id:
+            plugin_id = context.plugin_id
+
+            # Plugin config directory: ~/.openssl_encrypt/plugins/<plugin_id>/
+            # Allow read/write access
+            config_dir = os.path.abspath(
+                os.path.expanduser(f"~/.openssl_encrypt/plugins/{plugin_id}")
+            )
+            if abs_path.startswith(config_dir):
+                return True
+
+            # Plugin code directory: Use actual file location from context
+            # Allow read-only access (deny writes)
+            # This allows plugins to read from the directory where they are located
+            # e.g., plugins/hsm/fido2_pepper.py can read plugins/hsm/*
+            if context.plugin_file_directory:
+                plugin_code_dir = os.path.abspath(context.plugin_file_directory)
+                if abs_path.startswith(plugin_code_dir):
+                    if is_write:
+                        # Deny write access to plugin code directory
+                        logger.warning(
+                            f"Plugin '{plugin_id}' attempted to write to code directory: {abs_path}"
+                        )
+                        return False
+                    # Allow read access
+                    logger.debug(f"Plugin '{plugin_id}' reading from code directory: {abs_path}")
+                    return True
 
         # Deny access to everything else
         return False

@@ -17,6 +17,7 @@ Security Features:
 import json
 import logging
 import os
+import stat
 import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Union
@@ -139,6 +140,59 @@ class PluginConfigSchema:
         return self.fields.copy()
 
 
+def ensure_plugin_data_dir(plugin_id: str, subdir: str = "") -> Optional[Path]:
+    """
+    Create plugin data directory with secure permissions (0o700).
+
+    This function ensures that plugin data directories are created with
+    user-only access permissions for security. If permissions cannot be
+    set correctly, the function returns None to signal failure.
+
+    All plugin data is stored under: ~/.openssl_encrypt/plugins/<plugin_id>/
+
+    Args:
+        plugin_id: Plugin identifier (e.g., 'fido2', 'integrity')
+        subdir: Optional subdirectory (e.g., 'certs', 'cache')
+
+    Returns:
+        Path to the created directory if successful, None if permissions
+        cannot be set correctly
+    """
+    base_dir = Path.home() / ".openssl_encrypt" / "plugins" / plugin_id
+    if subdir:
+        data_dir = base_dir / subdir
+    else:
+        data_dir = base_dir
+
+    try:
+        # Create directory
+        data_dir.mkdir(parents=True, exist_ok=True)
+
+        # Enforce 0o700 on ALL parent directories under .openssl_encrypt
+        if hasattr(os, "chmod"):
+            # Set permissions on the leaf directory
+            os.chmod(data_dir, 0o700)
+
+            # Also ensure parent is secured if we created a subdirectory
+            if subdir:
+                os.chmod(base_dir, 0o700)
+
+            # Verify permissions were set correctly
+            current_perms = stat.S_IMODE(os.stat(data_dir).st_mode)
+            if current_perms != 0o700:
+                logger.warning(
+                    f"Failed to set secure permissions (0o700) on {data_dir}, "
+                    f"current permissions: {oct(current_perms)}"
+                )
+                return None
+
+        return data_dir
+
+    except (OSError, PermissionError) as e:
+        logger.error(f"Failed to create or secure plugin data directory {data_dir}: {e}")
+        return None
+
+
 class PluginConfigManager:
     """
     Manages configuration for plugins with security and validation.
@@ -161,6 +215,20 @@ class PluginConfigManager:
 
         # Create config directory if it doesn't exist
         self.config_dir.mkdir(parents=True, exist_ok=True)
+
+        # Enforce 0o700 permissions on config directory
+        if hasattr(os, "chmod"):
+            try:
+                os.chmod(self.config_dir, 0o700)
+                # Verify permissions were set correctly
+                current_perms = stat.S_IMODE(os.stat(self.config_dir).st_mode)
+                if current_perms != 0o700:
+                    logger.warning(
+                        f"Failed to set secure permissions (0o700) on {self.config_dir}, "
+                        f"current permissions: {oct(current_perms)}"
+                    )
+            except (OSError, PermissionError) as e:
+                logger.warning(f"Failed to set secure permissions on {self.config_dir}: {e}")
 
         # Load existing configurations
         self._load_all_configs()
@@ -320,14 +388,29 @@ class PluginConfigManager:
         if not self.config_dir.exists():
             return
 
-        for config_file in self.config_dir.glob("*.json"):
-            plugin_id = config_file.stem
+        # Load configs from new directory structure: plugins/<plugin_id>/config.json
+        try:
+            entries = list(self.config_dir.iterdir())
+        except (OSError, PermissionError) as e:
+            logger.error(f"Error reading plugin config directory {self.config_dir}: {e}")
+            return
+
+        for plugin_dir in entries:
             try:
-                config = self._load_plugin_config(plugin_id)
-                if config:
-                    self.configs[plugin_id] = config
+                if not plugin_dir.is_dir() or plugin_dir.name.startswith('.'):
+                    continue
+
+                config_file = plugin_dir / "config.json"
+                if config_file.exists():
+                    plugin_id = plugin_dir.name
+                    try:
+                        config = self._load_plugin_config(plugin_id)
+                        if config:
+                            self.configs[plugin_id] = config
+                    except Exception as e:
+                        logger.error(f"Error loading config for plugin {plugin_id}: {e}")
             except Exception as e:
-                logger.error(f"Error loading config for plugin {plugin_id}: {e}")
+                logger.error(f"Error processing plugin directory {plugin_dir}: {e}")
 
     def _load_plugin_config(self, plugin_id: str) -> Optional[Dict[str, Any]]:
         """Load plugin configuration from disk."""
@@ -369,9 +452,20 @@ class PluginConfigManager:
 
     def _get_config_file_path(self, plugin_id: str) -> Path:
         """Get path to plugin configuration file."""
-        # Sanitize plugin ID for filename
+        # Sanitize plugin ID for directory name
         safe_plugin_id = "".join(c for c in plugin_id if c.isalnum() or c in "_-.")
-        return self.config_dir / f"{safe_plugin_id}.json"
+        if not safe_plugin_id:
+            raise ValueError(f"Invalid plugin_id: '{plugin_id}' - contains no valid characters")
+        # Create plugin directory if needed
+        plugin_dir = self.config_dir / safe_plugin_id
+        plugin_dir.mkdir(parents=True, exist_ok=True)
+        # Enforce 0o700 on plugin directory
+        if hasattr(os, "chmod"):
+            try:
+                os.chmod(plugin_dir, 0o700)
+            except (OSError, PermissionError) as e:
+                logger.warning(f"Failed to set permissions on {plugin_dir}: {e}")
+        return plugin_dir / "config.json"
 
     def _get_default_config(self, plugin_id: str) -> Dict[str, Any]:
         """Get default configuration for plugin."""

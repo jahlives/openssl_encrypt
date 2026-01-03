@@ -1546,6 +1546,88 @@ def setup_list_algorithms_parser(subparser):
     )
 
 
+def setup_hsm_parser(subparser):
+    """Set up arguments for the hsm (Hardware Security Module) command."""
+    hsm_subparsers = subparser.add_subparsers(
+        dest="hsm_action",
+        help="HSM management action",
+        required=True,
+    )
+
+    # FIDO2 registration subcommand
+    fido2_register_parser = hsm_subparsers.add_parser(
+        "fido2-register",
+        help="Register new FIDO2 credential for hardware-bound encryption"
+    )
+    fido2_register_parser.add_argument(
+        "--description",
+        "-d",
+        help="Human-readable description for the security key (e.g., 'YubiKey 5 NFC')",
+    )
+    fido2_register_parser.add_argument(
+        "--backup",
+        action="store_true",
+        help="Register as backup credential (primary must already exist)",
+    )
+    fido2_register_parser.add_argument(
+        "--rp-id",
+        help="Custom Relying Party ID (default: openssl-encrypt.local)",
+    )
+
+    # FIDO2 status subcommand
+    fido2_status_parser = hsm_subparsers.add_parser(
+        "fido2-status",
+        help="Show FIDO2 registration status and list registered credentials"
+    )
+    fido2_status_parser.add_argument(
+        "--rp-id",
+        help="Custom Relying Party ID (default: openssl-encrypt.local)",
+    )
+
+    # FIDO2 test subcommand
+    fido2_test_parser = hsm_subparsers.add_parser(
+        "fido2-test",
+        help="Test FIDO2 pepper derivation with a random salt"
+    )
+    fido2_test_parser.add_argument(
+        "--rp-id",
+        help="Custom Relying Party ID (default: openssl-encrypt.local)",
+    )
+
+    # FIDO2 list devices subcommand
+    hsm_subparsers.add_parser(
+        "fido2-list",
+        help="List connected FIDO2 devices and their capabilities"
+    )
+
+    # FIDO2 unregister subcommand
+    fido2_unregister_parser = hsm_subparsers.add_parser(
+        "fido2-unregister",
+        help="Remove FIDO2 credential registration"
+    )
+    fido2_unregister_parser.add_argument(
+        "--credential-id",
+        "-c",
+        help="Specific credential ID to remove (e.g., 'primary', 'backup-1')",
+    )
+    fido2_unregister_parser.add_argument(
+        "--all",
+        dest="remove_all",
+        action="store_true",
+        help="Remove all registered credentials",
+    )
+    fido2_unregister_parser.add_argument(
+        "--rp-id",
+        help="Custom Relying Party ID (default: openssl-encrypt.local)",
+    )
+    fido2_unregister_parser.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Skip confirmation prompt",
+    )
+
+
 def setup_keyserver_parser(subparser):
     """Set up arguments for the keyserver command."""
     keyserver_subparsers = subparser.add_subparsers(
@@ -1824,6 +1906,14 @@ def create_subparser_main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_keyserver_parser(keyserver_parser)
+
+    # HSM (Hardware Security Module) management command
+    hsm_parser = subparsers.add_parser(
+        "hsm",
+        help="Manage HSM (Hardware Security Module) plugins and FIDO2 credentials",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_hsm_parser(hsm_parser)
 
     # Note: Steganography is now integrated into encrypt/decrypt commands
     # rather than separate commands

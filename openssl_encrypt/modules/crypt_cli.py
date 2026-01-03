@@ -1944,6 +1944,231 @@ def _get_security_icon(security_level: str) -> str:
     return icons.get(security_level, "🔒")
 
 
+def handle_hsm_command(args):
+    """
+    Handle HSM (Hardware Security Module) management commands.
+
+    Args:
+        args: Parsed command-line arguments
+    """
+    import secrets
+    import getpass
+
+    # Import FIDO2 plugin
+    try:
+        from ..plugins.hsm.fido2_pepper import FIDO2HSMPlugin, FIDO2_AVAILABLE
+    except ImportError:
+        print("❌ Error: FIDO2 library not available")
+        print("Install with: pip install fido2>=1.1.0")
+        sys.exit(1)
+
+    if not FIDO2_AVAILABLE:
+        print("❌ Error: FIDO2 library not available")
+        print("Install with: pip install fido2>=1.1.0")
+        sys.exit(1)
+
+    # Get HSM action
+    action = args.hsm_action
+
+    # Get optional rp_id
+    rp_id = getattr(args, "rp_id", None)
+
+    # Initialize plugin
+    plugin = FIDO2HSMPlugin(rp_id=rp_id) if rp_id else FIDO2HSMPlugin()
+
+    if action == "fido2-register":
+        # Register new FIDO2 credential
+        print("\n🔐 FIDO2 Credential Registration")
+        print("=" * 50)
+
+        description = getattr(args, "description", None)
+        backup = getattr(args, "backup", False)
+
+        if backup:
+            print("📦 Registering backup credential...")
+        else:
+            print("🔑 Registering primary credential...")
+
+        if description:
+            print(f"Description: {description}")
+
+        print("\nPlease insert your FIDO2 security key and follow the prompts.")
+        print("You will need to:")
+        print("  1. Touch your security key")
+        print("  2. Enter your security key PIN (if configured)\n")
+
+        # Initialize plugin
+        init_result = plugin.initialize()
+        if not init_result.success:
+            print(f"❌ Error: {init_result.message}")
+            sys.exit(1)
+
+        # Register credential
+        result = plugin.register_credential(description=description, is_backup=backup)
+
+        if result.success:
+            print(f"\n✅ {result.message}")
+            print(f"\nCredential ID: {result.data.get('credential_id')}")
+            print(f"Configuration saved to: {plugin.credential_file}")
+            print("\nYou can now use this credential with:")
+            print("  openssl_encrypt encrypt --hsm fido2 <file>")
+        else:
+            print(f"\n❌ Registration failed: {result.message}")
+            sys.exit(1)
+
+    elif action == "fido2-status":
+        # Show FIDO2 registration status
+        print("\n🔐 FIDO2 Registration Status")
+        print("=" * 50)
+
+        if not plugin.is_registered():
+            print("❌ No FIDO2 credentials registered")
+            print("\nTo register a credential, run:")
+            print("  openssl_encrypt hsm fido2-register --description 'My Security Key'")
+            sys.exit(0)
+
+        # Load credentials
+        credentials = plugin._load_credentials()
+
+        print(f"✅ {len(credentials)} credential(s) registered")
+        print(f"Configuration file: {plugin.credential_file}")
+        print(f"Relying Party ID: {plugin.rp_id}\n")
+
+        # Display each credential
+        for i, cred in enumerate(credentials, 1):
+            print(f"Credential #{i}:")
+            print(f"  ID: {cred['id']}")
+            print(f"  Description: {cred.get('description', 'N/A')}")
+            print(f"  Created: {cred.get('created_at', 'N/A')}")
+            print(f"  AAGUID: {cred.get('authenticator_aaguid', 'N/A')}")
+            print(f"  Backup: {'Yes' if cred.get('is_backup', False) else 'No'}")
+            print()
+
+    elif action == "fido2-test":
+        # Test FIDO2 pepper derivation
+        print("\n🔐 FIDO2 Pepper Derivation Test")
+        print("=" * 50)
+
+        # Initialize plugin
+        init_result = plugin.initialize()
+        if not init_result.success:
+            print(f"❌ Error: {init_result.message}")
+            sys.exit(1)
+
+        if not plugin.is_registered():
+            print("❌ No FIDO2 credentials registered")
+            print("\nRegister a credential first:")
+            print("  openssl_encrypt hsm fido2-register")
+            sys.exit(1)
+
+        # Generate random test salt
+        test_salt = secrets.token_bytes(16)
+        print(f"Test salt: {test_salt.hex()}")
+        print("\nPlease insert your FIDO2 security key and follow the prompts.")
+        print("You will need to:")
+        print("  1. Touch your security key")
+        print("  2. Enter your security key PIN (if configured)\n")
+
+        # Create dummy security context
+        from ..modules.plugin_system.plugin_base import PluginSecurityContext
+        context = PluginSecurityContext(
+            plugin_id=plugin.plugin_id,
+            capabilities=plugin.get_required_capabilities()
+        )
+
+        # Test pepper derivation
+        result = plugin.get_hsm_pepper(test_salt, context)
+
+        if result.success:
+            pepper = result.data.get("hsm_pepper")
+            print(f"\n✅ Test successful!")
+            print(f"Pepper length: {len(pepper)} bytes")
+            print(f"Pepper (hex): {pepper.hex()}")
+            print("\nYour FIDO2 credential is working correctly.")
+        else:
+            print(f"\n❌ Test failed: {result.message}")
+            sys.exit(1)
+
+    elif action == "fido2-list":
+        # List connected FIDO2 devices
+        print("\n🔐 Connected FIDO2 Devices")
+        print("=" * 50)
+
+        devices = plugin.list_devices()
+
+        if not devices:
+            print("❌ No FIDO2 devices found")
+            print("\nPlease connect a FIDO2 security key (YubiKey, Nitrokey, etc.)")
+            sys.exit(0)
+
+        print(f"Found {len(devices)} device(s):\n")
+
+        for i, device in enumerate(devices, 1):
+            if "error" in device:
+                print(f"Device #{i}: {device.get('product_name', 'Unknown')}")
+                print(f"  Error: {device['error']}\n")
+                continue
+
+            print(f"Device #{i}: {device.get('product_name', 'Unknown')}")
+            print(f"  Manufacturer: {device.get('manufacturer', 'Unknown')}")
+            print(f"  AAGUID: {device.get('aaguid', 'Unknown')}")
+            print(f"  Versions: {', '.join(device.get('versions', []))}")
+            print(f"  Extensions: {', '.join(device.get('extensions', []))}")
+
+            # Highlight hmac-secret support
+            hmac_support = device.get("hmac_secret_support", False)
+            if hmac_support:
+                print(f"  hmac-secret: ✅ Supported")
+            else:
+                print(f"  hmac-secret: ❌ Not supported")
+
+            print()
+
+    elif action == "fido2-unregister":
+        # Remove FIDO2 credential(s)
+        print("\n🔐 FIDO2 Credential Removal")
+        print("=" * 50)
+
+        if not plugin.is_registered():
+            print("❌ No FIDO2 credentials registered")
+            sys.exit(0)
+
+        credential_id = getattr(args, "credential_id", None)
+        remove_all = getattr(args, "remove_all", False)
+        skip_confirmation = getattr(args, "yes", False)
+
+        # Confirmation prompt (unless --yes flag is used)
+        if not skip_confirmation:
+            if remove_all:
+                prompt = "Are you sure you want to remove ALL FIDO2 credentials? This cannot be undone. (y/N): "
+            else:
+                target = credential_id or "primary"
+                prompt = f"Are you sure you want to remove credential '{target}'? This cannot be undone. (y/N): "
+
+            confirmation = input(prompt).strip().lower()
+            if confirmation != 'y':
+                print("Operation cancelled.")
+                sys.exit(0)
+
+        # Unregister
+        result = plugin.unregister(credential_id=credential_id, remove_all=remove_all)
+
+        if result.success:
+            print(f"\n✅ {result.message}")
+
+            if remove_all:
+                print(f"Configuration file removed: {plugin.credential_file}")
+            else:
+                print(f"Configuration updated: {plugin.credential_file}")
+        else:
+            print(f"\n❌ Removal failed: {result.message}")
+            sys.exit(1)
+
+    else:
+        print(f"❌ Unknown HSM action: {action}")
+        sys.exit(1)
+
+
 def handle_keyserver_command(args):
     """
     Handle keyserver management commands.
@@ -2398,6 +2623,7 @@ def main():
         "reload-plugin",
         "telemetry",
         "keyserver",
+        "hsm",
     ]
 
     # Use subparser only if a subcommand is present
@@ -3254,7 +3480,7 @@ def main_with_args(args=None):
         "--hsm",
         metavar="PLUGIN",
         help="Enable HSM (Hardware Security Module) plugin for hardware-bound key derivation. "
-        "Supported: 'yubikey' (Yubikey Challenge-Response). "
+        "Supported: 'yubikey' (YubiKey Challenge-Response), 'fido2' (FIDO2 hmac-secret). "
         "The HSM adds a hardware-specific pepper to the key derivation, requiring the device "
         "for both encryption and decryption.",
     )
@@ -3738,6 +3964,10 @@ def main_with_args(args=None):
 
     elif args.action == "keyserver":
         handle_keyserver_command(args)
+        sys.exit(0)
+
+    elif args.action == "hsm":
+        handle_hsm_command(args)
         sys.exit(0)
 
     elif args.action == "list-algorithms":
@@ -4935,13 +5165,34 @@ def main_with_args(args=None):
                             print(f"   Using manual slot: {args.hsm_slot}")
                         else:
                             print("   Auto-detecting Challenge-Response slot")
+
+                elif args.hsm.lower() == "fido2":
+                    from ..plugins.hsm.fido2_pepper import FIDO2HSMPlugin
+
+                    hsm_plugin_instance = FIDO2HSMPlugin()
+
+                    # Initialize plugin
+                    init_result = hsm_plugin_instance.initialize({})
+                    if not init_result.success:
+                        print(f"Error initializing HSM plugin: {init_result.message}")
+                        sys.exit(1)
+
+                    if not args.quiet:
+                        print(f"✅ Loaded HSM plugin: {hsm_plugin_instance.name}")
+                        print(f"   RP ID: {hsm_plugin_instance.rp_id}")
+                        if not hsm_plugin_instance.is_registered():
+                            print("   ⚠️  No credentials registered. Run: openssl_encrypt hsm fido2-register")
+
                 else:
-                    print(f"Error: Unknown HSM plugin '{args.hsm}'. Supported: yubikey")
+                    print(f"Error: Unknown HSM plugin '{args.hsm}'. Supported: yubikey, fido2")
                     sys.exit(1)
 
             except ImportError as e:
                 print(f"Error: Could not import HSM plugin: {e}")
-                print("Make sure yubikey-manager is installed: pip install -r requirements-hsm.txt")
+                if args.hsm.lower() == "yubikey":
+                    print("Make sure yubikey-manager is installed: pip install -r requirements-hsm.txt")
+                elif args.hsm.lower() == "fido2":
+                    print("Make sure fido2 library is installed: pip install fido2>=1.1.0")
                 sys.exit(1)
             except Exception as e:
                 print(f"Error initializing HSM plugin: {e}")
