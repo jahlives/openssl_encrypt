@@ -460,12 +460,20 @@ class PluginSandbox:
     def _restrict_process_operations(self, saved_state):
         """Restrict process execution operations.
 
+        Blocks multiple process execution vectors:
+        - subprocess.Popen
+        - os.system, os.popen, os.spawn* family
+
+        This prevents plugins from bypassing subprocess restrictions
+        by using alternative OS-level process execution functions.
+
         Args:
             saved_state: Dict to store original functions for restoration
         """
         import subprocess
+        import os
 
-        # Store original function
+        # Store original subprocess.Popen function
         saved_state["subprocess"] = subprocess.Popen
 
         def restricted_popen(*args, **kwargs):
@@ -475,8 +483,36 @@ class PluginSandbox:
 
         subprocess.Popen = restricted_popen
 
+        # Block os.system
+        if hasattr(os, 'system'):
+            saved_state["os.system"] = os.system
+            os.system = lambda *args, **kwargs: self._raise_process_execution_error()
+
+        # Block os.popen
+        if hasattr(os, 'popen'):
+            saved_state["os.popen"] = os.popen
+            os.popen = lambda *args, **kwargs: self._raise_process_execution_error()
+
+        # Block os.spawn* family
+        spawn_functions = ['spawnl', 'spawnle', 'spawnlp', 'spawnlpe',
+                          'spawnv', 'spawnve', 'spawnvp', 'spawnvpe']
+
+        for func_name in spawn_functions:
+            if hasattr(os, func_name):
+                saved_state[f"os.{func_name}"] = getattr(os, func_name)
+                setattr(os, func_name, lambda *args, **kwargs: self._raise_process_execution_error())
+
+    def _raise_process_execution_error(self):
+        """Raise error for blocked process execution attempts."""
+        raise SandboxViolationError(
+            "Process execution denied - plugin lacks EXECUTE_PROCESSES capability"
+        )
+
     def _restore_original_environment(self, saved_state):
         """Restore original functions after sandbox execution.
+
+        IMPORTANT: Import guard must be removed FIRST before restoring
+        other operations, since restoration may require importing blocked modules.
 
         Args:
             saved_state: Dict containing original functions to restore
@@ -484,25 +520,8 @@ class PluginSandbox:
         if not saved_state:
             return
 
-        # Restore file operations
-        if "file_ops" in saved_state:
-            import builtins
-
-            builtins.open = saved_state["file_ops"]
-
-        # Restore network operations
-        if "socket" in saved_state:
-            import socket
-
-            socket.socket = saved_state["socket"]
-
-        # Restore process operations
-        if "subprocess" in saved_state:
-            import subprocess
-
-            subprocess.Popen = saved_state["subprocess"]
-
-        # Remove import guard
+        # Remove import guard FIRST (before restoring anything else)
+        # This is critical because restoration may require importing blocked modules
         if "import_guard" in saved_state:
             import_guard = saved_state["import_guard"]
             try:
@@ -512,6 +531,42 @@ class PluginSandbox:
             except ValueError:
                 # Guard was already removed or not present
                 logger.warning("Import guard not found in sys.meta_path during cleanup")
+
+        # Now restore other operations (safe to import modules now)
+
+        # Restore file operations
+        if "file_ops" in saved_state:
+            import builtins
+            builtins.open = saved_state["file_ops"]
+
+        # Restore network operations
+        if "socket" in saved_state:
+            import socket
+            socket.socket = saved_state["socket"]
+
+        # Restore process operations
+        if "subprocess" in saved_state:
+            import subprocess
+            subprocess.Popen = saved_state["subprocess"]
+
+        # Restore os.system
+        if "os.system" in saved_state:
+            import os
+            os.system = saved_state["os.system"]
+
+        # Restore os.popen
+        if "os.popen" in saved_state:
+            import os
+            os.popen = saved_state["os.popen"]
+
+        # Restore os.spawn* family
+        spawn_functions = ['spawnl', 'spawnle', 'spawnlp', 'spawnlpe',
+                          'spawnv', 'spawnve', 'spawnvp', 'spawnvpe']
+        for func_name in spawn_functions:
+            key = f"os.{func_name}"
+            if key in saved_state:
+                import os
+                setattr(os, func_name, saved_state[key])
 
     def _is_safe_path(self, path: str, context: PluginSecurityContext = None, is_write: bool = False) -> bool:
         """Check if file path is safe for plugin access.
