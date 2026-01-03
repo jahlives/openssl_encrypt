@@ -33,9 +33,15 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ...core.security_logger import (
+    SecurityEventSeverity,
+    SecurityEventType,
+    get_security_logger,
+)
 from .models import PPClient, PPTOTPBackupCode
 
 logger = logging.getLogger(__name__)
+security_logger = get_security_logger()
 
 
 class TOTPRateLimiter:
@@ -134,15 +140,23 @@ class TOTPRateLimiter:
             lockout_until = now + self.lockout_duration
             self.lockouts[client_id] = lockout_until
 
+            lockout_seconds = int(self.lockout_duration.total_seconds())
+
             logger.warning(
                 f"TOTP rate limit exceeded - locking out client: {client_id[:16]}... "
                 f"for {self.lockout_duration.total_seconds()/60} minutes"
             )
 
+            # Log security event
+            security_logger.log_totp_lockout(
+                client_id=client_id,
+                attempts=attempt_count,
+                lockout_duration_seconds=lockout_seconds
+            )
+
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Too many failed TOTP attempts. Locked out for "
-                       f"{int(self.lockout_duration.total_seconds())} seconds."
+                detail=f"Too many failed TOTP attempts. Locked out for {lockout_seconds} seconds."
             )
 
     def record_attempt(self, client_id: str):
@@ -384,6 +398,17 @@ class TOTPService:
         else:
             # Record failed attempt
             self._rate_limiter.record_attempt(client.cert_fingerprint)
+
+            # Log security event for failed TOTP attempt
+            attempt_count = len(self._rate_limiter.attempts.get(client.cert_fingerprint, []))
+            security_logger.log_event(
+                SecurityEventType.TOTP_FAILURE,
+                SecurityEventSeverity.WARNING,
+                client.cert_fingerprint,
+                {"attempt_count": attempt_count, "max_attempts": self._rate_limiter.max_attempts},
+                f"Failed TOTP verification ({attempt_count}/{self._rate_limiter.max_attempts})"
+            )
+
             return False
 
     async def disable(self, client: PPClient, code: str) -> dict:

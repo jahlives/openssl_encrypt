@@ -23,7 +23,14 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from fastapi import HTTPException, Request, status
 
+from ..security_logger import (
+    SecurityEventSeverity,
+    SecurityEventType,
+    get_security_logger,
+)
+
 logger = logging.getLogger(__name__)
+security_logger = get_security_logger()
 
 
 class ProxyAuth:
@@ -222,6 +229,16 @@ class ProxyAuth:
         # Validate trusted proxy
         if not self._is_trusted_proxy(client_ip):
             logger.warning(f"Untrusted proxy IP: {client_ip}")
+
+            # Log security event for untrusted proxy attempt
+            security_logger.log_event(
+                SecurityEventType.UNTRUSTED_PROXY,
+                SecurityEventSeverity.WARNING,
+                client_ip,
+                {"client_ip": client_ip, "headers": dict(request.headers)},
+                f"Request from untrusted proxy: {client_ip}"
+            )
+
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Request not from trusted proxy"
@@ -232,6 +249,16 @@ class ProxyAuth:
             verify_status = request.headers.get(self.verify_header)
             if verify_status != "SUCCESS":
                 logger.warning(f"Certificate verification failed: {verify_status}")
+
+                # Log security event for cert verification failure
+                security_logger.log_event(
+                    SecurityEventType.CERT_VERIFICATION_FAILED,
+                    SecurityEventSeverity.WARNING,
+                    client_ip,
+                    {"verify_status": verify_status, "client_ip": client_ip},
+                    f"Certificate verification failed: {verify_status}"
+                )
+
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Client certificate verification failed"

@@ -13,6 +13,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ...core.security_logger import get_security_logger
 from .models import INClient, INMetadataHash, INVerificationLog
 from .schemas import (
     HashListResponse,
@@ -26,6 +27,7 @@ from .schemas import (
 )
 
 logger = logging.getLogger(__name__)
+security_logger = get_security_logger()
 
 
 class IntegrityService:
@@ -442,6 +444,15 @@ class IntegrityService:
             warning = "INTEGRITY VIOLATION: Metadata has been modified! The stored hash does not match the provided hash."
             logger.warning(
                 f"Integrity mismatch for {cert_fingerprint[:16]}... / {request.file_id}"
+            )
+
+            # Log critical security event for integrity violation
+            security_logger.log_integrity_mismatch(
+                client_id=cert_fingerprint,
+                file_id=request.file_id,
+                expected_hash=hash_record.metadata_hash,
+                actual_hash=request.metadata_hash,
+                ip_address=ip_address
             )
 
         return VerifyResponse(
