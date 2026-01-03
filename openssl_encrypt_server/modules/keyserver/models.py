@@ -44,7 +44,7 @@ class KSKey(Base):
     __tablename__ = "ks_keys"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    fingerprint = Column(String(64), unique=True, nullable=False, index=True)
+    fingerprint = Column(String(100), unique=True, nullable=False, index=True)  # SHA-256 with colons: 95 chars
     name = Column(String(255), nullable=True, index=True)
     email = Column(String(255), nullable=True, index=True)
     bundle_json = Column(Text, nullable=False)  # Complete PublicKeyBundle JSON
@@ -72,7 +72,7 @@ class KSAccessLog(Base):
     __tablename__ = "ks_access_log"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    key_fingerprint = Column(String(64), nullable=False)
+    key_fingerprint = Column(String(100), nullable=False)  # SHA-256 with colons: 95 chars
     action = Column(String(20), nullable=False)  # 'upload', 'download', 'search', 'revoke'
     client_id = Column(String(64), nullable=True)
     ip_address = Column(String(45), nullable=True)  # IPv4/IPv6
