@@ -7,7 +7,7 @@ on TOTP verification endpoints.
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from openssl_encrypt_server.modules.pepper.totp import TOTPRateLimiter
@@ -158,8 +158,9 @@ class TestWindowExpiry:
 
         # Mock time advancing 6 minutes
         with patch('openssl_encrypt_server.modules.pepper.totp.datetime') as mock_datetime:
-            future_time = datetime.utcnow() + timedelta(minutes=6)
-            mock_datetime.utcnow.return_value = future_time
+            future_time = datetime.now(timezone.utc) + timedelta(minutes=6)
+            mock_datetime.now.return_value = future_time
+            mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw) if args else future_time
 
             # Old attempts should be cleaned up
             rate_limiter.check_rate_limit(client_id)
@@ -177,8 +178,9 @@ class TestWindowExpiry:
         # Record attempts at different times
         with patch('openssl_encrypt_server.modules.pepper.totp.datetime') as mock_datetime:
             # 3 old attempts (7 minutes ago)
-            old_time = datetime.utcnow() - timedelta(minutes=7)
-            mock_datetime.utcnow.return_value = old_time
+            old_time = datetime.now(timezone.utc) - timedelta(minutes=7)
+            mock_datetime.now.return_value = old_time
+            mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw) if args else future_time
 
             for i in range(3):
                 rate_limiter.record_attempt(client_id)
@@ -194,7 +196,7 @@ class TestWindowExpiry:
         # (Old ones outside 5-minute window should be cleaned)
         recent_attempts = [
             ts for ts in rate_limiter.attempts[client_id]
-            if datetime.utcnow() - ts < timedelta(minutes=5)
+            if datetime.now(timezone.utc) - ts < timedelta(minutes=5)
         ]
 
         assert len(recent_attempts) == 2
@@ -221,10 +223,9 @@ class TestPerClientIsolation:
             rate_limiter.check_rate_limit(client_a)
 
         # Client B should be unaffected
-        rate_limiter.check_rate_limit(client_b)
         for i in range(5):
-            rate_limiter.record_attempt(client_b)
             rate_limiter.check_rate_limit(client_b)
+            rate_limiter.record_attempt(client_b)
 
     def test_multiple_clients_independent_counters(self, rate_limiter):
         """Multiple clients should not interfere"""
@@ -325,8 +326,9 @@ class TestConfigurability:
 
         # Mock time advancing 3 minutes (past 2-minute window)
         with patch('openssl_encrypt_server.modules.pepper.totp.datetime') as mock_datetime:
-            future_time = datetime.utcnow() + timedelta(minutes=3)
-            mock_datetime.utcnow.return_value = future_time
+            future_time = datetime.now(timezone.utc) + timedelta(minutes=3)
+            mock_datetime.now.return_value = future_time
+            mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw) if args else future_time
 
             # Old attempts should be expired
             limiter.check_rate_limit(client_id)
@@ -351,8 +353,9 @@ class TestConfigurability:
 
         # Mock time advancing 6 minutes (past 5-minute lockout)
         with patch('openssl_encrypt_server.modules.pepper.totp.datetime') as mock_datetime:
-            future_time = datetime.utcnow() + timedelta(minutes=6)
-            mock_datetime.utcnow.return_value = future_time
+            future_time = datetime.now(timezone.utc) + timedelta(minutes=6)
+            mock_datetime.now.return_value = future_time
+            mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw) if args else future_time
 
             # Should be unlocked
             limiter.check_rate_limit(client_id)
@@ -400,16 +403,17 @@ class TestEdgeCases:
 
         # Mock time past lockout
         with patch('openssl_encrypt_server.modules.pepper.totp.datetime') as mock_datetime:
-            future_time = datetime.utcnow() + timedelta(minutes=20)
-            mock_datetime.utcnow.return_value = future_time
+            future_time = datetime.now(timezone.utc) + timedelta(minutes=20)
+            mock_datetime.now.return_value = future_time
+            mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw) if args else future_time
 
             # Lockout should be cleared
             rate_limiter.check_rate_limit(client_id)
 
             # Should be able to make fresh attempts
             for i in range(5):
-                rate_limiter.record_attempt(client_id)
                 rate_limiter.check_rate_limit(client_id)
+                rate_limiter.record_attempt(client_id)
 
     def test_empty_client_id_handled(self, rate_limiter):
         """Empty client ID should be handled"""
