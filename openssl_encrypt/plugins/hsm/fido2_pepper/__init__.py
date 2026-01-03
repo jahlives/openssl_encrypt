@@ -51,12 +51,13 @@ try:
 except ImportError:
     FIDO2_AVAILABLE = False
 
-from ...modules.plugin_system.plugin_base import (
+from ....modules.plugin_system.plugin_base import (
     HSMPlugin,
     PluginResult,
     PluginSecurityContext,
     PluginCapability,
 )
+from ....modules.plugin_system.plugin_config import ensure_plugin_data_dir
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,7 @@ class FIDO2HSMPlugin(HSMPlugin):
     # Default configuration
     DEFAULT_RP_ID = "openssl-encrypt.local"
     DEFAULT_TIMEOUT = 30000  # 30 seconds
-    DEFAULT_CONFIG_DIR = Path.home() / ".openssl_encrypt" / "fido2"
+    DEFAULT_CONFIG_DIR = Path.home() / ".openssl_encrypt" / "plugins" / "fido2"
     DEFAULT_CREDENTIAL_FILE = "credentials.json"
 
     def __init__(
@@ -140,9 +141,11 @@ class FIDO2HSMPlugin(HSMPlugin):
     def _ensure_config_dir(self):
         """Create config directory with secure permissions (0o700)."""
         try:
-            self.config_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-            # Ensure directory has correct permissions even if it already existed
-            os.chmod(self.config_dir, 0o700)
+            # Use centralized helper for secure directory creation
+            config_dir = ensure_plugin_data_dir("fido2", "")
+            if config_dir is None:
+                raise RuntimeError("Failed to create secure FIDO2 config directory")
+            self.config_dir = config_dir
         except Exception as e:
             logger.error(f"Failed to create config directory: {e}")
             raise

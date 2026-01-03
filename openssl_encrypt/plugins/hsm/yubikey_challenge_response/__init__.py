@@ -27,16 +27,9 @@ Usage:
 """
 
 import logging
-import os
-import sys
 from typing import Any, Dict, Set
 
-# Ensure openssl_encrypt is in path for absolute imports
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
-from openssl_encrypt.modules.plugin_system import (
+from ....modules.plugin_system.plugin_base import (
     HSMPlugin,
     PluginCapability,
     PluginResult,

@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
+from ...modules.plugin_system.plugin_config import ensure_plugin_data_dir
+
 logger = logging.getLogger(__name__)
 
 
@@ -276,20 +278,28 @@ class KeyserverConfig:
 
 def _get_default_config_path() -> Path:
     """Get default configuration file path."""
-    home = Path.home()
-    return home / ".openssl_encrypt" / "plugins" / "keyserver.json"
+    # Use plugins/keyserver/ as base directory
+    config_dir = Path.home() / ".openssl_encrypt" / "plugins" / "keyserver"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir / "config.json"
 
 
-def _get_default_cache_path() -> Path:
-    """Get default cache database path."""
-    home = Path.home()
-    return home / ".openssl_encrypt" / "keyserver" / "cache.db"
+def _get_default_cache_path() -> Optional[Path]:
+    """Get default cache database path with secure permissions."""
+    keyserver_dir = ensure_plugin_data_dir("keyserver", "")
+    if keyserver_dir is None:
+        logger.error("Failed to create secure keyserver directory")
+        return None
+    return keyserver_dir / "cache.db"
 
 
-def _get_default_token_path() -> Path:
-    """Get default API token file path."""
-    home = Path.home()
-    return home / ".openssl_encrypt" / "keyserver" / "token"
+def _get_default_token_path() -> Optional[Path]:
+    """Get default API token file path with secure permissions."""
+    keyserver_dir = ensure_plugin_data_dir("keyserver", "")
+    if keyserver_dir is None:
+        logger.error("Failed to create secure keyserver directory")
+        return None
+    return keyserver_dir / "token"
 
 
 if __name__ == "__main__":

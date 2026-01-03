@@ -30,7 +30,7 @@ from .plugin_base import (
     PluginSecurityContext,
     PluginType,
 )
-from .plugin_config import PluginConfigManager
+from .plugin_config import PluginConfigManager, ensure_plugin_data_dir
 from .plugin_sandbox import PluginSandbox
 
 # Import security logger
@@ -110,23 +110,35 @@ class PluginManager:
 
     def discover_plugins(self) -> List[str]:
         """
-        Discover plugin files in registered directories.
+        Discover plugin files and packages in registered directories.
 
         Returns:
-            List of plugin file paths found
+            List of plugin file paths found (includes __init__.py for packages)
         """
         discovered = []
 
         for directory in self.plugin_directories:
             try:
-                for file_path in Path(directory).glob("*.py"):
+                dir_path = Path(directory)
+
+                # Discover .py files (existing logic)
+                for file_path in dir_path.glob("*.py"):
                     if not file_path.name.startswith("_"):  # Skip private files
                         discovered.append(str(file_path))
                         logger.debug(f"Discovered plugin file: {file_path}")
+
+                # Discover packages (directories with __init__.py)
+                for subdir in dir_path.iterdir():
+                    if subdir.is_dir() and not subdir.name.startswith("_"):
+                        init_file = subdir / "__init__.py"
+                        if init_file.exists():
+                            discovered.append(str(init_file))
+                            logger.debug(f"Discovered plugin package: {subdir}")
+
             except Exception as e:
                 logger.error(f"Error scanning plugin directory {directory}: {e}")
 
-        logger.info(f"Discovered {len(discovered)} plugin files")
+        logger.info(f"Discovered {len(discovered)} plugin files/packages")
         return discovered
 
     def load_plugin(self, file_path: str) -> PluginResult:
@@ -206,11 +218,25 @@ class PluginManager:
             if not validation_result.success:
                 return validation_result
 
+            # Security check: Verify plugin config directory permissions
+            # If permissions cannot be set to 0o700, skip plugin loading
+            if hasattr(os, "chmod"):
+                config_dir_path = ensure_plugin_data_dir("plugins", "")
+                if config_dir_path is None:
+                    error_msg = (
+                        f"Plugin {plugin.plugin_id} not loaded: "
+                        f"Plugin config directory has insecure permissions and cannot be secured"
+                    )
+                    logger.warning(error_msg)
+                    return PluginResult.error_result(error_msg)
+
             # Register plugin
             with self.lock:
                 if plugin.plugin_id in self.plugins:
                     logger.warning(f"Plugin {plugin.plugin_id} already registered, replacing")
 
+                # Pass file_path as-is to PluginRegistration
+                # For packages (__init__.py), PluginRegistration will correctly extract the package directory
                 registration = PluginRegistration(plugin, file_path)
                 self.plugins[plugin.plugin_id] = registration
 

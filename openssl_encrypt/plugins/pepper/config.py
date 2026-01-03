@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from ...modules.plugin_system.plugin_config import ensure_plugin_data_dir
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,21 +34,22 @@ class ConfigError(Exception):
 
 
 def _get_default_config_dir() -> Path:
-    """Get default configuration directory."""
-    config_dir = Path.home() / ".openssl_encrypt" / "plugins"
+    """Get default configuration directory for pepper plugin."""
+    config_dir = Path.home() / ".openssl_encrypt" / "plugins" / "pepper"
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir
 
 
 def _get_default_config_path() -> Path:
     """Get default pepper config file path."""
-    return _get_default_config_dir() / "pepper.json"
+    return _get_default_config_dir() / "config.json"
 
 
-def _get_default_cert_dir() -> Path:
-    """Get default certificate directory."""
-    cert_dir = Path.home() / ".openssl_encrypt" / "pepper" / "certs"
-    cert_dir.mkdir(parents=True, exist_ok=True, mode=0o700)  # Restrictive permissions
+def _get_default_cert_dir() -> Optional[Path]:
+    """Get default certificate directory with secure permissions."""
+    cert_dir = ensure_plugin_data_dir("pepper", "certs")
+    if cert_dir is None:
+        logger.error("Failed to create secure pepper certificate directory")
     return cert_dir
 
 
