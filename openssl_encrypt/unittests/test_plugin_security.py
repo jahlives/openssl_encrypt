@@ -645,6 +645,318 @@ class EvalPlugin(PreProcessorPlugin):
         self.assertTrue(result.success)
 
 
+class TestConfigDirectoryPermissions(unittest.TestCase):
+    """Tests for plugin config directory permission enforcement."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.test_dirs = []
+
+    def tearDown(self):
+        """Clean up test directories."""
+        import shutil
+        for test_dir in self.test_dirs:
+            if test_dir.exists():
+                try:
+                    shutil.rmtree(test_dir)
+                except Exception:
+                    pass
+
+    def test_ensure_plugin_data_dir_creates_with_0o700(self):
+        """Verify directories are created with 0o700 permissions."""
+        from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
+        import stat
+
+        test_dir = ensure_plugin_data_dir("test_security_plugin", "")
+        self.assertIsNotNone(test_dir, "Directory creation should succeed")
+        self.test_dirs.append(test_dir)
+
+        # Check permissions (Unix only)
+        if hasattr(os, "chmod"):
+            perms = stat.S_IMODE(os.stat(test_dir).st_mode)
+            self.assertEqual(perms, 0o700, f"Expected 0o700, got {oct(perms)}")
+
+    def test_ensure_plugin_data_dir_with_subdir(self):
+        """Verify subdirectories are created with 0o700 permissions."""
+        from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
+        import stat
+
+        test_dir = ensure_plugin_data_dir("test_security_plugin", "subdir")
+        self.assertIsNotNone(test_dir, "Subdirectory creation should succeed")
+        self.test_dirs.append(test_dir.parent)
+
+        # Check subdirectory permissions (Unix only)
+        if hasattr(os, "chmod"):
+            perms = stat.S_IMODE(os.stat(test_dir).st_mode)
+            self.assertEqual(perms, 0o700, f"Expected 0o700, got {oct(perms)}")
+
+            # Check parent directory permissions too
+            parent_perms = stat.S_IMODE(os.stat(test_dir.parent).st_mode)
+            self.assertEqual(parent_perms, 0o700, f"Parent expected 0o700, got {oct(parent_perms)}")
+
+    def test_ensure_plugin_data_dir_fixes_existing_permissions(self):
+        """Verify existing directories have permissions corrected."""
+        from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
+        import stat
+
+        # First create with correct permissions
+        test_dir = ensure_plugin_data_dir("test_security_plugin2", "")
+        self.assertIsNotNone(test_dir)
+        self.test_dirs.append(test_dir)
+
+        if hasattr(os, "chmod"):
+            # Change to insecure permissions
+            os.chmod(test_dir, 0o755)
+            initial_perms = stat.S_IMODE(os.stat(test_dir).st_mode)
+            self.assertEqual(initial_perms, 0o755)
+
+            # Call again - should fix permissions
+            test_dir2 = ensure_plugin_data_dir("test_security_plugin2", "")
+            self.assertIsNotNone(test_dir2)
+
+            # Check permissions were fixed
+            fixed_perms = stat.S_IMODE(os.stat(test_dir).st_mode)
+            self.assertEqual(fixed_perms, 0o700, "Permissions should be corrected to 0o700")
+
+    def test_plugin_load_fails_on_insecure_config_dir(self):
+        """Verify plugins don't load if config dir permissions cannot be secured."""
+        from unittest.mock import patch
+        from openssl_encrypt.modules.plugin_system.plugin_config import PluginConfigManager
+
+        # Create temporary directories for both plugin and config
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with tempfile.TemporaryDirectory() as config_dir:
+                plugin_file = Path(temp_dir) / "test_plugin.py"
+                plugin_file.write_text("""
+from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
+
+class TestPlugin(PreProcessorPlugin):
+    def __init__(self):
+        super().__init__("test_plugin", "Test", "1.0")
+
+    def get_required_capabilities(self):
+        return {PluginCapability.READ_FILES}
+
+    def get_description(self):
+        return "Test plugin"
+
+    def process_file(self, file_path, context):
+        return PluginResult.success_result("OK")
+""")
+
+                # Use temp config directory to avoid loading existing configs
+                config_manager = PluginConfigManager(config_dir)
+                plugin_manager = PluginManager(config_manager)
+                plugin_manager.add_plugin_directory(temp_dir)
+
+                # Mock ensure_plugin_data_dir to return None (permission failure)
+                with patch('openssl_encrypt.modules.plugin_system.plugin_manager.ensure_plugin_data_dir') as mock:
+                    mock.return_value = None
+
+                    result = plugin_manager.load_plugin(str(plugin_file))
+
+                    # Should fail to load
+                    if hasattr(os, "chmod"):  # Only on Unix systems
+                        self.assertFalse(result.success, "Plugin load should fail with insecure permissions")
+                        self.assertIn("insecure permissions", result.message.lower())
+
+
+class TestPackagePluginDiscovery(unittest.TestCase):
+    """Tests for package-based plugin discovery."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.test_dir = Path(tempfile.mkdtemp())
+        self.config_dir = Path(tempfile.mkdtemp())
+        self.config_manager = PluginConfigManager(str(self.config_dir))
+        self.plugin_manager = PluginManager(self.config_manager)
+        self.plugin_manager.add_plugin_directory(str(self.test_dir))
+
+    def tearDown(self):
+        """Clean up test directories."""
+        import shutil
+        if self.test_dir.exists():
+            shutil.rmtree(self.test_dir)
+        if self.config_dir.exists():
+            shutil.rmtree(self.config_dir)
+
+    def test_discovers_package_plugins(self):
+        """Verify plugins in packages (with __init__.py) are discovered."""
+        # Create a package plugin
+        pkg_dir = self.test_dir / "test_package_plugin"
+        pkg_dir.mkdir()
+        init_file = pkg_dir / "__init__.py"
+        init_file.write_text("""
+from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
+
+class PackagePlugin(PreProcessorPlugin):
+    def __init__(self):
+        super().__init__("package_plugin", "Package Plugin", "1.0")
+
+    def get_required_capabilities(self):
+        return {PluginCapability.READ_FILES}
+
+    def get_description(self):
+        return "Package-based plugin"
+
+    def process_file(self, file_path, context):
+        return PluginResult.success_result("OK")
+""")
+
+        # Discover plugins
+        discovered = self.plugin_manager.discover_plugins()
+
+        # Should find the package plugin
+        self.assertTrue(
+            any("test_package_plugin" in p for p in discovered),
+            f"Package plugin not discovered in: {discovered}"
+        )
+
+    def test_discovers_both_file_and_package_plugins(self):
+        """Verify both flat files and packages are discovered."""
+        # Create a flat file plugin
+        flat_file = self.test_dir / "flat_plugin.py"
+        flat_file.write_text("""
+from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
+
+class FlatPlugin(PreProcessorPlugin):
+    def __init__(self):
+        super().__init__("flat_plugin", "Flat Plugin", "1.0")
+
+    def get_required_capabilities(self):
+        return {PluginCapability.READ_FILES}
+
+    def get_description(self):
+        return "Flat file plugin"
+
+    def process_file(self, file_path, context):
+        return PluginResult.success_result("OK")
+""")
+
+        # Create a package plugin
+        pkg_dir = self.test_dir / "package_plugin"
+        pkg_dir.mkdir()
+        init_file = pkg_dir / "__init__.py"
+        init_file.write_text("""
+from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
+
+class PackagePlugin(PreProcessorPlugin):
+    def __init__(self):
+        super().__init__("package_plugin", "Package Plugin", "1.0")
+
+    def get_required_capabilities(self):
+        return {PluginCapability.READ_FILES}
+
+    def get_description(self):
+        return "Package plugin"
+
+    def process_file(self, file_path, context):
+        return PluginResult.success_result("OK")
+""")
+
+        # Discover plugins
+        discovered = self.plugin_manager.discover_plugins()
+
+        # Should find both
+        self.assertTrue(any("flat_plugin.py" in p for p in discovered), "Flat plugin not found")
+        self.assertTrue(any("package_plugin" in p for p in discovered), "Package plugin not found")
+
+    def test_package_plugin_file_directory_correct(self):
+        """Verify PluginRegistration.file_directory points to package dir, not __init__.py."""
+        # Create a package plugin
+        pkg_dir = self.test_dir / "dir_test_plugin"
+        pkg_dir.mkdir()
+        init_file = pkg_dir / "__init__.py"
+        init_file.write_text("""
+from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
+
+class DirTestPlugin(PreProcessorPlugin):
+    def __init__(self):
+        super().__init__("dir_test_plugin", "Dir Test", "1.0")
+
+    def get_required_capabilities(self):
+        return {PluginCapability.READ_FILES}
+
+    def get_description(self):
+        return "Test plugin directory"
+
+    def process_file(self, file_path, context):
+        return PluginResult.success_result("OK")
+""")
+
+        # Load the plugin
+        result = self.plugin_manager.load_plugin(str(init_file))
+        self.assertTrue(result.success, f"Plugin load failed: {result.message}")
+
+        # Check file_directory
+        registration = self.plugin_manager.plugins.get("dir_test_plugin")
+        self.assertIsNotNone(registration, "Plugin not registered")
+
+        # file_directory should be the package directory, not __init__.py
+        self.assertEqual(
+            registration.file_directory,
+            str(pkg_dir),
+            "file_directory should point to package directory"
+        )
+
+
+class TestUnifiedConfigPaths(unittest.TestCase):
+    """Tests for unified config directory structure."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.config_manager = PluginConfigManager()
+        self.test_dirs = []
+
+    def tearDown(self):
+        """Clean up test directories."""
+        import shutil
+        for test_dir in self.test_dirs:
+            if test_dir.exists():
+                try:
+                    shutil.rmtree(test_dir)
+                except Exception:
+                    pass
+
+    def test_config_file_path_under_plugin_dir(self):
+        """Verify config files are at plugins/<plugin_id>/config.json."""
+        config_path = self.config_manager._get_config_file_path("test_plugin")
+
+        expected = Path.home() / ".openssl_encrypt" / "plugins" / "test_plugin" / "config.json"
+        self.assertEqual(
+            config_path,
+            expected,
+            f"Config path should be {expected}, got {config_path}"
+        )
+
+        # Clean up
+        if config_path.parent.exists():
+            self.test_dirs.append(config_path.parent)
+
+    def test_plugin_data_dir_under_plugins(self):
+        """Verify ensure_plugin_data_dir creates under plugins/<plugin_id>/."""
+        from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
+
+        test_dir = ensure_plugin_data_dir("unified_test_plugin", "data")
+        self.assertIsNotNone(test_dir)
+        self.test_dirs.append(test_dir.parent)
+
+        expected_base = Path.home() / ".openssl_encrypt" / "plugins" / "unified_test_plugin"
+        expected_full = expected_base / "data"
+
+        self.assertEqual(
+            test_dir,
+            expected_full,
+            f"Data dir should be {expected_full}, got {test_dir}"
+        )
+
+        # Verify parent is also under plugins/
+        self.assertTrue(
+            str(test_dir.parent).startswith(str(Path.home() / ".openssl_encrypt" / "plugins")),
+            "Plugin data should be under ~/.openssl_encrypt/plugins/"
+        )
+
+
 if __name__ == '__main__':
     # Run tests
     unittest.main(verbosity=2)

@@ -388,14 +388,29 @@ class PluginConfigManager:
         if not self.config_dir.exists():
             return
 
-        for config_file in self.config_dir.glob("*.json"):
-            plugin_id = config_file.stem
+        # Load configs from new directory structure: plugins/<plugin_id>/config.json
+        try:
+            entries = list(self.config_dir.iterdir())
+        except (OSError, PermissionError) as e:
+            logger.error(f"Error reading plugin config directory {self.config_dir}: {e}")
+            return
+
+        for plugin_dir in entries:
             try:
-                config = self._load_plugin_config(plugin_id)
-                if config:
-                    self.configs[plugin_id] = config
+                if not plugin_dir.is_dir() or plugin_dir.name.startswith('.'):
+                    continue
+
+                config_file = plugin_dir / "config.json"
+                if config_file.exists():
+                    plugin_id = plugin_dir.name
+                    try:
+                        config = self._load_plugin_config(plugin_id)
+                        if config:
+                            self.configs[plugin_id] = config
+                    except Exception as e:
+                        logger.error(f"Error loading config for plugin {plugin_id}: {e}")
             except Exception as e:
-                logger.error(f"Error loading config for plugin {plugin_id}: {e}")
+                logger.error(f"Error processing plugin directory {plugin_dir}: {e}")
 
     def _load_plugin_config(self, plugin_id: str) -> Optional[Dict[str, Any]]:
         """Load plugin configuration from disk."""
@@ -439,6 +454,8 @@ class PluginConfigManager:
         """Get path to plugin configuration file."""
         # Sanitize plugin ID for directory name
         safe_plugin_id = "".join(c for c in plugin_id if c.isalnum() or c in "_-.")
+        if not safe_plugin_id:
+            raise ValueError(f"Invalid plugin_id: '{plugin_id}' - contains no valid characters")
         # Create plugin directory if needed
         plugin_dir = self.config_dir / safe_plugin_id
         plugin_dir.mkdir(parents=True, exist_ok=True)

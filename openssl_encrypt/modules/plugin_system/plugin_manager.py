@@ -192,6 +192,10 @@ class PluginManager:
                     parts = module_name.split('.')
                     for i in range(1, len(parts)):
                         parent_name = '.'.join(parts[:i])
+                        # Skip empty parent names or names that start with dots
+                        # (can occur with paths outside project root)
+                        if not parent_name or not parent_name.strip('.') or parent_name.startswith('.'):
+                            continue
                         if parent_name not in sys.modules:
                             try:
                                 __import__(parent_name)
@@ -221,7 +225,7 @@ class PluginManager:
             # Security check: Verify plugin config directory permissions
             # If permissions cannot be set to 0o700, skip plugin loading
             if hasattr(os, "chmod"):
-                config_dir_path = ensure_plugin_data_dir("plugins", "")
+                config_dir_path = ensure_plugin_data_dir(plugin.plugin_id, "")
                 if config_dir_path is None:
                     error_msg = (
                         f"Plugin {plugin.plugin_id} not loaded: "
@@ -271,8 +275,10 @@ class PluginManager:
             )
 
         except Exception as e:
+            import traceback
             error_msg = f"Error loading plugin from {file_path}: {str(e)}"
             logger.error(error_msg)
+            logger.debug(f"Traceback: {traceback.format_exc()}")
 
             # Security audit log for failed plugin load
             if security_logger:
