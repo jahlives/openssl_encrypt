@@ -15,6 +15,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from ...core.database import get_db
 from .auth import get_keyserver_auth
@@ -34,6 +36,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/keys", tags=["keyserver"])
 
 security = HTTPBearer()
+
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 
 # Dependency that lazily gets the auth instance
@@ -60,7 +65,8 @@ async def get_current_client(
     status_code=status.HTTP_200_OK,
     summary="Register new keyserver client",
 )
-async def register():
+@limiter.limit("10/hour")
+async def register(request: Request):
     """
     Register a new Keyserver client.
 
@@ -85,9 +91,10 @@ async def register():
     },
     summary="Upload public key",
 )
+@limiter.limit("60/minute")
 async def upload_key(
-    bundle: KeyBundleSchema,
     request: Request,
+    bundle: KeyBundleSchema,
     db: AsyncSession = Depends(get_db),
     client_id: str = Depends(get_current_client),
 ):
@@ -121,9 +128,10 @@ async def upload_key(
     responses={404: {"model": ErrorResponse, "description": "Key not found"}},
     summary="Search for public key",
 )
+@limiter.limit("100/minute")
 async def search_key(
+    request: Request,
     q: str = Query(..., description="Search query: fingerprint, name, or email"),
-    request: Request = None,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -161,10 +169,11 @@ async def search_key(
     },
     summary="Revoke public key",
 )
+@limiter.limit("60/minute")
 async def revoke_key(
+    request: Request,
     fingerprint: str,
     revocation: RevocationRequest,
-    request: Request,
     db: AsyncSession = Depends(get_db),
     client_id: str = Depends(get_current_client),
 ):
