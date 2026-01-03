@@ -19,8 +19,9 @@ import base64
 import io
 import logging
 import secrets
-from datetime import datetime, timezone
-from typing import List, Optional
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from typing import Dict, List, Optional
 from uuid import UUID
 
 import pyotp
@@ -28,6 +29,7 @@ import qrcode
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from cryptography.fernet import Fernet
+from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,12 +38,154 @@ from .models import PPClient, PPTOTPBackupCode
 logger = logging.getLogger(__name__)
 
 
+class TOTPRateLimiter:
+    """
+    Rate limiter for TOTP verification attempts.
+
+    Prevents brute force attacks on TOTP codes by:
+    - Limiting to 5 attempts per 5 minutes per client
+    - Locking out client for 15 minutes after 5 failed attempts
+    - Cleaning up old attempt records automatically
+
+    Thread-safe for concurrent requests.
+    """
+
+    def __init__(
+        self,
+        max_attempts: int = 5,
+        window_minutes: int = 5,
+        lockout_minutes: int = 15
+    ):
+        """
+        Initialize rate limiter.
+
+        Args:
+            max_attempts: Maximum attempts allowed in window
+            window_minutes: Time window for counting attempts (minutes)
+            lockout_minutes: Lockout duration after max attempts exceeded (minutes)
+        """
+        self.max_attempts = max_attempts
+        self.window = timedelta(minutes=window_minutes)
+        self.lockout_duration = timedelta(minutes=lockout_minutes)
+
+        # Track attempts: client_id -> list of attempt timestamps
+        self.attempts: Dict[str, List[datetime]] = defaultdict(list)
+
+        # Track lockouts: client_id -> lockout_until timestamp
+        self.lockouts: Dict[str, datetime] = {}
+
+        logger.info(
+            f"TOTP rate limiter initialized: {max_attempts} attempts per "
+            f"{window_minutes} minutes, {lockout_minutes} minute lockout"
+        )
+
+    def _clean_old_attempts(self, client_id: str):
+        """Remove attempts older than the time window."""
+        now = datetime.now(timezone.utc)
+        cutoff = now - self.window
+
+        if client_id in self.attempts:
+            self.attempts[client_id] = [
+                timestamp for timestamp in self.attempts[client_id]
+                if timestamp > cutoff
+            ]
+
+            # Remove empty lists to save memory
+            if not self.attempts[client_id]:
+                del self.attempts[client_id]
+
+    def check_rate_limit(self, client_id: str) -> None:
+        """
+        Check if client is rate limited.
+
+        Args:
+            client_id: Client identifier (cert fingerprint)
+
+        Raises:
+            HTTPException: 429 if client is rate limited or locked out
+        """
+        now = datetime.now(timezone.utc)
+
+        # Check if client is locked out
+        if client_id in self.lockouts:
+            lockout_until = self.lockouts[client_id]
+            if now < lockout_until:
+                remaining = int((lockout_until - now).total_seconds())
+                logger.warning(
+                    f"TOTP verification blocked - client locked out: "
+                    f"{client_id[:16]}... ({remaining}s remaining)"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"Too many failed TOTP attempts. Locked out for {remaining} seconds."
+                )
+            else:
+                # Lockout expired, remove it
+                del self.lockouts[client_id]
+                logger.info(f"TOTP lockout expired for {client_id[:16]}...")
+
+        # Clean old attempts
+        self._clean_old_attempts(client_id)
+
+        # Check attempt count
+        attempt_count = len(self.attempts.get(client_id, []))
+        if attempt_count >= self.max_attempts:
+            # Lock out the client
+            lockout_until = now + self.lockout_duration
+            self.lockouts[client_id] = lockout_until
+
+            logger.warning(
+                f"TOTP rate limit exceeded - locking out client: {client_id[:16]}... "
+                f"for {self.lockout_duration.total_seconds()/60} minutes"
+            )
+
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Too many failed TOTP attempts. Locked out for "
+                       f"{int(self.lockout_duration.total_seconds())} seconds."
+            )
+
+    def record_attempt(self, client_id: str):
+        """
+        Record a failed TOTP verification attempt.
+
+        Args:
+            client_id: Client identifier (cert fingerprint)
+        """
+        now = datetime.now(timezone.utc)
+        self.attempts[client_id].append(now)
+
+        attempt_count = len(self.attempts[client_id])
+        logger.debug(
+            f"TOTP attempt recorded for {client_id[:16]}... "
+            f"({attempt_count}/{self.max_attempts})"
+        )
+
+    def clear_attempts(self, client_id: str):
+        """
+        Clear attempts for client (after successful verification).
+
+        Args:
+            client_id: Client identifier (cert fingerprint)
+        """
+        if client_id in self.attempts:
+            del self.attempts[client_id]
+            logger.debug(f"TOTP attempts cleared for {client_id[:16]}...")
+
+        # Also clear any lockout
+        if client_id in self.lockouts:
+            del self.lockouts[client_id]
+
+
 class TOTPService:
     """
     TOTP 2FA service.
 
-    Handles TOTP setup, verification, and backup code management.
+    Handles TOTP setup, verification, and backup code management with rate limiting.
     """
+
+    # Shared rate limiter across all TOTPService instances
+    _rate_limiter = TOTPRateLimiter()
 
     def __init__(self, db: AsyncSession, issuer: str = "openssl_encrypt", fernet_key: Optional[str] = None):
         """
@@ -193,7 +337,11 @@ class TOTPService:
 
     async def verify_code(self, client: PPClient, code: str) -> bool:
         """
-        Verify TOTP code or backup code.
+        Verify TOTP code or backup code with rate limiting.
+
+        SECURITY: Rate limiting prevents brute force attacks on TOTP codes.
+        - Maximum 5 attempts per 5 minutes per client
+        - 15-minute lockout after exceeding limit
 
         Args:
             client: PPClient instance
@@ -201,9 +349,18 @@ class TOTPService:
 
         Returns:
             True if code valid, False otherwise
+
+        Raises:
+            HTTPException: 429 if rate limited or locked out
         """
         if not client.totp_secret_encrypted or not client.totp_verified:
             return False
+
+        # Check rate limit BEFORE attempting verification
+        # This prevents timing attacks and brute force
+        self._rate_limiter.check_rate_limit(client.cert_fingerprint)
+
+        verification_successful = False
 
         # Try TOTP code first (6 digits)
         if len(code) == 6 and code.isdigit():
@@ -211,14 +368,23 @@ class TOTPService:
             totp = pyotp.TOTP(secret)
             if totp.verify(code, valid_window=1):
                 logger.debug(f"TOTP code verified for {client.cert_fingerprint[:16]}")
-                return True
+                verification_successful = True
 
-        # Try backup code
-        if await self._verify_backup_code(client.id, code):
-            logger.info(f"Backup code used for {client.cert_fingerprint[:16]}")
+        # Try backup code if TOTP didn't match
+        if not verification_successful:
+            if await self._verify_backup_code(client.id, code):
+                logger.info(f"Backup code used for {client.cert_fingerprint[:16]}")
+                verification_successful = True
+
+        # Handle rate limiting based on verification result
+        if verification_successful:
+            # Clear attempts on successful verification
+            self._rate_limiter.clear_attempts(client.cert_fingerprint)
             return True
-
-        return False
+        else:
+            # Record failed attempt
+            self._rate_limiter.record_attempt(client.cert_fingerprint)
+            return False
 
     async def disable(self, client: PPClient, code: str) -> dict:
         """
