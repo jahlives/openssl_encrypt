@@ -64,7 +64,12 @@ async def lifespan(app: FastAPI):
     # Initialize database
     try:
         database_url = settings.get_database_url()
-        init_engine(database_url)
+        init_engine(
+            database_url,
+            pool_size=settings.database_pool_size,
+            max_overflow=settings.database_max_overflow,
+            query_timeout=settings.database_query_timeout,
+        )
         await init_db()
         logger.info("Database initialized successfully")
     except Exception as e:

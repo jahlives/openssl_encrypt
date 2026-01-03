@@ -138,6 +138,18 @@ class Settings(BaseSettings):
     postgres_db: str = Field(default="openssl_encrypt", validation_alias="POSTGRES_DB")
     postgres_host: str = Field(default="localhost", validation_alias="POSTGRES_HOST")
     postgres_port: int = Field(default=5432, validation_alias="POSTGRES_PORT")
+    database_query_timeout: int = Field(
+        default=30,  # 30 seconds
+        validation_alias="DATABASE_QUERY_TIMEOUT"
+    )
+    database_pool_size: int = Field(
+        default=20,
+        validation_alias="DATABASE_POOL_SIZE"
+    )
+    database_max_overflow: int = Field(
+        default=10,
+        validation_alias="DATABASE_MAX_OVERFLOW"
+    )
 
     # CORS - SECURITY: Must be explicitly configured for production
     cors_origins: str = Field(
