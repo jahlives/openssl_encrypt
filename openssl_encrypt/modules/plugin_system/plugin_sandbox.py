@@ -31,6 +31,116 @@ from .plugin_base import BasePlugin, PluginCapability, PluginResult, PluginSecur
 logger = logging.getLogger(__name__)
 
 
+class PluginImportGuard:
+    """
+    Import hook to block dangerous module imports in plugin code.
+
+    Prevents plugins from importing restricted modules that could be used
+    to bypass sandbox restrictions (e.g., subprocess, os, socket).
+
+    Installed in sys.meta_path before plugin execution.
+    Also temporarily removes dangerous modules from sys.modules to prevent
+    access to already-imported modules.
+    """
+
+    # Modules that should always be blocked
+    ALWAYS_BLOCKED = {
+        'ctypes',         # Load arbitrary C code
+        '__builtin__',    # Access to builtins
+        '__builtins__',   # Access to builtins
+    }
+
+    # Modules that are blocked unless specific capability is granted
+    CAPABILITY_GATED = {
+        'subprocess': None,  # Always blocked (no capability for this)
+        'os': None,          # Always blocked (contains os.system, etc.)
+        'socket': PluginCapability.NETWORK_ACCESS,  # Allowed with NETWORK_ACCESS
+    }
+
+    def __init__(self, context: PluginSecurityContext = None):
+        """Initialize the import guard.
+
+        Args:
+            context: Plugin security context with capabilities
+        """
+        self.context = context
+        self.hidden_modules = {}
+
+    def _should_block_module(self, module_name: str) -> bool:
+        """Check if a module should be blocked based on capabilities.
+
+        Args:
+            module_name: Name of the module to check
+
+        Returns:
+            True if module should be blocked, False if allowed
+        """
+        # Always block certain modules
+        if module_name in self.ALWAYS_BLOCKED:
+            return True
+
+        # Check capability-gated modules
+        if module_name in self.CAPABILITY_GATED:
+            required_capability = self.CAPABILITY_GATED[module_name]
+            # If no capability can grant access (None), always block
+            if required_capability is None:
+                return True
+            # If capability is granted, allow access
+            if self.context and required_capability in self.context.capabilities:
+                return False
+            # Otherwise, block
+            return True
+
+        return False
+
+    def hide_dangerous_modules(self):
+        """
+        Remove dangerous modules from sys.modules to prevent access.
+
+        Saves removed modules so they can be restored later.
+        """
+        # Get all modules that should be blocked
+        modules_to_hide = set(self.ALWAYS_BLOCKED) | set(self.CAPABILITY_GATED.keys())
+
+        for module_name in modules_to_hide:
+            # Check if module should actually be blocked based on capabilities
+            if self._should_block_module(module_name) and module_name in sys.modules:
+                self.hidden_modules[module_name] = sys.modules[module_name]
+                del sys.modules[module_name]
+                logger.debug(f"Hidden module from sys.modules: {module_name}")
+
+    def restore_hidden_modules(self):
+        """Restore previously hidden modules to sys.modules."""
+        for module_name, module in self.hidden_modules.items():
+            sys.modules[module_name] = module
+        self.hidden_modules.clear()
+        logger.debug(f"Restored {len(self.hidden_modules)} hidden modules")
+
+    def find_module(self, fullname, path=None):
+        """
+        Find module hook for Python 2/3 compatibility.
+
+        Returns self if module should be blocked, None otherwise.
+        """
+        # Check if the top-level module is blocked
+        module_base = fullname.split('.')[0]
+        if self._should_block_module(module_base):
+            logger.warning(f"Blocked import attempt: {fullname}")
+            raise ImportError(
+                f"Import of '{fullname}' blocked by plugin security policy. "
+                f"Module '{module_base}' is not allowed in plugin context."
+            )
+        return None
+
+    def find_spec(self, fullname, path, target=None):
+        """
+        Find spec hook for Python 3.4+.
+
+        Returns None (blocks import by raising ImportError in find_module).
+        """
+        return self.find_module(fullname, path)
+
+
 def _plugin_worker(plugin, context, result_queue):
     """
     Worker function for multiprocessing-based plugin execution.
@@ -287,6 +397,16 @@ class PluginSandbox:
         if PluginCapability.EXECUTE_PROCESSES not in context.capabilities:
             self._restrict_process_operations(saved_state)
 
+        # Install import guard to block dangerous module imports
+        # This prevents plugins from bypassing sandbox restrictions by importing
+        # dangerous modules dynamically (e.g., subprocess, os, socket)
+        # The guard respects capabilities - e.g., socket is allowed if NETWORK_ACCESS is granted
+        import_guard = PluginImportGuard(context)
+        import_guard.hide_dangerous_modules()  # Hide already-imported dangerous modules
+        sys.meta_path.insert(0, import_guard)
+        saved_state["import_guard"] = import_guard
+        logger.debug(f"Installed import guard for plugin {context.plugin_id}")
+
         return saved_state
 
     def _restrict_file_operations(self):
@@ -381,6 +501,17 @@ class PluginSandbox:
             import subprocess
 
             subprocess.Popen = saved_state["subprocess"]
+
+        # Remove import guard
+        if "import_guard" in saved_state:
+            import_guard = saved_state["import_guard"]
+            try:
+                sys.meta_path.remove(import_guard)
+                import_guard.restore_hidden_modules()  # Restore hidden modules
+                logger.debug("Removed import guard from sys.meta_path")
+            except ValueError:
+                # Guard was already removed or not present
+                logger.warning("Import guard not found in sys.meta_path during cleanup")
 
     def _is_safe_path(self, path: str, context: PluginSecurityContext = None, is_write: bool = False) -> bool:
         """Check if file path is safe for plugin access.
