@@ -116,14 +116,19 @@ class TOTPRateLimiter:
         if client_id in self.lockouts:
             lockout_until = self.lockouts[client_id]
             if now < lockout_until:
-                remaining = int((lockout_until - now).total_seconds())
+                remaining_seconds = int((lockout_until - now).total_seconds())
+                remaining_minutes = remaining_seconds // 60
                 logger.warning(
                     f"TOTP verification blocked - client locked out: "
-                    f"{client_id[:16]}... ({remaining}s remaining)"
+                    f"{client_id[:16]}... ({remaining_seconds}s remaining)"
                 )
+                if remaining_minutes > 0:
+                    detail_msg = f"Too many failed TOTP attempts. Try again in {remaining_minutes} minute(s)."
+                else:
+                    detail_msg = f"Too many failed TOTP attempts. Try again in {remaining_seconds} seconds."
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=f"Too many failed TOTP attempts. Locked out for {remaining} seconds."
+                    detail=detail_msg
                 )
             else:
                 # Lockout expired, remove it

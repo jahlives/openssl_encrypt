@@ -106,6 +106,7 @@ async def verify_totp_if_enabled(
 @limiter.limit("60/minute")
 @router.get("/profile", response_model=ProfileResponse)
 async def get_profile(
+    request: Request,
     cert_fingerprint: str = Depends(require_pepper_auth),
     db: AsyncSession = Depends(get_db),
 ):
@@ -122,7 +123,8 @@ async def get_profile(
 @limiter.limit("60/minute")
 @router.put("/profile", response_model=ProfileResponse)
 async def update_profile(
-    request: ProfileUpdateRequest,
+    request: Request,
+    body: ProfileUpdateRequest,
     cert_fingerprint: str = Depends(require_pepper_auth),
     db: AsyncSession = Depends(get_db),
 ):
@@ -137,6 +139,7 @@ async def update_profile(
 @limiter.limit("60/minute")
 @router.delete("/profile")
 async def delete_profile(
+    request: Request,
     cert_fingerprint: str = Depends(require_pepper_auth),
     db: AsyncSession = Depends(get_db),
     x_totp_code: Optional[str] = Header(None, alias="X-TOTP-Code"),
@@ -158,6 +161,7 @@ async def delete_profile(
 @limiter.limit("60/minute")
 @router.post("/totp/setup", response_model=TOTPSetupResponse)
 async def setup_totp(
+    request: Request,
     cert_fingerprint: str = Depends(require_pepper_auth),
     db: AsyncSession = Depends(get_db),
 ):
@@ -188,7 +192,8 @@ async def setup_totp(
 @limiter.limit("60/minute")
 @router.post("/totp/verify", response_model=TOTPVerifyResponse)
 async def verify_totp(
-    request: TOTPVerifyRequest,
+    request: Request,
+    body: TOTPVerifyRequest,
     cert_fingerprint: str = Depends(require_pepper_auth),
     db: AsyncSession = Depends(get_db),
 ):
@@ -213,7 +218,7 @@ async def verify_totp(
     )
 
     try:
-        result = await totp_service.verify_setup(client, request.code)
+        result = await totp_service.verify_setup(client, body.code)
         return TOTPVerifyResponse(**result)
     except ValueError as e:
         raise HTTPException(
@@ -225,6 +230,7 @@ async def verify_totp(
 @limiter.limit("60/minute")
 @router.delete("/totp")
 async def disable_totp(
+    request: Request,
     cert_fingerprint: str = Depends(require_pepper_auth),
     db: AsyncSession = Depends(get_db),
     x_totp_code: Optional[str] = Header(None, alias="X-TOTP-Code"),
@@ -262,6 +268,7 @@ async def disable_totp(
 @limiter.limit("60/minute")
 @router.post("/totp/backup", response_model=TOTPBackupCodesResponse)
 async def regenerate_backup_codes(
+    request: Request,
     cert_fingerprint: str = Depends(require_pepper_auth),
     db: AsyncSession = Depends(get_db),
     x_totp_code: Optional[str] = Header(None, alias="X-TOTP-Code"),
@@ -304,7 +311,8 @@ async def regenerate_backup_codes(
 @limiter.limit("60/minute")
 @router.post("/peppers", response_model=PepperResponse)
 async def create_pepper(
-    request: PepperCreateRequest,
+    request: Request,
+    body: PepperCreateRequest,
     cert_fingerprint: str = Depends(require_pepper_auth),
     db: AsyncSession = Depends(get_db),
 ):
@@ -329,6 +337,7 @@ async def create_pepper(
 @limiter.limit("60/minute")
 @router.get("/peppers", response_model=PepperListResponse)
 async def list_peppers(
+    request: Request,
     cert_fingerprint: str = Depends(require_pepper_auth),
     db: AsyncSession = Depends(get_db),
 ):
@@ -345,6 +354,7 @@ async def list_peppers(
 @limiter.limit("60/minute")
 @router.get("/peppers/{name}", response_model=PepperResponse)
 async def get_pepper(
+    request: Request,
     name: str,
     cert_fingerprint: str = Depends(require_pepper_auth),
     db: AsyncSession = Depends(get_db),
@@ -370,8 +380,9 @@ async def get_pepper(
 @limiter.limit("60/minute")
 @router.put("/peppers/{name}", response_model=PepperResponse)
 async def update_pepper(
+    request: Request,
     name: str,
-    request: PepperUpdateRequest,
+    body: PepperUpdateRequest,
     cert_fingerprint: str = Depends(require_pepper_auth),
     db: AsyncSession = Depends(get_db),
 ):
@@ -394,6 +405,7 @@ async def update_pepper(
 @limiter.limit("60/minute")
 @router.delete("/peppers/{name}")
 async def delete_pepper(
+    request: Request,
     name: str,
     cert_fingerprint: str = Depends(require_pepper_auth),
     db: AsyncSession = Depends(get_db),
@@ -418,6 +430,7 @@ async def delete_pepper(
 @limiter.limit("60/minute")
 @router.get("/deadman", response_model=DeadmanStatusResponse)
 async def get_deadman_status(
+    request: Request,
     cert_fingerprint: str = Depends(require_pepper_auth),
     db: AsyncSession = Depends(get_db),
 ):
@@ -441,7 +454,8 @@ async def get_deadman_status(
 @limiter.limit("60/minute")
 @router.put("/deadman", response_model=DeadmanStatusResponse)
 async def configure_deadman(
-    request: DeadmanConfigRequest,
+    request: Request,
+    body: DeadmanConfigRequest,
     cert_fingerprint: str = Depends(require_pepper_auth),
     db: AsyncSession = Depends(get_db),
 ):
@@ -463,9 +477,9 @@ async def configure_deadman(
     try:
         status_dict = await deadman_service.configure(
             client.id,
-            interval_seconds=request.interval_seconds,
-            grace_period_seconds=request.grace_period_seconds,
-            enabled=request.enabled
+            interval_seconds=body.interval_seconds,
+            grace_period_seconds=body.grace_period_seconds,
+            enabled=body.enabled
         )
         return DeadmanStatusResponse(**status_dict)
     except ValueError as e:
@@ -478,6 +492,7 @@ async def configure_deadman(
 @limiter.limit("60/minute")
 @router.post("/deadman/checkin", response_model=CheckinResponse)
 async def deadman_checkin(
+    request: Request,
     cert_fingerprint: str = Depends(require_pepper_auth),
     db: AsyncSession = Depends(get_db),
 ):
@@ -507,6 +522,7 @@ async def deadman_checkin(
 @limiter.limit("60/minute")
 @router.delete("/deadman")
 async def disable_deadman(
+    request: Request,
     cert_fingerprint: str = Depends(require_pepper_auth),
     db: AsyncSession = Depends(get_db),
 ):
@@ -537,6 +553,7 @@ async def disable_deadman(
 @limiter.limit("60/minute")
 @router.post("/panic", response_model=PanicResponse)
 async def panic_all(
+    request: Request,
     request_obj: Request,
     cert_fingerprint: str = Depends(require_pepper_auth),
     db: AsyncSession = Depends(get_db),
@@ -561,6 +578,7 @@ async def panic_all(
 @limiter.limit("60/minute")
 @router.post("/panic/{name}", response_model=PanicResponse)
 async def panic_single(
+    request: Request,
     name: str,
     request_obj: Request,
     cert_fingerprint: str = Depends(require_pepper_auth),

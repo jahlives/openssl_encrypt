@@ -88,16 +88,25 @@ class SecurityLogger:
             log_file: Path to security log file
             log_level: Minimum logging level (default: INFO)
         """
-        self.log_file = log_file
         self.logger = logging.getLogger("security")
         self.logger.setLevel(log_level)
 
         # Create log directory if it doesn't exist
         log_path = Path(log_file)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            self.log_file = log_file
+        except PermissionError:
+            # Fall back to temp directory for testing/development
+            import tempfile
+            fallback_dir = Path(tempfile.gettempdir()) / "openssl-encrypt"
+            fallback_dir.mkdir(parents=True, exist_ok=True)
+            self.log_file = str(fallback_dir / "security.log")
+            # Log warning to console
+            print(f"WARNING: Cannot write to {log_file}, using fallback: {self.log_file}")
 
         # Configure JSON formatter for structured logging
-        handler = logging.FileHandler(log_file)
+        handler = logging.FileHandler(self.log_file)
         handler.setFormatter(
             logging.Formatter(
                 '{"timestamp": "%(asctime)s", "level": "%(levelname)s", '

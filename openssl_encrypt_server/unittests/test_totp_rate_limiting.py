@@ -69,15 +69,17 @@ class TestAttemptLimits:
         """Test behavior at exact attempt limit"""
         client_id = "test_client_123"
 
-        # Record exactly 5 attempts
-        for i in range(5):
+        # Record exactly 4 attempts
+        for i in range(4):
             rate_limiter.record_attempt(client_id)
 
-        # 5th check should still pass
+        # 5th check (after 4 attempts) should still pass
         rate_limiter.check_rate_limit(client_id)
 
-        # But 6th should fail
+        # Record 5th attempt
         rate_limiter.record_attempt(client_id)
+
+        # 6th check (after 5 attempts) should fail
         with pytest.raises(HTTPException):
             rate_limiter.check_rate_limit(client_id)
 
@@ -103,8 +105,9 @@ class TestLockoutDuration:
 
         # Mock time advancing 14 minutes
         with patch('openssl_encrypt_server.modules.pepper.totp.datetime') as mock_datetime:
-            future_time = datetime.utcnow() + timedelta(minutes=14)
-            mock_datetime.utcnow.return_value = future_time
+            future_time = datetime.now(timezone.utc) + timedelta(minutes=14)
+            mock_datetime.now.return_value = future_time
+            mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw) if args else future_time
 
             # Still locked
             with pytest.raises(HTTPException):
@@ -112,8 +115,9 @@ class TestLockoutDuration:
 
         # Mock time advancing 16 minutes (past lockout)
         with patch('openssl_encrypt_server.modules.pepper.totp.datetime') as mock_datetime:
-            future_time = datetime.utcnow() + timedelta(minutes=16)
-            mock_datetime.utcnow.return_value = future_time
+            future_time = datetime.now(timezone.utc) + timedelta(minutes=16)
+            mock_datetime.now.return_value = future_time
+            mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw) if args else future_time
 
             # Should be unlocked
             rate_limiter.check_rate_limit(client_id)
@@ -135,7 +139,7 @@ class TestLockoutDuration:
 
         # Lockout expiry should be ~15 minutes from now
         lockout_until = rate_limiter.lockouts[client_id]
-        expected_time = datetime.utcnow() + timedelta(minutes=15)
+        expected_time = datetime.now(timezone.utc) + timedelta(minutes=15)
 
         # Allow 5 second tolerance
         assert abs((lockout_until - expected_time).total_seconds()) < 5
