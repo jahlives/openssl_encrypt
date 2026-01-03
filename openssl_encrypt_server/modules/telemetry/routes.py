@@ -10,7 +10,7 @@ Endpoints:
 
 import logging
 
-from fastapi import APIRouter, Depends, Request, Security, status
+from fastapi import APIRouter, Depends, Query, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi import Limiter
@@ -74,6 +74,55 @@ async def register(request: Request):
     """
     auth = get_telemetry_auth()
     return await auth.register_client()
+
+
+@router.post(
+    "/refresh",
+    response_model=RegisterResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        401: {"model": ErrorResponse, "description": "Invalid or expired refresh token"},
+    },
+    summary="Refresh access token",
+)
+@limiter.limit("60/hour")
+async def refresh_token(
+    request: Request,
+    refresh_token: str = Query(..., description="Refresh token")
+):
+    """
+    Use refresh token to get new access and refresh tokens (sliding expiration).
+
+    SECURITY:
+    - Requires valid refresh token (7-day expiry)
+    - Returns new token pair with extended expiration
+    - Implements sliding expiration: tokens auto-extend on use within TTL
+
+    Token Flow:
+    1. Client uses access token (1-hour expiry) for API calls
+    2. Before access token expires, client uses refresh token
+    3. Server returns NEW access token (1 hour) + NEW refresh token (7 days)
+    4. This provides sliding expiration - active clients never locked out
+
+    Args:
+        request: FastAPI request
+        refresh_token: Valid refresh token (from registration or previous refresh)
+
+    Returns:
+        RegisterResponse: New access and refresh tokens
+    """
+    auth = get_telemetry_auth()
+    result = auth.refresh_access_token(refresh_token)
+
+    return RegisterResponse(
+        client_id=result["client_id"],
+        token=result["access_token"],  # For backward compatibility
+        access_token=result["access_token"],
+        refresh_token=result["refresh_token"],
+        expires_at=result["access_token_expires_at"],
+        refresh_expires_at=result["refresh_token_expires_at"],
+        token_type=result["token_type"]
+    )
 
 
 @router.post(

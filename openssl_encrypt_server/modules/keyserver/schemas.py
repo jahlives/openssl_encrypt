@@ -12,11 +12,14 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class RegisterResponse(BaseModel):
-    """Response for client registration"""
+    """Response for client registration with access and refresh tokens"""
 
     client_id: str
-    token: str
-    expires_at: str  # ISO 8601 datetime
+    token: str  # Deprecated: kept for backward compatibility, same as access_token
+    access_token: Optional[str] = None  # Explicit access token (1-hour expiry)
+    refresh_token: Optional[str] = None  # Refresh token for sliding expiration (7-day expiry)
+    expires_at: str  # ISO 8601 datetime (access token expiry)
+    refresh_expires_at: Optional[str] = None  # ISO 8601 datetime (refresh token expiry)
     token_type: str = "Bearer"
 
 
