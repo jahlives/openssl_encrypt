@@ -58,7 +58,9 @@ class PluginRegistration:
         self.last_used = None
         self.usage_count = 0
         self.error_count = 0
-        self.capabilities = plugin.get_required_capabilities()
+        # Store capabilities as immutable frozenset to prevent runtime modification
+        # This prevents plugins from escalating privileges via monkey-patching
+        self.capabilities = frozenset(plugin.get_required_capabilities())
 
     def record_usage(self, success: bool = True):
         """Record plugin usage statistics."""
@@ -377,8 +379,8 @@ class PluginManager:
 
             return PluginResult.error_result(error_msg)
 
-        # Check capabilities
-        capability_check = self._check_capabilities(plugin, context)
+        # Check capabilities (use immutable capabilities from registration, not from plugin object)
+        capability_check = self._check_capabilities(plugin_id, registration.capabilities, context)
         if not capability_check.success:
             self._audit_log(
                 f"SECURITY: Capability check failed for plugin {plugin_id}: {capability_check.message}"
@@ -842,15 +844,26 @@ class PluginManager:
             return PluginResult.error_result(f"Plugin validation error: {str(e)}")
 
     def _check_capabilities(
-        self, plugin: BasePlugin, context: PluginSecurityContext
+        self, plugin_id: str, required_capabilities: frozenset, context: PluginSecurityContext
     ) -> PluginResult:
-        """Check if plugin has required capabilities in context."""
-        required_capabilities = plugin.get_required_capabilities()
+        """Check if plugin has required capabilities in context.
 
+        SECURITY: Capabilities are passed as parameter (from registration) to prevent
+        plugins from escalating privileges by modifying get_required_capabilities()
+        at runtime via monkey-patching.
+
+        Args:
+            plugin_id: Plugin identifier for error messages
+            required_capabilities: Immutable set of required capabilities from registration
+            context: Security context with granted capabilities
+
+        Returns:
+            PluginResult indicating success or capability violation
+        """
         for capability in required_capabilities:
             if not context.has_capability(capability):
                 return PluginResult.error_result(
-                    f"Plugin {plugin.plugin_id} requires capability {capability.value} which is not granted"
+                    f"Plugin {plugin_id} requires capability {capability.value} which is not granted"
                 )
 
         return PluginResult.success_result("Capability check passed")
