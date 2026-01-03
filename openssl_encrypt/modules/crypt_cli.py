@@ -2245,6 +2245,40 @@ def handle_keyserver_command(args):
             )
         print("=" * 60)
 
+    elif action == "register":
+        # Register with keyserver and obtain API token
+        if not config.enabled:
+            print("✗ Keyserver plugin is disabled. Enable with: openssl-encrypt keyserver enable")
+            return
+
+        plugin = KeyserverPlugin(config)
+
+        # Use custom server if specified
+        server_url = args.server if hasattr(args, 'server') and args.server else None
+
+        try:
+            print("Registering with keyserver...")
+            result = plugin.register(server_url=server_url)
+
+            print("\n✓ Successfully registered with keyserver")
+            print("=" * 60)
+            print(f"Client ID:   {result['client_id']}")
+            print(f"Expires:     {result['expires_at']}")
+            print(f"Token Type:  {result['token_type']}")
+            print(f"Token File:  {config.api_token_file}")
+            print("=" * 60)
+            print("\nAPI token has been securely saved.")
+            print("You can now upload and revoke keys using:")
+            print("  openssl-encrypt keyserver upload <identity>")
+            print("  openssl-encrypt keyserver revoke <fingerprint>")
+
+        except Exception as e:
+            print(f"\n✗ Registration failed: {e}")
+            print("\nTroubleshooting:")
+            print("  - Check network connectivity")
+            print("  - Verify keyserver URL is correct")
+            print(f"  - Server: {server_url or config.servers[0] if config.servers else 'Not configured'}")
+
     elif action == "search":
         # Search for key on keyserver
         if not config.enabled:

@@ -1645,6 +1645,15 @@ def setup_keyserver_parser(subparser):
     # Status subcommand
     keyserver_subparsers.add_parser("status", help="Show keyserver status and configuration")
 
+    # Register subcommand (no auth required)
+    register_parser = keyserver_subparsers.add_parser(
+        "register", help="Register with keyserver and obtain API token"
+    )
+    register_parser.add_argument(
+        "--server",
+        help="Specific keyserver URL to register with (default: first configured server)",
+    )
+
     # Search subcommand (public, no auth)
     search_parser = keyserver_subparsers.add_parser(
         "search", help="Search for public key on keyserver"
