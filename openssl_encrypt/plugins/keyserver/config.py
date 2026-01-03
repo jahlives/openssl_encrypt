@@ -71,6 +71,10 @@ class KeyserverConfig:
     api_token: Optional[str] = None  # Bearer token for uploads
     api_token_file: Path = field(default_factory=lambda: _get_default_token_path())
 
+    # Certificate pinning (SHA-256 fingerprints)
+    cert_fingerprints: Optional[List[str]] = None  # Expected cert fingerprints for pinning
+    enable_cert_pinning: bool = False  # Enable certificate pinning validation
+
     def __post_init__(self):
         """Validate configuration after initialization."""
         # Convert string paths to Path objects

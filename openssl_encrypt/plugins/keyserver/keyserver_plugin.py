@@ -20,10 +20,14 @@ Features:
 - HTTPS-only communication
 """
 
+import hashlib
 import logging
+import ssl
 from typing import Optional, Set
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.poolmanager import PoolManager
 
 from ...modules.key_bundle import PublicKeyBundle
 from ...modules.plugin_system.plugin_base import BasePlugin, PluginCapability, PluginType
@@ -31,6 +35,67 @@ from .cache import KeyserverCache
 from .config import KeyserverConfig
 
 logger = logging.getLogger(__name__)
+
+
+class CertPinningAdapter(HTTPAdapter):
+    """
+    HTTPAdapter that validates server certificate fingerprints.
+
+    Implements certificate pinning by comparing the server's certificate
+    SHA-256 fingerprint against a list of expected fingerprints.
+    """
+
+    def __init__(self, expected_fingerprints: list, *args, **kwargs):
+        """
+        Initialize adapter with expected certificate fingerprints.
+
+        Args:
+            expected_fingerprints: List of SHA-256 fingerprints (hex strings)
+        """
+        self.expected_fingerprints = [fp.lower().replace(":", "") for fp in expected_fingerprints]
+        super().__init__(*args, **kwargs)
+
+    def init_poolmanager(self, *args, **kwargs):
+        """Initialize pool manager with custom SSL context."""
+        kwargs['assert_hostname'] = True
+        kwargs['cert_reqs'] = ssl.CERT_REQUIRED
+        return super().init_poolmanager(*args, **kwargs)
+
+    def cert_verify(self, conn, url, verify, cert):
+        """Verify certificate fingerprint after standard SSL verification."""
+        # First do standard SSL verification
+        super().cert_verify(conn, url, verify, cert)
+
+        # Then verify certificate pinning
+        if not self.expected_fingerprints:
+            return  # No pinning configured
+
+        # Get the peer certificate
+        sock = conn.sock
+        if sock is None:
+            raise ssl.SSLError("No socket connection available for certificate pinning")
+
+        try:
+            # Get DER-encoded certificate
+            cert_der = sock.getpeercert(binary_form=True)
+            if cert_der is None:
+                raise ssl.SSLError("Could not retrieve peer certificate")
+
+            # Compute SHA-256 fingerprint
+            fingerprint = hashlib.sha256(cert_der).hexdigest()
+
+            # Validate against expected fingerprints
+            if fingerprint not in self.expected_fingerprints:
+                raise ssl.SSLError(
+                    f"Certificate pinning failed: fingerprint {fingerprint} not in expected list"
+                )
+
+            logger.debug(f"Certificate pinning validated: {fingerprint}")
+
+        except ssl.SSLError:
+            raise
+        except Exception as e:
+            raise ssl.SSLError(f"Certificate pinning validation failed: {e}")
 
 
 class KeyserverError(Exception):
@@ -93,6 +158,17 @@ class KeyserverPlugin(BasePlugin):
             max_entries=self.config.cache_max_entries,
             ttl_seconds=self.config.cache_ttl_seconds,
         )
+
+        # Create requests session with certificate pinning if enabled
+        self.session = requests.Session()
+        if self.config.enable_cert_pinning and self.config.cert_fingerprints:
+            adapter = CertPinningAdapter(self.config.cert_fingerprints)
+            self.session.mount("https://", adapter)
+            logger.info(
+                f"Certificate pinning enabled with {len(self.config.cert_fingerprints)} fingerprints"
+            )
+        else:
+            logger.debug("Certificate pinning not enabled")
 
         logger.info(f"Initialized keyserver plugin (enabled={self.config.enabled})")
 
@@ -231,7 +307,7 @@ class KeyserverPlugin(BasePlugin):
 
         try:
             # HTTP GET (public, no authentication)
-            response = requests.get(
+            response = self.session.get(
                 search_url,
                 params=params,
                 timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
@@ -297,7 +373,7 @@ class KeyserverPlugin(BasePlugin):
 
         try:
             # HTTP POST (no authentication required for registration)
-            response = requests.post(
+            response = self.session.post(
                 register_url,
                 timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
             )
@@ -401,7 +477,7 @@ class KeyserverPlugin(BasePlugin):
 
         try:
             # HTTP POST (requires authentication)
-            response = requests.post(
+            response = self.session.post(
                 upload_url,
                 json=data,
                 headers=headers,
@@ -474,7 +550,7 @@ class KeyserverPlugin(BasePlugin):
                 data = {"signature": signature.hex()}
 
                 # HTTP POST (requires authentication)
-                response = requests.post(
+                response = self.session.post(
                     revoke_url,
                     json=data,
                     headers=headers,

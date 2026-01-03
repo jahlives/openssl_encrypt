@@ -8,9 +8,12 @@ Unified FastAPI server for Keyserver and Telemetry modules.
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from .config import Settings, settings, validate_config
 from .core.database import close_db, init_db, init_engine
@@ -61,7 +64,12 @@ async def lifespan(app: FastAPI):
     # Initialize database
     try:
         database_url = settings.get_database_url()
-        init_engine(database_url)
+        init_engine(
+            database_url,
+            pool_size=settings.database_pool_size,
+            max_overflow=settings.database_max_overflow,
+            query_timeout=settings.database_query_timeout,
+        )
         await init_db()
         logger.info("Database initialized successfully")
     except Exception as e:
@@ -115,17 +123,28 @@ def create_app() -> FastAPI:
         redoc_url="/redoc" if settings.debug else None,
     )
 
-    # Add CORS middleware
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.get_cors_origins_list(),
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # Initialize rate limiter
+    limiter = Limiter(key_func=get_remote_address)
+    app.state.limiter = limiter
+
+    # Add CORS middleware - SECURITY: Only if origins are configured
+    cors_origins = settings.get_cors_origins_list()
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_credentials=settings.cors_allow_credentials,
+            allow_methods=settings.get_cors_methods_list(),
+            allow_headers=settings.get_cors_headers_list(),
+            max_age=settings.cors_max_age,
+        )
+        logger.info(f"CORS enabled for origins: {cors_origins}")
+    else:
+        logger.info("CORS disabled (no origins configured)")
 
     # Add exception handlers
     app.add_exception_handler(ServerException, server_exception_handler)
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     # Core routes
     @app.get("/health")

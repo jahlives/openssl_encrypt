@@ -31,6 +31,116 @@ from .plugin_base import BasePlugin, PluginCapability, PluginResult, PluginSecur
 logger = logging.getLogger(__name__)
 
 
+class PluginImportGuard:
+    """
+    Import hook to block dangerous module imports in plugin code.
+
+    Prevents plugins from importing restricted modules that could be used
+    to bypass sandbox restrictions (e.g., subprocess, os, socket).
+
+    Installed in sys.meta_path before plugin execution.
+    Also temporarily removes dangerous modules from sys.modules to prevent
+    access to already-imported modules.
+    """
+
+    # Modules that should always be blocked
+    ALWAYS_BLOCKED = {
+        'ctypes',         # Load arbitrary C code
+        '__builtin__',    # Access to builtins
+        '__builtins__',   # Access to builtins
+    }
+
+    # Modules that are blocked unless specific capability is granted
+    CAPABILITY_GATED = {
+        'subprocess': None,  # Always blocked (no capability for this)
+        'os': None,          # Always blocked (contains os.system, etc.)
+        'socket': PluginCapability.NETWORK_ACCESS,  # Allowed with NETWORK_ACCESS
+    }
+
+    def __init__(self, context: PluginSecurityContext = None):
+        """Initialize the import guard.
+
+        Args:
+            context: Plugin security context with capabilities
+        """
+        self.context = context
+        self.hidden_modules = {}
+
+    def _should_block_module(self, module_name: str) -> bool:
+        """Check if a module should be blocked based on capabilities.
+
+        Args:
+            module_name: Name of the module to check
+
+        Returns:
+            True if module should be blocked, False if allowed
+        """
+        # Always block certain modules
+        if module_name in self.ALWAYS_BLOCKED:
+            return True
+
+        # Check capability-gated modules
+        if module_name in self.CAPABILITY_GATED:
+            required_capability = self.CAPABILITY_GATED[module_name]
+            # If no capability can grant access (None), always block
+            if required_capability is None:
+                return True
+            # If capability is granted, allow access
+            if self.context and required_capability in self.context.capabilities:
+                return False
+            # Otherwise, block
+            return True
+
+        return False
+
+    def hide_dangerous_modules(self):
+        """
+        Remove dangerous modules from sys.modules to prevent access.
+
+        Saves removed modules so they can be restored later.
+        """
+        # Get all modules that should be blocked
+        modules_to_hide = set(self.ALWAYS_BLOCKED) | set(self.CAPABILITY_GATED.keys())
+
+        for module_name in modules_to_hide:
+            # Check if module should actually be blocked based on capabilities
+            if self._should_block_module(module_name) and module_name in sys.modules:
+                self.hidden_modules[module_name] = sys.modules[module_name]
+                del sys.modules[module_name]
+                logger.debug(f"Hidden module from sys.modules: {module_name}")
+
+    def restore_hidden_modules(self):
+        """Restore previously hidden modules to sys.modules."""
+        for module_name, module in self.hidden_modules.items():
+            sys.modules[module_name] = module
+        self.hidden_modules.clear()
+        logger.debug(f"Restored {len(self.hidden_modules)} hidden modules")
+
+    def find_module(self, fullname, path=None):
+        """
+        Find module hook for Python 2/3 compatibility.
+
+        Returns self if module should be blocked, None otherwise.
+        """
+        # Check if the top-level module is blocked
+        module_base = fullname.split('.')[0]
+        if self._should_block_module(module_base):
+            logger.warning(f"Blocked import attempt: {fullname}")
+            raise ImportError(
+                f"Import of '{fullname}' blocked by plugin security policy. "
+                f"Module '{module_base}' is not allowed in plugin context."
+            )
+        return None
+
+    def find_spec(self, fullname, path, target=None):
+        """
+        Find spec hook for Python 3.4+.
+
+        Returns None (blocks import by raising ImportError in find_module).
+        """
+        return self.find_module(fullname, path)
+
+
 def _plugin_worker(plugin, context, result_queue):
     """
     Worker function for multiprocessing-based plugin execution.
@@ -287,6 +397,16 @@ class PluginSandbox:
         if PluginCapability.EXECUTE_PROCESSES not in context.capabilities:
             self._restrict_process_operations(saved_state)
 
+        # Install import guard to block dangerous module imports
+        # This prevents plugins from bypassing sandbox restrictions by importing
+        # dangerous modules dynamically (e.g., subprocess, os, socket)
+        # The guard respects capabilities - e.g., socket is allowed if NETWORK_ACCESS is granted
+        import_guard = PluginImportGuard(context)
+        import_guard.hide_dangerous_modules()  # Hide already-imported dangerous modules
+        sys.meta_path.insert(0, import_guard)
+        saved_state["import_guard"] = import_guard
+        logger.debug(f"Installed import guard for plugin {context.plugin_id}")
+
         return saved_state
 
     def _restrict_file_operations(self):
@@ -340,12 +460,20 @@ class PluginSandbox:
     def _restrict_process_operations(self, saved_state):
         """Restrict process execution operations.
 
+        Blocks multiple process execution vectors:
+        - subprocess.Popen
+        - os.system, os.popen, os.spawn* family
+
+        This prevents plugins from bypassing subprocess restrictions
+        by using alternative OS-level process execution functions.
+
         Args:
             saved_state: Dict to store original functions for restoration
         """
         import subprocess
+        import os
 
-        # Store original function
+        # Store original subprocess.Popen function
         saved_state["subprocess"] = subprocess.Popen
 
         def restricted_popen(*args, **kwargs):
@@ -355,8 +483,36 @@ class PluginSandbox:
 
         subprocess.Popen = restricted_popen
 
+        # Block os.system
+        if hasattr(os, 'system'):
+            saved_state["os.system"] = os.system
+            os.system = lambda *args, **kwargs: self._raise_process_execution_error()
+
+        # Block os.popen
+        if hasattr(os, 'popen'):
+            saved_state["os.popen"] = os.popen
+            os.popen = lambda *args, **kwargs: self._raise_process_execution_error()
+
+        # Block os.spawn* family
+        spawn_functions = ['spawnl', 'spawnle', 'spawnlp', 'spawnlpe',
+                          'spawnv', 'spawnve', 'spawnvp', 'spawnvpe']
+
+        for func_name in spawn_functions:
+            if hasattr(os, func_name):
+                saved_state[f"os.{func_name}"] = getattr(os, func_name)
+                setattr(os, func_name, lambda *args, **kwargs: self._raise_process_execution_error())
+
+    def _raise_process_execution_error(self):
+        """Raise error for blocked process execution attempts."""
+        raise SandboxViolationError(
+            "Process execution denied - plugin lacks EXECUTE_PROCESSES capability"
+        )
+
     def _restore_original_environment(self, saved_state):
         """Restore original functions after sandbox execution.
+
+        IMPORTANT: Import guard must be removed FIRST before restoring
+        other operations, since restoration may require importing blocked modules.
 
         Args:
             saved_state: Dict containing original functions to restore
@@ -364,26 +520,58 @@ class PluginSandbox:
         if not saved_state:
             return
 
+        # Remove import guard FIRST (before restoring anything else)
+        # This is critical because restoration may require importing blocked modules
+        if "import_guard" in saved_state:
+            import_guard = saved_state["import_guard"]
+            try:
+                sys.meta_path.remove(import_guard)
+                import_guard.restore_hidden_modules()  # Restore hidden modules
+                logger.debug("Removed import guard from sys.meta_path")
+            except ValueError:
+                # Guard was already removed or not present
+                logger.warning("Import guard not found in sys.meta_path during cleanup")
+
+        # Now restore other operations (safe to import modules now)
+
         # Restore file operations
         if "file_ops" in saved_state:
             import builtins
-
             builtins.open = saved_state["file_ops"]
 
         # Restore network operations
         if "socket" in saved_state:
             import socket
-
             socket.socket = saved_state["socket"]
 
         # Restore process operations
         if "subprocess" in saved_state:
             import subprocess
-
             subprocess.Popen = saved_state["subprocess"]
+
+        # Restore os.system
+        if "os.system" in saved_state:
+            import os
+            os.system = saved_state["os.system"]
+
+        # Restore os.popen
+        if "os.popen" in saved_state:
+            import os
+            os.popen = saved_state["os.popen"]
+
+        # Restore os.spawn* family
+        spawn_functions = ['spawnl', 'spawnle', 'spawnlp', 'spawnlpe',
+                          'spawnv', 'spawnve', 'spawnvp', 'spawnvpe']
+        for func_name in spawn_functions:
+            key = f"os.{func_name}"
+            if key in saved_state:
+                import os
+                setattr(os, func_name, saved_state[key])
 
     def _is_safe_path(self, path: str, context: PluginSecurityContext = None, is_write: bool = False) -> bool:
         """Check if file path is safe for plugin access.
+
+        SECURITY: Uses realpath() to resolve symlinks and prevent traversal attacks.
 
         Args:
             path: File path to check
@@ -393,14 +581,36 @@ class PluginSandbox:
         Returns:
             True if access is allowed, False otherwise
         """
-        abs_path = os.path.abspath(path)
+        # Block symlink access explicitly
+        if os.path.islink(path):
+            logger.warning(f"Symlink access blocked: {path}")
+            return False
+
+        # Use realpath() instead of abspath() to resolve symlinks
+        # This prevents symlink attacks where a plugin creates a symlink
+        # in an allowed directory pointing to a sensitive file
+        try:
+            abs_path = os.path.realpath(path)
+        except (OSError, ValueError) as e:
+            logger.warning(f"Failed to resolve path {path}: {e}")
+            return False
+
+        # Verify the resolved path exists (for additional safety)
+        # This helps prevent TOCTOU issues
+        if not os.path.exists(abs_path):
+            # Allow non-existent paths for write operations (file creation)
+            if not is_write:
+                return False
 
         # Allow access to temp directory
-        if self.temp_dir and abs_path.startswith(os.path.abspath(self.temp_dir)):
-            return True
+        if self.temp_dir:
+            temp_dir_real = os.path.realpath(self.temp_dir)
+            if abs_path.startswith(temp_dir_real):
+                return True
 
         # Allow read-only access to standard library
-        if abs_path.startswith(os.path.dirname(os.__file__)):
+        stdlib_dir = os.path.realpath(os.path.dirname(os.__file__))
+        if abs_path.startswith(stdlib_dir):
             return True
 
         # Plugin-specific directory access (if context available)
@@ -409,10 +619,16 @@ class PluginSandbox:
 
             # Plugin config directory: ~/.openssl_encrypt/plugins/<plugin_id>/
             # Allow read/write access
-            config_dir = os.path.abspath(
+            config_dir = os.path.realpath(
                 os.path.expanduser(f"~/.openssl_encrypt/plugins/{plugin_id}")
             )
             if abs_path.startswith(config_dir):
+                # Double-check path didn't escape via symlink resolution
+                if not abs_path.startswith(config_dir):
+                    logger.warning(
+                        f"Path traversal attempt detected: {path} -> {abs_path}"
+                    )
+                    return False
                 return True
 
             # Plugin code directory: Use actual file location from context
@@ -420,7 +636,7 @@ class PluginSandbox:
             # This allows plugins to read from the directory where they are located
             # e.g., plugins/hsm/fido2_pepper.py can read plugins/hsm/*
             if context.plugin_file_directory:
-                plugin_code_dir = os.path.abspath(context.plugin_file_directory)
+                plugin_code_dir = os.path.realpath(context.plugin_file_directory)
                 if abs_path.startswith(plugin_code_dir):
                     if is_write:
                         # Deny write access to plugin code directory
@@ -433,6 +649,7 @@ class PluginSandbox:
                     return True
 
         # Deny access to everything else
+        logger.debug(f"Access denied to path: {abs_path}")
         return False
 
     def _execute_with_threading(

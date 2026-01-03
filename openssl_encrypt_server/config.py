@@ -12,7 +12,7 @@ Environment variables (see .env.example):
 
 import os
 from typing import List, Literal, Optional
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, ConfigDict
 from pydantic_settings import BaseSettings
 
 
@@ -44,16 +44,19 @@ class TelemetryConfig(BaseSettings):
 
 
 class PepperProxyConfig(BaseSettings):
-    """Pepper proxy mode configuration"""
+    """Pepper proxy mode configuration
+
+    SECURITY: trusted_proxies must be explicitly configured with specific IPs.
+    Defaults only include localhost. Broad network ranges (< /24) are rejected.
+    """
     fingerprint_header: str = "X-Client-Cert-Fingerprint"
     dn_header: Optional[str] = "X-Client-Cert-DN"
     verify_header: Optional[str] = "X-Client-Cert-Verify"
     trusted_proxies: List[str] = [
-        "127.0.0.1",
-        "::1",
-        "10.0.0.0/8",
-        "172.16.0.0/12",
-        "192.168.0.0/16"
+        "127.0.0.1",  # IPv4 localhost only
+        "::1",        # IPv6 localhost only
+        # IMPORTANT: Add your reverse proxy IPs here explicitly
+        # Do NOT use broad network ranges - specify exact IPs or small subnets (/24 or smaller)
     ]
 
 
@@ -135,9 +138,40 @@ class Settings(BaseSettings):
     postgres_db: str = Field(default="openssl_encrypt", validation_alias="POSTGRES_DB")
     postgres_host: str = Field(default="localhost", validation_alias="POSTGRES_HOST")
     postgres_port: int = Field(default=5432, validation_alias="POSTGRES_PORT")
+    database_query_timeout: int = Field(
+        default=30,  # 30 seconds
+        validation_alias="DATABASE_QUERY_TIMEOUT"
+    )
+    database_pool_size: int = Field(
+        default=20,
+        validation_alias="DATABASE_POOL_SIZE"
+    )
+    database_max_overflow: int = Field(
+        default=10,
+        validation_alias="DATABASE_MAX_OVERFLOW"
+    )
 
-    # CORS
-    cors_origins: str = Field(default="*", validation_alias="CORS_ORIGINS")
+    # CORS - SECURITY: Must be explicitly configured for production
+    cors_origins: str = Field(
+        default="",  # Empty = no CORS (secure default)
+        validation_alias="CORS_ORIGINS"
+    )
+    cors_allow_credentials: bool = Field(
+        default=False,  # Secure default
+        validation_alias="CORS_ALLOW_CREDENTIALS"
+    )
+    cors_allow_methods: str = Field(
+        default="GET,POST,PUT,DELETE",
+        validation_alias="CORS_ALLOW_METHODS"
+    )
+    cors_allow_headers: str = Field(
+        default="Authorization,Content-Type",
+        validation_alias="CORS_ALLOW_HEADERS"
+    )
+    cors_max_age: int = Field(
+        default=600,  # 10 minutes
+        validation_alias="CORS_MAX_AGE"
+    )
 
     # Modules
     keyserver_enabled: bool = Field(default=True, validation_alias="KEYSERVER_ENABLED")
@@ -169,10 +203,36 @@ class Settings(BaseSettings):
     integrity_mtls_client_ca: str = Field(default="/certs/client-ca.crt", validation_alias="INTEGRITY_MTLS_CLIENT_CA")
 
     def get_cors_origins_list(self) -> List[str]:
-        """Parse CORS origins string into list"""
-        if not self.cors_origins:
-            return ["*"]
-        return [origin.strip() for origin in self.cors_origins.split(",")]
+        """
+        Parse CORS origins string into list.
+
+        SECURITY: Returns empty list if no origins configured (CORS disabled).
+        Warns if wildcard "*" is used.
+        """
+        if not self.cors_origins or self.cors_origins.strip() == "":
+            return []  # No CORS enabled (secure default)
+
+        origins = [origin.strip() for origin in self.cors_origins.split(",")]
+
+        # Warn about wildcard origins
+        if "*" in origins:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "SECURITY WARNING: CORS configured with wildcard '*' origin. "
+                "This allows requests from ANY domain. "
+                "Use specific origins for production: CORS_ORIGINS=https://app.example.com"
+            )
+
+        return origins
+
+    def get_cors_methods_list(self) -> List[str]:
+        """Parse CORS methods string into list"""
+        return [method.strip() for method in self.cors_allow_methods.split(",")]
+
+    def get_cors_headers_list(self) -> List[str]:
+        """Parse CORS headers string into list"""
+        return [header.strip() for header in self.cors_allow_headers.split(",")]
 
     def get_database_url(self) -> str:
         """Get database URL, constructing from parts if not provided directly"""
@@ -236,9 +296,11 @@ class Settings(BaseSettings):
             ),
         )
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    model_config = ConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        populate_by_name=True,  # Allow both field names and aliases
+    )
 
 
 def validate_config(settings: Settings):

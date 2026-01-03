@@ -15,6 +15,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from ...core.database import get_db
 from .auth import get_keyserver_auth
@@ -34,6 +36,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/keys", tags=["keyserver"])
 
 security = HTTPBearer()
+
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 
 # Dependency that lazily gets the auth instance
@@ -60,7 +65,8 @@ async def get_current_client(
     status_code=status.HTTP_200_OK,
     summary="Register new keyserver client",
 )
-async def register():
+@limiter.limit("10/hour")
+async def register(request: Request):
     """
     Register a new Keyserver client.
 
@@ -85,9 +91,10 @@ async def register():
     },
     summary="Upload public key",
 )
+@limiter.limit("60/minute")
 async def upload_key(
-    bundle: KeyBundleSchema,
     request: Request,
+    bundle: KeyBundleSchema,
     db: AsyncSession = Depends(get_db),
     client_id: str = Depends(get_current_client),
 ):
@@ -121,9 +128,10 @@ async def upload_key(
     responses={404: {"model": ErrorResponse, "description": "Key not found"}},
     summary="Search for public key",
 )
+@limiter.limit("100/minute")
 async def search_key(
+    request: Request,
     q: str = Query(..., description="Search query: fingerprint, name, or email"),
-    request: Request = None,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -161,10 +169,11 @@ async def search_key(
     },
     summary="Revoke public key",
 )
+@limiter.limit("60/minute")
 async def revoke_key(
+    request: Request,
     fingerprint: str,
     revocation: RevocationRequest,
-    request: Request,
     db: AsyncSession = Depends(get_db),
     client_id: str = Depends(get_current_client),
 ):
@@ -189,3 +198,52 @@ async def revoke_key(
     service = KeyserverService(db)
     ip_address = request.client.host if request.client else None
     return await service.revoke_key(fingerprint, revocation, client_id, ip_address)
+
+
+@router.post(
+    "/refresh",
+    response_model=RegisterResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        401: {"model": ErrorResponse, "description": "Invalid or expired refresh token"},
+    },
+    summary="Refresh access token",
+)
+@limiter.limit("60/hour")
+async def refresh_token(
+    request: Request,
+    refresh_token: str = Query(..., description="Refresh token")
+):
+    """
+    Use refresh token to get new access and refresh tokens (sliding expiration).
+
+    SECURITY:
+    - Requires valid refresh token (7-day expiry)
+    - Returns new token pair with extended expiration
+    - Implements sliding expiration: tokens auto-extend on use within TTL
+
+    Token Flow:
+    1. Client uses access token (1-hour expiry) for API calls
+    2. Before access token expires, client uses refresh token
+    3. Server returns NEW access token (1 hour) + NEW refresh token (7 days)
+    4. This provides sliding expiration - active clients never locked out
+
+    Args:
+        request: FastAPI request
+        refresh_token: Valid refresh token (from registration or previous refresh)
+
+    Returns:
+        RegisterResponse: New access and refresh tokens
+    """
+    auth = get_keyserver_auth()
+    result = auth.refresh_access_token(refresh_token)
+
+    return RegisterResponse(
+        client_id=result["client_id"],
+        token=result["access_token"],  # For backward compatibility
+        access_token=result["access_token"],
+        refresh_token=result["refresh_token"],
+        expires_at=result["access_token_expires_at"],
+        refresh_expires_at=result["refresh_token_expires_at"],
+        token_type=result["token_type"]
+    )

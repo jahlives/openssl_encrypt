@@ -23,7 +23,14 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from fastapi import HTTPException, Request, status
 
+from ..security_logger import (
+    SecurityEventSeverity,
+    SecurityEventType,
+    get_security_logger,
+)
+
 logger = logging.getLogger(__name__)
+security_logger = get_security_logger()
 
 
 class ProxyAuth:
@@ -70,18 +77,41 @@ class ProxyAuth:
             for proxy in trusted_proxies:
                 try:
                     # Support both individual IPs and CIDR notation
-                    self.trusted_networks.append(ipaddress.ip_network(proxy, strict=False))
+                    network = ipaddress.ip_network(proxy, strict=False)
+
+                    # SECURITY: Reject networks larger than /24 to prevent broad trust
+                    # Exception: Allow localhost ranges (127.0.0.0/8, ::1/128)
+                    if network.prefixlen < 24:
+                        # Allow localhost ranges
+                        localhost_v4 = ipaddress.ip_network("127.0.0.0/8")
+                        localhost_v6 = ipaddress.ip_network("::1/128")
+
+                        if network != localhost_v4 and network != localhost_v6:
+                            logger.error(
+                                f"Rejected overly broad proxy network: {proxy} "
+                                f"(prefix length {network.prefixlen} < 24). "
+                                f"Please specify exact IPs or smaller subnets."
+                            )
+                            raise ValueError(
+                                f"Proxy network {proxy} is too broad (must be /24 or smaller). "
+                                f"Specify exact IPs or use smaller CIDR ranges for security."
+                            )
+
+                    self.trusted_networks.append(network)
+                    logger.info(f"Added trusted proxy network: {proxy}")
                 except ValueError as e:
                     logger.error(f"Invalid proxy address: {proxy} - {e}")
                     raise ValueError(f"Invalid trusted proxy address: {proxy}")
         else:
-            # Default: trust localhost and private networks
+            # No proxies configured - use minimal defaults (localhost only)
+            logger.warning(
+                "No trusted_proxies configured! Using localhost-only defaults. "
+                "If using a reverse proxy, you MUST configure trusted_proxies explicitly "
+                "in the configuration file to include your proxy's IP address."
+            )
             self.trusted_networks = [
-                ipaddress.ip_network("127.0.0.0/8"),
-                ipaddress.ip_network("::1/128"),
-                ipaddress.ip_network("10.0.0.0/8"),
-                ipaddress.ip_network("172.16.0.0/12"),
-                ipaddress.ip_network("192.168.0.0/16"),
+                ipaddress.ip_network("127.0.0.1/32"),  # IPv4 localhost only
+                ipaddress.ip_network("::1/128"),        # IPv6 localhost only
             ]
 
         logger.info(f"ProxyAuth initialized with {len(self.trusted_networks)} trusted networks")
@@ -199,6 +229,16 @@ class ProxyAuth:
         # Validate trusted proxy
         if not self._is_trusted_proxy(client_ip):
             logger.warning(f"Untrusted proxy IP: {client_ip}")
+
+            # Log security event for untrusted proxy attempt
+            security_logger.log_event(
+                SecurityEventType.UNTRUSTED_PROXY,
+                SecurityEventSeverity.WARNING,
+                client_ip,
+                {"client_ip": client_ip, "headers": dict(request.headers)},
+                f"Request from untrusted proxy: {client_ip}"
+            )
+
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Request not from trusted proxy"
@@ -209,6 +249,16 @@ class ProxyAuth:
             verify_status = request.headers.get(self.verify_header)
             if verify_status != "SUCCESS":
                 logger.warning(f"Certificate verification failed: {verify_status}")
+
+                # Log security event for cert verification failure
+                security_logger.log_event(
+                    SecurityEventType.CERT_VERIFICATION_FAILED,
+                    SecurityEventSeverity.WARNING,
+                    client_ip,
+                    {"verify_status": verify_status, "client_ip": client_ip},
+                    f"Certificate verification failed: {verify_status}"
+                )
+
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Client certificate verification failed"

@@ -27,7 +27,12 @@ _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
-def init_engine(database_url: str, pool_size: int = 20, max_overflow: int = 10):
+def init_engine(
+    database_url: str,
+    pool_size: int = 20,
+    max_overflow: int = 10,
+    query_timeout: int = 30,
+):
     """
     Initialize async database engine.
 
@@ -35,10 +40,20 @@ def init_engine(database_url: str, pool_size: int = 20, max_overflow: int = 10):
         database_url: PostgreSQL connection URL (must use asyncpg driver)
         pool_size: Number of connections in pool
         max_overflow: Maximum overflow connections
+        query_timeout: Query timeout in seconds (default: 30)
     """
     global _engine, _session_factory
 
     logger.info(f"Initializing database engine: {database_url.split('@')[1] if '@' in database_url else database_url}")
+    logger.info(f"Query timeout: {query_timeout}s")
+
+    # Configure asyncpg-specific settings
+    connect_args = {
+        "command_timeout": query_timeout,  # Timeout for commands (queries)
+        "server_settings": {
+            "statement_timeout": f"{query_timeout}s",  # PostgreSQL statement timeout
+        },
+    }
 
     _engine = create_async_engine(
         database_url,
@@ -46,6 +61,7 @@ def init_engine(database_url: str, pool_size: int = 20, max_overflow: int = 10):
         pool_size=pool_size,
         max_overflow=max_overflow,
         pool_pre_ping=True,  # Verify connections before using
+        connect_args=connect_args,  # Pass timeout configuration
     )
 
     _session_factory = async_sessionmaker(

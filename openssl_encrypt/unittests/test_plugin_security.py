@@ -305,9 +305,16 @@ class NetworkPlugin(PreProcessorPlugin):
                 use_process_isolation=False  # Use threading for error visibility
             )
 
-            # Should fail due to SandboxViolationError
+            # Should fail due to import blocking or usage blocking (defense-in-depth)
+            # Import hooks block at 'import socket' (new security layer)
+            # Sandbox blocks at 'socket.socket()' usage (original security layer)
             self.assertFalse(result.success)
-            self.assertIn("network access denied", result.message.lower())
+            # Accept either error message (import blocking is preferred/earlier)
+            self.assertTrue(
+                "network access denied" in result.message.lower() or
+                "import of 'socket' blocked" in result.message.lower(),
+                f"Expected network blocking error, got: {result.message}"
+            )
 
         finally:
             os.unlink(test_file.name)
@@ -391,9 +398,16 @@ class SubprocessPlugin(PreProcessorPlugin):
                 use_process_isolation=False  # Use threading for error visibility
             )
 
-            # Should fail due to SandboxViolationError
+            # Should fail due to import blocking or usage blocking (defense-in-depth)
+            # Import hooks block at 'import subprocess' (new security layer)
+            # Sandbox blocks at 'subprocess.Popen()' usage (original security layer)
             self.assertFalse(result.success)
-            self.assertIn("process execution denied", result.message.lower())
+            # Accept either error message (import blocking is preferred/earlier)
+            self.assertTrue(
+                "process execution denied" in result.message.lower() or
+                "import of 'subprocess' blocked" in result.message.lower(),
+                f"Expected subprocess blocking error, got: {result.message}"
+            )
 
         finally:
             os.unlink(test_file.name)

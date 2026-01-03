@@ -41,12 +41,14 @@ class TokenPayload(BaseModel):
 
 
 class TokenConfig(BaseModel):
-    """Token configuration"""
+    """Token configuration with support for access and refresh tokens"""
 
     secret: str
     algorithm: str = "HS256"
-    expiry_days: int = 365
+    access_token_expire_minutes: int = 60  # 1 hour (reduced from 365 days)
+    refresh_token_expire_days: int = 7     # 7 days for refresh tokens
     issuer: str
+    enable_sliding_expiration: bool = True  # Auto-extend tokens on use
 
 
 class TokenAuth:
@@ -71,28 +73,44 @@ class TokenAuth:
         """
         self.secret = config.secret
         self.algorithm = config.algorithm
-        self.expiry_days = config.expiry_days
+        self.access_token_expire_minutes = config.access_token_expire_minutes
+        self.refresh_token_expire_days = config.refresh_token_expire_days
+        self.enable_sliding_expiration = config.enable_sliding_expiration
         self.issuer = config.issuer
         self.client_model = client_model
 
-        logger.info(f"TokenAuth initialized for issuer: {self.issuer}")
+        logger.info(
+            f"TokenAuth initialized for issuer: {self.issuer} "
+            f"(access: {self.access_token_expire_minutes}min, "
+            f"refresh: {self.refresh_token_expire_days}days, "
+            f"sliding: {self.enable_sliding_expiration})"
+        )
 
     def generate_client_id(self) -> str:
         """Generate unique client ID (32 hex characters)"""
         return secrets.token_hex(16)
 
-    def create_token(self, client_id: str) -> tuple[str, datetime]:
+    def create_token(
+        self,
+        client_id: str,
+        token_type: str = "access"
+    ) -> tuple[str, datetime]:
         """
-        Create JWT token for client.
+        Create JWT token for client (access or refresh).
 
         Args:
             client_id: Client identifier
+            token_type: "access" or "refresh" (default: "access")
 
         Returns:
             tuple: (token string, expiry datetime)
         """
         now = datetime.now(timezone.utc)
-        expiry = now + timedelta(days=self.expiry_days)
+
+        if token_type == "refresh":
+            expiry = now + timedelta(days=self.refresh_token_expire_days)
+        else:  # access token
+            expiry = now + timedelta(minutes=self.access_token_expire_minutes)
 
         payload = {
             "sub": client_id,
@@ -100,13 +118,40 @@ class TokenAuth:
             "exp": expiry,
             "iat": now,
             "jti": secrets.token_hex(8),
+            "type": token_type,  # Distinguish token types
         }
 
         token = jwt.encode(payload, self.secret, algorithm=self.algorithm)
 
-        logger.debug(f"Created token for client {client_id[:8]}... (issuer: {self.issuer})")
+        logger.debug(
+            f"Created {token_type} token for client {client_id[:8]}... "
+            f"(issuer: {self.issuer}, expires: {expiry.isoformat()})"
+        )
 
         return token, expiry
+
+    def create_token_pair(self, client_id: str) -> dict:
+        """
+        Create both access and refresh tokens for client.
+
+        Args:
+            client_id: Client identifier
+
+        Returns:
+            dict with access_token, refresh_token, and expiry info
+        """
+        access_token, access_expiry = self.create_token(client_id, "access")
+        refresh_token, refresh_expiry = self.create_token(client_id, "refresh")
+
+        logger.info(f"Created token pair for client {client_id[:8]}...")
+
+        return {
+            "access_token": access_token,
+            "access_token_expires_at": access_expiry.isoformat(),
+            "refresh_token": refresh_token,
+            "refresh_token_expires_at": refresh_expiry.isoformat(),
+            "token_type": "Bearer"
+        }
 
     def verify_token(self, token: str) -> TokenPayload:
         """
@@ -153,18 +198,63 @@ class TokenAuth:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+    def refresh_access_token(self, refresh_token: str) -> dict:
+        """
+        Use refresh token to get new access token (sliding expiration).
+
+        Args:
+            refresh_token: Valid refresh token
+
+        Returns:
+            dict with new access_token and refresh_token
+
+        Raises:
+            HTTPException: If refresh token invalid or wrong type
+        """
+        # Verify refresh token
+        try:
+            payload = self.verify_token(refresh_token)
+        except HTTPException:
+            raise  # Re-raise auth errors
+
+        # Validate token type
+        token_data = jwt.decode(
+            refresh_token,
+            self.secret,
+            algorithms=[self.algorithm],
+            issuer=self.issuer
+        )
+
+        if token_data.get("type") != "refresh":
+            logger.warning(f"Attempted to refresh with non-refresh token: {payload.sub[:8]}...")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type. Refresh token required.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Create new token pair (sliding expiration)
+        new_tokens = self.create_token_pair(payload.sub)
+
+        logger.info(f"Refreshed tokens for client {payload.sub[:8]}... (sliding expiration)")
+
+        return {
+            "client_id": payload.sub,
+            **new_tokens
+        }
+
     async def register_client(self, metadata: Optional[dict] = None) -> dict:
         """
-        Register a new client and issue token.
+        Register a new client and issue token pair.
 
         Args:
             metadata: Optional client metadata (version, platform, etc.)
 
         Returns:
-            dict: Registration response with token
+            dict: Registration response with access and refresh tokens
         """
         client_id = self.generate_client_id()
-        token, expiry = self.create_token(client_id)
+        tokens = self.create_token_pair(client_id)
 
         async with get_db_session() as session:
             client = self.client_model(client_id=client_id, metadata=metadata or {})
@@ -175,9 +265,7 @@ class TokenAuth:
 
         return {
             "client_id": client_id,
-            "token": token,
-            "expires_at": expiry.isoformat(),
-            "token_type": "Bearer",
+            **tokens
         }
 
     async def get_client(self, client_id: str, session: AsyncSession):

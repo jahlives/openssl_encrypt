@@ -10,6 +10,8 @@ from typing import List
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from ...core.database import get_db
 from .auth import get_client_info, require_integrity_auth
@@ -33,7 +35,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/integrity", tags=["integrity"])
 
+# Initialize rate limiter (60/minute for all integrity endpoints)
+limiter = Limiter(key_func=get_remote_address)
 
+
+@limiter.limit("60/minute")
 @router.get("/profile", response_model=ProfileResponse)
 async def get_profile(
     cert_fingerprint: str = Depends(require_integrity_auth),
@@ -48,6 +54,7 @@ async def get_profile(
     return await service.get_profile(cert_fingerprint)
 
 
+@limiter.limit("60/minute")
 @router.put("/profile", response_model=ProfileResponse)
 async def update_profile(
     request: ProfileUpdateRequest,
@@ -61,6 +68,7 @@ async def update_profile(
     return await service.update_profile(cert_fingerprint, request.name)
 
 
+@limiter.limit("60/minute")
 @router.post("/hashes", response_model=HashResponse, status_code=201)
 async def store_hash(
     request: HashStoreRequest,
@@ -77,6 +85,7 @@ async def store_hash(
     return await service.store_hash(cert_fingerprint, request)
 
 
+@limiter.limit("60/minute")
 @router.get("/hashes", response_model=HashListResponse)
 async def list_hashes(
     cert_fingerprint: str = Depends(require_integrity_auth),
@@ -89,6 +98,7 @@ async def list_hashes(
     return await service.list_hashes(cert_fingerprint)
 
 
+@limiter.limit("60/minute")
 @router.get("/hashes/{file_id}", response_model=HashResponse)
 async def get_hash(
     file_id: str,
@@ -102,6 +112,7 @@ async def get_hash(
     return await service.get_hash(cert_fingerprint, file_id)
 
 
+@limiter.limit("60/minute")
 @router.put("/hashes/{file_id}", response_model=HashResponse)
 async def update_hash(
     file_id: str,
@@ -118,6 +129,7 @@ async def update_hash(
     return await service.update_hash(cert_fingerprint, file_id, request)
 
 
+@limiter.limit("60/minute")
 @router.delete("/hashes/{file_id}")
 async def delete_hash(
     file_id: str,
@@ -131,6 +143,7 @@ async def delete_hash(
     return await service.delete_hash(cert_fingerprint, file_id)
 
 
+@limiter.limit("60/minute")
 @router.delete("/hashes", response_model=DeleteResponse)
 async def delete_all_hashes(
     cert_fingerprint: str = Depends(require_integrity_auth),
@@ -145,6 +158,7 @@ async def delete_all_hashes(
     return await service.delete_all_hashes(cert_fingerprint)
 
 
+@limiter.limit("60/minute")
 @router.post("/verify", response_model=VerifyResponse)
 async def verify_hash(
     request: VerifyRequest,
@@ -165,6 +179,7 @@ async def verify_hash(
     return await service.verify_hash(cert_fingerprint, request, ip_address)
 
 
+@limiter.limit("60/minute")
 @router.post("/verify/batch", response_model=BatchVerifyResponse)
 async def verify_batch(
     request: BatchVerifyRequest,
@@ -198,6 +213,7 @@ async def verify_batch(
     )
 
 
+@limiter.limit("60/minute")
 @router.get("/stats", response_model=StatsResponse)
 async def get_stats(
     cert_fingerprint: str = Depends(require_integrity_auth),
