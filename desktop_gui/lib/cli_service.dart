@@ -627,6 +627,43 @@ class CLIService {
     }
   }
 
+  /// Run CLI command with stdin input (for passphrases, etc.)
+  static Future<ProcessResult> _runCLICommandWithStdin(List<String> args, String stdinInput) async {
+    Process process;
+
+    // When running inside Flatpak, use direct CLI path
+    if (_isFlaspakVersion && await File(_cliPath).exists()) {
+      _outputDebugLog('Using direct Flatpak CLI with stdin: $_cliPath ${args.join(' ')}');
+      process = await Process.start(_cliPath, args);
+    } else {
+      // Development CLI
+      final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
+      _outputDebugLog('Attempting development CLI with stdin: python ${pythonArgs.join(' ')}');
+
+      final env = Map<String, String>.from(Platform.environment);
+      process = await Process.start('python', pythonArgs,
+        workingDirectory: '/home/work/private/git/openssl_encrypt',
+        environment: env);
+    }
+
+    // Send stdin input
+    process.stdin.write(stdinInput);
+    if (!stdinInput.endsWith('\n')) {
+      process.stdin.write('\n');
+    }
+    await process.stdin.flush();
+    await process.stdin.close();
+
+    // Collect output
+    final stdout = await process.stdout.transform(utf8.decoder).join();
+    final stderr = await process.stderr.transform(utf8.decoder).join();
+    final exitCode = await process.exitCode;
+
+    _outputDebugLog('CLI with stdin exit code: $exitCode');
+
+    return ProcessResult(process.pid, exitCode, stdout, stderr);
+  }
+
   /// Run CLI command with real-time progress streaming
   static Future<ProcessResult> _runCLICommandWithProgress(
     List<String> args,
@@ -1487,6 +1524,153 @@ class CLIService {
       throw Exception('Failed to delete credential: $e');
     }
   }
+
+  // ==================== Identity Management Methods ====================
+
+  /// List all identities (own + contacts)
+  static Future<Map<String, List<Map<String, dynamic>>>> listIdentities() async {
+    try {
+      final args = ['identity', 'list', '--include-contacts', '--json'];
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+
+      if (result.exitCode != 0) {
+        _outputDebugLog('Failed to list identities: ${result.stderr}');
+        return {'own': [], 'contacts': []};
+      }
+
+      final data = jsonDecode(result.stdout) as Map<String, dynamic>;
+
+      return {
+        'own': (data['own'] as List<dynamic>?)?.map((i) => i as Map<String, dynamic>).toList() ?? [],
+        'contacts': (data['contacts'] as List<dynamic>?)?.map((i) => i as Map<String, dynamic>).toList() ?? [],
+      };
+    } catch (e) {
+      _outputDebugLog('Error listing identities: $e');
+      return {'own': [], 'contacts': []};
+    }
+  }
+
+  /// Create a new identity
+  static Future<Map<String, dynamic>> createIdentity({
+    required String name,
+    String? email,
+    required String passphrase,
+    String kemAlgorithm = 'ML-KEM-768',
+    String sigAlgorithm = 'ML-DSA-65',
+    String? hsmType,
+    int? hsmSlot,
+  }) async {
+    final args = [
+      'identity',
+      'create',
+      '--name', name,
+      '--kem-algorithm', kemAlgorithm,
+      '--sig-algorithm', sigAlgorithm,
+    ];
+
+    if (email != null && email.isNotEmpty) {
+      args.addAll(['--email', email]);
+    }
+
+    if (hsmType != null && hsmType != 'none') {
+      args.addAll(['--hsm', hsmType]);
+      if (hsmSlot != null) {
+        args.addAll(['--hsm-slot', hsmSlot.toString()]);
+      }
+    }
+
+    if (debugEnabled) {
+      args.add('--debug');
+    }
+
+    // Use stdin for passphrase
+    final process = await _runCLICommandWithStdin(args, passphrase);
+
+    if (process.exitCode != 0) {
+      throw Exception('Failed to create identity: ${process.stderr}');
+    }
+
+    // Return basic info
+    return {
+      'success': true,
+      'name': name,
+      'email': email,
+    };
+  }
+
+  /// Export public identity for sharing
+  static Future<String> exportIdentity(String name) async {
+    try {
+      final args = ['identity', 'export', name];
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+
+      if (result.exitCode != 0) {
+        throw Exception('Failed to export identity: ${result.stderr}');
+      }
+
+      return result.stdout.trim();
+    } catch (e) {
+      throw Exception('Error exporting identity: $e');
+    }
+  }
+
+  /// Import a contact's public key
+  static Future<void> importContact(String publicKeyData, {String? alias}) async {
+    try {
+      final args = ['identity', 'import', '--data', publicKeyData];
+
+      if (alias != null && alias.isNotEmpty) {
+        args.addAll(['--alias', alias]);
+      }
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+
+      if (result.exitCode != 0) {
+        throw Exception('Failed to import contact: ${result.stderr}');
+      }
+    } catch (e) {
+      throw Exception('Error importing contact: $e');
+    }
+  }
+
+  /// Delete an identity or contact
+  static Future<void> deleteIdentity(String name, {bool isContact = false}) async {
+    try {
+      final args = ['identity', 'delete', name];
+
+      if (isContact) {
+        args.add('--contact');
+      }
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+
+      if (result.exitCode != 0) {
+        throw Exception('Failed to delete identity: ${result.stderr}');
+      }
+    } catch (e) {
+      throw Exception('Error deleting identity: $e');
+    }
+  }
+
+  // ==================== Network Plugin Methods ====================
 
   /// Test keyserver connection
   static Future<bool> testKeyserverConnection(String url) async {
