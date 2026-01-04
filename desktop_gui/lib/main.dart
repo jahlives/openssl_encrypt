@@ -739,6 +739,12 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   List<Map<String, dynamic>> _ownIdentities = [];
   List<Map<String, dynamic>> _contacts = [];
 
+  // Cascade encryption state
+  String _cascadePreset = 'standard';  // 'standard', 'paranoia', 'custom'
+  List<String> _cascadeAlgorithms = ['aes-256-gcm', 'chacha20-poly1305'];
+  String _cascadeHash = 'sha256';
+  List<Map<String, dynamic>> _diversityWarnings = [];
+
   // Performance optimization caches
   static bool _algorithmsLoaded = false;
   static List<String>? _cachedAlgorithms;
@@ -1455,6 +1461,280 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     );
   }
 
+  /// Build cascade encryption UI section
+  Widget _buildCascadeSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.layers),
+                const SizedBox(width: 8),
+                const Text('Cascade Encryption Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.info_outline),
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Cascade Encryption'),
+                        content: const SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('Cascade encryption chains multiple algorithms together for defense-in-depth security.\n'),
+                              Text('Presets:', style: TextStyle(fontWeight: FontWeight.bold)),
+                              Text('• Standard: AES-256-GCM + ChaCha20-Poly1305'),
+                              Text('• Paranoia: AES-256-GCM + ChaCha20-Poly1305 + Threefish-512\n'),
+                              Text('Custom allows you to build your own algorithm chain with any combination.'),
+                            ],
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('OK'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  tooltip: 'Cascade Information',
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Text('Cascade Preset:', style: TextStyle(fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            Center(
+              child: SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'standard', label: Text('Standard'), icon: Icon(Icons.shield)),
+                  ButtonSegment(value: 'paranoia', label: Text('Paranoia'), icon: Icon(Icons.security)),
+                  ButtonSegment(value: 'custom', label: Text('Custom'), icon: Icon(Icons.tune)),
+                ],
+                selected: {_cascadePreset},
+                onSelectionChanged: (Set<String> newSelection) async {
+                  setState(() {
+                    _cascadePreset = newSelection.first;
+                    if (_cascadePreset == 'standard') {
+                      _cascadeAlgorithms = ['aes-256-gcm', 'chacha20-poly1305'];
+                    } else if (_cascadePreset == 'paranoia') {
+                      _cascadeAlgorithms = ['aes-256-gcm', 'chacha20-poly1305', 'threefish-512'];
+                    }
+                  });
+                  if (_cascadePreset == 'custom') {
+                    final warnings = await CLIService.validateCascade(_cascadeAlgorithms);
+                    setState(() { _diversityWarnings = warnings; });
+                  } else {
+                    setState(() { _diversityWarnings = []; });
+                  }
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (_cascadePreset != 'custom') ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  border: Border.all(color: Colors.blue.shade200),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Algorithm Chain:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    ..._cascadeAlgorithms.asMap().entries.map((entry) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 24,
+                              height: 24,
+                              decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle),
+                              child: Center(
+                                child: Text('${entry.key + 1}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(entry.value),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ],
+            if (_cascadePreset == 'custom') ...[
+              const Text('Custom Algorithm Chain:', style: TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Theme.of(context).colorScheme.outline),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  children: [
+                    if (_cascadeAlgorithms.isEmpty)
+                      const Padding(padding: EdgeInsets.all(16.0), child: Text('No algorithms added. Add at least 2 algorithms.'))
+                    else
+                      ReorderableListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _cascadeAlgorithms.length,
+                        onReorder: (oldIndex, newIndex) async {
+                          setState(() {
+                            if (newIndex > oldIndex) { newIndex -= 1; }
+                            final item = _cascadeAlgorithms.removeAt(oldIndex);
+                            _cascadeAlgorithms.insert(newIndex, item);
+                          });
+                          final warnings = await CLIService.validateCascade(_cascadeAlgorithms);
+                          setState(() { _diversityWarnings = warnings; });
+                        },
+                        itemBuilder: (context, index) {
+                          final algorithm = _cascadeAlgorithms[index];
+                          return ListTile(
+                            key: ValueKey(algorithm + index.toString()),
+                            dense: true,
+                            leading: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 24,
+                                  height: 24,
+                                  decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle),
+                                  child: Center(child: Text('${index + 1}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold))),
+                                ),
+                                const SizedBox(width: 8),
+                                const Icon(Icons.drag_handle),
+                              ],
+                            ),
+                            title: Text(algorithm),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () async {
+                                setState(() { _cascadeAlgorithms.removeAt(index); });
+                                final warnings = await CLIService.validateCascade(_cascadeAlgorithms);
+                                setState(() { _diversityWarnings = warnings; });
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(onPressed: () => _showAddCascadeAlgorithmDialog(), icon: const Icon(Icons.add), label: const Text('Add Algorithm')),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            const Text('HKDF Hash Function:', style: TextStyle(fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: _cascadeHash,
+              decoration: const InputDecoration(border: OutlineInputBorder(), helperText: 'Hash function for key derivation between layers'),
+              items: const [
+                DropdownMenuItem(value: 'sha256', child: Text('SHA-256')),
+                DropdownMenuItem(value: 'sha384', child: Text('SHA-384')),
+                DropdownMenuItem(value: 'sha512', child: Text('SHA-512')),
+                DropdownMenuItem(value: 'blake2b', child: Text('BLAKE2b')),
+                DropdownMenuItem(value: 'blake2s', child: Text('BLAKE2s')),
+              ],
+              onChanged: (value) { setState(() { _cascadeHash = value ?? 'sha256'; }); },
+            ),
+            if (_diversityWarnings.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Text('Security Warnings:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              ..._diversityWarnings.map((warning) {
+                final level = warning['level'] as String;
+                final message = warning['message'] as String;
+                final suggestion = warning['suggestion'] as String;
+                final color = level == 'ERROR' ? Colors.red : Colors.orange;
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: color.shade50, border: Border.all(color: color), borderRadius: BorderRadius.circular(8)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.warning, color: color.shade700, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(message, style: TextStyle(fontWeight: FontWeight.bold, color: color.shade900))),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(suggestion, style: TextStyle(fontSize: 12, color: color.shade800)),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAddCascadeAlgorithmDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Algorithm'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Select an algorithm to add to the cascade chain:'),
+              const SizedBox(height: 16),
+              const Text('AES Family:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              ..._buildAlgorithmTiles(['aes-256-gcm', 'aes-gcm-siv', 'aes-siv', 'aes-ocb3']),
+              const SizedBox(height: 8),
+              const Text('ChaCha Family:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              ..._buildAlgorithmTiles(['chacha20-poly1305', 'xchacha20-poly1305']),
+              const SizedBox(height: 8),
+              const Text('Threefish Family:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              ..._buildAlgorithmTiles(['threefish-512', 'threefish-1024']),
+            ],
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel'))],
+      ),
+    );
+  }
+
+  List<Widget> _buildAlgorithmTiles(List<String> algorithms) {
+    return algorithms.map((algorithm) {
+      final isAlreadyAdded = _cascadeAlgorithms.contains(algorithm);
+      return ListTile(
+        dense: true,
+        title: Text(algorithm),
+        trailing: isAlreadyAdded ? const Icon(Icons.check, color: Colors.green) : null,
+        enabled: !isAlreadyAdded,
+        onTap: isAlreadyAdded ? null : () async {
+          setState(() { _cascadeAlgorithms.add(algorithm); });
+          Navigator.pop(context);
+          final warnings = await CLIService.validateCascade(_cascadeAlgorithms);
+          setState(() { _diversityWarnings = warnings; });
+        },
+      );
+    }).toList();
+  }
+
   /// Build encryption mode selector widget
   Widget _buildEncryptionModeSelector() {
     return Card(
@@ -1893,8 +2173,14 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
             ],
           ],
 
-          // Advanced Algorithm Selection (only show in symmetric/cascade modes)
-          if (_encryptionMode != EncryptionMode.asymmetric)
+          // Cascade mode section (shown only in cascade mode)
+          if (_encryptionMode == EncryptionMode.cascade) ...[
+            _buildCascadeSection(),
+            const SizedBox(height: 16),
+          ],
+
+          // Advanced Algorithm Selection (only show in symmetric mode)
+          if (_encryptionMode == EncryptionMode.symmetric)
           Card(
             child: Padding(
               padding: const EdgeInsets.all(12.0),
@@ -3768,6 +4054,12 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   List<Map<String, dynamic>> _ownIdentities = [];
   List<Map<String, dynamic>> _contacts = [];
 
+  // Cascade encryption state
+  String _cascadePreset = 'standard';
+  List<String> _cascadeAlgorithms = ['aes-256-gcm', 'chacha20-poly1305'];
+  String _cascadeHash = 'sha256';
+  List<Map<String, dynamic>> _diversityWarnings = [];
+
   // Steganography state
   bool _enableSteganography = false;
   FileInfo? _coverImageFile;
@@ -5114,6 +5406,280 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   }
 
   /// Build encryption mode selector widget
+  /// Build cascade encryption UI section
+  Widget _buildCascadeSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.layers),
+                const SizedBox(width: 8),
+                const Text('Cascade Encryption Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.info_outline),
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Cascade Encryption'),
+                        content: const SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('Cascade encryption chains multiple algorithms together for defense-in-depth security.\n'),
+                              Text('Presets:', style: TextStyle(fontWeight: FontWeight.bold)),
+                              Text('• Standard: AES-256-GCM + ChaCha20-Poly1305'),
+                              Text('• Paranoia: AES-256-GCM + ChaCha20-Poly1305 + Threefish-512\n'),
+                              Text('Custom allows you to build your own algorithm chain with any combination.'),
+                            ],
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('OK'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  tooltip: 'Cascade Information',
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Text('Cascade Preset:', style: TextStyle(fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            Center(
+              child: SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'standard', label: Text('Standard'), icon: Icon(Icons.shield)),
+                  ButtonSegment(value: 'paranoia', label: Text('Paranoia'), icon: Icon(Icons.security)),
+                  ButtonSegment(value: 'custom', label: Text('Custom'), icon: Icon(Icons.tune)),
+                ],
+                selected: {_cascadePreset},
+                onSelectionChanged: (Set<String> newSelection) async {
+                  setState(() {
+                    _cascadePreset = newSelection.first;
+                    if (_cascadePreset == 'standard') {
+                      _cascadeAlgorithms = ['aes-256-gcm', 'chacha20-poly1305'];
+                    } else if (_cascadePreset == 'paranoia') {
+                      _cascadeAlgorithms = ['aes-256-gcm', 'chacha20-poly1305', 'threefish-512'];
+                    }
+                  });
+                  if (_cascadePreset == 'custom') {
+                    final warnings = await CLIService.validateCascade(_cascadeAlgorithms);
+                    setState(() { _diversityWarnings = warnings; });
+                  } else {
+                    setState(() { _diversityWarnings = []; });
+                  }
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (_cascadePreset != 'custom') ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  border: Border.all(color: Colors.blue.shade200),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Algorithm Chain:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    ..._cascadeAlgorithms.asMap().entries.map((entry) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 24,
+                              height: 24,
+                              decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle),
+                              child: Center(
+                                child: Text('${entry.key + 1}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(entry.value),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ],
+            if (_cascadePreset == 'custom') ...[
+              const Text('Custom Algorithm Chain:', style: TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Theme.of(context).colorScheme.outline),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  children: [
+                    if (_cascadeAlgorithms.isEmpty)
+                      const Padding(padding: EdgeInsets.all(16.0), child: Text('No algorithms added. Add at least 2 algorithms.'))
+                    else
+                      ReorderableListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _cascadeAlgorithms.length,
+                        onReorder: (oldIndex, newIndex) async {
+                          setState(() {
+                            if (newIndex > oldIndex) { newIndex -= 1; }
+                            final item = _cascadeAlgorithms.removeAt(oldIndex);
+                            _cascadeAlgorithms.insert(newIndex, item);
+                          });
+                          final warnings = await CLIService.validateCascade(_cascadeAlgorithms);
+                          setState(() { _diversityWarnings = warnings; });
+                        },
+                        itemBuilder: (context, index) {
+                          final algorithm = _cascadeAlgorithms[index];
+                          return ListTile(
+                            key: ValueKey(algorithm + index.toString()),
+                            dense: true,
+                            leading: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 24,
+                                  height: 24,
+                                  decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle),
+                                  child: Center(child: Text('${index + 1}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold))),
+                                ),
+                                const SizedBox(width: 8),
+                                const Icon(Icons.drag_handle),
+                              ],
+                            ),
+                            title: Text(algorithm),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () async {
+                                setState(() { _cascadeAlgorithms.removeAt(index); });
+                                final warnings = await CLIService.validateCascade(_cascadeAlgorithms);
+                                setState(() { _diversityWarnings = warnings; });
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(onPressed: () => _showAddCascadeAlgorithmDialog(), icon: const Icon(Icons.add), label: const Text('Add Algorithm')),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            const Text('HKDF Hash Function:', style: TextStyle(fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: _cascadeHash,
+              decoration: const InputDecoration(border: OutlineInputBorder(), helperText: 'Hash function for key derivation between layers'),
+              items: const [
+                DropdownMenuItem(value: 'sha256', child: Text('SHA-256')),
+                DropdownMenuItem(value: 'sha384', child: Text('SHA-384')),
+                DropdownMenuItem(value: 'sha512', child: Text('SHA-512')),
+                DropdownMenuItem(value: 'blake2b', child: Text('BLAKE2b')),
+                DropdownMenuItem(value: 'blake2s', child: Text('BLAKE2s')),
+              ],
+              onChanged: (value) { setState(() { _cascadeHash = value ?? 'sha256'; }); },
+            ),
+            if (_diversityWarnings.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Text('Security Warnings:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              ..._diversityWarnings.map((warning) {
+                final level = warning['level'] as String;
+                final message = warning['message'] as String;
+                final suggestion = warning['suggestion'] as String;
+                final color = level == 'ERROR' ? Colors.red : Colors.orange;
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: color.shade50, border: Border.all(color: color), borderRadius: BorderRadius.circular(8)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.warning, color: color.shade700, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(message, style: TextStyle(fontWeight: FontWeight.bold, color: color.shade900))),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(suggestion, style: TextStyle(fontSize: 12, color: color.shade800)),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAddCascadeAlgorithmDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Algorithm'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Select an algorithm to add to the cascade chain:'),
+              const SizedBox(height: 16),
+              const Text('AES Family:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              ..._buildAlgorithmTiles(['aes-256-gcm', 'aes-gcm-siv', 'aes-siv', 'aes-ocb3']),
+              const SizedBox(height: 8),
+              const Text('ChaCha Family:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              ..._buildAlgorithmTiles(['chacha20-poly1305', 'xchacha20-poly1305']),
+              const SizedBox(height: 8),
+              const Text('Threefish Family:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              ..._buildAlgorithmTiles(['threefish-512', 'threefish-1024']),
+            ],
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel'))],
+      ),
+    );
+  }
+
+  List<Widget> _buildAlgorithmTiles(List<String> algorithms) {
+    return algorithms.map((algorithm) {
+      final isAlreadyAdded = _cascadeAlgorithms.contains(algorithm);
+      return ListTile(
+        dense: true,
+        title: Text(algorithm),
+        trailing: isAlreadyAdded ? const Icon(Icons.check, color: Colors.green) : null,
+        enabled: !isAlreadyAdded,
+        onTap: isAlreadyAdded ? null : () async {
+          setState(() { _cascadeAlgorithms.add(algorithm); });
+          Navigator.pop(context);
+          final warnings = await CLIService.validateCascade(_cascadeAlgorithms);
+          setState(() { _diversityWarnings = warnings; });
+        },
+      );
+    }).toList();
+  }
+
   Widget _buildEncryptionModeSelector() {
     return Card(
       child: Padding(
@@ -5463,8 +6029,14 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
             const SizedBox(height: 16),
           ],
 
-          // Algorithm Selection Card (only show in symmetric/cascade modes)
-          if (_encryptionMode != EncryptionMode.asymmetric)
+          // Cascade mode section
+          if (_encryptionMode == EncryptionMode.cascade) ...[
+            _buildCascadeSection(),
+            const SizedBox(height: 16),
+          ],
+
+          // Algorithm Selection Card (only show in symmetric mode)
+          if (_encryptionMode == EncryptionMode.symmetric)
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
@@ -8139,6 +8711,12 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
   List<Map<String, dynamic>> _ownIdentities = [];
   List<Map<String, dynamic>> _contacts = [];
 
+  // Cascade encryption state
+  String _cascadePreset = 'standard';
+  List<String> _cascadeAlgorithms = ['aes-256-gcm', 'chacha20-poly1305'];
+  String _cascadeHash = 'sha256';
+  List<Map<String, dynamic>> _diversityWarnings = [];
+
   // Cached dropdown items for algorithms (performance optimization)
   static final Map<String, List<DropdownMenuItem<String>>> _dropdownCache = {};
 
@@ -8503,6 +9081,280 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
   }
 
   /// Build encryption mode selector widget
+  /// Build cascade encryption UI section
+  Widget _buildCascadeSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.layers),
+                const SizedBox(width: 8),
+                const Text('Cascade Encryption Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.info_outline),
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Cascade Encryption'),
+                        content: const SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('Cascade encryption chains multiple algorithms together for defense-in-depth security.\n'),
+                              Text('Presets:', style: TextStyle(fontWeight: FontWeight.bold)),
+                              Text('• Standard: AES-256-GCM + ChaCha20-Poly1305'),
+                              Text('• Paranoia: AES-256-GCM + ChaCha20-Poly1305 + Threefish-512\n'),
+                              Text('Custom allows you to build your own algorithm chain with any combination.'),
+                            ],
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('OK'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  tooltip: 'Cascade Information',
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Text('Cascade Preset:', style: TextStyle(fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            Center(
+              child: SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'standard', label: Text('Standard'), icon: Icon(Icons.shield)),
+                  ButtonSegment(value: 'paranoia', label: Text('Paranoia'), icon: Icon(Icons.security)),
+                  ButtonSegment(value: 'custom', label: Text('Custom'), icon: Icon(Icons.tune)),
+                ],
+                selected: {_cascadePreset},
+                onSelectionChanged: (Set<String> newSelection) async {
+                  setState(() {
+                    _cascadePreset = newSelection.first;
+                    if (_cascadePreset == 'standard') {
+                      _cascadeAlgorithms = ['aes-256-gcm', 'chacha20-poly1305'];
+                    } else if (_cascadePreset == 'paranoia') {
+                      _cascadeAlgorithms = ['aes-256-gcm', 'chacha20-poly1305', 'threefish-512'];
+                    }
+                  });
+                  if (_cascadePreset == 'custom') {
+                    final warnings = await CLIService.validateCascade(_cascadeAlgorithms);
+                    setState(() { _diversityWarnings = warnings; });
+                  } else {
+                    setState(() { _diversityWarnings = []; });
+                  }
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (_cascadePreset != 'custom') ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  border: Border.all(color: Colors.blue.shade200),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Algorithm Chain:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    ..._cascadeAlgorithms.asMap().entries.map((entry) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 24,
+                              height: 24,
+                              decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle),
+                              child: Center(
+                                child: Text('${entry.key + 1}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(entry.value),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ],
+            if (_cascadePreset == 'custom') ...[
+              const Text('Custom Algorithm Chain:', style: TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Theme.of(context).colorScheme.outline),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  children: [
+                    if (_cascadeAlgorithms.isEmpty)
+                      const Padding(padding: EdgeInsets.all(16.0), child: Text('No algorithms added. Add at least 2 algorithms.'))
+                    else
+                      ReorderableListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _cascadeAlgorithms.length,
+                        onReorder: (oldIndex, newIndex) async {
+                          setState(() {
+                            if (newIndex > oldIndex) { newIndex -= 1; }
+                            final item = _cascadeAlgorithms.removeAt(oldIndex);
+                            _cascadeAlgorithms.insert(newIndex, item);
+                          });
+                          final warnings = await CLIService.validateCascade(_cascadeAlgorithms);
+                          setState(() { _diversityWarnings = warnings; });
+                        },
+                        itemBuilder: (context, index) {
+                          final algorithm = _cascadeAlgorithms[index];
+                          return ListTile(
+                            key: ValueKey(algorithm + index.toString()),
+                            dense: true,
+                            leading: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 24,
+                                  height: 24,
+                                  decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle),
+                                  child: Center(child: Text('${index + 1}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold))),
+                                ),
+                                const SizedBox(width: 8),
+                                const Icon(Icons.drag_handle),
+                              ],
+                            ),
+                            title: Text(algorithm),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () async {
+                                setState(() { _cascadeAlgorithms.removeAt(index); });
+                                final warnings = await CLIService.validateCascade(_cascadeAlgorithms);
+                                setState(() { _diversityWarnings = warnings; });
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(onPressed: () => _showAddCascadeAlgorithmDialog(), icon: const Icon(Icons.add), label: const Text('Add Algorithm')),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            const Text('HKDF Hash Function:', style: TextStyle(fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: _cascadeHash,
+              decoration: const InputDecoration(border: OutlineInputBorder(), helperText: 'Hash function for key derivation between layers'),
+              items: const [
+                DropdownMenuItem(value: 'sha256', child: Text('SHA-256')),
+                DropdownMenuItem(value: 'sha384', child: Text('SHA-384')),
+                DropdownMenuItem(value: 'sha512', child: Text('SHA-512')),
+                DropdownMenuItem(value: 'blake2b', child: Text('BLAKE2b')),
+                DropdownMenuItem(value: 'blake2s', child: Text('BLAKE2s')),
+              ],
+              onChanged: (value) { setState(() { _cascadeHash = value ?? 'sha256'; }); },
+            ),
+            if (_diversityWarnings.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Text('Security Warnings:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              ..._diversityWarnings.map((warning) {
+                final level = warning['level'] as String;
+                final message = warning['message'] as String;
+                final suggestion = warning['suggestion'] as String;
+                final color = level == 'ERROR' ? Colors.red : Colors.orange;
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: color.shade50, border: Border.all(color: color), borderRadius: BorderRadius.circular(8)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.warning, color: color.shade700, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(message, style: TextStyle(fontWeight: FontWeight.bold, color: color.shade900))),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(suggestion, style: TextStyle(fontSize: 12, color: color.shade800)),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAddCascadeAlgorithmDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Algorithm'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Select an algorithm to add to the cascade chain:'),
+              const SizedBox(height: 16),
+              const Text('AES Family:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              ..._buildAlgorithmTiles(['aes-256-gcm', 'aes-gcm-siv', 'aes-siv', 'aes-ocb3']),
+              const SizedBox(height: 8),
+              const Text('ChaCha Family:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              ..._buildAlgorithmTiles(['chacha20-poly1305', 'xchacha20-poly1305']),
+              const SizedBox(height: 8),
+              const Text('Threefish Family:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              ..._buildAlgorithmTiles(['threefish-512', 'threefish-1024']),
+            ],
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel'))],
+      ),
+    );
+  }
+
+  List<Widget> _buildAlgorithmTiles(List<String> algorithms) {
+    return algorithms.map((algorithm) {
+      final isAlreadyAdded = _cascadeAlgorithms.contains(algorithm);
+      return ListTile(
+        dense: true,
+        title: Text(algorithm),
+        trailing: isAlreadyAdded ? const Icon(Icons.check, color: Colors.green) : null,
+        enabled: !isAlreadyAdded,
+        onTap: isAlreadyAdded ? null : () async {
+          setState(() { _cascadeAlgorithms.add(algorithm); });
+          Navigator.pop(context);
+          final warnings = await CLIService.validateCascade(_cascadeAlgorithms);
+          setState(() { _diversityWarnings = warnings; });
+        },
+      );
+    }).toList();
+  }
+
   Widget _buildEncryptionModeSelector() {
     return Card(
       child: Padding(
@@ -8756,6 +9608,12 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
               const SizedBox(height: 16),
             ],
 
+            // Cascade mode section
+            if (_encryptionMode == EncryptionMode.cascade) ...[
+              _buildCascadeSection(),
+              const SizedBox(height: 16),
+            ],
+
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -8824,8 +9682,8 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
 
                     const SizedBox(height: 16),
 
-                    // Algorithm Selection (only for encryption)
-                    if (_selectedOperation == 'encrypt') ...[
+                    // Algorithm Selection (only for encryption in symmetric mode)
+                    if (_selectedOperation == 'encrypt' && _encryptionMode == EncryptionMode.symmetric) ...[
                       Row(
                         children: [
                           const SizedBox(width: 100, child: Text('Algorithm:')),
