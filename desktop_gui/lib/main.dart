@@ -676,6 +676,14 @@ class _InfoTabState extends State<InfoTab> with SingleTickerProviderStateMixin {
     'ChaCha Family': ['chacha20-poly1305', 'xchacha20-poly1305'],
     'Threefish (Large Block)': ['threefish-512', 'threefish-1024'],
     'Fernet': ['fernet'],
+    'PQC Hybrid Encryption': [
+      'ml-kem-512-hybrid', 'ml-kem-768-hybrid', 'ml-kem-1024-hybrid',
+      'ml-kem-512-chacha20', 'ml-kem-768-chacha20', 'ml-kem-1024-chacha20',
+      'kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid',
+      'hqc-128-hybrid', 'hqc-192-hybrid', 'hqc-256-hybrid',
+      'mayo-1-hybrid', 'mayo-3-hybrid', 'mayo-5-hybrid',
+      'cross-128-hybrid', 'cross-192-hybrid', 'cross-256-hybrid',
+    ],
   };
 
   // Algorithm groupings for hashes
@@ -803,32 +811,6 @@ class _InfoTabState extends State<InfoTab> with SingleTickerProviderStateMixin {
           ),
           initiallyExpanded: false,
           children: children,
-        ),
-      );
-    }
-
-    // Add PQC algorithms (any starting with ml-kem-, kyber, hqc-, mayo-, cross-)
-    final pqcAlgos = algorithms.entries
-        .where((e) =>
-            e.key.startsWith('ml-kem-') ||
-            e.key.startsWith('kyber') ||
-            e.key.startsWith('hqc-') ||
-            e.key.startsWith('mayo-') ||
-            e.key.startsWith('cross-'))
-        .map((e) => e.value)
-        .toList();
-
-    if (pqcAlgos.isNotEmpty) {
-      final pqcChildren = pqcAlgos.map((algo) => _buildAlgorithmTile(algo)).toList();
-      widgets.add(
-        ExpansionTile(
-          key: const PageStorageKey<String>('group_PQC_Hybrid_Encryption'),
-          title: const Text(
-            'PQC Hybrid Encryption',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          initiallyExpanded: false,
-          children: pqcChildren,
         ),
       );
     }
