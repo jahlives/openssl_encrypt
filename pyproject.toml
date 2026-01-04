@@ -9,4 +9,5 @@ requires = [
     "Pillow>=10.0.0,<12.0.0",
     "numpy>=2.1.0,<3.0.0"
 ]
-build-backend = "setuptools.build_meta"
+build-backend = "build_backend"
+backend-path = ["."]
