@@ -36,7 +36,7 @@ class _EncryptTabState extends State<EncryptTab> {
   // Hash configuration
   bool _showHashConfig = false;
   Map<String, Map<String, dynamic>> _hashConfig = {};
-  List<String> _hashAlgorithms = [];
+  Map<String, List<String>> _hashAlgorithms = {};
 
   // KDF configuration
   bool _showKdfConfig = false;
@@ -73,16 +73,18 @@ class _EncryptTabState extends State<EncryptTab> {
 
   Future<void> _loadHashAlgorithms() async {
     try {
-      final algorithms = await CLIService.getHashAlgorithmsList();
+      final algorithms = await CLIService.getHashAlgorithms();
       setState(() {
         _hashAlgorithms = algorithms;
         // Initialize hash config with default values
-        for (final algo in algorithms) {
-          // Enable sha3-512 by default with 100000 rounds
-          if (algo == 'sha3-512') {
-            _hashConfig[algo] = {'enabled': true, 'rounds': 100000};
-          } else {
-            _hashConfig[algo] = {'enabled': false, 'rounds': 1000};
+        for (final group in algorithms.values) {
+          for (final algo in group) {
+            // Enable sha3-512 by default with 100000 rounds
+            if (algo == 'sha3-512') {
+              _hashConfig[algo] = {'enabled': true, 'rounds': 100000};
+            } else {
+              _hashConfig[algo] = {'enabled': false, 'rounds': 1000};
+            }
           }
         }
       });
@@ -753,11 +755,28 @@ class _EncryptTabState extends State<EncryptTab> {
             ),
           ),
           const SizedBox(height: 12),
-          ..._hashAlgorithms.map((hash) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8.0),
-              child: _buildHashConfig(hash, hash),
-            );
+          ..._hashAlgorithms.entries.expand((entry) {
+            final groupName = entry.key;
+            final hashes = entry.value;
+            return [
+              Padding(
+                padding: const EdgeInsets.only(top: 12, bottom: 8),
+                child: Text(
+                  groupName,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: Theme.of(context).colorScheme.secondary,
+                  ),
+                ),
+              ),
+              ...hashes.map((hash) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8.0, left: 8.0),
+                  child: _buildHashConfig(hash, hash),
+                );
+              }),
+            ];
           }),
           const SizedBox(height: 8),
           Wrap(
@@ -768,11 +787,13 @@ class _EncryptTabState extends State<EncryptTab> {
               TextButton(
                 onPressed: () {
                   setState(() {
-                    for (String hash in _hashAlgorithms) {
-                      _hashConfig[hash] = {
-                        'enabled': true,
-                        'rounds': 1000
-                      };
+                    for (final group in _hashAlgorithms.values) {
+                      for (String hash in group) {
+                        _hashConfig[hash] = {
+                          'enabled': true,
+                          'rounds': 1000
+                        };
+                      }
                     }
                   });
                 },
@@ -781,9 +802,11 @@ class _EncryptTabState extends State<EncryptTab> {
               TextButton(
                 onPressed: () {
                   setState(() {
-                    for (String hash in _hashAlgorithms) {
-                      if (_hashConfig[hash] != null) {
-                        _hashConfig[hash]!['enabled'] = false;
+                    for (final group in _hashAlgorithms.values) {
+                      for (String hash in group) {
+                        if (_hashConfig[hash] != null) {
+                          _hashConfig[hash]!['enabled'] = false;
+                        }
                       }
                     }
                   });
@@ -793,11 +816,13 @@ class _EncryptTabState extends State<EncryptTab> {
               TextButton(
                 onPressed: () {
                   setState(() {
-                    for (String hash in _hashAlgorithms) {
-                      _hashConfig[hash] = {
-                        'enabled': false,
-                        'rounds': 1000
-                      };
+                    for (final group in _hashAlgorithms.values) {
+                      for (String hash in group) {
+                        _hashConfig[hash] = {
+                          'enabled': false,
+                          'rounds': 1000
+                        };
+                      }
                     }
                   });
                 },
