@@ -192,6 +192,9 @@ class CLIService {
      List<String>? forIdentities,      // Asymmetric: recipients
      String? signWith,                  // Asymmetric: signing identity
      bool useKeyserver = false,         // Asymmetric: keyserver lookup
+     String? cascadePreset,             // Cascade: 'standard', 'paranoia', or null for custom
+     List<String>? cascadeAlgorithms,   // Cascade: custom algorithm chain
+     String cascadeHash = 'sha256',     // Cascade: HKDF hash function
      Function(String)? onProgress,
      Function(String)? onStatus}
   ) async {
@@ -374,6 +377,20 @@ class CLIService {
         if (useKeyserver) {
           args.add('--use-keyserver');
         }
+      }
+
+      // Add cascade encryption parameters if provided
+      if (cascadePreset != null || cascadeAlgorithms != null) {
+        if (cascadePreset != null && cascadePreset != 'custom') {
+          // Use preset: --cascade=standard or --cascade=paranoia
+          args.add('--cascade=$cascadePreset');
+        } else if (cascadeAlgorithms != null && cascadeAlgorithms.isNotEmpty) {
+          // Custom chain: --cascade --algorithm algo1,algo2,algo3
+          args.add('--cascade');
+          args.addAll(['--algorithm', cascadeAlgorithms.join(',')]);
+        }
+        // Add HKDF hash function
+        args.addAll(['--cascade-hash', cascadeHash]);
       }
 
       if (debugEnabled) {
@@ -1334,6 +1351,9 @@ class CLIService {
     List<String>? forIdentities,      // Asymmetric: recipients
     String? signWith,                  // Asymmetric: signing identity
     bool useKeyserver = false,         // Asymmetric: keyserver lookup
+    String? cascadePreset,             // Cascade: 'standard', 'paranoia', or null
+    List<String>? cascadeAlgorithms,   // Cascade: custom algorithm chain
+    String cascadeHash = 'sha256',     // Cascade: HKDF hash function
   }) async {
     final args = [
       'encrypt',
@@ -1452,6 +1472,17 @@ class CLIService {
       if (useKeyserver) {
         args.add('--use-keyserver');
       }
+    }
+
+    // Add cascade encryption parameters if provided
+    if (cascadePreset != null || cascadeAlgorithms != null) {
+      if (cascadePreset != null && cascadePreset != 'custom') {
+        args.add('--cascade=$cascadePreset');
+      } else if (cascadeAlgorithms != null && cascadeAlgorithms.isNotEmpty) {
+        args.add('--cascade');
+        args.addAll(['--algorithm', cascadeAlgorithms.join(',')]);
+      }
+      args.addAll(['--cascade-hash', cascadeHash]);
     }
 
     return await _runCLICommandWithProgress(
@@ -1740,6 +1771,71 @@ class CLIService {
       }
     } catch (e) {
       throw Exception('Error deleting identity: $e');
+    }
+  }
+
+  /// Validate cascade cipher chain and return diversity warnings
+  static Future<List<Map<String, dynamic>>> validateCascade(
+    List<String> algorithms, {
+    bool strict = false,
+  }) async {
+    try {
+      // For now, return basic validation
+      // In future, could call CLI for detailed validation
+      final warnings = <Map<String, dynamic>>[];
+
+      if (algorithms.length < 2) {
+        warnings.add({
+          'level': 'ERROR',
+          'message': 'Cascade mode requires at least 2 ciphers',
+          'suggestion': 'Add more algorithms to the chain',
+        });
+        return warnings;
+      }
+
+      // Check for duplicate algorithms
+      final uniqueAlgos = algorithms.toSet();
+      if (uniqueAlgos.length < algorithms.length) {
+        warnings.add({
+          'level': 'WARNING',
+          'message': 'Duplicate algorithms in cascade chain',
+          'suggestion': 'Use different algorithms for better security',
+        });
+      }
+
+      // Check for same family (basic check)
+      final hasMultipleAES = algorithms.where((a) => a.contains('aes')).length > 1;
+      final hasMultipleChaCha = algorithms.where((a) => a.contains('chacha')).length > 1;
+      final hasMultipleThreefish = algorithms.where((a) => a.contains('threefish')).length > 1;
+
+      if (hasMultipleAES) {
+        warnings.add({
+          'level': 'WARNING',
+          'message': 'Multiple AES variants in chain',
+          'suggestion': 'Mix different cipher families (AES + ChaCha + Threefish) for diversity',
+        });
+      }
+
+      if (hasMultipleChaCha) {
+        warnings.add({
+          'level': 'WARNING',
+          'message': 'Multiple ChaCha variants in chain',
+          'suggestion': 'Mix different cipher families for better diversity',
+        });
+      }
+
+      if (hasMultipleThreefish) {
+        warnings.add({
+          'level': 'INFO',
+          'message': 'Multiple Threefish variants in chain',
+          'suggestion': 'Consider mixing with AES or ChaCha for diversity',
+        });
+      }
+
+      return warnings;
+    } catch (e) {
+      _outputDebugLog('Error validating cascade: $e');
+      return [];
     }
   }
 
