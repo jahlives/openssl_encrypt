@@ -71,8 +71,9 @@ export CMAKE_PREFIX_PATH="${INSTALL_PREFIX}:${CMAKE_PREFIX_PATH}"
 echo ""
 echo "Step 2/2: Building liboqs-python ${LIBOQS_PYTHON_VERSION}..."
 
-# Use pip to install from git with specific tag
-pip install --no-cache-dir "git+https://github.com/open-quantum-safe/liboqs-python.git@${LIBOQS_PYTHON_VERSION}"
+# Use python3 -m pip to install from git with specific tag
+# This is more reliable than calling pip directly, especially during build processes
+python3 -m pip install --no-cache-dir "git+https://github.com/open-quantum-safe/liboqs-python.git@${LIBOQS_PYTHON_VERSION}"
 
 # Verify liboqs-python installation
 echo ""
