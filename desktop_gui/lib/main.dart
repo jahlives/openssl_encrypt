@@ -10,6 +10,7 @@ import 'file_manager.dart';
 import 'settings_service.dart';
 import 'settings_screen.dart';
 import 'configuration_profiles_screen.dart';
+import 'identity_management_screen.dart';
 import 'fido2_management_screen.dart';
 import 'input_validation.dart';
 
@@ -478,6 +479,8 @@ class _MainScreenState extends State<MainScreen> {
       case 4:
         return SettingsTab(onThemeChanged: widget.onThemeChanged);
       case 5:
+        return const IdentityManagementScreen();
+      case 6:
         return const Fido2ManagementScreen();
       default:
         return TextCryptoTab(onDebugChanged: widget.onDebugChanged, onToggleDebugWindow: _toggleDebugWindow);
@@ -628,6 +631,11 @@ class _MainScreenState extends State<MainScreen> {
                 icon: Icon(Icons.settings_outlined),
                 selectedIcon: Icon(Icons.settings),
                 label: Text('Settings'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.badge_outlined),
+                selectedIcon: Icon(Icons.badge),
+                label: Text('Identities'),
               ),
               NavigationRailDestination(
                 icon: Icon(Icons.fingerprint),
