@@ -6,6 +6,7 @@ include openssl_encrypt/version.py.template
 include requirements*.txt
 include requirements*.in
 include scripts/build_local_deps.sh
+include build_backend.py
 global-exclude __pycache__/*
 global-exclude */__pycache__/*
 global-exclude *.py[cod]
