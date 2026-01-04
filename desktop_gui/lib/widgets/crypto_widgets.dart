@@ -166,6 +166,119 @@ class AlgorithmSelector extends StatelessWidget {
     return descriptions[algorithm] ?? 'Advanced encryption algorithm - see CLI documentation for details';
   }
 
+  /// Build Classical Symmetric category with sub-group headers
+  List<Widget> _buildClassicalSymmetricWithSubgroups(BuildContext context, List<String> algorithms) {
+    final widgets = <Widget>[];
+
+    // Group algorithms by family
+    final fernet = algorithms.where((a) => a == 'fernet').toList();
+    final aes = algorithms.where((a) => a.startsWith('aes-')).toList();
+    final chacha = algorithms.where((a) => a.contains('chacha20') && !a.contains('ml-kem')).toList();
+    final threefish = algorithms.where((a) => a.startsWith('threefish-')).toList();
+
+    // Helper to build algorithm card
+    Widget buildAlgoCard(String algorithm) {
+      final isSelected = algorithm == selectedAlgorithm;
+      return Card(
+        color: isSelected ? Theme.of(context).colorScheme.primaryContainer : null,
+        child: ListTile(
+          leading: Icon(
+            Icons.security,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          title: Row(
+            children: [
+              Text(
+                algorithm,
+                style: TextStyle(
+                  fontWeight: isSelected ? FontWeight.bold : null,
+                ),
+              ),
+              if (algorithm == 'aes-gcm' || algorithm == 'threefish-512') ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.green,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'RECOMMENDED',
+                    style: TextStyle(color: Colors.white, fontSize: 10),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          subtitle: Text(
+            _getAlgorithmDescription(algorithm),
+            style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+          trailing: isSelected ? Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary) : null,
+          onTap: () => Navigator.of(context).pop(algorithm),
+        ),
+      );
+    }
+
+    // Fernet
+    if (fernet.isNotEmpty) {
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.only(left: 16, top: 8, bottom: 4),
+          child: Text(
+            'Fernet',
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: Theme.of(context).colorScheme.secondary),
+          ),
+        ),
+      );
+      widgets.addAll(fernet.map(buildAlgoCard));
+    }
+
+    // AES Family
+    if (aes.isNotEmpty) {
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.only(left: 16, top: 8, bottom: 4),
+          child: Text(
+            'AES Family',
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: Theme.of(context).colorScheme.secondary),
+          ),
+        ),
+      );
+      widgets.addAll(aes.map(buildAlgoCard));
+    }
+
+    // ChaCha Family
+    if (chacha.isNotEmpty) {
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.only(left: 16, top: 8, bottom: 4),
+          child: Text(
+            'ChaCha Family',
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: Theme.of(context).colorScheme.secondary),
+          ),
+        ),
+      );
+      widgets.addAll(chacha.map(buildAlgoCard));
+    }
+
+    // Threefish (Large Block)
+    if (threefish.isNotEmpty) {
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.only(left: 16, top: 8, bottom: 4),
+          child: Text(
+            'Threefish (Large Block)',
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: Theme.of(context).colorScheme.secondary),
+          ),
+        ),
+      );
+      widgets.addAll(threefish.map(buildAlgoCard));
+    }
+
+    return widgets;
+  }
+
   /// Show algorithm picker dialog
   void _showAlgorithmPicker(BuildContext context) async {
     final algorithmCategories = await CLIService.getSupportedAlgorithms();
@@ -192,6 +305,25 @@ class AlgorithmSelector extends StatelessWidget {
                   final category = entry.key;
                   final algorithms = entry.value;
 
+                  // Special handling for Classical Symmetric - add sub-group headers
+                  if (category == 'Classical Symmetric') {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Text(
+                            category,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                        ),
+                        ..._buildClassicalSymmetricWithSubgroups(context, algorithms),
+                        const SizedBox(height: 12),
+                      ],
+                    );
+                  }
+
+                  // Default rendering for other categories
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
