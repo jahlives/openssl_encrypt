@@ -35,6 +35,13 @@ class ExitAppIntent extends Intent {
   const ExitAppIntent();
 }
 
+// Encryption modes for the application
+enum EncryptionMode {
+  symmetric,   // Traditional password-based encryption (V3-V6)
+  asymmetric,  // Identity-based encryption with ML-KEM + ML-DSA (V7)
+  cascade,     // Multi-layer encryption chaining (V8)
+}
+
 void main() async {
   // Initialize Flutter framework
   WidgetsFlutterBinding.ensureInitialized();
@@ -719,6 +726,9 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   Map<String, Map<String, dynamic>> _kdfConfig = {};  // KDF chain configuration
   bool _showAdvanced = false;
 
+  // Encryption mode selection
+  EncryptionMode _encryptionMode = EncryptionMode.symmetric;
+
   // Performance optimization caches
   static bool _algorithmsLoaded = false;
   static List<String>? _cachedAlgorithms;
@@ -1075,6 +1085,89 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     }
   }
 
+  /// Build encryption mode selector widget
+  Widget _buildEncryptionModeSelector() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.security_outlined),
+                const SizedBox(width: 8),
+                const Text('Encryption Mode', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.info_outline),
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Encryption Mode Information'),
+                        content: const SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('Symmetric (Password-Based)', style: TextStyle(fontWeight: FontWeight.bold)),
+                              Text('Traditional encryption using a password. The same password is used for encryption and decryption.\n'),
+                              Text('Asymmetric (Identity-Based)', style: TextStyle(fontWeight: FontWeight.bold)),
+                              Text('Post-quantum secure encryption using ML-KEM and ML-DSA. Encrypt for specific identities without sharing passwords.\n'),
+                              Text('Cascade (Multi-Layer)', style: TextStyle(fontWeight: FontWeight.bold)),
+                              Text('Chain multiple encryption algorithms together for defense-in-depth. If one algorithm is broken, others remain secure.'),
+                            ],
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('OK'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  tooltip: 'Encryption Mode Information',
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Center(
+              child: SegmentedButton<EncryptionMode>(
+                segments: const [
+                  ButtonSegment(
+                    value: EncryptionMode.symmetric,
+                    label: Text('Symmetric'),
+                    icon: Icon(Icons.lock),
+                  ),
+                  ButtonSegment(
+                    value: EncryptionMode.asymmetric,
+                    label: Text('Asymmetric'),
+                    icon: Icon(Icons.vpn_key),
+                  ),
+                  ButtonSegment(
+                    value: EncryptionMode.cascade,
+                    label: Text('Cascade'),
+                    icon: Icon(Icons.layers),
+                  ),
+                ],
+                selected: {_encryptionMode},
+                onSelectionChanged: (Set<EncryptionMode> newSelection) {
+                  setState(() {
+                    _encryptionMode = newSelection.first;
+                  });
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildHsmSection() {
     return Card(
       child: Padding(
@@ -1412,6 +1505,9 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                 LengthLimitingTextInputFormatter(InputValidator.maxTextLength),
               ],
             ),
+          const SizedBox(height: 16),
+          // Encryption Mode Selector
+          _buildEncryptionModeSelector(),
           const SizedBox(height: 16),
           // Advanced Algorithm Selection
           Card(
@@ -3274,6 +3370,9 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   bool _showHashConfig = false;
   bool _showKdfConfig = false;
 
+  // Encryption mode selection
+  EncryptionMode _encryptionMode = EncryptionMode.symmetric;
+
   // Steganography state
   bool _enableSteganography = false;
   FileInfo? _coverImageFile;
@@ -4275,6 +4374,89 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     );
   }
 
+  /// Build encryption mode selector widget
+  Widget _buildEncryptionModeSelector() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.security_outlined),
+                const SizedBox(width: 8),
+                const Text('Encryption Mode', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.info_outline),
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Encryption Mode Information'),
+                        content: const SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('Symmetric (Password-Based)', style: TextStyle(fontWeight: FontWeight.bold)),
+                              Text('Traditional encryption using a password. The same password is used for encryption and decryption.\n'),
+                              Text('Asymmetric (Identity-Based)', style: TextStyle(fontWeight: FontWeight.bold)),
+                              Text('Post-quantum secure encryption using ML-KEM and ML-DSA. Encrypt for specific identities without sharing passwords.\n'),
+                              Text('Cascade (Multi-Layer)', style: TextStyle(fontWeight: FontWeight.bold)),
+                              Text('Chain multiple encryption algorithms together for defense-in-depth. If one algorithm is broken, others remain secure.'),
+                            ],
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('OK'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  tooltip: 'Encryption Mode Information',
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Center(
+              child: SegmentedButton<EncryptionMode>(
+                segments: const [
+                  ButtonSegment(
+                    value: EncryptionMode.symmetric,
+                    label: Text('Symmetric'),
+                    icon: Icon(Icons.lock),
+                  ),
+                  ButtonSegment(
+                    value: EncryptionMode.asymmetric,
+                    label: Text('Asymmetric'),
+                    icon: Icon(Icons.vpn_key),
+                  ),
+                  ButtonSegment(
+                    value: EncryptionMode.cascade,
+                    label: Text('Cascade'),
+                    icon: Icon(Icons.layers),
+                  ),
+                ],
+                selected: {_encryptionMode},
+                onSelectionChanged: (Set<EncryptionMode> newSelection) {
+                  setState(() {
+                    _encryptionMode = newSelection.first;
+                  });
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildHsmSection() {
     return Card(
       child: Padding(
@@ -4531,6 +4713,9 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
               ),
             ),
           ),
+          const SizedBox(height: 16),
+          // Encryption Mode Selector
+          _buildEncryptionModeSelector(),
           const SizedBox(height: 16),
           // Algorithm Selection Card (same as TextCryptoTab)
           Card(
@@ -7191,6 +7376,9 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
   bool _enableIntegrity = false;      // For encrypt mode: register hash
   bool _verifyIntegrity = false;      // For decrypt mode: verify before decrypt
 
+  // Encryption mode selection
+  EncryptionMode _encryptionMode = EncryptionMode.symmetric;
+
   // Cached dropdown items for algorithms (performance optimization)
   static final Map<String, List<DropdownMenuItem<String>>> _dropdownCache = {};
 
@@ -7203,6 +7391,89 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
       )).toList();
     }
     return _dropdownCache[key]!;
+  }
+
+  /// Build encryption mode selector widget
+  Widget _buildEncryptionModeSelector() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.security_outlined),
+                const SizedBox(width: 8),
+                const Text('Encryption Mode', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.info_outline),
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Encryption Mode Information'),
+                        content: const SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('Symmetric (Password-Based)', style: TextStyle(fontWeight: FontWeight.bold)),
+                              Text('Traditional encryption using a password. The same password is used for encryption and decryption.\n'),
+                              Text('Asymmetric (Identity-Based)', style: TextStyle(fontWeight: FontWeight.bold)),
+                              Text('Post-quantum secure encryption using ML-KEM and ML-DSA. Encrypt for specific identities without sharing passwords.\n'),
+                              Text('Cascade (Multi-Layer)', style: TextStyle(fontWeight: FontWeight.bold)),
+                              Text('Chain multiple encryption algorithms together for defense-in-depth. If one algorithm is broken, others remain secure.'),
+                            ],
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('OK'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  tooltip: 'Encryption Mode Information',
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Center(
+              child: SegmentedButton<EncryptionMode>(
+                segments: const [
+                  ButtonSegment(
+                    value: EncryptionMode.symmetric,
+                    label: Text('Symmetric'),
+                    icon: Icon(Icons.lock),
+                  ),
+                  ButtonSegment(
+                    value: EncryptionMode.asymmetric,
+                    label: Text('Asymmetric'),
+                    icon: Icon(Icons.vpn_key),
+                  ),
+                  ButtonSegment(
+                    value: EncryptionMode.cascade,
+                    label: Text('Cascade'),
+                    icon: Icon(Icons.layers),
+                  ),
+                ],
+                selected: {_encryptionMode},
+                onSelectionChanged: (Set<EncryptionMode> newSelection) {
+                  setState(() {
+                    _encryptionMode = newSelection.first;
+                  });
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -7363,6 +7634,10 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
 
           // Configuration Section
           if (_selectedFiles.isNotEmpty) ...[
+            // Encryption Mode Selector
+            _buildEncryptionModeSelector(),
+            const SizedBox(height: 16),
+
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
