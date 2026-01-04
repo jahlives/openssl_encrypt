@@ -1172,6 +1172,15 @@ def output_available_algorithms_json(args):
     except Exception:
         pass
 
+    # Add fernet manually (legacy algorithm not in registry)
+    result["ciphers"]["fernet"] = {
+        "display_name": "Fernet",
+        "available": True,
+        "required_library": None,
+        "security_level": "STANDARD",
+        "description": "AES-128-CBC with HMAC authentication (Default, Legacy)"
+    }
+
     try:
         for name, (info, available) in HashRegistry.default().list_all().items():
             required_lib = get_required_library(name, "hash")
