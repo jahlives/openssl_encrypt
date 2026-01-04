@@ -129,6 +129,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
                 const SizedBox(height: 16),
+                if (_matchesSearch('encryption mode defaults cascade asymmetric identity'))
+                  _buildCategoryCard(
+                    'Encryption Mode Defaults',
+                    Icons.layers,
+                    Colors.purple,
+                    [
+                      _buildDefaultEncryptionModeSelector(),
+                      _buildDefaultCascadePresetSelector(),
+                      _buildDefaultKemAlgorithmSelector(),
+                      _buildDefaultSigAlgorithmSelector(),
+                    ],
+                  ),
+                const SizedBox(height: 16),
                 if (_matchesSearch('application behavior interface'))
                   _buildCategoryCard(
                     'Application Behavior',
@@ -550,6 +563,193 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onChanged: (value) async {
               if (value != null) {
                 await SettingsService.setDefaultOutputFormat(value);
+                setState(() {});
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDefaultEncryptionModeSelector() {
+    final currentMode = SettingsService.getDefaultEncryptionMode();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Default Encryption Mode',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  'Default mode when opening crypto tabs',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          DropdownButton<String>(
+            value: currentMode,
+            items: const [
+              DropdownMenuItem(value: 'symmetric', child: Text('Symmetric')),
+              DropdownMenuItem(value: 'asymmetric', child: Text('Asymmetric')),
+              DropdownMenuItem(value: 'cascade', child: Text('Cascade')),
+            ],
+            onChanged: (value) async {
+              if (value != null) {
+                await SettingsService.setDefaultEncryptionMode(value);
+                setState(() {});
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDefaultCascadePresetSelector() {
+    final currentPreset = SettingsService.getDefaultCascadePreset();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Default Cascade Preset',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  'Default algorithm chain for cascade mode',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          DropdownButton<String>(
+            value: currentPreset,
+            items: const [
+              DropdownMenuItem(value: 'standard', child: Text('Standard (AES+ChaCha)')),
+              DropdownMenuItem(value: 'paranoia', child: Text('Paranoia (AES+ChaCha+Threefish)')),
+            ],
+            onChanged: (value) async {
+              if (value != null) {
+                await SettingsService.setDefaultCascadePreset(value);
+                setState(() {});
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDefaultKemAlgorithmSelector() {
+    final currentAlgorithm = SettingsService.getDefaultKemAlgorithm();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Default KEM Algorithm',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  'Default key encapsulation for new identities',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          DropdownButton<String>(
+            value: currentAlgorithm,
+            items: const [
+              DropdownMenuItem(value: 'ML-KEM-512', child: Text('ML-KEM-512')),
+              DropdownMenuItem(value: 'ML-KEM-768', child: Text('ML-KEM-768')),
+              DropdownMenuItem(value: 'ML-KEM-1024', child: Text('ML-KEM-1024')),
+            ],
+            onChanged: (value) async {
+              if (value != null) {
+                await SettingsService.setDefaultKemAlgorithm(value);
+                setState(() {});
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDefaultSigAlgorithmSelector() {
+    final currentAlgorithm = SettingsService.getDefaultSigAlgorithm();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Default Signature Algorithm',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  'Default digital signature for new identities',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          DropdownButton<String>(
+            value: currentAlgorithm,
+            items: const [
+              DropdownMenuItem(value: 'ML-DSA-44', child: Text('ML-DSA-44')),
+              DropdownMenuItem(value: 'ML-DSA-65', child: Text('ML-DSA-65')),
+              DropdownMenuItem(value: 'ML-DSA-87', child: Text('ML-DSA-87')),
+            ],
+            onChanged: (value) async {
+              if (value != null) {
+                await SettingsService.setDefaultSigAlgorithm(value);
                 setState(() {});
               }
             },

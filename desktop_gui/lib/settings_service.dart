@@ -46,6 +46,12 @@ class SettingsService {
   static const String _integrityCaCertPemKey = 'integrity_ca_cert_pem';
   static const String _integrityCertModeKey = 'integrity_cert_mode'; // 'file' or 'pem'
 
+  // Encryption mode defaults (V7/V8)
+  static const String _defaultEncryptionModeKey = 'default_encryption_mode';
+  static const String _defaultCascadePresetKey = 'default_cascade_preset';
+  static const String _defaultKemAlgorithmKey = 'default_kem_algorithm';
+  static const String _defaultSigAlgorithmKey = 'default_sig_algorithm';
+
   /// Initialize the settings service
   static Future<void> initialize() async {
     _prefs = await SharedPreferences.getInstance();
@@ -95,6 +101,46 @@ class SettingsService {
   /// Set default security level
   static Future<bool> setDefaultSecurityLevel(String level) {
     return prefs.setString(_defaultSecurityLevelKey, level);
+  }
+
+  /// Get default encryption mode (symmetric, asymmetric, cascade)
+  static String getDefaultEncryptionMode() {
+    return prefs.getString(_defaultEncryptionModeKey) ?? 'symmetric';
+  }
+
+  /// Set default encryption mode
+  static Future<bool> setDefaultEncryptionMode(String mode) {
+    return prefs.setString(_defaultEncryptionModeKey, mode);
+  }
+
+  /// Get default cascade preset (standard, paranoia)
+  static String getDefaultCascadePreset() {
+    return prefs.getString(_defaultCascadePresetKey) ?? 'standard';
+  }
+
+  /// Set default cascade preset
+  static Future<bool> setDefaultCascadePreset(String preset) {
+    return prefs.setString(_defaultCascadePresetKey, preset);
+  }
+
+  /// Get default KEM algorithm for new identities
+  static String getDefaultKemAlgorithm() {
+    return prefs.getString(_defaultKemAlgorithmKey) ?? 'ML-KEM-768';
+  }
+
+  /// Set default KEM algorithm
+  static Future<bool> setDefaultKemAlgorithm(String algorithm) {
+    return prefs.setString(_defaultKemAlgorithmKey, algorithm);
+  }
+
+  /// Get default signature algorithm for new identities
+  static String getDefaultSigAlgorithm() {
+    return prefs.getString(_defaultSigAlgorithmKey) ?? 'ML-DSA-65';
+  }
+
+  /// Set default signature algorithm
+  static Future<bool> setDefaultSigAlgorithm(String algorithm) {
+    return prefs.setString(_defaultSigAlgorithmKey, algorithm);
   }
 
   // =============================================================================
