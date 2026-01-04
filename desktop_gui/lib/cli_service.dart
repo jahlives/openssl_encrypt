@@ -124,57 +124,102 @@ class CLIService {
   /// Get list of supported algorithms organized by category
   static Future<Map<String, List<String>>> getSupportedAlgorithms() async {
     try {
-      // For now, return the known algorithm list from CLI help
-      // In the future, this could parse CLI output dynamically
-      return {
-        'Classical Symmetric': [
-          'fernet',
-          'aes-gcm',
-          'chacha20-poly1305',
-          'xchacha20-poly1305',
-          'aes-siv',
-          'aes-gcm-siv',
-        ],
-        'Threefish (Large Block)': [
-          'threefish-512',
-          'threefish-1024',
-        ],
-        'Post-Quantum Hybrid (ML-KEM)': [
-          'ml-kem-512-hybrid',
-          'ml-kem-768-hybrid',
-          'ml-kem-1024-hybrid',
-        ],
-        'Post-Quantum Hybrid (Kyber Legacy)': [
-          'kyber512-hybrid',
-          'kyber768-hybrid',
-          'kyber1024-hybrid',
-        ],
-        'Post-Quantum ChaCha20': [
-          'ml-kem-512-chacha20',
-          'ml-kem-768-chacha20',
-          'ml-kem-1024-chacha20',
-        ],
-        'Post-Quantum HQC': [
-          'hqc-128-hybrid',
-          'hqc-192-hybrid',
-          'hqc-256-hybrid',
-        ],
-        'Post-Quantum Signatures (MAYO)': [
-          'mayo-1-hybrid',
-          'mayo-3-hybrid',
-          'mayo-5-hybrid',
-        ],
-        'Post-Quantum Signatures (CROSS)': [
-          'cross-128-hybrid',
-          'cross-192-hybrid',
-          'cross-256-hybrid',
-        ],
-      };
+      final availabilityInfo = await getAvailabilityInfo();
+      if (availabilityInfo == null) {
+        // Fallback to basic algorithms if availability info not available
+        return {
+          'Classical Symmetric': [
+            'fernet',
+            'aes-gcm', 'aes-gcm-siv', 'aes-siv',
+            'chacha20-poly1305', 'xchacha20-poly1305',
+          ],
+        };
+      }
+
+      final result = <String, List<String>>{};
+
+      // Build Classical Symmetric category with all classical ciphers
+      // Ordered by family: Fernet first, then AES, ChaCha, Threefish
+      final classicalSymmetric = <String>[];
+
+      // Fernet first
+      if (availabilityInfo.ciphers.containsKey('fernet')) {
+        classicalSymmetric.add('fernet');
+      }
+
+      // AES Family
+      final aesCiphers = availabilityInfo.ciphers.entries
+          .where((e) => e.key.startsWith('aes-'))
+          .map((e) => e.key)
+          .toList()..sort();
+      classicalSymmetric.addAll(aesCiphers);
+
+      // ChaCha Family
+      final chachaCiphers = availabilityInfo.ciphers.entries
+          .where((e) => e.key.contains('chacha20') && !e.key.contains('ml-kem'))
+          .map((e) => e.key)
+          .toList()..sort();
+      classicalSymmetric.addAll(chachaCiphers);
+
+      // Threefish (Large Block)
+      final threefishCiphers = availabilityInfo.ciphers.entries
+          .where((e) => e.key.startsWith('threefish-'))
+          .map((e) => e.key)
+          .toList()..sort();
+      classicalSymmetric.addAll(threefishCiphers);
+
+      if (classicalSymmetric.isNotEmpty) {
+        result['Classical Symmetric'] = classicalSymmetric;
+      }
+
+      // Post-Quantum Hybrid (ML-KEM) - hardcoded since not in cipher registry
+      result['Post-Quantum Hybrid (ML-KEM)'] = [
+        'ml-kem-512-hybrid',
+        'ml-kem-768-hybrid',
+        'ml-kem-1024-hybrid',
+      ];
+
+      // Post-Quantum ChaCha20 - hardcoded since not in cipher registry
+      result['Post-Quantum ChaCha20'] = [
+        'ml-kem-512-chacha20',
+        'ml-kem-768-chacha20',
+        'ml-kem-1024-chacha20',
+      ];
+
+      // Post-Quantum Hybrid (Kyber Legacy) - hardcoded since not in cipher registry
+      result['Post-Quantum Hybrid (Kyber Legacy)'] = [
+        'kyber512-hybrid',
+        'kyber768-hybrid',
+        'kyber1024-hybrid',
+      ];
+
+      // Post-Quantum HQC - hardcoded since not in cipher registry
+      result['Post-Quantum HQC'] = [
+        'hqc-128-hybrid',
+        'hqc-192-hybrid',
+        'hqc-256-hybrid',
+      ];
+
+      // Post-Quantum Signatures (MAYO) - hardcoded since not in cipher registry
+      result['Post-Quantum Signatures (MAYO)'] = [
+        'mayo-1-hybrid',
+        'mayo-3-hybrid',
+        'mayo-5-hybrid',
+      ];
+
+      // Post-Quantum Signatures (CROSS) - hardcoded since not in cipher registry
+      result['Post-Quantum Signatures (CROSS)'] = [
+        'cross-128-hybrid',
+        'cross-192-hybrid',
+        'cross-256-hybrid',
+      ];
+
+      return result;
     } catch (e) {
       _outputDebugLog('Error getting algorithms: $e');
       // Return basic algorithms if there's an error
       return {
-        'Classical Symmetric': ['fernet', 'aes-gcm', 'chacha20-poly1305', 'xchacha20-poly1305'],
+        'Classical Symmetric': ['fernet', 'aes-gcm', 'chacha20-poly1305'],
       };
     }
   }
@@ -192,38 +237,74 @@ class CLIService {
   /// Get list of supported hash algorithms organized by category
   static Future<Map<String, List<String>>> getHashAlgorithms() async {
     try {
-      // Return the known hash algorithms from CLI help
-      return {
-        'SHA-2 Family': [
-          'sha224',
-          'sha256',
-          'sha384',
-          'sha512',
-        ],
-        'SHA-3 Family': [
-          'sha3-224',
-          'sha3-256',
-          'sha3-384',
-          'sha3-512',
-        ],
-        'SHAKE Functions': [
-          'shake128',
-          'shake256',
-        ],
-        'Modern Hash Functions': [
-          'blake2b',
-          'blake3',
-        ],
-        if (!shouldHideLegacyAlgorithms()) 'Legacy Hash Functions': [
-          'whirlpool',
-        ],
-      };
+      final availabilityInfo = await getAvailabilityInfo();
+      if (availabilityInfo == null) {
+        // Fallback to basic hash algorithms if availability info not available
+        return {
+          'SHA-2 Family': ['sha256', 'sha384', 'sha512'],
+          'SHA-3 Family': ['sha3-256', 'sha3-384', 'sha3-512'],
+          'SHAKE (XOF)': ['shake128', 'shake256'],
+          'BLAKE Family': ['blake2b', 'blake2s', 'blake3'],
+        };
+      }
+
+      final result = <String, List<String>>{};
+
+      // SHA-2 Family
+      final sha2Hashes = availabilityInfo.hashes.entries
+          .where((e) => e.key.startsWith('sha') && !e.key.startsWith('sha3') && !e.key.startsWith('shake'))
+          .map((e) => e.key)
+          .toList();
+      // Add sha224 if not already present (may not be in registry but supported by CLI)
+      if (!sha2Hashes.contains('sha224')) {
+        sha2Hashes.insert(0, 'sha224');
+      }
+      sha2Hashes.sort();
+      if (sha2Hashes.isNotEmpty) {
+        result['SHA-2 Family'] = sha2Hashes;
+      }
+
+      // SHA-3 Family
+      final sha3Hashes = availabilityInfo.hashes.entries
+          .where((e) => e.key.startsWith('sha3-'))
+          .map((e) => e.key)
+          .toList();
+      // Add sha3-224 if not already present (may not be in registry but supported by CLI)
+      if (!sha3Hashes.contains('sha3-224')) {
+        sha3Hashes.insert(0, 'sha3-224');
+      }
+      sha3Hashes.sort();
+      if (sha3Hashes.isNotEmpty) {
+        result['SHA-3 Family'] = sha3Hashes;
+      }
+
+      // SHAKE (XOF)
+      final shakeHashes = availabilityInfo.hashes.entries
+          .where((e) => e.key.startsWith('shake'))
+          .map((e) => e.key)
+          .toList()..sort();
+      if (shakeHashes.isNotEmpty) {
+        result['SHAKE (XOF)'] = shakeHashes;
+      }
+
+      // BLAKE Family
+      final blakeHashes = availabilityInfo.hashes.entries
+          .where((e) => e.key.startsWith('blake'))
+          .map((e) => e.key)
+          .toList()..sort();
+      if (blakeHashes.isNotEmpty) {
+        result['BLAKE Family'] = blakeHashes;
+      }
+
+      // NOTE: WHIRLPOOL is intentionally excluded (legacy, not recommended)
+
+      return result;
     } catch (e) {
       _outputDebugLog('Error getting hash algorithms: $e');
       // Return basic hash algorithms if there's an error
       return {
         'SHA-2 Family': ['sha256', 'sha512'],
-        'Modern Hash Functions': ['blake2b'],
+        'BLAKE Family': ['blake2b'],
       };
     }
   }
