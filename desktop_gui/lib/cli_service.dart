@@ -1679,6 +1679,115 @@ class CLIService {
       return false;
     }
   }
+
+  /// Test integrity server connection with mTLS
+  static Future<Map<String, dynamic>> testIntegrityConnection({
+    required String url,
+    String? clientCertPath,
+    String? clientKeyPath,
+    String? caCertPath,
+  }) async {
+    try {
+      final args = [
+        'plugin',
+        'integrity',
+        'test',
+        '--url', url,
+      ];
+
+      if (clientCertPath != null && clientCertPath.isNotEmpty) {
+        args.addAll(['--client-cert', clientCertPath]);
+      }
+      if (clientKeyPath != null && clientKeyPath.isNotEmpty) {
+        args.addAll(['--client-key', clientKeyPath]);
+      }
+      if (caCertPath != null && caCertPath.isNotEmpty) {
+        args.addAll(['--ca-cert', caCertPath]);
+      }
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+
+      return {
+        'success': result.exitCode == 0,
+        'message': result.exitCode == 0 ? result.stdout : result.stderr,
+      };
+    } catch (e) {
+      _outputDebugLog('Integrity connection test failed: $e');
+      return {
+        'success': false,
+        'message': 'Connection test failed: $e',
+      };
+    }
+  }
+
+  /// Get integrity verification statistics
+  static Future<Map<String, dynamic>> getIntegrityStats() async {
+    try {
+      final args = [
+        'plugin',
+        'integrity',
+        'stats',
+      ];
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+
+      if (result.exitCode == 0 && result.stdout.isNotEmpty) {
+        final data = jsonDecode(result.stdout);
+        return {
+          'success': true,
+          'total_verifications': data['total_verifications'] ?? 0,
+          'successful_verifications': data['successful_verifications'] ?? 0,
+          'failed_verifications': data['failed_verifications'] ?? 0,
+          'last_verification': data['last_verification'],
+        };
+      }
+
+      return {
+        'success': false,
+        'message': result.stderr,
+      };
+    } catch (e) {
+      _outputDebugLog('Failed to get integrity stats: $e');
+      return {
+        'success': false,
+        'message': 'Failed to get stats: $e',
+      };
+    }
+  }
+
+  /// Verify file integrity
+  static Future<bool> verifyFileIntegrity({
+    required String fileId,
+    required String metadataHash,
+  }) async {
+    try {
+      final args = [
+        'plugin',
+        'integrity',
+        'verify',
+        '--file-id', fileId,
+        '--metadata-hash', metadataHash,
+      ];
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+      return result.exitCode == 0;
+    } catch (e) {
+      _outputDebugLog('Integrity verification failed: $e');
+      return false;
+    }
+  }
 }
 
 /// Configuration classes for CLI parameters
