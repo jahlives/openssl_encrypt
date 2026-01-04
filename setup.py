@@ -235,45 +235,9 @@ class PostInstallCommand(Command):
             print("You may need to manually install Whirlpool: pip install whirlpool-py311")
 
 
-class CustomBuildPyCommand(build_py):
-    """Custom build_py - shows message about optional dependencies"""
-    def run(self):
-        print("\n" + "="*70)
-        print("Note: Optional cryptographic libraries (liboqs, threefish) not installed")
-        print("To add post-quantum and advanced cipher support, run after install:")
-        print("  openssl-encrypt install-dependencies")
-        print("="*70 + "\n")
-        build_py.run(self)
-
-
-class CustomDevelopCommand(develop):
-    """Custom development install - shows message about optional dependencies"""
-    def run(self):
-        print("\n" + "="*70)
-        print("Note: Optional cryptographic libraries (liboqs, threefish) not installed")
-        print("To add post-quantum and advanced cipher support, run after install:")
-        print("  openssl-encrypt install-dependencies")
-        print("="*70 + "\n")
-        develop.run(self)
-
-
-class CustomInstallCommand(install):
-    """Custom install - shows message about optional dependencies"""
-    def run(self):
-        print("\n" + "="*70)
-        print("Note: Optional cryptographic libraries (liboqs, threefish) not installed")
-        print("To add post-quantum and advanced cipher support, run after install:")
-        print("  openssl-encrypt install-dependencies")
-        print("="*70 + "\n")
-        install.run(self)
-
-
 setup(
     cmdclass={
-        "build_py": CustomBuildPyCommand,
         "post_install": PostInstallCommand,
-        "develop": CustomDevelopCommand,
-        "install": CustomInstallCommand,
     },
     name="openssl_encrypt",
     version=VERSION,
