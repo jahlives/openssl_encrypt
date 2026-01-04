@@ -10,9 +10,13 @@ Detects:
 - getattr(__builtins__, ...) patterns for accessing blocked functions
 - String concatenation to build dangerous function names
 - Dynamic import patterns
+- Dangerous OS functions (os.system, os.popen, etc.)
 - Subprocess creation attempts
-- Socket/network operations
-- File operations on absolute paths or parent directory traversal
+
+Note: File operations (open) and basic os/socket imports are allowed because:
+- File access is restricted by the sandbox's allowed_paths mechanism
+- Network access is needed for some legitimate plugins
+- Dangerous OS functions are still blocked (os.system, os.popen, etc.)
 """
 
 import ast
@@ -43,14 +47,18 @@ class DangerousPatternVisitor(ast.NodeVisitor):
     """
 
     # Functions that are always dangerous
+    # Note: open() is NOT included here as it's needed for legitimate file I/O
+    # File operations are handled by the sandbox's allowed_paths mechanism
     DANGEROUS_FUNCTIONS = {
         'eval', 'exec', 'compile', '__import__',
-        'open',  # Checked separately for path safety
     }
 
     # Modules that should never be imported
+    # Note: 'os' and 'socket' are NOT blocked here:
+    #   - 'os' is needed for path operations; file access is restricted by sandbox allowed_paths
+    #   - 'socket' is needed for network plugins; dangerous OS functions are checked separately
     DANGEROUS_MODULES = {
-        'subprocess', 'os', 'socket', 'ctypes', 'multiprocessing',
+        'subprocess', 'ctypes', 'multiprocessing',
         'importlib', '__builtin__', '__builtins__', 'sys', 'shutil',
         'pickle', 'shelve', 'commands', 'pty', 'fcntl', 'pwd', 'grp',
         'signal', 'resource', 'pipes', 'popen2', 'platform'

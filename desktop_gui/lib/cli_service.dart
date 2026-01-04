@@ -75,6 +75,10 @@ class CLIService {
           'aes-siv',
           'aes-gcm-siv',
         ],
+        'Threefish (Large Block)': [
+          'threefish-512',
+          'threefish-1024',
+        ],
         'Post-Quantum Hybrid (ML-KEM)': [
           'ml-kem-512-hybrid',
           'ml-kem-768-hybrid',
@@ -181,7 +185,18 @@ class CLIService {
     String algorithm,
     Map<String, Map<String, dynamic>>? hashConfig,
     Map<String, Map<String, dynamic>>? kdfConfig,
-    {String? encryptData, Function(String)? onProgress, Function(String)? onStatus}
+    {String? encryptData,
+     String? hsmPlugin,
+     int? hsmSlot,
+     bool enableIntegrity = false,
+     List<String>? forIdentities,      // Asymmetric: recipients
+     String? signWith,                  // Asymmetric: signing identity
+     bool useKeyserver = false,         // Asymmetric: keyserver lookup
+     String? cascadePreset,             // Cascade: 'standard', 'paranoia', or null for custom
+     List<String>? cascadeAlgorithms,   // Cascade: custom algorithm chain
+     String cascadeHash = 'sha256',     // Cascade: HKDF hash function
+     Function(String)? onProgress,
+     Function(String)? onStatus}
   ) async {
     Directory? tempDir;
     try {
@@ -234,6 +249,14 @@ class CLIService {
         '-o', outputFile.path,
         '--algorithm', algorithm,
       ];
+
+      // Add HSM configuration if provided
+      if (hsmPlugin != null && hsmPlugin != 'none') {
+        args.addAll(['--hsm', hsmPlugin]);
+        if (hsmSlot != null) {
+          args.addAll(['--hsm-slot', hsmSlot.toString()]);
+        }
+      }
 
       // Add hash configuration if provided
       if (hashConfig != null) {
@@ -338,12 +361,46 @@ class CLIService {
         }
       }
 
+      // Add integrity plugin if enabled
+      if (enableIntegrity) {
+        args.add('--integrity');
+      }
+
+      // Add asymmetric encryption parameters if provided
+      if (forIdentities != null && forIdentities.isNotEmpty) {
+        for (final recipient in forIdentities) {
+          args.addAll(['--for-identity', recipient]);
+        }
+        if (signWith != null && signWith.isNotEmpty) {
+          args.addAll(['--sign-with', signWith]);
+        }
+        if (useKeyserver) {
+          args.add('--use-keyserver');
+        }
+      }
+
+      // Add cascade encryption parameters if provided
+      if (cascadePreset != null || cascadeAlgorithms != null) {
+        if (cascadePreset != null && cascadePreset != 'custom') {
+          // Use preset: --cascade=standard or --cascade=paranoia
+          args.add('--cascade=$cascadePreset');
+        } else if (cascadeAlgorithms != null && cascadeAlgorithms.isNotEmpty) {
+          // Custom chain: --cascade --algorithm algo1,algo2,algo3
+          args.add('--cascade');
+          args.addAll(['--algorithm', cascadeAlgorithms.join(',')]);
+        }
+        // Add HKDF hash function
+        args.addAll(['--cascade-hash', cascadeHash]);
+      }
+
       if (debugEnabled) {
         args.add('--debug');
       }
 
-      // Add force password for simple passwords
-      args.add('--force-password');
+      // Add force password for simple passwords (not used in asymmetric mode)
+      if (forIdentities == null || forIdentities.isEmpty) {
+        args.add('--force-password');
+      }
 
       final maskedCommand = _getMaskedCommand(args);
       _outputDebugLog('=== CLI ENCRYPT COMMAND ===');
@@ -422,7 +479,14 @@ class CLIService {
   static Future<String> decryptTextWithProgress(
     String encryptedData,
     String password,
-    {Function(String)? onProgress, Function(String)? onStatus}
+    {String? hsmPlugin,
+     int? hsmSlot,
+     bool verifyIntegrity = false,
+     String? withKey,                // Asymmetric: decryption identity
+     String? verifyFrom,             // Asymmetric: sender verification
+     bool skipVerification = false,  // Asymmetric: skip signature check
+     Function(String)? onProgress,
+     Function(String)? onStatus}
   ) async {
     Directory? tempDir;
     try {
@@ -475,12 +539,38 @@ class CLIService {
         '-o', outputFile.path,
       ];
 
+      // Add HSM arguments if specified
+      if (hsmPlugin != null && hsmPlugin != 'none') {
+        args.addAll(['--hsm', hsmPlugin]);
+        if (hsmSlot != null) {
+          args.addAll(['--hsm-slot', hsmSlot.toString()]);
+        }
+      }
+
+      // Add integrity verification if enabled
+      if (verifyIntegrity) {
+        args.add('--verify-integrity');
+      }
+
+      // Add asymmetric decryption parameters if provided
+      if (withKey != null && withKey.isNotEmpty) {
+        args.addAll(['--with-key', withKey]);
+        if (verifyFrom != null && verifyFrom.isNotEmpty) {
+          args.addAll(['--verify-from', verifyFrom]);
+        }
+        if (skipVerification) {
+          args.add('--no-verify');
+        }
+      }
+
       if (debugEnabled) {
         args.add('--debug');
       }
 
-      // Add force password for simple passwords
-      args.add('--force-password');
+      // Add force password for simple passwords (not used in asymmetric mode)
+      if (withKey == null || withKey.isEmpty) {
+        args.add('--force-password');
+      }
 
       final maskedCommand = _getMaskedCommand(args);
       _outputDebugLog('=== CLI DECRYPT COMMAND ===');
@@ -595,6 +685,43 @@ class CLIService {
       _outputDebugLog('Development CLI exception: $e');
       throw Exception('No CLI available');
     }
+  }
+
+  /// Run CLI command with stdin input (for passphrases, etc.)
+  static Future<ProcessResult> _runCLICommandWithStdin(List<String> args, String stdinInput) async {
+    Process process;
+
+    // When running inside Flatpak, use direct CLI path
+    if (_isFlaspakVersion && await File(_cliPath).exists()) {
+      _outputDebugLog('Using direct Flatpak CLI with stdin: $_cliPath ${args.join(' ')}');
+      process = await Process.start(_cliPath, args);
+    } else {
+      // Development CLI
+      final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
+      _outputDebugLog('Attempting development CLI with stdin: python ${pythonArgs.join(' ')}');
+
+      final env = Map<String, String>.from(Platform.environment);
+      process = await Process.start('python', pythonArgs,
+        workingDirectory: '/home/work/private/git/openssl_encrypt',
+        environment: env);
+    }
+
+    // Send stdin input
+    process.stdin.write(stdinInput);
+    if (!stdinInput.endsWith('\n')) {
+      process.stdin.write('\n');
+    }
+    await process.stdin.flush();
+    await process.stdin.close();
+
+    // Collect output
+    final stdout = await process.stdout.transform(utf8.decoder).join();
+    final stderr = await process.stderr.transform(utf8.decoder).join();
+    final exitCode = await process.exitCode;
+
+    _outputDebugLog('CLI with stdin exit code: $exitCode');
+
+    return ProcessResult(process.pid, exitCode, stdout, stderr);
   }
 
   /// Run CLI command with real-time progress streaming
@@ -1218,6 +1345,15 @@ class CLIService {
     bool addDecoyData = false,
     Map<String, Map<String, dynamic>>? hashConfig,
     Map<String, Map<String, dynamic>>? kdfConfig,
+    String? hsmPlugin,
+    int? hsmSlot,
+    bool enableIntegrity = false,
+    List<String>? forIdentities,      // Asymmetric: recipients
+    String? signWith,                  // Asymmetric: signing identity
+    bool useKeyserver = false,         // Asymmetric: keyserver lookup
+    String? cascadePreset,             // Cascade: 'standard', 'paranoia', or null
+    List<String>? cascadeAlgorithms,   // Cascade: custom algorithm chain
+    String cascadeHash = 'sha256',     // Cascade: HKDF hash function
   }) async {
     final args = [
       'encrypt',
@@ -1312,6 +1448,43 @@ class CLIService {
       }
     }
 
+    // Add HSM arguments if specified
+    if (hsmPlugin != null && hsmPlugin != 'none') {
+      args.addAll(['--hsm', hsmPlugin]);
+      if (hsmSlot != null) {
+        args.addAll(['--hsm-slot', hsmSlot.toString()]);
+      }
+    }
+
+    // Add integrity plugin if enabled
+    if (enableIntegrity) {
+      args.add('--integrity');
+    }
+
+    // Add asymmetric encryption parameters if provided
+    if (forIdentities != null && forIdentities.isNotEmpty) {
+      for (final recipient in forIdentities) {
+        args.addAll(['--for-identity', recipient]);
+      }
+      if (signWith != null && signWith.isNotEmpty) {
+        args.addAll(['--sign-with', signWith]);
+      }
+      if (useKeyserver) {
+        args.add('--use-keyserver');
+      }
+    }
+
+    // Add cascade encryption parameters if provided
+    if (cascadePreset != null || cascadeAlgorithms != null) {
+      if (cascadePreset != null && cascadePreset != 'custom') {
+        args.add('--cascade=$cascadePreset');
+      } else if (cascadeAlgorithms != null && cascadeAlgorithms.isNotEmpty) {
+        args.add('--cascade');
+        args.addAll(['--algorithm', cascadeAlgorithms.join(',')]);
+      }
+      args.addAll(['--cascade-hash', cascadeHash]);
+    }
+
     return await _runCLICommandWithProgress(
       args,
       environment: {'CRYPT_PASSWORD': password},
@@ -1325,6 +1498,12 @@ class CLIService {
     required String password,
     String? stegoPassword,
     int bitsPerChannel = 1,
+    String? hsmPlugin,
+    int? hsmSlot,
+    bool verifyIntegrity = false,
+    String? withKey,                // Asymmetric: decryption identity
+    String? verifyFrom,             // Asymmetric: sender verification
+    bool skipVerification = false,  // Asymmetric: skip signature check
   }) async {
     final args = [
       'decrypt',
@@ -1340,10 +1519,649 @@ class CLIService {
       args.addAll(['--stego-password', stegoPassword]);
     }
 
+    // Add HSM arguments if specified
+    if (hsmPlugin != null && hsmPlugin != 'none') {
+      args.addAll(['--hsm', hsmPlugin]);
+      if (hsmSlot != null) {
+        args.addAll(['--hsm-slot', hsmSlot.toString()]);
+      }
+    }
+
+    // Add integrity verification if enabled
+    if (verifyIntegrity) {
+      args.add('--verify-integrity');
+    }
+
+    // Add asymmetric decryption parameters if provided
+    if (withKey != null && withKey.isNotEmpty) {
+      args.addAll(['--with-key', withKey]);
+      if (verifyFrom != null && verifyFrom.isNotEmpty) {
+        args.addAll(['--verify-from', verifyFrom]);
+      }
+      if (skipVerification) {
+        args.add('--no-verify');
+      }
+    }
+
     return await _runCLICommandWithProgress(
       args,
       environment: {'CRYPT_PASSWORD': password},
     );
+  }
+
+  /// Register a new FIDO2 credential
+  static Future<void> registerFido2Credential(String description, bool isBackup) async {
+    final args = [
+      'hsm',
+      'fido2-register',
+      '--description', description,
+    ];
+
+    if (isBackup) {
+      args.add('--backup');
+    }
+
+    final result = await _runCLICommand(args);
+    if (result.exitCode != 0) {
+      throw Exception('Failed to register FIDO2 credential: ${result.stderr}');
+    }
+  }
+
+  /// List all registered FIDO2 credentials
+  static Future<List<Map<String, dynamic>>> listFido2Credentials() async {
+    try {
+      // Read credentials from ~/.openssl_encrypt/plugins/fido2/credentials.json
+      final homeDir = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+      if (homeDir == null) {
+        throw Exception('Could not determine home directory');
+      }
+
+      final credentialsFile = File('$homeDir/.openssl_encrypt/plugins/fido2/credentials.json');
+
+      if (!await credentialsFile.exists()) {
+        return [];
+      }
+
+      final content = await credentialsFile.readAsString();
+      final data = jsonDecode(content) as Map<String, dynamic>;
+      final credentials = data['credentials'] as List<dynamic>? ?? [];
+
+      return credentials.map((c) => c as Map<String, dynamic>).toList();
+    } catch (e) {
+      _outputDebugLog('Error reading FIDO2 credentials: $e');
+      return [];
+    }
+  }
+
+  /// Delete a FIDO2 credential
+  static Future<void> deleteFido2Credential(String credentialId) async {
+    // For now, we'll need to manually edit the credentials file
+    // In a future version, the CLI could support a delete command
+    try {
+      final homeDir = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+      if (homeDir == null) {
+        throw Exception('Could not determine home directory');
+      }
+
+      final credentialsFile = File('$homeDir/.openssl_encrypt/plugins/fido2/credentials.json');
+
+      if (!await credentialsFile.exists()) {
+        throw Exception('Credentials file not found');
+      }
+
+      final content = await credentialsFile.readAsString();
+      final data = jsonDecode(content) as Map<String, dynamic>;
+      final credentials = data['credentials'] as List<dynamic>? ?? [];
+
+      // Remove the credential with matching ID
+      credentials.removeWhere((c) {
+        final cred = c as Map<String, dynamic>;
+        return cred['credential_id'] == credentialId;
+      });
+
+      // Write back to file
+      data['credentials'] = credentials;
+      await credentialsFile.writeAsString(
+        const JsonEncoder.withIndent('  ').convert(data),
+      );
+    } catch (e) {
+      throw Exception('Failed to delete credential: $e');
+    }
+  }
+
+  // ==================== Identity Management Methods ====================
+
+  /// List all identities (own + contacts)
+  static Future<Map<String, List<Map<String, dynamic>>>> listIdentities() async {
+    try {
+      final args = ['identity', 'list', '--include-contacts', '--json'];
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+
+      if (result.exitCode != 0) {
+        _outputDebugLog('Failed to list identities: ${result.stderr}');
+        return {'own': [], 'contacts': []};
+      }
+
+      final data = jsonDecode(result.stdout) as Map<String, dynamic>;
+
+      return {
+        'own': (data['own'] as List<dynamic>?)?.map((i) => i as Map<String, dynamic>).toList() ?? [],
+        'contacts': (data['contacts'] as List<dynamic>?)?.map((i) => i as Map<String, dynamic>).toList() ?? [],
+      };
+    } catch (e) {
+      _outputDebugLog('Error listing identities: $e');
+      return {'own': [], 'contacts': []};
+    }
+  }
+
+  /// Create a new identity
+  static Future<Map<String, dynamic>> createIdentity({
+    required String name,
+    String? email,
+    required String passphrase,
+    String kemAlgorithm = 'ML-KEM-768',
+    String sigAlgorithm = 'ML-DSA-65',
+    String? hsmType,
+    int? hsmSlot,
+  }) async {
+    final args = [
+      'identity',
+      'create',
+      '--name', name,
+      '--kem-algorithm', kemAlgorithm,
+      '--sig-algorithm', sigAlgorithm,
+    ];
+
+    if (email != null && email.isNotEmpty) {
+      args.addAll(['--email', email]);
+    }
+
+    if (hsmType != null && hsmType != 'none') {
+      args.addAll(['--hsm', hsmType]);
+      if (hsmSlot != null) {
+        args.addAll(['--hsm-slot', hsmSlot.toString()]);
+      }
+    }
+
+    if (debugEnabled) {
+      args.add('--debug');
+    }
+
+    // Use stdin for passphrase
+    final process = await _runCLICommandWithStdin(args, passphrase);
+
+    if (process.exitCode != 0) {
+      throw Exception('Failed to create identity: ${process.stderr}');
+    }
+
+    // Return basic info
+    return {
+      'success': true,
+      'name': name,
+      'email': email,
+    };
+  }
+
+  /// Export public identity for sharing
+  static Future<String> exportIdentity(String name) async {
+    try {
+      final args = ['identity', 'export', name];
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+
+      if (result.exitCode != 0) {
+        throw Exception('Failed to export identity: ${result.stderr}');
+      }
+
+      return result.stdout.trim();
+    } catch (e) {
+      throw Exception('Error exporting identity: $e');
+    }
+  }
+
+  /// Import a contact's public key
+  static Future<void> importContact(String publicKeyData, {String? alias}) async {
+    try {
+      final args = ['identity', 'import', '--data', publicKeyData];
+
+      if (alias != null && alias.isNotEmpty) {
+        args.addAll(['--alias', alias]);
+      }
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+
+      if (result.exitCode != 0) {
+        throw Exception('Failed to import contact: ${result.stderr}');
+      }
+    } catch (e) {
+      throw Exception('Error importing contact: $e');
+    }
+  }
+
+  /// Delete an identity or contact
+  static Future<void> deleteIdentity(String name, {bool isContact = false}) async {
+    try {
+      final args = ['identity', 'delete', name];
+
+      if (isContact) {
+        args.add('--contact');
+      }
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+
+      if (result.exitCode != 0) {
+        throw Exception('Failed to delete identity: ${result.stderr}');
+      }
+    } catch (e) {
+      throw Exception('Error deleting identity: $e');
+    }
+  }
+
+  /// Validate cascade cipher chain and return diversity warnings
+  static Future<List<Map<String, dynamic>>> validateCascade(
+    List<String> algorithms, {
+    bool strict = false,
+  }) async {
+    try {
+      // For now, return basic validation
+      // In future, could call CLI for detailed validation
+      final warnings = <Map<String, dynamic>>[];
+
+      if (algorithms.length < 2) {
+        warnings.add({
+          'level': 'ERROR',
+          'message': 'Cascade mode requires at least 2 ciphers',
+          'suggestion': 'Add more algorithms to the chain',
+        });
+        return warnings;
+      }
+
+      // Check for duplicate algorithms
+      final uniqueAlgos = algorithms.toSet();
+      if (uniqueAlgos.length < algorithms.length) {
+        warnings.add({
+          'level': 'WARNING',
+          'message': 'Duplicate algorithms in cascade chain',
+          'suggestion': 'Use different algorithms for better security',
+        });
+      }
+
+      // Check for same family (basic check)
+      final hasMultipleAES = algorithms.where((a) => a.contains('aes')).length > 1;
+      final hasMultipleChaCha = algorithms.where((a) => a.contains('chacha')).length > 1;
+      final hasMultipleThreefish = algorithms.where((a) => a.contains('threefish')).length > 1;
+
+      if (hasMultipleAES) {
+        warnings.add({
+          'level': 'WARNING',
+          'message': 'Multiple AES variants in chain',
+          'suggestion': 'Mix different cipher families (AES + ChaCha + Threefish) for diversity',
+        });
+      }
+
+      if (hasMultipleChaCha) {
+        warnings.add({
+          'level': 'WARNING',
+          'message': 'Multiple ChaCha variants in chain',
+          'suggestion': 'Mix different cipher families for better diversity',
+        });
+      }
+
+      if (hasMultipleThreefish) {
+        warnings.add({
+          'level': 'INFO',
+          'message': 'Multiple Threefish variants in chain',
+          'suggestion': 'Consider mixing with AES or ChaCha for diversity',
+        });
+      }
+
+      return warnings;
+    } catch (e) {
+      _outputDebugLog('Error validating cascade: $e');
+      return [];
+    }
+  }
+
+  // ==================== Network Plugin Methods ====================
+
+  /// Test keyserver connection
+  static Future<bool> testKeyserverConnection(String url) async {
+    try {
+      final args = [
+        'plugin',
+        'keyserver',
+        'test',
+        '--url', url,
+      ];
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+      return result.exitCode == 0;
+    } catch (e) {
+      _outputDebugLog('Keyserver connection test failed: $e');
+      return false;
+    }
+  }
+
+  /// Clear keyserver cache
+  static Future<bool> clearKeyserverCache() async {
+    try {
+      final args = [
+        'plugin',
+        'keyserver',
+        'clear-cache',
+      ];
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+      return result.exitCode == 0;
+    } catch (e) {
+      _outputDebugLog('Failed to clear keyserver cache: $e');
+      return false;
+    }
+  }
+
+  /// Test pepper server connection with mTLS
+  static Future<Map<String, dynamic>> testPepperConnection({
+    required String url,
+    String? clientCertPath,
+    String? clientKeyPath,
+    String? caCertPath,
+  }) async {
+    try {
+      final args = [
+        'plugin',
+        'pepper',
+        'test',
+        '--url', url,
+      ];
+
+      if (clientCertPath != null && clientCertPath.isNotEmpty) {
+        args.addAll(['--client-cert', clientCertPath]);
+      }
+      if (clientKeyPath != null && clientKeyPath.isNotEmpty) {
+        args.addAll(['--client-key', clientKeyPath]);
+      }
+      if (caCertPath != null && caCertPath.isNotEmpty) {
+        args.addAll(['--ca-cert', caCertPath]);
+      }
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+
+      return {
+        'success': result.exitCode == 0,
+        'message': result.exitCode == 0 ? result.stdout : result.stderr,
+      };
+    } catch (e) {
+      _outputDebugLog('Pepper connection test failed: $e');
+      return {
+        'success': false,
+        'message': 'Connection test failed: $e',
+      };
+    }
+  }
+
+  /// List stored peppers
+  static Future<List<Map<String, dynamic>>> listPeppers() async {
+    try {
+      final args = [
+        'plugin',
+        'pepper',
+        'list',
+      ];
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+
+      if (result.exitCode == 0 && result.stdout.isNotEmpty) {
+        final data = jsonDecode(result.stdout);
+        if (data is Map && data.containsKey('peppers')) {
+          return (data['peppers'] as List<dynamic>)
+              .map((p) => p as Map<String, dynamic>)
+              .toList();
+        }
+      }
+
+      return [];
+    } catch (e) {
+      _outputDebugLog('Failed to list peppers: $e');
+      return [];
+    }
+  }
+
+  /// Setup TOTP 2FA for pepper
+  static Future<Map<String, dynamic>> setupPepperTotp() async {
+    try {
+      final args = [
+        'plugin',
+        'pepper',
+        'setup-totp',
+      ];
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+
+      if (result.exitCode == 0 && result.stdout.isNotEmpty) {
+        final data = jsonDecode(result.stdout);
+        return {
+          'success': true,
+          'secret': data['secret'],
+          'qr_code': data['qr_code'],
+        };
+      }
+
+      return {
+        'success': false,
+        'message': result.stderr,
+      };
+    } catch (e) {
+      _outputDebugLog('Failed to setup TOTP: $e');
+      return {
+        'success': false,
+        'message': 'Setup failed: $e',
+      };
+    }
+  }
+
+  /// Verify TOTP code
+  static Future<bool> verifyPepperTotp(String code) async {
+    try {
+      final args = [
+        'plugin',
+        'pepper',
+        'verify-totp',
+        '--code', code,
+      ];
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+      return result.exitCode == 0;
+    } catch (e) {
+      _outputDebugLog('TOTP verification failed: $e');
+      return false;
+    }
+  }
+
+  /// Configure dead man's switch
+  static Future<bool> configurePepperDeadman({
+    required bool enabled,
+    int? intervalDays,
+    int? gracePeriodDays,
+  }) async {
+    try {
+      final args = [
+        'plugin',
+        'pepper',
+        'configure-deadman',
+      ];
+
+      if (enabled) {
+        args.add('--enable');
+        if (intervalDays != null) {
+          args.addAll(['--interval', intervalDays.toString()]);
+        }
+        if (gracePeriodDays != null) {
+          args.addAll(['--grace-period', gracePeriodDays.toString()]);
+        }
+      } else {
+        args.add('--disable');
+      }
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+      return result.exitCode == 0;
+    } catch (e) {
+      _outputDebugLog('Failed to configure dead man switch: $e');
+      return false;
+    }
+  }
+
+  /// Test integrity server connection with mTLS
+  static Future<Map<String, dynamic>> testIntegrityConnection({
+    required String url,
+    String? clientCertPath,
+    String? clientKeyPath,
+    String? caCertPath,
+  }) async {
+    try {
+      final args = [
+        'plugin',
+        'integrity',
+        'test',
+        '--url', url,
+      ];
+
+      if (clientCertPath != null && clientCertPath.isNotEmpty) {
+        args.addAll(['--client-cert', clientCertPath]);
+      }
+      if (clientKeyPath != null && clientKeyPath.isNotEmpty) {
+        args.addAll(['--client-key', clientKeyPath]);
+      }
+      if (caCertPath != null && caCertPath.isNotEmpty) {
+        args.addAll(['--ca-cert', caCertPath]);
+      }
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+
+      return {
+        'success': result.exitCode == 0,
+        'message': result.exitCode == 0 ? result.stdout : result.stderr,
+      };
+    } catch (e) {
+      _outputDebugLog('Integrity connection test failed: $e');
+      return {
+        'success': false,
+        'message': 'Connection test failed: $e',
+      };
+    }
+  }
+
+  /// Get integrity verification statistics
+  static Future<Map<String, dynamic>> getIntegrityStats() async {
+    try {
+      final args = [
+        'plugin',
+        'integrity',
+        'stats',
+      ];
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+
+      if (result.exitCode == 0 && result.stdout.isNotEmpty) {
+        final data = jsonDecode(result.stdout);
+        return {
+          'success': true,
+          'total_verifications': data['total_verifications'] ?? 0,
+          'successful_verifications': data['successful_verifications'] ?? 0,
+          'failed_verifications': data['failed_verifications'] ?? 0,
+          'last_verification': data['last_verification'],
+        };
+      }
+
+      return {
+        'success': false,
+        'message': result.stderr,
+      };
+    } catch (e) {
+      _outputDebugLog('Failed to get integrity stats: $e');
+      return {
+        'success': false,
+        'message': 'Failed to get stats: $e',
+      };
+    }
+  }
+
+  /// Verify file integrity
+  static Future<bool> verifyFileIntegrity({
+    required String fileId,
+    required String metadataHash,
+  }) async {
+    try {
+      final args = [
+        'plugin',
+        'integrity',
+        'verify',
+        '--file-id', fileId,
+        '--metadata-hash', metadataHash,
+      ];
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+      return result.exitCode == 0;
+    } catch (e) {
+      _outputDebugLog('Integrity verification failed: $e');
+      return false;
+    }
   }
 }
 

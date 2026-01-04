@@ -85,7 +85,7 @@ class FileInfo {
             final metadata = jsonDecode(metadataJson);
 
             if (metadata is Map<String, dynamic>) {
-              // Check for CLI format structures (V3, V4, V5)
+              // Check for CLI format structures (V3-V8)
               if (metadata.containsKey('format_version')) {
                 final formatVersion = metadata['format_version'] as int?;
                 if (formatVersion == 3) {
@@ -96,8 +96,8 @@ class FileInfo {
                     _isEncrypted = true;
                     return true;
                   }
-                } else if (formatVersion == 4 || formatVersion == 5) {
-                  // V4/V5 formats
+                } else if (formatVersion != null && formatVersion >= 4 && formatVersion <= 8) {
+                  // V4-V8 formats (current range: 4, 5, 6, 7, 8)
                   _isEncrypted = true;
                   return true;
                 }

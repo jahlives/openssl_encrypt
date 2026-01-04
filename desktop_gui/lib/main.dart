@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,7 +10,11 @@ import 'file_manager.dart';
 import 'settings_service.dart';
 import 'settings_screen.dart';
 import 'configuration_profiles_screen.dart';
+import 'identity_management_screen.dart';
+import 'fido2_management_screen.dart';
 import 'input_validation.dart';
+import 'tabs/encrypt_tab.dart';
+import 'tabs/decrypt_tab.dart';
 
 // Intent classes for keyboard shortcuts
 class OpenFileIntent extends Intent {
@@ -30,6 +35,13 @@ class ShowHelpIntent extends Intent {
 
 class ExitAppIntent extends Intent {
   const ExitAppIntent();
+}
+
+// Encryption modes for the application
+enum EncryptionMode {
+  symmetric,   // Traditional password-based encryption (V3-V6)
+  asymmetric,  // Identity-based encryption with ML-KEM + ML-DSA (V7)
+  cascade,     // Multi-layer encryption chaining (V8)
 }
 
 void main() async {
@@ -135,8 +147,6 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   final FileManager _fileManager = FileManager();
-  final GlobalKey<_FileCryptoTabState> _fileCryptoTabKey = GlobalKey<_FileCryptoTabState>();
-  final GlobalKey<_TextCryptoTabState> _textCryptoTabKey = GlobalKey<_TextCryptoTabState>();
   final GlobalKey<_BatchOperationsTabState> _batchOperationsTabKey = GlobalKey<_BatchOperationsTabState>();
   int _selectedIndex = 0;
   bool _isDragOver = false;
@@ -170,19 +180,12 @@ class _MainScreenState extends State<MainScreen> {
     // Get result from current active tab
     String? currentResult;
 
-    if (_selectedIndex == 0) {
-      // Text crypto tab
-      final textTabState = _textCryptoTabKey.currentState;
-      currentResult = textTabState?.result;
-    } else if (_selectedIndex == 1) {
-      // File crypto tab
-      final fileTabState = _fileCryptoTabKey.currentState;
-      currentResult = fileTabState?.result;
-    } else if (_selectedIndex == 2) {
+    if (_selectedIndex == 2) {
       // Batch operations tab
       final batchTabState = _batchOperationsTabKey.currentState;
       currentResult = batchTabState?.result;
     }
+    // Note: Encrypt/Decrypt tabs (indices 0-1) use internal copy functionality
 
     if (currentResult != null && currentResult.isNotEmpty) {
       await Clipboard.setData(ClipboardData(text: currentResult));
@@ -411,72 +414,43 @@ class _MainScreenState extends State<MainScreen> {
     if (details.files.isEmpty) return;
 
     final file = details.files.first;
-    final filePath = file.path;
 
-    // Switch to file tab first
+    // Switch to Decrypt tab
     setState(() {
       _selectedIndex = 1;
+      _isDragOver = false;
     });
 
-    // Wait a moment for the tab to be created if needed
-    await Future.delayed(const Duration(milliseconds: 50));
-
-    // Attempt to load the file in FileCryptoTab
-    final fileCryptoTabState = _fileCryptoTabKey.currentState;
-    if (fileCryptoTabState != null) {
-      final success = await fileCryptoTabState.loadFileFromPath(filePath);
-
-      if (success) {
-        // Show success feedback
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('File loaded: ${file.name}'),
-              duration: const Duration(seconds: 2),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } else {
-        // Show error feedback
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to load file: ${file.name}'),
-              duration: const Duration(seconds: 3),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    } else {
-      // Tab state not available, show fallback message
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please wait and try dropping the file again'),
-            duration: Duration(seconds: 2),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
+    // Show guidance message
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('File detected: ${file.name}\nPlease use the file picker to select it for decryption.'),
+          duration: const Duration(seconds: 3),
+          backgroundColor: Colors.blue,
+        ),
+      );
     }
   }
 
   Widget _getSelectedPage() {
     switch (_selectedIndex) {
       case 0:
-        return TextCryptoTab(key: _textCryptoTabKey, onDebugChanged: widget.onDebugChanged, onToggleDebugWindow: _toggleDebugWindow);
+        return EncryptTab(fileManager: _fileManager);
       case 1:
-        return FileCryptoTab(key: _fileCryptoTabKey, fileManager: _fileManager, onDebugChanged: widget.onDebugChanged);
+        return DecryptTab(fileManager: _fileManager);
       case 2:
         return BatchOperationsTab(key: _batchOperationsTabKey, fileManager: _fileManager, onDebugChanged: widget.onDebugChanged);
       case 3:
         return const InfoTab();
       case 4:
         return SettingsTab(onThemeChanged: widget.onThemeChanged);
+      case 5:
+        return const IdentityManagementScreen();
+      case 6:
+        return const Fido2ManagementScreen();
       default:
-        return TextCryptoTab(onDebugChanged: widget.onDebugChanged, onToggleDebugWindow: _toggleDebugWindow);
+        return EncryptTab(fileManager: _fileManager);
     }
   }
 
@@ -601,14 +575,14 @@ class _MainScreenState extends State<MainScreen> {
             backgroundColor: Theme.of(context).colorScheme.surface,
             destinations: const [
               NavigationRailDestination(
-                icon: Icon(Icons.text_fields_outlined),
-                selectedIcon: Icon(Icons.text_fields),
-                label: Text('Text Encryption'),
+                icon: Icon(Icons.lock_outline),
+                selectedIcon: Icon(Icons.lock),
+                label: Text('Encrypt'),
               ),
               NavigationRailDestination(
-                icon: Icon(Icons.folder_outlined),
-                selectedIcon: Icon(Icons.folder),
-                label: Text('File Encryption'),
+                icon: Icon(Icons.lock_open_outlined),
+                selectedIcon: Icon(Icons.lock_open),
+                label: Text('Decrypt'),
               ),
               NavigationRailDestination(
                 icon: Icon(Icons.file_copy_outlined),
@@ -624,6 +598,16 @@ class _MainScreenState extends State<MainScreen> {
                 icon: Icon(Icons.settings_outlined),
                 selectedIcon: Icon(Icons.settings),
                 label: Text('Settings'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.badge_outlined),
+                selectedIcon: Icon(Icons.badge),
+                label: Text('Identities'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.fingerprint),
+                selectedIcon: Icon(Icons.fingerprint),
+                label: Text('FIDO2 Keys'),
               ),
             ],
           ),
@@ -673,4416 +657,6 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
-// Text encryption/decryption tab
-class TextCryptoTab extends StatefulWidget {
-  final Function(bool) onDebugChanged;
-  final VoidCallback? onToggleDebugWindow;
-
-  const TextCryptoTab({super.key, required this.onDebugChanged, this.onToggleDebugWindow});
-
-  @override
-  State<TextCryptoTab> createState() => _TextCryptoTabState();
-}
-
-class _TextCryptoTabState extends State<TextCryptoTab> {
-  final TextEditingController _textController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
-  String result = '';
-  String _encryptedData = '';
-  bool _isLoading = false;
-  String _operationStatus = '';
-  String _operationProgress = '';
-  double _progressValue = 0.0;
-  List<String> _algorithms = [];
-  List<String> _hashAlgorithms = [];
-  // Note: KDF algorithms and security levels are configured directly in _kdfConfig
-  String _selectedAlgorithm = 'fernet';
-  String _selectedEncryptData = 'aes-gcm';  // For PQC algorithms
-  Map<String, Map<String, dynamic>> _hashConfig = {};  // Hash algorithm -> {enabled, rounds} mapping
-  Map<String, Map<String, dynamic>> _kdfConfig = {};  // KDF chain configuration
-  bool _showAdvanced = false;
-
-  // Performance optimization caches
-  static bool _algorithmsLoaded = false;
-  static List<String>? _cachedAlgorithms;
-  static List<String>? _cachedHashAlgorithms;
-
-  bool _showHashConfig = false;
-  bool _showKdfConfig = false;
-  bool _debugLogging = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadAlgorithms();
-  }
-
-  @override
-  void dispose() {
-    _textController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  /// Check if algorithm is available on current platform
-  bool _isAlgorithmAvailable(String algorithm) {
-    const Set<String> pythonOnlyAlgorithms = {
-      'aes-siv',
-      'aes-gcm-siv',
-      'aes-ocb3',
-    };
-
-    // These algorithms were only available with Python backend, now unavailable
-    if (pythonOnlyAlgorithms.contains(algorithm)) {
-      return false;
-    }
-    return true;
-  }
-
-  void _loadAlgorithms() async {
-    // Performance optimization: Use static cache to avoid reloading
-    if (_algorithmsLoaded && _cachedAlgorithms != null && _cachedHashAlgorithms != null) {
-      setState(() {
-        _algorithms = _cachedAlgorithms!;
-        _hashAlgorithms = _cachedHashAlgorithms!;
-      });
-      return;
-    }
-
-    // Early return if already loaded in this instance
-    if (_algorithms.isNotEmpty) return;
-
-    try {
-      final algorithmCategories = await CLIService.getSupportedAlgorithms();
-      final hashCategories = await CLIService.getHashAlgorithms();
-
-      // Store both flat and categorized versions
-      final algorithms = <String>[];
-      for (final category in algorithmCategories.values) {
-        algorithms.addAll(category);
-      }
-
-      final hashAlgorithms = <String>[];
-      for (final category in hashCategories.values) {
-        hashAlgorithms.addAll(category);
-      }
-      // KDF algorithms are handled directly in _kdfConfig initialization
-
-      setState(() {
-        _algorithms = algorithms;
-        _hashAlgorithms = hashAlgorithms;
-
-        if (algorithms.isNotEmpty) {
-          _selectedAlgorithm = algorithms.first;
-        }
-        if (hashAlgorithms.isNotEmpty) {
-          // Initialize hash configuration with default values (CLI order)
-          _hashConfig = {};
-          for (String hash in hashAlgorithms) {
-            _hashConfig[hash] = {
-              'enabled': true,  // All hash functions enabled with CLI integration
-              'rounds': 1000    // Default rounds for all hash functions (CLI supports all)
-            };
-          }
-        }
-        // Initialize KDF chain configuration (CLI order)
-        _kdfConfig = {
-          'pbkdf2': {'enabled': !CLIService.shouldHideLegacyAlgorithms(), 'rounds': 100000},
-          'scrypt': {'enabled': false, 'n': 16384, 'r': 8, 'p': 1, 'rounds': 1},
-          'argon2': {'enabled': false, 'memory_cost': 65536, 'time_cost': 3, 'parallelism': 1, 'rounds': 1},
-          'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1},
-          'balloon': {'enabled': false, 'space_cost': 8, 'time_cost': 1, 'parallel_cost': 1, 'rounds': 1},
-          'randomx': {'enabled': false, 'rounds': 1, 'mode': 'light', 'height': 1, 'hash_len': 32}
-        };
-      });
-
-      // Cache the results for future use
-      _cachedAlgorithms = algorithms;
-      _cachedHashAlgorithms = hashAlgorithms;
-      _algorithmsLoaded = true;
-    } catch (e) {
-      setState(() {
-        _algorithms = ['fernet'];
-        _hashAlgorithms = ['sha256'];
-        _selectedAlgorithm = 'fernet';
-        _hashConfig = {'sha256': {'enabled': true, 'rounds': 1000}};
-        _kdfConfig = {
-          'pbkdf2': {'enabled': !CLIService.shouldHideLegacyAlgorithms(), 'rounds': 100000},
-          'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1},
-          'randomx': {'enabled': false, 'rounds': 1, 'mode': 'light', 'height': 1, 'hash_len': 32}
-        };
-      });
-    }
-  }
-
-  void _encryptText() async {
-    if (_textController.text.isEmpty || _passwordController.text.isEmpty) {
-      setState(() {
-        result = 'Please enter both text and password';
-      });
-      return;
-    }
-
-    // Check if selected algorithm is available on current platform
-    if (!_isAlgorithmAvailable(_selectedAlgorithm)) {
-      setState(() {
-        result = 'Error: $_selectedAlgorithm is not available. This algorithm required the Python cryptography backend which has been removed in favor of pure Dart implementation.';
-      });
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-      _operationStatus = 'Encrypting data...';
-      _operationProgress = '';
-      _progressValue = 0.0;
-      result = 'Encrypting...';
-    });
-
-    // Give UI a moment to update before heavy crypto operations
-    await Future.delayed(const Duration(milliseconds: 50));
-
-    try {
-      // Pass selected algorithm and UI configurations to CLI service with progress
-      final encrypted = await CLIService.encryptTextWithProgress(
-        _textController.text,
-        _passwordController.text,
-        _selectedAlgorithm, // Pass the selected algorithm
-        _hashConfig,        // Pass hash configuration from UI
-        _kdfConfig,         // Pass KDF configuration from UI
-        encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
-        onProgress: (progress) {
-          setState(() {
-            _operationProgress = progress;
-          });
-        },
-        onStatus: (status) {
-          setState(() {
-            _operationStatus = status;
-            // Update progress based on status
-            if (status.contains('Initializing')) {
-              _progressValue = 0.2;
-            } else if (status.contains('Prepared')) {
-              _progressValue = 0.4;
-            } else if (status.contains('Executing')) {
-              _progressValue = 0.7;
-            } else if (status.contains('Reading')) {
-              _progressValue = 0.9;
-            } else if (status.contains('completed')) {
-              _progressValue = 1.0;
-            }
-          });
-        },
-      );
-
-      setState(() {
-        _encryptedData = encrypted;
-        result = encrypted; // Show only the base64 encoded string
-        _isLoading = false;
-        _operationStatus = '';
-        _operationProgress = '';
-        _progressValue = 0.0;
-      });
-    } catch (e) {
-      setState(() {
-        result = 'Encryption failed: $e';
-        _isLoading = false;
-        _operationStatus = '';
-        _operationProgress = '';
-        _progressValue = 0.0;
-      });
-    }
-  }
-
-  void _decryptText() async {
-    // Use encrypted data from previous encryption, or from input field if user pasted encrypted data
-    final inputData = _encryptedData.isEmpty ? _textController.text.trim() : _encryptedData;
-
-    if (inputData.isEmpty || _passwordController.text.isEmpty) {
-      setState(() {
-        result = 'Please encrypt some text first, paste encrypted data in the text field, or enter the password';
-      });
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-      _operationStatus = 'Decrypting data...';
-      _operationProgress = '';
-      _progressValue = 0.0;
-      result = 'Decrypting...';
-    });
-
-    // Give UI a moment to update before heavy crypto operations
-    await Future.delayed(const Duration(milliseconds: 50));
-
-    try {
-      final decrypted = await CLIService.decryptTextWithProgress(
-        inputData,
-        _passwordController.text,
-        onProgress: (progress) {
-          setState(() {
-            _operationProgress = progress;
-          });
-        },
-        onStatus: (status) {
-          setState(() {
-            _operationStatus = status;
-            // Update progress based on status
-            if (status.contains('Initializing')) {
-              _progressValue = 0.2;
-            } else if (status.contains('Prepared')) {
-              _progressValue = 0.4;
-            } else if (status.contains('Executing')) {
-              _progressValue = 0.7;
-            } else if (status.contains('Reading')) {
-              _progressValue = 0.9;
-            } else if (status.contains('completed')) {
-              _progressValue = 1.0;
-            }
-          });
-        },
-      );
-
-      setState(() {
-        result = decrypted; // Show only the decrypted text
-        _isLoading = false;
-        _operationStatus = '';
-        _operationProgress = '';
-        _progressValue = 0.0;
-      });
-    } catch (e) {
-      setState(() {
-        result = 'Decryption failed: $e';
-        _isLoading = false;
-        _operationStatus = '';
-        _operationProgress = '';
-        _progressValue = 0.0;
-      });
-    }
-  }
-
-  void _showCommandPreview() {
-    final inputText = _textController.text.trim();
-    final password = _passwordController.text.trim();
-
-    if (inputText.isEmpty && password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter text and password to preview command'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    // Show command preview dialog
-    showDialog(
-      context: context,
-      builder: (context) => CommandPreviewDialog(
-        algorithm: _selectedAlgorithm,
-        hashConfig: _hashConfig,
-        kdfConfig: _kdfConfig,
-        password: password,
-        inputText: inputText,
-      ),
-    );
-  }
-
-  void _openLogFile() {
-    final logFile = CLIService.getDebugLogFile();
-    if (logFile != null) {
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Debug Log File Location'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Debug log file saved to:'),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainer,
-                  border: Border.all(color: Theme.of(context).colorScheme.outline),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: SelectableText(
-                  logFile,
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'You can send this file to the developer for troubleshooting.',
-                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close'),
-            ),
-          ],
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No log file available')),
-      );
-    }
-  }
-
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextFormField(
-              controller: _textController,
-              decoration: const InputDecoration(
-                labelText: 'Text to encrypt',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.text_fields),
-                helperText: 'Maximum 1MB text content',
-              ),
-              maxLines: 3,
-              validator: InputValidator.validateTextContent,
-              // Security: Prevent excessively long input that could cause DoS
-              inputFormatters: [
-                LengthLimitingTextInputFormatter(InputValidator.maxTextLength),
-              ],
-            ),
-          const SizedBox(height: 16),
-          // Advanced Algorithm Selection
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.security),
-                      const SizedBox(width: 8),
-                      const Text('Encryption Algorithm', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                      const Spacer(),
-                      IconButton(
-                        icon: const Icon(Icons.info_outline),
-                        onPressed: () => _showAlgorithmInfo(context),
-                        tooltip: 'Algorithm Information',
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Theme.of(context).colorScheme.primary),
-                      borderRadius: BorderRadius.circular(8),
-                      color: Theme.of(context).colorScheme.primaryContainer,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary, size: 20),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Selected: $_selectedAlgorithm',
-                              style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _getAlgorithmDescription(_selectedAlgorithm),
-                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary),
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            ElevatedButton.icon(
-                              onPressed: () => _showAlgorithmPicker(),
-                              icon: const Icon(Icons.tune, size: 16),
-                              label: const Text('Choose Algorithm'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                                foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            ElevatedButton.icon(
-                              onPressed: () => _showRecommendationWizard(),
-                              icon: const Icon(Icons.auto_awesome, size: 16),
-                              label: const Text('Get Recommendations'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green.withValues(alpha: 0.2),
-                                foregroundColor: Colors.green.shade700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          // Private Key Encryption for Post-Quantum Algorithms
-          if (_isPostQuantumAlgorithm(_selectedAlgorithm)) ...[
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.vpn_key, color: Theme.of(context).colorScheme.primary),
-                        const SizedBox(width: 8),
-                        const Text('Private Key Encryption', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                        const Spacer(),
-                        const Icon(Icons.security, color: Colors.purple, size: 20),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Post-quantum algorithms require additional encryption of private key data',
-                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        const Text('Encryption Method: '),
-                        Expanded(
-                          child: DropdownButton<String>(
-                            value: _selectedEncryptData,
-                            isExpanded: true,
-                            items: _getNonPostQuantumAlgorithms().map((algorithm) => DropdownMenuItem<String>(
-                              value: algorithm,
-                              child: Text(algorithm),
-                            )).toList(),
-                            onChanged: (String? newValue) {
-                              if (newValue != null) {
-                                setState(() {
-                                  _selectedEncryptData = newValue;
-                                });
-                              }
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-          // Advanced Settings Toggle
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Column(
-                children: [
-                  InkWell(
-                    onTap: () {
-                      setState(() {
-                        _showAdvanced = !_showAdvanced;
-                      });
-                    },
-                    child: Row(
-                      children: [
-                        Icon(_showAdvanced ? Icons.expand_less : Icons.expand_more),
-                        const SizedBox(width: 8),
-                        const Expanded(
-                          child: Text(
-                            'Advanced Security Settings (CLI Compatible)',
-                            style: TextStyle(fontSize: 14),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Icon(_showAdvanced ? Icons.security : Icons.tune),
-                      ],
-                    ),
-                  ),
-                  if (_showAdvanced) ...[
-                    const SizedBox(height: 16),
-                    // Hash Chain Configuration
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: Column(
-                          children: [
-                            InkWell(
-                              onTap: () {
-                                setState(() {
-                                  _showHashConfig = !_showHashConfig;
-                                });
-                              },
-                              child: Row(
-                                children: [
-                                  Icon(_showHashConfig ? Icons.expand_less : Icons.expand_more),
-                                  const SizedBox(width: 8),
-                                  const Text('Hash Chain Configuration'),
-                                  const Spacer(),
-                                  const Icon(Icons.link),
-                                ],
-                              ),
-                            ),
-                            if (_showHashConfig) ...[
-                              const SizedBox(height: 12),
-                              Text(
-                                'Configure hash algorithms and rounds (CLI order)',
-                                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                              ),
-                              const SizedBox(height: 12),
-                              ..._hashAlgorithms.map((hash) {
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 8.0),
-                                  child: _buildHashConfig(hash, hash),
-                                );
-                              }),
-                              const SizedBox(height: 8),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                alignment: WrapAlignment.center,
-                                children: [
-                                  TextButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        for (String hash in _hashAlgorithms) {
-                                          // All algorithms now supported with CLI integration
-                                          _hashConfig[hash] = {
-                                            'enabled': true,
-                                            'rounds': 1000
-                                          };
-                                        }
-                                      });
-                                    },
-                                    child: const Text('Enable All', style: TextStyle(fontSize: 12)),
-                                  ),
-                                  TextButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        for (String hash in _hashAlgorithms) {
-                                          if (_hashConfig[hash] != null) {
-                                            _hashConfig[hash]!['enabled'] = false;
-                                          }
-                                        }
-                                      });
-                                    },
-                                    child: const Text('Disable All', style: TextStyle(fontSize: 12)),
-                                  ),
-                                  TextButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        for (String hash in _hashAlgorithms) {
-                                          // All algorithms now supported with CLI integration
-                                          _hashConfig[hash] = {
-                                            'enabled': false,
-                                            'rounds': 1000
-                                          };
-                                        }
-                                      });
-                                    },
-                                    child: const Text('Reset (1000)', style: TextStyle(fontSize: 12)),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    // KDF Chain Configuration
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: Column(
-                          children: [
-                            InkWell(
-                              onTap: () {
-                                setState(() {
-                                  _showKdfConfig = !_showKdfConfig;
-                                });
-                              },
-                              child: Row(
-                                children: [
-                                  Icon(_showKdfConfig ? Icons.expand_less : Icons.expand_more),
-                                  const SizedBox(width: 8),
-                                  const Text('KDF Chain Configuration'),
-                                  const Spacer(),
-                                  const Icon(Icons.vpn_key),
-                                ],
-                              ),
-                            ),
-                            if (_showKdfConfig) ...[
-                              const SizedBox(height: 12),
-                              Row(
-                                children: [
-                                  Text(
-                                    'Professional Key Derivation Configuration',
-                                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                                  ),
-                                  const Spacer(),
-                                  IconButton(
-                                    icon: const Icon(Icons.info_outline, size: 16),
-                                    onPressed: () => _showKDFInfo(),
-                                    tooltip: 'KDF Information',
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-
-                              // PBKDF2 Panel (hidden in CLI v1.2+)
-                              if (!CLIService.shouldHideLegacyAlgorithms()) ...[
-                                _buildPBKDF2Panel(),
-                                const SizedBox(height: 8),
-                              ],
-
-                              // Argon2 Panel
-                              _buildArgon2Panel(),
-                              const SizedBox(height: 8),
-
-                              // Scrypt Panel
-                              _buildScryptPanel(),
-                              const SizedBox(height: 8),
-
-                              // HKDF Panel
-                              _buildHKDFPanel(),
-                              const SizedBox(height: 8),
-
-                              // Balloon Panel
-                              _buildBalloonPanel(),
-                              const SizedBox(height: 8),
-
-                              // RandomX Panel
-                              _buildRandomXPanel(),
-                              const SizedBox(height: 8),
-                              // Quick presets
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                alignment: WrapAlignment.center,
-                                children: [
-                                  TextButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        if (!CLIService.shouldHideLegacyAlgorithms()) {
-                                          _kdfConfig['pbkdf2']?['enabled'] = true;
-                                        }
-                                        _kdfConfig['scrypt']?['enabled'] = false;
-                                        _kdfConfig['argon2']?['enabled'] = false;
-                                        _kdfConfig['hkdf']?['enabled'] = false;
-                                        _kdfConfig['balloon']?['enabled'] = false;
-                                      });
-                                    },
-                                    child: const Text('PBKDF2 Only', style: TextStyle(fontSize: 12)),
-                                  ),
-                                  TextButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        _kdfConfig['pbkdf2']?['enabled'] = false;
-                                        _kdfConfig['pbkdf2']?['rounds'] = 0; // Set rounds to 0 when disabled
-                                        _kdfConfig['scrypt']?['enabled'] = false;
-                                        _kdfConfig['argon2']?['enabled'] = false;
-                                        _kdfConfig['hkdf']?['enabled'] = false;
-                                        _kdfConfig['balloon']?['enabled'] = true;
-                                      });
-                                    },
-                                    child: const Text('Balloon Only', style: TextStyle(fontSize: 12)),
-                                  ),
-                                  TextButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        for (String kdf in _kdfConfig.keys) {
-                                          _kdfConfig[kdf]?['enabled'] = false;
-                                          // Special case for PBKDF2: set rounds to 0 when disabled
-                                          if (kdf == 'pbkdf2') {
-                                            _kdfConfig[kdf]?['rounds'] = 0;
-                                          }
-                                        }
-                                      });
-                                    },
-                                    child: const Text('Disable All', style: TextStyle(fontSize: 12)),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-
-                  // Debug Logging Toggle
-                  const SizedBox(height: 16),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                _debugLogging ? Icons.bug_report : Icons.bug_report_outlined,
-                                color: _debugLogging ? Colors.orange : Theme.of(context).colorScheme.onSurfaceVariant,
-                              ),
-                              const SizedBox(width: 8),
-                              const Expanded(
-                                child: Text(
-                                  'Debug Logging',
-                                  style: TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                              Switch(
-                                value: _debugLogging,
-                                onChanged: (bool value) async {
-                                  setState(() {
-                                    _debugLogging = value;
-                                    // Update debug banner visibility
-                                    widget.onDebugChanged(value);
-                                  });
-
-                                  // Enable/disable debug logging with file initialization
-                                  if (value) {
-                                    await CLIService.enableDebugLogging();
-                                  } else {
-                                    CLIService.disableDebugLogging();
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _debugLogging
-                              ? '🟢 Debug logging enabled - logs captured in-app and saved to file'
-                              : '🔲 Debug logging disabled - only basic status messages',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: _debugLogging ? Colors.orange.shade700 : Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                          if (_debugLogging) ...[
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    'Debug logs are being captured',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: Colors.orange.shade600,
-                                      fontFamily: 'monospace',
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                ElevatedButton.icon(
-                                  onPressed: widget.onToggleDebugWindow,
-                                  icon: const Icon(Icons.visibility, size: 16),
-                                  label: const Text('View Logs'),
-                                  style: ElevatedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    minimumSize: const Size(0, 28),
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                ElevatedButton.icon(
-                                  onPressed: _openLogFile,
-                                  icon: const Icon(Icons.folder_open, size: 16),
-                                  label: const Text('Open File'),
-                                  style: ElevatedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    minimumSize: const Size(0, 28),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                          if (_debugLogging) ...[
-                            const SizedBox(height: 8),
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.errorContainer,
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: Theme.of(context).colorScheme.error),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Icon(Icons.warning, size: 16, color: Theme.of(context).colorScheme.error),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          'SECURITY WARNING',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
-                                            color: Theme.of(context).colorScheme.error,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Debug logs may contain sensitive information including passwords, keys, and decrypted content. Only use with test files and non-sensitive data. Never share debug logs containing real passwords or personal data.',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Theme.of(context).colorScheme.error,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _passwordController,
-            decoration: const InputDecoration(
-              labelText: 'Password',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.lock),
-              helperText: 'Maximum 1024 characters',
-            ),
-            obscureText: true,
-            validator: InputValidator.validatePassword,
-            // Security: Prevent excessively long passwords that could cause buffer overflow
-            inputFormatters: [
-              LengthLimitingTextInputFormatter(InputValidator.maxPasswordLength),
-              // Security: Filter out null bytes and dangerous control characters
-              FilteringTextInputFormatter.deny(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]')),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (_isLoading)
-            Card(
-              color: Theme.of(context).colorScheme.tertiaryContainer,
-              elevation: 8,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    // Progress bar
-                    LinearProgressIndicator(
-                      value: _progressValue,
-                      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-                      valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary),
-                    ),
-                    const SizedBox(height: 12),
-                    // Circular progress indicator
-                    CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
-                    const SizedBox(height: 12),
-                    // Operation status
-                    Text(
-                      _operationStatus.isNotEmpty ? _operationStatus : 'Crypto operation in progress...',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onTertiaryContainer),
-                      textAlign: TextAlign.center,
-                    ),
-                    // CLI progress output
-                    if (_operationProgress.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.all(8.0),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.tertiaryContainer,
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: Theme.of(context).colorScheme.outline),
-                        ),
-                        child: Text(
-                          _operationProgress,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontFamily: 'monospace',
-                            color: Theme.of(context).colorScheme.onTertiaryContainer,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ],
-                    // Progress percentage
-                    if (_progressValue > 0) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        '${(_progressValue * 100).toInt()}%',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: Theme.of(context).colorScheme.onTertiaryContainer,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          if (_isLoading)
-            const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _isLoading ? null : _encryptText,
-                  icon: const Icon(Icons.lock),
-                  label: const Text('Encrypt'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _isLoading ? null : _decryptText,
-                  icon: const Icon(Icons.lock_open),
-                  label: const Text('Decrypt'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _isLoading ? null : _showCommandPreview,
-              icon: const Icon(Icons.code, size: 16),
-              label: const Text('Preview CLI Command'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Theme.of(context).colorScheme.primary,
-                side: BorderSide(color: Theme.of(context).colorScheme.outline),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: Stack(
-              children: [
-                Container(
-                  width: double.infinity,
-                  height: 200,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Theme.of(context).colorScheme.outline),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: SingleChildScrollView(
-                    child: SelectableText(
-                      result.isEmpty ? 'Results will appear here...' : result,
-                      style: const TextStyle(fontFamily: 'monospace'),
-                    ),
-                  ),
-                ),
-              if (result.isNotEmpty)
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: FloatingActionButton.small(
-                    heroTag: "copy_textresult",
-                    onPressed: () async {
-                      await Clipboard.setData(ClipboardData(text: result));
-
-                      // Schedule secure clipboard clearing after 30 seconds
-                      Timer(const Duration(seconds: 30), () async {
-                        await Clipboard.setData(const ClipboardData(text: ''));
-                      });
-
-                      if (mounted) {
-                        // ignore: use_build_context_synchronously
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Result copied to clipboard (will auto-clear in 30s)'),
-                            duration: Duration(seconds: 3),
-                          ),
-                        );
-                      }
-                    },
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    child: Icon(Icons.copy, size: 16, color: Theme.of(context).colorScheme.onPrimary),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-        ),
-      ),
-    );
-  }
-
-  // Helper method to build KDF configuration sections
-  // ignore: unused_element
-  Widget _buildKdfConfig(String kdfId, String kdfName, List<Widget> paramFields) {
-    final isEnabled = _kdfConfig[kdfId]?['enabled'] ?? false;
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        border: Border.all(color: isEnabled ? Colors.green : Theme.of(context).colorScheme.outline),
-        borderRadius: BorderRadius.circular(8),
-        color: isEnabled ? Colors.green.withValues(alpha: 0.1) : Theme.of(context).colorScheme.surfaceContainer,
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Switch(
-                value: isEnabled,
-                onChanged: (bool? value) {
-                  setState(() {
-                    if (_kdfConfig[kdfId] == null) {
-                      _kdfConfig[kdfId] = {};
-                    }
-                    _kdfConfig[kdfId]!['enabled'] = value;
-
-                    // Special case for PBKDF2: set rounds to 0 when disabled
-                    // This ensures CLI compatibility (CLI uses rounds > 0 for enablement)
-                    if (kdfId == 'pbkdf2' && !(value ?? false)) {
-                      _kdfConfig[kdfId]!['rounds'] = 0;
-                    } else if (kdfId == 'pbkdf2' && (value ?? false)) {
-                      // When re-enabling PBKDF2, restore default rounds
-                      _kdfConfig[kdfId]!['rounds'] = 100000;
-                    }
-                  });
-                },
-              ),
-              const SizedBox(width: 8),
-              Text(
-                kdfName,
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: isEnabled ? Colors.green.shade700 : Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-          if (isEnabled) ...paramFields,
-        ],
-      ),
-    );
-  }
-
-  // Helper method to build hash configuration sections
-  Widget _buildHashConfig(String hashId, String hashName) {
-    final isEnabled = _hashConfig[hashId]?['enabled'] ?? false;
-    final rounds = _hashConfig[hashId]?['rounds'] ?? 1000;
-
-    // All hash functions now supported with CLI integration
-    final effectiveEnabled = isEnabled;
-
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        border: Border.all(color: effectiveEnabled ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.outline),
-        borderRadius: BorderRadius.circular(8),
-        color: effectiveEnabled ? Theme.of(context).colorScheme.primaryContainer : Theme.of(context).colorScheme.surfaceContainer,
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Switch(
-                value: effectiveEnabled,
-                onChanged: (bool? value) {
-                  setState(() {
-                    if (_hashConfig[hashId] == null) {
-                      _hashConfig[hashId] = {'rounds': 1000};
-                    }
-                    _hashConfig[hashId]!['enabled'] = value;
-                  });
-                },
-              ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 80,
-                child: Text(
-                  hashName.toUpperCase(),
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                    color: effectiveEnabled ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              if (effectiveEnabled)
-                Expanded(
-                  child: _buildHashRoundsSlider(
-                    hashId,
-                    rounds,
-                    (int newRounds) {
-                      setState(() {
-                        _hashConfig[hashId]!['rounds'] = newRounds;
-                      });
-                    },
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Helper method to build number input fields
-  // ignore: unused_element
-  Widget _buildNumberField(String kdfId, String paramId, String label, int defaultValue) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 8.0),
-      child: TextFormField(
-        initialValue: defaultValue.toString(),
-        keyboardType: TextInputType.number,
-        decoration: InputDecoration(
-          labelText: label,
-          isDense: true,
-          border: const OutlineInputBorder(),
-        ),
-        onChanged: (value) {
-          final numValue = int.tryParse(value) ?? defaultValue;
-          setState(() {
-            _kdfConfig[kdfId] ??= {};
-            _kdfConfig[kdfId]![paramId] = numValue;
-          });
-        },
-      ),
-    );
-  }
-
-  // Helper method to build text input fields
-
-  /// Get detailed description for algorithm
-  String _getAlgorithmDescription(String algorithm) {
-    final descriptions = {
-      // Classical Symmetric
-      'fernet': 'AES-128-CBC with HMAC authentication - Python-compatible standard (Recommended for general use)',
-      'aes-gcm': 'AES-256-GCM authenticated encryption - High performance, military-grade',
-      'chacha20-poly1305': 'ChaCha20 stream cipher with Poly1305 MAC - Modern, fast, secure',
-      'xchacha20-poly1305': 'Extended ChaCha20 with 192-bit nonce - Enhanced security for large files',
-      'aes-siv': 'AES-SIV synthetic IV mode - Misuse-resistant encryption',
-      'aes-gcm-siv': 'AES-GCM-SIV - Combines speed of GCM with misuse resistance',
-      'aes-ocb3': 'AES-OCB3 high-performance authenticated encryption',
-      'camellia': 'Camellia block cipher - International standard, alternative to AES',
-
-      // Post-Quantum ML-KEM
-      'ml-kem-512-hybrid': 'ML-KEM-512 hybrid - Post-quantum with 128-bit classical security',
-      'ml-kem-768-hybrid': 'ML-KEM-768 hybrid - Post-quantum with 192-bit classical security (Recommended PQC)',
-      'ml-kem-1024-hybrid': 'ML-KEM-1024 hybrid - Post-quantum with 256-bit classical security',
-
-      // Post-Quantum Kyber Legacy
-      'kyber512-hybrid': 'Kyber-512 hybrid - Legacy PQC algorithm, use ML-KEM instead',
-      'kyber768-hybrid': 'Kyber-768 hybrid - Legacy PQC algorithm, use ML-KEM instead',
-      'kyber1024-hybrid': 'Kyber-1024 hybrid - Legacy PQC algorithm, use ML-KEM instead',
-
-      // Post-Quantum ChaCha20
-      'ml-kem-512-chacha20': 'ML-KEM-512 + ChaCha20 - Post-quantum with stream cipher',
-      'ml-kem-768-chacha20': 'ML-KEM-768 + ChaCha20 - Post-quantum with stream cipher',
-      'ml-kem-1024-chacha20': 'ML-KEM-1024 + ChaCha20 - Post-quantum with stream cipher',
-
-      // Post-Quantum HQC
-      'hqc-128-hybrid': 'HQC-128 hybrid - Alternative post-quantum KEM (128-bit security)',
-      'hqc-192-hybrid': 'HQC-192 hybrid - Alternative post-quantum KEM (192-bit security)',
-      'hqc-256-hybrid': 'HQC-256 hybrid - Alternative post-quantum KEM (256-bit security)',
-
-      // Post-Quantum Signatures
-      'mayo-1-hybrid': 'MAYO-1 hybrid - Post-quantum signatures (128-bit security)',
-      'mayo-3-hybrid': 'MAYO-3 hybrid - Post-quantum signatures (192-bit security)',
-      'mayo-5-hybrid': 'MAYO-5 hybrid - Post-quantum signatures (256-bit security)',
-      'cross-128-hybrid': 'CROSS-128 hybrid - Post-quantum signatures (128-bit security)',
-      'cross-192-hybrid': 'CROSS-192 hybrid - Post-quantum signatures (192-bit security)',
-      'cross-256-hybrid': 'CROSS-256 hybrid - Post-quantum signatures (256-bit security)',
-    };
-
-    return descriptions[algorithm] ?? 'Advanced encryption algorithm - see CLI documentation for details';
-  }
-
-  /// Show algorithm picker dialog
-  void _showAlgorithmPicker() async {
-    final algorithmCategories = await CLIService.getSupportedAlgorithms();
-
-    if (!mounted) return;
-
-    final selectedAlgorithm = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Choose Encryption Algorithm'),
-        content: SizedBox(
-          width: double.maxFinite,
-          height: 600,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Select an encryption algorithm. Post-quantum algorithms provide protection against quantum computers.',
-                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                ),
-                const SizedBox(height: 16),
-                ...algorithmCategories.entries.map((entry) {
-                  final category = entry.key;
-                  final algorithms = entry.value;
-
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Text(
-                          category,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                        ),
-                      ),
-                      ...algorithms.map((algorithm) {
-                        final isSelected = algorithm == _selectedAlgorithm;
-                        final isPostQuantum = category.contains('Post-Quantum');
-
-                        return Card(
-                          color: isSelected ? Theme.of(context).colorScheme.primaryContainer : null,
-                          child: ListTile(
-                            leading: Icon(
-                              isPostQuantum ? Icons.science : Icons.security,
-                              color: isPostQuantum ? Colors.purple : Theme.of(context).colorScheme.primary,
-                            ),
-                            title: Row(
-                              children: [
-                                Text(
-                                  algorithm,
-                                  style: TextStyle(
-                                    fontWeight: isSelected ? FontWeight.bold : null,
-                                  ),
-                                ),
-                                if (isPostQuantum) ...[
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.purple,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: const Text(
-                                      'PQC',
-                                      style: TextStyle(color: Colors.white, fontSize: 10),
-                                    ),
-                                  ),
-                                ],
-                                if (algorithm == 'fernet' || algorithm == 'ml-kem-768-hybrid') ...[
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.green,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: const Text(
-                                      'RECOMMENDED',
-                                      style: TextStyle(color: Colors.white, fontSize: 10),
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                            subtitle: Text(
-                              _getAlgorithmDescription(algorithm),
-                              style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                            ),
-                            trailing: isSelected ? Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary) : null,
-                            onTap: () => Navigator.of(context).pop(algorithm),
-                          ),
-                        );
-                      }),
-                      const SizedBox(height: 12),
-                    ],
-                  );
-                }),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-
-    if (selectedAlgorithm != null) {
-      setState(() {
-        _selectedAlgorithm = selectedAlgorithm;
-      });
-    }
-  }
-
-  /// Show algorithm info dialog - redirects to info tab
-  void _showAlgorithmInfo(BuildContext context) {
-    // This method is called from the menu, but we want to show the picker instead
-    _showAlgorithmPicker();
-  }
-
-  /// Get hash function description
-  // ignore: unused_element
-  String _getHashDescription(String hashName) {
-    final descriptions = {
-      // SHA-2 Family
-      'sha224': 'SHA-224 - Truncated SHA-256, good for legacy compatibility',
-      'sha256': 'SHA-256 - Most common secure hash, excellent balance of speed and security',
-      'sha384': 'SHA-384 - Truncated SHA-512, good for high-security applications',
-      'sha512': 'SHA-512 - Large output hash, maximum traditional security',
-
-      // SHA-3 Family
-      'sha3-224': 'SHA-3-224 - New generation hash with different design from SHA-2',
-      'sha3-256': 'SHA-3-256 - Alternative to SHA-256 with different security properties',
-      'sha3-384': 'SHA-3-384 - Alternative to SHA-384 with sponge construction',
-      'sha3-512': 'SHA-3-512 - Alternative to SHA-512 with sponge construction',
-
-      // SHAKE Functions
-      'shake128': 'SHAKE-128 - Extendable-output function, configurable length',
-      'shake256': 'SHAKE-256 - Extendable-output function, higher security level',
-
-      // Modern Hash Functions
-      'blake2b': 'BLAKE2b - Ultra-fast cryptographic hash, faster than MD5 but secure',
-      'blake3': 'BLAKE3 - Newest generation hash, extremely fast with tree structure',
-
-      // Legacy Hash Functions
-      'whirlpool': 'Whirlpool - ISO standard hash, mainly for specialized applications',
-    };
-
-    return descriptions[hashName] ?? 'Cryptographic hash function';
-  }
-
-  /// Get maximum recommended rounds for hash function
-  int _getMaxRounds(String hashName) {
-    // Hash functions use maximum of 1,000,000 rounds but with better precision control
-    return 1000000;
-  }
-
-  /// Build an auto-repeat button that continues action when held down
-  Widget _buildAutoRepeatButton({
-    required IconData icon,
-    required MaterialColor color,
-    required bool enabled,
-    required VoidCallback onAction,
-    double size = 32,
-    double iconSize = 16,
-  }) {
-    return AutoRepeatButton(
-      icon: icon,
-      color: color,
-      enabled: enabled,
-      onAction: onAction,
-      size: size,
-      iconSize: iconSize,
-    );
-  }
-
-  /// Show hash information dialog
-  // ignore: unused_element
-  void _showHashInfo() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Hash Functions Guide'),
-        content: const SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('🔰 Recommended for most users:', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text('• SHA-256: Standard, well-tested, universal compatibility'),
-              Text('• BLAKE2b: Modern, extremely fast, excellent security'),
-              SizedBox(height: 12),
-              Text('🚀 Modern high-performance:', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text('• BLAKE3: Newest generation, tree structure, parallelizable'),
-              Text('• SHAKE-256: Flexible output length, quantum-resistant design'),
-              SizedBox(height: 12),
-              Text('🛡️ Maximum security:', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text('• SHA-512: Large output, traditional maximum security'),
-              Text('• SHA-3-256: Alternative design, NIST standard'),
-              SizedBox(height: 12),
-              Text('ℹ️ About rounds:', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text('Higher rounds = more security but slower processing. Most applications work well with 1,000-10,000 rounds.'),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Show KDF information dialog
-  void _showKDFInfo() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Key Derivation Functions (KDF) Guide'),
-        content: const SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('🔰 PBKDF2 (Most Compatible):', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text('• Standard KDF, universally supported'),
-              Text('• Good security with sufficient iterations (100,000+)'),
-              Text('• Default choice for general use'),
-              SizedBox(height: 12),
-              Text('🛡️ Argon2 (Maximum Security):', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text('• Winner of Password Hashing Competition'),
-              Text('• Memory-hard function, resistant to hardware attacks'),
-              Text('• Best choice for high-security applications'),
-              SizedBox(height: 12),
-              Text('⚡ Scrypt (Balanced):', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text('• Memory-hard function, cryptocurrency standard'),
-              Text('• Good balance of security and performance'),
-              Text('• Configurable memory and CPU parameters'),
-              SizedBox(height: 12),
-              Text('🔗 HKDF (Key Expansion):', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text('• Designed for key expansion and derivation'),
-              Text('• Efficient, suitable for low-latency applications'),
-              Text('• Often used with other KDFs'),
-              SizedBox(height: 12),
-              Text('🎈 Balloon (Research):', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text('• Newer memory-hard function'),
-              Text('• Configurable time/space tradeoffs'),
-              Text('• Still under academic evaluation'),
-              SizedBox(height: 12),
-              Text('💎 RandomX (CPU-Hard):', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text('• Memory-hard KDF based on cryptocurrency mining'),
-              Text('• Requires significant CPU and memory resources'),
-              Text('• Light mode (256MB) or Fast mode (2GB) available'),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // =============================================================================
-  // KDF Panel Builders
-  // =============================================================================
-
-  /// Build PBKDF2 configuration panel
-  Widget _buildPBKDF2Panel() {
-    final config = _kdfConfig['pbkdf2'] ?? {'enabled': true, 'iterations': 100000};
-    final enabled = config['enabled'] ?? false;
-
-    return Card(
-      color: enabled ? Theme.of(context).colorScheme.primaryContainer : Theme.of(context).colorScheme.surfaceContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CheckboxListTile(
-              title: Row(
-                children: [
-                  const Text('PBKDF2', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.green,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('RECOMMENDED', style: TextStyle(color: Colors.white, fontSize: 10)),
-                  ),
-                ],
-              ),
-              subtitle: const Text('Password-Based Key Derivation Function 2 - Industry standard, widely supported'),
-              value: enabled,
-              onChanged: (bool? value) {
-                setState(() {
-                  _kdfConfig['pbkdf2'] = {
-                    'enabled': value ?? false,
-                    'iterations': config['iterations'] ?? 100000,
-                  };
-                });
-              },
-            ),
-            if (enabled) ...[
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Row(
-                  children: [
-                    const SizedBox(width: 100, child: Text('Iterations:')),
-                    Expanded(
-                      child: Slider(
-                        value: (config['iterations'] ?? 100000).toDouble(),
-                        min: 0,
-                        max: 1000000,
-                        divisions: 100,
-                        label: (config['iterations'] ?? 100000).toString(),
-                        onChanged: (double value) {
-                          setState(() {
-                            _kdfConfig['pbkdf2']!['iterations'] = value.toInt();
-                          });
-                        },
-                      ),
-                    ),
-                    SizedBox(width: 80, child: Text('${config['iterations'] ?? 100000}')),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Text(
-                  'Higher iterations = more security but slower processing. 100,000+ recommended.',
-                  style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build Argon2 configuration panel
-  Widget _buildArgon2Panel() {
-    final config = _kdfConfig['argon2'] ?? {
-      'enabled': false,
-      'time_cost': 3,
-      'memory_cost': 65536,
-      'parallelism': 4,
-      'hash_len': 32,
-      'type': 2,
-      'rounds': 10,
-    };
-    final enabled = config['enabled'] ?? false;
-
-    return Card(
-      color: enabled ? Theme.of(context).colorScheme.secondaryContainer : Theme.of(context).colorScheme.surfaceContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CheckboxListTile(
-              title: Row(
-                children: [
-                  const Text('Argon2', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.purple,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('MAX SECURITY', style: TextStyle(color: Colors.white, fontSize: 10)),
-                  ),
-                ],
-              ),
-              subtitle: const Text('Memory-hard function, winner of Password Hashing Competition - best against hardware attacks'),
-              value: enabled,
-              onChanged: (bool? value) {
-                setState(() {
-                  _kdfConfig['argon2'] = Map.from(config)..['enabled'] = value ?? false;
-                });
-              },
-            ),
-            if (enabled) ...[
-              const SizedBox(height: 8),
-              ...[
-                _buildKDFSlider('Time Cost', config['time_cost'] ?? 3, 1, 1000, (v) =>
-                  setState(() => _kdfConfig['argon2']!['time_cost'] = v)),
-                _buildKDFSlider('Memory (MB)', ((config['memory_cost'] ?? 65536) / 1024).round(), 1, 1024, (v) =>
-                  setState(() => _kdfConfig['argon2']!['memory_cost'] = v * 1024)),
-                _buildKDFSlider('Parallelism', config['parallelism'] ?? 4, 1, 16, (v) =>
-                  setState(() => _kdfConfig['argon2']!['parallelism'] = v)),
-                _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 128, (v) =>
-                  setState(() => _kdfConfig['argon2']!['hash_len'] = v)),
-                _buildKDFSlider('Rounds', config['rounds'] ?? 10, 0, 1000000, (v) =>
-                  setState(() => _kdfConfig['argon2']!['rounds'] = v)),
-              ],
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Row(
-                  children: [
-                    const Text('Type: '),
-                    DropdownButton<int>(
-                      value: config['type'] ?? 2,
-                      items: const [
-                        DropdownMenuItem(value: 0, child: Text('Argon2d')),
-                        DropdownMenuItem(value: 1, child: Text('Argon2i')),
-                        DropdownMenuItem(value: 2, child: Text('Argon2id (recommended)')),
-                      ],
-                      onChanged: (int? value) {
-                        setState(() {
-                          _kdfConfig['argon2']!['type'] = value ?? 2;
-                        });
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build Scrypt configuration panel
-  Widget _buildScryptPanel() {
-    final config = _kdfConfig['scrypt'] ?? {
-      'enabled': false,
-      'n': 16384,
-      'r': 8,
-      'p': 1,
-      'rounds': 10,
-    };
-    final enabled = config['enabled'] ?? false;
-
-    return Card(
-      color: enabled ? Theme.of(context).colorScheme.tertiaryContainer : Theme.of(context).colorScheme.surfaceContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CheckboxListTile(
-              title: Row(
-                children: [
-                  const Text('Scrypt', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.orange,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('BALANCED', style: TextStyle(color: Colors.white, fontSize: 10)),
-                  ),
-                ],
-              ),
-              subtitle: const Text('Memory-hard function used in cryptocurrencies - good balance of security and performance'),
-              value: enabled,
-              onChanged: (bool? value) {
-                setState(() {
-                  _kdfConfig['scrypt'] = Map.from(config)..['enabled'] = value ?? false;
-                });
-              },
-            ),
-            if (enabled) ...[
-              const SizedBox(height: 8),
-              ...[
-                _buildKDFSlider('N (CPU/Memory)', (config['n'] ?? 16384) ~/ 1024, 1, 1024, (v) =>
-                  setState(() => _kdfConfig['scrypt']!['n'] = v * 1024)),
-                _buildKDFSlider('R (Block Size)', config['r'] ?? 8, 1, 32, (v) =>
-                  setState(() => _kdfConfig['scrypt']!['r'] = v)),
-                _buildKDFSlider('P (Parallelism)', config['p'] ?? 1, 1, 16, (v) =>
-                  setState(() => _kdfConfig['scrypt']!['p'] = v)),
-                _buildKDFSlider('Rounds', config['rounds'] ?? 10, 0, 1000000, (v) =>
-                  setState(() => _kdfConfig['scrypt']!['rounds'] = v)),
-              ],
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build HKDF configuration panel
-  Widget _buildHKDFPanel() {
-    final config = _kdfConfig['hkdf'] ?? {
-      'enabled': false,
-      'rounds': 1,
-      'algorithm': 'sha256',
-      'info': 'openssl_encrypt_hkdf',
-    };
-    final enabled = config['enabled'] ?? false;
-
-    return Card(
-      color: enabled ? Theme.of(context).colorScheme.tertiaryContainer : Theme.of(context).colorScheme.surfaceContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CheckboxListTile(
-              title: Row(
-                children: [
-                  const Text('HKDF', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.teal,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('EFFICIENT', style: TextStyle(color: Colors.white, fontSize: 10)),
-                  ),
-                ],
-              ),
-              subtitle: const Text('HMAC-based Key Derivation Function - efficient key expansion, suitable for low-latency applications'),
-              value: enabled,
-              onChanged: (bool? value) {
-                setState(() {
-                  _kdfConfig['hkdf'] = Map.from(config)..['enabled'] = value ?? false;
-                });
-              },
-            ),
-            if (enabled) ...[
-              const SizedBox(height: 8),
-              _buildKDFSlider('Rounds', config['rounds'] ?? 1, 0, 1000000, (v) =>
-                setState(() => _kdfConfig['hkdf']!['rounds'] = v)),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Row(
-                  children: [
-                    const Text('Hash Algorithm: '),
-                    DropdownButton<String>(
-                      key: ValueKey('hash_algorithm_${config['algorithm'] ?? 'sha256'}'),
-                      value: config['algorithm'] ?? 'sha256',
-                      items: const [
-                        DropdownMenuItem(value: 'sha224', child: Text('SHA-224')),
-                        DropdownMenuItem(value: 'sha256', child: Text('SHA-256')),
-                        DropdownMenuItem(value: 'sha384', child: Text('SHA-384')),
-                        DropdownMenuItem(value: 'sha512', child: Text('SHA-512')),
-                      ],
-                      onChanged: (String? value) {
-                        setState(() {
-                          _kdfConfig['hkdf']!['algorithm'] = value ?? 'sha256';
-                        });
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: TextFormField(
-                  initialValue: config['info'] ?? 'openssl_encrypt_hkdf',
-                  decoration: const InputDecoration(
-                    labelText: 'Info String',
-                    isDense: true,
-                  ),
-                  onChanged: (value) {
-                    _kdfConfig['hkdf']!['info'] = value;
-                  },
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build Balloon configuration panel
-  Widget _buildBalloonPanel() {
-    final config = _kdfConfig['balloon'] ?? {
-      'enabled': false,
-      'time_cost': 3,
-      'space_cost': 65536,
-      'parallelism': 4,
-      'rounds': 2,
-      'hash_len': 32,
-    };
-    final enabled = config['enabled'] ?? false;
-
-    return Card(
-      color: enabled ? Theme.of(context).colorScheme.errorContainer : Theme.of(context).colorScheme.surfaceContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CheckboxListTile(
-              title: Row(
-                children: [
-                  const Text('Balloon', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.pink,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('RESEARCH', style: TextStyle(color: Colors.white, fontSize: 10)),
-                  ),
-                ],
-              ),
-              subtitle: const Text('Newer memory-hard function with configurable time/space tradeoffs - still under academic evaluation'),
-              value: enabled,
-              onChanged: (bool? value) {
-                setState(() {
-                  _kdfConfig['balloon'] = Map.from(config)..['enabled'] = value ?? false;
-                });
-              },
-            ),
-            if (enabled) ...[
-              const SizedBox(height: 8),
-              ...[
-                _buildKDFSlider('Time Cost', config['time_cost'] ?? 3, 1, 1000, (v) =>
-                  setState(() => _kdfConfig['balloon']!['time_cost'] = v)),
-                _buildKDFSlider('Space Cost (KB)', ((config['space_cost'] ?? 65536) / 1024).round(), 1, 1024, (v) =>
-                  setState(() => _kdfConfig['balloon']!['space_cost'] = v * 1024)),
-                _buildKDFSlider('Parallelism', config['parallelism'] ?? 4, 1, 16, (v) =>
-                  setState(() => _kdfConfig['balloon']!['parallelism'] = v)),
-                _buildKDFSlider('Rounds', config['rounds'] ?? 2, 0, 1000000, (v) =>
-                  setState(() => _kdfConfig['balloon']!['rounds'] = v)),
-                _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 128, (v) =>
-                  setState(() => _kdfConfig['balloon']!['hash_len'] = v)),
-              ],
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build RandomX configuration panel
-  Widget _buildRandomXPanel() {
-    final config = _kdfConfig['randomx'] ?? {
-      'enabled': false,
-      'rounds': 1,
-      'mode': 'light',
-      'height': 1,
-      'hash_len': 32,
-    };
-    final enabled = config['enabled'] ?? false;
-
-    return Card(
-      color: enabled ? Theme.of(context).colorScheme.errorContainer : Theme.of(context).colorScheme.surfaceContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CheckboxListTile(
-              title: Row(
-                children: [
-                  const Text('RandomX', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.purple,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('CPU-HARD', style: TextStyle(color: Colors.white, fontSize: 10)),
-                  ),
-                ],
-              ),
-              subtitle: const Text('Memory-hard KDF based on cryptocurrency mining algorithm (requires pyrx package)'),
-              value: enabled,
-              onChanged: (bool? value) {
-                setState(() {
-                  _kdfConfig['randomx'] = Map.from(config)..['enabled'] = value ?? false;
-                });
-              },
-            ),
-            if (enabled) ...[
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-                child: Row(
-                  children: [
-                    SizedBox(width: 120, child: Text('Mode:', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface))),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: DropdownButton<String>(
-                        value: config['mode'] ?? 'light',
-                        isExpanded: true,
-                        items: const [
-                          DropdownMenuItem(value: 'light', child: Text('Light (256MB RAM)')),
-                          DropdownMenuItem(value: 'fast', child: Text('Fast (2GB RAM)')),
-                        ],
-                        onChanged: (value) {
-                          setState(() {
-                            _kdfConfig['randomx']!['mode'] = value ?? 'light';
-                          });
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              ...[
-                _buildKDFSlider('Rounds', config['rounds'] ?? 1, 1, 10, (v) =>
-                  setState(() => _kdfConfig['randomx']!['rounds'] = v)),
-                _buildKDFSlider('Block Height', config['height'] ?? 1, 1, 1000, (v) =>
-                  setState(() => _kdfConfig['randomx']!['height'] = v)),
-                _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 64, (v) =>
-                  setState(() => _kdfConfig['randomx']!['hash_len'] = v)),
-              ],
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Helper to build KDF slider
-  Widget _buildKDFSlider(String label, int value, int min, int max, Function(int) onChanged) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-      child: Row(
-        children: [
-          SizedBox(width: 120, child: Text('$label:', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface))),
-          // Decrement button with auto-repeat
-          _buildAutoRepeatButton(
-            icon: Icons.remove,
-            color: Colors.orange,
-            enabled: value > min,
-            onAction: () => onChanged((value - 1).clamp(min, max)),
-            size: 28,
-            iconSize: 14,
-          ),
-          const SizedBox(width: 4),
-          // Slider
-          Expanded(
-            child: Slider(
-              value: value.toDouble(),
-              min: min.toDouble(),
-              max: max.toDouble(),
-              divisions: (max - min) > 1000 ? max ~/ 100 : max - min, // Smart divisions
-              label: value.toString(),
-              onChanged: (double v) => onChanged(v.toInt()),
-            ),
-          ),
-          const SizedBox(width: 4),
-          // Increment button with auto-repeat
-          _buildAutoRepeatButton(
-            icon: Icons.add,
-            color: Colors.orange,
-            enabled: value < max,
-            onAction: () => onChanged((value + 1).clamp(min, max)),
-            size: 28,
-            iconSize: 14,
-          ),
-          const SizedBox(width: 8),
-          SizedBox(width: 60, child: Text(value.toString(), style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface))),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHashRoundsSlider(String hashId, int currentRounds, Function(int) onChanged) {
-    // Get appropriate min/max values based on hash function
-    int minRounds = 0;  // Allow 0 to disable hash function
-    int maxRounds = _getMaxRounds(hashId);
-
-    // Ensure current value is within bounds
-    int clampedRounds = currentRounds.clamp(minRounds, maxRounds);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Rounds: $clampedRounds',
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w500,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Row(
-          children: [
-            // Decrement button with auto-repeat
-            _buildAutoRepeatButton(
-              icon: Icons.remove,
-              color: Colors.blue,
-              enabled: clampedRounds > minRounds,
-              onAction: () => onChanged((clampedRounds - 1).clamp(minRounds, maxRounds)),
-            ),
-            const SizedBox(width: 8),
-            // Slider
-            Expanded(
-              child: Slider(
-                value: clampedRounds.toDouble(),
-                min: minRounds.toDouble(),
-                max: maxRounds.toDouble(),
-                divisions: maxRounds ~/ 100, // Coarser divisions for slider
-                label: clampedRounds.toString(),
-                activeColor: Theme.of(context).colorScheme.primary,
-                inactiveColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
-                onChanged: (double value) => onChanged(value.toInt()),
-              ),
-            ),
-            const SizedBox(width: 8),
-            // Increment button with auto-repeat
-            _buildAutoRepeatButton(
-              icon: Icons.add,
-              color: Colors.blue,
-              enabled: clampedRounds < maxRounds,
-              onAction: () => onChanged((clampedRounds + 1).clamp(minRounds, maxRounds)),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  // =============================================================================
-  // Algorithm Recommendation Engine
-  // =============================================================================
-
-  /// Show intelligent algorithm recommendation wizard
-  void _showRecommendationWizard() async {
-    if (!mounted) return;
-
-    final recommendation = await showDialog<AlgorithmRecommendation>(
-      context: context,
-      builder: (context) => const RecommendationWizardDialog(),
-    );
-
-    if (recommendation != null) {
-      // Apply the recommendation
-      setState(() {
-        _selectedAlgorithm = recommendation.algorithm;
-
-        // Apply hash configuration
-        for (final hashEntry in recommendation.hashConfig.entries) {
-          final hashName = hashEntry.key;
-          final config = hashEntry.value;
-          if (_hashConfig.containsKey(hashName)) {
-            _hashConfig[hashName] = Map.from(config);
-          }
-        }
-
-        // Apply KDF configuration
-        for (final kdfEntry in recommendation.kdfConfig.entries) {
-          final kdfName = kdfEntry.key;
-          final config = kdfEntry.value;
-          if (_kdfConfig.containsKey(kdfName)) {
-            _kdfConfig[kdfName] = Map.from(config);
-          }
-        }
-      });
-
-      // Show success message with explanation
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('✨ Applied ${recommendation.profileName} configuration'),
-                Text(recommendation.explanation, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-              ],
-            ),
-            duration: const Duration(seconds: 5),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    }
-  }
-
-  bool _isPostQuantumAlgorithm(String algorithm) {
-    return algorithm.contains('ml-kem') ||
-           algorithm.contains('kyber') ||
-           algorithm.contains('hqc') ||
-           algorithm.contains('mayo') ||
-           algorithm.contains('cross');
-  }
-
-  List<String> _getNonPostQuantumAlgorithms() {
-    return [
-      'aes-gcm',
-      'aes-gcm-siv',
-      'aes-siv',
-      'chacha20-poly1305',
-      'xchacha20-poly1305',
-    ];
-  }
-}
-
-// File encryption/decryption tab
-class FileCryptoTab extends StatefulWidget {
-  final FileManager fileManager;
-  final Function(bool) onDebugChanged;
-
-  const FileCryptoTab({super.key, required this.fileManager, required this.onDebugChanged});
-
-  @override
-  State<FileCryptoTab> createState() => _FileCryptoTabState();
-}
-
-class _FileCryptoTabState extends State<FileCryptoTab> {
-  final TextEditingController _passwordController = TextEditingController();
-  FileInfo? _selectedFile;
-  String result = '';
-  bool _isLoading = false;
-  String? _decryptedContent; // Store decrypted content for optional saving
-  bool _debugLogging = false;
-  bool _forceOverwrite = false; // Force overwrite source file with --force flag
-
-  // Progress tracking
-  String _operationStatus = '';
-  String _operationProgress = '';
-  double _progressValue = 0.0;
-
-  // Algorithm and configuration (same as TextCryptoTab)
-  List<String> _algorithms = [];
-  List<String> _hashAlgorithms = [];
-  String _selectedAlgorithm = 'fernet';
-  String _selectedEncryptData = 'aes-gcm';  // For PQC algorithms
-  Map<String, Map<String, dynamic>> _hashConfig = {};
-  Map<String, Map<String, dynamic>> _kdfConfig = {};
-  bool _showAdvanced = false;
-  bool _showHashConfig = false;
-  bool _showKdfConfig = false;
-
-  // Steganography state
-  bool _enableSteganography = false;
-  FileInfo? _coverImageFile;
-  final TextEditingController _stegoPasswordController = TextEditingController();
-  int _bitsPerChannel = 1;
-  bool _randomizePixels = false;
-  bool _addDecoyData = false;
-  bool _stegoExtractMode = false;  // For decrypt mode
-
-  @override
-  void initState() {
-    super.initState();
-    _loadAlgorithms();
-  }
-
-  Future<void> _loadAlgorithms() async {
-    try {
-      final algorithmMap = await CLIService.getSupportedAlgorithms();
-      final algorithms = algorithmMap.values.expand((list) => list).toList();
-      final hashAlgorithmsList = await CLIService.getHashAlgorithmsList();
-
-      setState(() {
-        _algorithms = algorithms;
-        _hashAlgorithms = hashAlgorithmsList;
-
-        if (algorithms.isNotEmpty) {
-          _selectedAlgorithm = algorithms.first;
-        }
-        if (hashAlgorithmsList.isNotEmpty) {
-          // Initialize hash configuration with default values (CLI order)
-          _hashConfig = {};
-          for (String hash in hashAlgorithmsList) {
-            _hashConfig[hash] = {
-              'enabled': true,  // All hash functions enabled with CLI integration
-              'rounds': 1000    // Default rounds for all hash functions (CLI supports all)
-            };
-          }
-        }
-        // Initialize KDF chain configuration (CLI order)
-        _kdfConfig = {
-          'pbkdf2': {'enabled': !CLIService.shouldHideLegacyAlgorithms(), 'rounds': 100000},
-          'scrypt': {'enabled': false, 'n': 16384, 'r': 8, 'p': 1, 'rounds': 1},
-          'argon2': {'enabled': false, 'memory_cost': 65536, 'time_cost': 3, 'parallelism': 1, 'rounds': 1},
-          'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1},
-          'balloon': {'enabled': false, 'space_cost': 65536, 'time_cost': 3, 'parallelism': 4, 'rounds': 2, 'hash_len': 32},
-          'randomx': {'enabled': false, 'rounds': 1, 'mode': 'light', 'height': 1, 'hash_len': 32},
-        };
-      });
-    } catch (e) {
-      setState(() {
-        _algorithms = ['fernet'];
-        _hashAlgorithms = ['sha256'];
-        _selectedAlgorithm = 'fernet';
-        _hashConfig = {'sha256': {'enabled': true, 'rounds': 1000}};
-        _kdfConfig = {
-          'pbkdf2': {'enabled': !CLIService.shouldHideLegacyAlgorithms(), 'rounds': 100000},
-          'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1},
-          'randomx': {'enabled': false, 'rounds': 1, 'mode': 'light', 'height': 1, 'hash_len': 32}
-        };
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _passwordController.dispose();
-    _stegoPasswordController.dispose();
-    super.dispose();
-  }
-
-  void _pickFile() async {
-    final file = await widget.fileManager.pickFile();
-    if (file != null) {
-      setState(() {
-        _selectedFile = file;
-        result = 'Selected file: ${file.name}\nSize: ${file.sizeFormatted}';
-      });
-    }
-  }
-
-  /// Load a file from a given path (for drag & drop support)
-  Future<bool> loadFileFromPath(String filePath) async {
-    try {
-      final fileInfo = await widget.fileManager.createFileInfoFromPath(filePath);
-      if (fileInfo != null) {
-        setState(() {
-          _selectedFile = fileInfo;
-          result = 'Selected file: ${fileInfo.name}\nSize: ${fileInfo.sizeFormatted}';
-        });
-        return true;
-      }
-    } catch (e) {
-      setState(() {
-        result = 'Error loading file: $e';
-      });
-    }
-    return false;
-  }
-
-  void _pickTestFile() async {
-    final testFileNames = await widget.fileManager.getTestFileNames();
-
-    if (!mounted) return;
-
-    final selectedFileName = await showDialog<String>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Select Test File'),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 400,
-            child: RepaintBoundary(
-              child: ListView.builder(
-                key: const Key('test_files_listview'),
-                itemCount: testFileNames.length,
-                itemBuilder: (context, index) {
-                final fileName = testFileNames[index];
-                final isEncrypted = fileName.contains('test1_');
-
-                // Determine format version and algorithm
-                String formatInfo = '';
-                String algorithmName = '';
-                if (fileName.startsWith('v3/')) {
-                  formatInfo = 'v3';
-                } else if (fileName.startsWith('v4/')) {
-                  formatInfo = 'v4';
-                } else if (fileName.startsWith('v5/')) {
-                  formatInfo = 'v5';
-                }
-
-                // Extract algorithm name from filename
-                final baseName = fileName.split('/').last;
-                if (baseName.contains('fernet_balloon')) {
-                  algorithmName = 'Fernet + Balloon KDF';
-                } else if (baseName.contains('fernet')) {
-                  algorithmName = 'Fernet';
-                } else if (baseName.contains('aes-gcm')) {
-                  algorithmName = 'AES-GCM';
-                } else if (baseName.contains('xchacha20')) {
-                  algorithmName = 'XChaCha20-Poly1305';
-                } else if (baseName.contains('chacha20')) {
-                  algorithmName = 'ChaCha20-Poly1305';
-                } else if (baseName.contains('mobile_generated')) {
-                  algorithmName = 'Mobile Generated Test';
-                } else {
-                  algorithmName = 'Unknown';
-                }
-
-                return ListTile(
-                  leading: Icon(
-                    isEncrypted ? Icons.lock : Icons.description,
-                    color: formatInfo == 'v5' ? Colors.green :
-                           formatInfo == 'v4' ? Colors.orange :
-                           formatInfo == 'v3' ? Colors.red : Colors.blue,
-                  ),
-                  title: Text(baseName),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        algorithmName,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.grey[700],
-                        ),
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (formatInfo.isNotEmpty) ...[
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: formatInfo == 'v5' ? Colors.green :
-                                       formatInfo == 'v4' ? Colors.orange :
-                                       formatInfo == 'v3' ? Colors.red : Colors.grey,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                formatInfo.toUpperCase(),
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                          ],
-                          Flexible(
-                            child: Text(
-                              'Password: 1234',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey[600],
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  onTap: () {
-                    Navigator.of(context).pop(fileName);
-                  },
-                );
-              },
-            ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (selectedFileName != null) {
-      final fileInfo = await widget.fileManager.getTestFileInfo(selectedFileName);
-      if (fileInfo != null) {
-        setState(() {
-          _selectedFile = fileInfo;
-          result = 'Selected test file: ${fileInfo.name}\nSize: ${fileInfo.sizeFormatted}\nNote: Test password is "1234"';
-        });
-      }
-    }
-  }
-
-  void _encryptFile() async {
-    if (_selectedFile == null || _passwordController.text.isEmpty) {
-      setState(() {
-        result = 'Please select a file and enter a password';
-      });
-      return;
-    }
-
-    // Use selected algorithm, hash, and KDF configuration
-    setState(() {
-      _isLoading = true;
-      result = 'Encrypting file with $_selectedAlgorithm...';
-      _operationStatus = 'Preparing encryption...';
-      _operationProgress = '';
-      _progressValue = 0.0;
-    });
-
-    // Give UI a moment to update before heavy crypto operations
-    await Future.delayed(const Duration(milliseconds: 50));
-
-    try {
-      // Check if steganography is enabled
-      if (_enableSteganography && _coverImageFile != null) {
-        // Steganography mode: Encrypt and hide in cover image
-        setState(() {
-          _operationStatus = 'Encrypting and hiding in cover image...';
-          _progressValue = 0.3;
-        });
-
-        // Generate output filename for stego image
-        final outputPath = _forceOverwrite
-            ? _coverImageFile!.path
-            : widget.fileManager.getEncryptedFileName(_coverImageFile!.path);
-
-        // Encrypt with steganography
-        final cliResult = await CLIService.encryptWithSteganography(
-          inputPath: _selectedFile!.path,
-          coverImagePath: _coverImageFile!.path,
-          outputPath: outputPath,
-          password: _passwordController.text,
-          stegoPassword: _stegoPasswordController.text.isNotEmpty ? _stegoPasswordController.text : null,
-          algorithm: _selectedAlgorithm,
-          bitsPerChannel: _bitsPerChannel,
-          randomizePixels: _randomizePixels,
-          addDecoyData: _addDecoyData,
-          hashConfig: _hashConfig,
-          kdfConfig: _kdfConfig,
-        );
-
-        setState(() {
-          _progressValue = 0.9;
-        });
-
-        if (cliResult.exitCode == 0) {
-          setState(() {
-            result = 'File encrypted and hidden successfully!\n\n'
-                'Original: ${_selectedFile!.name}\n'
-                'Size: ${_selectedFile!.sizeFormatted}\n'
-                'Cover Image: ${_coverImageFile!.name}\n'
-                'Stego Image: ${outputPath.split('/').last}\n'
-                'Saved to: $outputPath\n\n'
-                'Algorithm: $_selectedAlgorithm\n'
-                'Steganography: LSB (${_bitsPerChannel} bit${_bitsPerChannel > 1 ? "s" : ""}/channel)\n'
-                'Format: OpenSSL Encrypt with Steganography';
-            _isLoading = false;
-          });
-        } else {
-          final errorMsg = cliResult.stderr.toString().trim();
-          throw Exception(errorMsg.isNotEmpty ? errorMsg : 'Steganography encryption failed');
-        }
-      } else {
-        // Normal encryption mode
-        // Read file content
-        final fileContent = await widget.fileManager.readFileText(_selectedFile!.path);
-        if (fileContent == null) {
-          throw Exception('Could not read file');
-        }
-
-        // Encrypt file content using CLI service with selected configurations
-        final encrypted = await CLIService.encryptTextWithProgress(
-          fileContent,
-          _passwordController.text,
-          _selectedAlgorithm, // Use selected algorithm
-          _hashConfig,        // Use hash configuration from UI
-          _kdfConfig,         // Use KDF configuration from UI
-          encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
-          onProgress: (progress) {
-            setState(() {
-              _operationStatus = 'Encrypting with $_selectedAlgorithm...';
-              _operationProgress = progress;
-              _progressValue = progress.contains('%')
-                ? (double.tryParse(progress.split('%')[0]) ?? 0.0) / 100.0
-                : 0.5;
-            });
-          },
-        );
-
-        if (encrypted.startsWith('ERROR:')) {
-          throw Exception(encrypted.substring(7));
-        }
-
-        // Generate output filename - use original path if force overwrite is enabled
-        final outputPath = _forceOverwrite
-            ? _selectedFile!.path
-            : widget.fileManager.getEncryptedFileName(_selectedFile!.path);
-
-        // Save encrypted file
-        final success = await widget.fileManager.writeFileText(outputPath, encrypted);
-
-        if (success) {
-          setState(() {
-            if (_forceOverwrite) {
-              result = 'File encrypted successfully (source overwritten)!\n\n'
-                  'Original: ${_selectedFile!.name}\n'
-                  'Size: ${_selectedFile!.sizeFormatted}\n'
-                  'Status: Source file replaced with encrypted content\n'
-                  'Path: $outputPath\n\n'
-                  'Algorithm: $_selectedAlgorithm\n'
-                  'CLI Compatible: Yes\n'
-                  'Format: OpenSSL Encrypt Desktop GUI';
-            } else {
-              result = 'File encrypted successfully!\n\n'
-                  'Original: ${_selectedFile!.name}\n'
-                  'Size: ${_selectedFile!.sizeFormatted}\n'
-                  'Encrypted: ${outputPath.split('/').last}\n'
-                  'Saved to: $outputPath\n\n'
-                  'Algorithm: $_selectedAlgorithm\n'
-                  'CLI Compatible: Yes\n'
-                  'Format: OpenSSL Encrypt Desktop GUI';
-            }
-            _isLoading = false;
-          });
-        } else {
-          throw Exception('Failed to save encrypted file');
-        }
-      }
-    } catch (e) {
-      setState(() {
-        result = 'File encryption failed: $e';
-        _isLoading = false;
-      });
-    }
-  }
-
-  void _decryptFile() async {
-    if (_selectedFile == null || _passwordController.text.isEmpty) {
-      setState(() {
-        result = 'Please select an encrypted file and enter a password';
-      });
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-      result = _stegoExtractMode ? 'Extracting and decrypting from stego image...' : 'Decrypting file...';
-      _operationStatus = _stegoExtractMode ? 'Starting steganography extraction...' : 'Starting decryption...';
-      _operationProgress = '';
-      _progressValue = 0.0;
-    });
-
-    // Give UI a moment to update before heavy crypto operations
-    await Future.delayed(const Duration(milliseconds: 50));
-
-    try {
-      // Check if steganography extraction mode is enabled
-      if (_stegoExtractMode) {
-        // Steganography extraction mode: Extract and decrypt from stego image
-        setState(() {
-          _operationStatus = 'Extracting encrypted data from image...';
-          _progressValue = 0.3;
-        });
-
-        // Generate output filename for decrypted file
-        final outputPath = _forceOverwrite
-            ? _selectedFile!.path
-            : widget.fileManager.getEncryptedFileName(_selectedFile!.path).replaceAll('.enc', '.dec');
-
-        // Extract and decrypt from steganography
-        final cliResult = await CLIService.decryptFromSteganography(
-          stegoImagePath: _selectedFile!.path,
-          outputPath: outputPath,
-          password: _passwordController.text,
-          stegoPassword: _stegoPasswordController.text.isNotEmpty ? _stegoPasswordController.text : null,
-          bitsPerChannel: _bitsPerChannel,
-        );
-
-        setState(() {
-          _progressValue = 0.9;
-        });
-
-        if (cliResult.exitCode == 0) {
-          // Read the decrypted content
-          final decrypted = await widget.fileManager.readFileText(outputPath);
-
-          setState(() {
-            _decryptedContent = decrypted;
-            result = 'File extracted and decrypted successfully!\n\n'
-                'Stego Image: ${_selectedFile!.name}\n'
-                'Size: ${_selectedFile!.sizeFormatted}\n'
-                'Decrypted File: ${outputPath.split('/').last}\n'
-                'Saved to: $outputPath\n\n'
-                'Steganography: LSB (${_bitsPerChannel} bit${_bitsPerChannel > 1 ? "s" : ""}/channel)\n'
-                'Format: OpenSSL Encrypt with Steganography\n\n'
-                'Decrypted Content Preview:\n'
-                '${(decrypted != null && decrypted.length > 200) ? '${decrypted.substring(0, 200)}...' : decrypted ?? 'Binary data'}';
-            _isLoading = false;
-            _operationStatus = '';
-            _operationProgress = '';
-            _progressValue = 0.0;
-          });
-        } else {
-          final errorMsg = cliResult.stderr.toString().trim();
-          throw Exception(errorMsg.isNotEmpty ? errorMsg : 'Steganography extraction failed');
-        }
-      } else {
-        // Normal decryption mode - check if file is encrypted
-        bool fileIsEncrypted = await _selectedFile!.isEncrypted;
-        if (!fileIsEncrypted) {
-          setState(() {
-            result = 'Selected file does not appear to be encrypted.\n'
-                'Expected: CLI format (base64_metadata:base64_data) or JSON format with encrypted_data and metadata fields.\n'
-                'File: ${_selectedFile!.name}';
-          });
-          return;
-        }
-
-        // Read the encrypted file
-        setState(() {
-          _operationStatus = 'Reading encrypted file...';
-          _progressValue = 0.2;
-        });
-
-        final fileContent = await widget.fileManager.readFileText(_selectedFile!.path);
-        if (fileContent == null) {
-          throw Exception('Could not read file');
-        }
-
-        setState(() {
-          _operationStatus = 'File loaded, starting decryption...';
-          _progressValue = 0.3;
-        });
-
-        // Decrypt using CLI service with progress callbacks
-        final decrypted = await CLIService.decryptTextWithProgress(
-          fileContent,  // Pass raw file content
-          _passwordController.text,
-          onProgress: (progress) {
-            setState(() {
-              _operationProgress = progress;
-            });
-          },
-          onStatus: (status) {
-            setState(() {
-              _operationStatus = status;
-              // Update progress based on status
-              if (status.contains('Initializing')) {
-                _progressValue = 0.4;
-              } else if (status.contains('Prepared')) {
-                _progressValue = 0.5;
-              } else if (status.contains('Executing')) {
-                _progressValue = 0.7;
-              } else if (status.contains('Reading')) {
-                _progressValue = 0.9;
-              } else if (status.contains('completed')) {
-                _progressValue = 1.0;
-              }
-            });
-          },
-        );
-
-        if (decrypted.startsWith('ERROR:')) {
-          throw Exception(decrypted.substring(7));
-        }
-
-        // Store decrypted content and optionally save directly if force overwrite is enabled
-        if (_forceOverwrite) {
-          // Save decrypted content directly to source file
-          final success = await widget.fileManager.writeFileText(_selectedFile!.path, decrypted);
-
-          if (success) {
-            setState(() {
-              _decryptedContent = decrypted;
-              result = 'File decrypted successfully (source overwritten)!\n\n'
-                  'Status: Source file replaced with decrypted content\n'
-                  'Path: ${_selectedFile!.path}\n'
-                  'File: ${_selectedFile!.name}\n\n'
-                  'Decrypted Content Preview:\n'
-                  '${decrypted.length > 200 ? '${decrypted.substring(0, 200)}...' : decrypted}';
-              _isLoading = false;
-              _operationStatus = '';
-              _operationProgress = '';
-              _progressValue = 0.0;
-            });
-          } else {
-            throw Exception('Failed to save decrypted file');
-          }
-        } else {
-          // Store for optional saving (existing behavior)
-          setState(() {
-            _decryptedContent = decrypted; // Store for optional saving
-            result = decrypted; // Show only the decrypted content
-            _isLoading = false;
-            _operationStatus = '';
-            _operationProgress = '';
-            _progressValue = 0.0;
-          });
-        }
-      }
-    } catch (e) {
-      setState(() {
-        result = 'File decryption failed: $e';
-        _isLoading = false;
-        _operationStatus = '';
-        _operationProgress = '';
-        _progressValue = 0.0;
-      });
-    }
-  }
-
-  void _saveDecryptedToFile() async {
-    if (_decryptedContent == null || _selectedFile == null) {
-      setState(() {
-        result = 'No decrypted content available to save';
-      });
-      return;
-    }
-
-    try {
-      // Generate output filename
-      final outputPath = widget.fileManager.getDecryptedFileName(_selectedFile!.path);
-      final success = await widget.fileManager.writeFileText(outputPath, _decryptedContent!);
-
-      if (success) {
-        setState(() {
-          result += '\n\n✅ Content saved to file:\n$outputPath';
-        });
-      } else {
-        setState(() {
-          result += '\n\n❌ Failed to save content to file';
-        });
-      }
-    } catch (e) {
-      setState(() {
-        result += '\n\n❌ Save failed: $e';
-      });
-    }
-  }
-
-  // Helper methods (copied from TextCryptoTab)
-  String _getAlgorithmDescription(String algorithm) {
-    final descriptions = {
-      // Classical Symmetric
-      'fernet': 'Fernet - Symmetric encryption with built-in MAC (most compatible)',
-      'aes-gcm': 'AES-GCM - Modern authenticated encryption (high performance)',
-      'chacha20-poly1305': 'ChaCha20-Poly1305 - Fast stream cipher with authentication',
-      'xchacha20-poly1305': 'XChaCha20-Poly1305 - Extended nonce ChaCha20 variant',
-      // Post-quantum Key Encapsulation
-      'ml-kem-512': 'ML-KEM-512 - Post-quantum KEM (128-bit security)',
-      'ml-kem-768': 'ML-KEM-768 - Post-quantum KEM (192-bit security)',
-      'ml-kem-1024': 'ML-KEM-1024 - Post-quantum KEM (256-bit security)',
-    };
-
-    return descriptions[algorithm] ?? 'Advanced encryption algorithm - see CLI documentation for details';
-  }
-
-  void _showAlgorithmPicker() async {
-    final selectedAlgorithm = await showDialog<String>(
-      context: context,
-      builder: (context) => _buildAlgorithmPicker(),
-    );
-
-    if (selectedAlgorithm != null) {
-      setState(() {
-        _selectedAlgorithm = selectedAlgorithm;
-      });
-    }
-  }
-
-  Widget _buildAlgorithmPicker() {
-    final algorithmCategories = {
-      'Classical Symmetric': [
-        'fernet', 'aes-gcm', 'chacha20-poly1305', 'xchacha20-poly1305',
-        'aes-siv', 'aes-gcm-siv'
-      ].where((a) => _algorithms.contains(a)).toList(),
-      'ML-KEM Post-Quantum': [
-        'ml-kem-512-hybrid', 'ml-kem-768-hybrid', 'ml-kem-1024-hybrid',
-        'ml-kem-512-chacha20', 'ml-kem-768-chacha20', 'ml-kem-1024-chacha20'
-      ].where((a) => _algorithms.contains(a)).toList(),
-      'Kyber Legacy': [
-        'kyber512-hybrid', 'kyber768-hybrid', 'kyber1024-hybrid'
-      ].where((a) => _algorithms.contains(a)).toList(),
-      'HQC Code-Based': [
-        'hqc-128-hybrid', 'hqc-192-hybrid', 'hqc-256-hybrid'
-      ].where((a) => _algorithms.contains(a)).toList(),
-      'MAYO Signature': [
-        'mayo-1-hybrid', 'mayo-3-hybrid', 'mayo-5-hybrid'
-      ].where((a) => _algorithms.contains(a)).toList(),
-      'CROSS Signature': [
-        'cross-128-hybrid', 'cross-192-hybrid', 'cross-256-hybrid'
-      ].where((a) => _algorithms.contains(a)).toList(),
-    };
-
-    return AlertDialog(
-      title: const Text('Select Encryption Algorithm'),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            Text(
-              'Select an encryption algorithm. Post-quantum algorithms provide protection against quantum computers.',
-              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 16),
-            ...algorithmCategories.entries.map((entry) {
-              final category = entry.key;
-              final algorithms = entry.value;
-
-              if (algorithms.isEmpty) return const SizedBox.shrink();
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    child: Text(
-                      category,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                    ),
-                  ),
-                  ...algorithms.map((algorithm) {
-                    final isSelected = algorithm == _selectedAlgorithm;
-
-                    return Card(
-                      color: isSelected ? Theme.of(context).colorScheme.primaryContainer : null,
-                      child: ListTile(
-                        leading: const Icon(Icons.security),
-                        title: Text(algorithm),
-                        subtitle: Text(_getAlgorithmDescription(algorithm)),
-                        trailing: isSelected ? Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary) : null,
-                        onTap: () => Navigator.of(context).pop(algorithm),
-                      ),
-                    );
-                  }),
-                  const SizedBox(height: 8),
-                ],
-              );
-            }),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-      ],
-    );
-  }
-
-  void _showRecommendationWizard() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Recommendation wizard: Use Fernet for compatibility or AES-GCM for performance'),
-        duration: Duration(seconds: 3),
-      ),
-    );
-  }
-
-  Widget _buildHashConfigSection() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.tag),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'Hash Functions Configuration',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                Switch(
-                  value: _showHashConfig,
-                  onChanged: (bool? value) {
-                    setState(() {
-                      _showHashConfig = value ?? false;
-                    });
-                  },
-                ),
-              ],
-            ),
-            if (_showHashConfig) ...[
-              const SizedBox(height: 12),
-              ..._hashAlgorithms.map((hash) => _buildHashConfig(hash, hash.toUpperCase())),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildKDFConfigSection() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.security),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'Key Derivation Functions',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                Switch(
-                  value: _showKdfConfig,
-                  onChanged: (bool? value) {
-                    setState(() {
-                      _showKdfConfig = value ?? false;
-                    });
-                  },
-                ),
-              ],
-            ),
-            if (_showKdfConfig) ...[
-              const SizedBox(height: 12),
-              Text(
-                'KDF configuration enabled - switch to TextCrypto tab for full parameter control',
-                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-              ),
-              const SizedBox(height: 8),
-              // PBKDF2 Panel (hidden in CLI v1.2+)
-              if (!CLIService.shouldHideLegacyAlgorithms()) ...[
-                _buildPBKDF2Panel(),
-                const SizedBox(height: 8),
-              ],
-
-              // Argon2 Panel
-              _buildArgon2Panel(),
-              const SizedBox(height: 8),
-
-              // Scrypt Panel
-              _buildScryptPanel(),
-              const SizedBox(height: 8),
-
-              // HKDF Panel
-              _buildHKDFPanel(),
-              const SizedBox(height: 8),
-
-              // Balloon Panel
-              _buildBalloonPanel(),
-              const SizedBox(height: 8),
-
-              // RandomX Panel
-              _buildRandomXPanel(),
-              const SizedBox(height: 8),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHashConfig(String hashId, String hashName) {
-    final isEnabled = _hashConfig[hashId]?['enabled'] ?? false;
-    final rounds = _hashConfig[hashId]?['rounds'] ?? 1000;
-
-    // All hash functions now supported with CLI integration
-    final effectiveEnabled = isEnabled;
-
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        border: Border.all(color: effectiveEnabled ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.outline),
-        borderRadius: BorderRadius.circular(8),
-        color: effectiveEnabled ? Theme.of(context).colorScheme.primaryContainer : Theme.of(context).colorScheme.surfaceContainer,
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Switch(
-                value: effectiveEnabled,
-                onChanged: (bool? value) {
-                  setState(() {
-                    if (_hashConfig[hashId] == null) {
-                      _hashConfig[hashId] = {'rounds': 1000};
-                    }
-                    _hashConfig[hashId]!['enabled'] = value;
-                  });
-                },
-              ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 80,
-                child: Text(
-                  hashName.toUpperCase(),
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                    color: effectiveEnabled ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              if (effectiveEnabled)
-                Expanded(
-                  child: _buildHashRoundsSlider(
-                    hashId,
-                    rounds,
-                    (int newRounds) {
-                      setState(() {
-                        _hashConfig[hashId]!['rounds'] = newRounds;
-                      });
-                    },
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ignore: unused_element
-  Widget _buildSimpleKDFConfig(String kdfId) {
-    final isEnabled = _kdfConfig[kdfId]?['enabled'] ?? false;
-
-    return Card(
-      child: CheckboxListTile(
-        title: Text(kdfId.toUpperCase()),
-        subtitle: Text('Enable $kdfId key derivation'),
-        value: isEnabled,
-        onChanged: (bool? value) {
-          setState(() {
-            if (_kdfConfig[kdfId] != null) {
-              _kdfConfig[kdfId]!['enabled'] = value;
-            }
-          });
-        },
-      ),
-    );
-  }
-
-  Widget _buildHashRoundsSlider(String hashId, int currentRounds, Function(int) onChanged) {
-    // Get appropriate min/max values based on hash function
-    int minRounds = 0;  // Allow 0 to disable hash function
-    int maxRounds = _getMaxRounds(hashId);
-
-    // Ensure current value is within bounds
-    int clampedRounds = currentRounds.clamp(minRounds, maxRounds);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Rounds: $clampedRounds',
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w500,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Row(
-          children: [
-            // Decrement button with auto-repeat
-            _buildAutoRepeatButton(
-              icon: Icons.remove,
-              color: Colors.blue,
-              enabled: clampedRounds > minRounds,
-              onAction: () => onChanged((clampedRounds - 1).clamp(minRounds, maxRounds)),
-            ),
-            const SizedBox(width: 8),
-            // Slider
-            Expanded(
-              child: Slider(
-                value: clampedRounds.toDouble(),
-                min: minRounds.toDouble(),
-                max: maxRounds.toDouble(),
-                divisions: maxRounds ~/ 100, // Coarser divisions for slider
-                label: clampedRounds.toString(),
-                activeColor: Theme.of(context).colorScheme.primary,
-                inactiveColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
-                onChanged: (double value) => onChanged(value.toInt()),
-              ),
-            ),
-            const SizedBox(width: 8),
-            // Increment button with auto-repeat
-            _buildAutoRepeatButton(
-              icon: Icons.add,
-              color: Colors.blue,
-              enabled: clampedRounds < maxRounds,
-              onAction: () => onChanged((clampedRounds + 1).clamp(minRounds, maxRounds)),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  /// Get maximum recommended rounds for hash function
-  int _getMaxRounds(String hashName) {
-    // Hash functions use maximum of 1,000,000 rounds but with better precision control
-    return 1000000;
-  }
-
-  /// Build an auto-repeat button that continues action when held down
-  Widget _buildAutoRepeatButton({
-    required IconData icon,
-    required MaterialColor color,
-    required bool enabled,
-    required VoidCallback onAction,
-    double size = 32,
-    double iconSize = 16,
-  }) {
-    return AutoRepeatButton(
-      icon: icon,
-      color: color,
-      enabled: enabled,
-      onAction: onAction,
-      size: size,
-      iconSize: iconSize,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Selected File',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  if (_selectedFile == null)
-                    const Text('No file selected')
-                  else
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Name: ${_selectedFile!.name}'),
-                        Text('Size: ${_selectedFile!.sizeFormatted}'),
-                        Text('Type: ${_selectedFile!.extension}'),
-                      ],
-                    ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _isLoading ? null : _pickFile,
-                          icon: const Icon(Icons.folder_open),
-                          label: const Text('Choose File'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _isLoading ? null : _pickTestFile,
-                          icon: const Icon(Icons.quiz),
-                          label: const Text('Test Files'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue,
-                            foregroundColor: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          // Algorithm Selection Card (same as TextCryptoTab)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.security),
-                      const SizedBox(width: 8),
-                      const Text('Encryption Algorithm', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                      const Spacer(),
-                      IconButton(
-                        icon: Icon(_showAdvanced ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
-                        onPressed: () => setState(() => _showAdvanced = !_showAdvanced),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Theme.of(context).colorScheme.primary),
-                      borderRadius: BorderRadius.circular(8),
-                      color: Theme.of(context).colorScheme.primaryContainer,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary, size: 20),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Selected: $_selectedAlgorithm',
-                              style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _getAlgorithmDescription(_selectedAlgorithm),
-                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary),
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            ElevatedButton.icon(
-                              onPressed: () => _showAlgorithmPicker(),
-                              icon: const Icon(Icons.tune, size: 16),
-                              label: const Text('Choose Algorithm'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                                foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            ElevatedButton.icon(
-                              onPressed: () => _showRecommendationWizard(),
-                              icon: const Icon(Icons.auto_awesome, size: 16),
-                              label: const Text('Get Recommendations'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green.withValues(alpha: 0.2),
-                                foregroundColor: Colors.green.shade700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (_showAdvanced) ...[
-                    const SizedBox(height: 16),
-                    ExpansionTile(
-                      leading: const Icon(Icons.tag),
-                      title: const Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Advanced Security Settings (CLI Compatible)',
-                              style: TextStyle(fontSize: 14),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                      children: [
-                        _buildHashConfigSection(),
-                        _buildKDFConfigSection(),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          // Private Key Encryption for Post-Quantum Algorithms
-          if (_isPostQuantumAlgorithm(_selectedAlgorithm)) ...[
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.vpn_key, color: Theme.of(context).colorScheme.primary),
-                        const SizedBox(width: 8),
-                        const Text('Private Key Encryption', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                        const Spacer(),
-                        const Icon(Icons.security, color: Colors.purple, size: 20),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Post-quantum algorithms require additional encryption of private key data',
-                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        const Text('Encryption Method: '),
-                        Expanded(
-                          child: DropdownButton<String>(
-                            value: _selectedEncryptData,
-                            isExpanded: true,
-                            items: _getNonPostQuantumAlgorithms().map((algorithm) => DropdownMenuItem<String>(
-                              value: algorithm,
-                              child: Text(algorithm),
-                            )).toList(),
-                            onChanged: (String? newValue) {
-                              if (newValue != null) {
-                                setState(() {
-                                  _selectedEncryptData = newValue;
-                                });
-                              }
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-          // Steganography settings (Encrypt mode - Hide in cover image)
-          _buildSteganographySection(isEncryptMode: true),
-          const SizedBox(height: 8),
-          // Steganography settings (Decrypt mode - Extract from stego image)
-          _buildSteganographySection(isEncryptMode: false),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _passwordController,
-            decoration: const InputDecoration(
-              labelText: 'Password',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.lock),
-              helperText: 'Maximum 1024 characters',
-            ),
-            obscureText: true,
-            validator: InputValidator.validatePassword,
-            // Security: Prevent excessively long passwords that could cause buffer overflow
-            inputFormatters: [
-              LengthLimitingTextInputFormatter(InputValidator.maxPasswordLength),
-              // Security: Filter out null bytes and dangerous control characters
-              FilteringTextInputFormatter.deny(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]')),
-            ],
-          ),
-          const SizedBox(height: 16),
-          // Debug Logging Toggle
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        _debugLogging ? Icons.bug_report : Icons.bug_report_outlined,
-                        color: _debugLogging ? Colors.orange : Colors.grey,
-                      ),
-                      const SizedBox(width: 8),
-                      const Expanded(
-                        child: Text(
-                          'Debug Logging',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      Switch(
-                        value: _debugLogging,
-                        onChanged: (bool value) async {
-                          setState(() {
-                            _debugLogging = value;
-                            // Update CLI service debug flag
-                            CLIService.debugEnabled = value;
-                            // Update debug banner visibility
-                            widget.onDebugChanged(value);
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _debugLogging
-                      ? '🟢 Debug logging enabled - logs written to console and file'
-                      : '🔲 Debug logging disabled - only basic status messages',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _debugLogging ? Colors.orange.shade700 : Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  if (_debugLogging) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      'Debug output will be shown in console',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.orange.shade600,
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-                  ],
-                  if (_debugLogging) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.red.shade50,
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: Colors.red.shade300),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(Icons.warning, size: 16, color: Colors.red.shade700),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'SECURITY WARNING',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.red.shade700,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Debug logs may contain sensitive information including passwords, keys, and decrypted content. Only use with test files and non-sensitive data. Never share debug logs containing real passwords or personal data.',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.red.shade600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          if (_isLoading)
-            Card(
-              color: Theme.of(context).colorScheme.tertiaryContainer,
-              elevation: 8,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    // Progress bar
-                    LinearProgressIndicator(
-                      value: _progressValue,
-                      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-                      valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary),
-                    ),
-                    const SizedBox(height: 12),
-                    // Circular progress indicator
-                    CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
-                    const SizedBox(height: 12),
-                    // Operation status
-                    Text(
-                      _operationStatus.isNotEmpty ? _operationStatus : 'Crypto operation in progress...',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onTertiaryContainer),
-                      textAlign: TextAlign.center,
-                    ),
-                    // CLI progress output
-                    if (_operationProgress.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.all(8.0),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.tertiaryContainer,
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: Theme.of(context).colorScheme.outline),
-                        ),
-                        child: Text(
-                          _operationProgress,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontFamily: 'monospace',
-                            color: Theme.of(context).colorScheme.onTertiaryContainer,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ],
-                    // Progress percentage
-                    if (_progressValue > 0) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        '${(_progressValue * 100).toInt()}%',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: Theme.of(context).colorScheme.onTertiaryContainer,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          const SizedBox(height: 16),
-          // Force overwrite option
-          Row(
-            children: [
-              Checkbox(
-                value: _forceOverwrite,
-                onChanged: _isLoading ? null : (value) {
-                  setState(() {
-                    _forceOverwrite = value ?? false;
-                  });
-                },
-              ),
-              GestureDetector(
-                onTap: _isLoading ? null : () {
-                  setState(() {
-                    _forceOverwrite = !_forceOverwrite;
-                  });
-                },
-                child: Text(
-                  'Force overwrite source file (--force)',
-                  style: TextStyle(
-                    color: _isLoading ? Theme.of(context).colorScheme.onSurfaceVariant : null,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Tooltip(
-                message: 'When enabled, replaces the original file with encrypted/decrypted content instead of creating a new file',
-                child: Icon(
-                  Icons.info_outline,
-                  size: 16,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const Spacer(), // Pushes everything else to the right, leaving space
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _isLoading ? null : _encryptFile,
-                  icon: Icon(Icons.lock, color: _isLoading ? Theme.of(context).colorScheme.onSurfaceVariant : null),
-                  label: Text(_isLoading ? 'LOCKED - Encrypting...' : 'Encrypt File'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _isLoading ? Theme.of(context).colorScheme.surfaceContainer : null,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _isLoading ? null : _decryptFile,
-                  icon: Icon(Icons.lock_open, color: _isLoading ? Theme.of(context).colorScheme.onSurfaceVariant : null),
-                  label: Text(_isLoading ? 'LOCKED - Decrypting...' : 'Decrypt File'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _isLoading ? Theme.of(context).colorScheme.surfaceContainer : null,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          // Save to File button (only shown when decrypted content is available)
-          if (_decryptedContent != null)
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _isLoading ? null : _saveDecryptedToFile,
-                icon: const Icon(Icons.save),
-                label: const Text('Save Decrypted Content to File'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ),
-          if (_decryptedContent != null)
-            const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: Stack(
-              children: [
-                Container(
-                  width: double.infinity,
-                  height: 200,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Theme.of(context).colorScheme.outline),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: SingleChildScrollView(
-                    child: SelectableText(
-                      result.isEmpty ? 'File operation results will appear here...' : result,
-                      style: const TextStyle(fontFamily: 'monospace'),
-                    ),
-                  ),
-                ),
-              if (result.isNotEmpty)
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: FloatingActionButton.small(
-                    heroTag: "copy_fileresult",
-                    onPressed: () async {
-                      await Clipboard.setData(ClipboardData(text: result));
-
-                      // Schedule secure clipboard clearing after 30 seconds
-                      Timer(const Duration(seconds: 30), () async {
-                        await Clipboard.setData(const ClipboardData(text: ''));
-                      });
-
-                      if (mounted) {
-                        // ignore: use_build_context_synchronously
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Result copied to clipboard (will auto-clear in 30s)'),
-                            duration: Duration(seconds: 3),
-                          ),
-                        );
-                      }
-                    },
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    child: Icon(Icons.copy, size: 16, color: Theme.of(context).colorScheme.onPrimary),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-        ),
-      ),
-    );
-  }
-
-  // =============================================================================
-  // KDF Panel Builders (copied from TextCryptoTabState for consistency)
-  // =============================================================================
-
-  /// Build PBKDF2 configuration panel
-  Widget _buildPBKDF2Panel() {
-    final config = _kdfConfig['pbkdf2'] ?? {'enabled': true, 'iterations': 100000};
-    final enabled = config['enabled'] ?? false;
-
-    return Card(
-      color: enabled ? Theme.of(context).colorScheme.primaryContainer : Theme.of(context).colorScheme.surfaceContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CheckboxListTile(
-              title: Row(
-                children: [
-                  const Text('PBKDF2', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.green,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('RECOMMENDED', style: TextStyle(color: Colors.white, fontSize: 10)),
-                  ),
-                ],
-              ),
-              subtitle: const Text('Password-Based Key Derivation Function 2 - Industry standard, widely supported'),
-              value: enabled,
-              onChanged: (bool? value) {
-                setState(() {
-                  _kdfConfig['pbkdf2'] = {
-                    'enabled': value ?? false,
-                    'iterations': config['iterations'] ?? 100000,
-                  };
-                });
-              },
-            ),
-            if (enabled) ...[
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Row(
-                  children: [
-                    const SizedBox(width: 100, child: Text('Iterations:')),
-                    Expanded(
-                      child: Slider(
-                        value: (config['iterations'] ?? 100000).toDouble(),
-                        min: 0,
-                        max: 1000000,
-                        divisions: 100,
-                        label: (config['iterations'] ?? 100000).toString(),
-                        onChanged: (double value) {
-                          setState(() {
-                            _kdfConfig['pbkdf2']!['iterations'] = value.toInt();
-                          });
-                        },
-                      ),
-                    ),
-                    SizedBox(width: 80, child: Text('${config['iterations'] ?? 100000}')),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Text(
-                  'Higher iterations = more security but slower processing. 100,000+ recommended.',
-                  style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build Argon2 configuration panel
-  Widget _buildArgon2Panel() {
-    final config = _kdfConfig['argon2'] ?? {
-      'enabled': false,
-      'time_cost': 3,
-      'memory_cost': 65536,
-      'parallelism': 4,
-      'hash_len': 32,
-      'type': 2,
-      'rounds': 10,
-    };
-    final enabled = config['enabled'] ?? false;
-
-    return Card(
-      color: enabled ? Theme.of(context).colorScheme.secondaryContainer : Theme.of(context).colorScheme.surfaceContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CheckboxListTile(
-              title: Row(
-                children: [
-                  const Text('Argon2', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.purple,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('MAX SECURITY', style: TextStyle(color: Colors.white, fontSize: 10)),
-                  ),
-                ],
-              ),
-              subtitle: const Text('Memory-hard function, winner of Password Hashing Competition - best against hardware attacks'),
-              value: enabled,
-              onChanged: (bool? value) {
-                setState(() {
-                  _kdfConfig['argon2'] = Map.from(config)..['enabled'] = value ?? false;
-                });
-              },
-            ),
-            if (enabled) ...[
-              const SizedBox(height: 8),
-              ...[
-                _buildKDFSlider('Time Cost', config['time_cost'] ?? 3, 1, 1000, (v) =>
-                  setState(() => _kdfConfig['argon2']!['time_cost'] = v)),
-                _buildKDFSlider('Memory (MB)', ((config['memory_cost'] ?? 65536) / 1024).round(), 1, 1024, (v) =>
-                  setState(() => _kdfConfig['argon2']!['memory_cost'] = v * 1024)),
-                _buildKDFSlider('Parallelism', config['parallelism'] ?? 4, 1, 16, (v) =>
-                  setState(() => _kdfConfig['argon2']!['parallelism'] = v)),
-                _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 128, (v) =>
-                  setState(() => _kdfConfig['argon2']!['hash_len'] = v)),
-                _buildKDFSlider('Rounds', config['rounds'] ?? 10, 0, 1000000, (v) =>
-                  setState(() => _kdfConfig['argon2']!['rounds'] = v)),
-              ],
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Row(
-                  children: [
-                    const Text('Type: '),
-                    DropdownButton<int>(
-                      value: config['type'] ?? 2,
-                      items: const [
-                        DropdownMenuItem(value: 0, child: Text('Argon2d')),
-                        DropdownMenuItem(value: 1, child: Text('Argon2i')),
-                        DropdownMenuItem(value: 2, child: Text('Argon2id (recommended)')),
-                      ],
-                      onChanged: (int? value) {
-                        setState(() {
-                          _kdfConfig['argon2']!['type'] = value ?? 2;
-                        });
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build Scrypt configuration panel
-  Widget _buildScryptPanel() {
-    final config = _kdfConfig['scrypt'] ?? {
-      'enabled': false,
-      'n': 16384,
-      'r': 8,
-      'p': 1,
-      'rounds': 10,
-    };
-    final enabled = config['enabled'] ?? false;
-
-    return Card(
-      color: enabled ? Theme.of(context).colorScheme.tertiaryContainer : Theme.of(context).colorScheme.surfaceContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CheckboxListTile(
-              title: Row(
-                children: [
-                  const Text('Scrypt', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.orange,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('BALANCED', style: TextStyle(color: Colors.white, fontSize: 10)),
-                  ),
-                ],
-              ),
-              subtitle: const Text('Memory-hard function used in cryptocurrencies - good balance of security and performance'),
-              value: enabled,
-              onChanged: (bool? value) {
-                setState(() {
-                  _kdfConfig['scrypt'] = Map.from(config)..['enabled'] = value ?? false;
-                });
-              },
-            ),
-            if (enabled) ...[
-              const SizedBox(height: 8),
-              ...[
-                _buildKDFSlider('N (CPU/Memory)', (config['n'] ?? 16384) ~/ 1024, 1, 1024, (v) =>
-                  setState(() => _kdfConfig['scrypt']!['n'] = v * 1024)),
-                _buildKDFSlider('R (Block Size)', config['r'] ?? 8, 1, 32, (v) =>
-                  setState(() => _kdfConfig['scrypt']!['r'] = v)),
-                _buildKDFSlider('P (Parallelism)', config['p'] ?? 1, 1, 16, (v) =>
-                  setState(() => _kdfConfig['scrypt']!['p'] = v)),
-                _buildKDFSlider('Rounds', config['rounds'] ?? 10, 0, 1000000, (v) =>
-                  setState(() => _kdfConfig['scrypt']!['rounds'] = v)),
-              ],
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build HKDF configuration panel
-  Widget _buildHKDFPanel() {
-    final config = _kdfConfig['hkdf'] ?? {
-      'enabled': false,
-      'rounds': 1,
-      'algorithm': 'sha256',
-      'info': 'openssl_encrypt_hkdf',
-    };
-    final enabled = config['enabled'] ?? false;
-
-    return Card(
-      color: enabled ? Theme.of(context).colorScheme.tertiaryContainer : Theme.of(context).colorScheme.surfaceContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CheckboxListTile(
-              title: Row(
-                children: [
-                  const Text('HKDF', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.teal,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('EFFICIENT', style: TextStyle(color: Colors.white, fontSize: 10)),
-                  ),
-                ],
-              ),
-              subtitle: const Text('HMAC-based Key Derivation Function - efficient key expansion, suitable for low-latency applications'),
-              value: enabled,
-              onChanged: (bool? value) {
-                setState(() {
-                  _kdfConfig['hkdf'] = Map.from(config)..['enabled'] = value ?? false;
-                });
-              },
-            ),
-            if (enabled) ...[
-              const SizedBox(height: 8),
-              _buildKDFSlider('Rounds', config['rounds'] ?? 1, 0, 1000000, (v) =>
-                setState(() => _kdfConfig['hkdf']!['rounds'] = v)),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Row(
-                  children: [
-                    const Text('Hash Algorithm: '),
-                    DropdownButton<String>(
-                      key: ValueKey('hash_algorithm_${config['algorithm'] ?? 'sha256'}'),
-                      value: config['algorithm'] ?? 'sha256',
-                      items: const [
-                        DropdownMenuItem(value: 'sha224', child: Text('SHA-224')),
-                        DropdownMenuItem(value: 'sha256', child: Text('SHA-256')),
-                        DropdownMenuItem(value: 'sha384', child: Text('SHA-384')),
-                        DropdownMenuItem(value: 'sha512', child: Text('SHA-512')),
-                      ],
-                      onChanged: (String? value) {
-                        setState(() {
-                          _kdfConfig['hkdf']!['algorithm'] = value ?? 'sha256';
-                        });
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: TextFormField(
-                  initialValue: config['info'] ?? 'openssl_encrypt_hkdf',
-                  decoration: const InputDecoration(
-                    labelText: 'Info String',
-                    isDense: true,
-                  ),
-                  onChanged: (value) {
-                    _kdfConfig['hkdf']!['info'] = value;
-                  },
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build Balloon configuration panel
-  Widget _buildBalloonPanel() {
-    final config = _kdfConfig['balloon'] ?? {
-      'enabled': false,
-      'time_cost': 3,
-      'space_cost': 65536,
-      'parallelism': 4,
-      'rounds': 2,
-      'hash_len': 32,
-    };
-    final enabled = config['enabled'] ?? false;
-
-    return Card(
-      color: enabled ? Theme.of(context).colorScheme.errorContainer : Theme.of(context).colorScheme.surfaceContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CheckboxListTile(
-              title: Row(
-                children: [
-                  const Text('Balloon', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.pink,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('RESEARCH', style: TextStyle(color: Colors.white, fontSize: 10)),
-                  ),
-                ],
-              ),
-              subtitle: const Text('Newer memory-hard function with configurable time/space tradeoffs - still under academic evaluation'),
-              value: enabled,
-              onChanged: (bool? value) {
-                setState(() {
-                  _kdfConfig['balloon'] = Map.from(config)..['enabled'] = value ?? false;
-                });
-              },
-            ),
-            if (enabled) ...[
-              const SizedBox(height: 8),
-              ...[
-                _buildKDFSlider('Time Cost', config['time_cost'] ?? 3, 1, 1000, (v) =>
-                  setState(() => _kdfConfig['balloon']!['time_cost'] = v)),
-                _buildKDFSlider('Space Cost (KB)', ((config['space_cost'] ?? 65536) / 1024).round(), 1, 1024, (v) =>
-                  setState(() => _kdfConfig['balloon']!['space_cost'] = v * 1024)),
-                _buildKDFSlider('Parallelism', config['parallelism'] ?? 4, 1, 16, (v) =>
-                  setState(() => _kdfConfig['balloon']!['parallelism'] = v)),
-                _buildKDFSlider('Rounds', config['rounds'] ?? 2, 0, 1000000, (v) =>
-                  setState(() => _kdfConfig['balloon']!['rounds'] = v)),
-                _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 128, (v) =>
-                  setState(() => _kdfConfig['balloon']!['hash_len'] = v)),
-              ],
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build RandomX configuration panel
-  Widget _buildRandomXPanel() {
-    final config = _kdfConfig['randomx'] ?? {
-      'enabled': false,
-      'rounds': 1,
-      'mode': 'light',
-      'height': 1,
-      'hash_len': 32,
-    };
-    final enabled = config['enabled'] ?? false;
-
-    return Card(
-      color: enabled ? Theme.of(context).colorScheme.errorContainer : Theme.of(context).colorScheme.surfaceContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CheckboxListTile(
-              title: Row(
-                children: [
-                  const Text('RandomX', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.purple,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('CPU-HARD', style: TextStyle(color: Colors.white, fontSize: 10)),
-                  ),
-                ],
-              ),
-              subtitle: const Text('Memory-hard KDF based on cryptocurrency mining algorithm (requires pyrx package)'),
-              value: enabled,
-              onChanged: (bool? value) {
-                setState(() {
-                  _kdfConfig['randomx'] = Map.from(config)..['enabled'] = value ?? false;
-                });
-              },
-            ),
-            if (enabled) ...[
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-                child: Row(
-                  children: [
-                    SizedBox(width: 120, child: Text('Mode:', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface))),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: DropdownButton<String>(
-                        value: config['mode'] ?? 'light',
-                        isExpanded: true,
-                        items: const [
-                          DropdownMenuItem(value: 'light', child: Text('Light (256MB RAM)')),
-                          DropdownMenuItem(value: 'fast', child: Text('Fast (2GB RAM)')),
-                        ],
-                        onChanged: (value) {
-                          setState(() {
-                            _kdfConfig['randomx']!['mode'] = value ?? 'light';
-                          });
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              ...[
-                _buildKDFSlider('Rounds', config['rounds'] ?? 1, 1, 10, (v) =>
-                  setState(() => _kdfConfig['randomx']!['rounds'] = v)),
-                _buildKDFSlider('Block Height', config['height'] ?? 1, 1, 1000, (v) =>
-                  setState(() => _kdfConfig['randomx']!['height'] = v)),
-                _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 64, (v) =>
-                  setState(() => _kdfConfig['randomx']!['hash_len'] = v)),
-              ],
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build steganography settings section
-  Widget _buildSteganographySection({required bool isEncryptMode}) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Checkbox(
-                  value: isEncryptMode ? _enableSteganography : _stegoExtractMode,
-                  onChanged: (value) {
-                    setState(() {
-                      if (isEncryptMode) {
-                        _enableSteganography = value ?? false;
-                        // Disable extract mode when enabling hide mode
-                        if (_enableSteganography) {
-                          _stegoExtractMode = false;
-                        }
-                      } else {
-                        _stegoExtractMode = value ?? false;
-                        // Disable hide mode when enabling extract mode
-                        if (_stegoExtractMode) {
-                          _enableSteganography = false;
-                        }
-                      }
-                    });
-                  },
-                ),
-                Text(
-                  isEncryptMode ? 'Enable Steganography' : 'Extract from Steganography',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Tooltip(
-                  message: isEncryptMode
-                      ? 'Hide encrypted data in a cover image (PNG/BMP only)'
-                      : 'Extract and decrypt data from a stego image',
-                  child: Icon(Icons.info_outline, size: 16, color: Colors.grey),
-                ),
-              ],
-            ),
-            if ((isEncryptMode && _enableSteganography) || (!isEncryptMode && _stegoExtractMode)) ...[
-              const Divider(),
-              const SizedBox(height: 8),
-              // Cover image picker (only in encrypt mode)
-              if (isEncryptMode) ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        readOnly: true,
-                        controller: TextEditingController(
-                          text: _coverImageFile?.name ?? 'No cover image selected',
-                        ),
-                        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
-                        decoration: InputDecoration(
-                          labelText: 'Cover Image (PNG/BMP)',
-                          border: OutlineInputBorder(),
-                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton.icon(
-                      onPressed: () async {
-                        // Use file manager to pick cover image
-                        final file = await widget.fileManager.pickFile();
-                        if (file != null) {
-                          // Check if file is PNG or BMP
-                          final extension = file.name.toLowerCase().split('.').last;
-                          if (extension == 'png' || extension == 'bmp') {
-                            setState(() {
-                              _coverImageFile = file;
-                            });
-                          } else {
-                            // Show error if wrong file type
-                            setState(() {
-                              result = 'Error: Cover image must be PNG or BMP format.\nSelected: ${file.name}';
-                            });
-                          }
-                        }
-                      },
-                      icon: const Icon(Icons.image, size: 16),
-                      label: const Text('Pick Image', style: TextStyle(fontSize: 12)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-              ],
-              // Stego password
-              TextField(
-                controller: _stegoPasswordController,
-                obscureText: true,
-                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
-                decoration: InputDecoration(
-                  labelText: 'Stego Password (optional)',
-                  hintText: isEncryptMode
-                      ? 'Separate password for steganography layer'
-                      : 'Enter if stego password was used',
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  suffixIcon: Tooltip(
-                    message: 'Optional password for pixel randomization. Increases security.',
-                    child: Icon(Icons.info_outline, size: 16),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              // Bits per channel
-              Row(
-                children: [
-                  SizedBox(
-                    width: 150,
-                    child: Text(
-                      'Bits per Channel:',
-                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
-                    ),
-                  ),
-                  DropdownButton<int>(
-                    value: _bitsPerChannel,
-                    items: [1, 2, 3].map((bits) {
-                      return DropdownMenuItem(
-                        value: bits,
-                        child: Text('$bits bit${bits > 1 ? "s" : ""}', style: TextStyle(fontSize: 12)),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      setState(() {
-                        _bitsPerChannel = value ?? 1;
-                      });
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  Tooltip(
-                    message: 'Higher values = more capacity but more visible. Must match during extraction.',
-                    child: Icon(Icons.info_outline, size: 16, color: Colors.grey),
-                  ),
-                ],
-              ),
-              // Encrypt-only options
-              if (isEncryptMode) ...[
-                const SizedBox(height: 8),
-                CheckboxListTile(
-                  value: _randomizePixels,
-                  onChanged: _stegoPasswordController.text.isNotEmpty
-                      ? (value) {
-                          setState(() {
-                            _randomizePixels = value ?? false;
-                          });
-                        }
-                      : null,
-                  title: Text(
-                    'Randomize Pixels',
-                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
-                  ),
-                  subtitle: Text(
-                    'Requires stego password. Spreads data randomly for better security.',
-                    style: TextStyle(fontSize: 10, color: Colors.grey),
-                  ),
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                ),
-                CheckboxListTile(
-                  value: _addDecoyData,
-                  onChanged: (value) {
-                    setState(() {
-                      _addDecoyData = value ?? false;
-                    });
-                  },
-                  title: Text(
-                    'Add Decoy Data',
-                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
-                  ),
-                  subtitle: Text(
-                    'Adds fake data to unused space for deniability.',
-                    style: TextStyle(fontSize: 10, color: Colors.grey),
-                  ),
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ],
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Helper to build KDF slider
-  Widget _buildKDFSlider(String label, int value, int min, int max, Function(int) onChanged) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-      child: Row(
-        children: [
-          SizedBox(width: 120, child: Text('$label:', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface))),
-          // Decrement button with auto-repeat
-          _buildAutoRepeatButton(
-            icon: Icons.remove,
-            color: Colors.orange,
-            enabled: value > min,
-            onAction: () => onChanged((value - 1).clamp(min, max)),
-            size: 28,
-            iconSize: 14,
-          ),
-          const SizedBox(width: 4),
-          // Slider
-          Expanded(
-            child: Slider(
-              value: value.toDouble(),
-              min: min.toDouble(),
-              max: max.toDouble(),
-              divisions: (max - min) > 1000 ? max ~/ 100 : max - min, // Smart divisions
-              label: value.toString(),
-              onChanged: (double v) => onChanged(v.toInt()),
-            ),
-          ),
-          const SizedBox(width: 4),
-          // Increment button with auto-repeat
-          _buildAutoRepeatButton(
-            icon: Icons.add,
-            color: Colors.orange,
-            enabled: value < max,
-            onAction: () => onChanged((value + 1).clamp(min, max)),
-            size: 28,
-            iconSize: 14,
-          ),
-          const SizedBox(width: 8),
-          SizedBox(width: 60, child: Text(value.toString(), style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface))),
-        ],
-      ),
-    );
-  }
-
-  bool _isPostQuantumAlgorithm(String algorithm) {
-    return algorithm.contains('ml-kem') ||
-           algorithm.contains('kyber') ||
-           algorithm.contains('hqc') ||
-           algorithm.contains('mayo') ||
-           algorithm.contains('cross');
-  }
-
-  List<String> _getNonPostQuantumAlgorithms() {
-    return [
-      'aes-gcm',
-      'aes-gcm-siv',
-      'aes-siv',
-      'chacha20-poly1305',
-      'xchacha20-poly1305',
-    ];
-  }
-}
-
 // Info tab
 class InfoTab extends StatefulWidget {
   const InfoTab({super.key});
@@ -5100,6 +674,8 @@ class _InfoTabState extends State<InfoTab> {
     'xchacha20-poly1305': 'Extended ChaCha20-Poly1305 with 192-bit nonce',
     'aes-siv': 'AES-SIV synthetic IV mode',
     'aes-gcm-siv': 'AES-GCM-SIV misuse-resistant encryption',
+    'threefish-512': '512-bit block cipher, 256-bit PQ security, CTR+Poly1305',
+    'threefish-1024': '1024-bit block cipher, 512-bit PQ security, CTR+Poly1305',
   };
 
   /// Check if algorithm is available on current platform
@@ -6363,7 +1939,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
   String _selectedEncryptData = 'aes-gcm';  // For PQC algorithms
   String _password = '';
   String _confirmPassword = '';
-  String _selectedOperation = 'encrypt'; // 'encrypt' or 'decrypt'
+  String _selectedOperation = 'encrypt'; // 'encrypt', 'decrypt', or 'verify-integrity'
   final List<BatchOperationResult> _results = [];
   String result = ''; // Add result field for clipboard copying
 
@@ -6371,8 +1947,57 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
   int _currentFileIndex = 0;
   String _currentStatus = '';
 
+  // Integrity settings
+  bool _enableIntegrity = false;      // For encrypt mode: register hash
+  bool _verifyIntegrity = false;      // For decrypt mode: verify before decrypt
+
+  // Advanced settings
+  bool _showAdvanced = false;
+
+  // Encryption mode selection
+  EncryptionMode _encryptionMode = EncryptionMode.symmetric;
+
+  // Asymmetric encryption state
+  List<String> _selectedRecipients = [];
+  String? _signingIdentity;
+  String? _decryptionIdentity;
+  String? _verifyFrom;
+  bool _skipVerification = false;
+  bool _useKeyserver = false;
+  List<Map<String, dynamic>> _ownIdentities = [];
+  List<Map<String, dynamic>> _contacts = [];
+
+  // Cascade encryption state
+  String _cascadePreset = 'standard';
+  List<String> _cascadeAlgorithms = ['aes-256-gcm', 'chacha20-poly1305'];
+  String _cascadeHash = 'sha256';
+  List<Map<String, dynamic>> _diversityWarnings = [];
+
   // Cached dropdown items for algorithms (performance optimization)
   static final Map<String, List<DropdownMenuItem<String>>> _dropdownCache = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadIdentities();
+  }
+
+  /// Load identities for asymmetric encryption
+  void _loadIdentities() async {
+    try {
+      final identities = await CLIService.listIdentities();
+      setState(() {
+        _ownIdentities = identities['own'] ?? [];
+        _contacts = identities['contacts'] ?? [];
+      });
+    } catch (e) {
+      CLIService.outputDebugLog('Failed to load identities: $e');
+      setState(() {
+        _ownIdentities = [];
+        _contacts = [];
+      });
+    }
+  }
 
   List<DropdownMenuItem<String>> _getCachedAlgorithmDropdownItems(List<String> algorithms) {
     final key = algorithms.join(',');
@@ -6383,6 +2008,689 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
       )).toList();
     }
     return _dropdownCache[key]!;
+  }
+
+  /// Build asymmetric encryption UI section (for encrypt mode)
+  Widget _buildAsymmetricEncryptSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.vpn_key),
+                const SizedBox(width: 8),
+                const Text('Asymmetric Encryption Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (_ownIdentities.isEmpty && _contacts.isEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  border: Border.all(color: Colors.orange),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.warning, color: Colors.orange.shade700),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'No identities available',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('You need to create an identity before using asymmetric encryption.'),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        final mainScreenState = context.findAncestorStateOfType<_MainScreenState>();
+                        mainScreenState?.setState(() {
+                          mainScreenState._selectedIndex = 5;
+                        });
+                      },
+                      icon: const Icon(Icons.badge),
+                      label: const Text('Go to Identity Management'),
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              const Text('Recipients (who can decrypt):', style: TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ..._selectedRecipients.map((recipient) => Chip(
+                    label: Text(recipient),
+                    deleteIcon: const Icon(Icons.close, size: 18),
+                    onDeleted: () {
+                      setState(() {
+                        _selectedRecipients.remove(recipient);
+                      });
+                    },
+                  )),
+                  ActionChip(
+                    avatar: const Icon(Icons.add, size: 18),
+                    label: const Text('Add Recipient'),
+                    onPressed: () => _showAddRecipientDialog(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Text('Sign with (optional):', style: TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _signingIdentity,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Select signing identity',
+                  helperText: 'Digitally sign the encrypted data with your identity',
+                ),
+                items: [
+                  const DropdownMenuItem<String>(
+                    value: null,
+                    child: Text('None (unsigned)'),
+                  ),
+                  ..._ownIdentities.map((identity) => DropdownMenuItem<String>(
+                    value: identity['name'] as String,
+                    child: Text(identity['name'] as String),
+                  )),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _signingIdentity = value;
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
+              CheckboxListTile(
+                value: _useKeyserver,
+                onChanged: (value) {
+                  setState(() {
+                    _useKeyserver = value ?? false;
+                  });
+                },
+                title: const Text('Use keyserver for recipient lookup'),
+                subtitle: const Text('Automatically fetch recipient public keys from keyserver', style: TextStyle(fontSize: 11)),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build asymmetric decryption UI section (for decrypt mode)
+  Widget _buildAsymmetricDecryptSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.vpn_key),
+                const SizedBox(width: 8),
+                const Text('Asymmetric Decryption Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (_ownIdentities.isEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  border: Border.all(color: Colors.orange),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.warning, color: Colors.orange.shade700),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'No identities available',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('You need an identity to decrypt asymmetrically encrypted data.'),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        final mainScreenState = context.findAncestorStateOfType<_MainScreenState>();
+                        mainScreenState?.setState(() {
+                          mainScreenState._selectedIndex = 5;
+                        });
+                      },
+                      icon: const Icon(Icons.badge),
+                      label: const Text('Go to Identity Management'),
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              const Text('Decrypt with identity:', style: TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _decryptionIdentity,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Select decryption identity',
+                  helperText: 'The identity that was specified as a recipient',
+                ),
+                items: _ownIdentities.map((identity) => DropdownMenuItem<String>(
+                  value: identity['name'] as String,
+                  child: Text(identity['name'] as String),
+                )).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _decryptionIdentity = value;
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
+              const Text('Verify signature from (optional):', style: TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _verifyFrom,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Select sender to verify',
+                  helperText: 'Verify the digital signature from the sender',
+                ),
+                items: [
+                  const DropdownMenuItem<String>(
+                    value: null,
+                    child: Text('Don\'t verify signature'),
+                  ),
+                  ..._ownIdentities.map((identity) => DropdownMenuItem<String>(
+                    value: identity['name'] as String,
+                    child: Text('${identity['name']} (own)'),
+                  )),
+                  ..._contacts.map((contact) => DropdownMenuItem<String>(
+                    value: contact['name'] as String,
+                    child: Text('${contact['name']} (contact)'),
+                  )),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _verifyFrom = value;
+                  });
+                },
+              ),
+              if (_showAdvanced) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    border: Border.all(color: Colors.red.shade200),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: CheckboxListTile(
+                    value: _skipVerification,
+                    onChanged: (value) {
+                      setState(() {
+                        _skipVerification = value ?? false;
+                      });
+                    },
+                    title: const Text('Skip signature verification (dangerous)', style: TextStyle(color: Colors.red)),
+                    subtitle: const Text('Only use if you understand the security implications', style: TextStyle(fontSize: 11)),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Show dialog to add recipient
+  void _showAddRecipientDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Recipient'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Select a recipient who will be able to decrypt this data:'),
+              const SizedBox(height: 16),
+              ...(_ownIdentities.isEmpty && _contacts.isEmpty)
+                  ? [const Text('No identities or contacts available')]
+                  : [
+                      ..._ownIdentities.map((identity) {
+                        final name = identity['name'] as String;
+                        final isSelected = _selectedRecipients.contains(name);
+                        return ListTile(
+                          leading: const Icon(Icons.badge),
+                          title: Text('$name (own)'),
+                          subtitle: identity['email'] != null ? Text(identity['email'] as String) : null,
+                          trailing: isSelected ? const Icon(Icons.check, color: Colors.green) : null,
+                          onTap: isSelected
+                              ? null
+                              : () {
+                                  setState(() {
+                                    _selectedRecipients.add(name);
+                                  });
+                                  Navigator.pop(context);
+                                },
+                        );
+                      }),
+                      ..._contacts.map((contact) {
+                        final name = contact['name'] as String;
+                        final isSelected = _selectedRecipients.contains(name);
+                        return ListTile(
+                          leading: const Icon(Icons.contact_mail),
+                          title: Text('$name (contact)'),
+                          subtitle: contact['email'] != null ? Text(contact['email'] as String) : null,
+                          trailing: isSelected ? const Icon(Icons.check, color: Colors.green) : null,
+                          onTap: isSelected
+                              ? null
+                              : () {
+                                  setState(() {
+                                    _selectedRecipients.add(name);
+                                  });
+                                  Navigator.pop(context);
+                                },
+                        );
+                      }),
+                    ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build encryption mode selector widget
+  /// Build cascade encryption UI section
+  Widget _buildCascadeSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.layers),
+                const SizedBox(width: 8),
+                const Text('Cascade Encryption Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.info_outline),
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Cascade Encryption'),
+                        content: const SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('Cascade encryption chains multiple algorithms together for defense-in-depth security.\n'),
+                              Text('Presets:', style: TextStyle(fontWeight: FontWeight.bold)),
+                              Text('• Standard: AES-256-GCM + ChaCha20-Poly1305'),
+                              Text('• Paranoia: AES-256-GCM + ChaCha20-Poly1305 + Threefish-512\n'),
+                              Text('Custom allows you to build your own algorithm chain with any combination.'),
+                            ],
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('OK'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  tooltip: 'Cascade Information',
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Text('Cascade Preset:', style: TextStyle(fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            Center(
+              child: SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'standard', label: Text('Standard'), icon: Icon(Icons.shield)),
+                  ButtonSegment(value: 'paranoia', label: Text('Paranoia'), icon: Icon(Icons.security)),
+                  ButtonSegment(value: 'custom', label: Text('Custom'), icon: Icon(Icons.tune)),
+                ],
+                selected: {_cascadePreset},
+                onSelectionChanged: (Set<String> newSelection) async {
+                  setState(() {
+                    _cascadePreset = newSelection.first;
+                    if (_cascadePreset == 'standard') {
+                      _cascadeAlgorithms = ['aes-256-gcm', 'chacha20-poly1305'];
+                    } else if (_cascadePreset == 'paranoia') {
+                      _cascadeAlgorithms = ['aes-256-gcm', 'chacha20-poly1305', 'threefish-512'];
+                    }
+                  });
+                  if (_cascadePreset == 'custom') {
+                    final warnings = await CLIService.validateCascade(_cascadeAlgorithms);
+                    setState(() { _diversityWarnings = warnings; });
+                  } else {
+                    setState(() { _diversityWarnings = []; });
+                  }
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (_cascadePreset != 'custom') ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  border: Border.all(color: Colors.blue.shade200),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Algorithm Chain:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    ..._cascadeAlgorithms.asMap().entries.map((entry) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 24,
+                              height: 24,
+                              decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle),
+                              child: Center(
+                                child: Text('${entry.key + 1}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(entry.value),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ],
+            if (_cascadePreset == 'custom') ...[
+              const Text('Custom Algorithm Chain:', style: TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Theme.of(context).colorScheme.outline),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  children: [
+                    if (_cascadeAlgorithms.isEmpty)
+                      const Padding(padding: EdgeInsets.all(16.0), child: Text('No algorithms added. Add at least 2 algorithms.'))
+                    else
+                      ReorderableListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _cascadeAlgorithms.length,
+                        onReorder: (oldIndex, newIndex) async {
+                          setState(() {
+                            if (newIndex > oldIndex) { newIndex -= 1; }
+                            final item = _cascadeAlgorithms.removeAt(oldIndex);
+                            _cascadeAlgorithms.insert(newIndex, item);
+                          });
+                          final warnings = await CLIService.validateCascade(_cascadeAlgorithms);
+                          setState(() { _diversityWarnings = warnings; });
+                        },
+                        itemBuilder: (context, index) {
+                          final algorithm = _cascadeAlgorithms[index];
+                          return ListTile(
+                            key: ValueKey(algorithm + index.toString()),
+                            dense: true,
+                            leading: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 24,
+                                  height: 24,
+                                  decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle),
+                                  child: Center(child: Text('${index + 1}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold))),
+                                ),
+                                const SizedBox(width: 8),
+                                const Icon(Icons.drag_handle),
+                              ],
+                            ),
+                            title: Text(algorithm),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () async {
+                                setState(() { _cascadeAlgorithms.removeAt(index); });
+                                final warnings = await CLIService.validateCascade(_cascadeAlgorithms);
+                                setState(() { _diversityWarnings = warnings; });
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(onPressed: () => _showAddCascadeAlgorithmDialog(), icon: const Icon(Icons.add), label: const Text('Add Algorithm')),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            const Text('HKDF Hash Function:', style: TextStyle(fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: _cascadeHash,
+              decoration: const InputDecoration(border: OutlineInputBorder(), helperText: 'Hash function for key derivation between layers'),
+              items: const [
+                DropdownMenuItem(value: 'sha256', child: Text('SHA-256')),
+                DropdownMenuItem(value: 'sha384', child: Text('SHA-384')),
+                DropdownMenuItem(value: 'sha512', child: Text('SHA-512')),
+                DropdownMenuItem(value: 'blake2b', child: Text('BLAKE2b')),
+                DropdownMenuItem(value: 'blake2s', child: Text('BLAKE2s')),
+              ],
+              onChanged: (value) { setState(() { _cascadeHash = value ?? 'sha256'; }); },
+            ),
+            if (_diversityWarnings.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Text('Security Warnings:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              ..._diversityWarnings.map((warning) {
+                final level = warning['level'] as String;
+                final message = warning['message'] as String;
+                final suggestion = warning['suggestion'] as String;
+                final color = level == 'ERROR' ? Colors.red : Colors.orange;
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: color.shade50, border: Border.all(color: color), borderRadius: BorderRadius.circular(8)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.warning, color: color.shade700, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(message, style: TextStyle(fontWeight: FontWeight.bold, color: color.shade900))),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(suggestion, style: TextStyle(fontSize: 12, color: color.shade800)),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAddCascadeAlgorithmDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Algorithm'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Select an algorithm to add to the cascade chain:'),
+              const SizedBox(height: 16),
+              const Text('AES Family:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              ..._buildAlgorithmTiles(['aes-256-gcm', 'aes-gcm-siv', 'aes-siv', 'aes-ocb3']),
+              const SizedBox(height: 8),
+              const Text('ChaCha Family:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              ..._buildAlgorithmTiles(['chacha20-poly1305', 'xchacha20-poly1305']),
+              const SizedBox(height: 8),
+              const Text('Threefish Family:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              ..._buildAlgorithmTiles(['threefish-512', 'threefish-1024']),
+            ],
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel'))],
+      ),
+    );
+  }
+
+  List<Widget> _buildAlgorithmTiles(List<String> algorithms) {
+    return algorithms.map((algorithm) {
+      final isAlreadyAdded = _cascadeAlgorithms.contains(algorithm);
+      return ListTile(
+        dense: true,
+        title: Text(algorithm),
+        trailing: isAlreadyAdded ? const Icon(Icons.check, color: Colors.green) : null,
+        enabled: !isAlreadyAdded,
+        onTap: isAlreadyAdded ? null : () async {
+          setState(() { _cascadeAlgorithms.add(algorithm); });
+          Navigator.pop(context);
+          final warnings = await CLIService.validateCascade(_cascadeAlgorithms);
+          setState(() { _diversityWarnings = warnings; });
+        },
+      );
+    }).toList();
+  }
+
+  Widget _buildEncryptionModeSelector() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.security_outlined),
+                const SizedBox(width: 8),
+                const Text('Encryption Mode', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.info_outline),
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Encryption Mode Information'),
+                        content: const SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('Symmetric (Password-Based)', style: TextStyle(fontWeight: FontWeight.bold)),
+                              Text('Traditional encryption using a password. The same password is used for encryption and decryption.\n'),
+                              Text('Asymmetric (Identity-Based)', style: TextStyle(fontWeight: FontWeight.bold)),
+                              Text('Post-quantum secure encryption using ML-KEM and ML-DSA. Encrypt for specific identities without sharing passwords.\n'),
+                              Text('Cascade (Multi-Layer)', style: TextStyle(fontWeight: FontWeight.bold)),
+                              Text('Chain multiple encryption algorithms together for defense-in-depth. If one algorithm is broken, others remain secure.'),
+                            ],
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('OK'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  tooltip: 'Encryption Mode Information',
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Center(
+              child: SegmentedButton<EncryptionMode>(
+                segments: const [
+                  ButtonSegment(
+                    value: EncryptionMode.symmetric,
+                    label: Text('Symmetric'),
+                    icon: Icon(Icons.lock),
+                  ),
+                  ButtonSegment(
+                    value: EncryptionMode.asymmetric,
+                    label: Text('Asymmetric'),
+                    icon: Icon(Icons.vpn_key),
+                  ),
+                  ButtonSegment(
+                    value: EncryptionMode.cascade,
+                    label: Text('Cascade'),
+                    icon: Icon(Icons.layers),
+                  ),
+                ],
+                selected: {_encryptionMode},
+                onSelectionChanged: (Set<EncryptionMode> newSelection) {
+                  setState(() {
+                    _encryptionMode = newSelection.first;
+                  });
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -6543,6 +2851,25 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
 
           // Configuration Section
           if (_selectedFiles.isNotEmpty) ...[
+            // Encryption Mode Selector
+            _buildEncryptionModeSelector(),
+            const SizedBox(height: 16),
+
+            // Asymmetric mode section
+            if (_encryptionMode == EncryptionMode.asymmetric) ...[
+              if (_selectedOperation == 'encrypt')
+                _buildAsymmetricEncryptSection()
+              else if (_selectedOperation == 'decrypt')
+                _buildAsymmetricDecryptSection(),
+              const SizedBox(height: 16),
+            ],
+
+            // Cascade mode section
+            if (_encryptionMode == EncryptionMode.cascade) ...[
+              _buildCascadeSection(),
+              const SizedBox(height: 16),
+            ],
+
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -6562,13 +2889,43 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                     const SizedBox(height: 16),
 
                     // Operation Type
-                    Row(
+                    Column(
                       children: [
-                        Expanded(
-                          child: RadioListTile<String>(
-                            title: const Text('Encrypt Files'),
-                            subtitle: const Text('Encrypt all selected files'),
-                            value: 'encrypt',
+                        Row(
+                          children: [
+                            Expanded(
+                              child: RadioListTile<String>(
+                                title: const Text('Encrypt Files'),
+                                subtitle: const Text('Encrypt all selected files'),
+                                value: 'encrypt',
+                                groupValue: _selectedOperation,
+                                onChanged: _isLoading ? null : (value) {
+                                  setState(() {
+                                    _selectedOperation = value!;
+                                  });
+                                },
+                              ),
+                            ),
+                            Expanded(
+                              child: RadioListTile<String>(
+                                title: const Text('Decrypt Files'),
+                                subtitle: const Text('Decrypt all selected files'),
+                                value: 'decrypt',
+                                groupValue: _selectedOperation,
+                                onChanged: _isLoading ? null : (value) {
+                                  setState(() {
+                                    _selectedOperation = value!;
+                                  });
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (SettingsService.getIntegrityEnabled())
+                          RadioListTile<String>(
+                            title: const Text('Verify Integrity'),
+                            subtitle: const Text('Verify file integrity against server'),
+                            value: 'verify-integrity',
                             groupValue: _selectedOperation,
                             onChanged: _isLoading ? null : (value) {
                               setState(() {
@@ -6576,27 +2933,13 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                               });
                             },
                           ),
-                        ),
-                        Expanded(
-                          child: RadioListTile<String>(
-                            title: const Text('Decrypt Files'),
-                            subtitle: const Text('Decrypt all selected files'),
-                            value: 'decrypt',
-                            groupValue: _selectedOperation,
-                            onChanged: _isLoading ? null : (value) {
-                              setState(() {
-                                _selectedOperation = value!;
-                              });
-                            },
-                          ),
-                        ),
                       ],
                     ),
 
                     const SizedBox(height: 16),
 
-                    // Algorithm Selection (only for encryption)
-                    if (_selectedOperation == 'encrypt') ...[
+                    // Algorithm Selection (only for encryption in symmetric mode)
+                    if (_selectedOperation == 'encrypt' && _encryptionMode == EncryptionMode.symmetric) ...[
                       Row(
                         children: [
                           const SizedBox(width: 100, child: Text('Algorithm:')),
@@ -6765,6 +3108,73 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                         ],
                       ],
                     ),
+
+                    // Integrity verification section (for encrypt/decrypt operations)
+                    if (SettingsService.getIntegrityEnabled() && _selectedOperation != 'verify-integrity') ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.teal.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.teal.withValues(alpha: 0.3)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.verified, size: 18, color: Colors.teal),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Integrity Verification',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            if (_selectedOperation == 'encrypt')
+                              CheckboxListTile(
+                                value: _enableIntegrity,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _enableIntegrity = value ?? false;
+                                  });
+                                },
+                                title: const Text(
+                                  'Register hash with integrity server',
+                                  style: TextStyle(fontSize: 13),
+                                ),
+                                subtitle: const Text(
+                                  'Upload encrypted file hashes to integrity server',
+                                  style: TextStyle(fontSize: 11),
+                                ),
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                              )
+                            else if (_selectedOperation == 'decrypt')
+                              CheckboxListTile(
+                                value: _verifyIntegrity,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _verifyIntegrity = value ?? false;
+                                  });
+                                },
+                                title: const Text(
+                                  'Verify integrity before decryption',
+                                  style: TextStyle(fontSize: 13),
+                                ),
+                                subtitle: const Text(
+                                  'Check if file hashes match registered hashes',
+                                  style: TextStyle(fontSize: 11),
+                                ),
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -6780,12 +3190,20 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                 onPressed: _canStartOperation() ? _startBatchOperation : null,
                 icon: _isLoading
                     ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                    : Icon(_selectedOperation == 'encrypt' ? Icons.lock : Icons.lock_open),
+                    : Icon(_selectedOperation == 'encrypt'
+                        ? Icons.lock
+                        : _selectedOperation == 'decrypt'
+                          ? Icons.lock_open
+                          : Icons.verified),
                 label: _isLoading
-                    ? Text('${_selectedOperation == 'encrypt' ? 'Encrypting' : 'Decrypting'} (${_currentFileIndex + 1}/${_selectedFiles.length})')
-                    : Text('${_selectedOperation == 'encrypt' ? 'Encrypt' : 'Decrypt'} ${_selectedFiles.length} file(s)'),
+                    ? Text('${_selectedOperation == 'encrypt' ? 'Encrypting' : _selectedOperation == 'decrypt' ? 'Decrypting' : 'Verifying'} (${_currentFileIndex + 1}/${_selectedFiles.length})')
+                    : Text('${_selectedOperation == 'encrypt' ? 'Encrypt' : _selectedOperation == 'decrypt' ? 'Decrypt' : 'Verify Integrity of'} ${_selectedFiles.length} file(s)'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _selectedOperation == 'encrypt' ? Colors.green : Colors.blue,
+                  backgroundColor: _selectedOperation == 'encrypt'
+                      ? Colors.green
+                      : _selectedOperation == 'decrypt'
+                        ? Colors.blue
+                        : Colors.teal,
                   foregroundColor: Colors.white,
                 ),
               ),
@@ -6995,7 +3413,17 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
   }
 
   bool _canStartOperation() {
-    if (_selectedFiles.isEmpty || _isLoading || _password.isEmpty) {
+    if (_selectedFiles.isEmpty || _isLoading) {
+      return false;
+    }
+
+    // Verify integrity doesn't need a password
+    if (_selectedOperation == 'verify-integrity') {
+      return true;
+    }
+
+    // Encrypt and decrypt operations need a password
+    if (_password.isEmpty) {
       return false;
     }
 
@@ -7062,15 +3490,46 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
           );
         }
 
-        // Encrypt using CLI service
-        final encrypted = await CLIService.encryptTextWithProgress(
-          content,
-          _password,
-          _selectedAlgorithm,
-          null,
-          null,
-          encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
-        );
+        // Encrypt based on encryption mode
+        String encrypted;
+        if (_encryptionMode == EncryptionMode.asymmetric) {
+          // Asymmetric encryption mode
+          encrypted = await CLIService.encryptTextWithProgress(
+            content,
+            _password,
+            'aes-256-gcm',
+            null,
+            null,
+            forIdentities: _selectedRecipients,
+            signWith: _signingIdentity,
+            useKeyserver: _useKeyserver,
+            enableIntegrity: _enableIntegrity,
+          );
+        } else if (_encryptionMode == EncryptionMode.cascade) {
+          // Cascade encryption mode
+          encrypted = await CLIService.encryptTextWithProgress(
+            content,
+            _password,
+            'aes-256-gcm',
+            null,
+            null,
+            cascadePreset: _cascadePreset != 'custom' ? _cascadePreset : null,
+            cascadeAlgorithms: _cascadePreset == 'custom' ? _cascadeAlgorithms : null,
+            cascadeHash: _cascadeHash,
+            enableIntegrity: _enableIntegrity,
+          );
+        } else {
+          // Symmetric encryption mode (default)
+          encrypted = await CLIService.encryptTextWithProgress(
+            content,
+            _password,
+            _selectedAlgorithm,
+            null,
+            null,
+            encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
+            enableIntegrity: _enableIntegrity,
+          );
+        }
 
         // Save encrypted file
         final outputPath = widget.fileManager.getEncryptedFileName(file.path);
@@ -7089,7 +3548,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
             errorMessage: 'Could not write encrypted file',
           );
         }
-      } else {
+      } else if (_selectedOperation == 'decrypt') {
         // Decrypt operation
         final content = await widget.fileManager.readFileText(file.path);
         if (content == null) {
@@ -7100,8 +3559,26 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
           );
         }
 
-        // Decrypt using CLI service
-        final decrypted = await CLIService.decryptText(content, _password);
+        // Decrypt based on encryption mode
+        String decrypted;
+        if (_encryptionMode == EncryptionMode.asymmetric) {
+          // Asymmetric decryption mode
+          decrypted = await CLIService.decryptTextWithProgress(
+            content,
+            _password,
+            withKey: _decryptionIdentity,
+            verifyFrom: _verifyFrom,
+            skipVerification: _skipVerification,
+            verifyIntegrity: _verifyIntegrity,
+          );
+        } else {
+          // Symmetric/Cascade decryption mode (cascade is auto-detected from metadata)
+          decrypted = await CLIService.decryptTextWithProgress(
+            content,
+            _password,
+            verifyIntegrity: _verifyIntegrity,
+          );
+        }
 
         // Save decrypted file
         final outputPath = widget.fileManager.getDecryptedFileName(file.path);
@@ -7120,6 +3597,65 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
             errorMessage: 'Could not write decrypted file',
           );
         }
+      } else if (_selectedOperation == 'verify-integrity') {
+        // Verify integrity operation
+        final content = await widget.fileManager.readFileText(file.path);
+        if (content == null) {
+          return BatchOperationResult(
+            fileName: file.name,
+            success: false,
+            errorMessage: 'Could not read file content',
+          );
+        }
+
+        // Parse the encrypted file to get metadata
+        // The file format is typically: metadata:encrypted_data
+        // We need to extract file ID and hash for verification
+        try {
+          // Try to decode as JSON first (newer format)
+          final Map<String, dynamic> data = jsonDecode(content);
+          final String? fileId = data['file_id'];
+          final String? metadataHash = data['metadata_hash'];
+
+          if (fileId != null && metadataHash != null) {
+            final verified = await CLIService.verifyFileIntegrity(
+              fileId: fileId,
+              metadataHash: metadataHash,
+            );
+
+            if (verified) {
+              return BatchOperationResult(
+                fileName: file.name,
+                success: true,
+                outputPath: 'Integrity verified ✓',
+              );
+            } else {
+              return BatchOperationResult(
+                fileName: file.name,
+                success: false,
+                errorMessage: 'Integrity verification failed - hash mismatch',
+              );
+            }
+          } else {
+            return BatchOperationResult(
+              fileName: file.name,
+              success: false,
+              errorMessage: 'File not registered with integrity server',
+            );
+          }
+        } catch (e) {
+          return BatchOperationResult(
+            fileName: file.name,
+            success: false,
+            errorMessage: 'Invalid encrypted file format or not registered: $e',
+          );
+        }
+      } else {
+        return BatchOperationResult(
+          fileName: file.name,
+          success: false,
+          errorMessage: 'Unknown operation: $_selectedOperation',
+        );
       }
     } catch (e) {
       return BatchOperationResult(

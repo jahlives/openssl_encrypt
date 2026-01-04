@@ -129,6 +129,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
                 const SizedBox(height: 16),
+                if (_matchesSearch('encryption mode defaults cascade asymmetric identity'))
+                  _buildCategoryCard(
+                    'Encryption Mode Defaults',
+                    Icons.layers,
+                    Colors.purple,
+                    [
+                      _buildDefaultEncryptionModeSelector(),
+                      _buildDefaultCascadePresetSelector(),
+                      _buildDefaultKemAlgorithmSelector(),
+                      _buildDefaultSigAlgorithmSelector(),
+                    ],
+                  ),
+                const SizedBox(height: 16),
                 if (_matchesSearch('application behavior interface'))
                   _buildCategoryCard(
                     'Application Behavior',
@@ -203,6 +216,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         SettingsService.getWindowMaximized(),
                         SettingsService.setWindowMaximized,
                       ),
+                    ],
+                  ),
+                const SizedBox(height: 16),
+                if (_matchesSearch('network plugins keyserver pepper integrity'))
+                  _buildCategoryCard(
+                    'Network Plugins',
+                    Icons.cloud,
+                    Colors.teal,
+                    [
+                      _buildKeyserverSection(),
+                      const Divider(height: 32),
+                      _buildPepperSection(),
+                      const Divider(height: 32),
+                      _buildIntegritySection(),
                     ],
                   ),
                 const SizedBox(height: 16),
@@ -545,6 +572,193 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildDefaultEncryptionModeSelector() {
+    final currentMode = SettingsService.getDefaultEncryptionMode();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Default Encryption Mode',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  'Default mode when opening crypto tabs',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          DropdownButton<String>(
+            value: currentMode,
+            items: const [
+              DropdownMenuItem(value: 'symmetric', child: Text('Symmetric')),
+              DropdownMenuItem(value: 'asymmetric', child: Text('Asymmetric')),
+              DropdownMenuItem(value: 'cascade', child: Text('Cascade')),
+            ],
+            onChanged: (value) async {
+              if (value != null) {
+                await SettingsService.setDefaultEncryptionMode(value);
+                setState(() {});
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDefaultCascadePresetSelector() {
+    final currentPreset = SettingsService.getDefaultCascadePreset();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Default Cascade Preset',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  'Default algorithm chain for cascade mode',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          DropdownButton<String>(
+            value: currentPreset,
+            items: const [
+              DropdownMenuItem(value: 'standard', child: Text('Standard (AES+ChaCha)')),
+              DropdownMenuItem(value: 'paranoia', child: Text('Paranoia (AES+ChaCha+Threefish)')),
+            ],
+            onChanged: (value) async {
+              if (value != null) {
+                await SettingsService.setDefaultCascadePreset(value);
+                setState(() {});
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDefaultKemAlgorithmSelector() {
+    final currentAlgorithm = SettingsService.getDefaultKemAlgorithm();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Default KEM Algorithm',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  'Default key encapsulation for new identities',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          DropdownButton<String>(
+            value: currentAlgorithm,
+            items: const [
+              DropdownMenuItem(value: 'ML-KEM-512', child: Text('ML-KEM-512')),
+              DropdownMenuItem(value: 'ML-KEM-768', child: Text('ML-KEM-768')),
+              DropdownMenuItem(value: 'ML-KEM-1024', child: Text('ML-KEM-1024')),
+            ],
+            onChanged: (value) async {
+              if (value != null) {
+                await SettingsService.setDefaultKemAlgorithm(value);
+                setState(() {});
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDefaultSigAlgorithmSelector() {
+    final currentAlgorithm = SettingsService.getDefaultSigAlgorithm();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Default Signature Algorithm',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  'Default digital signature for new identities',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          DropdownButton<String>(
+            value: currentAlgorithm,
+            items: const [
+              DropdownMenuItem(value: 'ML-DSA-44', child: Text('ML-DSA-44')),
+              DropdownMenuItem(value: 'ML-DSA-65', child: Text('ML-DSA-65')),
+              DropdownMenuItem(value: 'ML-DSA-87', child: Text('ML-DSA-87')),
+            ],
+            onChanged: (value) async {
+              if (value != null) {
+                await SettingsService.setDefaultSigAlgorithm(value);
+                setState(() {});
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMaxRecentFilesSelector() {
     final currentMax = SettingsService.getMaxRecentFiles();
 
@@ -869,6 +1083,982 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildKeyserverSection() {
+    return StatefulBuilder(
+      builder: (context, setState) {
+        final keyserverEnabled = SettingsService.getKeyserverEnabled();
+        final keyserverUrl = SettingsService.getKeyserverUrl();
+        final cacheTtl = SettingsService.getKeyserverCacheTtl();
+        final uploadEnabled = SettingsService.getKeyserverUploadEnabled();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Keyserver header with enable toggle
+            Row(
+              children: [
+                const Icon(Icons.vpn_key, size: 20),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Keyserver Plugin',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      Text(
+                        'Distributed public key discovery and sharing',
+                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: keyserverEnabled,
+                  onChanged: (value) async {
+                    await SettingsService.setKeyserverEnabled(value);
+                    setState(() {});
+                    widget.onSettingChanged?.call('keyserver_enabled', value);
+                  },
+                ),
+              ],
+            ),
+
+            if (keyserverEnabled) ...[
+              const Divider(),
+              const SizedBox(height: 8),
+
+              // Server URL
+              ListTile(
+                leading: const Icon(Icons.link, size: 20),
+                title: const Text('Server URL', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                subtitle: TextFormField(
+                  initialValue: keyserverUrl,
+                  style: const TextStyle(fontSize: 12),
+                  decoration: InputDecoration(
+                    hintText: 'https://keys.openssl-encrypt.org',
+                    border: const OutlineInputBorder(),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    suffixIcon: keyserverUrl != 'https://keys.openssl-encrypt.org'
+                        ? IconButton(
+                            icon: const Icon(Icons.restore, size: 16),
+                            onPressed: () async {
+                              await SettingsService.setKeyserverUrl('https://keys.openssl-encrypt.org');
+                              setState(() {});
+                              widget.onSettingChanged?.call('keyserver_url', 'https://keys.openssl-encrypt.org');
+                            },
+                            tooltip: 'Reset to default',
+                          )
+                        : null,
+                  ),
+                  onFieldSubmitted: (value) async {
+                    if (value.isNotEmpty && value.startsWith('http')) {
+                      await SettingsService.setKeyserverUrl(value);
+                      widget.onSettingChanged?.call('keyserver_url', value);
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Cache TTL
+              ListTile(
+                leading: const Icon(Icons.schedule, size: 20),
+                title: const Text('Cache TTL', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                subtitle: DropdownButtonFormField<int>(
+                  value: cacheTtl,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  ),
+                  style: const TextStyle(fontSize: 12, color: Colors.black87),
+                  items: const [
+                    DropdownMenuItem(value: 1, child: Text('1 hour')),
+                    DropdownMenuItem(value: 6, child: Text('6 hours')),
+                    DropdownMenuItem(value: 24, child: Text('24 hours (default)')),
+                    DropdownMenuItem(value: 48, child: Text('48 hours')),
+                    DropdownMenuItem(value: 168, child: Text('7 days (168 hours)')),
+                  ],
+                  onChanged: (value) async {
+                    if (value != null) {
+                      await SettingsService.setKeyserverCacheTtl(value);
+                      setState(() {});
+                      widget.onSettingChanged?.call('keyserver_cache_ttl', value);
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Upload enabled
+              SwitchListTile(
+                secondary: const Icon(Icons.upload, size: 20),
+                title: const Text('Enable Key Upload', style: TextStyle(fontSize: 13)),
+                subtitle: const Text('Allow uploading public keys to keyserver', style: TextStyle(fontSize: 11)),
+                value: uploadEnabled,
+                onChanged: (value) async {
+                  await SettingsService.setKeyserverUploadEnabled(value);
+                  setState(() {});
+                  widget.onSettingChanged?.call('keyserver_upload_enabled', value);
+                },
+              ),
+              const SizedBox(height: 8),
+
+              // Action buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        final success = await CLIService.testKeyserverConnection(keyserverUrl);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(success
+                                ? 'Connection successful!'
+                                : 'Connection failed. Check URL and network.'),
+                              backgroundColor: success ? Colors.green : Colors.red,
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.wifi_tethering, size: 16),
+                      label: const Text('Test', style: TextStyle(fontSize: 12)),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        final success = await CLIService.clearKeyserverCache();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(success
+                                ? 'Cache cleared successfully!'
+                                : 'Failed to clear cache.'),
+                              backgroundColor: success ? Colors.orange : Colors.red,
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.clear_all, size: 16),
+                      label: const Text('Clear Cache', style: TextStyle(fontSize: 12)),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildPepperSection() {
+    return StatefulBuilder(
+      builder: (context, setState) {
+        final pepperEnabled = SettingsService.getPepperEnabled();
+        final pepperUrl = SettingsService.getPepperServerUrl();
+        final certMode = SettingsService.getPepperCertMode();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Pepper header with enable toggle
+            Row(
+              children: [
+                const Icon(Icons.key, size: 20),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Remote Pepper Plugin',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      Text(
+                        'Network-based pepper with mTLS and 2FA',
+                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: pepperEnabled,
+                  onChanged: (value) async {
+                    await SettingsService.setPepperEnabled(value);
+                    setState(() {});
+                    widget.onSettingChanged?.call('pepper_enabled', value);
+                  },
+                ),
+              ],
+            ),
+
+            if (pepperEnabled) ...[
+              const SizedBox(height: 8),
+              // Security warning
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning, size: 16, color: Colors.orange.shade700),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Warning: Remote pepper requires secure mTLS authentication. Keep certificates safe.',
+                        style: TextStyle(fontSize: 11),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(),
+              const SizedBox(height: 8),
+
+              // Server URL
+              ListTile(
+                leading: const Icon(Icons.link, size: 20),
+                title: const Text('Server URL', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                subtitle: TextFormField(
+                  initialValue: pepperUrl,
+                  style: const TextStyle(fontSize: 12),
+                  decoration: InputDecoration(
+                    hintText: 'https://pepper.openssl-encrypt.org',
+                    border: const OutlineInputBorder(),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    suffixIcon: pepperUrl != 'https://pepper.openssl-encrypt.org'
+                        ? IconButton(
+                            icon: const Icon(Icons.restore, size: 16),
+                            onPressed: () async {
+                              await SettingsService.setPepperServerUrl('https://pepper.openssl-encrypt.org');
+                              setState(() {});
+                              widget.onSettingChanged?.call('pepper_server_url', 'https://pepper.openssl-encrypt.org');
+                            },
+                            tooltip: 'Reset to default',
+                          )
+                        : null,
+                  ),
+                  onFieldSubmitted: (value) async {
+                    if (value.isNotEmpty && value.startsWith('http')) {
+                      await SettingsService.setPepperServerUrl(value);
+                      widget.onSettingChanged?.call('pepper_server_url', value);
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Certificate mode selector
+              ListTile(
+                leading: const Icon(Icons.security, size: 20),
+                title: const Text('Certificate Mode', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                subtitle: SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(
+                      value: 'file',
+                      label: Text('File Paths', style: TextStyle(fontSize: 11)),
+                      icon: Icon(Icons.folder, size: 16),
+                    ),
+                    ButtonSegment(
+                      value: 'pem',
+                      label: Text('Paste PEM', style: TextStyle(fontSize: 11)),
+                      icon: Icon(Icons.content_paste, size: 16),
+                    ),
+                  ],
+                  selected: {certMode},
+                  onSelectionChanged: (Set<String> newSelection) async {
+                    await SettingsService.setPepperCertMode(newSelection.first);
+                    setState(() {});
+                    widget.onSettingChanged?.call('pepper_cert_mode', newSelection.first);
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Certificate configuration based on mode
+              if (certMode == 'file')
+                _buildCertificateFilePaths(setState)
+              else
+                _buildCertificatePemInputs(setState),
+
+              const SizedBox(height: 8),
+
+              // Action buttons
+              _buildPepperActionButtons(pepperUrl, certMode, setState),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildCertificateFilePaths(StateSetter setState) {
+    final clientCertPath = SettingsService.getPepperClientCertPath();
+    final clientKeyPath = SettingsService.getPepperClientKeyPath();
+    final caCertPath = SettingsService.getPepperCaCertPath();
+
+    return Column(
+      children: [
+        // Client Certificate
+        ListTile(
+          leading: const Icon(Icons.badge, size: 20),
+          title: const Text('Client Certificate', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: Text(
+            clientCertPath ?? 'Not set',
+            style: const TextStyle(fontSize: 11),
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.folder_open, size: 18),
+                onPressed: () async {
+                  final result = await FilePicker.platform.pickFiles(
+                    type: FileType.custom,
+                    allowedExtensions: ['pem', 'crt', 'cert'],
+                  );
+                  if (result != null && result.files.single.path != null) {
+                    await SettingsService.setPepperClientCertPath(result.files.single.path);
+                    setState(() {});
+                  }
+                },
+                tooltip: 'Select file',
+              ),
+              if (clientCertPath != null)
+                IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () async {
+                    await SettingsService.setPepperClientCertPath(null);
+                    setState(() {});
+                  },
+                  tooltip: 'Clear',
+                ),
+            ],
+          ),
+        ),
+
+        // Client Key
+        ListTile(
+          leading: const Icon(Icons.vpn_key, size: 20),
+          title: const Text('Client Key', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: Text(
+            clientKeyPath ?? 'Not set',
+            style: const TextStyle(fontSize: 11),
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.folder_open, size: 18),
+                onPressed: () async {
+                  final result = await FilePicker.platform.pickFiles(
+                    type: FileType.custom,
+                    allowedExtensions: ['pem', 'key'],
+                  );
+                  if (result != null && result.files.single.path != null) {
+                    await SettingsService.setPepperClientKeyPath(result.files.single.path);
+                    setState(() {});
+                  }
+                },
+                tooltip: 'Select file',
+              ),
+              if (clientKeyPath != null)
+                IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () async {
+                    await SettingsService.setPepperClientKeyPath(null);
+                    setState(() {});
+                  },
+                  tooltip: 'Clear',
+                ),
+            ],
+          ),
+        ),
+
+        // CA Certificate
+        ListTile(
+          leading: const Icon(Icons.verified_user, size: 20),
+          title: const Text('CA Certificate', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: Text(
+            caCertPath ?? 'Not set',
+            style: const TextStyle(fontSize: 11),
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.folder_open, size: 18),
+                onPressed: () async {
+                  final result = await FilePicker.platform.pickFiles(
+                    type: FileType.custom,
+                    allowedExtensions: ['pem', 'crt', 'cert'],
+                  );
+                  if (result != null && result.files.single.path != null) {
+                    await SettingsService.setPepperCaCertPath(result.files.single.path);
+                    setState(() {});
+                  }
+                },
+                tooltip: 'Select file',
+              ),
+              if (caCertPath != null)
+                IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () async {
+                    await SettingsService.setPepperCaCertPath(null);
+                    setState(() {});
+                  },
+                  tooltip: 'Clear',
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCertificatePemInputs(StateSetter setState) {
+    return Column(
+      children: [
+        // Client Cert + Key PEM
+        ListTile(
+          leading: const Icon(Icons.badge, size: 20),
+          title: const Text('Client Certificate + Key (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: const Text('Paste combined certificate and private key', style: TextStyle(fontSize: 10)),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: TextFormField(
+            initialValue: SettingsService.getPepperClientCertPem(),
+            maxLines: 4,
+            style: const TextStyle(fontSize: 10, fontFamily: 'monospace'),
+            decoration: const InputDecoration(
+              hintText: '-----BEGIN CERTIFICATE-----\n...\n-----END PRIVATE KEY-----',
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.all(8),
+            ),
+            onChanged: (value) async {
+              await SettingsService.setPepperClientCertPem(value.isEmpty ? null : value);
+            },
+          ),
+        ),
+        const SizedBox(height: 8),
+
+        // CA Certificate PEM
+        ListTile(
+          leading: const Icon(Icons.verified_user, size: 20),
+          title: const Text('CA Certificate (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: const Text('Paste CA certificate', style: TextStyle(fontSize: 10)),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: TextFormField(
+            initialValue: SettingsService.getPepperCaCertPem(),
+            maxLines: 4,
+            style: const TextStyle(fontSize: 10, fontFamily: 'monospace'),
+            decoration: const InputDecoration(
+              hintText: '-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----',
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.all(8),
+            ),
+            onChanged: (value) async {
+              await SettingsService.setPepperCaCertPem(value.isEmpty ? null : value);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPepperActionButtons(String pepperUrl, String certMode, StateSetter setState) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  final result = await CLIService.testPepperConnection(
+                    url: pepperUrl,
+                    clientCertPath: certMode == 'file' ? SettingsService.getPepperClientCertPath() : null,
+                    clientKeyPath: certMode == 'file' ? SettingsService.getPepperClientKeyPath() : null,
+                    caCertPath: certMode == 'file' ? SettingsService.getPepperCaCertPath() : null,
+                  );
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(result['success']
+                          ? 'mTLS connection successful!'
+                          : 'Connection failed: ${result['message']}'),
+                        backgroundColor: result['success'] ? Colors.green : Colors.red,
+                      ),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.wifi_tethering, size: 16),
+                label: const Text('Test mTLS', style: TextStyle(fontSize: 12)),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  final peppers = await CLIService.listPeppers();
+                  if (context.mounted) {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Stored Peppers'),
+                        content: peppers.isEmpty
+                          ? const Text('No peppers stored yet.')
+                          : SizedBox(
+                              width: double.maxFinite,
+                              child: ListView.builder(
+                                shrinkWrap: true,
+                                itemCount: peppers.length,
+                                itemBuilder: (context, i) => ListTile(
+                                  leading: const Icon(Icons.fiber_manual_record, size: 12),
+                                  title: Text(peppers[i]['id'] ?? 'Unknown', style: const TextStyle(fontSize: 12)),
+                                  subtitle: Text('Created: ${peppers[i]['created_at'] ?? 'N/A'}', style: const TextStyle(fontSize: 10)),
+                                ),
+                              ),
+                            ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Close'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.list, size: 16),
+                label: const Text('List Peppers', style: TextStyle(fontSize: 12)),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ElevatedButton.icon(
+          onPressed: () {
+            // TODO: Implement TOTP setup dialog
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('TOTP setup coming soon')),
+            );
+          },
+          icon: const Icon(Icons.qr_code, size: 16),
+          label: const Text('Setup 2FA (TOTP)', style: TextStyle(fontSize: 12)),
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildIntegritySection() {
+    return StatefulBuilder(
+      builder: (context, setState) {
+        final integrityEnabled = SettingsService.getIntegrityEnabled();
+        final integrityUrl = SettingsService.getIntegrityServerUrl();
+        final certMode = SettingsService.getIntegrityCertMode();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Integrity header with enable toggle
+            Row(
+              children: [
+                const Icon(Icons.verified, size: 20),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Integrity Verification Plugin',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      Text(
+                        'Distributed hash verification and audit trail',
+                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: integrityEnabled,
+                  onChanged: (value) async {
+                    await SettingsService.setIntegrityEnabled(value);
+                    setState(() {});
+                    widget.onSettingChanged?.call('integrity_enabled', value);
+                  },
+                ),
+              ],
+            ),
+
+            if (integrityEnabled) ...[
+              const Divider(),
+              const SizedBox(height: 8),
+
+              // Server URL
+              ListTile(
+                leading: const Icon(Icons.link, size: 20),
+                title: const Text('Server URL', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                subtitle: TextFormField(
+                  initialValue: integrityUrl,
+                  style: const TextStyle(fontSize: 12),
+                  decoration: InputDecoration(
+                    hintText: 'https://integrity.openssl-encrypt.org',
+                    border: const OutlineInputBorder(),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    suffixIcon: integrityUrl != 'https://integrity.openssl-encrypt.org'
+                        ? IconButton(
+                            icon: const Icon(Icons.restore, size: 16),
+                            onPressed: () async {
+                              await SettingsService.setIntegrityServerUrl('https://integrity.openssl-encrypt.org');
+                              setState(() {});
+                              widget.onSettingChanged?.call('integrity_server_url', 'https://integrity.openssl-encrypt.org');
+                            },
+                            tooltip: 'Reset to default',
+                          )
+                        : null,
+                  ),
+                  onFieldSubmitted: (value) async {
+                    if (value.isNotEmpty && value.startsWith('http')) {
+                      await SettingsService.setIntegrityServerUrl(value);
+                      widget.onSettingChanged?.call('integrity_server_url', value);
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Certificate mode selector
+              ListTile(
+                leading: const Icon(Icons.security, size: 20),
+                title: const Text('Certificate Mode', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                subtitle: SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(
+                      value: 'file',
+                      label: Text('File Paths', style: TextStyle(fontSize: 11)),
+                      icon: Icon(Icons.folder, size: 16),
+                    ),
+                    ButtonSegment(
+                      value: 'pem',
+                      label: Text('Paste PEM', style: TextStyle(fontSize: 11)),
+                      icon: Icon(Icons.content_paste, size: 16),
+                    ),
+                  ],
+                  selected: {certMode},
+                  onSelectionChanged: (Set<String> newSelection) async {
+                    await SettingsService.setIntegrityCertMode(newSelection.first);
+                    setState(() {});
+                    widget.onSettingChanged?.call('integrity_cert_mode', newSelection.first);
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Certificate configuration based on mode
+              if (certMode == 'file')
+                _buildIntegrityCertificateFilePaths(setState)
+              else
+                _buildIntegrityCertificatePemInputs(setState),
+
+              const SizedBox(height: 8),
+
+              // Action buttons
+              _buildIntegrityActionButtons(integrityUrl, certMode, setState),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildIntegrityCertificateFilePaths(StateSetter setState) {
+    final clientCertPath = SettingsService.getIntegrityClientCertPath();
+    final clientKeyPath = SettingsService.getIntegrityClientKeyPath();
+    final caCertPath = SettingsService.getIntegrityCaCertPath();
+
+    return Column(
+      children: [
+        // Client Certificate
+        ListTile(
+          leading: const Icon(Icons.badge, size: 20),
+          title: const Text('Client Certificate', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: Text(
+            clientCertPath ?? 'Not set',
+            style: const TextStyle(fontSize: 11),
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.folder_open, size: 18),
+                onPressed: () async {
+                  final result = await FilePicker.platform.pickFiles(
+                    type: FileType.custom,
+                    allowedExtensions: ['pem', 'crt', 'cert'],
+                  );
+                  if (result != null && result.files.single.path != null) {
+                    await SettingsService.setIntegrityClientCertPath(result.files.single.path);
+                    setState(() {});
+                  }
+                },
+                tooltip: 'Select file',
+              ),
+              if (clientCertPath != null)
+                IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () async {
+                    await SettingsService.setIntegrityClientCertPath(null);
+                    setState(() {});
+                  },
+                  tooltip: 'Clear',
+                ),
+            ],
+          ),
+        ),
+
+        // Client Key
+        ListTile(
+          leading: const Icon(Icons.vpn_key, size: 20),
+          title: const Text('Client Key', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: Text(
+            clientKeyPath ?? 'Not set',
+            style: const TextStyle(fontSize: 11),
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.folder_open, size: 18),
+                onPressed: () async {
+                  final result = await FilePicker.platform.pickFiles(
+                    type: FileType.custom,
+                    allowedExtensions: ['pem', 'key'],
+                  );
+                  if (result != null && result.files.single.path != null) {
+                    await SettingsService.setIntegrityClientKeyPath(result.files.single.path);
+                    setState(() {});
+                  }
+                },
+                tooltip: 'Select file',
+              ),
+              if (clientKeyPath != null)
+                IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () async {
+                    await SettingsService.setIntegrityClientKeyPath(null);
+                    setState(() {});
+                  },
+                  tooltip: 'Clear',
+                ),
+            ],
+          ),
+        ),
+
+        // CA Certificate
+        ListTile(
+          leading: const Icon(Icons.verified_user, size: 20),
+          title: const Text('CA Certificate', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: Text(
+            caCertPath ?? 'Not set',
+            style: const TextStyle(fontSize: 11),
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.folder_open, size: 18),
+                onPressed: () async {
+                  final result = await FilePicker.platform.pickFiles(
+                    type: FileType.custom,
+                    allowedExtensions: ['pem', 'crt', 'cert'],
+                  );
+                  if (result != null && result.files.single.path != null) {
+                    await SettingsService.setIntegrityCaCertPath(result.files.single.path);
+                    setState(() {});
+                  }
+                },
+                tooltip: 'Select file',
+              ),
+              if (caCertPath != null)
+                IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () async {
+                    await SettingsService.setIntegrityCaCertPath(null);
+                    setState(() {});
+                  },
+                  tooltip: 'Clear',
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildIntegrityCertificatePemInputs(StateSetter setState) {
+    return Column(
+      children: [
+        // Client Cert + Key PEM
+        ListTile(
+          leading: const Icon(Icons.badge, size: 20),
+          title: const Text('Client Certificate + Key (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: const Text('Paste combined certificate and private key', style: TextStyle(fontSize: 10)),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: TextFormField(
+            initialValue: SettingsService.getIntegrityClientCertPem(),
+            maxLines: 4,
+            style: const TextStyle(fontSize: 10, fontFamily: 'monospace'),
+            decoration: const InputDecoration(
+              hintText: '-----BEGIN CERTIFICATE-----\n...\n-----END PRIVATE KEY-----',
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.all(8),
+            ),
+            onChanged: (value) async {
+              await SettingsService.setIntegrityClientCertPem(value.isEmpty ? null : value);
+            },
+          ),
+        ),
+        const SizedBox(height: 8),
+
+        // CA Certificate PEM
+        ListTile(
+          leading: const Icon(Icons.verified_user, size: 20),
+          title: const Text('CA Certificate (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: const Text('Paste CA certificate', style: TextStyle(fontSize: 10)),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: TextFormField(
+            initialValue: SettingsService.getIntegrityCaCertPem(),
+            maxLines: 4,
+            style: const TextStyle(fontSize: 10, fontFamily: 'monospace'),
+            decoration: const InputDecoration(
+              hintText: '-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----',
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.all(8),
+            ),
+            onChanged: (value) async {
+              await SettingsService.setIntegrityCaCertPem(value.isEmpty ? null : value);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildIntegrityActionButtons(String integrityUrl, String certMode, StateSetter setState) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  final result = await CLIService.testIntegrityConnection(
+                    url: integrityUrl,
+                    clientCertPath: certMode == 'file' ? SettingsService.getIntegrityClientCertPath() : null,
+                    clientKeyPath: certMode == 'file' ? SettingsService.getIntegrityClientKeyPath() : null,
+                    caCertPath: certMode == 'file' ? SettingsService.getIntegrityCaCertPath() : null,
+                  );
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(result['success']
+                          ? 'mTLS connection successful!'
+                          : 'Connection failed: ${result['message']}'),
+                        backgroundColor: result['success'] ? Colors.green : Colors.red,
+                      ),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.wifi_tethering, size: 16),
+                label: const Text('Test Connection', style: TextStyle(fontSize: 12)),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  final stats = await CLIService.getIntegrityStats();
+                  if (context.mounted) {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Verification Statistics'),
+                        content: stats['success']
+                          ? Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Total Verifications: ${stats['total_verifications']}', style: const TextStyle(fontSize: 13)),
+                                Text('Successful: ${stats['successful_verifications']}', style: const TextStyle(fontSize: 13, color: Colors.green)),
+                                Text('Failed: ${stats['failed_verifications']}', style: const TextStyle(fontSize: 13, color: Colors.red)),
+                                if (stats['last_verification'] != null)
+                                  Text('Last: ${stats['last_verification']}', style: const TextStyle(fontSize: 11)),
+                              ],
+                            )
+                          : Text('Failed to retrieve stats: ${stats['message']}'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Close'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.bar_chart, size: 16),
+                label: const Text('View Stats', style: TextStyle(fontSize: 12)),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
