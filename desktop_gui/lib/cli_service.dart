@@ -185,7 +185,15 @@ class CLIService {
     String algorithm,
     Map<String, Map<String, dynamic>>? hashConfig,
     Map<String, Map<String, dynamic>>? kdfConfig,
-    {String? encryptData, String? hsmPlugin, int? hsmSlot, bool enableIntegrity = false, Function(String)? onProgress, Function(String)? onStatus}
+    {String? encryptData,
+     String? hsmPlugin,
+     int? hsmSlot,
+     bool enableIntegrity = false,
+     List<String>? forIdentities,      // Asymmetric: recipients
+     String? signWith,                  // Asymmetric: signing identity
+     bool useKeyserver = false,         // Asymmetric: keyserver lookup
+     Function(String)? onProgress,
+     Function(String)? onStatus}
   ) async {
     Directory? tempDir;
     try {
@@ -355,12 +363,27 @@ class CLIService {
         args.add('--integrity');
       }
 
+      // Add asymmetric encryption parameters if provided
+      if (forIdentities != null && forIdentities.isNotEmpty) {
+        for (final recipient in forIdentities) {
+          args.addAll(['--for-identity', recipient]);
+        }
+        if (signWith != null && signWith.isNotEmpty) {
+          args.addAll(['--sign-with', signWith]);
+        }
+        if (useKeyserver) {
+          args.add('--use-keyserver');
+        }
+      }
+
       if (debugEnabled) {
         args.add('--debug');
       }
 
-      // Add force password for simple passwords
-      args.add('--force-password');
+      // Add force password for simple passwords (not used in asymmetric mode)
+      if (forIdentities == null || forIdentities.isEmpty) {
+        args.add('--force-password');
+      }
 
       final maskedCommand = _getMaskedCommand(args);
       _outputDebugLog('=== CLI ENCRYPT COMMAND ===');
@@ -439,7 +462,14 @@ class CLIService {
   static Future<String> decryptTextWithProgress(
     String encryptedData,
     String password,
-    {String? hsmPlugin, int? hsmSlot, bool verifyIntegrity = false, Function(String)? onProgress, Function(String)? onStatus}
+    {String? hsmPlugin,
+     int? hsmSlot,
+     bool verifyIntegrity = false,
+     String? withKey,                // Asymmetric: decryption identity
+     String? verifyFrom,             // Asymmetric: sender verification
+     bool skipVerification = false,  // Asymmetric: skip signature check
+     Function(String)? onProgress,
+     Function(String)? onStatus}
   ) async {
     Directory? tempDir;
     try {
@@ -505,12 +535,25 @@ class CLIService {
         args.add('--verify-integrity');
       }
 
+      // Add asymmetric decryption parameters if provided
+      if (withKey != null && withKey.isNotEmpty) {
+        args.addAll(['--with-key', withKey]);
+        if (verifyFrom != null && verifyFrom.isNotEmpty) {
+          args.addAll(['--verify-from', verifyFrom]);
+        }
+        if (skipVerification) {
+          args.add('--no-verify');
+        }
+      }
+
       if (debugEnabled) {
         args.add('--debug');
       }
 
-      // Add force password for simple passwords
-      args.add('--force-password');
+      // Add force password for simple passwords (not used in asymmetric mode)
+      if (withKey == null || withKey.isEmpty) {
+        args.add('--force-password');
+      }
 
       final maskedCommand = _getMaskedCommand(args);
       _outputDebugLog('=== CLI DECRYPT COMMAND ===');
@@ -1288,6 +1331,9 @@ class CLIService {
     String? hsmPlugin,
     int? hsmSlot,
     bool enableIntegrity = false,
+    List<String>? forIdentities,      // Asymmetric: recipients
+    String? signWith,                  // Asymmetric: signing identity
+    bool useKeyserver = false,         // Asymmetric: keyserver lookup
   }) async {
     final args = [
       'encrypt',
@@ -1395,6 +1441,19 @@ class CLIService {
       args.add('--integrity');
     }
 
+    // Add asymmetric encryption parameters if provided
+    if (forIdentities != null && forIdentities.isNotEmpty) {
+      for (final recipient in forIdentities) {
+        args.addAll(['--for-identity', recipient]);
+      }
+      if (signWith != null && signWith.isNotEmpty) {
+        args.addAll(['--sign-with', signWith]);
+      }
+      if (useKeyserver) {
+        args.add('--use-keyserver');
+      }
+    }
+
     return await _runCLICommandWithProgress(
       args,
       environment: {'CRYPT_PASSWORD': password},
@@ -1411,6 +1470,9 @@ class CLIService {
     String? hsmPlugin,
     int? hsmSlot,
     bool verifyIntegrity = false,
+    String? withKey,                // Asymmetric: decryption identity
+    String? verifyFrom,             // Asymmetric: sender verification
+    bool skipVerification = false,  // Asymmetric: skip signature check
   }) async {
     final args = [
       'decrypt',
@@ -1437,6 +1499,17 @@ class CLIService {
     // Add integrity verification if enabled
     if (verifyIntegrity) {
       args.add('--verify-integrity');
+    }
+
+    // Add asymmetric decryption parameters if provided
+    if (withKey != null && withKey.isNotEmpty) {
+      args.addAll(['--with-key', withKey]);
+      if (verifyFrom != null && verifyFrom.isNotEmpty) {
+        args.addAll(['--verify-from', verifyFrom]);
+      }
+      if (skipVerification) {
+        args.add('--no-verify');
+      }
     }
 
     return await _runCLICommandWithProgress(
