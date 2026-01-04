@@ -5,6 +5,7 @@ recursive-include openssl_encrypt/smart_recommendations_data *.json
 include openssl_encrypt/version.py.template
 include requirements*.txt
 include requirements*.in
+include scripts/build_local_deps.sh
 global-exclude __pycache__/*
 global-exclude */__pycache__/*
 global-exclude *.py[cod]

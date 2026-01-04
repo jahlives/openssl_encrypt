@@ -1900,6 +1900,14 @@ def create_subparser_main():
         )
         setup_list_algorithms_parser(list_algorithms_parser)
 
+    # Algorithm availability information (JSON output for GUI)
+    if REGISTRY_AVAILABLE:
+        subparsers.add_parser(
+            "list-available-algorithms",
+            help="List all algorithms with availability status and library requirements (JSON output)",
+            formatter_class=argparse.RawTextHelpFormatter,
+        )
+
     # Telemetry management command
     telemetry_parser = subparsers.add_parser(
         "telemetry",

@@ -6,6 +6,7 @@
 !/openssl_encrypt/templates/standard.yml
 !/openssl_encrypt/templates/paranoid.json
 !/openssl_encrypt/templates/paranoid.yml
+!/openssl_encrypt/templates/__init__.py
 /openssl_encrypt/version.py
 
 CLAUDE.md

@@ -5,8 +5,15 @@ import sys
 from typing import List
 
 from setuptools import Command, find_packages, setup
+from setuptools.command.develop import develop
+from setuptools.command.install import install
+from setuptools.command.build_py import build_py
 
 # Dependencies are now specified in pyproject.toml
+
+# Required versions for external dependencies
+REQUIRED_LIBOQS_VERSION = "0.12.0"
+REQUIRED_LIBOQS_PYTHON_VERSION = "0.12.0"
 
 
 # Read the contents of your README file
@@ -14,7 +21,7 @@ this_directory = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(this_directory, "README.md"), encoding="utf-8") as f:
     long_description = f.read()
 
-VERSION = "1.4.0"  # Define version in a variable for reuse
+VERSION = "1.4.0b3"  # Define version in a variable for reuse
 
 # Get git commit hash
 git_hash = "unknown"
@@ -61,6 +68,125 @@ __git_commit__ = "{git_hash}"
         )
 
 
+def check_liboqs_version():
+    """Check if liboqs is already installed with correct version"""
+    try:
+        result = subprocess.run(
+            ['pkg-config', '--modversion', 'liboqs'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            version = result.stdout.strip()
+            if version == REQUIRED_LIBOQS_VERSION:
+                print(f"✓ liboqs {version} already installed")
+                return True
+            else:
+                print(f"⚠ Found liboqs {version}, but need {REQUIRED_LIBOQS_VERSION}")
+                return False
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return False
+
+
+def check_liboqs_python_version():
+    """Check if liboqs-python is installed with correct version"""
+    try:
+        # Import in a subprocess to avoid affecting current process
+        result = subprocess.run(
+            [sys.executable, '-c',
+             'import oqs; print(oqs.oqs_python_version())'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            version = result.stdout.strip()
+            if version == REQUIRED_LIBOQS_PYTHON_VERSION:
+                print(f"✓ liboqs-python {version} already installed")
+                return True
+            else:
+                print(f"⚠ Found liboqs-python {version}, but need {REQUIRED_LIBOQS_PYTHON_VERSION}")
+                return False
+    except (subprocess.TimeoutExpired, Exception):
+        pass
+    return False
+
+
+def build_local_dependencies():
+    """Build liboqs and liboqs-python with specific versions"""
+
+    # Always show that we're checking
+    print("\n" + "="*60, flush=True)
+    print("Checking liboqs dependencies...", flush=True)
+    print("="*60, flush=True)
+
+    # Check if already installed
+    liboqs_ok = check_liboqs_version()
+    liboqs_python_ok = check_liboqs_python_version()
+
+    if liboqs_ok and liboqs_python_ok:
+        print("✓ All liboqs dependencies already installed with correct versions", flush=True)
+        print("="*60 + "\n", flush=True)
+        return True
+
+    print(f"\nBuilding liboqs {REQUIRED_LIBOQS_VERSION} and "
+          f"liboqs-python {REQUIRED_LIBOQS_PYTHON_VERSION}...\n")
+
+    install_script = os.path.join(
+        this_directory,
+        'scripts',
+        'build_local_deps.sh'
+    )
+
+    if not os.path.exists(install_script):
+        print("⚠ Warning: Build script not found at", install_script)
+        print(f"Please install manually:")
+        print(f"  liboqs {REQUIRED_LIBOQS_VERSION}: https://github.com/open-quantum-safe/liboqs/releases/tag/{REQUIRED_LIBOQS_VERSION}")
+        print(f"  liboqs-python {REQUIRED_LIBOQS_PYTHON_VERSION}: pip install git+https://github.com/open-quantum-safe/liboqs-python.git@{REQUIRED_LIBOQS_PYTHON_VERSION}")
+        print("="*60 + "\n")
+        return False
+
+    try:
+        # Set version environment variables
+        env = os.environ.copy()
+        env['LIBOQS_INSTALL_PREFIX'] = os.path.expanduser('~/.local')
+        env['LIBOQS_VERSION'] = REQUIRED_LIBOQS_VERSION
+        env['LIBOQS_PYTHON_VERSION'] = REQUIRED_LIBOQS_PYTHON_VERSION
+
+        # Run build script
+        subprocess.check_call(['/bin/bash', install_script], env=env)
+
+        # Verify versions after build
+        if not check_liboqs_version():
+            raise RuntimeError(f"liboqs {REQUIRED_LIBOQS_VERSION} installation failed verification")
+
+        if not check_liboqs_python_version():
+            raise RuntimeError(f"liboqs-python {REQUIRED_LIBOQS_PYTHON_VERSION} installation failed verification")
+
+        print("="*60 + "\n")
+        return True
+
+    except subprocess.CalledProcessError as e:
+        print(f"\n✗ Error: Failed to build dependencies: {e}")
+        print(f"\nPlease install manually:")
+        print(f"  1. Install build tools: cmake, ninja, git")
+        print(f"  2. Build liboqs {REQUIRED_LIBOQS_VERSION}:")
+        print(f"     git clone --branch {REQUIRED_LIBOQS_VERSION} https://github.com/open-quantum-safe/liboqs.git")
+        print(f"     cd liboqs && mkdir build && cd build")
+        print(f"     cmake -GNinja -DCMAKE_INSTALL_PREFIX=$HOME/.local ..")
+        print(f"     ninja && ninja install")
+        print(f"  3. Install liboqs-python {REQUIRED_LIBOQS_PYTHON_VERSION}:")
+        print(f"     pip install git+https://github.com/open-quantum-safe/liboqs-python.git@{REQUIRED_LIBOQS_PYTHON_VERSION}")
+        print("="*60 + "\n")
+        return False
+    except RuntimeError as e:
+        print(f"\n✗ Error: {e}")
+        print("="*60 + "\n")
+        return False
+
+
 class PostInstallCommand(Command):
     """Custom install command that runs setup_whirlpool after installation."""
 
@@ -87,9 +213,33 @@ class PostInstallCommand(Command):
             print("You may need to manually install Whirlpool: pip install whirlpool-py311")
 
 
+class CustomBuildPyCommand(build_py):
+    """Custom build_py that checks dependencies (runs during editable install)"""
+    def run(self):
+        build_local_dependencies()
+        build_py.run(self)
+
+
+class CustomDevelopCommand(develop):
+    """Custom development install that builds dependencies"""
+    def run(self):
+        build_local_dependencies()
+        develop.run(self)
+
+
+class CustomInstallCommand(install):
+    """Custom install that builds dependencies"""
+    def run(self):
+        build_local_dependencies()
+        install.run(self)
+
+
 setup(
     cmdclass={
+        "build_py": CustomBuildPyCommand,
         "post_install": PostInstallCommand,
+        "develop": CustomDevelopCommand,
+        "install": CustomInstallCommand,
     },
     name="openssl_encrypt",
     version=VERSION,
@@ -103,6 +253,7 @@ setup(
         "console_scripts": [
             "openssl-encrypt=openssl_encrypt.cli:main",
             "whirlpool-setup=openssl_encrypt.modules.setup_whirlpool:setup_whirlpool",
+            "openssl-encrypt-check-deps=openssl_encrypt.versions:main",
         ],
     },
     # Read dev requirements from requirements-dev.txt
@@ -133,7 +284,7 @@ setup(
     },
     packages=find_packages(),
     include_package_data=True,
-    package_data={"": ["README.md"]},
+    package_data={"": ["README.md", "scripts/build_local_deps.sh"]},
     author="Tobi",
     author_email="jahlives@gmx.ch",
     license="Hippocratic-3.0",
