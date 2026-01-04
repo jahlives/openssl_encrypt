@@ -1237,6 +1237,234 @@ def output_available_algorithms_json(args):
     print(json.dumps(result, indent=2))
 
 
+def install_optional_dependencies(args):
+    """
+    Install optional dependencies (liboqs, liboqs-python, threefish).
+
+    This command helps users install advanced crypto libraries after
+    the base package is installed. It builds:
+    - liboqs (C library for post-quantum cryptography)
+    - liboqs-python (Python bindings)
+    - threefish_native (Rust extension for Threefish cipher)
+
+    Args:
+        args: Parsed command line arguments
+    """
+    import os
+    import shutil
+    import subprocess
+
+    print("\n" + "="*70)
+    print("OpenSSL-Encrypt: Optional Dependencies Installer")
+    print("="*70)
+    print("\nThis will install:")
+    print("  • liboqs 0.12.0 (post-quantum cryptography)")
+    print("  • liboqs-python 0.12.0 (Python bindings)")
+    print("  • threefish_native (large-block cipher)")
+    print("\nRequirements:")
+    print("  • cmake, ninja (or make), gcc, g++, git")
+    print("  • Rust toolchain (rustc, cargo) for threefish")
+    print("  • ~500MB disk space, ~10-15 minutes build time")
+    print("="*70 + "\n")
+
+    if not args.yes:
+        response = input("Continue? [y/N]: ").strip().lower()
+        if response not in ('y', 'yes'):
+            print("Installation cancelled.")
+            return
+
+    success_count = 0
+    failed = []
+
+    # Check for required build tools
+    print("\n[1/4] Checking build tools...")
+    required_tools = {
+        'cmake': 'cmake',
+        'ninja or make': ['ninja', 'make'],
+        'gcc': 'gcc',
+        'g++': 'g++',
+        'git': 'git',
+        'cargo': 'cargo'  # For threefish
+    }
+
+    missing_tools = []
+    for tool_name, commands in required_tools.items():
+        if isinstance(commands, str):
+            commands = [commands]
+        found = any(shutil.which(cmd) for cmd in commands)
+        if found:
+            print(f"  ✓ {tool_name} found")
+        else:
+            print(f"  ✗ {tool_name} NOT found")
+            missing_tools.append(tool_name)
+
+    if missing_tools:
+        print(f"\n✗ Missing required tools: {', '.join(missing_tools)}")
+        print("\nPlease install them first:")
+        print("  Ubuntu/Debian: sudo apt-get install cmake ninja-build gcc g++ git cargo")
+        print("  Fedora: sudo dnf install cmake ninja-build gcc g++ git cargo")
+        print("  macOS: brew install cmake ninja gcc git rust")
+        sys.exit(1)
+
+    # Get package root directory
+    try:
+        import openssl_encrypt
+        package_dir = os.path.dirname(os.path.abspath(openssl_encrypt.__file__))
+        repo_root = os.path.dirname(package_dir)  # Go up one level
+    except Exception as e:
+        print(f"✗ Could not locate package directory: {e}")
+        sys.exit(1)
+
+    # [2/4] Build liboqs
+    print("\n[2/4] Building liboqs 0.12.0...")
+    try:
+        # Check if already installed
+        result = subprocess.run(
+            ['pkg-config', '--modversion', 'liboqs'],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0 and result.stdout.strip() == "0.12.0":
+            print("  ✓ liboqs 0.12.0 already installed")
+            success_count += 1
+        else:
+            # Try using the build script if available
+            build_script = os.path.join(repo_root, 'scripts', 'build_local_deps.sh')
+            if not os.path.exists(build_script):
+                # Build manually
+                print("  Building from source...")
+                build_dir = os.path.expanduser("~/.cache/openssl-encrypt-build")
+                os.makedirs(build_dir, exist_ok=True)
+
+                # Clone liboqs
+                liboqs_dir = os.path.join(build_dir, "liboqs")
+                if os.path.exists(liboqs_dir):
+                    shutil.rmtree(liboqs_dir)
+
+                subprocess.run(
+                    ['git', 'clone', '--branch', '0.12.0', '--depth', '1',
+                     'https://github.com/open-quantum-safe/liboqs.git', liboqs_dir],
+                    check=True
+                )
+
+                # Build
+                build_path = os.path.join(liboqs_dir, 'build')
+                os.makedirs(build_path, exist_ok=True)
+
+                subprocess.run(
+                    ['cmake', '-GNinja', '-DCMAKE_INSTALL_PREFIX=' + os.path.expanduser('~/.local'), '..'],
+                    cwd=build_path, check=True
+                )
+                subprocess.run(['ninja'], cwd=build_path, check=True)
+                subprocess.run(['ninja', 'install'], cwd=build_path, check=True)
+
+                print("  ✓ liboqs 0.12.0 built and installed to ~/.local")
+                success_count += 1
+            else:
+                # Use build script
+                env = os.environ.copy()
+                env['LIBOQS_INSTALL_PREFIX'] = os.path.expanduser('~/.local')
+                env['LIBOQS_VERSION'] = '0.12.0'
+                env['LIBOQS_PYTHON_VERSION'] = '0.12.0'
+
+                bash_cmd = shutil.which('bash') or '/bin/bash'
+                subprocess.run([bash_cmd, build_script], env=env, check=True)
+                print("  ✓ liboqs 0.12.0 built and installed")
+                success_count += 1
+    except Exception as e:
+        print(f"  ✗ Failed to build liboqs: {e}")
+        failed.append("liboqs")
+
+    # [3/4] Install liboqs-python
+    print("\n[3/4] Installing liboqs-python 0.12.0...")
+    try:
+        # Check if already installed
+        result = subprocess.run(
+            [sys.executable, '-c', 'import oqs; print(oqs.oqs_python_version())'],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0 and result.stdout.strip() == "0.12.0":
+            print("  ✓ liboqs-python 0.12.0 already installed")
+            success_count += 1
+        else:
+            # Install via pip
+            subprocess.run(
+                [sys.executable, '-m', 'pip', 'install',
+                 'git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0'],
+                check=True
+            )
+            print("  ✓ liboqs-python 0.12.0 installed")
+            success_count += 1
+    except Exception as e:
+        print(f"  ✗ Failed to install liboqs-python: {e}")
+        failed.append("liboqs-python")
+
+    # [4/4] Build threefish_native
+    print("\n[4/4] Building threefish_native...")
+    try:
+        # Check if already installed
+        try:
+            import threefish_native
+            print(f"  ✓ threefish_native already installed (version {getattr(threefish_native, '__version__', 'unknown')})")
+            success_count += 1
+        except ImportError:
+            # Try to build it
+            threefish_dir = os.path.join(repo_root, 'threefish_native')
+            if not os.path.exists(threefish_dir):
+                print("  ✗ threefish_native source not found")
+                print("     This is only available when installing from source repository")
+                failed.append("threefish_native")
+            else:
+                # Install maturin if needed
+                subprocess.run(
+                    [sys.executable, '-m', 'pip', 'install', 'maturin'],
+                    capture_output=True, check=True
+                )
+
+                # Build with maturin
+                env = os.environ.copy()
+                env['PYO3_USE_ABI3_FORWARD_COMPATIBILITY'] = '1'
+
+                subprocess.run(
+                    ['maturin', 'build', '--release'],
+                    cwd=threefish_dir, env=env, check=True
+                )
+
+                # Install the built wheel
+                wheels_dir = os.path.join(threefish_dir, 'target', 'wheels')
+                wheels = [f for f in os.listdir(wheels_dir) if f.endswith('.whl')]
+                if wheels:
+                    subprocess.run(
+                        [sys.executable, '-m', 'pip', 'install', '--force-reinstall',
+                         os.path.join(wheels_dir, wheels[0])],
+                        check=True
+                    )
+                    print("  ✓ threefish_native built and installed")
+                    success_count += 1
+                else:
+                    print("  ✗ No wheel file found after build")
+                    failed.append("threefish_native")
+    except Exception as e:
+        print(f"  ✗ Failed to build threefish_native: {e}")
+        failed.append("threefish_native")
+
+    # Summary
+    print("\n" + "="*70)
+    print("Installation Summary")
+    print("="*70)
+    print(f"  Successfully installed: {success_count}/3 components")
+    if failed:
+        print(f"  Failed: {', '.join(failed)}")
+    else:
+        print("  All components installed successfully!")
+
+    print("\nTo verify installation, run:")
+    print("  openssl-encrypt list-available-algorithms")
+    print("="*70 + "\n")
+
+    if failed:
+        sys.exit(1)
+
+
 def run_config_wizard(args):
     """
     Run the configuration wizard and display results.
@@ -2840,6 +3068,7 @@ def main():
         "generate-password",
         "list-algorithms",
         "list-available-algorithms",
+        "install-dependencies",
         "security-info",
         "analyze-security",
         "config-wizard",
@@ -3003,6 +3232,11 @@ def main_with_args(args=None):
         "--debug",
         action="store_true",
         help="Show detailed debug information (WARNING: logs passwords and sensitive data - test files only!)",
+    )
+    global_group.add_argument(
+        "--yes", "-y",
+        action="store_true",
+        help="Automatic yes to prompts (for install-dependencies command)",
     )
     global_group.add_argument(
         "--quiet",
@@ -4214,6 +4448,10 @@ def main_with_args(args=None):
 
     elif args.action == "list-available-algorithms":
         output_available_algorithms_json(args)
+        sys.exit(0)
+
+    elif args.action == "install-dependencies":
+        install_optional_dependencies(args)
         sys.exit(0)
 
     elif args.action == "check-argon2":
