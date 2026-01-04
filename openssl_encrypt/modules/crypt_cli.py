@@ -3096,7 +3096,7 @@ def main():
     # Use subparser only if a subcommand is present
     # (after global flags have been moved to the front by preprocess_global_args)
     # Find the first non-flag argument (skip global flags)
-    global_flags = {"--progress", "--verbose", "--debug", "--quiet"}
+    global_flags = {"--progress", "--verbose", "--debug", "--quiet", "--yes", "-y"}
     first_command = None
     for i in range(1, len(sys.argv)):
         arg = sys.argv[i]

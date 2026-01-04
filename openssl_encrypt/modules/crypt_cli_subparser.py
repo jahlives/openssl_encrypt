@@ -1764,6 +1764,11 @@ def create_subparser_main():
         help="Suppress all output except decrypted content and exit code",
     )
     parser.add_argument(
+        "--yes", "-y",
+        action="store_true",
+        help="Automatic yes to prompts (for install-dependencies command)",
+    )
+    parser.add_argument(
         "--identity-store",
         dest="identity_store",
         metavar="PATH",
@@ -1907,6 +1912,13 @@ def create_subparser_main():
             help="List all algorithms with availability status and library requirements (JSON output)",
             formatter_class=argparse.RawTextHelpFormatter,
         )
+
+    # Install optional dependencies (liboqs, liboqs-python, threefish)
+    subparsers.add_parser(
+        "install-dependencies",
+        help="Install optional crypto libraries (liboqs, liboqs-python, threefish) after base package install",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
 
     # Telemetry management command
     telemetry_parser = subparsers.add_parser(
