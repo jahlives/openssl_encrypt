@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7038,13 +7039,17 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
   String _selectedEncryptData = 'aes-gcm';  // For PQC algorithms
   String _password = '';
   String _confirmPassword = '';
-  String _selectedOperation = 'encrypt'; // 'encrypt' or 'decrypt'
+  String _selectedOperation = 'encrypt'; // 'encrypt', 'decrypt', or 'verify-integrity'
   final List<BatchOperationResult> _results = [];
   String result = ''; // Add result field for clipboard copying
 
   // Progress tracking
   int _currentFileIndex = 0;
   String _currentStatus = '';
+
+  // Integrity settings
+  bool _enableIntegrity = false;      // For encrypt mode: register hash
+  bool _verifyIntegrity = false;      // For decrypt mode: verify before decrypt
 
   // Cached dropdown items for algorithms (performance optimization)
   static final Map<String, List<DropdownMenuItem<String>>> _dropdownCache = {};
@@ -7237,13 +7242,43 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                     const SizedBox(height: 16),
 
                     // Operation Type
-                    Row(
+                    Column(
                       children: [
-                        Expanded(
-                          child: RadioListTile<String>(
-                            title: const Text('Encrypt Files'),
-                            subtitle: const Text('Encrypt all selected files'),
-                            value: 'encrypt',
+                        Row(
+                          children: [
+                            Expanded(
+                              child: RadioListTile<String>(
+                                title: const Text('Encrypt Files'),
+                                subtitle: const Text('Encrypt all selected files'),
+                                value: 'encrypt',
+                                groupValue: _selectedOperation,
+                                onChanged: _isLoading ? null : (value) {
+                                  setState(() {
+                                    _selectedOperation = value!;
+                                  });
+                                },
+                              ),
+                            ),
+                            Expanded(
+                              child: RadioListTile<String>(
+                                title: const Text('Decrypt Files'),
+                                subtitle: const Text('Decrypt all selected files'),
+                                value: 'decrypt',
+                                groupValue: _selectedOperation,
+                                onChanged: _isLoading ? null : (value) {
+                                  setState(() {
+                                    _selectedOperation = value!;
+                                  });
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (SettingsService.getIntegrityEnabled())
+                          RadioListTile<String>(
+                            title: const Text('Verify Integrity'),
+                            subtitle: const Text('Verify file integrity against server'),
+                            value: 'verify-integrity',
                             groupValue: _selectedOperation,
                             onChanged: _isLoading ? null : (value) {
                               setState(() {
@@ -7251,20 +7286,6 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                               });
                             },
                           ),
-                        ),
-                        Expanded(
-                          child: RadioListTile<String>(
-                            title: const Text('Decrypt Files'),
-                            subtitle: const Text('Decrypt all selected files'),
-                            value: 'decrypt',
-                            groupValue: _selectedOperation,
-                            onChanged: _isLoading ? null : (value) {
-                              setState(() {
-                                _selectedOperation = value!;
-                              });
-                            },
-                          ),
-                        ),
                       ],
                     ),
 
@@ -7440,6 +7461,73 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                         ],
                       ],
                     ),
+
+                    // Integrity verification section (for encrypt/decrypt operations)
+                    if (SettingsService.getIntegrityEnabled() && _selectedOperation != 'verify-integrity') ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.teal.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.teal.withValues(alpha: 0.3)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.verified, size: 18, color: Colors.teal),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Integrity Verification',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            if (_selectedOperation == 'encrypt')
+                              CheckboxListTile(
+                                value: _enableIntegrity,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _enableIntegrity = value ?? false;
+                                  });
+                                },
+                                title: const Text(
+                                  'Register hash with integrity server',
+                                  style: TextStyle(fontSize: 13),
+                                ),
+                                subtitle: const Text(
+                                  'Upload encrypted file hashes to integrity server',
+                                  style: TextStyle(fontSize: 11),
+                                ),
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                              )
+                            else if (_selectedOperation == 'decrypt')
+                              CheckboxListTile(
+                                value: _verifyIntegrity,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _verifyIntegrity = value ?? false;
+                                  });
+                                },
+                                title: const Text(
+                                  'Verify integrity before decryption',
+                                  style: TextStyle(fontSize: 13),
+                                ),
+                                subtitle: const Text(
+                                  'Check if file hashes match registered hashes',
+                                  style: TextStyle(fontSize: 11),
+                                ),
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -7455,12 +7543,20 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                 onPressed: _canStartOperation() ? _startBatchOperation : null,
                 icon: _isLoading
                     ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                    : Icon(_selectedOperation == 'encrypt' ? Icons.lock : Icons.lock_open),
+                    : Icon(_selectedOperation == 'encrypt'
+                        ? Icons.lock
+                        : _selectedOperation == 'decrypt'
+                          ? Icons.lock_open
+                          : Icons.verified),
                 label: _isLoading
-                    ? Text('${_selectedOperation == 'encrypt' ? 'Encrypting' : 'Decrypting'} (${_currentFileIndex + 1}/${_selectedFiles.length})')
-                    : Text('${_selectedOperation == 'encrypt' ? 'Encrypt' : 'Decrypt'} ${_selectedFiles.length} file(s)'),
+                    ? Text('${_selectedOperation == 'encrypt' ? 'Encrypting' : _selectedOperation == 'decrypt' ? 'Decrypting' : 'Verifying'} (${_currentFileIndex + 1}/${_selectedFiles.length})')
+                    : Text('${_selectedOperation == 'encrypt' ? 'Encrypt' : _selectedOperation == 'decrypt' ? 'Decrypt' : 'Verify Integrity of'} ${_selectedFiles.length} file(s)'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _selectedOperation == 'encrypt' ? Colors.green : Colors.blue,
+                  backgroundColor: _selectedOperation == 'encrypt'
+                      ? Colors.green
+                      : _selectedOperation == 'decrypt'
+                        ? Colors.blue
+                        : Colors.teal,
                   foregroundColor: Colors.white,
                 ),
               ),
@@ -7670,7 +7766,17 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
   }
 
   bool _canStartOperation() {
-    if (_selectedFiles.isEmpty || _isLoading || _password.isEmpty) {
+    if (_selectedFiles.isEmpty || _isLoading) {
+      return false;
+    }
+
+    // Verify integrity doesn't need a password
+    if (_selectedOperation == 'verify-integrity') {
+      return true;
+    }
+
+    // Encrypt and decrypt operations need a password
+    if (_password.isEmpty) {
       return false;
     }
 
@@ -7745,6 +7851,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
           null,
           null,
           encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
+          enableIntegrity: _enableIntegrity,
         );
 
         // Save encrypted file
@@ -7764,7 +7871,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
             errorMessage: 'Could not write encrypted file',
           );
         }
-      } else {
+      } else if (_selectedOperation == 'decrypt') {
         // Decrypt operation
         final content = await widget.fileManager.readFileText(file.path);
         if (content == null) {
@@ -7776,7 +7883,11 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
         }
 
         // Decrypt using CLI service
-        final decrypted = await CLIService.decryptText(content, _password);
+        final decrypted = await CLIService.decryptTextWithProgress(
+          content,
+          _password,
+          verifyIntegrity: _verifyIntegrity,
+        );
 
         // Save decrypted file
         final outputPath = widget.fileManager.getDecryptedFileName(file.path);
@@ -7795,6 +7906,65 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
             errorMessage: 'Could not write decrypted file',
           );
         }
+      } else if (_selectedOperation == 'verify-integrity') {
+        // Verify integrity operation
+        final content = await widget.fileManager.readFileText(file.path);
+        if (content == null) {
+          return BatchOperationResult(
+            fileName: file.name,
+            success: false,
+            errorMessage: 'Could not read file content',
+          );
+        }
+
+        // Parse the encrypted file to get metadata
+        // The file format is typically: metadata:encrypted_data
+        // We need to extract file ID and hash for verification
+        try {
+          // Try to decode as JSON first (newer format)
+          final Map<String, dynamic> data = jsonDecode(content);
+          final String? fileId = data['file_id'];
+          final String? metadataHash = data['metadata_hash'];
+
+          if (fileId != null && metadataHash != null) {
+            final verified = await CLIService.verifyFileIntegrity(
+              fileId: fileId,
+              metadataHash: metadataHash,
+            );
+
+            if (verified) {
+              return BatchOperationResult(
+                fileName: file.name,
+                success: true,
+                outputPath: 'Integrity verified ✓',
+              );
+            } else {
+              return BatchOperationResult(
+                fileName: file.name,
+                success: false,
+                errorMessage: 'Integrity verification failed - hash mismatch',
+              );
+            }
+          } else {
+            return BatchOperationResult(
+              fileName: file.name,
+              success: false,
+              errorMessage: 'File not registered with integrity server',
+            );
+          }
+        } catch (e) {
+          return BatchOperationResult(
+            fileName: file.name,
+            success: false,
+            errorMessage: 'Invalid encrypted file format or not registered: $e',
+          );
+        }
+      } else {
+        return BatchOperationResult(
+          fileName: file.name,
+          success: false,
+          errorMessage: 'Unknown operation: $_selectedOperation',
+        );
       }
     } catch (e) {
       return BatchOperationResult(
