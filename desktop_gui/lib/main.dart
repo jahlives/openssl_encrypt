@@ -711,6 +711,10 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   bool _showKdfConfig = false;
   bool _debugLogging = false;
 
+  // HSM settings
+  String _hsmType = 'none';  // 'none', 'yubikey', 'fido2'
+  int? _yubikeySlot;         // null = auto-detect, 1 or 2 = manual
+
   @override
   void initState() {
     super.initState();
@@ -851,6 +855,8 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
         _hashConfig,        // Pass hash configuration from UI
         _kdfConfig,         // Pass KDF configuration from UI
         encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
+        hsmPlugin: _hsmType != 'none' ? _hsmType : null,
+        hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
         onProgress: (progress) {
           setState(() {
             _operationProgress = progress;
@@ -1039,6 +1045,153 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     }
   }
 
+  Widget _buildHsmSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.security),
+                const SizedBox(width: 8),
+                const Text('Hardware Security Module (HSM)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.info_outline),
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('HSM Information'),
+                        content: const SingleChildScrollView(
+                          child: Text(
+                            'Hardware Security Modules provide additional security by deriving encryption keys from hardware tokens.\n\n'
+                            'YubiKey: Uses Challenge-Response (HMAC-SHA1) to derive a pepper from your YubiKey.\n\n'
+                            'FIDO2: Uses FIDO2 hmac-secret extension to derive a pepper from FIDO2 authenticators (requires credential registration).\n\n'
+                            'Note: You will need to use the same HSM device to decrypt data.',
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('OK'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  tooltip: 'HSM Information',
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // HSM Type Selection
+            Row(
+              children: [
+                Radio<String>(
+                  value: 'none',
+                  groupValue: _hsmType,
+                  onChanged: (value) {
+                    setState(() {
+                      _hsmType = value!;
+                    });
+                  },
+                ),
+                const Text('None'),
+                const SizedBox(width: 16),
+                Radio<String>(
+                  value: 'yubikey',
+                  groupValue: _hsmType,
+                  onChanged: (value) {
+                    setState(() {
+                      _hsmType = value!;
+                    });
+                  },
+                ),
+                const Text('YubiKey Challenge-Response'),
+                const SizedBox(width: 16),
+                Radio<String>(
+                  value: 'fido2',
+                  groupValue: _hsmType,
+                  onChanged: null,  // Disabled for now, will be enabled in Step 3
+                ),
+                Text(
+                  'FIDO2 hmac-secret',
+                  style: TextStyle(color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+            // YubiKey options
+            if (_hsmType == 'yubikey') ...[
+              const Divider(),
+              const SizedBox(height: 8),
+              const Text('YubiKey Slot Selection:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Radio<int?>(
+                    value: null,
+                    groupValue: _yubikeySlot,
+                    onChanged: (value) {
+                      setState(() {
+                        _yubikeySlot = value;
+                      });
+                    },
+                  ),
+                  const Text('Auto-detect'),
+                  const SizedBox(width: 16),
+                  Radio<int?>(
+                    value: 1,
+                    groupValue: _yubikeySlot,
+                    onChanged: (value) {
+                      setState(() {
+                        _yubikeySlot = value;
+                      });
+                    },
+                  ),
+                  const Text('Slot 1'),
+                  const SizedBox(width: 16),
+                  Radio<int?>(
+                    value: 2,
+                    groupValue: _yubikeySlot,
+                    onChanged: (value) {
+                      setState(() {
+                        _yubikeySlot = value;
+                      });
+                    },
+                  ),
+                  const Text('Slot 2'),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info, size: 16, color: Colors.blue.shade700),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Requires YubiKey with Challenge-Response (HMAC-SHA1) configured. You may need to touch the YubiKey.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1194,6 +1347,9 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
             ),
             const SizedBox(height: 16),
           ],
+          // HSM Section
+          _buildHsmSection(),
+          const SizedBox(height: 16),
           // Advanced Settings Toggle
           Card(
             child: Padding(
@@ -2877,6 +3033,10 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   int _bitsPerChannel = 1;
   bool _randomizePixels = false;
   bool _addDecoyData = false;
+
+  // HSM settings
+  String _hsmType = 'none';  // 'none', 'yubikey', 'fido2'
+  int? _yubikeySlot;         // null = auto-detect, 1 or 2 = manual
   bool _stegoExtractMode = false;  // For decrypt mode
 
   @override
@@ -3846,6 +4006,154 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     );
   }
 
+  Widget _buildHsmSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.security),
+                const SizedBox(width: 8),
+                const Text('Hardware Security Module (HSM)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.info_outline),
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('HSM Information'),
+                        content: const SingleChildScrollView(
+                          child: Text(
+                            'Hardware Security Modules provide additional security by deriving encryption keys from hardware tokens.\n\n'
+                            'YubiKey: Uses Challenge-Response (HMAC-SHA1) to derive a pepper from your YubiKey.\n\n'
+                            'FIDO2: Uses FIDO2 hmac-secret extension to derive a pepper from FIDO2 authenticators (requires credential registration).\n\n'
+                            'Note: You will need to use the same HSM device to decrypt data.',
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('OK'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  tooltip: 'HSM Information',
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // HSM Type Selection
+            Row(
+              children: [
+                Radio<String>(
+                  value: 'none',
+                  groupValue: _hsmType,
+                  onChanged: (value) {
+                    setState(() {
+                      _hsmType = value!;
+                    });
+                  },
+                ),
+                const Text('None'),
+                const SizedBox(width: 16),
+                Radio<String>(
+                  value: 'yubikey',
+                  groupValue: _hsmType,
+                  onChanged: (value) {
+                    setState(() {
+                      _hsmType = value!;
+                    });
+                  },
+                ),
+                const Text('YubiKey Challenge-Response'),
+                const SizedBox(width: 16),
+                Radio<String>(
+                  value: 'fido2',
+                  groupValue: _hsmType,
+                  onChanged: null,  // Disabled for now, will be enabled in Step 3
+                ),
+                Text(
+                  'FIDO2 hmac-secret',
+                  style: TextStyle(color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+            // YubiKey options
+            if (_hsmType == 'yubikey') ...[
+              const Divider(),
+              const SizedBox(height: 8),
+              const Text('YubiKey Slot Selection:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Radio<int?>(
+                    value: null,
+                    groupValue: _yubikeySlot,
+                    onChanged: (value) {
+                      setState(() {
+                        _yubikeySlot = value;
+                      });
+                    },
+                  ),
+                  const Text('Auto-detect'),
+                  const SizedBox(width: 16),
+                  Radio<int?>(
+                    value: 1,
+                    groupValue: _yubikeySlot,
+                    onChanged: (value) {
+                      setState(() {
+                        _yubikeySlot = value;
+                      });
+                    },
+                  ),
+                  const Text('Slot 1'),
+                  const SizedBox(width: 16),
+                  Radio<int?>(
+                    value: 2,
+                    groupValue: _yubikeySlot,
+                    onChanged: (value) {
+                      setState(() {
+                        _yubikeySlot = value;
+                      });
+                    },
+                  ),
+                  const Text('Slot 2'),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info, size: 16, color: Colors.blue.shade700),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Requires YubiKey with Challenge-Response (HMAC-SHA1) configured. You may need to touch the YubiKey.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -4055,6 +4363,9 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
             ),
             const SizedBox(height: 16),
           ],
+          // HSM Section
+          _buildHsmSection(),
+          const SizedBox(height: 16),
           // Steganography settings (Encrypt mode - Hide in cover image)
           _buildSteganographySection(isEncryptMode: true),
           const SizedBox(height: 8),

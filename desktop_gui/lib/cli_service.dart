@@ -185,7 +185,7 @@ class CLIService {
     String algorithm,
     Map<String, Map<String, dynamic>>? hashConfig,
     Map<String, Map<String, dynamic>>? kdfConfig,
-    {String? encryptData, Function(String)? onProgress, Function(String)? onStatus}
+    {String? encryptData, String? hsmPlugin, int? hsmSlot, Function(String)? onProgress, Function(String)? onStatus}
   ) async {
     Directory? tempDir;
     try {
@@ -238,6 +238,14 @@ class CLIService {
         '-o', outputFile.path,
         '--algorithm', algorithm,
       ];
+
+      // Add HSM configuration if provided
+      if (hsmPlugin != null && hsmPlugin != 'none') {
+        args.addAll(['--hsm', hsmPlugin]);
+        if (hsmSlot != null) {
+          args.addAll(['--hsm-slot', hsmSlot.toString()]);
+        }
+      }
 
       // Add hash configuration if provided
       if (hashConfig != null) {
