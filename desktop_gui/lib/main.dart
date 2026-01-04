@@ -1892,6 +1892,10 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       'aes-ocb3': 'AES-OCB3 high-performance authenticated encryption',
       'camellia': 'Camellia block cipher - International standard, alternative to AES',
 
+      // Threefish (Large Block)
+      'threefish-512': 'Threefish-512 - 512-bit block cipher, 256-bit PQ security, CTR mode with Poly1305',
+      'threefish-1024': 'Threefish-1024 - 1024-bit block cipher, 512-bit PQ security, CTR mode with Poly1305',
+
       // Post-Quantum ML-KEM
       'ml-kem-512-hybrid': 'ML-KEM-512 hybrid - Post-quantum with 128-bit classical security',
       'ml-kem-768-hybrid': 'ML-KEM-768 hybrid - Post-quantum with 192-bit classical security (Recommended PQC)',
@@ -3457,6 +3461,9 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
       'aes-gcm': 'AES-GCM - Modern authenticated encryption (high performance)',
       'chacha20-poly1305': 'ChaCha20-Poly1305 - Fast stream cipher with authentication',
       'xchacha20-poly1305': 'XChaCha20-Poly1305 - Extended nonce ChaCha20 variant',
+      // Threefish (Large Block)
+      'threefish-512': 'Threefish-512 - 512-bit block cipher with CTR+Poly1305',
+      'threefish-1024': 'Threefish-1024 - 1024-bit block cipher with CTR+Poly1305',
       // Post-quantum Key Encapsulation
       'ml-kem-512': 'ML-KEM-512 - Post-quantum KEM (128-bit security)',
       'ml-kem-768': 'ML-KEM-768 - Post-quantum KEM (192-bit security)',
@@ -3484,6 +3491,9 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
       'Classical Symmetric': [
         'fernet', 'aes-gcm', 'chacha20-poly1305', 'xchacha20-poly1305',
         'aes-siv', 'aes-gcm-siv'
+      ].where((a) => _algorithms.contains(a)).toList(),
+      'Threefish (Large Block)': [
+        'threefish-512', 'threefish-1024'
       ].where((a) => _algorithms.contains(a)).toList(),
       'ML-KEM Post-Quantum': [
         'ml-kem-512-hybrid', 'ml-kem-768-hybrid', 'ml-kem-1024-hybrid',
@@ -5100,6 +5110,8 @@ class _InfoTabState extends State<InfoTab> {
     'xchacha20-poly1305': 'Extended ChaCha20-Poly1305 with 192-bit nonce',
     'aes-siv': 'AES-SIV synthetic IV mode',
     'aes-gcm-siv': 'AES-GCM-SIV misuse-resistant encryption',
+    'threefish-512': '512-bit block cipher, 256-bit PQ security, CTR+Poly1305',
+    'threefish-1024': '1024-bit block cipher, 512-bit PQ security, CTR+Poly1305',
   };
 
   /// Check if algorithm is available on current platform

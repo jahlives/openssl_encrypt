@@ -75,6 +75,10 @@ class CLIService {
           'aes-siv',
           'aes-gcm-siv',
         ],
+        'Threefish (Large Block)': [
+          'threefish-512',
+          'threefish-1024',
+        ],
         'Post-Quantum Hybrid (ML-KEM)': [
           'ml-kem-512-hybrid',
           'ml-kem-768-hybrid',
