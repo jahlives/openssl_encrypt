@@ -201,6 +201,12 @@ def build_local_dependencies():
         print(f"\n✗ Error: {e}")
         print("="*60 + "\n")
         return False
+    except Exception as e:
+        print(f"\n✗ Unexpected error during dependency build: {e}")
+        print("You can install optional dependencies later with:")
+        print("  openssl-encrypt install-dependencies")
+        print("="*60 + "\n")
+        return False
 
 
 class PostInstallCommand(Command):
@@ -232,21 +238,33 @@ class PostInstallCommand(Command):
 class CustomBuildPyCommand(build_py):
     """Custom build_py that checks dependencies (runs during editable install)"""
     def run(self):
-        build_local_dependencies()
+        try:
+            build_local_dependencies()
+        except Exception as e:
+            print(f"\nNote: Optional dependency build skipped: {e}")
+            print("You can install them later with: openssl-encrypt install-dependencies\n")
         build_py.run(self)
 
 
 class CustomDevelopCommand(develop):
     """Custom development install that builds dependencies"""
     def run(self):
-        build_local_dependencies()
+        try:
+            build_local_dependencies()
+        except Exception as e:
+            print(f"\nNote: Optional dependency build skipped: {e}")
+            print("You can install them later with: openssl-encrypt install-dependencies\n")
         develop.run(self)
 
 
 class CustomInstallCommand(install):
     """Custom install that builds dependencies"""
     def run(self):
-        build_local_dependencies()
+        try:
+            build_local_dependencies()
+        except Exception as e:
+            print(f"\nNote: Optional dependency build skipped: {e}")
+            print("You can install them later with: openssl-encrypt install-dependencies\n")
         install.run(self)
 
 
