@@ -680,8 +680,8 @@ class _InfoTabState extends State<InfoTab> with SingleTickerProviderStateMixin {
 
   // Algorithm groupings for hashes
   final Map<String, List<String>> _hashGroups = {
-    'SHA-2 Family': ['sha256', 'sha384', 'sha512'],
-    'SHA-3 Family': ['sha3-256', 'sha3-384', 'sha3-512'],
+    'SHA-2 Family': ['sha224', 'sha256', 'sha384', 'sha512'],
+    'SHA-3 Family': ['sha3-224', 'sha3-256', 'sha3-384', 'sha3-512'],
     'SHAKE (XOF)': ['shake128', 'shake256'],
     'BLAKE Family': ['blake2b', 'blake2s', 'blake3'],
   };
@@ -850,6 +850,32 @@ class _InfoTabState extends State<InfoTab> with SingleTickerProviderStateMixin {
     // Filter out whirlpool
     final filteredHashes = Map<String, AlgorithmAvailability>.from(_availabilityInfo!.hashes)
       ..removeWhere((key, value) => key.toLowerCase().contains('whirlpool'));
+
+    // Add sha224 if not present (supported by CLI but may not be in registry)
+    if (!filteredHashes.containsKey('sha224')) {
+      filteredHashes['sha224'] = AlgorithmAvailability(
+        name: 'sha224',
+        displayName: 'SHA-224',
+        available: true,
+        requiredLibrary: null,
+        securityLevel: 'STANDARD',
+        description: 'SHA-224 - 224-bit hash from SHA-2 family',
+        libraryVersion: null,
+      );
+    }
+
+    // Add sha3-224 if not present (supported by CLI but may not be in registry)
+    if (!filteredHashes.containsKey('sha3-224')) {
+      filteredHashes['sha3-224'] = AlgorithmAvailability(
+        name: 'sha3-224',
+        displayName: 'SHA3-224',
+        available: true,
+        requiredLibrary: null,
+        securityLevel: 'STANDARD',
+        description: 'SHA3-224 - Keccak-based hash with 224-bit output',
+        libraryVersion: null,
+      );
+    }
 
     return SingleChildScrollView(
       child: _buildGroupedList(_hashGroups, filteredHashes),
