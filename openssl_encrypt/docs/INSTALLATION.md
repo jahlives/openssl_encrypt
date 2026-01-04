@@ -51,6 +51,12 @@ When you run `pip install openssl_encrypt`, the setup script will:
    - Build and install liboqs-python 0.12.0
    - Verify installations
 
+**About build output:**
+- Full compiler output (cmake, ninja, gcc) is shown during builds
+- This includes all build progress (e.g., `[1/156] Building C object...`)
+- If dependencies are already installed with correct versions, build is skipped
+- Build time: ~3-5 minutes depending on your system
+
 ### Environment Setup
 
 After installation, add these lines to your shell profile (`~/.bashrc` or `~/.zshrc`):
@@ -134,6 +140,49 @@ Checking openssl_encrypt dependencies...
 ✓ All dependencies satisfied
 ```
 
+## Advanced Configuration
+
+### Environment Variables
+
+**SKIP_LIBOQS_CHECK** - Skip automatic dependency checking on import
+```bash
+# Useful for CI/CD or containerized environments where dependencies are pre-installed
+export SKIP_LIBOQS_CHECK=1
+python -c "import openssl_encrypt"  # No dependency check
+```
+
+**LIBOQS_CHECK_VERBOSE** - Enable verbose output for dependency checks
+```bash
+# Shows detailed status even when dependencies are satisfied
+export LIBOQS_CHECK_VERBOSE=1
+python -c "import openssl_encrypt"
+# Output:
+# ✓ liboqs dependencies satisfied:
+#   ✓ liboqs 0.12.0
+#   ✓ liboqs-python 0.12.0
+```
+
+### Import-Time Dependency Checking
+
+The package automatically checks dependencies when imported:
+
+```python
+import openssl_encrypt  # Checks dependencies on first import
+```
+
+If dependencies are missing:
+- **Non-interactive**: Shows warning message with installation instructions
+- **Interactive terminal**: Offers to build dependencies automatically
+  ```
+  WARNING: liboqs dependencies not satisfied
+  ✗ liboqs not found via pkg-config
+  ✗ liboqs-python not installed
+
+  Would you like to build dependencies now? (y/N):
+  ```
+
+This check runs once per Python process and can be disabled with `SKIP_LIBOQS_CHECK=1`.
+
 ## Development Installation
 
 For development, clone the repository and install in editable mode:
@@ -149,7 +198,74 @@ pip install -e .
 pip install -e ".[dev]"
 ```
 
+**Note about editable installs:**
+- The setup process automatically checks and builds dependencies during installation
+- Due to PEP 517 isolated builds, `pip install -e .` may not show build output in real-time
+- Dependencies ARE being checked - they're just not visible during pip's isolated build
+- To see verbose output, import the package after installation:
+  ```bash
+  LIBOQS_CHECK_VERBOSE=1 python -c "import openssl_encrypt"
+  ```
+- Or use `python setup.py develop` to see all build output (requires setuptools)
+
+**Manual dependency build for developers:**
+```bash
+# Run the build script directly with environment control
+export LIBOQS_VERSION=0.12.0
+export LIBOQS_PYTHON_VERSION=0.12.0
+export LIBOQS_INSTALL_PREFIX=$HOME/.local
+bash scripts/build_local_deps.sh
+```
+
 ## Troubleshooting
+
+### Missing setuptools
+
+**Problem:** `ModuleNotFoundError: No module named 'setuptools'` when running `setup.py` directly
+
+```bash
+# Install setuptools in your environment
+pip install setuptools wheel
+```
+
+Note: This is only needed if you run `setup.py` directly. Regular `pip install` handles this automatically.
+
+### Dependencies not being built
+
+**Problem:** Ran `pip install` but dependencies weren't built
+
+Check if dependencies are already installed with correct versions:
+```bash
+pkg-config --modversion liboqs  # Should show 0.12.0
+python -c "import oqs; print(oqs.oqs_python_version())"  # Should show 0.12.0
+```
+
+If correct versions are already installed, the build is automatically skipped. To force rebuild:
+```bash
+# Remove existing installations
+pip uninstall liboqs-python
+rm -rf $HOME/.local/lib/liboqs* $HOME/.local/include/oqs
+
+# Reinstall
+pip install --force-reinstall --no-cache-dir openssl_encrypt
+```
+
+### Import warnings about dependencies
+
+**Problem:** Warning messages appear when importing openssl_encrypt
+
+This is normal if dependencies are missing. The package will still import but post-quantum features won't work.
+
+To suppress the check (not recommended):
+```bash
+export SKIP_LIBOQS_CHECK=1
+```
+
+To see more details:
+```bash
+export LIBOQS_CHECK_VERBOSE=1
+python -c "import openssl_encrypt"
+```
 
 ### liboqs build fails
 
