@@ -7,6 +7,7 @@ from typing import List
 from setuptools import Command, find_packages, setup
 from setuptools.command.develop import develop
 from setuptools.command.install import install
+from setuptools.command.build_py import build_py
 
 # Dependencies are now specified in pyproject.toml
 
@@ -211,6 +212,13 @@ class PostInstallCommand(Command):
             print("You may need to manually install Whirlpool: pip install whirlpool-py311")
 
 
+class CustomBuildPyCommand(build_py):
+    """Custom build_py that checks dependencies (runs during editable install)"""
+    def run(self):
+        build_local_dependencies()
+        build_py.run(self)
+
+
 class CustomDevelopCommand(develop):
     """Custom development install that builds dependencies"""
     def run(self):
@@ -227,6 +235,7 @@ class CustomInstallCommand(install):
 
 setup(
     cmdclass={
+        "build_py": CustomBuildPyCommand,
         "post_install": PostInstallCommand,
         "develop": CustomDevelopCommand,
         "install": CustomInstallCommand,
