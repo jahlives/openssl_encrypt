@@ -434,7 +434,7 @@ class CLIService {
   static Future<String> decryptTextWithProgress(
     String encryptedData,
     String password,
-    {Function(String)? onProgress, Function(String)? onStatus}
+    {String? hsmPlugin, int? hsmSlot, Function(String)? onProgress, Function(String)? onStatus}
   ) async {
     Directory? tempDir;
     try {
@@ -486,6 +486,14 @@ class CLIService {
         '-i', inputFile.path,
         '-o', outputFile.path,
       ];
+
+      // Add HSM arguments if specified
+      if (hsmPlugin != null && hsmPlugin != 'none') {
+        args.addAll(['--hsm', hsmPlugin]);
+        if (hsmSlot != null) {
+          args.addAll(['--hsm-slot', hsmSlot.toString()]);
+        }
+      }
 
       if (debugEnabled) {
         args.add('--debug');
@@ -1230,6 +1238,8 @@ class CLIService {
     bool addDecoyData = false,
     Map<String, Map<String, dynamic>>? hashConfig,
     Map<String, Map<String, dynamic>>? kdfConfig,
+    String? hsmPlugin,
+    int? hsmSlot,
   }) async {
     final args = [
       'encrypt',
@@ -1324,6 +1334,14 @@ class CLIService {
       }
     }
 
+    // Add HSM arguments if specified
+    if (hsmPlugin != null && hsmPlugin != 'none') {
+      args.addAll(['--hsm', hsmPlugin]);
+      if (hsmSlot != null) {
+        args.addAll(['--hsm-slot', hsmSlot.toString()]);
+      }
+    }
+
     return await _runCLICommandWithProgress(
       args,
       environment: {'CRYPT_PASSWORD': password},
@@ -1337,6 +1355,8 @@ class CLIService {
     required String password,
     String? stegoPassword,
     int bitsPerChannel = 1,
+    String? hsmPlugin,
+    int? hsmSlot,
   }) async {
     final args = [
       'decrypt',
@@ -1352,10 +1372,98 @@ class CLIService {
       args.addAll(['--stego-password', stegoPassword]);
     }
 
+    // Add HSM arguments if specified
+    if (hsmPlugin != null && hsmPlugin != 'none') {
+      args.addAll(['--hsm', hsmPlugin]);
+      if (hsmSlot != null) {
+        args.addAll(['--hsm-slot', hsmSlot.toString()]);
+      }
+    }
+
     return await _runCLICommandWithProgress(
       args,
       environment: {'CRYPT_PASSWORD': password},
     );
+  }
+
+  /// Register a new FIDO2 credential
+  static Future<void> registerFido2Credential(String description, bool isBackup) async {
+    final args = [
+      'hsm',
+      'fido2-register',
+      '--description', description,
+    ];
+
+    if (isBackup) {
+      args.add('--backup');
+    }
+
+    final result = await _runCLICommand(args);
+    if (result.exitCode != 0) {
+      throw Exception('Failed to register FIDO2 credential: ${result.stderr}');
+    }
+  }
+
+  /// List all registered FIDO2 credentials
+  static Future<List<Map<String, dynamic>>> listFido2Credentials() async {
+    try {
+      // Read credentials from ~/.openssl_encrypt/plugins/fido2/credentials.json
+      final homeDir = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+      if (homeDir == null) {
+        throw Exception('Could not determine home directory');
+      }
+
+      final credentialsFile = File('$homeDir/.openssl_encrypt/plugins/fido2/credentials.json');
+
+      if (!await credentialsFile.exists()) {
+        return [];
+      }
+
+      final content = await credentialsFile.readAsString();
+      final data = jsonDecode(content) as Map<String, dynamic>;
+      final credentials = data['credentials'] as List<dynamic>? ?? [];
+
+      return credentials.map((c) => c as Map<String, dynamic>).toList();
+    } catch (e) {
+      _outputDebugLog('Error reading FIDO2 credentials: $e');
+      return [];
+    }
+  }
+
+  /// Delete a FIDO2 credential
+  static Future<void> deleteFido2Credential(String credentialId) async {
+    // For now, we'll need to manually edit the credentials file
+    // In a future version, the CLI could support a delete command
+    try {
+      final homeDir = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+      if (homeDir == null) {
+        throw Exception('Could not determine home directory');
+      }
+
+      final credentialsFile = File('$homeDir/.openssl_encrypt/plugins/fido2/credentials.json');
+
+      if (!await credentialsFile.exists()) {
+        throw Exception('Credentials file not found');
+      }
+
+      final content = await credentialsFile.readAsString();
+      final data = jsonDecode(content) as Map<String, dynamic>;
+      final credentials = data['credentials'] as List<dynamic>? ?? [];
+
+      // Remove the credential with matching ID
+      credentials.removeWhere((c) {
+        final cred = c as Map<String, dynamic>;
+        return cred['credential_id'] == credentialId;
+      });
+
+      // Write back to file
+      data['credentials'] = credentials;
+      await credentialsFile.writeAsString(
+        const JsonEncoder.withIndent('  ').convert(data),
+      );
+    } catch (e) {
+      throw Exception('Failed to delete credential: $e');
+    }
   }
 }
 

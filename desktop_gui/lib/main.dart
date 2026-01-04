@@ -9,6 +9,7 @@ import 'file_manager.dart';
 import 'settings_service.dart';
 import 'settings_screen.dart';
 import 'configuration_profiles_screen.dart';
+import 'fido2_management_screen.dart';
 import 'input_validation.dart';
 
 // Intent classes for keyboard shortcuts
@@ -475,6 +476,8 @@ class _MainScreenState extends State<MainScreen> {
         return const InfoTab();
       case 4:
         return SettingsTab(onThemeChanged: widget.onThemeChanged);
+      case 5:
+        return const Fido2ManagementScreen();
       default:
         return TextCryptoTab(onDebugChanged: widget.onDebugChanged, onToggleDebugWindow: _toggleDebugWindow);
     }
@@ -624,6 +627,11 @@ class _MainScreenState extends State<MainScreen> {
                 icon: Icon(Icons.settings_outlined),
                 selectedIcon: Icon(Icons.settings),
                 label: Text('Settings'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.fingerprint),
+                selectedIcon: Icon(Icons.fingerprint),
+                label: Text('FIDO2 Keys'),
               ),
             ],
           ),
@@ -926,6 +934,8 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
       final decrypted = await CLIService.decryptTextWithProgress(
         inputData,
         _passwordController.text,
+        hsmPlugin: _hsmType != 'none' ? _hsmType : null,
+        hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
         onProgress: (progress) {
           setState(() {
             _operationProgress = progress;
@@ -1115,12 +1125,13 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                 Radio<String>(
                   value: 'fido2',
                   groupValue: _hsmType,
-                  onChanged: null,  // Disabled for now, will be enabled in Step 3
+                  onChanged: (value) {
+                    setState(() {
+                      _hsmType = value!;
+                    });
+                  },
                 ),
-                Text(
-                  'FIDO2 hmac-secret',
-                  style: TextStyle(color: Colors.grey.shade600),
-                ),
+                const Text('FIDO2 hmac-secret'),
               ],
             ),
             // YubiKey options
@@ -1180,6 +1191,54 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                     const Expanded(
                       child: Text(
                         'Requires YubiKey with Challenge-Response (HMAC-SHA1) configured. You may need to touch the YubiKey.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            // FIDO2 options
+            if (_hsmType == 'fido2') ...[
+              const Divider(),
+              const SizedBox(height: 8),
+              const Text('FIDO2 Credential:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info, size: 16, color: Colors.green.shade700),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Use the "FIDO2 Keys" tab in the sidebar to register and manage credentials.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info, size: 16, color: Colors.blue.shade700),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Requires a registered FIDO2 credential. You will need to touch your authenticator device during encryption/decryption.',
                         style: TextStyle(fontSize: 12),
                       ),
                     ),
@@ -2514,6 +2573,54 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                 ),
               ),
             ],
+            // FIDO2 options
+            if (_hsmType == 'fido2') ...[
+              const Divider(),
+              const SizedBox(height: 8),
+              const Text('FIDO2 Credential:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info, size: 16, color: Colors.green.shade700),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Use the "FIDO2 Keys" tab in the sidebar to register and manage credentials.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info, size: 16, color: Colors.blue.shade700),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Requires a registered FIDO2 credential. You will need to touch your authenticator device during encryption/decryption.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -3312,6 +3419,8 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
           addDecoyData: _addDecoyData,
           hashConfig: _hashConfig,
           kdfConfig: _kdfConfig,
+          hsmPlugin: _hsmType != 'none' ? _hsmType : null,
+          hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
         );
 
         setState(() {
@@ -3351,6 +3460,8 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
           _hashConfig,        // Use hash configuration from UI
           _kdfConfig,         // Use KDF configuration from UI
           encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
+          hsmPlugin: _hsmType != 'none' ? _hsmType : null,
+          hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
           onProgress: (progress) {
             setState(() {
               _operationStatus = 'Encrypting with $_selectedAlgorithm...';
@@ -3449,6 +3560,8 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
           password: _passwordController.text,
           stegoPassword: _stegoPasswordController.text.isNotEmpty ? _stegoPasswordController.text : null,
           bitsPerChannel: _bitsPerChannel,
+          hsmPlugin: _hsmType != 'none' ? _hsmType : null,
+          hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
         );
 
         setState(() {
@@ -3511,6 +3624,8 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
         final decrypted = await CLIService.decryptTextWithProgress(
           fileContent,  // Pass raw file content
           _passwordController.text,
+          hsmPlugin: _hsmType != 'none' ? _hsmType : null,
+          hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
           onProgress: (progress) {
             setState(() {
               _operationProgress = progress;
@@ -4076,12 +4191,13 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                 Radio<String>(
                   value: 'fido2',
                   groupValue: _hsmType,
-                  onChanged: null,  // Disabled for now, will be enabled in Step 3
+                  onChanged: (value) {
+                    setState(() {
+                      _hsmType = value!;
+                    });
+                  },
                 ),
-                Text(
-                  'FIDO2 hmac-secret',
-                  style: TextStyle(color: Colors.grey.shade600),
-                ),
+                const Text('FIDO2 hmac-secret'),
               ],
             ),
             // YubiKey options
@@ -4141,6 +4257,54 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                     const Expanded(
                       child: Text(
                         'Requires YubiKey with Challenge-Response (HMAC-SHA1) configured. You may need to touch the YubiKey.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            // FIDO2 options
+            if (_hsmType == 'fido2') ...[
+              const Divider(),
+              const SizedBox(height: 8),
+              const Text('FIDO2 Credential:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info, size: 16, color: Colors.green.shade700),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Use the "FIDO2 Keys" tab in the sidebar to register and manage credentials.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info, size: 16, color: Colors.blue.shade700),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Requires a registered FIDO2 credential. You will need to touch your authenticator device during encryption/decryption.',
                         style: TextStyle(fontSize: 12),
                       ),
                     ),
@@ -4842,6 +5006,54 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                           _kdfConfig['argon2']!['type'] = value ?? 2;
                         });
                       },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            // FIDO2 options
+            if (_hsmType == 'fido2') ...[
+              const Divider(),
+              const SizedBox(height: 8),
+              const Text('FIDO2 Credential:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info, size: 16, color: Colors.green.shade700),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Use the "FIDO2 Keys" tab in the sidebar to register and manage credentials.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info, size: 16, color: Colors.blue.shade700),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Requires a registered FIDO2 credential. You will need to touch your authenticator device during encryption/decryption.',
+                        style: TextStyle(fontSize: 12),
+                      ),
                     ),
                   ],
                 ),
