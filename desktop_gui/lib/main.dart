@@ -230,7 +230,7 @@ class _MainScreenState extends State<MainScreen> {
 
   void _showAlgorithmInfo(BuildContext context) {
     setState(() {
-      _selectedIndex = 2; // Switch to info tab
+      _selectedIndex = 3; // Switch to info tab (index 3 = Information tab)
     });
   }
 
@@ -657,7 +657,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
-// Info tab
+// Info tab - Enhanced with algorithm availability and grouped display
 class InfoTab extends StatefulWidget {
   const InfoTab({super.key});
 
@@ -665,207 +665,336 @@ class InfoTab extends StatefulWidget {
   State<InfoTab> createState() => _InfoTabState();
 }
 
-class _InfoTabState extends State<InfoTab> {
-  List<String> _algorithms = [];
-  final Map<String, String> _algorithmDescriptions = {
-    'fernet': 'AES-128-CBC with HMAC authentication (Default)',
-    'aes-gcm': 'AES-256-GCM authenticated encryption',
-    'chacha20-poly1305': 'ChaCha20 stream cipher with Poly1305 MAC',
-    'xchacha20-poly1305': 'Extended ChaCha20-Poly1305 with 192-bit nonce',
-    'aes-siv': 'AES-SIV synthetic IV mode',
-    'aes-gcm-siv': 'AES-GCM-SIV misuse-resistant encryption',
-    'threefish-512': '512-bit block cipher, 256-bit PQ security, CTR+Poly1305',
-    'threefish-1024': '1024-bit block cipher, 512-bit PQ security, CTR+Poly1305',
+class _InfoTabState extends State<InfoTab> with SingleTickerProviderStateMixin {
+  AvailabilityInfo? _availabilityInfo;
+  bool _isLoading = true;
+  late TabController _tabController;
+
+  // Algorithm groupings for encryption
+  final Map<String, List<String>> _encryptionGroups = {
+    'AES Family': ['aes-256-gcm', 'aes-256-gcm-siv', 'aes-256-siv', 'aes-256-ocb3'],
+    'ChaCha Family': ['chacha20-poly1305', 'xchacha20-poly1305'],
+    'Threefish (Large Block)': ['threefish-512', 'threefish-1024'],
+    'Fernet': ['fernet'],
   };
 
-  /// Check if algorithm is available on current platform
-  bool _isAlgorithmAvailable(String algorithm) {
-    // All algorithms are available via CLI backend
-    return true;
-  }
+  // Algorithm groupings for hashes
+  final Map<String, List<String>> _hashGroups = {
+    'SHA-2 Family': ['sha256', 'sha384', 'sha512'],
+    'SHA-3 Family': ['sha3-256', 'sha3-384', 'sha3-512'],
+    'SHAKE (XOF)': ['shake128', 'shake256'],
+    'BLAKE Family': ['blake2b', 'blake2s', 'blake3'],
+  };
 
-  /// Get platform-specific description for algorithm
-  String _getAlgorithmDescription(String algorithm) {
-    return _algorithmDescriptions[algorithm] ?? algorithm;
-  }
+  // KDFs are ungrouped but we'll list them in order
+  final List<String> _kdfOrder = [
+    'pbkdf2',
+    'argon2id',
+    'argon2i',
+    'argon2d',
+    'scrypt',
+    'hkdf',
+    'balloon',
+    'randomx',
+  ];
 
   @override
   void initState() {
     super.initState();
-    _loadAlgorithms();
+    _tabController = TabController(length: 3, vsync: this);
+    _loadAvailabilityInfo();
   }
 
   @override
   void dispose() {
+    _tabController.dispose();
     super.dispose();
   }
 
-  void _loadAlgorithms() async {
-    // Performance optimization: Only load if not already loaded
-    if (_algorithms.isNotEmpty) return;
-
+  Future<void> _loadAvailabilityInfo() async {
     try {
-      final algorithms = await CLIService.getSupportedAlgorithmsList();
+      final info = await CLIService.getAvailabilityInfo();
       setState(() {
-        _algorithms = algorithms;
+        _availabilityInfo = info;
+        _isLoading = false;
       });
     } catch (e) {
       setState(() {
-        _algorithms = ['Error loading algorithms'];
+        _isLoading = false;
       });
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildAlgorithmTile(AlgorithmAvailability algo) {
     return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Supported Algorithms',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  ..._algorithms.map((algo) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Icon(Icons.check_circle, color: Colors.green, size: 16),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    algo,
-                                    style: const TextStyle(fontWeight: FontWeight.bold),
-                                  ),
-                                  if (_algorithmDescriptions.containsKey(algo))
-                                    Text(
-                                      _getAlgorithmDescription(algo),
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: _isAlgorithmAvailable(algo)
-                                            ? Colors.grey[600]
-                                            : Colors.orange[600],
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      )),
-                ],
-              ),
-            ),
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            algo.available ? Icons.check_circle : Icons.cancel,
+            color: algo.available ? Colors.green : Colors.red,
+            size: 18,
           ),
-          const SizedBox(height: 16),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'App Information',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  algo.displayName,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                    color: algo.available ? null : Colors.grey,
                   ),
-                  const SizedBox(height: 8),
-                  const Text('Version: 1.0.0 (Desktop Development)'),
-                  const Text('Build: Desktop GUI Prototype'),
-                  Text('Crypto Backend: ${CLIService.isFlatpakVersion ? 'Flatpak' : 'Development (Python Module)'}'),
-                  const Text('Hash Chaining: CLI Compatible Order'),
-                  const Text('Platform: Flutter'),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          const Card(
-            child: Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+                ),
+                if (algo.requiredLibrary != null)
                   Text(
-                    'Security Features',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    'requires: ${algo.requiredLibrary}${algo.libraryVersion != null ? " (${algo.libraryVersion})" : ""}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[600],
+                      fontStyle: FontStyle.italic,
+                    ),
                   ),
-                  SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Icon(Icons.check_circle, color: Colors.green, size: 16),
-                      SizedBox(width: 8),
-                      Text('AES-128-CBC Encryption (Fernet)'),
-                    ],
+                if (algo.description != null && algo.description!.isNotEmpty)
+                  Text(
+                    algo.description!,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[600],
+                    ),
                   ),
-                  Row(
-                    children: [
-                      Icon(Icons.check_circle, color: Colors.green, size: 16),
-                      SizedBox(width: 8),
-                      Text('Chained Hash/KDF (CLI Compatible)'),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      Icon(Icons.check_circle, color: Colors.green, size: 16),
-                      SizedBox(width: 8),
-                      Text('Multi-Hash Password Processing'),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      Icon(Icons.check_circle, color: Colors.green, size: 16),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'PBKDF2, Scrypt, Argon2, HKDF, Balloon KDFs',
-                          style: TextStyle(fontSize: 14),
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      Icon(Icons.check_circle, color: Colors.green, size: 16),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Post-Quantum Algorithms (ML-KEM, MAYO, CROSS via CLI)',
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      Icon(Icons.check_circle, color: Colors.green, size: 16),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Complete CLI Algorithm Support (AES-SIV, AES-GCM-SIV, AES-OCB3)',
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+              ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildGroupedList(
+    Map<String, List<String>> groups,
+    Map<String, AlgorithmAvailability> algorithms,
+  ) {
+    final widgets = <Widget>[];
+
+    for (final entry in groups.entries) {
+      final groupName = entry.key;
+      final algoNames = entry.value;
+
+      // Get algorithms for this group
+      final groupAlgos = <AlgorithmAvailability>[];
+      for (final name in algoNames) {
+        if (algorithms.containsKey(name)) {
+          groupAlgos.add(algorithms[name]!);
+        }
+      }
+
+      if (groupAlgos.isEmpty) continue;
+
+      widgets.add(
+        ExpansionTile(
+          title: Text(
+            groupName,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          initiallyExpanded: true,
+          children: groupAlgos.map((algo) => _buildAlgorithmTile(algo)).toList(),
+        ),
+      );
+    }
+
+    // Add PQC algorithms (any starting with ml-kem-, kyber, hqc-, mayo-, cross-)
+    final pqcAlgos = algorithms.entries
+        .where((e) =>
+            e.key.startsWith('ml-kem-') ||
+            e.key.startsWith('kyber') ||
+            e.key.startsWith('hqc-') ||
+            e.key.startsWith('mayo-') ||
+            e.key.startsWith('cross-'))
+        .map((e) => e.value)
+        .toList();
+
+    if (pqcAlgos.isNotEmpty) {
+      widgets.add(
+        ExpansionTile(
+          title: const Text(
+            'PQC Hybrid Encryption',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          initiallyExpanded: false,
+          children: pqcAlgos.map((algo) => _buildAlgorithmTile(algo)).toList(),
+        ),
+      );
+    }
+
+    return Column(children: widgets);
+  }
+
+  Widget _buildCiphersTab() {
+    if (_availabilityInfo == null) {
+      return const Center(child: Text('No algorithm information available'));
+    }
+
+    return SingleChildScrollView(
+      child: _buildGroupedList(_encryptionGroups, _availabilityInfo!.ciphers),
+    );
+  }
+
+  Widget _buildHashesTab() {
+    if (_availabilityInfo == null) {
+      return const Center(child: Text('No algorithm information available'));
+    }
+
+    // Filter out whirlpool
+    final filteredHashes = Map<String, AlgorithmAvailability>.from(_availabilityInfo!.hashes)
+      ..removeWhere((key, value) => key.toLowerCase().contains('whirlpool'));
+
+    return SingleChildScrollView(
+      child: _buildGroupedList(_hashGroups, filteredHashes),
+    );
+  }
+
+  Widget _buildKDFsTab() {
+    if (_availabilityInfo == null) {
+      return const Center(child: Text('No algorithm information available'));
+    }
+
+    final widgets = <Widget>[];
+    for (final name in _kdfOrder) {
+      if (_availabilityInfo!.kdfs.containsKey(name)) {
+        widgets.add(_buildAlgorithmTile(_availabilityInfo!.kdfs[name]!));
+      }
+    }
+
+    // Add any KDFs not in the order list
+    for (final entry in _availabilityInfo!.kdfs.entries) {
+      if (!_kdfOrder.contains(entry.key)) {
+        widgets.add(_buildAlgorithmTile(entry.value));
+      }
+    }
+
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(children: widgets),
+      ),
+    );
+  }
+
+  Widget _buildLibraryStatusCard() {
+    if (_availabilityInfo == null) {
+      return const SizedBox.shrink();
+    }
+
+    final libraries = _availabilityInfo!.libraries;
+    if (libraries.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Library Status',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            ...libraries.entries.map((entry) {
+              final libName = entry.key;
+              final libInfo = entry.value;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Icon(
+                      libInfo.available ? Icons.check_circle : Icons.cancel,
+                      color: libInfo.available ? Colors.green : Colors.red,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '$libName${libInfo.version != null ? " v${libInfo.version}" : ""}',
+                        style: TextStyle(
+                          color: libInfo.available ? null : Colors.grey,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
         ),
       ),
+    );
+  }
+
+  Widget _buildAppInfoCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'App Information',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text('Version: 1.0.0 (Desktop Development)'),
+            const Text('Build: Desktop GUI Prototype'),
+            Text('Crypto Backend: ${CLIService.isFlatpakVersion ? 'Flatpak' : 'Development (Python Module)'}'),
+            const Text('Hash Chaining: CLI Compatible Order'),
+            const Text('Platform: Flutter'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    return Column(
+      children: [
+        TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Encryption'),
+            Tab(text: 'Hash Functions'),
+            Tab(text: 'KDFs'),
+          ],
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _buildCiphersTab(),
+              _buildHashesTab(),
+              _buildKDFsTab(),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              _buildLibraryStatusCard(),
+              const SizedBox(height: 8),
+              _buildAppInfoCard(),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
