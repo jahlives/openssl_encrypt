@@ -1465,6 +1465,49 @@ class CLIService {
       throw Exception('Failed to delete credential: $e');
     }
   }
+
+  /// Test keyserver connection
+  static Future<bool> testKeyserverConnection(String url) async {
+    try {
+      final args = [
+        'plugin',
+        'keyserver',
+        'test',
+        '--url', url,
+      ];
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+      return result.exitCode == 0;
+    } catch (e) {
+      _outputDebugLog('Keyserver connection test failed: $e');
+      return false;
+    }
+  }
+
+  /// Clear keyserver cache
+  static Future<bool> clearKeyserverCache() async {
+    try {
+      final args = [
+        'plugin',
+        'keyserver',
+        'clear-cache',
+      ];
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+      return result.exitCode == 0;
+    } catch (e) {
+      _outputDebugLog('Failed to clear keyserver cache: $e');
+      return false;
+    }
+  }
 }
 
 /// Configuration classes for CLI parameters

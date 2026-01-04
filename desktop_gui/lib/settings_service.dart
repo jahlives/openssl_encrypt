@@ -18,6 +18,12 @@ class SettingsService {
   static const String _windowWidthKey = 'window_width';
   static const String _windowHeightKey = 'window_height';
 
+  // Keyserver network plugin settings
+  static const String _keyserverEnabledKey = 'keyserver_enabled';
+  static const String _keyserverUrlKey = 'keyserver_url';
+  static const String _keyserverCacheTtlKey = 'keyserver_cache_ttl_hours';
+  static const String _keyserverUploadEnabledKey = 'keyserver_upload_enabled';
+
   /// Initialize the settings service
   static Future<void> initialize() async {
     _prefs = await SharedPreferences.getInstance();
@@ -168,6 +174,50 @@ class SettingsService {
   }
 
   // =============================================================================
+  // Network Plugins - Keyserver
+  // =============================================================================
+
+  /// Get keyserver enabled state
+  static bool getKeyserverEnabled() {
+    return prefs.getBool(_keyserverEnabledKey) ?? false;
+  }
+
+  /// Set keyserver enabled state
+  static Future<bool> setKeyserverEnabled(bool enabled) {
+    return prefs.setBool(_keyserverEnabledKey, enabled);
+  }
+
+  /// Get keyserver URL
+  static String getKeyserverUrl() {
+    return prefs.getString(_keyserverUrlKey) ?? 'https://keys.openssl-encrypt.org';
+  }
+
+  /// Set keyserver URL
+  static Future<bool> setKeyserverUrl(String url) {
+    return prefs.setString(_keyserverUrlKey, url);
+  }
+
+  /// Get keyserver cache TTL in hours
+  static int getKeyserverCacheTtl() {
+    return prefs.getInt(_keyserverCacheTtlKey) ?? 24;
+  }
+
+  /// Set keyserver cache TTL in hours
+  static Future<bool> setKeyserverCacheTtl(int hours) {
+    return prefs.setInt(_keyserverCacheTtlKey, hours);
+  }
+
+  /// Get keyserver upload enabled state
+  static bool getKeyserverUploadEnabled() {
+    return prefs.getBool(_keyserverUploadEnabledKey) ?? true;
+  }
+
+  /// Set keyserver upload enabled state
+  static Future<bool> setKeyserverUploadEnabled(bool enabled) {
+    return prefs.setBool(_keyserverUploadEnabledKey, enabled);
+  }
+
+  // =============================================================================
   // Utility Methods
   // =============================================================================
 
@@ -206,6 +256,10 @@ class SettingsService {
         _windowMaximizedKey,
         _windowWidthKey,
         _windowHeightKey,
+        _keyserverEnabledKey,
+        _keyserverUrlKey,
+        _keyserverCacheTtlKey,
+        _keyserverUploadEnabledKey,
       };
 
       // Security: Validate settings schema and values
@@ -239,13 +293,18 @@ class SettingsService {
             throw ArgumentError('Invalid output format: $value');
           }
           await prefs.setString(key, value);
+        } else if (key == _keyserverUrlKey) {
+          if (value is! String || value.length > 500 || !value.startsWith('http')) {
+            throw ArgumentError('Invalid keyserver URL: $value');
+          }
+          await prefs.setString(key, value);
         } else if ([_autoSaveSettingsKey, _showAdvancedOptionsKey, _confirmDangerousActionsKey,
-                   _debugModeKey, _windowMaximizedKey].contains(key)) {
+                   _debugModeKey, _windowMaximizedKey, _keyserverEnabledKey, _keyserverUploadEnabledKey].contains(key)) {
           if (value is! bool) {
             throw ArgumentError('Invalid boolean value for $key: $value');
           }
           await prefs.setBool(key, value);
-        } else if ([_maxRecentFilesKey, _windowWidthKey, _windowHeightKey].contains(key)) {
+        } else if ([_maxRecentFilesKey, _windowWidthKey, _windowHeightKey, _keyserverCacheTtlKey].contains(key)) {
           if (value is! int || value < 0 || value > 10000) {
             throw ArgumentError('Invalid integer value for $key: $value');
           }

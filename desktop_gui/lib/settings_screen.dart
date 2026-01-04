@@ -206,6 +206,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
                 const SizedBox(height: 16),
+                if (_matchesSearch('network plugins keyserver'))
+                  _buildCategoryCard(
+                    'Network Plugins',
+                    Icons.cloud,
+                    Colors.teal,
+                    [
+                      _buildKeyserverSection(),
+                    ],
+                  ),
+                const SizedBox(height: 16),
                 if (_matchesSearch('system information'))
                   _buildCategoryCard(
                     'System Information',
@@ -869,6 +879,185 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildKeyserverSection() {
+    return StatefulBuilder(
+      builder: (context, setState) {
+        final keyserverEnabled = SettingsService.getKeyserverEnabled();
+        final keyserverUrl = SettingsService.getKeyserverUrl();
+        final cacheTtl = SettingsService.getKeyserverCacheTtl();
+        final uploadEnabled = SettingsService.getKeyserverUploadEnabled();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Keyserver header with enable toggle
+            Row(
+              children: [
+                const Icon(Icons.vpn_key, size: 20),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Keyserver Plugin',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      Text(
+                        'Distributed public key discovery and sharing',
+                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: keyserverEnabled,
+                  onChanged: (value) async {
+                    await SettingsService.setKeyserverEnabled(value);
+                    setState(() {});
+                    widget.onSettingChanged?.call('keyserver_enabled', value);
+                  },
+                ),
+              ],
+            ),
+
+            if (keyserverEnabled) ...[
+              const Divider(),
+              const SizedBox(height: 8),
+
+              // Server URL
+              ListTile(
+                leading: const Icon(Icons.link, size: 20),
+                title: const Text('Server URL', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                subtitle: TextFormField(
+                  initialValue: keyserverUrl,
+                  style: const TextStyle(fontSize: 12),
+                  decoration: InputDecoration(
+                    hintText: 'https://keys.openssl-encrypt.org',
+                    border: const OutlineInputBorder(),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    suffixIcon: keyserverUrl != 'https://keys.openssl-encrypt.org'
+                        ? IconButton(
+                            icon: const Icon(Icons.restore, size: 16),
+                            onPressed: () async {
+                              await SettingsService.setKeyserverUrl('https://keys.openssl-encrypt.org');
+                              setState(() {});
+                              widget.onSettingChanged?.call('keyserver_url', 'https://keys.openssl-encrypt.org');
+                            },
+                            tooltip: 'Reset to default',
+                          )
+                        : null,
+                  ),
+                  onFieldSubmitted: (value) async {
+                    if (value.isNotEmpty && value.startsWith('http')) {
+                      await SettingsService.setKeyserverUrl(value);
+                      widget.onSettingChanged?.call('keyserver_url', value);
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Cache TTL
+              ListTile(
+                leading: const Icon(Icons.schedule, size: 20),
+                title: const Text('Cache TTL', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                subtitle: DropdownButtonFormField<int>(
+                  value: cacheTtl,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  ),
+                  style: const TextStyle(fontSize: 12, color: Colors.black87),
+                  items: const [
+                    DropdownMenuItem(value: 1, child: Text('1 hour')),
+                    DropdownMenuItem(value: 6, child: Text('6 hours')),
+                    DropdownMenuItem(value: 24, child: Text('24 hours (default)')),
+                    DropdownMenuItem(value: 48, child: Text('48 hours')),
+                    DropdownMenuItem(value: 168, child: Text('7 days (168 hours)')),
+                  ],
+                  onChanged: (value) async {
+                    if (value != null) {
+                      await SettingsService.setKeyserverCacheTtl(value);
+                      setState(() {});
+                      widget.onSettingChanged?.call('keyserver_cache_ttl', value);
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Upload enabled
+              SwitchListTile(
+                secondary: const Icon(Icons.upload, size: 20),
+                title: const Text('Enable Key Upload', style: TextStyle(fontSize: 13)),
+                subtitle: const Text('Allow uploading public keys to keyserver', style: TextStyle(fontSize: 11)),
+                value: uploadEnabled,
+                onChanged: (value) async {
+                  await SettingsService.setKeyserverUploadEnabled(value);
+                  setState(() {});
+                  widget.onSettingChanged?.call('keyserver_upload_enabled', value);
+                },
+              ),
+              const SizedBox(height: 8),
+
+              // Action buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        final success = await CLIService.testKeyserverConnection(keyserverUrl);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(success
+                                ? 'Connection successful!'
+                                : 'Connection failed. Check URL and network.'),
+                              backgroundColor: success ? Colors.green : Colors.red,
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.wifi_tethering, size: 16),
+                      label: const Text('Test', style: TextStyle(fontSize: 12)),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        final success = await CLIService.clearKeyserverCache();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(success
+                                ? 'Cache cleared successfully!'
+                                : 'Failed to clear cache.'),
+                              backgroundColor: success ? Colors.orange : Colors.red,
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.clear_all, size: 16),
+                      label: const Text('Clear Cache', style: TextStyle(fontSize: 12)),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 }
