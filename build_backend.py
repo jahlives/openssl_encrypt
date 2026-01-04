@@ -37,7 +37,7 @@ def check_liboqs():
 
 
 def build_liboqs():
-    """Attempt to build liboqs dependencies."""
+    """Check for liboqs dependencies and show installation message."""
     print("\n" + "="*60, flush=True)
     print("Custom build backend: Checking liboqs dependencies", flush=True)
     print("="*60, flush=True)
@@ -48,10 +48,10 @@ def build_liboqs():
         return
 
     print("✗ liboqs-python not found", flush=True)
-    print("\nNote: liboqs dependencies are not installed.", flush=True)
+    print("\nNote: Optional cryptographic libraries not installed.", flush=True)
     print("PQC algorithms will not be available.", flush=True)
-    print("\nTo enable PQC support, install liboqs manually:", flush=True)
-    print("  See: https://github.com/open-quantum-safe/liboqs", flush=True)
+    print("\nTo enable PQC support after installation, run:", flush=True)
+    print("  openssl-encrypt install-dependencies", flush=True)
     print("="*60 + "\n", flush=True)
 
 
