@@ -252,7 +252,7 @@ class CLIService {
 
       // SHA-2 Family
       final sha2Hashes = availabilityInfo.hashes.entries
-          .where((e) => e.key.startsWith('sha') && !e.key.startsWith('sha3') && !e.key.startsWith('shake'))
+          .where((e) => e.key.startsWith('sha') && !e.key.startsWith('sha3-') && !e.key.startsWith('shake'))
           .map((e) => e.key)
           .toList();
       // Add sha224 if not already present (may not be in registry but supported by CLI)
