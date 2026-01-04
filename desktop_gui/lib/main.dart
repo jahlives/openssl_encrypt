@@ -724,6 +724,11 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   String _hsmType = 'none';  // 'none', 'yubikey', 'fido2'
   int? _yubikeySlot;         // null = auto-detect, 1 or 2 = manual
 
+  // Integrity settings
+  bool _enableIntegrity = false;      // For encrypt mode: register hash
+  bool _verifyIntegrity = false;      // For decrypt mode: verify before decrypt
+  String? _integrityVerificationResult;  // Store verification result
+
   @override
   void initState() {
     super.initState();
@@ -866,6 +871,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
         encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
         hsmPlugin: _hsmType != 'none' ? _hsmType : null,
         hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
+        enableIntegrity: _enableIntegrity,
         onProgress: (progress) {
           setState(() {
             _operationProgress = progress;
@@ -937,6 +943,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
         _passwordController.text,
         hsmPlugin: _hsmType != 'none' ? _hsmType : null,
         hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
+        verifyIntegrity: _verifyIntegrity,
         onProgress: (progress) {
           setState(() {
             _operationProgress = progress;
@@ -956,6 +963,10 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
               _progressValue = 0.9;
             } else if (status.contains('completed')) {
               _progressValue = 1.0;
+            }
+            // Capture integrity verification result
+            if (status.contains('Integrity') || status.contains('verified')) {
+              _integrityVerificationResult = status;
             }
           });
         },
@@ -1246,6 +1257,122 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
                   ],
                 ),
               ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build integrity verification section
+  Widget _buildIntegritySection() {
+    // Determine mode based on whether we have encrypted data
+    final bool isEncryptMode = result.isEmpty || !result.startsWith('ENCRYPTED:');
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.verified, size: 20, color: Colors.teal),
+                const SizedBox(width: 8),
+                Text(
+                  'Integrity Verification',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (isEncryptMode) ...[
+              // Encrypt mode: Register hash
+              CheckboxListTile(
+                value: _enableIntegrity,
+                onChanged: (value) {
+                  setState(() {
+                    _enableIntegrity = value ?? false;
+                  });
+                },
+                title: Text(
+                  'Register hash with integrity server',
+                  style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface),
+                ),
+                subtitle: Text(
+                  'Upload encrypted data hash to integrity server for future verification',
+                  style: TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ] else ...[
+              // Decrypt mode: Verify integrity
+              CheckboxListTile(
+                value: _verifyIntegrity,
+                onChanged: (value) {
+                  setState(() {
+                    _verifyIntegrity = value ?? false;
+                    // Reset verification result when toggling
+                    if (!_verifyIntegrity) {
+                      _integrityVerificationResult = null;
+                    }
+                  });
+                },
+                title: Text(
+                  'Verify integrity before decryption',
+                  style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface),
+                ),
+                subtitle: Text(
+                  'Check if encrypted data hash matches the registered hash on integrity server',
+                  style: TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+              // Show verification result if available
+              if (_integrityVerificationResult != null) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _integrityVerificationResult!.contains('✓')
+                        ? Colors.green.withValues(alpha: 0.1)
+                        : Colors.orange.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: _integrityVerificationResult!.contains('✓')
+                          ? Colors.green
+                          : Colors.orange,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _integrityVerificationResult!.contains('✓')
+                            ? Icons.check_circle
+                            : Icons.warning,
+                        size: 16,
+                        color: _integrityVerificationResult!.contains('✓')
+                            ? Colors.green
+                            : Colors.orange,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _integrityVerificationResult!,
+                          style: TextStyle(fontSize: 11),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ],
         ),
@@ -1804,6 +1931,11 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
             ],
           ),
           const SizedBox(height: 16),
+          // Integrity verification settings
+          if (SettingsService.getIntegrityEnabled())
+            _buildIntegritySection(),
+          if (SettingsService.getIntegrityEnabled())
+            const SizedBox(height: 16),
           if (_isLoading)
             Card(
               color: Theme.of(context).colorScheme.tertiaryContainer,
