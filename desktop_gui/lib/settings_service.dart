@@ -24,6 +24,17 @@ class SettingsService {
   static const String _keyserverCacheTtlKey = 'keyserver_cache_ttl_hours';
   static const String _keyserverUploadEnabledKey = 'keyserver_upload_enabled';
 
+  // Remote Pepper network plugin settings
+  static const String _pepperEnabledKey = 'pepper_enabled';
+  static const String _pepperServerUrlKey = 'pepper_server_url';
+  static const String _pepperClientCertPathKey = 'pepper_client_cert_path';
+  static const String _pepperClientKeyPathKey = 'pepper_client_key_path';
+  static const String _pepperCaCertPathKey = 'pepper_ca_cert_path';
+  static const String _pepperClientCertPemKey = 'pepper_client_cert_pem';
+  static const String _pepperClientKeyPemKey = 'pepper_client_key_pem';
+  static const String _pepperCaCertPemKey = 'pepper_ca_cert_pem';
+  static const String _pepperCertModeKey = 'pepper_cert_mode'; // 'file' or 'pem'
+
   /// Initialize the settings service
   static Future<void> initialize() async {
     _prefs = await SharedPreferences.getInstance();
@@ -218,6 +229,118 @@ class SettingsService {
   }
 
   // =============================================================================
+  // Network Plugins - Remote Pepper
+  // =============================================================================
+
+  /// Get pepper enabled state
+  static bool getPepperEnabled() {
+    return prefs.getBool(_pepperEnabledKey) ?? false;
+  }
+
+  /// Set pepper enabled state
+  static Future<bool> setPepperEnabled(bool enabled) {
+    return prefs.setBool(_pepperEnabledKey, enabled);
+  }
+
+  /// Get pepper server URL
+  static String getPepperServerUrl() {
+    return prefs.getString(_pepperServerUrlKey) ?? 'https://pepper.openssl-encrypt.org';
+  }
+
+  /// Set pepper server URL
+  static Future<bool> setPepperServerUrl(String url) {
+    return prefs.setString(_pepperServerUrlKey, url);
+  }
+
+  /// Get pepper certificate mode ('file' or 'pem')
+  static String getPepperCertMode() {
+    return prefs.getString(_pepperCertModeKey) ?? 'file';
+  }
+
+  /// Set pepper certificate mode
+  static Future<bool> setPepperCertMode(String mode) {
+    return prefs.setString(_pepperCertModeKey, mode);
+  }
+
+  /// Get pepper client certificate file path
+  static String? getPepperClientCertPath() {
+    return prefs.getString(_pepperClientCertPathKey);
+  }
+
+  /// Set pepper client certificate file path
+  static Future<bool> setPepperClientCertPath(String? path) {
+    if (path == null) {
+      return prefs.remove(_pepperClientCertPathKey);
+    }
+    return prefs.setString(_pepperClientCertPathKey, path);
+  }
+
+  /// Get pepper client key file path
+  static String? getPepperClientKeyPath() {
+    return prefs.getString(_pepperClientKeyPathKey);
+  }
+
+  /// Set pepper client key file path
+  static Future<bool> setPepperClientKeyPath(String? path) {
+    if (path == null) {
+      return prefs.remove(_pepperClientKeyPathKey);
+    }
+    return prefs.setString(_pepperClientKeyPathKey, path);
+  }
+
+  /// Get pepper CA certificate file path
+  static String? getPepperCaCertPath() {
+    return prefs.getString(_pepperCaCertPathKey);
+  }
+
+  /// Set pepper CA certificate file path
+  static Future<bool> setPepperCaCertPath(String? path) {
+    if (path == null) {
+      return prefs.remove(_pepperCaCertPathKey);
+    }
+    return prefs.setString(_pepperCaCertPathKey, path);
+  }
+
+  /// Get pepper client certificate PEM content
+  static String? getPepperClientCertPem() {
+    return prefs.getString(_pepperClientCertPemKey);
+  }
+
+  /// Set pepper client certificate PEM content
+  static Future<bool> setPepperClientCertPem(String? pem) {
+    if (pem == null) {
+      return prefs.remove(_pepperClientCertPemKey);
+    }
+    return prefs.setString(_pepperClientCertPemKey, pem);
+  }
+
+  /// Get pepper client key PEM content
+  static String? getPepperClientKeyPem() {
+    return prefs.getString(_pepperClientKeyPemKey);
+  }
+
+  /// Set pepper client key PEM content
+  static Future<bool> setPepperClientKeyPem(String? pem) {
+    if (pem == null) {
+      return prefs.remove(_pepperClientKeyPemKey);
+    }
+    return prefs.setString(_pepperClientKeyPemKey, pem);
+  }
+
+  /// Get pepper CA certificate PEM content
+  static String? getPepperCaCertPem() {
+    return prefs.getString(_pepperCaCertPemKey);
+  }
+
+  /// Set pepper CA certificate PEM content
+  static Future<bool> setPepperCaCertPem(String? pem) {
+    if (pem == null) {
+      return prefs.remove(_pepperCaCertPemKey);
+    }
+    return prefs.setString(_pepperCaCertPemKey, pem);
+  }
+
+  // =============================================================================
   // Utility Methods
   // =============================================================================
 
@@ -260,6 +383,15 @@ class SettingsService {
         _keyserverUrlKey,
         _keyserverCacheTtlKey,
         _keyserverUploadEnabledKey,
+        _pepperEnabledKey,
+        _pepperServerUrlKey,
+        _pepperClientCertPathKey,
+        _pepperClientKeyPathKey,
+        _pepperCaCertPathKey,
+        _pepperClientCertPemKey,
+        _pepperClientKeyPemKey,
+        _pepperCaCertPemKey,
+        _pepperCertModeKey,
       };
 
       // Security: Validate settings schema and values
@@ -293,13 +425,36 @@ class SettingsService {
             throw ArgumentError('Invalid output format: $value');
           }
           await prefs.setString(key, value);
-        } else if (key == _keyserverUrlKey) {
+        } else if (key == _keyserverUrlKey || key == _pepperServerUrlKey) {
           if (value is! String || value.length > 500 || !value.startsWith('http')) {
-            throw ArgumentError('Invalid keyserver URL: $value');
+            throw ArgumentError('Invalid server URL for $key: $value');
+          }
+          await prefs.setString(key, value);
+        } else if ([_pepperClientCertPathKey, _pepperClientKeyPathKey, _pepperCaCertPathKey].contains(key)) {
+          if (value != null && (value is! String || value.length > 1000)) {
+            throw ArgumentError('Invalid file path for $key: $value');
+          }
+          if (value == null) {
+            await prefs.remove(key);
+          } else {
+            await prefs.setString(key, value);
+          }
+        } else if ([_pepperClientCertPemKey, _pepperClientKeyPemKey, _pepperCaCertPemKey].contains(key)) {
+          if (value != null && (value is! String || value.length > 50000)) {
+            throw ArgumentError('Invalid PEM content for $key: $value');
+          }
+          if (value == null) {
+            await prefs.remove(key);
+          } else {
+            await prefs.setString(key, value);
+          }
+        } else if (key == _pepperCertModeKey) {
+          if (value is! String || !['file', 'pem'].contains(value)) {
+            throw ArgumentError('Invalid cert mode: $value');
           }
           await prefs.setString(key, value);
         } else if ([_autoSaveSettingsKey, _showAdvancedOptionsKey, _confirmDangerousActionsKey,
-                   _debugModeKey, _windowMaximizedKey, _keyserverEnabledKey, _keyserverUploadEnabledKey].contains(key)) {
+                   _debugModeKey, _windowMaximizedKey, _keyserverEnabledKey, _keyserverUploadEnabledKey, _pepperEnabledKey].contains(key)) {
           if (value is! bool) {
             throw ArgumentError('Invalid boolean value for $key: $value');
           }

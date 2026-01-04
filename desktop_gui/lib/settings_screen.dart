@@ -206,13 +206,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
                 const SizedBox(height: 16),
-                if (_matchesSearch('network plugins keyserver'))
+                if (_matchesSearch('network plugins keyserver pepper'))
                   _buildCategoryCard(
                     'Network Plugins',
                     Icons.cloud,
                     Colors.teal,
                     [
                       _buildKeyserverSection(),
+                      const Divider(height: 32),
+                      _buildPepperSection(),
                     ],
                   ),
                 const SizedBox(height: 16),
@@ -1058,6 +1060,423 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildPepperSection() {
+    return StatefulBuilder(
+      builder: (context, setState) {
+        final pepperEnabled = SettingsService.getPepperEnabled();
+        final pepperUrl = SettingsService.getPepperServerUrl();
+        final certMode = SettingsService.getPepperCertMode();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Pepper header with enable toggle
+            Row(
+              children: [
+                const Icon(Icons.key, size: 20),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Remote Pepper Plugin',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      Text(
+                        'Network-based pepper with mTLS and 2FA',
+                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: pepperEnabled,
+                  onChanged: (value) async {
+                    await SettingsService.setPepperEnabled(value);
+                    setState(() {});
+                    widget.onSettingChanged?.call('pepper_enabled', value);
+                  },
+                ),
+              ],
+            ),
+
+            if (pepperEnabled) ...[
+              const SizedBox(height: 8),
+              // Security warning
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning, size: 16, color: Colors.orange.shade700),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Warning: Remote pepper requires secure mTLS authentication. Keep certificates safe.',
+                        style: TextStyle(fontSize: 11),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(),
+              const SizedBox(height: 8),
+
+              // Server URL
+              ListTile(
+                leading: const Icon(Icons.link, size: 20),
+                title: const Text('Server URL', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                subtitle: TextFormField(
+                  initialValue: pepperUrl,
+                  style: const TextStyle(fontSize: 12),
+                  decoration: InputDecoration(
+                    hintText: 'https://pepper.openssl-encrypt.org',
+                    border: const OutlineInputBorder(),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    suffixIcon: pepperUrl != 'https://pepper.openssl-encrypt.org'
+                        ? IconButton(
+                            icon: const Icon(Icons.restore, size: 16),
+                            onPressed: () async {
+                              await SettingsService.setPepperServerUrl('https://pepper.openssl-encrypt.org');
+                              setState(() {});
+                              widget.onSettingChanged?.call('pepper_server_url', 'https://pepper.openssl-encrypt.org');
+                            },
+                            tooltip: 'Reset to default',
+                          )
+                        : null,
+                  ),
+                  onFieldSubmitted: (value) async {
+                    if (value.isNotEmpty && value.startsWith('http')) {
+                      await SettingsService.setPepperServerUrl(value);
+                      widget.onSettingChanged?.call('pepper_server_url', value);
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Certificate mode selector
+              ListTile(
+                leading: const Icon(Icons.security, size: 20),
+                title: const Text('Certificate Mode', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                subtitle: SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(
+                      value: 'file',
+                      label: Text('File Paths', style: TextStyle(fontSize: 11)),
+                      icon: Icon(Icons.folder, size: 16),
+                    ),
+                    ButtonSegment(
+                      value: 'pem',
+                      label: Text('Paste PEM', style: TextStyle(fontSize: 11)),
+                      icon: Icon(Icons.content_paste, size: 16),
+                    ),
+                  ],
+                  selected: {certMode},
+                  onSelectionChanged: (Set<String> newSelection) async {
+                    await SettingsService.setPepperCertMode(newSelection.first);
+                    setState(() {});
+                    widget.onSettingChanged?.call('pepper_cert_mode', newSelection.first);
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Certificate configuration based on mode
+              if (certMode == 'file')
+                _buildCertificateFilePaths(setState)
+              else
+                _buildCertificatePemInputs(setState),
+
+              const SizedBox(height: 8),
+
+              // Action buttons
+              _buildPepperActionButtons(pepperUrl, certMode, setState),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildCertificateFilePaths(StateSetter setState) {
+    final clientCertPath = SettingsService.getPepperClientCertPath();
+    final clientKeyPath = SettingsService.getPepperClientKeyPath();
+    final caCertPath = SettingsService.getPepperCaCertPath();
+
+    return Column(
+      children: [
+        // Client Certificate
+        ListTile(
+          leading: const Icon(Icons.badge, size: 20),
+          title: const Text('Client Certificate', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: Text(
+            clientCertPath ?? 'Not set',
+            style: const TextStyle(fontSize: 11),
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.folder_open, size: 18),
+                onPressed: () async {
+                  final result = await FilePicker.platform.pickFiles(
+                    type: FileType.custom,
+                    allowedExtensions: ['pem', 'crt', 'cert'],
+                  );
+                  if (result != null && result.files.single.path != null) {
+                    await SettingsService.setPepperClientCertPath(result.files.single.path);
+                    setState(() {});
+                  }
+                },
+                tooltip: 'Select file',
+              ),
+              if (clientCertPath != null)
+                IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () async {
+                    await SettingsService.setPepperClientCertPath(null);
+                    setState(() {});
+                  },
+                  tooltip: 'Clear',
+                ),
+            ],
+          ),
+        ),
+
+        // Client Key
+        ListTile(
+          leading: const Icon(Icons.vpn_key, size: 20),
+          title: const Text('Client Key', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: Text(
+            clientKeyPath ?? 'Not set',
+            style: const TextStyle(fontSize: 11),
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.folder_open, size: 18),
+                onPressed: () async {
+                  final result = await FilePicker.platform.pickFiles(
+                    type: FileType.custom,
+                    allowedExtensions: ['pem', 'key'],
+                  );
+                  if (result != null && result.files.single.path != null) {
+                    await SettingsService.setPepperClientKeyPath(result.files.single.path);
+                    setState(() {});
+                  }
+                },
+                tooltip: 'Select file',
+              ),
+              if (clientKeyPath != null)
+                IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () async {
+                    await SettingsService.setPepperClientKeyPath(null);
+                    setState(() {});
+                  },
+                  tooltip: 'Clear',
+                ),
+            ],
+          ),
+        ),
+
+        // CA Certificate
+        ListTile(
+          leading: const Icon(Icons.verified_user, size: 20),
+          title: const Text('CA Certificate', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: Text(
+            caCertPath ?? 'Not set',
+            style: const TextStyle(fontSize: 11),
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.folder_open, size: 18),
+                onPressed: () async {
+                  final result = await FilePicker.platform.pickFiles(
+                    type: FileType.custom,
+                    allowedExtensions: ['pem', 'crt', 'cert'],
+                  );
+                  if (result != null && result.files.single.path != null) {
+                    await SettingsService.setPepperCaCertPath(result.files.single.path);
+                    setState(() {});
+                  }
+                },
+                tooltip: 'Select file',
+              ),
+              if (caCertPath != null)
+                IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () async {
+                    await SettingsService.setPepperCaCertPath(null);
+                    setState(() {});
+                  },
+                  tooltip: 'Clear',
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCertificatePemInputs(StateSetter setState) {
+    return Column(
+      children: [
+        // Client Cert + Key PEM
+        ListTile(
+          leading: const Icon(Icons.badge, size: 20),
+          title: const Text('Client Certificate + Key (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: const Text('Paste combined certificate and private key', style: TextStyle(fontSize: 10)),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: TextFormField(
+            initialValue: SettingsService.getPepperClientCertPem(),
+            maxLines: 4,
+            style: const TextStyle(fontSize: 10, fontFamily: 'monospace'),
+            decoration: const InputDecoration(
+              hintText: '-----BEGIN CERTIFICATE-----\n...\n-----END PRIVATE KEY-----',
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.all(8),
+            ),
+            onChanged: (value) async {
+              await SettingsService.setPepperClientCertPem(value.isEmpty ? null : value);
+            },
+          ),
+        ),
+        const SizedBox(height: 8),
+
+        // CA Certificate PEM
+        ListTile(
+          leading: const Icon(Icons.verified_user, size: 20),
+          title: const Text('CA Certificate (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: const Text('Paste CA certificate', style: TextStyle(fontSize: 10)),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: TextFormField(
+            initialValue: SettingsService.getPepperCaCertPem(),
+            maxLines: 4,
+            style: const TextStyle(fontSize: 10, fontFamily: 'monospace'),
+            decoration: const InputDecoration(
+              hintText: '-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----',
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.all(8),
+            ),
+            onChanged: (value) async {
+              await SettingsService.setPepperCaCertPem(value.isEmpty ? null : value);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPepperActionButtons(String pepperUrl, String certMode, StateSetter setState) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  final result = await CLIService.testPepperConnection(
+                    url: pepperUrl,
+                    clientCertPath: certMode == 'file' ? SettingsService.getPepperClientCertPath() : null,
+                    clientKeyPath: certMode == 'file' ? SettingsService.getPepperClientKeyPath() : null,
+                    caCertPath: certMode == 'file' ? SettingsService.getPepperCaCertPath() : null,
+                  );
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(result['success']
+                          ? 'mTLS connection successful!'
+                          : 'Connection failed: ${result['message']}'),
+                        backgroundColor: result['success'] ? Colors.green : Colors.red,
+                      ),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.wifi_tethering, size: 16),
+                label: const Text('Test mTLS', style: TextStyle(fontSize: 12)),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  final peppers = await CLIService.listPeppers();
+                  if (context.mounted) {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Stored Peppers'),
+                        content: peppers.isEmpty
+                          ? const Text('No peppers stored yet.')
+                          : SizedBox(
+                              width: double.maxFinite,
+                              child: ListView.builder(
+                                shrinkWrap: true,
+                                itemCount: peppers.length,
+                                itemBuilder: (context, i) => ListTile(
+                                  leading: const Icon(Icons.fiber_manual_record, size: 12),
+                                  title: Text(peppers[i]['id'] ?? 'Unknown', style: const TextStyle(fontSize: 12)),
+                                  subtitle: Text('Created: ${peppers[i]['created_at'] ?? 'N/A'}', style: const TextStyle(fontSize: 10)),
+                                ),
+                              ),
+                            ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Close'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.list, size: 16),
+                label: const Text('List Peppers', style: TextStyle(fontSize: 12)),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ElevatedButton.icon(
+          onPressed: () {
+            // TODO: Implement TOTP setup dialog
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('TOTP setup coming soon')),
+            );
+          },
+          icon: const Icon(Icons.qr_code, size: 16),
+          label: const Text('Setup 2FA (TOTP)', style: TextStyle(fontSize: 12)),
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+          ),
+        ),
+      ],
     );
   }
 }
