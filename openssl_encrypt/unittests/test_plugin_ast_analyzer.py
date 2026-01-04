@@ -151,10 +151,9 @@ def plugin_function():
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert not is_safe
-        # Should detect both import os and os.system
-        assert len(violations) >= 2
+        # Should detect os.system() call (os import is now allowed)
+        assert len(violations) >= 1
         violation_types = [v.violation_type for v in violations]
-        assert "dangerous_import" in violation_types
         assert "dangerous_os_function" in violation_types
 
     def test_os_popen_call_detected(self):
@@ -224,8 +223,9 @@ def plugin_function():
 
     def test_all_dangerous_modules_detected(self):
         """All dangerous modules should be detected"""
+        # Note: 'os' and 'socket' are now allowed (file/network access controlled by sandbox)
         dangerous_modules = [
-            'subprocess', 'os', 'socket', 'ctypes', 'multiprocessing',
+            'subprocess', 'ctypes', 'multiprocessing',
             'importlib', 'sys', 'shutil'
         ]
 
@@ -287,7 +287,8 @@ def plugin_function(data):
         """Common safe imports should be allowed"""
         safe_imports = [
             'json', 'datetime', 'hashlib', 'base64', 'uuid',
-            'collections', 'itertools', 'functools', 'typing'
+            'collections', 'itertools', 'functools', 'typing',
+            'os', 'socket'  # Now allowed (file/network access controlled by sandbox)
         ]
 
         for module in safe_imports:
@@ -301,6 +302,29 @@ def plugin_function():
 
             assert is_safe, f"Safe module '{module}' was incorrectly flagged as dangerous"
             assert len(violations) == 0
+
+    def test_file_operations_allowed(self):
+        """File operations (open) should be allowed - sandbox controls access"""
+        code = '''
+import os
+import json
+
+def plugin_function(config_dir):
+    # Safe file operations - sandbox controls allowed paths
+    config_file = os.path.join(config_dir, "config.json")
+
+    with open(config_file, "r") as f:
+        config = json.load(f)
+
+    with open(config_file, "w") as f:
+        json.dump(config, f)
+
+    return config
+'''
+        is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
+
+        assert is_safe, "File operations should be allowed"
+        assert len(violations) == 0
 
 
 class TestSyntaxErrors:
