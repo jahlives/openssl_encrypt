@@ -1,5 +1,6 @@
 """Setup script for the openssl-encrypt package."""
 import os
+import shutil
 import subprocess  # nosec B404
 import sys
 from typing import List
@@ -155,8 +156,23 @@ def build_local_dependencies():
         env['LIBOQS_VERSION'] = REQUIRED_LIBOQS_VERSION
         env['LIBOQS_PYTHON_VERSION'] = REQUIRED_LIBOQS_PYTHON_VERSION
 
+        # Find bash in common locations
+        bash_paths = ['/bin/bash', '/usr/bin/bash', '/usr/local/bin/bash']
+        bash_cmd = None
+        for bash_path in bash_paths:
+            if os.path.exists(bash_path):
+                bash_cmd = bash_path
+                break
+
+        if bash_cmd is None:
+            # Try to find bash via PATH
+            bash_cmd = shutil.which('bash')
+
+        if bash_cmd is None:
+            raise RuntimeError("bash not found - required to run build script")
+
         # Run build script
-        subprocess.check_call(['/bin/bash', install_script], env=env)
+        subprocess.check_call([bash_cmd, install_script], env=env)
 
         # Verify versions after build
         if not check_liboqs_version():
