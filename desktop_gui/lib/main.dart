@@ -793,14 +793,16 @@ class _InfoTabState extends State<InfoTab> with SingleTickerProviderStateMixin {
 
       if (groupAlgos.isEmpty) continue;
 
+      final children = groupAlgos.map((algo) => _buildAlgorithmTile(algo)).toList();
       widgets.add(
         ExpansionTile(
+          key: PageStorageKey<String>('group_$groupName'),
           title: Text(
             groupName,
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
-          initiallyExpanded: true,
-          children: groupAlgos.map((algo) => _buildAlgorithmTile(algo)).toList(),
+          initiallyExpanded: false,
+          children: children,
         ),
       );
     }
@@ -817,14 +819,16 @@ class _InfoTabState extends State<InfoTab> with SingleTickerProviderStateMixin {
         .toList();
 
     if (pqcAlgos.isNotEmpty) {
+      final pqcChildren = pqcAlgos.map((algo) => _buildAlgorithmTile(algo)).toList();
       widgets.add(
         ExpansionTile(
+          key: const PageStorageKey<String>('group_PQC_Hybrid_Encryption'),
           title: const Text(
             'PQC Hybrid Encryption',
             style: TextStyle(fontWeight: FontWeight.bold),
           ),
           initiallyExpanded: false,
-          children: pqcAlgos.map((algo) => _buildAlgorithmTile(algo)).toList(),
+          children: pqcChildren,
         ),
       );
     }
