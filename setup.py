@@ -236,35 +236,35 @@ class PostInstallCommand(Command):
 
 
 class CustomBuildPyCommand(build_py):
-    """Custom build_py that checks dependencies (runs during editable install)"""
+    """Custom build_py - shows message about optional dependencies"""
     def run(self):
-        try:
-            build_local_dependencies()
-        except Exception as e:
-            print(f"\nNote: Optional dependency build skipped: {e}")
-            print("You can install them later with: openssl-encrypt install-dependencies\n")
+        print("\n" + "="*70)
+        print("Note: Optional cryptographic libraries (liboqs, threefish) not installed")
+        print("To add post-quantum and advanced cipher support, run after install:")
+        print("  openssl-encrypt install-dependencies")
+        print("="*70 + "\n")
         build_py.run(self)
 
 
 class CustomDevelopCommand(develop):
-    """Custom development install that builds dependencies"""
+    """Custom development install - shows message about optional dependencies"""
     def run(self):
-        try:
-            build_local_dependencies()
-        except Exception as e:
-            print(f"\nNote: Optional dependency build skipped: {e}")
-            print("You can install them later with: openssl-encrypt install-dependencies\n")
+        print("\n" + "="*70)
+        print("Note: Optional cryptographic libraries (liboqs, threefish) not installed")
+        print("To add post-quantum and advanced cipher support, run after install:")
+        print("  openssl-encrypt install-dependencies")
+        print("="*70 + "\n")
         develop.run(self)
 
 
 class CustomInstallCommand(install):
-    """Custom install that builds dependencies"""
+    """Custom install - shows message about optional dependencies"""
     def run(self):
-        try:
-            build_local_dependencies()
-        except Exception as e:
-            print(f"\nNote: Optional dependency build skipped: {e}")
-            print("You can install them later with: openssl-encrypt install-dependencies\n")
+        print("\n" + "="*70)
+        print("Note: Optional cryptographic libraries (liboqs, threefish) not installed")
+        print("To add post-quantum and advanced cipher support, run after install:")
+        print("  openssl-encrypt install-dependencies")
+        print("="*70 + "\n")
         install.run(self)
 
 
