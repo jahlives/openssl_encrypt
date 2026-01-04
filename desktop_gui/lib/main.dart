@@ -729,6 +729,16 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   // Encryption mode selection
   EncryptionMode _encryptionMode = EncryptionMode.symmetric;
 
+  // Asymmetric encryption state
+  List<String> _selectedRecipients = [];
+  String? _signingIdentity;
+  String? _decryptionIdentity;
+  String? _verifyFrom;
+  bool _skipVerification = false;
+  bool _useKeyserver = false;
+  List<Map<String, dynamic>> _ownIdentities = [];
+  List<Map<String, dynamic>> _contacts = [];
+
   // Performance optimization caches
   static bool _algorithmsLoaded = false;
   static List<String>? _cachedAlgorithms;
@@ -751,6 +761,7 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
   void initState() {
     super.initState();
     _loadAlgorithms();
+    _loadIdentities();
   }
 
   @override
@@ -847,6 +858,24 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
           'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1},
           'randomx': {'enabled': false, 'rounds': 1, 'mode': 'light', 'height': 1, 'hash_len': 32}
         };
+      });
+    }
+  }
+
+  /// Load identities for asymmetric encryption
+  void _loadIdentities() async {
+    try {
+      final identities = await CLIService.listIdentities();
+      setState(() {
+        _ownIdentities = identities['own'] ?? [];
+        _contacts = identities['contacts'] ?? [];
+      });
+    } catch (e) {
+      CLIService.outputDebugLog('Failed to load identities: $e');
+      // Non-fatal error, just means no identities available
+      setState(() {
+        _ownIdentities = [];
+        _contacts = [];
       });
     }
   }
@@ -1083,6 +1112,347 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
         const SnackBar(content: Text('No log file available')),
       );
     }
+  }
+
+  /// Build asymmetric encryption UI section (for encrypt mode)
+  Widget _buildAsymmetricEncryptSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.vpn_key),
+                const SizedBox(width: 8),
+                const Text('Asymmetric Encryption Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Warning if no identities exist
+            if (_ownIdentities.isEmpty && _contacts.isEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  border: Border.all(color: Colors.orange),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.warning, color: Colors.orange.shade700),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'No identities available',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('You need to create an identity before using asymmetric encryption.'),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        // Navigate to Identity Management screen
+                        final mainScreenState = context.findAncestorStateOfType<_MainScreenState>();
+                        mainScreenState?.setState(() {
+                          mainScreenState._selectedIndex = 5; // Identities tab
+                        });
+                      },
+                      icon: const Icon(Icons.badge),
+                      label: const Text('Go to Identity Management'),
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              // Recipients selector
+              const Text('Recipients (who can decrypt):', style: TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ..._selectedRecipients.map((recipient) => Chip(
+                    label: Text(recipient),
+                    deleteIcon: const Icon(Icons.close, size: 18),
+                    onDeleted: () {
+                      setState(() {
+                        _selectedRecipients.remove(recipient);
+                      });
+                    },
+                  )),
+                  ActionChip(
+                    avatar: const Icon(Icons.add, size: 18),
+                    label: const Text('Add Recipient'),
+                    onPressed: () => _showAddRecipientDialog(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Signing identity dropdown
+              const Text('Sign with (optional):', style: TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _signingIdentity,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Select signing identity',
+                  helperText: 'Digitally sign the encrypted data with your identity',
+                ),
+                items: [
+                  const DropdownMenuItem<String>(
+                    value: null,
+                    child: Text('None (unsigned)'),
+                  ),
+                  ..._ownIdentities.map((identity) => DropdownMenuItem<String>(
+                    value: identity['name'] as String,
+                    child: Text(identity['name'] as String),
+                  )),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _signingIdentity = value;
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // Use keyserver checkbox
+              CheckboxListTile(
+                value: _useKeyserver,
+                onChanged: (value) {
+                  setState(() {
+                    _useKeyserver = value ?? false;
+                  });
+                },
+                title: const Text('Use keyserver for recipient lookup'),
+                subtitle: const Text('Automatically fetch recipient public keys from keyserver', style: TextStyle(fontSize: 11)),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build asymmetric decryption UI section (for decrypt mode)
+  Widget _buildAsymmetricDecryptSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.vpn_key),
+                const SizedBox(width: 8),
+                const Text('Asymmetric Decryption Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Warning if no own identities exist
+            if (_ownIdentities.isEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  border: Border.all(color: Colors.orange),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.warning, color: Colors.orange.shade700),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'No identities available',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('You need an identity to decrypt asymmetrically encrypted data.'),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        final mainScreenState = context.findAncestorStateOfType<_MainScreenState>();
+                        mainScreenState?.setState(() {
+                          mainScreenState._selectedIndex = 5;
+                        });
+                      },
+                      icon: const Icon(Icons.badge),
+                      label: const Text('Go to Identity Management'),
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              // Decryption identity dropdown
+              const Text('Decrypt with identity:', style: TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _decryptionIdentity,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Select decryption identity',
+                  helperText: 'The identity that was specified as a recipient',
+                ),
+                items: _ownIdentities.map((identity) => DropdownMenuItem<String>(
+                  value: identity['name'] as String,
+                  child: Text(identity['name'] as String),
+                )).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _decryptionIdentity = value;
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // Verify sender dropdown
+              const Text('Verify signature from (optional):', style: TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _verifyFrom,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Select sender to verify',
+                  helperText: 'Verify the digital signature from the sender',
+                ),
+                items: [
+                  const DropdownMenuItem<String>(
+                    value: null,
+                    child: Text('Don\'t verify signature'),
+                  ),
+                  ..._ownIdentities.map((identity) => DropdownMenuItem<String>(
+                    value: identity['name'] as String,
+                    child: Text('${identity['name']} (own)'),
+                  )),
+                  ..._contacts.map((contact) => DropdownMenuItem<String>(
+                    value: contact['name'] as String,
+                    child: Text('${contact['name']} (contact)'),
+                  )),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _verifyFrom = value;
+                  });
+                },
+              ),
+
+              // Skip verification checkbox (advanced/dangerous)
+              if (_showAdvanced) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    border: Border.all(color: Colors.red.shade200),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: CheckboxListTile(
+                    value: _skipVerification,
+                    onChanged: (value) {
+                      setState(() {
+                        _skipVerification = value ?? false;
+                      });
+                    },
+                    title: const Text('Skip signature verification (dangerous)', style: TextStyle(color: Colors.red)),
+                    subtitle: const Text('Only use if you understand the security implications', style: TextStyle(fontSize: 11)),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Show dialog to add recipient
+  void _showAddRecipientDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Recipient'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Select a recipient who will be able to decrypt this data:'),
+              const SizedBox(height: 16),
+              ...(_ownIdentities.isEmpty && _contacts.isEmpty)
+                  ? [const Text('No identities or contacts available')]
+                  : [
+                      ..._ownIdentities.map((identity) {
+                        final name = identity['name'] as String;
+                        final isSelected = _selectedRecipients.contains(name);
+                        return ListTile(
+                          leading: const Icon(Icons.badge),
+                          title: Text('$name (own)'),
+                          subtitle: identity['email'] != null ? Text(identity['email'] as String) : null,
+                          trailing: isSelected ? const Icon(Icons.check, color: Colors.green) : null,
+                          onTap: isSelected
+                              ? null
+                              : () {
+                                  setState(() {
+                                    _selectedRecipients.add(name);
+                                  });
+                                  Navigator.pop(context);
+                                },
+                        );
+                      }),
+                      ..._contacts.map((contact) {
+                        final name = contact['name'] as String;
+                        final isSelected = _selectedRecipients.contains(name);
+                        return ListTile(
+                          leading: const Icon(Icons.contact_mail),
+                          title: Text('$name (contact)'),
+                          subtitle: contact['email'] != null ? Text(contact['email'] as String) : null,
+                          trailing: isSelected ? const Icon(Icons.check, color: Colors.green) : null,
+                          onTap: isSelected
+                              ? null
+                              : () {
+                                  setState(() {
+                                    _selectedRecipients.add(name);
+                                  });
+                                  Navigator.pop(context);
+                                },
+                        );
+                      }),
+                    ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Build encryption mode selector widget
@@ -1509,7 +1879,22 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
           // Encryption Mode Selector
           _buildEncryptionModeSelector(),
           const SizedBox(height: 16),
-          // Advanced Algorithm Selection
+
+          // Asymmetric mode sections (shown only in asymmetric mode)
+          if (_encryptionMode == EncryptionMode.asymmetric) ...[
+            // Show encrypt section for encryption
+            if (result.isEmpty || !result.contains(':')) ...[
+              _buildAsymmetricEncryptSection(),
+              const SizedBox(height: 16),
+            ] else ...[
+              // Show decrypt section for decryption
+              _buildAsymmetricDecryptSection(),
+              const SizedBox(height: 16),
+            ],
+          ],
+
+          // Advanced Algorithm Selection (only show in symmetric/cascade modes)
+          if (_encryptionMode != EncryptionMode.asymmetric)
           Card(
             child: Padding(
               padding: const EdgeInsets.all(12.0),
@@ -3373,6 +3758,16 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   // Encryption mode selection
   EncryptionMode _encryptionMode = EncryptionMode.symmetric;
 
+  // Asymmetric encryption state
+  List<String> _selectedRecipients = [];
+  String? _signingIdentity;
+  String? _decryptionIdentity;
+  String? _verifyFrom;
+  bool _skipVerification = false;
+  bool _useKeyserver = false;
+  List<Map<String, dynamic>> _ownIdentities = [];
+  List<Map<String, dynamic>> _contacts = [];
+
   // Steganography state
   bool _enableSteganography = false;
   FileInfo? _coverImageFile;
@@ -3395,6 +3790,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   void initState() {
     super.initState();
     _loadAlgorithms();
+    _loadIdentities();
   }
 
   Future<void> _loadAlgorithms() async {
@@ -3441,6 +3837,23 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
           'hkdf': {'enabled': false, 'info': 'openssl_encrypt_hkdf', 'rounds': 1},
           'randomx': {'enabled': false, 'rounds': 1, 'mode': 'light', 'height': 1, 'hash_len': 32}
         };
+      });
+    }
+  }
+
+  /// Load identities for asymmetric encryption
+  void _loadIdentities() async {
+    try {
+      final identities = await CLIService.listIdentities();
+      setState(() {
+        _ownIdentities = identities['own'] ?? [];
+        _contacts = identities['contacts'] ?? [];
+      });
+    } catch (e) {
+      CLIService.outputDebugLog('Failed to load identities: $e');
+      setState(() {
+        _ownIdentities = [];
+        _contacts = [];
       });
     }
   }
@@ -4374,6 +4787,332 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
     );
   }
 
+  /// Build asymmetric encryption UI section (for encrypt mode)
+  Widget _buildAsymmetricEncryptSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.vpn_key),
+                const SizedBox(width: 8),
+                const Text('Asymmetric Encryption Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (_ownIdentities.isEmpty && _contacts.isEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  border: Border.all(color: Colors.orange),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.warning, color: Colors.orange.shade700),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'No identities available',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('You need to create an identity before using asymmetric encryption.'),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        final mainScreenState = context.findAncestorStateOfType<_MainScreenState>();
+                        mainScreenState?.setState(() {
+                          mainScreenState._selectedIndex = 5;
+                        });
+                      },
+                      icon: const Icon(Icons.badge),
+                      label: const Text('Go to Identity Management'),
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              const Text('Recipients (who can decrypt):', style: TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ..._selectedRecipients.map((recipient) => Chip(
+                    label: Text(recipient),
+                    deleteIcon: const Icon(Icons.close, size: 18),
+                    onDeleted: () {
+                      setState(() {
+                        _selectedRecipients.remove(recipient);
+                      });
+                    },
+                  )),
+                  ActionChip(
+                    avatar: const Icon(Icons.add, size: 18),
+                    label: const Text('Add Recipient'),
+                    onPressed: () => _showAddRecipientDialog(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Text('Sign with (optional):', style: TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _signingIdentity,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Select signing identity',
+                  helperText: 'Digitally sign the encrypted data with your identity',
+                ),
+                items: [
+                  const DropdownMenuItem<String>(
+                    value: null,
+                    child: Text('None (unsigned)'),
+                  ),
+                  ..._ownIdentities.map((identity) => DropdownMenuItem<String>(
+                    value: identity['name'] as String,
+                    child: Text(identity['name'] as String),
+                  )),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _signingIdentity = value;
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
+              CheckboxListTile(
+                value: _useKeyserver,
+                onChanged: (value) {
+                  setState(() {
+                    _useKeyserver = value ?? false;
+                  });
+                },
+                title: const Text('Use keyserver for recipient lookup'),
+                subtitle: const Text('Automatically fetch recipient public keys from keyserver', style: TextStyle(fontSize: 11)),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build asymmetric decryption UI section (for decrypt mode)
+  Widget _buildAsymmetricDecryptSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.vpn_key),
+                const SizedBox(width: 8),
+                const Text('Asymmetric Decryption Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (_ownIdentities.isEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  border: Border.all(color: Colors.orange),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.warning, color: Colors.orange.shade700),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'No identities available',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('You need an identity to decrypt asymmetrically encrypted data.'),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        final mainScreenState = context.findAncestorStateOfType<_MainScreenState>();
+                        mainScreenState?.setState(() {
+                          mainScreenState._selectedIndex = 5;
+                        });
+                      },
+                      icon: const Icon(Icons.badge),
+                      label: const Text('Go to Identity Management'),
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              const Text('Decrypt with identity:', style: TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _decryptionIdentity,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Select decryption identity',
+                  helperText: 'The identity that was specified as a recipient',
+                ),
+                items: _ownIdentities.map((identity) => DropdownMenuItem<String>(
+                  value: identity['name'] as String,
+                  child: Text(identity['name'] as String),
+                )).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _decryptionIdentity = value;
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
+              const Text('Verify signature from (optional):', style: TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _verifyFrom,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Select sender to verify',
+                  helperText: 'Verify the digital signature from the sender',
+                ),
+                items: [
+                  const DropdownMenuItem<String>(
+                    value: null,
+                    child: Text('Don\'t verify signature'),
+                  ),
+                  ..._ownIdentities.map((identity) => DropdownMenuItem<String>(
+                    value: identity['name'] as String,
+                    child: Text('${identity['name']} (own)'),
+                  )),
+                  ..._contacts.map((contact) => DropdownMenuItem<String>(
+                    value: contact['name'] as String,
+                    child: Text('${contact['name']} (contact)'),
+                  )),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _verifyFrom = value;
+                  });
+                },
+              ),
+              if (_showAdvanced) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    border: Border.all(color: Colors.red.shade200),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: CheckboxListTile(
+                    value: _skipVerification,
+                    onChanged: (value) {
+                      setState(() {
+                        _skipVerification = value ?? false;
+                      });
+                    },
+                    title: const Text('Skip signature verification (dangerous)', style: TextStyle(color: Colors.red)),
+                    subtitle: const Text('Only use if you understand the security implications', style: TextStyle(fontSize: 11)),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Show dialog to add recipient
+  void _showAddRecipientDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Recipient'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Select a recipient who will be able to decrypt this data:'),
+              const SizedBox(height: 16),
+              ...(_ownIdentities.isEmpty && _contacts.isEmpty)
+                  ? [const Text('No identities or contacts available')]
+                  : [
+                      ..._ownIdentities.map((identity) {
+                        final name = identity['name'] as String;
+                        final isSelected = _selectedRecipients.contains(name);
+                        return ListTile(
+                          leading: const Icon(Icons.badge),
+                          title: Text('$name (own)'),
+                          subtitle: identity['email'] != null ? Text(identity['email'] as String) : null,
+                          trailing: isSelected ? const Icon(Icons.check, color: Colors.green) : null,
+                          onTap: isSelected
+                              ? null
+                              : () {
+                                  setState(() {
+                                    _selectedRecipients.add(name);
+                                  });
+                                  Navigator.pop(context);
+                                },
+                        );
+                      }),
+                      ..._contacts.map((contact) {
+                        final name = contact['name'] as String;
+                        final isSelected = _selectedRecipients.contains(name);
+                        return ListTile(
+                          leading: const Icon(Icons.contact_mail),
+                          title: Text('$name (contact)'),
+                          subtitle: contact['email'] != null ? Text(contact['email'] as String) : null,
+                          trailing: isSelected ? const Icon(Icons.check, color: Colors.green) : null,
+                          onTap: isSelected
+                              ? null
+                              : () {
+                                  setState(() {
+                                    _selectedRecipients.add(name);
+                                  });
+                                  Navigator.pop(context);
+                                },
+                        );
+                      }),
+                    ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Build encryption mode selector widget
   Widget _buildEncryptionModeSelector() {
     return Card(
@@ -4717,7 +5456,15 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
           // Encryption Mode Selector
           _buildEncryptionModeSelector(),
           const SizedBox(height: 16),
-          // Algorithm Selection Card (same as TextCryptoTab)
+
+          // Asymmetric mode sections
+          if (_encryptionMode == EncryptionMode.asymmetric) ...[
+            _buildAsymmetricEncryptSection(),
+            const SizedBox(height: 16),
+          ],
+
+          // Algorithm Selection Card (only show in symmetric/cascade modes)
+          if (_encryptionMode != EncryptionMode.asymmetric)
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
@@ -7376,11 +8123,47 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
   bool _enableIntegrity = false;      // For encrypt mode: register hash
   bool _verifyIntegrity = false;      // For decrypt mode: verify before decrypt
 
+  // Advanced settings
+  bool _showAdvanced = false;
+
   // Encryption mode selection
   EncryptionMode _encryptionMode = EncryptionMode.symmetric;
 
+  // Asymmetric encryption state
+  List<String> _selectedRecipients = [];
+  String? _signingIdentity;
+  String? _decryptionIdentity;
+  String? _verifyFrom;
+  bool _skipVerification = false;
+  bool _useKeyserver = false;
+  List<Map<String, dynamic>> _ownIdentities = [];
+  List<Map<String, dynamic>> _contacts = [];
+
   // Cached dropdown items for algorithms (performance optimization)
   static final Map<String, List<DropdownMenuItem<String>>> _dropdownCache = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadIdentities();
+  }
+
+  /// Load identities for asymmetric encryption
+  void _loadIdentities() async {
+    try {
+      final identities = await CLIService.listIdentities();
+      setState(() {
+        _ownIdentities = identities['own'] ?? [];
+        _contacts = identities['contacts'] ?? [];
+      });
+    } catch (e) {
+      CLIService.outputDebugLog('Failed to load identities: $e');
+      setState(() {
+        _ownIdentities = [];
+        _contacts = [];
+      });
+    }
+  }
 
   List<DropdownMenuItem<String>> _getCachedAlgorithmDropdownItems(List<String> algorithms) {
     final key = algorithms.join(',');
@@ -7391,6 +8174,332 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
       )).toList();
     }
     return _dropdownCache[key]!;
+  }
+
+  /// Build asymmetric encryption UI section (for encrypt mode)
+  Widget _buildAsymmetricEncryptSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.vpn_key),
+                const SizedBox(width: 8),
+                const Text('Asymmetric Encryption Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (_ownIdentities.isEmpty && _contacts.isEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  border: Border.all(color: Colors.orange),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.warning, color: Colors.orange.shade700),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'No identities available',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('You need to create an identity before using asymmetric encryption.'),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        final mainScreenState = context.findAncestorStateOfType<_MainScreenState>();
+                        mainScreenState?.setState(() {
+                          mainScreenState._selectedIndex = 5;
+                        });
+                      },
+                      icon: const Icon(Icons.badge),
+                      label: const Text('Go to Identity Management'),
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              const Text('Recipients (who can decrypt):', style: TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ..._selectedRecipients.map((recipient) => Chip(
+                    label: Text(recipient),
+                    deleteIcon: const Icon(Icons.close, size: 18),
+                    onDeleted: () {
+                      setState(() {
+                        _selectedRecipients.remove(recipient);
+                      });
+                    },
+                  )),
+                  ActionChip(
+                    avatar: const Icon(Icons.add, size: 18),
+                    label: const Text('Add Recipient'),
+                    onPressed: () => _showAddRecipientDialog(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Text('Sign with (optional):', style: TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _signingIdentity,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Select signing identity',
+                  helperText: 'Digitally sign the encrypted data with your identity',
+                ),
+                items: [
+                  const DropdownMenuItem<String>(
+                    value: null,
+                    child: Text('None (unsigned)'),
+                  ),
+                  ..._ownIdentities.map((identity) => DropdownMenuItem<String>(
+                    value: identity['name'] as String,
+                    child: Text(identity['name'] as String),
+                  )),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _signingIdentity = value;
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
+              CheckboxListTile(
+                value: _useKeyserver,
+                onChanged: (value) {
+                  setState(() {
+                    _useKeyserver = value ?? false;
+                  });
+                },
+                title: const Text('Use keyserver for recipient lookup'),
+                subtitle: const Text('Automatically fetch recipient public keys from keyserver', style: TextStyle(fontSize: 11)),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build asymmetric decryption UI section (for decrypt mode)
+  Widget _buildAsymmetricDecryptSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.vpn_key),
+                const SizedBox(width: 8),
+                const Text('Asymmetric Decryption Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (_ownIdentities.isEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  border: Border.all(color: Colors.orange),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.warning, color: Colors.orange.shade700),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'No identities available',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('You need an identity to decrypt asymmetrically encrypted data.'),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        final mainScreenState = context.findAncestorStateOfType<_MainScreenState>();
+                        mainScreenState?.setState(() {
+                          mainScreenState._selectedIndex = 5;
+                        });
+                      },
+                      icon: const Icon(Icons.badge),
+                      label: const Text('Go to Identity Management'),
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              const Text('Decrypt with identity:', style: TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _decryptionIdentity,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Select decryption identity',
+                  helperText: 'The identity that was specified as a recipient',
+                ),
+                items: _ownIdentities.map((identity) => DropdownMenuItem<String>(
+                  value: identity['name'] as String,
+                  child: Text(identity['name'] as String),
+                )).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _decryptionIdentity = value;
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
+              const Text('Verify signature from (optional):', style: TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _verifyFrom,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Select sender to verify',
+                  helperText: 'Verify the digital signature from the sender',
+                ),
+                items: [
+                  const DropdownMenuItem<String>(
+                    value: null,
+                    child: Text('Don\'t verify signature'),
+                  ),
+                  ..._ownIdentities.map((identity) => DropdownMenuItem<String>(
+                    value: identity['name'] as String,
+                    child: Text('${identity['name']} (own)'),
+                  )),
+                  ..._contacts.map((contact) => DropdownMenuItem<String>(
+                    value: contact['name'] as String,
+                    child: Text('${contact['name']} (contact)'),
+                  )),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _verifyFrom = value;
+                  });
+                },
+              ),
+              if (_showAdvanced) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    border: Border.all(color: Colors.red.shade200),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: CheckboxListTile(
+                    value: _skipVerification,
+                    onChanged: (value) {
+                      setState(() {
+                        _skipVerification = value ?? false;
+                      });
+                    },
+                    title: const Text('Skip signature verification (dangerous)', style: TextStyle(color: Colors.red)),
+                    subtitle: const Text('Only use if you understand the security implications', style: TextStyle(fontSize: 11)),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Show dialog to add recipient
+  void _showAddRecipientDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Recipient'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Select a recipient who will be able to decrypt this data:'),
+              const SizedBox(height: 16),
+              ...(_ownIdentities.isEmpty && _contacts.isEmpty)
+                  ? [const Text('No identities or contacts available')]
+                  : [
+                      ..._ownIdentities.map((identity) {
+                        final name = identity['name'] as String;
+                        final isSelected = _selectedRecipients.contains(name);
+                        return ListTile(
+                          leading: const Icon(Icons.badge),
+                          title: Text('$name (own)'),
+                          subtitle: identity['email'] != null ? Text(identity['email'] as String) : null,
+                          trailing: isSelected ? const Icon(Icons.check, color: Colors.green) : null,
+                          onTap: isSelected
+                              ? null
+                              : () {
+                                  setState(() {
+                                    _selectedRecipients.add(name);
+                                  });
+                                  Navigator.pop(context);
+                                },
+                        );
+                      }),
+                      ..._contacts.map((contact) {
+                        final name = contact['name'] as String;
+                        final isSelected = _selectedRecipients.contains(name);
+                        return ListTile(
+                          leading: const Icon(Icons.contact_mail),
+                          title: Text('$name (contact)'),
+                          subtitle: contact['email'] != null ? Text(contact['email'] as String) : null,
+                          trailing: isSelected ? const Icon(Icons.check, color: Colors.green) : null,
+                          onTap: isSelected
+                              ? null
+                              : () {
+                                  setState(() {
+                                    _selectedRecipients.add(name);
+                                  });
+                                  Navigator.pop(context);
+                                },
+                        );
+                      }),
+                    ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Build encryption mode selector widget
@@ -7637,6 +8746,15 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
             // Encryption Mode Selector
             _buildEncryptionModeSelector(),
             const SizedBox(height: 16),
+
+            // Asymmetric mode section
+            if (_encryptionMode == EncryptionMode.asymmetric) ...[
+              if (_selectedOperation == 'encrypt')
+                _buildAsymmetricEncryptSection()
+              else if (_selectedOperation == 'decrypt')
+                _buildAsymmetricDecryptSection(),
+              const SizedBox(height: 16),
+            ],
 
             Card(
               child: Padding(
