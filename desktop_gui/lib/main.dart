@@ -3146,6 +3146,11 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
   int? _yubikeySlot;         // null = auto-detect, 1 or 2 = manual
   bool _stegoExtractMode = false;  // For decrypt mode
 
+  // Integrity settings
+  bool _enableIntegrity = false;      // For encrypt mode: register hash
+  bool _verifyIntegrity = false;      // For decrypt mode: verify before decrypt
+  String? _integrityVerificationResult;  // Store verification result
+
   @override
   void initState() {
     super.initState();
@@ -3421,6 +3426,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
           kdfConfig: _kdfConfig,
           hsmPlugin: _hsmType != 'none' ? _hsmType : null,
           hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
+          enableIntegrity: _enableIntegrity,
         );
 
         setState(() {
@@ -3462,6 +3468,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
           encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
           hsmPlugin: _hsmType != 'none' ? _hsmType : null,
           hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
+          enableIntegrity: _enableIntegrity,
           onProgress: (progress) {
             setState(() {
               _operationStatus = 'Encrypting with $_selectedAlgorithm...';
@@ -3562,6 +3569,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
           bitsPerChannel: _bitsPerChannel,
           hsmPlugin: _hsmType != 'none' ? _hsmType : null,
           hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
+          verifyIntegrity: _verifyIntegrity,
         );
 
         setState(() {
@@ -3626,6 +3634,7 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
           _passwordController.text,
           hsmPlugin: _hsmType != 'none' ? _hsmType : null,
           hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
+          verifyIntegrity: _verifyIntegrity,
           onProgress: (progress) {
             setState(() {
               _operationProgress = progress;
@@ -3645,6 +3654,10 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                 _progressValue = 0.9;
               } else if (status.contains('completed')) {
                 _progressValue = 1.0;
+              }
+              // Capture integrity verification result
+              if (status.contains('Integrity') || status.contains('verified')) {
+                _integrityVerificationResult = status;
               }
             });
           },
@@ -4535,6 +4548,9 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
           const SizedBox(height: 8),
           // Steganography settings (Decrypt mode - Extract from stego image)
           _buildSteganographySection(isEncryptMode: false),
+          const SizedBox(height: 16),
+          // Integrity verification settings
+          _buildIntegritySection(),
           const SizedBox(height: 16),
           TextFormField(
             controller: _passwordController,
@@ -5543,6 +5559,130 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
                   ),
                   dense: true,
                   contentPadding: EdgeInsets.zero,
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build integrity verification section
+  Widget _buildIntegritySection() {
+    // Check if integrity is enabled in settings
+    final integrityEnabled = SettingsService.getIntegrityEnabled();
+
+    if (!integrityEnabled) {
+      // Don't show the section if integrity is not configured
+      return const SizedBox.shrink();
+    }
+
+    // Determine if we're in encrypt or decrypt mode based on selected file
+    final bool isEncryptMode = _selectedFile == null || !(_selectedFile!.name.endsWith('.enc'));
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.verified, size: 20, color: Colors.teal),
+                const SizedBox(width: 8),
+                Text(
+                  'Integrity Verification',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (isEncryptMode) ...[
+              // Encrypt mode: Register hash
+              CheckboxListTile(
+                value: _enableIntegrity,
+                onChanged: (value) {
+                  setState(() {
+                    _enableIntegrity = value ?? false;
+                  });
+                },
+                title: Text(
+                  'Register hash with integrity server',
+                  style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface),
+                ),
+                subtitle: Text(
+                  'Upload encrypted file hash to integrity server for future verification',
+                  style: TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ] else ...[
+              // Decrypt mode: Verify integrity
+              CheckboxListTile(
+                value: _verifyIntegrity,
+                onChanged: (value) {
+                  setState(() {
+                    _verifyIntegrity = value ?? false;
+                    // Reset verification result when toggling
+                    if (!_verifyIntegrity) {
+                      _integrityVerificationResult = null;
+                    }
+                  });
+                },
+                title: Text(
+                  'Verify integrity before decryption',
+                  style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface),
+                ),
+                subtitle: Text(
+                  'Check if file hash matches the registered hash on integrity server',
+                  style: TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+              // Show verification result if available
+              if (_integrityVerificationResult != null) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _integrityVerificationResult!.contains('✓')
+                        ? Colors.green.withValues(alpha: 0.1)
+                        : Colors.orange.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: _integrityVerificationResult!.contains('✓')
+                          ? Colors.green
+                          : Colors.orange,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _integrityVerificationResult!.contains('✓')
+                            ? Icons.check_circle
+                            : Icons.warning,
+                        size: 16,
+                        color: _integrityVerificationResult!.contains('✓')
+                            ? Colors.green
+                            : Colors.orange,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _integrityVerificationResult!,
+                          style: TextStyle(fontSize: 11),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ],

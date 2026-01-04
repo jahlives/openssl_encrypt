@@ -185,7 +185,7 @@ class CLIService {
     String algorithm,
     Map<String, Map<String, dynamic>>? hashConfig,
     Map<String, Map<String, dynamic>>? kdfConfig,
-    {String? encryptData, String? hsmPlugin, int? hsmSlot, Function(String)? onProgress, Function(String)? onStatus}
+    {String? encryptData, String? hsmPlugin, int? hsmSlot, bool enableIntegrity = false, Function(String)? onProgress, Function(String)? onStatus}
   ) async {
     Directory? tempDir;
     try {
@@ -350,6 +350,11 @@ class CLIService {
         }
       }
 
+      // Add integrity plugin if enabled
+      if (enableIntegrity) {
+        args.add('--integrity');
+      }
+
       if (debugEnabled) {
         args.add('--debug');
       }
@@ -434,7 +439,7 @@ class CLIService {
   static Future<String> decryptTextWithProgress(
     String encryptedData,
     String password,
-    {String? hsmPlugin, int? hsmSlot, Function(String)? onProgress, Function(String)? onStatus}
+    {String? hsmPlugin, int? hsmSlot, bool verifyIntegrity = false, Function(String)? onProgress, Function(String)? onStatus}
   ) async {
     Directory? tempDir;
     try {
@@ -493,6 +498,11 @@ class CLIService {
         if (hsmSlot != null) {
           args.addAll(['--hsm-slot', hsmSlot.toString()]);
         }
+      }
+
+      // Add integrity verification if enabled
+      if (verifyIntegrity) {
+        args.add('--verify-integrity');
       }
 
       if (debugEnabled) {
@@ -1240,6 +1250,7 @@ class CLIService {
     Map<String, Map<String, dynamic>>? kdfConfig,
     String? hsmPlugin,
     int? hsmSlot,
+    bool enableIntegrity = false,
   }) async {
     final args = [
       'encrypt',
@@ -1342,6 +1353,11 @@ class CLIService {
       }
     }
 
+    // Add integrity plugin if enabled
+    if (enableIntegrity) {
+      args.add('--integrity');
+    }
+
     return await _runCLICommandWithProgress(
       args,
       environment: {'CRYPT_PASSWORD': password},
@@ -1357,6 +1373,7 @@ class CLIService {
     int bitsPerChannel = 1,
     String? hsmPlugin,
     int? hsmSlot,
+    bool verifyIntegrity = false,
   }) async {
     final args = [
       'decrypt',
@@ -1378,6 +1395,11 @@ class CLIService {
       if (hsmSlot != null) {
         args.addAll(['--hsm-slot', hsmSlot.toString()]);
       }
+    }
+
+    // Add integrity verification if enabled
+    if (verifyIntegrity) {
+      args.add('--verify-integrity');
     }
 
     return await _runCLICommandWithProgress(
