@@ -21,6 +21,10 @@ class CLIService {
   static String? _debugLogFile;
   static VoidCallback? _onDebugLogAdded;
 
+  // Cache for algorithm availability info (fetched once at startup)
+  static AvailabilityInfo? _availabilityCache;
+  static bool _availabilityLoading = false;
+
   /// Initialize CLI service and verify CLI is available
   static Future<bool> initialize() async {
     try {
@@ -33,6 +37,10 @@ class CLIService {
         print('=== CLI Backend Initialized ===');
         print(getVersionInfo());
         print('===============================');
+
+        // Fetch algorithm availability info at startup (non-blocking)
+        getAvailabilityInfo();
+
         return true;
       }
 
@@ -47,6 +55,10 @@ class CLIService {
           print('=== CLI Backend Initialized ===');
           print(getVersionInfo());
           print('===============================');
+
+          // Fetch algorithm availability info at startup (non-blocking)
+          getAvailabilityInfo();
+
           return true;
         }
       } catch (e) {
@@ -58,6 +70,54 @@ class CLIService {
     } catch (e) {
       _outputDebugLog('CLI initialization error: $e');
       return false;
+    }
+  }
+
+  /// Get algorithm availability info (cached at startup)
+  static Future<AvailabilityInfo?> getAvailabilityInfo() async {
+    if (_availabilityCache != null) return _availabilityCache;
+    if (_availabilityLoading) {
+      // Wait for loading to complete
+      while (_availabilityLoading) {
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+      return _availabilityCache;
+    }
+
+    _availabilityLoading = true;
+    try {
+      final result = await _runCLICommand(['list-available-algorithms']);
+      if (result.exitCode == 0) {
+        final json = jsonDecode(result.stdout.toString()) as Map<String, dynamic>;
+        _availabilityCache = AvailabilityInfo.fromJson(json);
+      }
+    } catch (e) {
+      _outputDebugLog('Error fetching availability info: $e');
+    } finally {
+      _availabilityLoading = false;
+    }
+    return _availabilityCache;
+  }
+
+  /// Check if a specific algorithm is available
+  static Future<bool> isAlgorithmAvailable(
+      String algorithm, String category) async {
+    final info = await getAvailabilityInfo();
+    if (info == null) return true; // Assume available if can't check
+
+    switch (category) {
+      case 'cipher':
+        return info.ciphers[algorithm]?.available ?? true;
+      case 'hash':
+        return info.hashes[algorithm]?.available ?? true;
+      case 'kdf':
+        return info.kdfs[algorithm]?.available ?? true;
+      case 'kem':
+        return info.kems[algorithm]?.available ?? true;
+      case 'signature':
+        return info.signatures[algorithm]?.available ?? true;
+      default:
+        return true;
     }
   }
 
@@ -2162,6 +2222,132 @@ class CLIService {
       _outputDebugLog('Integrity verification failed: $e');
       return false;
     }
+  }
+}
+
+/// Algorithm availability information
+class AlgorithmAvailability {
+  final String name;
+  final String displayName;
+  final bool available;
+  final String? requiredLibrary;
+  final String securityLevel;
+  final String? description;
+  final String? libraryVersion;
+
+  AlgorithmAvailability({
+    required this.name,
+    required this.displayName,
+    required this.available,
+    this.requiredLibrary,
+    required this.securityLevel,
+    this.description,
+    this.libraryVersion,
+  });
+
+  factory AlgorithmAvailability.fromJson(
+    String name,
+    Map<String, dynamic> json,
+    Map<String, dynamic> libraries,
+  ) {
+    final requiredLib = json['required_library'] as String?;
+    String? libVersion;
+    if (requiredLib != null && libraries.containsKey(requiredLib)) {
+      final libInfo = libraries[requiredLib] as Map<String, dynamic>;
+      if (libInfo['available'] == true) {
+        libVersion = libInfo['version'] as String?;
+      }
+    }
+
+    return AlgorithmAvailability(
+      name: name,
+      displayName: json['display_name'] as String? ?? name,
+      available: json['available'] as bool? ?? false,
+      requiredLibrary: requiredLib,
+      securityLevel: json['security_level'] as String? ?? 'STANDARD',
+      description: json['description'] as String?,
+      libraryVersion: libVersion,
+    );
+  }
+}
+
+/// Library information
+class LibraryInfo {
+  final bool available;
+  final String? version;
+  final List<String> requiredFor;
+
+  LibraryInfo({
+    required this.available,
+    this.version,
+    required this.requiredFor,
+  });
+
+  factory LibraryInfo.fromJson(Map<String, dynamic> json) {
+    return LibraryInfo(
+      available: json['available'] as bool? ?? false,
+      version: json['version'] as String?,
+      requiredFor: (json['required_for'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
+    );
+  }
+}
+
+/// Complete availability information from CLI
+class AvailabilityInfo {
+  final Map<String, AlgorithmAvailability> ciphers;
+  final Map<String, AlgorithmAvailability> hashes;
+  final Map<String, AlgorithmAvailability> kdfs;
+  final Map<String, AlgorithmAvailability> kems;
+  final Map<String, AlgorithmAvailability> signatures;
+  final Map<String, LibraryInfo> libraries;
+
+  AvailabilityInfo({
+    required this.ciphers,
+    required this.hashes,
+    required this.kdfs,
+    required this.kems,
+    required this.signatures,
+    required this.libraries,
+  });
+
+  factory AvailabilityInfo.fromJson(Map<String, dynamic> json) {
+    final libraries = <String, LibraryInfo>{};
+    final libsJson = json['libraries'] as Map<String, dynamic>? ?? {};
+    for (final entry in libsJson.entries) {
+      libraries[entry.key] =
+          LibraryInfo.fromJson(entry.value as Map<String, dynamic>);
+    }
+
+    return AvailabilityInfo(
+      ciphers: _parseAlgorithms(
+          json['ciphers'] as Map<String, dynamic>?, libsJson),
+      hashes:
+          _parseAlgorithms(json['hashes'] as Map<String, dynamic>?, libsJson),
+      kdfs: _parseAlgorithms(json['kdfs'] as Map<String, dynamic>?, libsJson),
+      kems: _parseAlgorithms(json['kems'] as Map<String, dynamic>?, libsJson),
+      signatures: _parseAlgorithms(
+          json['signatures'] as Map<String, dynamic>?, libsJson),
+      libraries: libraries,
+    );
+  }
+
+  static Map<String, AlgorithmAvailability> _parseAlgorithms(
+    Map<String, dynamic>? json,
+    Map<String, dynamic> libraries,
+  ) {
+    if (json == null) return {};
+    final result = <String, AlgorithmAvailability>{};
+    for (final entry in json.entries) {
+      result[entry.key] = AlgorithmAvailability.fromJson(
+        entry.key,
+        entry.value as Map<String, dynamic>,
+        libraries,
+      );
+    }
+    return result;
   }
 }
 

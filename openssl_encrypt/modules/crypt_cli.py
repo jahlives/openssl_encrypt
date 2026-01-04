@@ -1033,6 +1033,201 @@ def show_algorithm_registry(args):
         sys.exit(1)
 
 
+def output_available_algorithms_json(args):
+    """
+    Output all algorithm availability information as JSON.
+
+    Used by Flutter GUI to dynamically enable/disable algorithms based on
+    installed crypto libraries.
+
+    Args:
+        args: Parsed command line arguments
+    """
+    import subprocess
+
+    try:
+        from .registry import (
+            CipherRegistry,
+            HashRegistry,
+            KDFRegistry,
+            KEMRegistry,
+            SignatureRegistry,
+        )
+    except ImportError as e:
+        print(json.dumps({"error": f"Registry system not available: {e}"}))
+        sys.exit(1)
+
+    result = {
+        "ciphers": {},
+        "hashes": {},
+        "kdfs": {},
+        "kems": {},
+        "signatures": {},
+        "libraries": {}
+    }
+
+    # Library availability checks
+    libraries = {
+        "threefish_native": {
+            "available": False,
+            "version": None,
+            "required_for": ["threefish-512", "threefish-1024"]
+        },
+        "blake3": {
+            "available": False,
+            "version": None,
+            "required_for": ["blake3"]
+        },
+        "argon2-cffi": {
+            "available": False,
+            "version": None,
+            "required_for": ["argon2id", "argon2i", "argon2d"]
+        },
+        "randomx": {
+            "available": False,
+            "version": None,
+            "required_for": ["randomx"]
+        },
+        "liboqs": {
+            "available": False,
+            "version": None,
+            "required_for": ["ml-kem-*", "kyber*", "hqc-*", "mayo-*", "cross-*", "ml-dsa-*", "slh-dsa-*", "fn-dsa-*"]
+        }
+    }
+
+    # Check threefish_native
+    try:
+        import threefish_native
+        libraries["threefish_native"]["available"] = True
+        libraries["threefish_native"]["version"] = getattr(threefish_native, "__version__", "installed")
+    except ImportError:
+        pass
+
+    # Check blake3
+    try:
+        import blake3
+        libraries["blake3"]["available"] = True
+        libraries["blake3"]["version"] = getattr(blake3, "__version__", "installed")
+    except ImportError:
+        pass
+
+    # Check argon2-cffi
+    try:
+        import argon2
+        libraries["argon2-cffi"]["available"] = True
+        libraries["argon2-cffi"]["version"] = getattr(argon2, "__version__", "installed")
+    except ImportError:
+        pass
+
+    # Check randomx (using subprocess for safety - may cause SIGILL on unsupported CPUs)
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", "import randomx; print(getattr(randomx, '__version__', 'installed'))"],
+            capture_output=True, timeout=2, check=False
+        )
+        if proc.returncode == 0:
+            libraries["randomx"]["available"] = True
+            libraries["randomx"]["version"] = proc.stdout.decode().strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+
+    # Check liboqs
+    try:
+        import oqs
+        libraries["liboqs"]["available"] = True
+        libraries["liboqs"]["version"] = oqs.get_version() if hasattr(oqs, 'get_version') else getattr(oqs, "__version__", "installed")
+    except ImportError:
+        pass
+
+    result["libraries"] = libraries
+
+    # Helper function to determine required library for an algorithm
+    def get_required_library(name: str, category: str) -> Optional[str]:
+        if category == "cipher":
+            if name.startswith("threefish"):
+                return "threefish_native"
+        elif category == "hash":
+            if name == "blake3":
+                return "blake3"
+        elif category == "kdf":
+            if name.startswith("argon2"):
+                return "argon2-cffi"
+            elif name == "randomx":
+                return "randomx"
+        elif category in ("kem", "signature"):
+            return "liboqs"
+        return None
+
+    # Get algorithm info from registries
+    try:
+        for name, (info, available) in CipherRegistry.default().list_all().items():
+            required_lib = get_required_library(name, "cipher")
+            result["ciphers"][name] = {
+                "display_name": info.display_name,
+                "available": available,
+                "required_library": required_lib,
+                "security_level": info.security_level.name,
+                "description": info.description or ""
+            }
+    except Exception:
+        pass
+
+    try:
+        for name, (info, available) in HashRegistry.default().list_all().items():
+            required_lib = get_required_library(name, "hash")
+            result["hashes"][name] = {
+                "display_name": info.display_name,
+                "available": available,
+                "required_library": required_lib,
+                "security_level": info.security_level.name,
+                "description": info.description or ""
+            }
+    except Exception:
+        pass
+
+    try:
+        for name, (info, available) in KDFRegistry.default().list_all().items():
+            required_lib = get_required_library(name, "kdf")
+            result["kdfs"][name] = {
+                "display_name": info.display_name,
+                "available": available,
+                "required_library": required_lib,
+                "security_level": info.security_level.name,
+                "description": info.description or ""
+            }
+    except Exception:
+        pass
+
+    try:
+        for name, (info, available) in KEMRegistry.default().list_all().items():
+            required_lib = get_required_library(name, "kem")
+            result["kems"][name] = {
+                "display_name": info.display_name,
+                "available": available,
+                "required_library": required_lib,
+                "security_level": info.security_level.name,
+                "description": info.description or ""
+            }
+    except Exception:
+        pass
+
+    try:
+        for name, (info, available) in SignatureRegistry.default().list_all().items():
+            required_lib = get_required_library(name, "signature")
+            result["signatures"][name] = {
+                "display_name": info.display_name,
+                "available": available,
+                "required_library": required_lib,
+                "security_level": info.security_level.name,
+                "description": info.description or ""
+            }
+    except Exception:
+        pass
+
+    # Output JSON
+    print(json.dumps(result, indent=2))
+
+
 def run_config_wizard(args):
     """
     Run the configuration wizard and display results.
@@ -2635,6 +2830,7 @@ def main():
         "shred",
         "generate-password",
         "list-algorithms",
+        "list-available-algorithms",
         "security-info",
         "analyze-security",
         "config-wizard",
@@ -4005,6 +4201,10 @@ def main_with_args(args=None):
 
     elif args.action == "list-algorithms":
         show_algorithm_registry(args)
+        sys.exit(0)
+
+    elif args.action == "list-available-algorithms":
+        output_available_algorithms_json(args)
         sys.exit(0)
 
     elif args.action == "check-argon2":
