@@ -837,8 +837,185 @@ class _InfoTabState extends State<InfoTab> with SingleTickerProviderStateMixin {
       return const Center(child: Text('No algorithm information available'));
     }
 
+    // Create extended cipher map with PQC algorithms
+    final extendedCiphers = Map<String, AlgorithmAvailability>.from(_availabilityInfo!.ciphers);
+
+    // Add PQC algorithms (not in cipher registry but supported by CLI)
+    final pqcAlgorithms = {
+      // ML-KEM Hybrid
+      'ml-kem-512-hybrid': AlgorithmAvailability(
+        name: 'ml-kem-512-hybrid',
+        displayName: 'ML-KEM-512 Hybrid',
+        available: _availabilityInfo!.libraries['liboqs']?.available ?? false,
+        requiredLibrary: 'liboqs',
+        securityLevel: 'HIGH',
+        description: 'Post-quantum hybrid with AES-256-GCM, NIST level 1',
+        libraryVersion: _availabilityInfo!.libraries['liboqs']?.version,
+      ),
+      'ml-kem-768-hybrid': AlgorithmAvailability(
+        name: 'ml-kem-768-hybrid',
+        displayName: 'ML-KEM-768 Hybrid',
+        available: _availabilityInfo!.libraries['liboqs']?.available ?? false,
+        requiredLibrary: 'liboqs',
+        securityLevel: 'HIGH',
+        description: 'Post-quantum hybrid with AES-256-GCM, NIST level 3 (Recommended)',
+        libraryVersion: _availabilityInfo!.libraries['liboqs']?.version,
+      ),
+      'ml-kem-1024-hybrid': AlgorithmAvailability(
+        name: 'ml-kem-1024-hybrid',
+        displayName: 'ML-KEM-1024 Hybrid',
+        available: _availabilityInfo!.libraries['liboqs']?.available ?? false,
+        requiredLibrary: 'liboqs',
+        securityLevel: 'PARANOID',
+        description: 'Post-quantum hybrid with AES-256-GCM, NIST level 5',
+        libraryVersion: _availabilityInfo!.libraries['liboqs']?.version,
+      ),
+      // ML-KEM ChaCha20
+      'ml-kem-512-chacha20': AlgorithmAvailability(
+        name: 'ml-kem-512-chacha20',
+        displayName: 'ML-KEM-512 ChaCha20',
+        available: _availabilityInfo!.libraries['liboqs']?.available ?? false,
+        requiredLibrary: 'liboqs',
+        securityLevel: 'HIGH',
+        description: 'Post-quantum with ChaCha20-Poly1305',
+        libraryVersion: _availabilityInfo!.libraries['liboqs']?.version,
+      ),
+      'ml-kem-768-chacha20': AlgorithmAvailability(
+        name: 'ml-kem-768-chacha20',
+        displayName: 'ML-KEM-768 ChaCha20',
+        available: _availabilityInfo!.libraries['liboqs']?.available ?? false,
+        requiredLibrary: 'liboqs',
+        securityLevel: 'HIGH',
+        description: 'Post-quantum with ChaCha20-Poly1305',
+        libraryVersion: _availabilityInfo!.libraries['liboqs']?.version,
+      ),
+      'ml-kem-1024-chacha20': AlgorithmAvailability(
+        name: 'ml-kem-1024-chacha20',
+        displayName: 'ML-KEM-1024 ChaCha20',
+        available: _availabilityInfo!.libraries['liboqs']?.available ?? false,
+        requiredLibrary: 'liboqs',
+        securityLevel: 'PARANOID',
+        description: 'Post-quantum with ChaCha20-Poly1305',
+        libraryVersion: _availabilityInfo!.libraries['liboqs']?.version,
+      ),
+      // Kyber Legacy
+      'kyber512-hybrid': AlgorithmAvailability(
+        name: 'kyber512-hybrid',
+        displayName: 'Kyber-512 Hybrid (LEGACY)',
+        available: _availabilityInfo!.libraries['liboqs']?.available ?? false,
+        requiredLibrary: 'liboqs',
+        securityLevel: 'LEGACY',
+        description: 'Legacy PQC - use ML-KEM instead',
+        libraryVersion: _availabilityInfo!.libraries['liboqs']?.version,
+      ),
+      'kyber768-hybrid': AlgorithmAvailability(
+        name: 'kyber768-hybrid',
+        displayName: 'Kyber-768 Hybrid (LEGACY)',
+        available: _availabilityInfo!.libraries['liboqs']?.available ?? false,
+        requiredLibrary: 'liboqs',
+        securityLevel: 'LEGACY',
+        description: 'Legacy PQC - use ML-KEM instead',
+        libraryVersion: _availabilityInfo!.libraries['liboqs']?.version,
+      ),
+      'kyber1024-hybrid': AlgorithmAvailability(
+        name: 'kyber1024-hybrid',
+        displayName: 'Kyber-1024 Hybrid (LEGACY)',
+        available: _availabilityInfo!.libraries['liboqs']?.available ?? false,
+        requiredLibrary: 'liboqs',
+        securityLevel: 'LEGACY',
+        description: 'Legacy PQC - use ML-KEM instead',
+        libraryVersion: _availabilityInfo!.libraries['liboqs']?.version,
+      ),
+      // HQC
+      'hqc-128-hybrid': AlgorithmAvailability(
+        name: 'hqc-128-hybrid',
+        displayName: 'HQC-128 Hybrid',
+        available: _availabilityInfo!.libraries['liboqs']?.available ?? false,
+        requiredLibrary: 'liboqs',
+        securityLevel: 'HIGH',
+        description: 'HQC-128 hybrid - WARNING: Known security issues',
+        libraryVersion: _availabilityInfo!.libraries['liboqs']?.version,
+      ),
+      'hqc-192-hybrid': AlgorithmAvailability(
+        name: 'hqc-192-hybrid',
+        displayName: 'HQC-192 Hybrid',
+        available: _availabilityInfo!.libraries['liboqs']?.available ?? false,
+        requiredLibrary: 'liboqs',
+        securityLevel: 'HIGH',
+        description: 'HQC-192 hybrid - WARNING: Known security issues',
+        libraryVersion: _availabilityInfo!.libraries['liboqs']?.version,
+      ),
+      'hqc-256-hybrid': AlgorithmAvailability(
+        name: 'hqc-256-hybrid',
+        displayName: 'HQC-256 Hybrid',
+        available: _availabilityInfo!.libraries['liboqs']?.available ?? false,
+        requiredLibrary: 'liboqs',
+        securityLevel: 'HIGH',
+        description: 'HQC-256 hybrid - WARNING: Known security issues',
+        libraryVersion: _availabilityInfo!.libraries['liboqs']?.version,
+      ),
+      // MAYO
+      'mayo-1-hybrid': AlgorithmAvailability(
+        name: 'mayo-1-hybrid',
+        displayName: 'MAYO-1 Hybrid',
+        available: _availabilityInfo!.libraries['liboqs']?.available ?? false,
+        requiredLibrary: 'liboqs',
+        securityLevel: 'HIGH',
+        description: 'Post-quantum signatures (128-bit)',
+        libraryVersion: _availabilityInfo!.libraries['liboqs']?.version,
+      ),
+      'mayo-3-hybrid': AlgorithmAvailability(
+        name: 'mayo-3-hybrid',
+        displayName: 'MAYO-3 Hybrid',
+        available: _availabilityInfo!.libraries['liboqs']?.available ?? false,
+        requiredLibrary: 'liboqs',
+        securityLevel: 'HIGH',
+        description: 'Post-quantum signatures (192-bit)',
+        libraryVersion: _availabilityInfo!.libraries['liboqs']?.version,
+      ),
+      'mayo-5-hybrid': AlgorithmAvailability(
+        name: 'mayo-5-hybrid',
+        displayName: 'MAYO-5 Hybrid',
+        available: _availabilityInfo!.libraries['liboqs']?.available ?? false,
+        requiredLibrary: 'liboqs',
+        securityLevel: 'HIGH',
+        description: 'Post-quantum signatures (256-bit)',
+        libraryVersion: _availabilityInfo!.libraries['liboqs']?.version,
+      ),
+      // CROSS
+      'cross-128-hybrid': AlgorithmAvailability(
+        name: 'cross-128-hybrid',
+        displayName: 'CROSS-128 Hybrid',
+        available: _availabilityInfo!.libraries['liboqs']?.available ?? false,
+        requiredLibrary: 'liboqs',
+        securityLevel: 'HIGH',
+        description: 'Post-quantum signatures (128-bit)',
+        libraryVersion: _availabilityInfo!.libraries['liboqs']?.version,
+      ),
+      'cross-192-hybrid': AlgorithmAvailability(
+        name: 'cross-192-hybrid',
+        displayName: 'CROSS-192 Hybrid',
+        available: _availabilityInfo!.libraries['liboqs']?.available ?? false,
+        requiredLibrary: 'liboqs',
+        securityLevel: 'HIGH',
+        description: 'Post-quantum signatures (192-bit)',
+        libraryVersion: _availabilityInfo!.libraries['liboqs']?.version,
+      ),
+      'cross-256-hybrid': AlgorithmAvailability(
+        name: 'cross-256-hybrid',
+        displayName: 'CROSS-256 Hybrid',
+        available: _availabilityInfo!.libraries['liboqs']?.available ?? false,
+        requiredLibrary: 'liboqs',
+        securityLevel: 'HIGH',
+        description: 'Post-quantum signatures (256-bit)',
+        libraryVersion: _availabilityInfo!.libraries['liboqs']?.version,
+      ),
+    };
+
+    extendedCiphers.addAll(pqcAlgorithms);
+
     return SingleChildScrollView(
-      child: _buildGroupedList(_encryptionGroups, _availabilityInfo!.ciphers),
+      child: _buildGroupedList(_encryptionGroups, extendedCiphers),
     );
   }
 
