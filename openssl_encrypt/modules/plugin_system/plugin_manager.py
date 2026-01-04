@@ -676,26 +676,8 @@ class PluginManager:
             # Check file size (prevent huge files)
             file_size = os.path.getsize(file_path)
             if file_size > 1024 * 1024:  # 1MB limit
-                logger.warning(f"Plugin file too large: {file_path} ({file_path} bytes)")
+                logger.warning(f"Plugin file too large: {file_path} ({file_size} bytes)")
                 return False
-
-            # Check if plugin is in built-in plugins directory (automatically trusted)
-            # Built-in plugins are shipped with the application and are pre-vetted
-            abs_file_path = os.path.abspath(file_path)
-
-            # Determine if this is a built-in plugin by checking if it's in the openssl_encrypt/plugins directory
-            try:
-                # Get the openssl_encrypt package directory
-                import openssl_encrypt
-                package_dir = os.path.dirname(os.path.abspath(openssl_encrypt.__file__))
-                builtin_plugins_dir = os.path.join(package_dir, "plugins")
-
-                # If the plugin is in the built-in plugins directory, skip AST analysis
-                if abs_file_path.startswith(builtin_plugins_dir):
-                    logger.debug(f"Built-in plugin automatically trusted: {file_path}")
-                    return True
-            except Exception as e:
-                logger.debug(f"Could not determine if plugin is built-in: {e}")
 
             # AST-based content validation
             with open(file_path, "r", encoding="utf-8") as f:
