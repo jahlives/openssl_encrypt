@@ -117,17 +117,18 @@ def check_liboqs_python_version():
 def build_local_dependencies():
     """Build liboqs and liboqs-python with specific versions"""
 
-    print("\n" + "="*60)
-    print("Checking liboqs dependencies...")
-    print("="*60)
+    # Always show that we're checking
+    print("\n" + "="*60, flush=True)
+    print("Checking liboqs dependencies...", flush=True)
+    print("="*60, flush=True)
 
     # Check if already installed
     liboqs_ok = check_liboqs_version()
     liboqs_python_ok = check_liboqs_python_version()
 
     if liboqs_ok and liboqs_python_ok:
-        print("✓ All liboqs dependencies already installed with correct versions")
-        print("="*60 + "\n")
+        print("✓ All liboqs dependencies already installed with correct versions", flush=True)
+        print("="*60 + "\n", flush=True)
         return True
 
     print(f"\nBuilding liboqs {REQUIRED_LIBOQS_VERSION} and "

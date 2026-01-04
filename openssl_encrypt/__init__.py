@@ -33,13 +33,20 @@ def _check_and_build_dependencies():
         return
     _check_and_build_dependencies._checked = True
 
+    # Enable verbose mode with environment variable
+    verbose = os.environ.get('LIBOQS_CHECK_VERBOSE', '').lower() in ('1', 'true', 'yes')
+
     from .versions import check_liboqs_version, check_liboqs_python_version
 
     liboqs_ok, liboqs_ver, liboqs_msg = check_liboqs_version()
     liboqs_python_ok, liboqs_python_ver, liboqs_python_msg = check_liboqs_python_version()
 
     if liboqs_ok and liboqs_python_ok:
-        # All good, return silently
+        # All good, return silently (or verbosely if requested)
+        if verbose:
+            print(f"✓ liboqs dependencies satisfied:", file=sys.stderr)
+            print(f"  {liboqs_msg}", file=sys.stderr)
+            print(f"  {liboqs_python_msg}", file=sys.stderr)
         return
 
     # Dependencies are missing or wrong version
