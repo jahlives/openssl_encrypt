@@ -914,40 +914,116 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     await Future.delayed(const Duration(milliseconds: 50));
 
     try {
-      // Pass selected algorithm and UI configurations to CLI service with progress
-      final encrypted = await CLIService.encryptTextWithProgress(
-        _textController.text,
-        _passwordController.text,
-        _selectedAlgorithm, // Pass the selected algorithm
-        _hashConfig,        // Pass hash configuration from UI
-        _kdfConfig,         // Pass KDF configuration from UI
-        encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
-        hsmPlugin: _hsmType != 'none' ? _hsmType : null,
-        hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
-        enableIntegrity: _enableIntegrity,
-        onProgress: (progress) {
-          setState(() {
-            _operationProgress = progress;
-          });
-        },
-        onStatus: (status) {
-          setState(() {
-            _operationStatus = status;
-            // Update progress based on status
-            if (status.contains('Initializing')) {
-              _progressValue = 0.2;
-            } else if (status.contains('Prepared')) {
-              _progressValue = 0.4;
-            } else if (status.contains('Executing')) {
-              _progressValue = 0.7;
-            } else if (status.contains('Reading')) {
-              _progressValue = 0.9;
-            } else if (status.contains('completed')) {
-              _progressValue = 1.0;
-            }
-          });
-        },
-      );
+      // Pass parameters based on encryption mode
+      String encrypted;
+      if (_encryptionMode == EncryptionMode.asymmetric) {
+        // Asymmetric encryption mode
+        encrypted = await CLIService.encryptTextWithProgress(
+          _textController.text,
+          _passwordController.text,
+          'aes-256-gcm', // Default algorithm (will be overridden by asymmetric mode)
+          _hashConfig,
+          _kdfConfig,
+          forIdentities: _selectedRecipients,
+          signWith: _signingIdentity,
+          useKeyserver: _useKeyserver,
+          hsmPlugin: _hsmType != 'none' ? _hsmType : null,
+          hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
+          enableIntegrity: _enableIntegrity,
+          onProgress: (progress) {
+            setState(() {
+              _operationProgress = progress;
+            });
+          },
+          onStatus: (status) {
+            setState(() {
+              _operationStatus = status;
+              if (status.contains('Initializing')) {
+                _progressValue = 0.2;
+              } else if (status.contains('Prepared')) {
+                _progressValue = 0.4;
+              } else if (status.contains('Executing')) {
+                _progressValue = 0.7;
+              } else if (status.contains('Reading')) {
+                _progressValue = 0.9;
+              } else if (status.contains('completed')) {
+                _progressValue = 1.0;
+              }
+            });
+          },
+        );
+      } else if (_encryptionMode == EncryptionMode.cascade) {
+        // Cascade encryption mode
+        encrypted = await CLIService.encryptTextWithProgress(
+          _textController.text,
+          _passwordController.text,
+          'aes-256-gcm', // Default algorithm (will be overridden by cascade mode)
+          _hashConfig,
+          _kdfConfig,
+          cascadePreset: _cascadePreset != 'custom' ? _cascadePreset : null,
+          cascadeAlgorithms: _cascadePreset == 'custom' ? _cascadeAlgorithms : null,
+          cascadeHash: _cascadeHash,
+          hsmPlugin: _hsmType != 'none' ? _hsmType : null,
+          hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
+          enableIntegrity: _enableIntegrity,
+          onProgress: (progress) {
+            setState(() {
+              _operationProgress = progress;
+            });
+          },
+          onStatus: (status) {
+            setState(() {
+              _operationStatus = status;
+              if (status.contains('Initializing')) {
+                _progressValue = 0.2;
+              } else if (status.contains('Prepared')) {
+                _progressValue = 0.4;
+              } else if (status.contains('Executing')) {
+                _progressValue = 0.7;
+              } else if (status.contains('Reading')) {
+                _progressValue = 0.9;
+              } else if (status.contains('completed')) {
+                _progressValue = 1.0;
+              }
+            });
+          },
+        );
+      } else {
+        // Symmetric encryption mode (default)
+        encrypted = await CLIService.encryptTextWithProgress(
+          _textController.text,
+          _passwordController.text,
+          _selectedAlgorithm, // Pass the selected algorithm
+          _hashConfig,        // Pass hash configuration from UI
+          _kdfConfig,         // Pass KDF configuration from UI
+          encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
+          hsmPlugin: _hsmType != 'none' ? _hsmType : null,
+          hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
+          enableIntegrity: _enableIntegrity,
+          onProgress: (progress) {
+            setState(() {
+              _operationProgress = progress;
+            });
+          },
+          onStatus: (status) {
+            setState(() {
+              _operationStatus = status;
+              // Update progress based on status
+              if (status.contains('Initializing')) {
+                _progressValue = 0.2;
+              } else if (status.contains('Prepared')) {
+                _progressValue = 0.4;
+              } else if (status.contains('Executing')) {
+                _progressValue = 0.7;
+              } else if (status.contains('Reading')) {
+                _progressValue = 0.9;
+              } else if (status.contains('completed')) {
+                _progressValue = 1.0;
+              }
+            });
+          },
+        );
+      }
 
       setState(() {
         _encryptedData = encrypted;
@@ -991,39 +1067,81 @@ class _TextCryptoTabState extends State<TextCryptoTab> {
     await Future.delayed(const Duration(milliseconds: 50));
 
     try {
-      final decrypted = await CLIService.decryptTextWithProgress(
-        inputData,
-        _passwordController.text,
-        hsmPlugin: _hsmType != 'none' ? _hsmType : null,
-        hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
-        verifyIntegrity: _verifyIntegrity,
-        onProgress: (progress) {
-          setState(() {
-            _operationProgress = progress;
-          });
-        },
-        onStatus: (status) {
-          setState(() {
-            _operationStatus = status;
-            // Update progress based on status
-            if (status.contains('Initializing')) {
-              _progressValue = 0.2;
-            } else if (status.contains('Prepared')) {
-              _progressValue = 0.4;
-            } else if (status.contains('Executing')) {
-              _progressValue = 0.7;
-            } else if (status.contains('Reading')) {
-              _progressValue = 0.9;
-            } else if (status.contains('completed')) {
-              _progressValue = 1.0;
-            }
-            // Capture integrity verification result
-            if (status.contains('Integrity') || status.contains('verified')) {
-              _integrityVerificationResult = status;
-            }
-          });
-        },
-      );
+      // Pass parameters based on encryption mode
+      String decrypted;
+      if (_encryptionMode == EncryptionMode.asymmetric) {
+        // Asymmetric decryption mode
+        decrypted = await CLIService.decryptTextWithProgress(
+          inputData,
+          _passwordController.text,
+          withKey: _decryptionIdentity,
+          verifyFrom: _verifyFrom,
+          skipVerification: _skipVerification,
+          hsmPlugin: _hsmType != 'none' ? _hsmType : null,
+          hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
+          verifyIntegrity: _verifyIntegrity,
+          onProgress: (progress) {
+            setState(() {
+              _operationProgress = progress;
+            });
+          },
+          onStatus: (status) {
+            setState(() {
+              _operationStatus = status;
+              if (status.contains('Initializing')) {
+                _progressValue = 0.2;
+              } else if (status.contains('Prepared')) {
+                _progressValue = 0.4;
+              } else if (status.contains('Executing')) {
+                _progressValue = 0.7;
+              } else if (status.contains('Reading')) {
+                _progressValue = 0.9;
+              } else if (status.contains('completed')) {
+                _progressValue = 1.0;
+              }
+              // Capture integrity verification result
+              if (status.contains('Integrity') || status.contains('verified')) {
+                _integrityVerificationResult = status;
+              }
+            });
+          },
+        );
+      } else {
+        // Symmetric/Cascade decryption mode (cascade is auto-detected from metadata)
+        decrypted = await CLIService.decryptTextWithProgress(
+          inputData,
+          _passwordController.text,
+          hsmPlugin: _hsmType != 'none' ? _hsmType : null,
+          hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
+          verifyIntegrity: _verifyIntegrity,
+          onProgress: (progress) {
+            setState(() {
+              _operationProgress = progress;
+            });
+          },
+          onStatus: (status) {
+            setState(() {
+              _operationStatus = status;
+              // Update progress based on status
+              if (status.contains('Initializing')) {
+                _progressValue = 0.2;
+              } else if (status.contains('Prepared')) {
+                _progressValue = 0.4;
+              } else if (status.contains('Executing')) {
+                _progressValue = 0.7;
+              } else if (status.contains('Reading')) {
+                _progressValue = 0.9;
+              } else if (status.contains('completed')) {
+                _progressValue = 1.0;
+              }
+              // Capture integrity verification result
+              if (status.contains('Integrity') || status.contains('verified')) {
+                _integrityVerificationResult = status;
+              }
+            });
+          },
+        );
+      }
 
       setState(() {
         result = decrypted; // Show only the decrypted text
@@ -4403,27 +4521,79 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
           throw Exception('Could not read file');
         }
 
-        // Encrypt file content using CLI service with selected configurations
-        final encrypted = await CLIService.encryptTextWithProgress(
-          fileContent,
-          _passwordController.text,
-          _selectedAlgorithm, // Use selected algorithm
-          _hashConfig,        // Use hash configuration from UI
-          _kdfConfig,         // Use KDF configuration from UI
-          encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
-          hsmPlugin: _hsmType != 'none' ? _hsmType : null,
-          hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
-          enableIntegrity: _enableIntegrity,
-          onProgress: (progress) {
-            setState(() {
-              _operationStatus = 'Encrypting with $_selectedAlgorithm...';
-              _operationProgress = progress;
-              _progressValue = progress.contains('%')
-                ? (double.tryParse(progress.split('%')[0]) ?? 0.0) / 100.0
-                : 0.5;
-            });
-          },
-        );
+        // Encrypt file content based on encryption mode
+        String encrypted;
+        if (_encryptionMode == EncryptionMode.asymmetric) {
+          // Asymmetric encryption mode
+          encrypted = await CLIService.encryptTextWithProgress(
+            fileContent,
+            _passwordController.text,
+            'aes-256-gcm',
+            _hashConfig,
+            _kdfConfig,
+            forIdentities: _selectedRecipients,
+            signWith: _signingIdentity,
+            useKeyserver: _useKeyserver,
+            hsmPlugin: _hsmType != 'none' ? _hsmType : null,
+            hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
+            enableIntegrity: _enableIntegrity,
+            onProgress: (progress) {
+              setState(() {
+                _operationStatus = 'Encrypting with asymmetric encryption...';
+                _operationProgress = progress;
+                _progressValue = progress.contains('%')
+                  ? (double.tryParse(progress.split('%')[0]) ?? 0.0) / 100.0
+                  : 0.5;
+              });
+            },
+          );
+        } else if (_encryptionMode == EncryptionMode.cascade) {
+          // Cascade encryption mode
+          encrypted = await CLIService.encryptTextWithProgress(
+            fileContent,
+            _passwordController.text,
+            'aes-256-gcm',
+            _hashConfig,
+            _kdfConfig,
+            cascadePreset: _cascadePreset != 'custom' ? _cascadePreset : null,
+            cascadeAlgorithms: _cascadePreset == 'custom' ? _cascadeAlgorithms : null,
+            cascadeHash: _cascadeHash,
+            hsmPlugin: _hsmType != 'none' ? _hsmType : null,
+            hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
+            enableIntegrity: _enableIntegrity,
+            onProgress: (progress) {
+              setState(() {
+                _operationStatus = 'Encrypting with cascade encryption...';
+                _operationProgress = progress;
+                _progressValue = progress.contains('%')
+                  ? (double.tryParse(progress.split('%')[0]) ?? 0.0) / 100.0
+                  : 0.5;
+              });
+            },
+          );
+        } else {
+          // Symmetric encryption mode (default)
+          encrypted = await CLIService.encryptTextWithProgress(
+            fileContent,
+            _passwordController.text,
+            _selectedAlgorithm, // Use selected algorithm
+            _hashConfig,        // Use hash configuration from UI
+            _kdfConfig,         // Use KDF configuration from UI
+            encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
+            hsmPlugin: _hsmType != 'none' ? _hsmType : null,
+            hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
+            enableIntegrity: _enableIntegrity,
+            onProgress: (progress) {
+              setState(() {
+                _operationStatus = 'Encrypting with $_selectedAlgorithm...';
+                _operationProgress = progress;
+                _progressValue = progress.contains('%')
+                  ? (double.tryParse(progress.split('%')[0]) ?? 0.0) / 100.0
+                  : 0.5;
+              });
+            },
+          );
+        }
 
         if (encrypted.startsWith('ERROR:')) {
           throw Exception(encrypted.substring(7));
@@ -4573,40 +4743,81 @@ class _FileCryptoTabState extends State<FileCryptoTab> {
           _progressValue = 0.3;
         });
 
-        // Decrypt using CLI service with progress callbacks
-        final decrypted = await CLIService.decryptTextWithProgress(
-          fileContent,  // Pass raw file content
-          _passwordController.text,
-          hsmPlugin: _hsmType != 'none' ? _hsmType : null,
-          hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
-          verifyIntegrity: _verifyIntegrity,
-          onProgress: (progress) {
-            setState(() {
-              _operationProgress = progress;
-            });
-          },
-          onStatus: (status) {
-            setState(() {
-              _operationStatus = status;
-              // Update progress based on status
-              if (status.contains('Initializing')) {
-                _progressValue = 0.4;
-              } else if (status.contains('Prepared')) {
-                _progressValue = 0.5;
-              } else if (status.contains('Executing')) {
-                _progressValue = 0.7;
-              } else if (status.contains('Reading')) {
-                _progressValue = 0.9;
-              } else if (status.contains('completed')) {
-                _progressValue = 1.0;
-              }
-              // Capture integrity verification result
-              if (status.contains('Integrity') || status.contains('verified')) {
-                _integrityVerificationResult = status;
-              }
-            });
-          },
-        );
+        // Decrypt based on encryption mode
+        String decrypted;
+        if (_encryptionMode == EncryptionMode.asymmetric) {
+          // Asymmetric decryption mode
+          decrypted = await CLIService.decryptTextWithProgress(
+            fileContent,
+            _passwordController.text,
+            withKey: _decryptionIdentity,
+            verifyFrom: _verifyFrom,
+            skipVerification: _skipVerification,
+            hsmPlugin: _hsmType != 'none' ? _hsmType : null,
+            hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
+            verifyIntegrity: _verifyIntegrity,
+            onProgress: (progress) {
+              setState(() {
+                _operationProgress = progress;
+              });
+            },
+            onStatus: (status) {
+              setState(() {
+                _operationStatus = status;
+                if (status.contains('Initializing')) {
+                  _progressValue = 0.4;
+                } else if (status.contains('Prepared')) {
+                  _progressValue = 0.5;
+                } else if (status.contains('Executing')) {
+                  _progressValue = 0.7;
+                } else if (status.contains('Reading')) {
+                  _progressValue = 0.9;
+                } else if (status.contains('completed')) {
+                  _progressValue = 1.0;
+                }
+                // Capture integrity verification result
+                if (status.contains('Integrity') || status.contains('verified')) {
+                  _integrityVerificationResult = status;
+                }
+              });
+            },
+          );
+        } else {
+          // Symmetric/Cascade decryption mode (cascade is auto-detected from metadata)
+          decrypted = await CLIService.decryptTextWithProgress(
+            fileContent,  // Pass raw file content
+            _passwordController.text,
+            hsmPlugin: _hsmType != 'none' ? _hsmType : null,
+            hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
+            verifyIntegrity: _verifyIntegrity,
+            onProgress: (progress) {
+              setState(() {
+                _operationProgress = progress;
+              });
+            },
+            onStatus: (status) {
+              setState(() {
+                _operationStatus = status;
+                // Update progress based on status
+                if (status.contains('Initializing')) {
+                  _progressValue = 0.4;
+                } else if (status.contains('Prepared')) {
+                  _progressValue = 0.5;
+                } else if (status.contains('Executing')) {
+                  _progressValue = 0.7;
+                } else if (status.contains('Reading')) {
+                  _progressValue = 0.9;
+                } else if (status.contains('completed')) {
+                  _progressValue = 1.0;
+                }
+                // Capture integrity verification result
+                if (status.contains('Integrity') || status.contains('verified')) {
+                  _integrityVerificationResult = status;
+                }
+              });
+            },
+          );
+        }
 
         if (decrypted.startsWith('ERROR:')) {
           throw Exception(decrypted.substring(7));
@@ -10234,16 +10445,46 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
           );
         }
 
-        // Encrypt using CLI service
-        final encrypted = await CLIService.encryptTextWithProgress(
-          content,
-          _password,
-          _selectedAlgorithm,
-          null,
-          null,
-          encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
-          enableIntegrity: _enableIntegrity,
-        );
+        // Encrypt based on encryption mode
+        String encrypted;
+        if (_encryptionMode == EncryptionMode.asymmetric) {
+          // Asymmetric encryption mode
+          encrypted = await CLIService.encryptTextWithProgress(
+            content,
+            _password,
+            'aes-256-gcm',
+            null,
+            null,
+            forIdentities: _selectedRecipients,
+            signWith: _signingIdentity,
+            useKeyserver: _useKeyserver,
+            enableIntegrity: _enableIntegrity,
+          );
+        } else if (_encryptionMode == EncryptionMode.cascade) {
+          // Cascade encryption mode
+          encrypted = await CLIService.encryptTextWithProgress(
+            content,
+            _password,
+            'aes-256-gcm',
+            null,
+            null,
+            cascadePreset: _cascadePreset != 'custom' ? _cascadePreset : null,
+            cascadeAlgorithms: _cascadePreset == 'custom' ? _cascadeAlgorithms : null,
+            cascadeHash: _cascadeHash,
+            enableIntegrity: _enableIntegrity,
+          );
+        } else {
+          // Symmetric encryption mode (default)
+          encrypted = await CLIService.encryptTextWithProgress(
+            content,
+            _password,
+            _selectedAlgorithm,
+            null,
+            null,
+            encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
+            enableIntegrity: _enableIntegrity,
+          );
+        }
 
         // Save encrypted file
         final outputPath = widget.fileManager.getEncryptedFileName(file.path);
@@ -10273,12 +10514,26 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
           );
         }
 
-        // Decrypt using CLI service
-        final decrypted = await CLIService.decryptTextWithProgress(
-          content,
-          _password,
-          verifyIntegrity: _verifyIntegrity,
-        );
+        // Decrypt based on encryption mode
+        String decrypted;
+        if (_encryptionMode == EncryptionMode.asymmetric) {
+          // Asymmetric decryption mode
+          decrypted = await CLIService.decryptTextWithProgress(
+            content,
+            _password,
+            withKey: _decryptionIdentity,
+            verifyFrom: _verifyFrom,
+            skipVerification: _skipVerification,
+            verifyIntegrity: _verifyIntegrity,
+          );
+        } else {
+          // Symmetric/Cascade decryption mode (cascade is auto-detected from metadata)
+          decrypted = await CLIService.decryptTextWithProgress(
+            content,
+            _password,
+            verifyIntegrity: _verifyIntegrity,
+          );
+        }
 
         // Save decrypted file
         final outputPath = widget.fileManager.getDecryptedFileName(file.path);
