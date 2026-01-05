@@ -15,13 +15,10 @@ flatpak run com.opensslencrypt.OpenSSLEncrypt --gui
 flatpak run com.opensslencrypt.OpenSSLEncrypt encrypt myfile.txt
 ```
 
-✅ **All crypto libraries pre-built** (no cmake, gcc, or rust needed)
-
-✅ **Sandboxed and secure** (isolated from system)
-
-✅ **Automatic updates** available
-
-✅ **Works immediately** on any Linux distribution
+- ✅ **All crypto libraries pre-built** (no cmake, gcc, or rust needed)
+- ✅ **Sandboxed and secure** (isolated from system)
+- ✅ **Automatic updates** available
+- ✅ **Works immediately** on any Linux distribution
 
 📖 **Details:** See [Method 4: Flatpak Installation](#method-4-flatpak-installation-containerized)
 
@@ -358,15 +355,11 @@ Flatpak provides a sandboxed application with all dependencies pre-built and inc
 
 #### What's Included
 
-✅ All post-quantum cryptography libraries (liboqs, liboqs-python)
-
-✅ Threefish cipher support
-
-✅ Flutter GUI with native Wayland/X11 support
-
-✅ All Python dependencies
-
-✅ Isolated from system packages (sandbox security)
+- ✅ All post-quantum cryptography libraries (liboqs, liboqs-python)
+- ✅ Threefish cipher support
+- ✅ Flutter GUI with native Wayland/X11 support
+- ✅ All Python dependencies
+- ✅ Isolated from system packages (sandbox security)
 
 #### Installation Options
 
@@ -502,29 +495,20 @@ flatpak override --user com.opensslencrypt.OpenSSLEncrypt \
 
 #### Advantages of Flatpak
 
-✅ **Zero build time** - Everything pre-compiled
-
-✅ **No dependencies** - Self-contained package
-
-✅ **Automatic updates** - Via Flatpak system
-
-✅ **Sandboxed security** - Isolated from system
-
-✅ **Cross-distribution** - Works on any Linux distro
-
-✅ **No conflicts** - Doesn't affect system packages
-
-✅ **GUI included** - Flutter desktop app pre-installed
+- ✅ **Zero build time** - Everything pre-compiled
+- ✅ **No dependencies** - Self-contained package
+- ✅ **Automatic updates** - Via Flatpak system
+- ✅ **Sandboxed security** - Isolated from system
+- ✅ **Cross-distribution** - Works on any Linux distro
+- ✅ **No conflicts** - Doesn't affect system packages
+- ✅ **GUI included** - Flutter desktop app pre-installed
 
 #### Disadvantages
 
-⚠️ **Larger download** - Includes all dependencies (~200-300MB)
-
-⚠️ **Slower startup** - Sandbox initialization overhead
-
-⚠️ **Limited system integration** - Runs in isolated environment
-
-⚠️ **No editable install** - Not suitable for development
+- ⚠️ **Larger download** - Includes all dependencies (~200-300MB)
+- ⚠️ **Slower startup** - Sandbox initialization overhead
+- ⚠️ **Limited system integration** - Runs in isolated environment
+- ⚠️ **No editable install** - Not suitable for development
 
 #### Troubleshooting Flatpak
 
