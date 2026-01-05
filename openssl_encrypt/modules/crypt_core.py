@@ -5937,6 +5937,19 @@ def decrypt_file(
                         for p in plugin_manager.get_plugins_by_type(PluginType.HSM)
                     ]
                     available_list = ", ".join(available_hsm) if available_hsm else "none"
+
+                    # Debug logging to help diagnose missing dependencies
+                    logger.debug(f"HSM plugin '{hsm_plugin_name}' not found")
+                    logger.debug(f"Available HSM plugins: {available_list}")
+                    logger.debug("Common causes:")
+                    logger.debug("  - Missing HSM dependencies (yubikey-manager, fido2)")
+                    logger.debug("  - Plugin failed to initialize during loading")
+                    logger.debug("")
+                    logger.debug("💡 To install HSM dependencies:")
+                    logger.debug("   pip install openssl-encrypt[hsm]")
+                    logger.debug("   # OR")
+                    logger.debug("   pip install -r requirements-hsm.txt")
+
                     raise KeyDerivationError(
                         f"HSM plugin '{hsm_plugin_name}' not found. "
                         f"Available HSM plugins: {available_list}. "
@@ -5947,6 +5960,15 @@ def decrypt_file(
                 init_result = hsm_plugin.initialize({})
 
                 if not init_result.success:
+                    # In debug mode, show detailed error with installation instructions
+                    logger.debug(f"HSM Plugin Error: {init_result.message}")
+                    # Check if it's a missing dependency error
+                    if "not available" in init_result.message.lower() or "not installed" in init_result.message.lower():
+                        logger.debug("💡 To install HSM dependencies:")
+                        logger.debug("   pip install openssl-encrypt[hsm]")
+                        logger.debug("   # OR")
+                        logger.debug("   pip install -r requirements-hsm.txt")
+
                     raise KeyDerivationError(
                         f"Failed to initialize HSM plugin '{hsm_plugin_name}': {init_result.message}"
                     )

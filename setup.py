@@ -22,7 +22,7 @@ this_directory = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(this_directory, "README.md"), encoding="utf-8") as f:
     long_description = f.read()
 
-VERSION = "1.4.0b6"  # Define version in a variable for reuse
+VERSION = "1.4.0b7"  # Define version in a variable for reuse
 
 # Get git commit hash
 git_hash = "unknown"
@@ -270,6 +270,13 @@ setup(
                 and not prod_line.startswith("#")
                 and not prod_line.startswith("-")
             ]
+        ],
+        "hsm": [
+            line.strip()
+            for line in open("requirements-hsm.txt")
+            if line.strip()
+            and not line.startswith("#")
+            and not line.startswith("-")
         ],
         "threefish": [
             "openssl-encrypt-threefish>=1.0.0",
