@@ -10,6 +10,7 @@ The project is historically named `openssl-encrypt` because it once was a Python
 ## Installation
 
 To install follow the [guide](https://github.com/jahlives/openssl_encrypt/wiki/INSTALLATION)
+
 ---
 
 ## Ethical Commitment & Usage Restrictions
