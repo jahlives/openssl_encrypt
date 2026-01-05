@@ -12,7 +12,7 @@ flatpak install --user https://gitlab.rm-rf.ch/world/openssl_encrypt/-/packages/
 flatpak run com.opensslencrypt.OpenSSLEncrypt --gui
 
 # Or CLI
-flatpak run com.opensslencrypt.OpenSSLEncrypt encrypt myfile.txt
+flatpak run com.opensslencrypt.OpenSSLEncrypt encrypt -i myfile.txt
 ```
 
 - ✅ **All crypto libraries pre-built** (no cmake, gcc, or rust needed)
@@ -219,7 +219,7 @@ source ~/.bashrc  # After adding paths in Step 4
 vim openssl_encrypt/modules/crypt_core.py
 
 # Changes are immediately available (editable install)
-python3 -m openssl_encrypt encrypt myfile.txt
+python3 -m openssl_encrypt encrypt -i myfile.txt
 
 # Run tests
 pytest tests/
@@ -384,10 +384,10 @@ Flatpak provides a sandboxed application with all dependencies pre-built and inc
    flatpak run com.opensslencrypt.OpenSSLEncrypt --help
 
    # Encrypt a file
-   flatpak run com.opensslencrypt.OpenSSLEncrypt encrypt myfile.txt
+   flatpak run com.opensslencrypt.OpenSSLEncrypt encrypt -i myfile.txt
 
    # Decrypt a file
-   flatpak run com.opensslencrypt.OpenSSLEncrypt decrypt myfile.txt.enc
+   flatpak run com.opensslencrypt.OpenSSLEncrypt decrypt -i myfile.txt.enc
    ```
 
 **Option 2: Add as Flatpak Remote Repository**
@@ -460,7 +460,7 @@ For convenience, create an alias to use like a native command:
 alias openssl-encrypt='flatpak run com.opensslencrypt.OpenSSLEncrypt'
 
 # After sourcing your profile:
-openssl-encrypt encrypt myfile.txt
+openssl-encrypt encrypt -i myfile.txt
 openssl-encrypt --gui
 ```
 
@@ -663,8 +663,8 @@ openssl-encrypt list-available-algorithms | jq '.kems'
 
 # Create a test encryption with ML-KEM
 echo "test" > test.txt
-openssl-encrypt encrypt test.txt --kem ml-kem-768 --sig ml-dsa-65
-openssl-encrypt decrypt test.txt.enc -o decrypted.txt
+openssl-encrypt encrypt -i test.txt --kem ml-kem-768 --sig ml-dsa-65
+openssl-encrypt decrypt -i test.txt.enc -o decrypted.txt
 diff test.txt decrypted.txt && echo "✓ Post-quantum encryption works!"
 ```
 
@@ -676,8 +676,8 @@ openssl-encrypt list-available-algorithms | jq '.ciphers | with_entries(select(.
 
 # Test Threefish-512 encryption
 echo "test" > test.txt
-openssl-encrypt encrypt test.txt -c threefish-512
-openssl-encrypt decrypt test.txt.enc -o decrypted.txt
+openssl-encrypt encrypt -i test.txt -c threefish-512
+openssl-encrypt decrypt -i test.txt.enc -o decrypted.txt
 diff test.txt decrypted.txt && echo "✓ Threefish cipher works!"
 ```
 
