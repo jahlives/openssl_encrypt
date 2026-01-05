@@ -22,7 +22,7 @@ this_directory = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(this_directory, "README.md"), encoding="utf-8") as f:
     long_description = f.read()
 
-VERSION = "1.4.0b5"  # Define version in a variable for reuse
+VERSION = "1.4.0b6"  # Define version in a variable for reuse
 
 # Get git commit hash
 git_hash = "unknown"
@@ -276,7 +276,7 @@ setup(
         ],
     },
     project_urls={
-        "Homepage": "https://github.com/jahlives/openssl_encrypt",
+        "Homepage": "https://github.com/jahlives/openssl_encrypt/tree/releases/1.4.0",
         "Bug Tracker": "https://github.com/jahlives/openssl_encrypt/issues",
         "Documentation": "https://github.com/jahlives/openssl_encrypt/tree/releases/1.4.0/openssl_encrypt/docs",
         "Source Code": "https://github.com/jahlives/openssl_encrypt/tree/releases/1.4.0",
