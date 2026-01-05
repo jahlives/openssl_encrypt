@@ -48,8 +48,26 @@ try:
     from fido2.ctap2 import Ctap2
     from fido2.ctap2.extensions import HmacSecretExtension
     FIDO2_AVAILABLE = True
+
+    class CLIUserInteraction(UserInteraction):
+        """User interaction handler for CLI prompts (PIN, touch)."""
+
+        def prompt_up(self):
+            """Prompt user to touch their security key."""
+            print("\n🔐 Touch your security key now...")
+
+        def request_pin(self, permissions, rd_id):
+            """Request PIN from user."""
+            print("🔑 Your security key requires a PIN.")
+            return getpass.getpass("Enter PIN: ")
+
+        def request_uv(self, permissions, rd_id):
+            """Request user verification."""
+            return True
+
 except ImportError:
     FIDO2_AVAILABLE = False
+    CLIUserInteraction = None  # Placeholder when FIDO2 is not available
 
 from ....modules.plugin_system.plugin_base import (
     HSMPlugin,
@@ -60,23 +78,6 @@ from ....modules.plugin_system.plugin_base import (
 from ....modules.plugin_system.plugin_config import ensure_plugin_data_dir
 
 logger = logging.getLogger(__name__)
-
-
-class CLIUserInteraction(UserInteraction):
-    """User interaction handler for CLI prompts (PIN, touch)."""
-
-    def prompt_up(self):
-        """Prompt user to touch their security key."""
-        print("\n🔐 Touch your security key now...")
-
-    def request_pin(self, permissions, rd_id):
-        """Request PIN from user."""
-        print("🔑 Your security key requires a PIN.")
-        return getpass.getpass("Enter PIN: ")
-
-    def request_uv(self, permissions, rd_id):
-        """Request user verification."""
-        return True
 
 
 class FIDO2HSMPlugin(HSMPlugin):

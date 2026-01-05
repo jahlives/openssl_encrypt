@@ -115,6 +115,15 @@ class YubikeyHSMPlugin(HSMPlugin):
                             self.logger.info(f"Challenge-Response found on slot {slot}")
                             return slot
                         except Exception as e:
+                            error_msg = str(e).lower()
+                            # If it timed out waiting for touch, that means it IS Challenge-Response
+                            # (just configured to require touch)
+                            if "timeout" in error_msg or "touch" in error_msg:
+                                self.logger.info(
+                                    f"Challenge-Response found on slot {slot} (requires touch)"
+                                )
+                                return slot
+                            # Otherwise it's probably not Challenge-Response
                             self.logger.debug(
                                 f"Slot {slot} configured but not for Challenge-Response: {e}"
                             )

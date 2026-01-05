@@ -3,3 +3,6 @@
 
 # Yubikey Challenge-Response support
 yubikey-manager>=5.0.0,<6.0.0
+
+# FIDO2 support for hardware security keys
+fido2>=2.0.0,<3.0.0
