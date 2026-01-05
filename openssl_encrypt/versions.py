@@ -8,33 +8,55 @@ LIBOQS_PYTHON_VERSION = "0.12.0"
 def check_liboqs_version():
     """
     Check if liboqs is installed with correct version
+    Tries common installation paths if not found in PKG_CONFIG_PATH
 
     Returns:
         tuple: (installed: bool, version: str or None, message: str)
     """
     import subprocess
+    import os
 
-    try:
-        result = subprocess.run(
-            ['pkg-config', '--modversion', 'liboqs'],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        if result.returncode == 0:
-            version = result.stdout.strip()
-            if version == LIBOQS_VERSION:
-                return (True, version, f"✓ liboqs {version}")
-            else:
-                return (False, version, f"✗ liboqs version mismatch: found {version}, need {LIBOQS_VERSION}")
-        else:
-            return (False, None, "✗ liboqs not found via pkg-config")
-    except FileNotFoundError:
-        return (False, None, "✗ pkg-config not found, cannot verify liboqs")
-    except subprocess.TimeoutExpired:
-        return (False, None, "✗ pkg-config timeout")
-    except Exception as e:
-        return (False, None, f"✗ Error checking liboqs: {e}")
+    # Common paths where liboqs might be installed
+    common_pkgconfig_paths = [
+        None,  # Use default PKG_CONFIG_PATH first
+        os.path.expanduser('~/.local/lib64/pkgconfig'),
+        os.path.expanduser('~/.local/lib/pkgconfig'),
+        '/usr/local/lib64/pkgconfig',
+        '/usr/local/lib/pkgconfig',
+    ]
+
+    for pkg_path in common_pkgconfig_paths:
+        try:
+            env = os.environ.copy()
+            if pkg_path is not None:
+                # Add this path to PKG_CONFIG_PATH
+                existing_path = env.get('PKG_CONFIG_PATH', '')
+                if existing_path:
+                    env['PKG_CONFIG_PATH'] = f"{pkg_path}:{existing_path}"
+                else:
+                    env['PKG_CONFIG_PATH'] = pkg_path
+
+            result = subprocess.run(
+                ['pkg-config', '--modversion', 'liboqs'],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                env=env
+            )
+            if result.returncode == 0:
+                version = result.stdout.strip()
+                if version == LIBOQS_VERSION:
+                    return (True, version, f"✓ liboqs {version}")
+                else:
+                    return (False, version, f"✗ liboqs version mismatch: found {version}, need {LIBOQS_VERSION}")
+        except FileNotFoundError:
+            return (False, None, "✗ pkg-config not found, cannot verify liboqs")
+        except subprocess.TimeoutExpired:
+            continue  # Try next path
+        except Exception:
+            continue  # Try next path
+
+    return (False, None, "✗ liboqs not found via pkg-config")
 
 def check_liboqs_python_version():
     """
@@ -100,13 +122,14 @@ Manual Installation Instructions:
    ninja && ninja install
 
 3. Install liboqs-python {LIBOQS_PYTHON_VERSION}:
-   export PKG_CONFIG_PATH=$HOME/.local/lib/pkgconfig:$PKG_CONFIG_PATH
-   export LD_LIBRARY_PATH=$HOME/.local/lib:$LD_LIBRARY_PATH
+   # Note: Use lib64 on 64-bit systems, lib on others
+   export PKG_CONFIG_PATH=$HOME/.local/lib64/pkgconfig:$HOME/.local/lib/pkgconfig:$PKG_CONFIG_PATH
+   export LD_LIBRARY_PATH=$HOME/.local/lib64:$HOME/.local/lib:$LD_LIBRARY_PATH
    pip install git+https://github.com/open-quantum-safe/liboqs-python.git@{LIBOQS_PYTHON_VERSION}
 
 4. Add to your shell profile (~/.bashrc or ~/.zshrc):
-   export LD_LIBRARY_PATH="$HOME/.local/lib:$LD_LIBRARY_PATH"
-   export PKG_CONFIG_PATH="$HOME/.local/lib/pkgconfig:$PKG_CONFIG_PATH"
+   export LD_LIBRARY_PATH="$HOME/.local/lib64:$HOME/.local/lib:$LD_LIBRARY_PATH"
+   export PKG_CONFIG_PATH="$HOME/.local/lib64/pkgconfig:$HOME/.local/lib/pkgconfig:$PKG_CONFIG_PATH"
 
 5. Verify installation:
    python -m openssl_encrypt.versions
