@@ -22,7 +22,7 @@ this_directory = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(this_directory, "README.md"), encoding="utf-8") as f:
     long_description = f.read()
 
-VERSION = "1.4.0b4"  # Define version in a variable for reuse
+VERSION = "1.4.0b5"  # Define version in a variable for reuse
 
 # Get git commit hash
 git_hash = "unknown"
@@ -276,9 +276,10 @@ setup(
         ],
     },
     project_urls={
-        "Bug Tracker": "https://gitlab.rm-rf.ch/world/openssl_encrypt/-/issues",
-        "Documentation": "https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt/docs",
-        "Source Code": "https://gitlab.rm-rf.ch/world/openssl_encrypt/-/tree/main/openssl_encrypt",
+        "Homepage": "https://github.com/jahlives/openssl_encrypt",
+        "Bug Tracker": "https://github.com/jahlives/openssl_encrypt/issues",
+        "Documentation": "https://github.com/jahlives/openssl_encrypt/tree/releases/1.4.0/openssl_encrypt/docs",
+        "Source Code": "https://github.com/jahlives/openssl_encrypt/tree/releases/1.4.0",
     },
     packages=find_packages(),
     include_package_data=True,
@@ -290,7 +291,7 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     keywords="encryption, decryption, random-password, secure shredding, security",
-    url="https://gitlab.rm-rf.ch/world/openssl_encrypt",
+    url="https://github.com/jahlives/openssl_encrypt",
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Developers",
