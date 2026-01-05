@@ -1,11 +1,37 @@
 # Installation Guide
 
+## 🚀 Quick Install (Recommended for Most Users)
+
+**Want to get started immediately without build tools?** Use Flatpak:
+
+```bash
+# Download and install (all dependencies included)
+flatpak install --user https://gitlab.rm-rf.ch/world/openssl_encrypt/-/packages/latest/openssl-encrypt-flatpak.flatpak
+
+# Run GUI
+flatpak run com.opensslencrypt.OpenSSLEncrypt --gui
+
+# Or CLI
+flatpak run com.opensslencrypt.OpenSSLEncrypt encrypt myfile.txt
+```
+
+✅ **All crypto libraries pre-built** (no cmake, gcc, or rust needed)
+✅ **Sandboxed and secure** (isolated from system)
+✅ **Automatic updates** available
+✅ **Works immediately** on any Linux distribution
+
+📖 **Details:** See [Method 4: Flatpak Installation](#method-4-flatpak-installation-containerized)
+
+---
+
 ## Table of Contents
+- [Quick Install](#-quick-install-recommended-for-most-users)
 - [Prerequisites](#prerequisites)
 - [Installation Methods](#installation-methods)
-  - [Method 1: PyPI + install-dependencies (Recommended)](#method-1-pypi--install-dependencies-recommended)
+  - [Method 1: PyPI + install-dependencies](#method-1-pypi--install-dependencies)
   - [Method 2: Local Development Install](#method-2-local-development-install)
   - [Method 3: Manual Dependency Build](#method-3-manual-dependency-build)
+  - [Method 4: Flatpak Installation (Containerized)](#method-4-flatpak-installation-containerized)
 - [Virtual Environment](#virtual-environment)
 - [Verification](#verification)
 - [Advanced Configuration](#advanced-configuration)
@@ -317,6 +343,226 @@ export PKG_CONFIG_PATH="$HOME/.local/lib64/pkgconfig:$HOME/.local/lib/pkgconfig:
 **Apply changes:**
 ```bash
 source ~/.bashrc  # or source ~/.zshrc
+```
+
+---
+
+### Method 4: Flatpak Installation (Containerized)
+
+**Best for:** Users who want a complete, self-contained installation without build tools
+
+Flatpak provides a sandboxed application with all dependencies pre-built and included.
+
+#### What's Included
+
+✅ All post-quantum cryptography libraries (liboqs, liboqs-python)
+✅ Threefish cipher support
+✅ Flutter GUI with native Wayland/X11 support
+✅ All Python dependencies
+✅ Isolated from system packages (sandbox security)
+
+#### Installation Options
+
+**Option 1: Download from Package Registry (Recommended)**
+
+1. **Download the latest package:**
+   - Visit: https://gitlab.rm-rf.ch/world/openssl_encrypt/-/packages
+   - Find the latest `openssl-encrypt-flatpak` package
+   - Download the `.flatpak` file
+
+2. **Install the downloaded package:**
+   ```bash
+   flatpak install --user com.opensslencrypt.OpenSSLEncrypt.flatpak
+   ```
+
+3. **Run the application:**
+   ```bash
+   # GUI mode (Flutter desktop app)
+   flatpak run com.opensslencrypt.OpenSSLEncrypt --gui
+
+   # CLI mode
+   flatpak run com.opensslencrypt.OpenSSLEncrypt --help
+
+   # Encrypt a file
+   flatpak run com.opensslencrypt.OpenSSLEncrypt encrypt myfile.txt
+
+   # Decrypt a file
+   flatpak run com.opensslencrypt.OpenSSLEncrypt decrypt myfile.txt.enc
+   ```
+
+**Option 2: Add as Flatpak Remote Repository**
+
+For automatic updates:
+
+```bash
+# Add the repository
+flatpak remote-add --user openssl-encrypt-repo \
+  https://gitlab.rm-rf.ch/world/openssl_encrypt/-/jobs/artifacts/main/raw/flatpak/public/repo?job=create-repository
+
+# Install from repository
+flatpak install --user openssl-encrypt-repo com.opensslencrypt.OpenSSLEncrypt
+
+# Get automatic updates later
+flatpak update com.opensslencrypt.OpenSSLEncrypt
+```
+
+**Option 3: Direct Install via URL**
+
+```bash
+# Install directly from URL (requires GitLab access)
+flatpak install --user \
+  https://gitlab.rm-rf.ch/world/openssl_encrypt/-/packages/latest/openssl-encrypt-flatpak.flatpak
+```
+
+**Option 4: Install via wget/curl**
+
+```bash
+# Download latest package
+VERSION=$(curl -s "https://gitlab.rm-rf.ch/api/v4/projects/world%2Fopenssl_encrypt/packages" | \
+          grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+wget "https://gitlab.rm-rf.ch/world/openssl_encrypt/-/packages/generic/openssl-encrypt-flatpak/${VERSION}/com.opensslencrypt.OpenSSLEncrypt.flatpak"
+
+# Install
+flatpak install --user com.opensslencrypt.OpenSSLEncrypt.flatpak
+```
+
+#### Prerequisites
+
+Before installing Flatpak packages, ensure Flatpak is installed on your system:
+
+**Ubuntu/Debian:**
+```bash
+sudo apt install flatpak
+```
+
+**Fedora/RHEL:**
+```bash
+sudo dnf install flatpak
+```
+
+**Arch Linux:**
+```bash
+sudo pacman -S flatpak
+```
+
+**Add Flathub for runtime dependencies:**
+```bash
+flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+```
+
+#### Creating a Shell Alias (Optional)
+
+For convenience, create an alias to use like a native command:
+
+```bash
+# Add to ~/.bashrc or ~/.zshrc
+alias openssl-encrypt='flatpak run com.opensslencrypt.OpenSSLEncrypt'
+
+# After sourcing your profile:
+openssl-encrypt encrypt myfile.txt
+openssl-encrypt --gui
+```
+
+#### Flatpak-Specific Features
+
+**GUI Mode:**
+The Flatpak includes a Flutter desktop application with:
+- Native Wayland and X11 support
+- Drag & drop file operations
+- Real-time progress monitoring
+- Configuration profiles
+- Dark/light theme switching
+
+**Sandboxing:**
+The application runs in a secure sandbox with limited system access:
+- Read/write access to your home directory
+- Network access (for keyserver features)
+- GPU acceleration for rendering
+- Sound system access
+
+**HSM/YubiKey Support:**
+To use hardware security modules:
+```bash
+# Grant USB device access
+flatpak override --user com.opensslencrypt.OpenSSLEncrypt \
+  --device=<device-path>
+
+# Example: YubiKey
+flatpak override --user com.opensslencrypt.OpenSSLEncrypt \
+  --device=/dev/bus/usb/001/002
+```
+
+#### Advantages of Flatpak
+
+✅ **Zero build time** - Everything pre-compiled
+✅ **No dependencies** - Self-contained package
+✅ **Automatic updates** - Via Flatpak system
+✅ **Sandboxed security** - Isolated from system
+✅ **Cross-distribution** - Works on any Linux distro
+✅ **No conflicts** - Doesn't affect system packages
+✅ **GUI included** - Flutter desktop app pre-installed
+
+#### Disadvantages
+
+⚠️ **Larger download** - Includes all dependencies (~200-300MB)
+⚠️ **Slower startup** - Sandbox initialization overhead
+⚠️ **Limited system integration** - Runs in isolated environment
+⚠️ **No editable install** - Not suitable for development
+
+#### Troubleshooting Flatpak
+
+**GUI mode fails with display errors:**
+```bash
+# For X11 systems, allow local connections
+xhost +local:
+
+# Then run GUI mode
+flatpak run com.opensslencrypt.OpenSSLEncrypt --gui
+```
+
+**Permission denied downloading packages:**
+- Ensure you're logged into GitLab
+- For CLI access, create a Personal Access Token with `read_api` scope
+- Use token in wget: `--header="PRIVATE-TOKEN: your_token"`
+
+**Flatpak command not found:**
+```bash
+# Install Flatpak first (see Prerequisites above)
+```
+
+**Access to files outside home directory:**
+```bash
+# Grant access to specific directory
+flatpak override --user com.opensslencrypt.OpenSSLEncrypt \
+  --filesystem=/path/to/directory
+```
+
+**HSM/YubiKey not detected:**
+```bash
+# List USB devices
+lsusb
+
+# Grant access to specific device
+flatpak override --user com.opensslencrypt.OpenSSLEncrypt \
+  --device=/dev/bus/usb/<bus>/<device>
+
+# Or grant all USB access (less secure)
+flatpak override --user com.opensslencrypt.OpenSSLEncrypt \
+  --device=all
+```
+
+#### Uninstalling Flatpak
+
+```bash
+# Remove the application
+flatpak uninstall --user com.opensslencrypt.OpenSSLEncrypt
+
+# Remove repository (if added)
+flatpak remote-delete --user openssl-encrypt-repo
+
+# Clean up unused runtimes
+flatpak uninstall --unused
 ```
 
 ---
