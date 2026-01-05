@@ -7,6 +7,11 @@ A Python-based file encryption tool with modern ciphers, post-quantum algorithms
 The project is historically named `openssl-encrypt` because it once was a Python script wrapper around OpenSSL. That approach stopped working with recent Python versions, so I did a complete rewrite in pure Python using modern ciphers and hashes. The project name is a “homage” to its ---
 
 ---
+## Installation
+
+To install follow the [guide](https://github.com/jahlives/openssl_encrypt/wiki/INSTALLATION)
+---
+
 ## Ethical Commitment & Usage Restrictions
 
 This project is committed to the protection of human rights and the prevention of mass surveillance. To reflect these values, it is licensed under the **Hippocratic License 2.1**.
