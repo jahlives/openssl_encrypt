@@ -337,9 +337,14 @@ class _EncryptTabState extends State<EncryptTab> {
         },
         onStatus: (status) {
           setState(() {
-            if (status.toLowerCase().contains('touch') ||
-                status.toLowerCase().contains('yubikey') ||
-                status.toLowerCase().contains('press')) {
+            final lowerStatus = status.toLowerCase();
+            // Only show YubiKey prompt if we're WAITING for touch (not if touch was registered)
+            if ((lowerStatus.contains('touch') ||
+                 lowerStatus.contains('yubikey') ||
+                 lowerStatus.contains('press')) &&
+                !lowerStatus.contains('registered') &&
+                !lowerStatus.contains('derived') &&
+                !lowerStatus.contains('executed')) {
               _operationStatus = 'Please touch your YubiKey...';
             } else {
               _operationStatus = status;
@@ -508,9 +513,14 @@ class _EncryptTabState extends State<EncryptTab> {
         },
         onStatus: (status) {
           setState(() {
-            if (status.toLowerCase().contains('touch') ||
-                status.toLowerCase().contains('yubikey') ||
-                status.toLowerCase().contains('press')) {
+            final lowerStatus = status.toLowerCase();
+            // Only show YubiKey prompt if we're WAITING for touch (not if touch was registered)
+            if ((lowerStatus.contains('touch') ||
+                 lowerStatus.contains('yubikey') ||
+                 lowerStatus.contains('press')) &&
+                !lowerStatus.contains('registered') &&
+                !lowerStatus.contains('derived') &&
+                !lowerStatus.contains('executed')) {
               _operationStatus = 'Please touch your YubiKey...';
             } else {
               _operationStatus = status;

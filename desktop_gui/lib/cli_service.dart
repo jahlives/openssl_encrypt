@@ -561,6 +561,7 @@ class CLIService {
       final result = await _runCLICommandWithProgress(
         args,
         environment: {'CRYPT_PASSWORD': password},
+        commandForStatus: maskedCommand,
         onStdout: (line) {
           if (debugEnabled) _outputDebugLog('CLI stdout: $line');
         },
@@ -574,9 +575,6 @@ class CLIService {
           onStatus?.call(line);
         },
       );
-
-      // Show executed command after operation completes (replaces YubiKey prompt if shown)
-      onStatus?.call('Executed: $maskedCommand');
 
       if (result.exitCode != 0) {
         final errorMsg = result.stderr.toString().trim();
@@ -730,6 +728,7 @@ class CLIService {
       final result = await _runCLICommandWithProgress(
         args,
         environment: {'CRYPT_PASSWORD': password},
+        commandForStatus: maskedCommand,
         onStdout: (line) {
           if (debugEnabled) _outputDebugLog('CLI stdout: $line');
         },
@@ -743,9 +742,6 @@ class CLIService {
           onStatus?.call(line);
         },
       );
-
-      // Show executed command after operation completes (replaces YubiKey prompt if shown)
-      onStatus?.call('Executed: $maskedCommand');
 
       if (result.exitCode != 0) {
         final errorMsg = result.stderr.toString().trim();
@@ -879,7 +875,7 @@ class CLIService {
   /// Run CLI command with real-time progress streaming
   static Future<ProcessResult> _runCLICommandWithProgress(
     List<String> args,
-    {Map<String, String>? environment, Function(String)? onStdout, Function(String)? onStderr, Function(String)? onProgress, Function(String)? onStatus}
+    {Map<String, String>? environment, Function(String)? onStdout, Function(String)? onStderr, Function(String)? onProgress, Function(String)? onStatus, String? commandForStatus}
   ) async {
     Process process;
 
@@ -922,9 +918,20 @@ class CLIService {
         onProgress?.call(line);
       }
 
-      // Detect HSM/YubiKey touch prompts
       final lowerLine = line.toLowerCase();
-      if (lowerLine.contains('touch') ||
+
+      // Detect HSM/YubiKey touch completion (pepper derived = touch was successful)
+      if (lowerLine.contains('hardware pepper derived') ||
+          lowerLine.contains('pepper derived')) {
+        // Show executed command immediately after touch is detected
+        if (commandForStatus != null) {
+          onStatus?.call('Executed: $commandForStatus');
+        } else {
+          onStatus?.call('YubiKey touch registered, processing...');
+        }
+      }
+      // Detect HSM/YubiKey touch prompts (waiting for touch)
+      else if (lowerLine.contains('touch') ||
           lowerLine.contains('press') ||
           lowerLine.contains('yubikey') ||
           lowerLine.contains('waiting for') ||
@@ -949,9 +956,20 @@ class CLIService {
         onProgress?.call(line);
       }
 
-      // Detect HSM/YubiKey touch prompts in stderr as well
       final lowerLine = line.toLowerCase();
-      if (lowerLine.contains('touch') ||
+
+      // Detect HSM/YubiKey touch completion (pepper derived = touch was successful)
+      if (lowerLine.contains('hardware pepper derived') ||
+          lowerLine.contains('pepper derived')) {
+        // Show executed command immediately after touch is detected
+        if (commandForStatus != null) {
+          onStatus?.call('Executed: $commandForStatus');
+        } else {
+          onStatus?.call('YubiKey touch registered, processing...');
+        }
+      }
+      // Detect HSM/YubiKey touch prompts in stderr as well (waiting for touch)
+      else if (lowerLine.contains('touch') ||
           lowerLine.contains('press') ||
           lowerLine.contains('yubikey') ||
           lowerLine.contains('waiting for') ||
