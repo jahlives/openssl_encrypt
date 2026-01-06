@@ -575,6 +575,9 @@ class CLIService {
         onProgress: (line) {
           onProgress?.call(line);
         },
+        onStatus: (line) {
+          onStatus?.call(line);
+        },
       );
 
       if (result.exitCode != 0) {
@@ -745,6 +748,9 @@ class CLIService {
         },
         onProgress: (line) {
           onProgress?.call(line);
+        },
+        onStatus: (line) {
+          onStatus?.call(line);
         },
       );
 
