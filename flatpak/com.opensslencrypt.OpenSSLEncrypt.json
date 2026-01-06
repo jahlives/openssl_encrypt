@@ -119,6 +119,7 @@
       "build-commands": [
         "pip3 install --prefix=${FLATPAK_DEST} 'cffi==1.17.1'",
         "pip3 install --prefix=${FLATPAK_DEST} 'pycparser==2.22'",
+        "pip3 install --prefix=${FLATPAK_DEST} 'certifi==2026.1.4'",
         "pip3 install --prefix=${FLATPAK_DEST} 'cryptography==44.0.3'",
         "pip3 install --prefix=${FLATPAK_DEST} 'argon2-cffi==23.1.0'",
         "pip3 install --prefix=${FLATPAK_DEST} 'argon2-cffi-bindings==21.2.0'",
