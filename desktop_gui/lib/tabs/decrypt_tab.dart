@@ -14,7 +14,7 @@ class DecryptTab extends StatefulWidget {
 
 class _DecryptTabState extends State<DecryptTab> {
   // Input mode toggle
-  bool _isFileMode = false;
+  bool _isFileMode = true;
 
   // Text input controllers
   final TextEditingController _textController = TextEditingController();
@@ -27,16 +27,17 @@ class _DecryptTabState extends State<DecryptTab> {
   bool _isLoading = false;
   String result = '';
   String? _decryptedContent;
+  String _operationStatus = '';
+
+  // Password options
+  bool _forcePassword = false;
 
   // Optional decryption settings (mostly for asymmetric mode)
   String? _decryptionIdentity;
   String? _verifyFrom;
   bool _skipVerification = false;
-  bool _verifyIntegrity = true;
-
-  // HSM settings (if file was encrypted with HSM)
-  String _hsmType = 'none';
-  int _yubikeySlot = 1;
+  bool _verifyIntegrity = false;  // Remote server verification - off by default
+  bool _showProgress = false;
 
   @override
   void dispose() {
@@ -75,6 +76,7 @@ class _DecryptTabState extends State<DecryptTab> {
     setState(() {
       _isLoading = true;
       result = 'Decrypting...';
+      _operationStatus = '';
     });
 
     try {
@@ -84,9 +86,31 @@ class _DecryptTabState extends State<DecryptTab> {
         withKey: _decryptionIdentity,
         verifyFrom: _verifyFrom,
         skipVerification: _skipVerification,
-        hsmPlugin: _hsmType != 'none' ? _hsmType : null,
-        hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
         verifyIntegrity: _verifyIntegrity,
+        forcePassword: _forcePassword,
+        showProgress: _showProgress,
+        onProgress: (progress) {
+          setState(() {
+            _operationStatus = progress;
+          });
+        },
+        onStatus: (status) {
+          setState(() {
+            final lowerStatus = status.toLowerCase();
+            // Only show YubiKey prompt if we're WAITING for touch (not if touch was registered)
+            if ((lowerStatus.contains('touch') ||
+                 lowerStatus.contains('yubikey') ||
+                 lowerStatus.contains('press')) &&
+                !lowerStatus.contains('registered') &&
+                !lowerStatus.contains('derived') &&
+                !lowerStatus.contains('executed')) {
+              _operationStatus = 'Please touch your YubiKey...';
+            } else {
+              _operationStatus = status;
+            }
+          });
+        },
+        onIntegrityPrompt: _verifyIntegrity ? _showIntegrityWarningDialog : null,
       );
 
       setState(() {
@@ -112,6 +136,7 @@ class _DecryptTabState extends State<DecryptTab> {
     setState(() {
       _isLoading = true;
       result = 'Decrypting file...';
+      _operationStatus = '';
     });
 
     try {
@@ -128,9 +153,31 @@ class _DecryptTabState extends State<DecryptTab> {
         withKey: _decryptionIdentity,
         verifyFrom: _verifyFrom,
         skipVerification: _skipVerification,
-        hsmPlugin: _hsmType != 'none' ? _hsmType : null,
-        hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
         verifyIntegrity: _verifyIntegrity,
+        forcePassword: _forcePassword,
+        showProgress: _showProgress,
+        onProgress: (progress) {
+          setState(() {
+            _operationStatus = progress;
+          });
+        },
+        onStatus: (status) {
+          setState(() {
+            final lowerStatus = status.toLowerCase();
+            // Only show YubiKey prompt if we're WAITING for touch (not if touch was registered)
+            if ((lowerStatus.contains('touch') ||
+                 lowerStatus.contains('yubikey') ||
+                 lowerStatus.contains('press')) &&
+                !lowerStatus.contains('registered') &&
+                !lowerStatus.contains('derived') &&
+                !lowerStatus.contains('executed')) {
+              _operationStatus = 'Please touch your YubiKey...';
+            } else {
+              _operationStatus = status;
+            }
+          });
+        },
+        onIntegrityPrompt: _verifyIntegrity ? _showIntegrityWarningDialog : null,
       );
 
       // Store decrypted content
@@ -172,6 +219,77 @@ class _DecryptTabState extends State<DecryptTab> {
         ),
       );
     }
+  }
+
+  /// Show warning dialog when integrity verification fails
+  Future<bool> _showIntegrityWarningDialog(String message) async {
+    if (!mounted) return false;
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,  // Force user to make a choice
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber, color: Colors.orange.shade700, size: 28),
+            const SizedBox(width: 8),
+            const Text('Integrity Verification Failed'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'The file metadata may have been tampered with.',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Proceeding could expose you to a denial-of-service attack '
+              'via malicious hash/KDF parameters that consume excessive '
+              'CPU or memory.',
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                border: Border.all(color: Colors.red.shade200),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.red),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Only proceed if you trust the source of this file.',
+                      style: TextStyle(color: Colors.red, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Abort'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+            ),
+            child: const Text('Proceed Anyway', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    return result ?? false;  // Default to false (abort) if dialog dismissed
   }
 
   @override
@@ -263,15 +381,34 @@ class _DecryptTabState extends State<DecryptTab> {
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(12.0),
-                child: TextField(
-                  controller: _passwordController,
-                  decoration: const InputDecoration(
-                    labelText: 'Password',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.lock_open),
-                  ),
-                  obscureText: true,
-                  enabled: !_isLoading,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: _passwordController,
+                      decoration: const InputDecoration(
+                        labelText: 'Password',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.lock_open),
+                      ),
+                      obscureText: true,
+                      enabled: !_isLoading,
+                    ),
+                    const SizedBox(height: 8),
+                    CheckboxListTile(
+                      value: _forcePassword,
+                      onChanged: _isLoading ? null : (value) {
+                        setState(() {
+                          _forcePassword = value ?? false;
+                        });
+                      },
+                      title: const Text('Force password'),
+                      subtitle: const Text('Accept weak passwords (use with caution)'),
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      dense: true,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -280,7 +417,7 @@ class _DecryptTabState extends State<DecryptTab> {
             // Advanced Options (Rarely needed - collapsed by default)
             ExpansionTile(
               title: const Text('Advanced Options'),
-              subtitle: const Text('Only needed for asymmetric encryption or HSM'),
+              subtitle: const Text('Integrity verification settings'),
               leading: const Icon(Icons.settings),
               children: [
                 // Integrity Verification
@@ -290,15 +427,6 @@ class _DecryptTabState extends State<DecryptTab> {
                   isEncryptMode: false,
                   onEnableIntegrityChanged: (_) {},
                   onVerifyIntegrityChanged: (value) => setState(() => _verifyIntegrity = value),
-                ),
-                const SizedBox(height: 12),
-
-                // HSM Configuration
-                HsmConfigSection(
-                  hsmType: _hsmType,
-                  yubikeySlot: _yubikeySlot,
-                  onHsmTypeChanged: (type) => setState(() => _hsmType = type),
-                  onYubikeySlotChanged: (slot) => setState(() => _yubikeySlot = slot),
                 ),
               ],
             ),
@@ -320,6 +448,64 @@ class _DecryptTabState extends State<DecryptTab> {
                 textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
             ),
+
+            // Progress checkbox
+            CheckboxListTile(
+              value: _showProgress,
+              onChanged: _isLoading ? null : (value) {
+                setState(() {
+                  _showProgress = value ?? false;
+                });
+              },
+              title: const Text('Show progress'),
+              subtitle: const Text('Display real-time progress during operation'),
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              dense: true,
+            ),
+
+            // Operation Status Display (YubiKey touch prompts, etc.)
+            if (_isLoading && _operationStatus.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Card(
+                  color: _operationStatus.contains('YubiKey')
+                      ? Colors.amber.shade900
+                      : Colors.grey.shade900,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Row(
+                      children: [
+                        if (_operationStatus.contains('YubiKey'))
+                          Icon(Icons.touch_app, color: Colors.amber.shade100)
+                        else
+                          SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            _operationStatus,
+                            style: TextStyle(
+                              color: _operationStatus.contains('YubiKey')
+                                  ? Colors.amber.shade100
+                                  : Colors.white,
+                              fontWeight: _operationStatus.contains('YubiKey')
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
 
             // Save to File Button (for file mode)
             if (_isFileMode && _decryptedContent != null) ...[

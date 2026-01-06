@@ -2736,14 +2736,17 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  border: Border.all(color: Colors.blue.shade200),
+                  color: Colors.grey.shade900,
+                  border: Border.all(color: Colors.grey.shade700),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Algorithm Chain:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text('Algorithm Chain:', style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    )),
                     const SizedBox(height: 8),
                     ..._cascadeAlgorithms.asMap().entries.map((entry) {
                       return Padding(
@@ -2753,13 +2756,16 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                             Container(
                               width: 24,
                               height: 24,
-                              decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade700,
+                                shape: BoxShape.circle,
+                              ),
                               child: Center(
                                 child: Text('${entry.key + 1}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
                               ),
                             ),
                             const SizedBox(width: 8),
-                            Text(entry.value),
+                            Text(entry.value, style: const TextStyle(color: Colors.white)),
                           ],
                         ),
                       );

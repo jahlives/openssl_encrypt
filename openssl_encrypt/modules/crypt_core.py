@@ -69,6 +69,23 @@ from .crypt_errors import (  # Error handling imports are at the top of file
 # Import utility functions
 from .crypt_utils import safe_open_file
 
+# Import integrity plugin for remote metadata verification
+try:
+    from ..plugins.integrity import IntegrityPlugin
+    from ..plugins.integrity.config import ConfigError as IntegrityConfigError
+    from ..plugins.integrity.config import IntegrityConfig
+    from ..plugins.integrity.integrity_plugin import IntegrityPluginError
+    _INTEGRITY_PLUGIN_AVAILABLE = True
+except ImportError:
+    _INTEGRITY_PLUGIN_AVAILABLE = False
+
+
+# Integrity verification exception
+class IntegrityVerificationError(Exception):
+    """Raised when integrity verification fails and user aborts decryption."""
+    pass
+
+
 # Define type variable for generic function
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -2925,6 +2942,8 @@ def create_metadata_v5(
     hsm_slot_used=None,
     include_encrypted_hash=True,
     aad_mode=False,
+    pepper_plugin_name=None,
+    pepper_name=None,
 ):
     """
     Create metadata in format version 5.
@@ -3031,6 +3050,12 @@ def create_metadata_v5(
         if hsm_slot_used:
             metadata["encryption"]["hsm_config"] = {"slot": hsm_slot_used}
 
+    # Add pepper configuration if used
+    if pepper_plugin_name:
+        metadata["encryption"]["pepper_plugin"] = pepper_plugin_name
+        if pepper_name:
+            metadata["encryption"]["pepper_name"] = pepper_name
+
     return metadata
 
 
@@ -3048,6 +3073,8 @@ def create_metadata_v6(
     include_encrypted_hash=True,
     aad_mode=False,
     keystore_id=None,
+    pepper_plugin_name=None,
+    pepper_name=None,
 ):
     """
     Create metadata in format version 6 with formal HSM validation.
@@ -3204,6 +3231,12 @@ def create_metadata_v6(
 
             metadata["encryption"]["hsm_config"] = {"slot": hsm_slot_used}
 
+    # Add pepper configuration if used
+    if pepper_plugin_name:
+        metadata["encryption"]["pepper_plugin"] = pepper_plugin_name
+        if pepper_name:
+            metadata["encryption"]["pepper_name"] = pepper_name
+
     # Add keystore ID if present (v6 enhancement)
     if keystore_id:
         metadata["derivation_config"]["keystore_id"] = keystore_id
@@ -3232,6 +3265,8 @@ def create_metadata_v8(
     hsm_plugin_name: str = None,
     hsm_slot_used: int = None,
     keystore_id: str = None,
+    pepper_plugin_name: str = None,
+    pepper_name: str = None,
 ):
     """
     Create metadata in format version 8 with cascade encryption support.
@@ -3412,6 +3447,12 @@ def create_metadata_v8(
                 )
 
             metadata["encryption"]["hsm_config"] = {"slot": hsm_slot_used}
+
+    # Add pepper configuration if used
+    if pepper_plugin_name:
+        metadata["encryption"]["pepper_plugin"] = pepper_plugin_name
+        if pepper_name:
+            metadata["encryption"]["pepper_name"] = pepper_name
 
     # Add keystore ID if present
     if keystore_id:
@@ -4159,6 +4200,9 @@ def encrypt_file(
     cascade=False,
     cipher_names=None,
     cascade_hash="sha256",
+    integrity=False,
+    pepper_plugin=None,
+    pepper_name=None,
 ):
     """
     Encrypt a file with a password using the specified algorithm.
@@ -4183,6 +4227,7 @@ def encrypt_file(
         cascade (bool): Enable cascade encryption with multiple cipher layers (default: False)
         cipher_names (list, optional): List of cipher names for cascade mode (e.g., ["aes-256-gcm", "chacha20-poly1305"])
         cascade_hash (str): Hash function for HKDF in cascade mode (default: "sha256")
+        integrity (bool): If True, store metadata hash on remote integrity server (default: False)
 
     Returns:
         bool: True if encryption was successful
@@ -4467,7 +4512,131 @@ def encrypt_file(
         except Exception as e:
             raise KeyDerivationError(f"HSM operation failed: {str(e)}")
 
-    # Generate key (now with hsm_pepper)
+    # Remote pepper generation/retrieval if pepper plugin provided
+    remote_pepper = None
+    remote_pepper_name = None
+
+    if pepper_plugin:
+        if not quiet:
+            print("Processing remote pepper...")
+
+        try:
+            if pepper_name:
+                # Retrieve existing pepper by name
+                if not quiet:
+                    print(f"Retrieving pepper '{pepper_name}' from remote server...")
+
+                try:
+                    encrypted_pepper_data = pepper_plugin.get_pepper(pepper_name)
+                except Exception as e:
+                    raise KeyDerivationError(f"Failed to retrieve pepper '{pepper_name}': {e}")
+
+                # Decrypt pepper with password
+                # Format: nonce (12 bytes) + ciphertext + tag (16 bytes)
+                if len(encrypted_pepper_data) < 28:  # 12 + 16 minimum
+                    raise KeyDerivationError("Invalid encrypted pepper data format")
+
+                nonce = encrypted_pepper_data[:12]
+                ciphertext_with_tag = encrypted_pepper_data[12:]
+
+                # Derive decryption key from password using SHA-256
+                import hashlib
+
+                pepper_key = hashlib.sha256(password).digest()
+
+                try:
+                    aesgcm = AESGCM(pepper_key)
+                    remote_pepper = aesgcm.decrypt(nonce, ciphertext_with_tag, None)
+                except Exception as e:
+                    raise KeyDerivationError(
+                        "Failed to decrypt pepper - wrong password or corrupted data"
+                    )
+
+                remote_pepper_name = pepper_name
+
+            else:
+                # Auto-generate mode: create new pepper
+                if not quiet:
+                    print("Generating new remote pepper...")
+
+                # Generate 32-byte random pepper
+                remote_pepper = secrets.token_bytes(32)
+
+                # Derive encryption key from password using SHA-256
+                import hashlib
+
+                pepper_key = hashlib.sha256(password).digest()
+
+                # Encrypt pepper with AES-GCM
+                nonce = secrets.token_bytes(12)
+                aesgcm = AESGCM(pepper_key)
+                ciphertext_with_tag = aesgcm.encrypt(nonce, remote_pepper, None)
+
+                # Store encrypted pepper
+                encrypted_pepper_data = nonce + ciphertext_with_tag
+
+                # Generate file_id for pepper name
+                file_id = hashlib.sha256(os.path.abspath(input_file).encode("utf-8")).hexdigest()[:32]
+
+                try:
+                    pepper_plugin.store_pepper(
+                        name=file_id,
+                        pepper_encrypted=encrypted_pepper_data,
+                        description=f"Auto-generated pepper for {os.path.basename(input_file)}",
+                    )
+                    remote_pepper_name = file_id
+
+                    if not quiet:
+                        print(f"Pepper stored on remote server (id: {file_id[:16]}...)")
+                except Exception as e:
+                    # If pepper already exists, try to update it instead
+                    if "already exists" in str(e):
+                        try:
+                            if not quiet:
+                                print(f"Pepper {file_id[:16]}... already exists, updating...")
+                            pepper_plugin.update_pepper(
+                                name=file_id,
+                                pepper_encrypted=encrypted_pepper_data,
+                                description=f"Auto-generated pepper for {os.path.basename(input_file)} (updated)",
+                            )
+                            remote_pepper_name = file_id
+
+                            if not quiet:
+                                print(f"Pepper updated on remote server (id: {file_id[:16]}...)")
+                        except Exception as update_e:
+                            raise KeyDerivationError(f"Failed to update existing pepper on remote server: {update_e}")
+                    else:
+                        raise KeyDerivationError(f"Failed to store pepper on remote server: {e}")
+
+            # Validate pepper
+            if not remote_pepper or len(remote_pepper) < 16:
+                raise KeyDerivationError("Invalid pepper: must be at least 16 bytes")
+
+            if len(remote_pepper) > 128:
+                raise KeyDerivationError("Invalid pepper: exceeds maximum 128 bytes")
+
+            if not quiet:
+                print(f"Remote pepper active ({len(remote_pepper)} bytes)")
+
+        except ImportError as e:
+            raise KeyDerivationError(f"Pepper plugin dependencies not available: {e}")
+        except KeyDerivationError:
+            raise
+        except Exception as e:
+            raise KeyDerivationError(f"Pepper operation failed: {str(e)}")
+
+    # Combine HSM pepper and remote pepper if both present
+    combined_pepper = None
+    if hsm_pepper and remote_pepper:
+        combined_pepper = hsm_pepper + remote_pepper
+        if not quiet and debug:
+            logger.debug(f"Combined HSM+remote pepper: {len(combined_pepper)} bytes")
+    elif hsm_pepper:
+        combined_pepper = hsm_pepper
+    elif remote_pepper:
+        combined_pepper = remote_pepper
+
+    # Generate key (now with combined pepper)
     key, salt, hash_config = generate_key(
         password,
         salt,
@@ -4478,7 +4647,7 @@ def encrypt_file(
         progress=progress,
         debug=debug,
         pqc_keypair=pqc_keypair,
-        hsm_pepper=hsm_pepper,
+        hsm_pepper=combined_pepper,
     )
     # Read the input file
     if not quiet:
@@ -5132,6 +5301,8 @@ def encrypt_file(
                 hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
                 hsm_slot_used=hsm_slot_used,
                 keystore_id=keystore_id,
+                pepper_plugin_name="remote" if remote_pepper else None,
+                pepper_name=remote_pepper_name,
             )
         else:
             # V6 format for backward compatibility
@@ -5149,9 +5320,59 @@ def encrypt_file(
                 include_encrypted_hash=False,  # AEAD mode: no encrypted_hash
                 aad_mode=True,  # Mark as AEAD binding
                 keystore_id=keystore_id,  # Pass keystore ID if present
+                pepper_plugin_name="remote" if remote_pepper else None,
+                pepper_name=remote_pepper_name,
             )
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_b64 = base64.b64encode(metadata_json)
+
+        # Store metadata hash on integrity server if enabled (AEAD mode)
+        if integrity and _INTEGRITY_PLUGIN_AVAILABLE:
+            try:
+                config = IntegrityConfig.from_file()
+                if not config.enabled:
+                    if not quiet:
+                        print("Warning: --integrity flag used but integrity plugin not configured")
+                        print("Configure at: ~/.openssl_encrypt/plugins/integrity/config.json")
+                else:
+                    with IntegrityPlugin(config) as plugin:
+                        from pathlib import Path as PathLib
+                        file_id = IntegrityPlugin.compute_file_id(PathLib(input_file))
+                        metadata_hash = IntegrityPlugin.compute_metadata_hash(metadata_json)
+                        # Get algorithm name for description
+                        algo_name = algorithm.value if hasattr(algorithm, 'value') else str(algorithm)
+
+                        try:
+                            plugin.store_hash(
+                                file_id=file_id,
+                                metadata_hash=metadata_hash,
+                                algorithm=algo_name,
+                                description=f"Encrypted: {PathLib(output_file).name}"
+                            )
+                            if not quiet:
+                                print(f"✓ Metadata hash uploaded to integrity server")
+                        except Exception as store_e:
+                            # If hash already exists (409 Conflict), try to update it
+                            if "409" in str(store_e) or "Conflict" in str(store_e):
+                                try:
+                                    if not quiet:
+                                        print(f"Integrity hash already exists, updating...")
+                                    plugin.update_hash(
+                                        file_id=file_id,
+                                        metadata_hash=metadata_hash,
+                                        description=f"Encrypted: {PathLib(output_file).name} (updated)"
+                                    )
+                                    if not quiet:
+                                        print(f"✓ Metadata hash updated on integrity server")
+                                except Exception as update_e:
+                                    if not quiet:
+                                        print(f"Warning: Failed to update integrity hash: {update_e}")
+                            else:
+                                if not quiet:
+                                    print(f"Warning: Failed to store integrity hash: {store_e}")
+            except Exception as e:
+                if not quiet:
+                    print(f"Warning: Failed to store integrity hash: {e}")
 
     # Only show progress for larger files (> 1MB)
     if len(data) > 1024 * 1024 and not quiet:
@@ -5317,11 +5538,61 @@ def encrypt_file(
             hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
             hsm_slot_used=hsm_slot_used,
             keystore_id=keystore_id,  # Pass keystore ID if present
+            pepper_plugin_name="remote" if remote_pepper else None,
+            pepper_name=remote_pepper_name,
         )
         # If scrypt is used, add rounds to hash_config
         # Serialize and encode the metadata
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_base64 = base64.b64encode(metadata_json)
+
+        # Store metadata hash on integrity server if enabled (non-AEAD mode)
+        if integrity and _INTEGRITY_PLUGIN_AVAILABLE:
+            try:
+                config = IntegrityConfig.from_file()
+                if not config.enabled:
+                    if not quiet:
+                        print("Warning: --integrity flag used but integrity plugin not configured")
+                        print("Configure at: ~/.openssl_encrypt/plugins/integrity/config.json")
+                else:
+                    with IntegrityPlugin(config) as plugin:
+                        from pathlib import Path as PathLib
+                        file_id = IntegrityPlugin.compute_file_id(PathLib(input_file))
+                        metadata_hash = IntegrityPlugin.compute_metadata_hash(metadata_json)
+                        # Get algorithm name for description
+                        algo_name = algorithm.value if hasattr(algorithm, 'value') else str(algorithm)
+
+                        try:
+                            plugin.store_hash(
+                                file_id=file_id,
+                                metadata_hash=metadata_hash,
+                                algorithm=algo_name,
+                                description=f"Encrypted: {PathLib(output_file).name}"
+                            )
+                            if not quiet:
+                                print(f"✓ Metadata hash uploaded to integrity server")
+                        except Exception as store_e:
+                            # If hash already exists (409 Conflict), try to update it
+                            if "409" in str(store_e) or "Conflict" in str(store_e):
+                                try:
+                                    if not quiet:
+                                        print(f"Integrity hash already exists, updating...")
+                                    plugin.update_hash(
+                                        file_id=file_id,
+                                        metadata_hash=metadata_hash,
+                                        description=f"Encrypted: {PathLib(output_file).name} (updated)"
+                                    )
+                                    if not quiet:
+                                        print(f"✓ Metadata hash updated on integrity server")
+                                except Exception as update_e:
+                                    if not quiet:
+                                        print(f"Warning: Failed to update integrity hash: {update_e}")
+                            else:
+                                if not quiet:
+                                    print(f"Warning: Failed to store integrity hash: {store_e}")
+            except Exception as e:
+                if not quiet:
+                    print(f"Warning: Failed to store integrity hash: {e}")
     else:
         # AEAD: metadata was already created and encoded before encryption
         metadata_base64 = metadata_b64
@@ -5484,6 +5755,7 @@ def decrypt_file(
     secure_mode=False,
     hsm_plugin=None,
     no_estimate=False,
+    verify_integrity=False,
 ):
     """
     Decrypt a file with a password.
@@ -5500,6 +5772,7 @@ def decrypt_file(
         enable_plugins (bool): Whether to enable plugin execution (default: True)
         plugin_manager (PluginManager, optional): Plugin manager instance for plugin execution
         secure_mode (bool): If True, use O_NOFOLLOW to reject symlinks (default: False)
+        verify_integrity (bool): If True, verify metadata integrity with remote server before decryption (default: False)
 
     Returns:
         Union[bool, bytes]: True if decryption was successful and output_file is specified,
@@ -5642,6 +5915,53 @@ def decrypt_file(
     # Extract necessary information from metadata
     format_version = metadata.get("format_version", 1)
 
+    # Verify metadata integrity with remote server if enabled (BEFORE key derivation)
+    if verify_integrity and _INTEGRITY_PLUGIN_AVAILABLE:
+        try:
+            config = IntegrityConfig.from_file()
+            if not config.enabled:
+                if not quiet:
+                    print("Warning: --verify-integrity flag used but integrity plugin not configured")
+                    print("Configure at: ~/.openssl_encrypt/plugins/integrity/config.json")
+            else:
+                with IntegrityPlugin(config) as plugin:
+                    from pathlib import Path as PathLib
+                    file_id = IntegrityPlugin.compute_file_id(PathLib(input_file))
+                    # Compute hash from the base64-decoded metadata JSON
+                    current_hash = IntegrityPlugin.compute_metadata_hash(metadata_json.encode('utf-8'))
+
+                    match, details = plugin.verify(file_id, current_hash)
+
+                    if match:
+                        if not quiet:
+                            print(f"✓ Integrity verification passed")
+                    else:
+                        warning_msg = details.get('warning', 'Hash mismatch or not found')
+                        print(f"\n⚠️  INTEGRITY VERIFICATION FAILED!")
+                        print(f"    Reason: {warning_msg}")
+                        print(f"\n    This file's metadata may have been tampered with.")
+                        print(f"    Proceeding could expose you to a DoS attack via")
+                        print(f"    malicious hash/KDF parameters.\n")
+
+                        # Ask user if they want to proceed
+                        try:
+                            response = input("Do you want to proceed anyway? [y/N]: ").strip().lower()
+                            if response not in ('y', 'yes'):
+                                raise IntegrityVerificationError(
+                                    f"Decryption aborted due to integrity verification failure: {warning_msg}"
+                                )
+                            print("⚠️  Proceeding despite integrity verification failure...")
+                        except (EOFError, KeyboardInterrupt):
+                            raise IntegrityVerificationError(
+                                "Decryption aborted by user due to integrity verification failure"
+                            )
+        except IntegrityVerificationError:
+            raise  # Re-raise to abort decryption
+        except Exception as e:
+            if not quiet:
+                print(f"Warning: Integrity verification failed: {e}")
+                print("Proceeding with decryption...")
+
     # Initialize cascade variables (will be set later for V8 format)
     is_cascade = False
     cascade_cipher_chain = None
@@ -5743,6 +6063,10 @@ def decrypt_file(
         # Extract HSM configuration if present (v5+)
         hsm_plugin_name = encryption.get("hsm_plugin")
         hsm_config = encryption.get("hsm_config", {})
+
+        # Extract pepper configuration if present (v5+)
+        pepper_plugin_name = encryption.get("pepper_plugin")
+        pepper_name = encryption.get("pepper_name")
 
         # Extract PQC information if present
         pqc_info = None
@@ -6050,7 +6374,90 @@ def decrypt_file(
         except Exception as e:
             raise KeyDerivationError(f"HSM operation failed: {str(e)}")
 
-    # Generate the key from the password and salt (with hsm_pepper if applicable)
+    # Remote pepper retrieval if required
+    remote_pepper = None
+    if pepper_plugin_name:
+        if not quiet:
+            print(f"File requires remote pepper plugin '{pepper_plugin_name}'...")
+
+        try:
+            from ..plugins.pepper import PepperPlugin, PepperConfig, PepperError
+
+            config = PepperConfig.from_file()
+            if not config.enabled:
+                raise KeyDerivationError(
+                    f"File requires pepper plugin but it's not configured. "
+                    f"Configure at: {PepperConfig.get_default_config_path()}"
+                )
+
+            pepper_plugin = PepperPlugin(config)
+
+            if not pepper_name:
+                raise KeyDerivationError(
+                    "File requires remote pepper but pepper_name not found in metadata"
+                )
+
+            if not quiet:
+                print(f"Retrieving pepper '{pepper_name[:16]}...' from remote server...")
+
+            try:
+                encrypted_pepper_data = pepper_plugin.get_pepper(pepper_name)
+            except Exception as e:
+                raise KeyDerivationError(
+                    f"Failed to retrieve pepper from server. "
+                    f"Ensure you have network access and proper mTLS configuration. Error: {e}"
+                )
+
+            # Decrypt pepper with password
+            if len(encrypted_pepper_data) < 28:  # 12 + 16 minimum
+                raise KeyDerivationError("Invalid encrypted pepper data format from server")
+
+            nonce = encrypted_pepper_data[:12]
+            ciphertext_with_tag = encrypted_pepper_data[12:]
+
+            # Derive decryption key from password
+            import hashlib
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+            pepper_key = hashlib.sha256(password).digest()
+
+            try:
+                aesgcm = AESGCM(pepper_key)
+                remote_pepper = aesgcm.decrypt(nonce, ciphertext_with_tag, None)
+            except Exception as e:
+                # This could be wrong password or corrupted data
+                raise AuthenticationError(
+                    "Failed to decrypt remote pepper - wrong password or corrupted pepper data"
+                )
+
+            # Validate pepper
+            if not remote_pepper or len(remote_pepper) < 16:
+                raise KeyDerivationError("Invalid pepper retrieved from server")
+
+            if not quiet:
+                print(f"Remote pepper decrypted ({len(remote_pepper)} bytes)")
+
+        except ImportError as e:
+            raise KeyDerivationError(
+                f"Pepper plugin not available: {e}. Install pepper plugin dependencies."
+            )
+        except (KeyDerivationError, AuthenticationError):
+            raise
+        except Exception as e:
+            raise KeyDerivationError(f"Pepper retrieval failed: {str(e)}")
+
+    # Combine HSM pepper and remote pepper
+    combined_pepper = None
+    if hsm_pepper and remote_pepper:
+        combined_pepper = hsm_pepper + remote_pepper
+        if not quiet and debug:
+            logger.debug(f"Combined HSM+remote pepper: {len(combined_pepper)} bytes")
+    elif hsm_pepper:
+        combined_pepper = hsm_pepper
+    elif remote_pepper:
+        combined_pepper = remote_pepper
+
+    # Generate the key from the password and salt (with combined pepper if applicable)
     if not quiet:
         print("Generating decryption key ✅")  # Green check symbol)
 
@@ -6064,7 +6471,7 @@ def decrypt_file(
         progress=progress,
         debug=debug,
         pqc_keypair=pqc_info,
-        hsm_pepper=hsm_pepper,
+        hsm_pepper=combined_pepper,
     )
 
     # Helper function to get expected nonce size for each algorithm

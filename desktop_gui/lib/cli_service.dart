@@ -333,16 +333,21 @@ class CLIService {
      List<String>? forIdentities,      // Asymmetric: recipients
      String? signWith,                  // Asymmetric: signing identity
      bool useKeyserver = false,         // Asymmetric: keyserver lookup
+     String? identityStore,             // Asymmetric: identity store path
      String? cascadePreset,             // Cascade: 'standard', 'paranoia', or null for custom
      List<String>? cascadeAlgorithms,   // Cascade: custom algorithm chain
      String cascadeHash = 'sha256',     // Cascade: HKDF hash function
+     bool noDiversityCheck = false,     // Cascade: --no-diversity-check
+     bool strictDiversity = false,      // Cascade: --strict-diversity
+     bool forcePassword = false,        // Force acceptance of weak passwords
+     bool enablePepper = false,         // Remote pepper: enable pepper plugin
+     String? pepperName,                // Remote pepper: named pepper to use
+     bool showProgress = false,         // CLI --progress flag
      Function(String)? onProgress,
      Function(String)? onStatus}
   ) async {
     Directory? tempDir;
     try {
-      onStatus?.call('Initializing encryption...');
-
       // Create temporary directory with restrictive permissions
       tempDir = await Directory.systemTemp.createTemp('openssl_encrypt_');
 
@@ -381,8 +386,6 @@ class CLIService {
       // Write data to the already-protected input file
       await inputFile.writeAsString(text);
 
-      onStatus?.call('Prepared temporary files');
-
       // Build CLI command - password passed via environment variable for security
       final args = [
         'encrypt',
@@ -420,6 +423,30 @@ class CLIService {
                 break;
               case 'shake256':
                 args.addAll(['--shake256-rounds', config['rounds'].toString()]);
+                break;
+              case 'shake128':
+                args.addAll(['--shake128-rounds', config['rounds'].toString()]);
+                break;
+              case 'sha224':
+                args.addAll(['--sha224-rounds', config['rounds'].toString()]);
+                break;
+              case 'sha384':
+                args.addAll(['--sha384-rounds', config['rounds'].toString()]);
+                break;
+              case 'sha3-224':
+                args.addAll(['--sha3-224-rounds', config['rounds'].toString()]);
+                break;
+              case 'sha3-256':
+                args.addAll(['--sha3-256-rounds', config['rounds'].toString()]);
+                break;
+              case 'sha3-384':
+                args.addAll(['--sha3-384-rounds', config['rounds'].toString()]);
+                break;
+              case 'sha3-512':
+                args.addAll(['--sha3-512-rounds', config['rounds'].toString()]);
+                break;
+              case 'whirlpool':
+                args.addAll(['--whirlpool-rounds', config['rounds'].toString()]);
                 break;
             }
           }
@@ -507,6 +534,15 @@ class CLIService {
         args.add('--integrity');
       }
 
+      // Add pepper plugin parameters if enabled
+      if (enablePepper) {
+        if (pepperName != null && pepperName.isNotEmpty) {
+          args.addAll(['--pepper-name', pepperName]);
+        } else {
+          args.add('--pepper');
+        }
+      }
+
       // Add asymmetric encryption parameters if provided
       if (forIdentities != null && forIdentities.isNotEmpty) {
         for (final recipient in forIdentities) {
@@ -514,6 +550,9 @@ class CLIService {
         }
         if (signWith != null && signWith.isNotEmpty) {
           args.addAll(['--sign-with', signWith]);
+        }
+        if (identityStore != null && identityStore.isNotEmpty) {
+          args.addAll(['--identity-store', identityStore]);
         }
         if (useKeyserver) {
           args.add('--use-keyserver');
@@ -532,26 +571,38 @@ class CLIService {
         }
         // Add HKDF hash function
         args.addAll(['--cascade-hash', cascadeHash]);
+        // Add diversity check options
+        if (noDiversityCheck) {
+          args.add('--no-diversity-check');
+        }
+        if (strictDiversity) {
+          args.add('--strict-diversity');
+        }
       }
 
       if (debugEnabled) {
         args.add('--debug');
       }
 
-      // Add force password for simple passwords (not used in asymmetric mode)
-      if (forIdentities == null || forIdentities.isEmpty) {
+      // Add force password if enabled
+      if (forcePassword) {
         args.add('--force-password');
+      }
+
+      // Add progress flag if enabled
+      if (showProgress) {
+        args.add('--progress');
       }
 
       final maskedCommand = _getMaskedCommand(args);
       _outputDebugLog('=== CLI ENCRYPT COMMAND ===');
       _outputDebugLog('Full command: $maskedCommand');
       _outputDebugLog('Raw args: ${args.join(' ')}');
-      onStatus?.call('Executing: $maskedCommand');
 
       final result = await _runCLICommandWithProgress(
         args,
         environment: {'CRYPT_PASSWORD': password},
+        commandForStatus: maskedCommand,
         onStdout: (line) {
           if (debugEnabled) _outputDebugLog('CLI stdout: $line');
         },
@@ -560,6 +611,9 @@ class CLIService {
         },
         onProgress: (line) {
           onProgress?.call(line);
+        },
+        onStatus: (line) {
+          onStatus?.call(line);
         },
       );
 
@@ -572,8 +626,6 @@ class CLIService {
         throw Exception('Encryption failed: ${errorMsg.isNotEmpty ? errorMsg : stdoutMsg}\n\nCommand executed: $maskedCommand');
       }
 
-      onStatus?.call('Reading encrypted output...');
-
       // Read encrypted output
       if (!await outputFile.exists()) {
         throw Exception('CLI did not create output file');
@@ -583,7 +635,6 @@ class CLIService {
 
       // Cleanup temporary files
       await tempDir.delete(recursive: true);
-      onStatus?.call('Encryption completed successfully');
 
       return encryptedContent.trim();
     } catch (e) {
@@ -626,13 +677,14 @@ class CLIService {
      String? withKey,                // Asymmetric: decryption identity
      String? verifyFrom,             // Asymmetric: sender verification
      bool skipVerification = false,  // Asymmetric: skip signature check
+     bool forcePassword = false,     // Force acceptance of weak passwords
+     bool showProgress = false,      // CLI --progress flag
      Function(String)? onProgress,
-     Function(String)? onStatus}
+     Function(String)? onStatus,
+     Future<bool> Function(String)? onIntegrityPrompt}
   ) async {
     Directory? tempDir;
     try {
-      onStatus?.call('Initializing decryption...');
-
       // Create temporary directory with restrictive permissions
       tempDir = await Directory.systemTemp.createTemp('openssl_encrypt_');
 
@@ -671,7 +723,9 @@ class CLIService {
       // Write data to the already-protected input file
       await inputFile.writeAsString(encryptedData);
 
-      onStatus?.call('Prepared temporary files');
+      // Check if file requires HSM for decryption
+      final hsmRequired = requiresHsm(encryptedData);
+      _outputDebugLog('Decrypt: HSM required = $hsmRequired');
 
       // Build CLI command - password passed via environment variable for security
       final args = [
@@ -708,30 +762,64 @@ class CLIService {
         args.add('--debug');
       }
 
-      // Add force password for simple passwords (not used in asymmetric mode)
-      if (withKey == null || withKey.isEmpty) {
+      // Add force password if enabled
+      if (forcePassword) {
         args.add('--force-password');
+      }
+
+      // Add progress flag if enabled
+      if (showProgress) {
+        args.add('--progress');
       }
 
       final maskedCommand = _getMaskedCommand(args);
       _outputDebugLog('=== CLI DECRYPT COMMAND ===');
       _outputDebugLog('Full command: $maskedCommand');
       _outputDebugLog('Raw args: ${args.join(' ')}');
-      onStatus?.call('Executing: $maskedCommand');
 
-      final result = await _runCLICommandWithProgress(
-        args,
-        environment: {'CRYPT_PASSWORD': password},
-        onStdout: (line) {
-          if (debugEnabled) _outputDebugLog('CLI stdout: $line');
-        },
-        onStderr: (line) {
-          if (debugEnabled) _outputDebugLog('CLI stderr: $line');
-        },
-        onProgress: (line) {
-          onProgress?.call(line);
-        },
-      );
+      // Use interactive method if integrity verification with callback is enabled
+      final ProcessResult result;
+      if (verifyIntegrity && onIntegrityPrompt != null) {
+        _outputDebugLog('Using interactive CLI for integrity verification');
+        result = await _runCLICommandWithInteraction(
+          args,
+          environment: {'CRYPT_PASSWORD': password},
+          commandForStatus: maskedCommand,
+          hsmDetectionEnabled: hsmRequired,
+          onIntegrityPrompt: onIntegrityPrompt,
+          onStdout: (line) {
+            if (debugEnabled) _outputDebugLog('CLI stdout: $line');
+          },
+          onStderr: (line) {
+            if (debugEnabled) _outputDebugLog('CLI stderr: $line');
+          },
+          onProgress: (line) {
+            onProgress?.call(line);
+          },
+          onStatus: (line) {
+            onStatus?.call(line);
+          },
+        );
+      } else {
+        result = await _runCLICommandWithProgress(
+          args,
+          environment: {'CRYPT_PASSWORD': password},
+          commandForStatus: maskedCommand,
+          hsmDetectionEnabled: hsmRequired,
+          onStdout: (line) {
+            if (debugEnabled) _outputDebugLog('CLI stdout: $line');
+          },
+          onStderr: (line) {
+            if (debugEnabled) _outputDebugLog('CLI stderr: $line');
+          },
+          onProgress: (line) {
+            onProgress?.call(line);
+          },
+          onStatus: (line) {
+            onStatus?.call(line);
+          },
+        );
+      }
 
       if (result.exitCode != 0) {
         final errorMsg = result.stderr.toString().trim();
@@ -742,8 +830,6 @@ class CLIService {
         throw Exception('Decryption failed: ${errorMsg.isNotEmpty ? errorMsg : stdoutMsg}\n\nCommand executed: $maskedCommand');
       }
 
-      onStatus?.call('Reading decrypted output...');
-
       // Read decrypted output
       if (!await outputFile.exists()) {
         throw Exception('CLI did not create output file');
@@ -753,7 +839,6 @@ class CLIService {
 
       // Cleanup temporary files
       await tempDir.delete(recursive: true);
-      onStatus?.call('Decryption completed successfully');
 
       return decryptedContent.trim();
     } catch (e) {
@@ -776,6 +861,34 @@ class CLIService {
   /// Legacy decrypt method for backward compatibility
   static Future<String> decryptText(String encryptedData, String password) async {
     return decryptTextWithProgress(encryptedData, password);
+  }
+
+  /// Parse encrypted file metadata to check for HSM configuration
+  /// Returns true if the encrypted file requires HSM/YubiKey for decryption
+  static bool requiresHsm(String encryptedData) {
+    try {
+      // Format: base64(metadata):base64(encrypted_data)
+      final colonIndex = encryptedData.indexOf(':');
+      if (colonIndex == -1) {
+        _outputDebugLog('requiresHsm: No colon found in encrypted data');
+        return false;
+      }
+
+      final metadataB64 = encryptedData.substring(0, colonIndex);
+      final metadataBytes = base64Decode(metadataB64);
+      final metadataJson = utf8.decode(metadataBytes);
+      final metadata = jsonDecode(metadataJson) as Map<String, dynamic>;
+
+      // Check for hsm_plugin in encryption config
+      final encryption = metadata['encryption'] as Map<String, dynamic>?;
+      final hasHsm = encryption?.containsKey('hsm_plugin') ?? false;
+
+      _outputDebugLog('requiresHsm: HSM plugin present = $hasHsm');
+      return hasHsm;
+    } catch (e) {
+      _outputDebugLog('requiresHsm: Parse error - $e');
+      return false; // Assume no HSM on parse failure
+    }
   }
 
 
@@ -868,12 +981,13 @@ class CLIService {
   /// Run CLI command with real-time progress streaming
   static Future<ProcessResult> _runCLICommandWithProgress(
     List<String> args,
-    {Map<String, String>? environment, Function(String)? onStdout, Function(String)? onStderr, Function(String)? onProgress}
+    {Map<String, String>? environment, Function(String)? onStdout, Function(String)? onStderr, Function(String)? onProgress, Function(String)? onStatus, String? commandForStatus, bool hsmDetectionEnabled = false}
   ) async {
     Process process;
 
     // Merge environment variables for secure password passing
     final processEnv = Map<String, String>.from(Platform.environment);
+    processEnv['PYTHONUNBUFFERED'] = '1';  // Force unbuffered Python output for real-time YubiKey prompts
     if (environment != null) {
       processEnv.addAll(environment);
     }
@@ -909,6 +1023,36 @@ class CLIService {
       if (line.contains('Progress:') || line.contains('%') || line.contains('Processing')) {
         onProgress?.call(line);
       }
+
+      final lowerLine = line.toLowerCase();
+
+      // Only detect HSM/YubiKey prompts if HSM was actually used during encryption
+      if (hsmDetectionEnabled) {
+        // Detect HSM/YubiKey touch completion (pepper derived = touch was successful)
+        if (lowerLine.contains('hardware pepper derived') ||
+            lowerLine.contains('pepper derived')) {
+          // Show executed command immediately after touch is detected
+          if (commandForStatus != null) {
+            onStatus?.call('Executed: $commandForStatus');
+          } else {
+            onStatus?.call('YubiKey touch registered, processing...');
+          }
+        }
+        // Detect HSM/YubiKey touch prompts (waiting for touch)
+        else if (lowerLine.contains('touch') ||
+            lowerLine.contains('press') ||
+            lowerLine.contains('yubikey') ||
+            lowerLine.contains('waiting for') ||
+            lowerLine.contains('user presence') ||
+            lowerLine.contains('confirm on device')) {
+          onStatus?.call(line);
+        }
+      }
+
+      // Pass through any status/info messages
+      if (line.contains('INFO:') || line.contains('Status:')) {
+        onStatus?.call(line);
+      }
     });
 
     // Listen to stderr stream
@@ -919,6 +1063,208 @@ class CLIService {
       // Some CLI tools output progress to stderr
       if (line.contains('Progress:') || line.contains('%') || line.contains('Processing')) {
         onProgress?.call(line);
+      }
+
+      final lowerLine = line.toLowerCase();
+
+      // Only detect HSM/YubiKey prompts if HSM was actually used during encryption
+      if (hsmDetectionEnabled) {
+        // Detect HSM/YubiKey touch completion (pepper derived = touch was successful)
+        if (lowerLine.contains('hardware pepper derived') ||
+            lowerLine.contains('pepper derived')) {
+          // Show executed command immediately after touch is detected
+          if (commandForStatus != null) {
+            onStatus?.call('Executed: $commandForStatus');
+          } else {
+            onStatus?.call('YubiKey touch registered, processing...');
+          }
+        }
+        // Detect HSM/YubiKey touch prompts in stderr as well (waiting for touch)
+        else if (lowerLine.contains('touch') ||
+            lowerLine.contains('press') ||
+            lowerLine.contains('yubikey') ||
+            lowerLine.contains('waiting for') ||
+            lowerLine.contains('user presence') ||
+            lowerLine.contains('confirm on device')) {
+          onStatus?.call(line);
+        }
+      }
+
+      // Pass through any status/info messages
+      if (line.contains('INFO:') || line.contains('Status:')) {
+        onStatus?.call(line);
+      }
+    });
+
+    // Wait for process completion
+    final exitCode = await process.exitCode;
+
+    // Return a ProcessResult-compatible object
+    return ProcessResult(
+      process.pid,
+      exitCode,
+      stdoutBuffer.toString(),
+      stderrBuffer.toString(),
+    );
+  }
+
+  /// Run CLI command with real-time progress streaming and interactive stdin support
+  /// Used for commands that may require user confirmation (e.g., integrity verification)
+  static Future<ProcessResult> _runCLICommandWithInteraction(
+    List<String> args,
+    {Map<String, String>? environment,
+     Function(String)? onStdout,
+     Function(String)? onStderr,
+     Function(String)? onProgress,
+     Function(String)? onStatus,
+     String? commandForStatus,
+     bool hsmDetectionEnabled = false,
+     Future<bool> Function(String)? onIntegrityPrompt}
+  ) async {
+    Process process;
+
+    // Merge environment variables for secure password passing
+    final processEnv = Map<String, String>.from(Platform.environment);
+    processEnv['PYTHONUNBUFFERED'] = '1';  // Force unbuffered Python output
+    if (environment != null) {
+      processEnv.addAll(environment);
+    }
+
+    // Prefer development CLI when available
+    try {
+      final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
+      process = await Process.start('python', pythonArgs,
+        workingDirectory: '/home/work/private/git/openssl_encrypt',
+        environment: processEnv);
+      _outputDebugLog('Using development CLI with interaction (python module)');
+    } catch (e) {
+      _outputDebugLog('Development CLI unavailable: $e, trying Flatpak CLI with interaction');
+      // Fallback to Flatpak CLI
+      if (await File(_cliPath).exists()) {
+        process = await Process.start(_cliPath, args, environment: processEnv);
+        _outputDebugLog('Using Flatpak CLI with interaction');
+      } else {
+        throw Exception('No CLI available');
+      }
+    }
+
+    // Capture stdout and stderr streams
+    final stdoutBuffer = StringBuffer();
+    final stderrBuffer = StringBuffer();
+    bool integrityPromptDetected = false;
+
+    // Listen to stdout stream with integrity prompt detection
+    process.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen((line) async {
+      stdoutBuffer.writeln(line);
+      onStdout?.call(line);
+
+      // Parse progress information from CLI output
+      if (line.contains('Progress:') || line.contains('%') || line.contains('Processing')) {
+        onProgress?.call(line);
+      }
+
+      final lowerLine = line.toLowerCase();
+
+      // Detect integrity verification failure prompt
+      if (!integrityPromptDetected &&
+          (line.contains('INTEGRITY VERIFICATION FAILED') ||
+           line.contains('Do you want to proceed anyway?'))) {
+        integrityPromptDetected = true;
+        _outputDebugLog('Integrity prompt detected, showing dialog');
+
+        if (onIntegrityPrompt != null) {
+          try {
+            final shouldProceed = await onIntegrityPrompt(line);
+            _outputDebugLog('User response to integrity prompt: $shouldProceed');
+
+            if (shouldProceed) {
+              // Write 'y' to stdin to continue
+              process.stdin.writeln('y');
+              await process.stdin.flush();
+              _outputDebugLog('Sent "y" to CLI stdin');
+            } else {
+              // User chose to abort, kill the process
+              _outputDebugLog('User aborted, killing process');
+              process.kill();
+            }
+          } catch (e) {
+            _outputDebugLog('Error handling integrity prompt: $e');
+            process.kill();
+          }
+        } else {
+          // No callback provided, kill process (fail-safe)
+          _outputDebugLog('No integrity callback, killing process');
+          process.kill();
+        }
+      }
+
+      // Only detect HSM/YubiKey prompts if HSM was actually used during encryption
+      if (hsmDetectionEnabled) {
+        // Detect HSM/YubiKey touch completion (pepper derived = touch was successful)
+        if (lowerLine.contains('hardware pepper derived') ||
+            lowerLine.contains('pepper derived')) {
+          // Show executed command immediately after touch is detected
+          if (commandForStatus != null) {
+            onStatus?.call('Executed: $commandForStatus');
+          } else {
+            onStatus?.call('YubiKey touch registered, processing...');
+          }
+        }
+        // Detect HSM/YubiKey touch prompts (waiting for touch)
+        else if (lowerLine.contains('touch') ||
+            lowerLine.contains('press') ||
+            lowerLine.contains('yubikey') ||
+            lowerLine.contains('waiting for') ||
+            lowerLine.contains('user presence') ||
+            lowerLine.contains('confirm on device')) {
+          onStatus?.call(line);
+        }
+      }
+
+      // Pass through any status/info messages
+      if (line.contains('INFO:') || line.contains('Status:')) {
+        onStatus?.call(line);
+      }
+    });
+
+    // Listen to stderr stream
+    process.stderr.transform(utf8.decoder).transform(const LineSplitter()).listen((line) {
+      stderrBuffer.writeln(line);
+      onStderr?.call(line);
+
+      // Some CLI tools output progress to stderr
+      if (line.contains('Progress:') || line.contains('%') || line.contains('Processing')) {
+        onProgress?.call(line);
+      }
+
+      final lowerLine = line.toLowerCase();
+
+      // Only detect HSM/YubiKey prompts if HSM was actually used during encryption
+      if (hsmDetectionEnabled) {
+        // Detect HSM/YubiKey touch completion (pepper derived = touch was successful)
+        if (lowerLine.contains('hardware pepper derived') ||
+            lowerLine.contains('pepper derived')) {
+          // Show executed command immediately after touch is detected
+          if (commandForStatus != null) {
+            onStatus?.call('Executed: $commandForStatus');
+          } else {
+            onStatus?.call('YubiKey touch registered, processing...');
+          }
+        }
+        // Detect HSM/YubiKey touch prompts in stderr as well (waiting for touch)
+        else if (lowerLine.contains('touch') ||
+            lowerLine.contains('press') ||
+            lowerLine.contains('yubikey') ||
+            lowerLine.contains('waiting for') ||
+            lowerLine.contains('user presence') ||
+            lowerLine.contains('confirm on device')) {
+          onStatus?.call(line);
+        }
+      }
+
+      // Pass through any status/info messages
+      if (line.contains('INFO:') || line.contains('Status:')) {
+        onStatus?.call(line);
       }
     });
 
@@ -1481,9 +1827,18 @@ class CLIService {
     required String password,
     String? stegoPassword,
     String algorithm = 'aes-gcm',
+    String stegoMethod = 'lsb',              // Steganography method
     int bitsPerChannel = 1,
     bool randomizePixels = false,
     bool addDecoyData = false,
+    int? jpegQuality,                        // JPEG quality (70-100)
+    // Video steganography options
+    double? videoQuantizationStep,           // default 8.0
+    double? videoAdaptationFactor,           // default 1.2
+    double? videoCompensationFactor,         // default 0.5
+    int? videoBitsPerCoefficient,            // 1-4, default 2
+    bool videoTemporalSpread = true,         // default enabled
+    int? videoQualityPreservation,           // 1-10, default 8
     Map<String, Map<String, dynamic>>? hashConfig,
     Map<String, Map<String, dynamic>>? kdfConfig,
     String? hsmPlugin,
@@ -1492,9 +1847,12 @@ class CLIService {
     List<String>? forIdentities,      // Asymmetric: recipients
     String? signWith,                  // Asymmetric: signing identity
     bool useKeyserver = false,         // Asymmetric: keyserver lookup
+    String? identityStore,             // Asymmetric: identity store path
     String? cascadePreset,             // Cascade: 'standard', 'paranoia', or null
     List<String>? cascadeAlgorithms,   // Cascade: custom algorithm chain
     String cascadeHash = 'sha256',     // Cascade: HKDF hash function
+    bool noDiversityCheck = false,     // Cascade: --no-diversity-check
+    bool strictDiversity = false,      // Cascade: --strict-diversity
   }) async {
     final args = [
       'encrypt',
@@ -1502,7 +1860,7 @@ class CLIService {
       '--stego-hide', coverImagePath,
       '-o', outputPath,
       '-a', algorithm,
-      '--stego-method', 'lsb',
+      '--stego-method', stegoMethod,
       '--stego-bits-per-channel', bitsPerChannel.toString(),
     ];
 
@@ -1519,6 +1877,32 @@ class CLIService {
     // Add decoy data if enabled
     if (addDecoyData) {
       args.add('--stego-decoy-data');
+    }
+
+    // Add JPEG quality if provided
+    if (jpegQuality != null) {
+      args.addAll(['--jpeg-quality', jpegQuality.toString()]);
+    }
+
+    // Add video steganography options if provided
+    if (videoQuantizationStep != null) {
+      args.addAll(['--video-quantization-step', videoQuantizationStep.toString()]);
+    }
+    if (videoAdaptationFactor != null) {
+      args.addAll(['--video-adaptation-factor', videoAdaptationFactor.toString()]);
+    }
+    if (videoCompensationFactor != null) {
+      args.addAll(['--video-compensation-factor', videoCompensationFactor.toString()]);
+    }
+    if (videoBitsPerCoefficient != null) {
+      args.addAll(['--video-bits-per-coefficient', videoBitsPerCoefficient.toString()]);
+    }
+    if (!videoTemporalSpread) {
+      // Only add flag if disabled (default is enabled)
+      args.add('--no-video-temporal-spread');
+    }
+    if (videoQualityPreservation != null) {
+      args.addAll(['--video-quality-preservation', videoQualityPreservation.toString()]);
     }
 
     // Add hash configuration if provided
@@ -1613,6 +1997,9 @@ class CLIService {
       if (useKeyserver) {
         args.add('--use-keyserver');
       }
+      if (identityStore != null && identityStore.isNotEmpty) {
+        args.addAll(['--identity-store', identityStore]);
+      }
     }
 
     // Add cascade encryption parameters if provided
@@ -1624,12 +2011,110 @@ class CLIService {
         args.addAll(['--algorithm', cascadeAlgorithms.join(',')]);
       }
       args.addAll(['--cascade-hash', cascadeHash]);
+      if (noDiversityCheck) {
+        args.add('--no-diversity-check');
+      }
+      if (strictDiversity) {
+        args.add('--strict-diversity');
+      }
     }
 
     return await _runCLICommandWithProgress(
       args,
       environment: {'CRYPT_PASSWORD': password},
     );
+  }
+
+  /// Encrypt text and hide in steganographic cover media
+  static Future<String> encryptTextWithSteganography({
+    required String text,
+    required String coverMediaPath,
+    required String outputPath,
+    required String password,
+    String? stegoPassword,
+    String algorithm = 'aes-gcm',
+    String stegoMethod = 'lsb',
+    int bitsPerChannel = 1,
+    bool randomizePixels = false,
+    bool addDecoyData = false,
+    int? jpegQuality,
+    // Video steganography options
+    double? videoQuantizationStep,
+    double? videoAdaptationFactor,
+    double? videoCompensationFactor,
+    int? videoBitsPerCoefficient,
+    bool videoTemporalSpread = true,
+    int? videoQualityPreservation,
+    Map<String, Map<String, dynamic>>? hashConfig,
+    Map<String, Map<String, dynamic>>? kdfConfig,
+    String? hsmPlugin,
+    int? hsmSlot,
+    bool enableIntegrity = false,
+    List<String>? forIdentities,
+    String? signWith,
+    bool useKeyserver = false,
+    String? identityStore,
+    String? cascadePreset,
+    List<String>? cascadeAlgorithms,
+    String cascadeHash = 'sha256',
+    bool noDiversityCheck = false,
+    bool strictDiversity = false,
+  }) async {
+    // Create temporary file for text
+    final tempDir = await Directory.systemTemp.createTemp('stego_text_');
+    final tempFile = File('${tempDir.path}/input.txt');
+    await tempFile.writeAsString(text);
+
+    try {
+      // Encrypt temp file with steganography
+      final result = await encryptWithSteganography(
+        inputPath: tempFile.path,
+        coverImagePath: coverMediaPath,
+        outputPath: outputPath,
+        password: password,
+        stegoPassword: stegoPassword,
+        algorithm: algorithm,
+        stegoMethod: stegoMethod,
+        bitsPerChannel: bitsPerChannel,
+        randomizePixels: randomizePixels,
+        addDecoyData: addDecoyData,
+        jpegQuality: jpegQuality,
+        videoQuantizationStep: videoQuantizationStep,
+        videoAdaptationFactor: videoAdaptationFactor,
+        videoCompensationFactor: videoCompensationFactor,
+        videoBitsPerCoefficient: videoBitsPerCoefficient,
+        videoTemporalSpread: videoTemporalSpread,
+        videoQualityPreservation: videoQualityPreservation,
+        hashConfig: hashConfig,
+        kdfConfig: kdfConfig,
+        hsmPlugin: hsmPlugin,
+        hsmSlot: hsmSlot,
+        enableIntegrity: enableIntegrity,
+        forIdentities: forIdentities,
+        signWith: signWith,
+        useKeyserver: useKeyserver,
+        identityStore: identityStore,
+        cascadePreset: cascadePreset,
+        cascadeAlgorithms: cascadeAlgorithms,
+        cascadeHash: cascadeHash,
+        noDiversityCheck: noDiversityCheck,
+        strictDiversity: strictDiversity,
+      );
+
+      if (result.exitCode != 0) {
+        throw Exception('Steganography encryption failed: ${result.stderr}');
+      }
+
+      return outputPath;
+    } finally {
+      // Clean up temp file and directory
+      try {
+        if (await tempFile.exists()) await tempFile.delete();
+        if (await tempDir.exists()) await tempDir.delete();
+      } catch (e) {
+        outputDebugLog('Failed to clean up temp file: $e');
+      }
+    }
   }
 
   /// Decrypt file from steganographic image
