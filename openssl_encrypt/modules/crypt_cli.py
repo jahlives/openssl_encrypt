@@ -5678,6 +5678,60 @@ def main_with_args(args=None):
                 print(f"Error initializing HSM plugin: {e}")
                 sys.exit(1)
 
+        # Load pepper plugin if requested
+        pepper_plugin_instance = None
+        pepper_name_to_use = None
+        if hasattr(args, "pepper") and args.pepper:
+            try:
+                from ..plugins.pepper import PepperPlugin, PepperConfig, PepperError
+
+                config = PepperConfig.from_file()
+                if not config.enabled:
+                    print("ERROR: --pepper flag used but pepper plugin not configured")
+                    print(f"Configure at: {PepperConfig.get_default_config_path()}")
+                    sys.exit(1)
+
+                pepper_plugin_instance = PepperPlugin(config)
+
+                # Auto-generate mode: don't set pepper_name_to_use (leave as None)
+                # The core encryption logic will generate a new pepper and determine the name
+                pepper_name_to_use = None
+
+                if not args.quiet:
+                    print(f"Pepper plugin enabled (auto-generate mode)")
+
+            except ImportError as e:
+                print(f"ERROR: Could not import pepper plugin: {e}")
+                print("Make sure pepper plugin is properly installed")
+                sys.exit(1)
+            except Exception as e:
+                print(f"ERROR: Pepper plugin initialization failed: {e}")
+                sys.exit(1)
+
+        elif hasattr(args, "pepper_name") and args.pepper_name:
+            try:
+                from ..plugins.pepper import PepperPlugin, PepperConfig, PepperError
+
+                config = PepperConfig.from_file()
+                if not config.enabled:
+                    print("ERROR: --pepper-name flag used but pepper plugin not configured")
+                    print(f"Configure at: {PepperConfig.get_default_config_path()}")
+                    sys.exit(1)
+
+                pepper_plugin_instance = PepperPlugin(config)
+                pepper_name_to_use = args.pepper_name
+
+                if not args.quiet:
+                    print(f"Pepper plugin enabled (using existing pepper: {pepper_name_to_use})")
+
+            except ImportError as e:
+                print(f"ERROR: Could not import pepper plugin: {e}")
+                print("Make sure pepper plugin is properly installed")
+                sys.exit(1)
+            except Exception as e:
+                print(f"ERROR: Pepper plugin initialization failed: {e}")
+                sys.exit(1)
+
         if args.action == "encrypt":
             # Check if asymmetric mode (--for flag present)
             if hasattr(args, "for_identity") and args.for_identity:
@@ -6605,6 +6659,8 @@ def main_with_args(args=None):
                             cipher_names=cipher_names,
                             cascade_hash=cascade_hash_func,
                             integrity=getattr(args, 'integrity', False),
+                            pepper_plugin=pepper_plugin_instance,
+                            pepper_name=pepper_name_to_use,
                         )
 
                     if success:
@@ -6852,6 +6908,8 @@ def main_with_args(args=None):
                     cipher_names=cipher_names,
                     cascade_hash=cascade_hash_func,
                     integrity=getattr(args, 'integrity', False),
+                    pepper_plugin=pepper_plugin_instance,
+                    pepper_name=pepper_name_to_use,
                 )
 
                 if success:
@@ -7473,6 +7531,8 @@ def main_with_args(args=None):
                         cipher_names=cipher_names,
                         cascade_hash=cascade_hash_func,
                         integrity=getattr(args, 'integrity', False),
+                        pepper_plugin=pepper_plugin_instance,
+                        pepper_name=pepper_name_to_use,
                     )
 
                 # Handle steganography if requested

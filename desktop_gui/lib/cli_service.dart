@@ -340,6 +340,8 @@ class CLIService {
      bool noDiversityCheck = false,     // Cascade: --no-diversity-check
      bool strictDiversity = false,      // Cascade: --strict-diversity
      bool forcePassword = false,        // Force acceptance of weak passwords
+     bool enablePepper = false,         // Remote pepper: enable pepper plugin
+     String? pepperName,                // Remote pepper: named pepper to use
      bool showProgress = false,         // CLI --progress flag
      Function(String)? onProgress,
      Function(String)? onStatus}
@@ -530,6 +532,15 @@ class CLIService {
       // Add integrity plugin if enabled
       if (enableIntegrity) {
         args.add('--integrity');
+      }
+
+      // Add pepper plugin parameters if enabled
+      if (enablePepper) {
+        if (pepperName != null && pepperName.isNotEmpty) {
+          args.addAll(['--pepper-name', pepperName]);
+        } else {
+          args.add('--pepper');
+        }
       }
 
       // Add asymmetric encryption parameters if provided

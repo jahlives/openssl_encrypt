@@ -58,6 +58,11 @@ class _EncryptTabState extends State<EncryptTab> {
   // Integrity
   bool _enableIntegrity = false;
 
+  // Pepper plugin options
+  bool _enablePepper = false;
+  String _pepperMode = 'auto'; // 'auto' or 'named'
+  final TextEditingController _pepperNameController = TextEditingController();
+
   // File-specific options
   bool _forceOverwrite = false;
 
@@ -155,6 +160,7 @@ class _EncryptTabState extends State<EncryptTab> {
     _identityStorePathController.dispose();
     _cascadeAlgorithmsTextController.dispose();
     _stegoPasswordController.dispose();
+    _pepperNameController.dispose();
     super.dispose();
   }
 
@@ -331,6 +337,8 @@ class _EncryptTabState extends State<EncryptTab> {
         noDiversityCheck: _encryptionMode == EncryptionMode.cascade ? _disableDiversityCheck : false,
         strictDiversity: _encryptionMode == EncryptionMode.cascade ? _strictDiversity : false,
         forcePassword: _forcePassword,
+        enablePepper: _enablePepper,
+        pepperName: _pepperMode == 'named' ? _pepperNameController.text : null,
         showProgress: _showProgress,
         onProgress: (progress) {
           setState(() {
@@ -508,6 +516,8 @@ class _EncryptTabState extends State<EncryptTab> {
         noDiversityCheck: _encryptionMode == EncryptionMode.cascade ? _disableDiversityCheck : false,
         strictDiversity: _encryptionMode == EncryptionMode.cascade ? _strictDiversity : false,
         forcePassword: _forcePassword,
+        enablePepper: _enablePepper,
+        pepperName: _pepperMode == 'named' ? _pepperNameController.text : null,
         showProgress: _showProgress,
         onProgress: (progress) {
           setState(() {
@@ -2602,6 +2612,16 @@ class _EncryptTabState extends State<EncryptTab> {
                   isEncryptMode: true,
                   onEnableIntegrityChanged: (value) => setState(() => _enableIntegrity = value),
                   onVerifyIntegrityChanged: (_) {},
+                ),
+                const SizedBox(height: 12),
+
+                // Pepper Configuration
+                PepperConfigSection(
+                  enablePepper: _enablePepper,
+                  pepperMode: _pepperMode,
+                  pepperNameController: _pepperNameController,
+                  onEnablePepperChanged: (value) => setState(() => _enablePepper = value),
+                  onPepperModeChanged: (mode) => setState(() => _pepperMode = mode),
                 ),
                 const SizedBox(height: 12),
 

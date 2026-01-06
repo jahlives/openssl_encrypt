@@ -644,6 +644,112 @@ class IntegrityConfigSection extends StatelessWidget {
   }
 }
 
+/// Pepper Configuration Section
+/// For remote pepper plugin settings
+class PepperConfigSection extends StatelessWidget {
+  final bool enablePepper;
+  final String pepperMode;
+  final TextEditingController pepperNameController;
+  final ValueChanged<bool> onEnablePepperChanged;
+  final ValueChanged<String> onPepperModeChanged;
+
+  const PepperConfigSection({
+    super.key,
+    required this.enablePepper,
+    required this.pepperMode,
+    required this.pepperNameController,
+    required this.onEnablePepperChanged,
+    required this.onPepperModeChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.vpn_key),
+                const SizedBox(width: 8),
+                const Text('Remote Pepper', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.info_outline),
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Remote Pepper Plugin'),
+                        content: const SingleChildScrollView(
+                          child: Text(
+                            'Remote pepper adds an additional cryptographic salt stored on a remote server.\n\n'
+                            '• Auto Mode: Generates unique pepper per file\n'
+                            '• Named Mode: Reuses existing pepper by name\n\n'
+                            'The pepper is encrypted with your file password before storage.\n\n'
+                            'Requires pepper plugin configuration with mTLS certificates.',
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Close'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  tooltip: 'Pepper Information',
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            CheckboxListTile(
+              value: enablePepper,
+              onChanged: (value) => onEnablePepperChanged(value ?? false),
+              title: const Text('Enable remote pepper'),
+              subtitle: const Text('Store encrypted pepper on remote server'),
+              contentPadding: EdgeInsets.zero,
+            ),
+            if (enablePepper) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: pepperMode,
+                decoration: const InputDecoration(
+                  labelText: 'Pepper Mode',
+                  border: OutlineInputBorder(),
+                  helperText: 'Auto-generate or use existing pepper',
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'auto', child: Text('Auto-generate (unique per file)')),
+                  DropdownMenuItem(value: 'named', child: Text('Use existing named pepper')),
+                ],
+                onChanged: (value) {
+                  if (value != null) onPepperModeChanged(value);
+                },
+              ),
+              if (pepperMode == 'named') ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: pepperNameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Pepper Name',
+                    border: OutlineInputBorder(),
+                    helperText: 'Name of existing pepper to retrieve',
+                    prefixIcon: Icon(Icons.label),
+                  ),
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Input Type Toggle
 /// Switch between text and file input modes
 class InputTypeToggle extends StatelessWidget {

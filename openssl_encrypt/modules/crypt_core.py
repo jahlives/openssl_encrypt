@@ -2942,6 +2942,8 @@ def create_metadata_v5(
     hsm_slot_used=None,
     include_encrypted_hash=True,
     aad_mode=False,
+    pepper_plugin_name=None,
+    pepper_name=None,
 ):
     """
     Create metadata in format version 5.
@@ -3048,6 +3050,12 @@ def create_metadata_v5(
         if hsm_slot_used:
             metadata["encryption"]["hsm_config"] = {"slot": hsm_slot_used}
 
+    # Add pepper configuration if used
+    if pepper_plugin_name:
+        metadata["encryption"]["pepper_plugin"] = pepper_plugin_name
+        if pepper_name:
+            metadata["encryption"]["pepper_name"] = pepper_name
+
     return metadata
 
 
@@ -3065,6 +3073,8 @@ def create_metadata_v6(
     include_encrypted_hash=True,
     aad_mode=False,
     keystore_id=None,
+    pepper_plugin_name=None,
+    pepper_name=None,
 ):
     """
     Create metadata in format version 6 with formal HSM validation.
@@ -3221,6 +3231,12 @@ def create_metadata_v6(
 
             metadata["encryption"]["hsm_config"] = {"slot": hsm_slot_used}
 
+    # Add pepper configuration if used
+    if pepper_plugin_name:
+        metadata["encryption"]["pepper_plugin"] = pepper_plugin_name
+        if pepper_name:
+            metadata["encryption"]["pepper_name"] = pepper_name
+
     # Add keystore ID if present (v6 enhancement)
     if keystore_id:
         metadata["derivation_config"]["keystore_id"] = keystore_id
@@ -3249,6 +3265,8 @@ def create_metadata_v8(
     hsm_plugin_name: str = None,
     hsm_slot_used: int = None,
     keystore_id: str = None,
+    pepper_plugin_name: str = None,
+    pepper_name: str = None,
 ):
     """
     Create metadata in format version 8 with cascade encryption support.
@@ -3429,6 +3447,12 @@ def create_metadata_v8(
                 )
 
             metadata["encryption"]["hsm_config"] = {"slot": hsm_slot_used}
+
+    # Add pepper configuration if used
+    if pepper_plugin_name:
+        metadata["encryption"]["pepper_plugin"] = pepper_plugin_name
+        if pepper_name:
+            metadata["encryption"]["pepper_name"] = pepper_name
 
     # Add keystore ID if present
     if keystore_id:
@@ -4177,6 +4201,8 @@ def encrypt_file(
     cipher_names=None,
     cascade_hash="sha256",
     integrity=False,
+    pepper_plugin=None,
+    pepper_name=None,
 ):
     """
     Encrypt a file with a password using the specified algorithm.
@@ -4486,7 +4512,131 @@ def encrypt_file(
         except Exception as e:
             raise KeyDerivationError(f"HSM operation failed: {str(e)}")
 
-    # Generate key (now with hsm_pepper)
+    # Remote pepper generation/retrieval if pepper plugin provided
+    remote_pepper = None
+    remote_pepper_name = None
+
+    if pepper_plugin:
+        if not quiet:
+            print("Processing remote pepper...")
+
+        try:
+            if pepper_name:
+                # Retrieve existing pepper by name
+                if not quiet:
+                    print(f"Retrieving pepper '{pepper_name}' from remote server...")
+
+                try:
+                    encrypted_pepper_data = pepper_plugin.get_pepper(pepper_name)
+                except Exception as e:
+                    raise KeyDerivationError(f"Failed to retrieve pepper '{pepper_name}': {e}")
+
+                # Decrypt pepper with password
+                # Format: nonce (12 bytes) + ciphertext + tag (16 bytes)
+                if len(encrypted_pepper_data) < 28:  # 12 + 16 minimum
+                    raise KeyDerivationError("Invalid encrypted pepper data format")
+
+                nonce = encrypted_pepper_data[:12]
+                ciphertext_with_tag = encrypted_pepper_data[12:]
+
+                # Derive decryption key from password using SHA-256
+                import hashlib
+
+                pepper_key = hashlib.sha256(password).digest()
+
+                try:
+                    aesgcm = AESGCM(pepper_key)
+                    remote_pepper = aesgcm.decrypt(nonce, ciphertext_with_tag, None)
+                except Exception as e:
+                    raise KeyDerivationError(
+                        "Failed to decrypt pepper - wrong password or corrupted data"
+                    )
+
+                remote_pepper_name = pepper_name
+
+            else:
+                # Auto-generate mode: create new pepper
+                if not quiet:
+                    print("Generating new remote pepper...")
+
+                # Generate 32-byte random pepper
+                remote_pepper = secrets.token_bytes(32)
+
+                # Derive encryption key from password using SHA-256
+                import hashlib
+
+                pepper_key = hashlib.sha256(password).digest()
+
+                # Encrypt pepper with AES-GCM
+                nonce = secrets.token_bytes(12)
+                aesgcm = AESGCM(pepper_key)
+                ciphertext_with_tag = aesgcm.encrypt(nonce, remote_pepper, None)
+
+                # Store encrypted pepper
+                encrypted_pepper_data = nonce + ciphertext_with_tag
+
+                # Generate file_id for pepper name
+                file_id = hashlib.sha256(os.path.abspath(input_file).encode("utf-8")).hexdigest()[:32]
+
+                try:
+                    pepper_plugin.store_pepper(
+                        name=file_id,
+                        pepper_encrypted=encrypted_pepper_data,
+                        description=f"Auto-generated pepper for {os.path.basename(input_file)}",
+                    )
+                    remote_pepper_name = file_id
+
+                    if not quiet:
+                        print(f"Pepper stored on remote server (id: {file_id[:16]}...)")
+                except Exception as e:
+                    # If pepper already exists, try to update it instead
+                    if "already exists" in str(e):
+                        try:
+                            if not quiet:
+                                print(f"Pepper {file_id[:16]}... already exists, updating...")
+                            pepper_plugin.update_pepper(
+                                name=file_id,
+                                pepper_encrypted=encrypted_pepper_data,
+                                description=f"Auto-generated pepper for {os.path.basename(input_file)} (updated)",
+                            )
+                            remote_pepper_name = file_id
+
+                            if not quiet:
+                                print(f"Pepper updated on remote server (id: {file_id[:16]}...)")
+                        except Exception as update_e:
+                            raise KeyDerivationError(f"Failed to update existing pepper on remote server: {update_e}")
+                    else:
+                        raise KeyDerivationError(f"Failed to store pepper on remote server: {e}")
+
+            # Validate pepper
+            if not remote_pepper or len(remote_pepper) < 16:
+                raise KeyDerivationError("Invalid pepper: must be at least 16 bytes")
+
+            if len(remote_pepper) > 128:
+                raise KeyDerivationError("Invalid pepper: exceeds maximum 128 bytes")
+
+            if not quiet:
+                print(f"Remote pepper active ({len(remote_pepper)} bytes)")
+
+        except ImportError as e:
+            raise KeyDerivationError(f"Pepper plugin dependencies not available: {e}")
+        except KeyDerivationError:
+            raise
+        except Exception as e:
+            raise KeyDerivationError(f"Pepper operation failed: {str(e)}")
+
+    # Combine HSM pepper and remote pepper if both present
+    combined_pepper = None
+    if hsm_pepper and remote_pepper:
+        combined_pepper = hsm_pepper + remote_pepper
+        if not quiet and debug:
+            logger.debug(f"Combined HSM+remote pepper: {len(combined_pepper)} bytes")
+    elif hsm_pepper:
+        combined_pepper = hsm_pepper
+    elif remote_pepper:
+        combined_pepper = remote_pepper
+
+    # Generate key (now with combined pepper)
     key, salt, hash_config = generate_key(
         password,
         salt,
@@ -4497,7 +4647,7 @@ def encrypt_file(
         progress=progress,
         debug=debug,
         pqc_keypair=pqc_keypair,
-        hsm_pepper=hsm_pepper,
+        hsm_pepper=combined_pepper,
     )
     # Read the input file
     if not quiet:
@@ -5151,6 +5301,8 @@ def encrypt_file(
                 hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
                 hsm_slot_used=hsm_slot_used,
                 keystore_id=keystore_id,
+                pepper_plugin_name="remote" if remote_pepper else None,
+                pepper_name=remote_pepper_name,
             )
         else:
             # V6 format for backward compatibility
@@ -5168,6 +5320,8 @@ def encrypt_file(
                 include_encrypted_hash=False,  # AEAD mode: no encrypted_hash
                 aad_mode=True,  # Mark as AEAD binding
                 keystore_id=keystore_id,  # Pass keystore ID if present
+                pepper_plugin_name="remote" if remote_pepper else None,
+                pepper_name=remote_pepper_name,
             )
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_b64 = base64.b64encode(metadata_json)
@@ -5363,6 +5517,8 @@ def encrypt_file(
             hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
             hsm_slot_used=hsm_slot_used,
             keystore_id=keystore_id,  # Pass keystore ID if present
+            pepper_plugin_name="remote" if remote_pepper else None,
+            pepper_name=remote_pepper_name,
         )
         # If scrypt is used, add rounds to hash_config
         # Serialize and encode the metadata
@@ -5866,6 +6022,10 @@ def decrypt_file(
         hsm_plugin_name = encryption.get("hsm_plugin")
         hsm_config = encryption.get("hsm_config", {})
 
+        # Extract pepper configuration if present (v5+)
+        pepper_plugin_name = encryption.get("pepper_plugin")
+        pepper_name = encryption.get("pepper_name")
+
         # Extract PQC information if present
         pqc_info = None
         pqc_has_private_key = "pqc_private_key" in encryption
@@ -6172,7 +6332,90 @@ def decrypt_file(
         except Exception as e:
             raise KeyDerivationError(f"HSM operation failed: {str(e)}")
 
-    # Generate the key from the password and salt (with hsm_pepper if applicable)
+    # Remote pepper retrieval if required
+    remote_pepper = None
+    if pepper_plugin_name:
+        if not quiet:
+            print(f"File requires remote pepper plugin '{pepper_plugin_name}'...")
+
+        try:
+            from ..plugins.pepper import PepperPlugin, PepperConfig, PepperError
+
+            config = PepperConfig.from_file()
+            if not config.enabled:
+                raise KeyDerivationError(
+                    f"File requires pepper plugin but it's not configured. "
+                    f"Configure at: {PepperConfig.get_default_config_path()}"
+                )
+
+            pepper_plugin = PepperPlugin(config)
+
+            if not pepper_name:
+                raise KeyDerivationError(
+                    "File requires remote pepper but pepper_name not found in metadata"
+                )
+
+            if not quiet:
+                print(f"Retrieving pepper '{pepper_name[:16]}...' from remote server...")
+
+            try:
+                encrypted_pepper_data = pepper_plugin.get_pepper(pepper_name)
+            except Exception as e:
+                raise KeyDerivationError(
+                    f"Failed to retrieve pepper from server. "
+                    f"Ensure you have network access and proper mTLS configuration. Error: {e}"
+                )
+
+            # Decrypt pepper with password
+            if len(encrypted_pepper_data) < 28:  # 12 + 16 minimum
+                raise KeyDerivationError("Invalid encrypted pepper data format from server")
+
+            nonce = encrypted_pepper_data[:12]
+            ciphertext_with_tag = encrypted_pepper_data[12:]
+
+            # Derive decryption key from password
+            import hashlib
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+            pepper_key = hashlib.sha256(password).digest()
+
+            try:
+                aesgcm = AESGCM(pepper_key)
+                remote_pepper = aesgcm.decrypt(nonce, ciphertext_with_tag, None)
+            except Exception as e:
+                # This could be wrong password or corrupted data
+                raise AuthenticationError(
+                    "Failed to decrypt remote pepper - wrong password or corrupted pepper data"
+                )
+
+            # Validate pepper
+            if not remote_pepper or len(remote_pepper) < 16:
+                raise KeyDerivationError("Invalid pepper retrieved from server")
+
+            if not quiet:
+                print(f"Remote pepper decrypted ({len(remote_pepper)} bytes)")
+
+        except ImportError as e:
+            raise KeyDerivationError(
+                f"Pepper plugin not available: {e}. Install pepper plugin dependencies."
+            )
+        except (KeyDerivationError, AuthenticationError):
+            raise
+        except Exception as e:
+            raise KeyDerivationError(f"Pepper retrieval failed: {str(e)}")
+
+    # Combine HSM pepper and remote pepper
+    combined_pepper = None
+    if hsm_pepper and remote_pepper:
+        combined_pepper = hsm_pepper + remote_pepper
+        if not quiet and debug:
+            logger.debug(f"Combined HSM+remote pepper: {len(combined_pepper)} bytes")
+    elif hsm_pepper:
+        combined_pepper = hsm_pepper
+    elif remote_pepper:
+        combined_pepper = remote_pepper
+
+    # Generate the key from the password and salt (with combined pepper if applicable)
     if not quiet:
         print("Generating decryption key ✅")  # Green check symbol)
 
@@ -6186,7 +6429,7 @@ def decrypt_file(
         progress=progress,
         debug=debug,
         pqc_keypair=pqc_info,
-        hsm_pepper=hsm_pepper,
+        hsm_pepper=combined_pepper,
     )
 
     # Helper function to get expected nonce size for each algorithm
