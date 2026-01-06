@@ -486,7 +486,6 @@ flatpak-build:
   artifacts:
     paths:
       - flatpak/repo/
-      - flatpak/build-dir/
     expire_in: 1 week
   rules:
     - if: $CI_COMMIT_BRANCH =~ /^releases\//
