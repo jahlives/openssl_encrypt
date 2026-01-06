@@ -469,24 +469,19 @@ flatpak-build:
       - flatpak/.flatpak-builder/
     policy: pull-push
   before_script:
-    # Install dependencies
     - dnf install -y flatpak flatpak-builder git xz
-    # Install Flutter SDK
     - dnf install -y clang cmake ninja-build gtk3-devel
     - git clone https://github.com/flutter/flutter.git -b stable --depth 1 /opt/flutter
     - export PATH="$PATH:/opt/flutter/bin"
     - flutter precache --linux
-    # Setup Flathub
     - flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
     - flatpak install -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
     - flatpak install -y flathub org.freedesktop.Sdk.Extension.rust-stable//24.08
   script:
-    # Build Flutter GUI first
     - cd desktop_gui
     - flutter pub get
     - flutter build linux --release
     - cd ..
-    # Build Flatpak with cache
     - cd flatpak
     - ./build-flatpak.sh --build-flutter
   artifacts:
@@ -524,21 +519,16 @@ flatpak-publish:
     FLATPAK_REPO_PATH: /var/www/flatpak-repo
     LOCAL_REPO: /home/work/private/flatpak-shared-repo
   before_script:
-    # Install tools
     - dnf install -y flatpak flatpak-builder ostree gnupg2 rsync git
-    # Setup Flathub for dependencies
     - flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
     - flatpak install -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
     - flatpak install -y flathub org.freedesktop.Sdk.Extension.rust-stable//24.08
-    # Import GPG key
     - echo "$FLATPAK_GPG_PRIVATE_KEY" | base64 -d | gpg --batch --import
     - gpg --list-secret-keys
   script:
     - cd flatpak
-    # Determine branch name
     - FLATPAK_BRANCH="${CI_COMMIT_TAG:-${CI_COMMIT_BRANCH##*/}}"
     - echo "Building for branch: $FLATPAK_BRANCH"
-    # Build with GPG signing to local shared repo
     - |
       flatpak-builder \
         --repo="$LOCAL_REPO" \
@@ -547,21 +537,16 @@ flatpak-publish:
         --force-clean \
         build-dir \
         com.opensslencrypt.OpenSSLEncrypt.json
-    # Update local repository
     - ostree summary -u --repo="$LOCAL_REPO" --gpg-sign="$FLATPAK_GPG_KEY_ID"
     - flatpak build-update-repo --gpg-sign="$FLATPAK_GPG_KEY_ID" "$LOCAL_REPO"
-    # Copy to server path (same host - direct copy)
     - echo "Syncing to server repository..."
     - rsync -avz "$LOCAL_REPO/objects/" "$FLATPAK_REPO_PATH/objects/"
     - rsync -avz "$LOCAL_REPO/refs/" "$FLATPAK_REPO_PATH/refs/"
     - rsync -avz "$LOCAL_REPO/summary"* "$FLATPAK_REPO_PATH/"
-    # Update server repo
     - ostree summary -u --repo="$FLATPAK_REPO_PATH" --gpg-sign="$FLATPAK_GPG_KEY_ID"
     - flatpak build-update-repo --gpg-sign="$FLATPAK_GPG_KEY_ID" "$FLATPAK_REPO_PATH"
     - chown -R www-data:www-data "$FLATPAK_REPO_PATH" || echo "Warning: Could not set ownership (may require elevated privileges)"
-    # Generate and deploy .flatpakrepo file
     - ./generate-flatpakrepo.sh
-    # Sync web files
     - rsync -avz ./flathub/ "$FLATPAK_REPO_PATH/"
     - echo "✅ Flatpak published successfully to $FLATPAK_REPO_PATH"
     - echo "Branch: $FLATPAK_BRANCH"
@@ -576,9 +561,8 @@ flatpak-publish:
 
 flatpak-publish:clean:
   extends: flatpak-publish
-  needs: []  # Don't depend on build job
+  needs: []
   before_script:
-    # Full setup including Flutter
     - dnf install -y flatpak flatpak-builder ostree gnupg2 rsync git clang cmake ninja-build gtk3-devel
     - git clone https://github.com/flutter/flutter.git -b stable --depth 1 /opt/flutter
     - export PATH="$PATH:/opt/flutter/bin"
@@ -586,21 +570,16 @@ flatpak-publish:clean:
     - flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
     - flatpak install -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
     - flatpak install -y flathub org.freedesktop.Sdk.Extension.rust-stable//24.08
-    # Import GPG key
     - echo "$FLATPAK_GPG_PRIVATE_KEY" | base64 -d | gpg --batch --import
   script:
-    # Build Flutter from scratch
     - cd desktop_gui
     - flutter clean
     - flutter pub get
     - flutter build linux --release
     - cd ../flatpak
-    # Clean build with GPG signing
     - rm -rf build-dir .flatpak-builder
-    # Determine branch name
     - FLATPAK_BRANCH="${CI_COMMIT_TAG:-${CI_COMMIT_BRANCH##*/}}"
     - echo "Building for branch: $FLATPAK_BRANCH"
-    # Build with GPG signing to local shared repo
     - |
       flatpak-builder \
         --repo="$LOCAL_REPO" \
@@ -609,21 +588,16 @@ flatpak-publish:clean:
         --force-clean \
         build-dir \
         com.opensslencrypt.OpenSSLEncrypt.json
-    # Update local repository
     - ostree summary -u --repo="$LOCAL_REPO" --gpg-sign="$FLATPAK_GPG_KEY_ID"
     - flatpak build-update-repo --gpg-sign="$FLATPAK_GPG_KEY_ID" "$LOCAL_REPO"
-    # Copy to server path (same host - direct copy)
     - echo "Syncing to server repository..."
     - rsync -avz "$LOCAL_REPO/objects/" "$FLATPAK_REPO_PATH/objects/"
     - rsync -avz "$LOCAL_REPO/refs/" "$FLATPAK_REPO_PATH/refs/"
     - rsync -avz "$LOCAL_REPO/summary"* "$FLATPAK_REPO_PATH/"
-    # Update server repo
     - ostree summary -u --repo="$FLATPAK_REPO_PATH" --gpg-sign="$FLATPAK_GPG_KEY_ID"
     - flatpak build-update-repo --gpg-sign="$FLATPAK_GPG_KEY_ID" "$FLATPAK_REPO_PATH"
     - chown -R www-data:www-data "$FLATPAK_REPO_PATH" || echo "Warning: Could not set ownership (may require elevated privileges)"
-    # Generate and deploy .flatpakrepo file
     - ./generate-flatpakrepo.sh
-    # Sync web files
     - rsync -avz ./flathub/ "$FLATPAK_REPO_PATH/"
     - echo "✅ Flatpak published successfully to $FLATPAK_REPO_PATH"
     - echo "Branch: $FLATPAK_BRANCH"
