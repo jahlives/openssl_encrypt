@@ -5341,14 +5341,35 @@ def encrypt_file(
                         metadata_hash = IntegrityPlugin.compute_metadata_hash(metadata_json)
                         # Get algorithm name for description
                         algo_name = algorithm.value if hasattr(algorithm, 'value') else str(algorithm)
-                        plugin.store_hash(
-                            file_id=file_id,
-                            metadata_hash=metadata_hash,
-                            algorithm=algo_name,
-                            description=f"Encrypted: {PathLib(output_file).name}"
-                        )
-                        if not quiet:
-                            print(f"✓ Metadata hash uploaded to integrity server")
+
+                        try:
+                            plugin.store_hash(
+                                file_id=file_id,
+                                metadata_hash=metadata_hash,
+                                algorithm=algo_name,
+                                description=f"Encrypted: {PathLib(output_file).name}"
+                            )
+                            if not quiet:
+                                print(f"✓ Metadata hash uploaded to integrity server")
+                        except Exception as store_e:
+                            # If hash already exists (409 Conflict), try to update it
+                            if "409" in str(store_e) or "Conflict" in str(store_e):
+                                try:
+                                    if not quiet:
+                                        print(f"Integrity hash already exists, updating...")
+                                    plugin.update_hash(
+                                        file_id=file_id,
+                                        metadata_hash=metadata_hash,
+                                        description=f"Encrypted: {PathLib(output_file).name} (updated)"
+                                    )
+                                    if not quiet:
+                                        print(f"✓ Metadata hash updated on integrity server")
+                                except Exception as update_e:
+                                    if not quiet:
+                                        print(f"Warning: Failed to update integrity hash: {update_e}")
+                            else:
+                                if not quiet:
+                                    print(f"Warning: Failed to store integrity hash: {store_e}")
             except Exception as e:
                 if not quiet:
                     print(f"Warning: Failed to store integrity hash: {e}")
@@ -5540,14 +5561,35 @@ def encrypt_file(
                         metadata_hash = IntegrityPlugin.compute_metadata_hash(metadata_json)
                         # Get algorithm name for description
                         algo_name = algorithm.value if hasattr(algorithm, 'value') else str(algorithm)
-                        plugin.store_hash(
-                            file_id=file_id,
-                            metadata_hash=metadata_hash,
-                            algorithm=algo_name,
-                            description=f"Encrypted: {PathLib(output_file).name}"
-                        )
-                        if not quiet:
-                            print(f"✓ Metadata hash uploaded to integrity server")
+
+                        try:
+                            plugin.store_hash(
+                                file_id=file_id,
+                                metadata_hash=metadata_hash,
+                                algorithm=algo_name,
+                                description=f"Encrypted: {PathLib(output_file).name}"
+                            )
+                            if not quiet:
+                                print(f"✓ Metadata hash uploaded to integrity server")
+                        except Exception as store_e:
+                            # If hash already exists (409 Conflict), try to update it
+                            if "409" in str(store_e) or "Conflict" in str(store_e):
+                                try:
+                                    if not quiet:
+                                        print(f"Integrity hash already exists, updating...")
+                                    plugin.update_hash(
+                                        file_id=file_id,
+                                        metadata_hash=metadata_hash,
+                                        description=f"Encrypted: {PathLib(output_file).name} (updated)"
+                                    )
+                                    if not quiet:
+                                        print(f"✓ Metadata hash updated on integrity server")
+                                except Exception as update_e:
+                                    if not quiet:
+                                        print(f"Warning: Failed to update integrity hash: {update_e}")
+                            else:
+                                if not quiet:
+                                    print(f"Warning: Failed to store integrity hash: {store_e}")
             except Exception as e:
                 if not quiet:
                     print(f"Warning: Failed to store integrity hash: {e}")
