@@ -712,6 +712,15 @@ def setup_encrypt_parser(subparser):
         "If not specified, the plugin will auto-detect the configured slot.",
     )
 
+    # Integrity verification options
+    integrity_group = subparser.add_argument_group("Integrity verification options")
+    integrity_group.add_argument(
+        "--integrity",
+        action="store_true",
+        help="Store metadata hash on remote integrity server for tamper detection. "
+        "Requires integrity plugin configuration at ~/.openssl_encrypt/plugins/integrity/config.json",
+    )
+
 
 def setup_decrypt_parser(subparser):
     """Set up arguments specific to the decrypt command."""
@@ -900,6 +909,16 @@ def setup_decrypt_parser(subparser):
         metavar="SLOT",
         help="Manually specify Yubikey slot (1 or 2) for Challenge-Response. "
         "If not specified, the slot will be read from file metadata or auto-detected.",
+    )
+
+    # Integrity verification options
+    integrity_group = subparser.add_argument_group("Integrity verification options")
+    integrity_group.add_argument(
+        "--verify-integrity",
+        action="store_true",
+        help="Verify metadata integrity with remote server before decryption. "
+        "Protects against DoS attacks from tampered metadata with expensive hash/KDF parameters. "
+        "Requires integrity plugin configuration at ~/.openssl_encrypt/plugins/integrity/config.json",
     )
 
 

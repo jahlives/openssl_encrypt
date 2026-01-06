@@ -6604,6 +6604,7 @@ def main_with_args(args=None):
                             cascade=cascade_mode,
                             cipher_names=cipher_names,
                             cascade_hash=cascade_hash_func,
+                            integrity=getattr(args, 'integrity', False),
                         )
 
                     if success:
@@ -6850,6 +6851,7 @@ def main_with_args(args=None):
                     cascade=cascade_mode,
                     cipher_names=cipher_names,
                     cascade_hash=cascade_hash_func,
+                    integrity=getattr(args, 'integrity', False),
                 )
 
                 if success:
@@ -7470,6 +7472,7 @@ def main_with_args(args=None):
                         cascade=cascade_mode,
                         cipher_names=cipher_names,
                         cascade_hash=cascade_hash_func,
+                        integrity=getattr(args, 'integrity', False),
                     )
 
                 # Handle steganography if requested
@@ -8324,6 +8327,7 @@ def main_with_args(args=None):
                             plugin_manager=plugin_manager,
                             hsm_plugin=hsm_plugin_instance,
                             no_estimate=getattr(args, "no_estimate", False),
+                            verify_integrity=getattr(args, 'verify_integrity', False),
                         )
                     if success:
                         # Apply the original permissions to the temp file
@@ -8547,6 +8551,7 @@ def main_with_args(args=None):
                         plugin_manager=plugin_manager,
                         hsm_plugin=hsm_plugin_instance,
                         no_estimate=getattr(args, "no_estimate", False),
+                        verify_integrity=getattr(args, 'verify_integrity', False),
                     )
                 if success:
                     # Security audit log for successful decryption
@@ -8716,6 +8721,7 @@ def main_with_args(args=None):
                         plugin_manager=plugin_manager,
                         hsm_plugin=hsm_plugin_instance,
                         no_estimate=getattr(args, "no_estimate", False),
+                        verify_integrity=getattr(args, 'verify_integrity', False),
                     )
                 try:
                     # Try to decode as text
