@@ -337,6 +337,8 @@ class CLIService {
      String? cascadePreset,             // Cascade: 'standard', 'paranoia', or null for custom
      List<String>? cascadeAlgorithms,   // Cascade: custom algorithm chain
      String cascadeHash = 'sha256',     // Cascade: HKDF hash function
+     bool noDiversityCheck = false,     // Cascade: --no-diversity-check
+     bool strictDiversity = false,      // Cascade: --strict-diversity
      Function(String)? onProgress,
      Function(String)? onStatus}
   ) async {
@@ -536,6 +538,13 @@ class CLIService {
         }
         // Add HKDF hash function
         args.addAll(['--cascade-hash', cascadeHash]);
+        // Add diversity check options
+        if (noDiversityCheck) {
+          args.add('--no-diversity-check');
+        }
+        if (strictDiversity) {
+          args.add('--strict-diversity');
+        }
       }
 
       if (debugEnabled) {

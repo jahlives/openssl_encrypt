@@ -65,6 +65,40 @@ class _EncryptTabState extends State<EncryptTab> {
   String _signingIdentity = '';
   bool _useKeyserver = false;
 
+  // Cascade encryption options
+  String _cascadePreset = 'standard';
+  List<String> _cascadeAlgorithms = ['aes-256-gcm', 'chacha20-poly1305'];
+  String _cascadeHash = 'sha256';
+  final TextEditingController _cascadeAlgorithmsTextController = TextEditingController();
+  bool _disableDiversityCheck = false;
+  bool _strictDiversity = false;
+
+  // Cascade presets
+  static const Map<String, List<String>> _cascadePresets = {
+    'standard': ['aes-256-gcm', 'chacha20-poly1305'],
+    'paranoia': ['aes-256-gcm', 'chacha20-poly1305', 'threefish-512'],
+  };
+
+  // Classical symmetric ciphers (non-PQS)
+  static const Map<String, List<String>> _classicalCipherFamilies = {
+    'Fernet': ['fernet'],
+    'AES Family': ['aes-gcm', 'aes-gcm-siv', 'aes-ocb3', 'aes-siv'],
+    'ChaCha Family': ['chacha20-poly1305', 'xchacha20-poly1305'],
+    'Threefish': ['threefish-512', 'threefish-1024'],
+  };
+
+  // Cascade hash options
+  static const List<String> _cascadeHashes = [
+    'sha256',
+    'sha384',
+    'sha512',
+    'sha3-256',
+    'sha3-384',
+    'sha3-512',
+    'blake2b',
+    'blake2s',
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -77,6 +111,7 @@ class _EncryptTabState extends State<EncryptTab> {
     _passwordController.dispose();
     _recipientIdentityController.dispose();
     _identityStorePathController.dispose();
+    _cascadeAlgorithmsTextController.dispose();
     super.dispose();
   }
 
@@ -143,6 +178,16 @@ class _EncryptTabState extends State<EncryptTab> {
       }
     }
 
+    // Validate cascade mode requirements
+    if (_encryptionMode == EncryptionMode.cascade) {
+      if (_cascadeAlgorithms.length < 2) {
+        setState(() {
+          result = 'Cascade encryption requires at least 2 algorithms';
+        });
+        return;
+      }
+    }
+
     setState(() {
       _isLoading = true;
       result = 'Encrypting...';
@@ -162,6 +207,11 @@ class _EncryptTabState extends State<EncryptTab> {
         signWith: _encryptionMode == EncryptionMode.asymmetric ? _signingIdentity : null,
         useKeyserver: _encryptionMode == EncryptionMode.asymmetric ? _useKeyserver : false,
         identityStore: _encryptionMode == EncryptionMode.asymmetric && _identityStorePathController.text.isNotEmpty ? _identityStorePathController.text : null,
+        cascadePreset: _encryptionMode == EncryptionMode.cascade && _cascadePreset != 'custom' ? _cascadePreset : null,
+        cascadeAlgorithms: _encryptionMode == EncryptionMode.cascade && _cascadePreset == 'custom' ? _cascadeAlgorithms : null,
+        cascadeHash: _encryptionMode == EncryptionMode.cascade ? _cascadeHash : 'sha256',
+        noDiversityCheck: _encryptionMode == EncryptionMode.cascade ? _disableDiversityCheck : false,
+        strictDiversity: _encryptionMode == EncryptionMode.cascade ? _strictDiversity : false,
       );
 
       setState(() {
@@ -200,6 +250,16 @@ class _EncryptTabState extends State<EncryptTab> {
       }
     }
 
+    // Validate cascade mode requirements
+    if (_encryptionMode == EncryptionMode.cascade) {
+      if (_cascadeAlgorithms.length < 2) {
+        setState(() {
+          result = 'Cascade encryption requires at least 2 algorithms';
+        });
+        return;
+      }
+    }
+
     setState(() {
       _isLoading = true;
       result = 'Encrypting file...';
@@ -226,6 +286,11 @@ class _EncryptTabState extends State<EncryptTab> {
         signWith: _encryptionMode == EncryptionMode.asymmetric ? _signingIdentity : null,
         useKeyserver: _encryptionMode == EncryptionMode.asymmetric ? _useKeyserver : false,
         identityStore: _encryptionMode == EncryptionMode.asymmetric && _identityStorePathController.text.isNotEmpty ? _identityStorePathController.text : null,
+        cascadePreset: _encryptionMode == EncryptionMode.cascade && _cascadePreset != 'custom' ? _cascadePreset : null,
+        cascadeAlgorithms: _encryptionMode == EncryptionMode.cascade && _cascadePreset == 'custom' ? _cascadeAlgorithms : null,
+        cascadeHash: _encryptionMode == EncryptionMode.cascade ? _cascadeHash : 'sha256',
+        noDiversityCheck: _encryptionMode == EncryptionMode.cascade ? _disableDiversityCheck : false,
+        strictDiversity: _encryptionMode == EncryptionMode.cascade ? _strictDiversity : false,
       );
 
       // Save encrypted file
@@ -1115,6 +1180,573 @@ class _EncryptTabState extends State<EncryptTab> {
     );
   }
 
+  /// Build cascade encryption configuration widget
+  Widget _buildCascadeConfig() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              children: [
+                const Icon(Icons.layers),
+                const SizedBox(width: 8),
+                const Text('Cascade Encryption Configuration',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Preset Selector
+            const Text('Preset:', style: TextStyle(fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            Center(
+              child: SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(
+                    value: 'standard',
+                    label: Text('Standard'),
+                    icon: Icon(Icons.shield),
+                  ),
+                  ButtonSegment(
+                    value: 'paranoia',
+                    label: Text('Paranoia'),
+                    icon: Icon(Icons.security),
+                  ),
+                  ButtonSegment(
+                    value: 'custom',
+                    label: Text('Custom'),
+                    icon: Icon(Icons.tune),
+                  ),
+                ],
+                selected: {_cascadePreset},
+                onSelectionChanged: (Set<String> newSelection) {
+                  final preset = newSelection.first;
+                  setState(() {
+                    _cascadePreset = preset;
+                    if (preset == 'custom') {
+                      // Clear the list when switching to custom
+                      _cascadeAlgorithms = [];
+                      _syncCascadeTextFromAlgorithms();
+                    } else if (_cascadePresets.containsKey(preset)) {
+                      // Load preset algorithms
+                      _cascadeAlgorithms = List.from(_cascadePresets[preset]!);
+                      _syncCascadeTextFromAlgorithms();
+                    }
+                  });
+                },
+              ),
+            ),
+
+            // Show preset info when not custom
+            if (_cascadePreset != 'custom') ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+                  border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.5)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _cascadePreset == 'standard'
+                      ? 'Standard preset provides balanced security with two diverse algorithms.'
+                      : 'Paranoia preset offers maximum security with three layers from different families.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+
+            // Algorithm Chain Display
+            Row(
+              children: [
+                const Text('Algorithm Chain:', style: TextStyle(fontWeight: FontWeight.w500)),
+                const Spacer(),
+                if (_cascadePreset == 'custom')
+                  TextButton.icon(
+                    onPressed: _isLoading ? null : _showCascadeAlgorithmPicker,
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Add'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                border: Border.all(color: Theme.of(context).colorScheme.outline),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: _cascadeAlgorithms.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(16.0),
+                      child: Center(
+                        child: Text(
+                          'No algorithms selected. Add at least 2 algorithms for cascade encryption.',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                    )
+                  : Column(
+                      children: _cascadeAlgorithms.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final algorithm = entry.value;
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            children: [
+                              // Number badge
+                              Container(
+                                width: 28,
+                                height: 28,
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    '${index + 1}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              // Algorithm name
+                              Expanded(
+                                child: Text(
+                                  algorithm,
+                                  style: const TextStyle(fontWeight: FontWeight.w500),
+                                ),
+                              ),
+                              // Family badge
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: _getCascadeFamilyColor(algorithm).withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  _getCascadeCipherFamily(algorithm),
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: _getCascadeFamilyColor(algorithm),
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              // Delete button (only for custom mode)
+                              if (_cascadePreset == 'custom') ...[
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, size: 18),
+                                  onPressed: _isLoading
+                                      ? null
+                                      : () {
+                                          setState(() {
+                                            _cascadeAlgorithms.removeAt(index);
+                                            _syncCascadeTextFromAlgorithms();
+                                          });
+                                        },
+                                  tooltip: 'Remove',
+                                  constraints: const BoxConstraints(),
+                                  padding: const EdgeInsets.all(4),
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ),
+            ),
+            const SizedBox(height: 16),
+
+            // Manual Text Input
+            const Text('Manual Entry:', style: TextStyle(fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _cascadeAlgorithmsTextController,
+              decoration: InputDecoration(
+                border: const OutlineInputBorder(),
+                labelText: 'Algorithms (comma or space separated)',
+                hintText: 'aes-gcm, chacha20-poly1305, threefish-512',
+                helperText: 'Enter algorithm names separated by comma or space',
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.refresh),
+                  onPressed: _parseCascadeAlgorithmsFromText,
+                  tooltip: 'Parse and apply',
+                ),
+              ),
+              enabled: !_isLoading && _cascadePreset == 'custom',
+              onSubmitted: (_) => _parseCascadeAlgorithmsFromText(),
+            ),
+            const SizedBox(height: 16),
+
+            // Cascade Hash Dropdown
+            const Text('HKDF Hash Function:', style: TextStyle(fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: _cascadeHash,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                helperText: 'Hash function for key derivation between encryption layers',
+              ),
+              items: _cascadeHashes.map((hash) {
+                return DropdownMenuItem(
+                  value: hash,
+                  child: Text(_formatCascadeHashName(hash)),
+                );
+              }).toList(),
+              onChanged: _isLoading
+                  ? null
+                  : (value) {
+                      setState(() {
+                        _cascadeHash = value ?? 'sha256';
+                      });
+                    },
+            ),
+            const SizedBox(height: 16),
+
+            // Diversity Options
+            const Text('Diversity Validation:', style: TextStyle(fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            CheckboxListTile(
+              value: _disableDiversityCheck,
+              onChanged: _isLoading
+                  ? null
+                  : (value) {
+                      setState(() {
+                        _disableDiversityCheck = value ?? false;
+                        if (_disableDiversityCheck) {
+                          _strictDiversity = false;
+                        }
+                      });
+                    },
+              title: const Text('Disable diversity warnings'),
+              subtitle: const Text('Skip cipher family diversity checks (--no-diversity-check)'),
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              dense: true,
+            ),
+            CheckboxListTile(
+              value: _strictDiversity,
+              onChanged: (_isLoading || _disableDiversityCheck)
+                  ? null
+                  : (value) {
+                      setState(() {
+                        _strictDiversity = value ?? false;
+                        if (_strictDiversity) {
+                          _disableDiversityCheck = false;
+                        }
+                      });
+                    },
+              title: const Text('Strict diversity'),
+              subtitle: const Text('Require all ciphers from different families (--strict-diversity)'),
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              dense: true,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Show cascade algorithm picker dialog
+  void _showCascadeAlgorithmPicker() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Select Cascade Algorithms'),
+            content: SizedBox(
+              width: 500,
+              height: 500,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Select classical symmetric ciphers only (no post-quantum). '
+                      'Order matters - algorithms are applied in selection sequence.',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Quick Presets Section
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Quick Presets:',
+                              style: TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              ActionChip(
+                                avatar: const Icon(Icons.shield, size: 18),
+                                label: const Text('Standard'),
+                                onPressed: () {
+                                  setState(() {
+                                    _cascadePreset = 'standard';
+                                    _cascadeAlgorithms = List.from(_cascadePresets['standard']!);
+                                    _syncCascadeTextFromAlgorithms();
+                                  });
+                                  Navigator.pop(dialogContext);
+                                },
+                              ),
+                              ActionChip(
+                                avatar: const Icon(Icons.security, size: 18),
+                                label: const Text('Paranoia'),
+                                onPressed: () {
+                                  setState(() {
+                                    _cascadePreset = 'paranoia';
+                                    _cascadeAlgorithms = List.from(_cascadePresets['paranoia']!);
+                                    _syncCascadeTextFromAlgorithms();
+                                  });
+                                  Navigator.pop(dialogContext);
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Divider(),
+                    const SizedBox(height: 8),
+
+                    // Individual Algorithm Selection by Family
+                    ..._classicalCipherFamilies.entries.map((familyEntry) {
+                      final familyName = familyEntry.key;
+                      final algorithms = familyEntry.value;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Text(
+                              familyName,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: _getCascadeFamilyColor(algorithms.first),
+                              ),
+                            ),
+                          ),
+                          ...algorithms.map((algorithm) {
+                            final orderIndex = _cascadeAlgorithms.indexOf(algorithm);
+                            final isSelected = orderIndex >= 0;
+
+                            return Card(
+                              color: isSelected
+                                  ? Theme.of(context).colorScheme.primaryContainer
+                                  : null,
+                              child: ListTile(
+                                dense: true,
+                                leading: isSelected
+                                    ? Container(
+                                        width: 28,
+                                        height: 28,
+                                        decoration: BoxDecoration(
+                                          color: Theme.of(context).colorScheme.primary,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Center(
+                                          child: Text(
+                                            '${orderIndex + 1}',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                    : Icon(
+                                        Icons.add_circle_outline,
+                                        color: Theme.of(context).colorScheme.primary,
+                                      ),
+                                title: Text(
+                                  algorithm,
+                                  style: TextStyle(
+                                    fontWeight: isSelected ? FontWeight.bold : null,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  _getCascadeAlgorithmDescription(algorithm),
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                                trailing: isSelected
+                                    ? IconButton(
+                                        icon: const Icon(Icons.remove_circle, color: Colors.red),
+                                        onPressed: () {
+                                          setDialogState(() {});
+                                          setState(() {
+                                            _cascadeAlgorithms.remove(algorithm);
+                                            _cascadePreset = 'custom';
+                                            _syncCascadeTextFromAlgorithms();
+                                          });
+                                        },
+                                      )
+                                    : null,
+                                onTap: () {
+                                  setDialogState(() {});
+                                  setState(() {
+                                    if (isSelected) {
+                                      _cascadeAlgorithms.remove(algorithm);
+                                    } else {
+                                      _cascadeAlgorithms.add(algorithm);
+                                    }
+                                    _cascadePreset = 'custom';
+                                    _syncCascadeTextFromAlgorithms();
+                                  });
+                                },
+                              ),
+                            );
+                          }),
+                        ],
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                },
+                child: Text('Done (${_cascadeAlgorithms.length} selected)'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// Helper methods for cascade encryption
+
+  /// Sync text controller from cascade algorithms list
+  void _syncCascadeTextFromAlgorithms() {
+    _cascadeAlgorithmsTextController.text = _cascadeAlgorithms.join(', ');
+  }
+
+  /// Parse algorithms from text input
+  void _parseCascadeAlgorithmsFromText() {
+    final text = _cascadeAlgorithmsTextController.text.trim();
+    if (text.isEmpty) {
+      setState(() {
+        _cascadeAlgorithms = [];
+      });
+      return;
+    }
+
+    // Split by comma or space, filter empty entries
+    final parsed = text
+        .split(RegExp(r'[,\s]+'))
+        .map((s) => s.trim().toLowerCase())
+        .where((s) => s.isNotEmpty)
+        .toList();
+
+    // Validate against known classical ciphers
+    final allValid = _classicalCipherFamilies.values.expand((e) => e).toSet();
+    final validAlgorithms = parsed.where((a) => allValid.contains(a)).toList();
+
+    setState(() {
+      _cascadeAlgorithms = validAlgorithms;
+      _cascadePreset = 'custom';
+      _syncCascadeTextFromAlgorithms();
+    });
+  }
+
+  /// Get cipher family for display
+  String _getCascadeCipherFamily(String algorithm) {
+    if (algorithm == 'fernet') return 'Fernet';
+    if (algorithm.startsWith('aes-')) return 'AES';
+    if (algorithm.contains('chacha')) return 'ChaCha';
+    if (algorithm.startsWith('threefish')) return 'Threefish';
+    return 'Other';
+  }
+
+  /// Get family color
+  Color _getCascadeFamilyColor(String algorithm) {
+    switch (_getCascadeCipherFamily(algorithm)) {
+      case 'Fernet':
+        return Colors.purple;
+      case 'AES':
+        return Colors.blue;
+      case 'ChaCha':
+        return Colors.green;
+      case 'Threefish':
+        return Colors.orange;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  /// Format cascade hash name for display
+  String _formatCascadeHashName(String hash) {
+    switch (hash) {
+      case 'sha256':
+        return 'SHA-256';
+      case 'sha384':
+        return 'SHA-384';
+      case 'sha512':
+        return 'SHA-512';
+      case 'sha3-256':
+        return 'SHA3-256';
+      case 'sha3-384':
+        return 'SHA3-384';
+      case 'sha3-512':
+        return 'SHA3-512';
+      case 'blake2b':
+        return 'BLAKE2b';
+      case 'blake2s':
+        return 'BLAKE2s';
+      default:
+        return hash.toUpperCase();
+    }
+  }
+
+  /// Get algorithm description for picker
+  String _getCascadeAlgorithmDescription(String algorithm) {
+    const descriptions = {
+      'fernet': 'AES-128-CBC with HMAC - Python standard',
+      'aes-gcm': 'AES-256-GCM - Fast, hardware accelerated',
+      'aes-gcm-siv': 'AES-GCM-SIV - Misuse resistant',
+      'aes-ocb3': 'AES-OCB3 - High performance',
+      'aes-siv': 'AES-SIV - Deterministic encryption',
+      'chacha20-poly1305': 'ChaCha20-Poly1305 - Modern stream cipher',
+      'xchacha20-poly1305': 'XChaCha20 - Extended nonce',
+      'threefish-512': '512-bit block, 256-bit PQ security',
+      'threefish-1024': '1024-bit block, 512-bit PQ security',
+    };
+    return descriptions[algorithm] ?? 'Symmetric cipher';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1219,6 +1851,10 @@ class _EncryptTabState extends State<EncryptTab> {
             // Asymmetric Encryption Configuration (for asymmetric mode)
             if (_encryptionMode == EncryptionMode.asymmetric)
               _buildAsymmetricConfig(),
+
+            // Cascade Encryption Configuration (for cascade mode)
+            if (_encryptionMode == EncryptionMode.cascade)
+              _buildCascadeConfig(),
 
             const SizedBox(height: 16),
 
