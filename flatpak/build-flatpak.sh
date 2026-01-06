@@ -123,9 +123,9 @@ if [[ "$BUILD_FLUTTER" == "true" ]]; then
     flutter build linux --release
 
     # Verify build output
-    if [[ -f "build/linux/x64/release/bundle/openssl_encrypt_mobile" ]]; then
+    if [[ -f "build/linux/x64/release/bundle/openssl_encrypt" ]]; then
         echo "✅ Flutter build successful"
-        echo "📁 Binary: $(pwd)/build/linux/x64/release/bundle/openssl_encrypt_mobile"
+        echo "📁 Binary: $(pwd)/build/linux/x64/release/bundle/openssl_encrypt"
     else
         echo "❌ Flutter build failed - binary not found"
         exit 1
