@@ -340,6 +340,7 @@ class CLIService {
      bool noDiversityCheck = false,     // Cascade: --no-diversity-check
      bool strictDiversity = false,      // Cascade: --strict-diversity
      bool forcePassword = false,        // Force acceptance of weak passwords
+     bool showProgress = false,         // CLI --progress flag
      Function(String)? onProgress,
      Function(String)? onStatus}
   ) async {
@@ -553,6 +554,11 @@ class CLIService {
         args.add('--force-password');
       }
 
+      // Add progress flag if enabled
+      if (showProgress) {
+        args.add('--progress');
+      }
+
       final maskedCommand = _getMaskedCommand(args);
       _outputDebugLog('=== CLI ENCRYPT COMMAND ===');
       _outputDebugLog('Full command: $maskedCommand');
@@ -637,6 +643,7 @@ class CLIService {
      String? verifyFrom,             // Asymmetric: sender verification
      bool skipVerification = false,  // Asymmetric: skip signature check
      bool forcePassword = false,     // Force acceptance of weak passwords
+     bool showProgress = false,      // CLI --progress flag
      Function(String)? onProgress,
      Function(String)? onStatus}
   ) async {
@@ -718,6 +725,11 @@ class CLIService {
       // Add force password if enabled
       if (forcePassword) {
         args.add('--force-password');
+      }
+
+      // Add progress flag if enabled
+      if (showProgress) {
+        args.add('--progress');
       }
 
       final maskedCommand = _getMaskedCommand(args);

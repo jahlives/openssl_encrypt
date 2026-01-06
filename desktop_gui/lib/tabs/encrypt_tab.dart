@@ -34,6 +34,7 @@ class _EncryptTabState extends State<EncryptTab> {
   bool _isLoading = false;
   String result = '';
   String _operationStatus = '';
+  bool _showProgress = false;
 
   // Hash configuration
   bool _showHashConfig = false;
@@ -330,6 +331,7 @@ class _EncryptTabState extends State<EncryptTab> {
         noDiversityCheck: _encryptionMode == EncryptionMode.cascade ? _disableDiversityCheck : false,
         strictDiversity: _encryptionMode == EncryptionMode.cascade ? _strictDiversity : false,
         forcePassword: _forcePassword,
+        showProgress: _showProgress,
         onProgress: (progress) {
           setState(() {
             _operationStatus = progress;
@@ -506,6 +508,7 @@ class _EncryptTabState extends State<EncryptTab> {
         noDiversityCheck: _encryptionMode == EncryptionMode.cascade ? _disableDiversityCheck : false,
         strictDiversity: _encryptionMode == EncryptionMode.cascade ? _strictDiversity : false,
         forcePassword: _forcePassword,
+        showProgress: _showProgress,
         onProgress: (progress) {
           setState(() {
             _operationStatus = progress;
@@ -2639,6 +2642,21 @@ class _EncryptTabState extends State<EncryptTab> {
                 padding: const EdgeInsets.all(20),
                 textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
+            ),
+
+            // Progress checkbox
+            CheckboxListTile(
+              value: _showProgress,
+              onChanged: _isLoading ? null : (value) {
+                setState(() {
+                  _showProgress = value ?? false;
+                });
+              },
+              title: const Text('Show progress'),
+              subtitle: const Text('Display real-time progress during operation'),
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              dense: true,
             ),
 
             // Operation Status Display (YubiKey touch prompts, etc.)
