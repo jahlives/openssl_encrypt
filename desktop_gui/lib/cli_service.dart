@@ -422,6 +422,30 @@ class CLIService {
               case 'shake256':
                 args.addAll(['--shake256-rounds', config['rounds'].toString()]);
                 break;
+              case 'shake128':
+                args.addAll(['--shake128-rounds', config['rounds'].toString()]);
+                break;
+              case 'sha224':
+                args.addAll(['--sha224-rounds', config['rounds'].toString()]);
+                break;
+              case 'sha384':
+                args.addAll(['--sha384-rounds', config['rounds'].toString()]);
+                break;
+              case 'sha3-224':
+                args.addAll(['--sha3-224-rounds', config['rounds'].toString()]);
+                break;
+              case 'sha3-256':
+                args.addAll(['--sha3-256-rounds', config['rounds'].toString()]);
+                break;
+              case 'sha3-384':
+                args.addAll(['--sha3-384-rounds', config['rounds'].toString()]);
+                break;
+              case 'sha3-512':
+                args.addAll(['--sha3-512-rounds', config['rounds'].toString()]);
+                break;
+              case 'whirlpool':
+                args.addAll(['--whirlpool-rounds', config['rounds'].toString()]);
+                break;
             }
           }
         }
@@ -503,10 +527,9 @@ class CLIService {
         }
       }
 
-      // Add integrity plugin if enabled
-      if (enableIntegrity) {
-        args.add('--integrity');
-      }
+      // Note: Integrity plugin is configured via config file (~/.openssl_encrypt/plugins/integrity.json)
+      // not via CLI flags. When configured, it activates automatically.
+      // No CLI argument needed here.
 
       // Add asymmetric encryption parameters if provided
       if (forIdentities != null && forIdentities.isNotEmpty) {
