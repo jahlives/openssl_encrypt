@@ -37,10 +37,6 @@ class _DecryptTabState extends State<DecryptTab> {
   bool _skipVerification = false;
   bool _verifyIntegrity = true;
 
-  // HSM settings (if file was encrypted with HSM)
-  String _hsmType = 'none';
-  int _yubikeySlot = 1;
-
   @override
   void dispose() {
     _textController.dispose();
@@ -87,8 +83,6 @@ class _DecryptTabState extends State<DecryptTab> {
         withKey: _decryptionIdentity,
         verifyFrom: _verifyFrom,
         skipVerification: _skipVerification,
-        hsmPlugin: _hsmType != 'none' ? _hsmType : null,
-        hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
         verifyIntegrity: _verifyIntegrity,
         forcePassword: _forcePassword,
       );
@@ -132,8 +126,6 @@ class _DecryptTabState extends State<DecryptTab> {
         withKey: _decryptionIdentity,
         verifyFrom: _verifyFrom,
         skipVerification: _skipVerification,
-        hsmPlugin: _hsmType != 'none' ? _hsmType : null,
-        hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
         verifyIntegrity: _verifyIntegrity,
         forcePassword: _forcePassword,
       );
@@ -304,7 +296,7 @@ class _DecryptTabState extends State<DecryptTab> {
             // Advanced Options (Rarely needed - collapsed by default)
             ExpansionTile(
               title: const Text('Advanced Options'),
-              subtitle: const Text('Only needed for asymmetric encryption or HSM'),
+              subtitle: const Text('Integrity verification settings'),
               leading: const Icon(Icons.settings),
               children: [
                 // Integrity Verification
@@ -314,15 +306,6 @@ class _DecryptTabState extends State<DecryptTab> {
                   isEncryptMode: false,
                   onEnableIntegrityChanged: (_) {},
                   onVerifyIntegrityChanged: (value) => setState(() => _verifyIntegrity = value),
-                ),
-                const SizedBox(height: 12),
-
-                // HSM Configuration
-                HsmConfigSection(
-                  hsmType: _hsmType,
-                  yubikeySlot: _yubikeySlot,
-                  onHsmTypeChanged: (type) => setState(() => _hsmType = type),
-                  onYubikeySlotChanged: (slot) => setState(() => _yubikeySlot = slot),
                 ),
               ],
             ),
