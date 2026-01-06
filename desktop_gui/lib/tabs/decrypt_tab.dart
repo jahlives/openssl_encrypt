@@ -14,7 +14,7 @@ class DecryptTab extends StatefulWidget {
 
 class _DecryptTabState extends State<DecryptTab> {
   // Input mode toggle
-  bool _isFileMode = false;
+  bool _isFileMode = true;
 
   // Text input controllers
   final TextEditingController _textController = TextEditingController();
