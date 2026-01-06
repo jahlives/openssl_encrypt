@@ -339,6 +339,7 @@ class CLIService {
      String cascadeHash = 'sha256',     // Cascade: HKDF hash function
      bool noDiversityCheck = false,     // Cascade: --no-diversity-check
      bool strictDiversity = false,      // Cascade: --strict-diversity
+     bool forcePassword = false,        // Force acceptance of weak passwords
      Function(String)? onProgress,
      Function(String)? onStatus}
   ) async {
@@ -551,8 +552,8 @@ class CLIService {
         args.add('--debug');
       }
 
-      // Add force password for simple passwords (not used in asymmetric mode)
-      if (forIdentities == null || forIdentities.isEmpty) {
+      // Add force password if enabled
+      if (forcePassword) {
         args.add('--force-password');
       }
 
@@ -639,6 +640,7 @@ class CLIService {
      String? withKey,                // Asymmetric: decryption identity
      String? verifyFrom,             // Asymmetric: sender verification
      bool skipVerification = false,  // Asymmetric: skip signature check
+     bool forcePassword = false,     // Force acceptance of weak passwords
      Function(String)? onProgress,
      Function(String)? onStatus}
   ) async {
@@ -721,8 +723,8 @@ class CLIService {
         args.add('--debug');
       }
 
-      // Add force password for simple passwords (not used in asymmetric mode)
-      if (withKey == null || withKey.isEmpty) {
+      // Add force password if enabled
+      if (forcePassword) {
         args.add('--force-password');
       }
 

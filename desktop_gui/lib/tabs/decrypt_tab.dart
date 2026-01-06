@@ -28,6 +28,9 @@ class _DecryptTabState extends State<DecryptTab> {
   String result = '';
   String? _decryptedContent;
 
+  // Password options
+  bool _forcePassword = false;
+
   // Optional decryption settings (mostly for asymmetric mode)
   String? _decryptionIdentity;
   String? _verifyFrom;
@@ -87,6 +90,7 @@ class _DecryptTabState extends State<DecryptTab> {
         hsmPlugin: _hsmType != 'none' ? _hsmType : null,
         hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
         verifyIntegrity: _verifyIntegrity,
+        forcePassword: _forcePassword,
       );
 
       setState(() {
@@ -131,6 +135,7 @@ class _DecryptTabState extends State<DecryptTab> {
         hsmPlugin: _hsmType != 'none' ? _hsmType : null,
         hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
         verifyIntegrity: _verifyIntegrity,
+        forcePassword: _forcePassword,
       );
 
       // Store decrypted content
@@ -263,15 +268,34 @@ class _DecryptTabState extends State<DecryptTab> {
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(12.0),
-                child: TextField(
-                  controller: _passwordController,
-                  decoration: const InputDecoration(
-                    labelText: 'Password',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.lock_open),
-                  ),
-                  obscureText: true,
-                  enabled: !_isLoading,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: _passwordController,
+                      decoration: const InputDecoration(
+                        labelText: 'Password',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.lock_open),
+                      ),
+                      obscureText: true,
+                      enabled: !_isLoading,
+                    ),
+                    const SizedBox(height: 8),
+                    CheckboxListTile(
+                      value: _forcePassword,
+                      onChanged: _isLoading ? null : (value) {
+                        setState(() {
+                          _forcePassword = value ?? false;
+                        });
+                      },
+                      title: const Text('Force password'),
+                      subtitle: const Text('Accept weak passwords (use with caution)'),
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      dense: true,
+                    ),
+                  ],
                 ),
               ),
             ),

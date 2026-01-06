@@ -58,6 +58,9 @@ class _EncryptTabState extends State<EncryptTab> {
   // File-specific options
   bool _forceOverwrite = false;
 
+  // Password options
+  bool _forcePassword = false;
+
   // Asymmetric encryption options
   final List<String> _recipientIdentities = [];
   final TextEditingController _recipientIdentityController = TextEditingController();
@@ -212,6 +215,7 @@ class _EncryptTabState extends State<EncryptTab> {
         cascadeHash: _encryptionMode == EncryptionMode.cascade ? _cascadeHash : 'sha256',
         noDiversityCheck: _encryptionMode == EncryptionMode.cascade ? _disableDiversityCheck : false,
         strictDiversity: _encryptionMode == EncryptionMode.cascade ? _strictDiversity : false,
+        forcePassword: _forcePassword,
       );
 
       setState(() {
@@ -291,6 +295,7 @@ class _EncryptTabState extends State<EncryptTab> {
         cascadeHash: _encryptionMode == EncryptionMode.cascade ? _cascadeHash : 'sha256',
         noDiversityCheck: _encryptionMode == EncryptionMode.cascade ? _disableDiversityCheck : false,
         strictDiversity: _encryptionMode == EncryptionMode.cascade ? _strictDiversity : false,
+        forcePassword: _forcePassword,
       );
 
       // Save encrypted file
@@ -1811,15 +1816,34 @@ class _EncryptTabState extends State<EncryptTab> {
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(12.0),
-                child: TextField(
-                  controller: _passwordController,
-                  decoration: const InputDecoration(
-                    labelText: 'Password',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.lock),
-                  ),
-                  obscureText: true,
-                  enabled: !_isLoading,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: _passwordController,
+                      decoration: const InputDecoration(
+                        labelText: 'Password',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.lock),
+                      ),
+                      obscureText: true,
+                      enabled: !_isLoading,
+                    ),
+                    const SizedBox(height: 8),
+                    CheckboxListTile(
+                      value: _forcePassword,
+                      onChanged: _isLoading ? null : (value) {
+                        setState(() {
+                          _forcePassword = value ?? false;
+                        });
+                      },
+                      title: const Text('Force password'),
+                      subtitle: const Text('Accept weak passwords (use with caution)'),
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      dense: true,
+                    ),
+                  ],
                 ),
               ),
             ),
