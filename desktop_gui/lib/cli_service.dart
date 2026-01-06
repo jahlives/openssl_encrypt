@@ -575,6 +575,9 @@ class CLIService {
         },
       );
 
+      // Show executed command after operation completes (replaces YubiKey prompt if shown)
+      onStatus?.call('Executed: $maskedCommand');
+
       if (result.exitCode != 0) {
         final errorMsg = result.stderr.toString().trim();
         final stdoutMsg = result.stdout.toString().trim();
@@ -740,6 +743,9 @@ class CLIService {
           onStatus?.call(line);
         },
       );
+
+      // Show executed command after operation completes (replaces YubiKey prompt if shown)
+      onStatus?.call('Executed: $maskedCommand');
 
       if (result.exitCode != 0) {
         final errorMsg = result.stderr.toString().trim();
