@@ -727,8 +727,8 @@ class FilePickerWidget extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  border: Border.all(color: Colors.blue.shade200),
+                  color: Colors.grey.shade900,
+                  border: Border.all(color: Colors.grey.shade700),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Column(
@@ -736,18 +736,21 @@ class FilePickerWidget extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.insert_drive_file, size: 20),
+                        Icon(Icons.insert_drive_file, size: 20, color: Colors.grey.shade300),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             selectedFile!.name,
-                            style: const TextStyle(fontWeight: FontWeight.w500),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white,
+                            ),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         if (onClearFile != null)
                           IconButton(
-                            icon: const Icon(Icons.close, size: 20),
+                            icon: Icon(Icons.close, size: 20, color: Colors.grey.shade300),
                             onPressed: enabled ? onClearFile : null,
                             tooltip: 'Clear selection',
                           ),
@@ -756,11 +759,11 @@ class FilePickerWidget extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       'Size: ${selectedFile!.sizeFormatted}',
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade300),
                     ),
                     Text(
                       'Path: ${selectedFile!.path}',
-                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],

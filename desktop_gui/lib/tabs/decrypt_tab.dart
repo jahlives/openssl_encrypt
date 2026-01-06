@@ -27,6 +27,7 @@ class _DecryptTabState extends State<DecryptTab> {
   bool _isLoading = false;
   String result = '';
   String? _decryptedContent;
+  String _operationStatus = '';
 
   // Password options
   bool _forcePassword = false;
@@ -74,6 +75,7 @@ class _DecryptTabState extends State<DecryptTab> {
     setState(() {
       _isLoading = true;
       result = 'Decrypting...';
+      _operationStatus = '';
     });
 
     try {
@@ -85,6 +87,22 @@ class _DecryptTabState extends State<DecryptTab> {
         skipVerification: _skipVerification,
         verifyIntegrity: _verifyIntegrity,
         forcePassword: _forcePassword,
+        onProgress: (progress) {
+          setState(() {
+            _operationStatus = progress;
+          });
+        },
+        onStatus: (status) {
+          setState(() {
+            if (status.toLowerCase().contains('touch') ||
+                status.toLowerCase().contains('yubikey') ||
+                status.toLowerCase().contains('press')) {
+              _operationStatus = 'Please touch your YubiKey...';
+            } else {
+              _operationStatus = status;
+            }
+          });
+        },
       );
 
       setState(() {
@@ -110,6 +128,7 @@ class _DecryptTabState extends State<DecryptTab> {
     setState(() {
       _isLoading = true;
       result = 'Decrypting file...';
+      _operationStatus = '';
     });
 
     try {
@@ -128,6 +147,22 @@ class _DecryptTabState extends State<DecryptTab> {
         skipVerification: _skipVerification,
         verifyIntegrity: _verifyIntegrity,
         forcePassword: _forcePassword,
+        onProgress: (progress) {
+          setState(() {
+            _operationStatus = progress;
+          });
+        },
+        onStatus: (status) {
+          setState(() {
+            if (status.toLowerCase().contains('touch') ||
+                status.toLowerCase().contains('yubikey') ||
+                status.toLowerCase().contains('press')) {
+              _operationStatus = 'Please touch your YubiKey...';
+            } else {
+              _operationStatus = status;
+            }
+          });
+        },
       );
 
       // Store decrypted content
@@ -327,6 +362,49 @@ class _DecryptTabState extends State<DecryptTab> {
                 textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
             ),
+
+            // Operation Status Display (YubiKey touch prompts, etc.)
+            if (_isLoading && _operationStatus.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Card(
+                  color: _operationStatus.contains('YubiKey')
+                      ? Colors.amber.shade900
+                      : Colors.grey.shade900,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Row(
+                      children: [
+                        if (_operationStatus.contains('YubiKey'))
+                          Icon(Icons.touch_app, color: Colors.amber.shade100)
+                        else
+                          SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            _operationStatus,
+                            style: TextStyle(
+                              color: _operationStatus.contains('YubiKey')
+                                  ? Colors.amber.shade100
+                                  : Colors.white,
+                              fontWeight: _operationStatus.contains('YubiKey')
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
 
             // Save to File Button (for file mode)
             if (_isFileMode && _decryptedContent != null) ...[

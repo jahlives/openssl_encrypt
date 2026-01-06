@@ -883,7 +883,7 @@ class CLIService {
   /// Run CLI command with real-time progress streaming
   static Future<ProcessResult> _runCLICommandWithProgress(
     List<String> args,
-    {Map<String, String>? environment, Function(String)? onStdout, Function(String)? onStderr, Function(String)? onProgress}
+    {Map<String, String>? environment, Function(String)? onStdout, Function(String)? onStderr, Function(String)? onProgress, Function(String)? onStatus}
   ) async {
     Process process;
 
@@ -924,6 +924,22 @@ class CLIService {
       if (line.contains('Progress:') || line.contains('%') || line.contains('Processing')) {
         onProgress?.call(line);
       }
+
+      // Detect HSM/YubiKey touch prompts
+      final lowerLine = line.toLowerCase();
+      if (lowerLine.contains('touch') ||
+          lowerLine.contains('press') ||
+          lowerLine.contains('yubikey') ||
+          lowerLine.contains('waiting for') ||
+          lowerLine.contains('user presence') ||
+          lowerLine.contains('confirm on device')) {
+        onStatus?.call(line);
+      }
+
+      // Pass through any status/info messages
+      if (line.contains('INFO:') || line.contains('Status:')) {
+        onStatus?.call(line);
+      }
     });
 
     // Listen to stderr stream
@@ -934,6 +950,22 @@ class CLIService {
       // Some CLI tools output progress to stderr
       if (line.contains('Progress:') || line.contains('%') || line.contains('Processing')) {
         onProgress?.call(line);
+      }
+
+      // Detect HSM/YubiKey touch prompts in stderr as well
+      final lowerLine = line.toLowerCase();
+      if (lowerLine.contains('touch') ||
+          lowerLine.contains('press') ||
+          lowerLine.contains('yubikey') ||
+          lowerLine.contains('waiting for') ||
+          lowerLine.contains('user presence') ||
+          lowerLine.contains('confirm on device')) {
+        onStatus?.call(line);
+      }
+
+      // Pass through any status/info messages
+      if (line.contains('INFO:') || line.contains('Status:')) {
+        onStatus?.call(line);
       }
     });
 
