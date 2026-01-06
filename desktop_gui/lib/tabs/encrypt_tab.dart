@@ -58,6 +58,13 @@ class _EncryptTabState extends State<EncryptTab> {
   // File-specific options
   bool _forceOverwrite = false;
 
+  // Asymmetric encryption options
+  final List<String> _recipientIdentities = [];
+  final TextEditingController _recipientIdentityController = TextEditingController();
+  final TextEditingController _identityStorePathController = TextEditingController();
+  String _signingIdentity = '';
+  bool _useKeyserver = false;
+
   @override
   void initState() {
     super.initState();
@@ -68,6 +75,8 @@ class _EncryptTabState extends State<EncryptTab> {
   void dispose() {
     _textController.dispose();
     _passwordController.dispose();
+    _recipientIdentityController.dispose();
+    _identityStorePathController.dispose();
     super.dispose();
   }
 
@@ -118,6 +127,22 @@ class _EncryptTabState extends State<EncryptTab> {
       return;
     }
 
+    // Validate asymmetric mode requirements
+    if (_encryptionMode == EncryptionMode.asymmetric) {
+      if (_signingIdentity.isEmpty) {
+        setState(() {
+          result = 'Please enter a signing identity for asymmetric encryption';
+        });
+        return;
+      }
+      if (_recipientIdentities.isEmpty) {
+        setState(() {
+          result = 'Please add at least one recipient identity for asymmetric encryption';
+        });
+        return;
+      }
+    }
+
     setState(() {
       _isLoading = true;
       result = 'Encrypting...';
@@ -128,11 +153,15 @@ class _EncryptTabState extends State<EncryptTab> {
         _textController.text,
         _passwordController.text,
         _selectedAlgorithm,
-        _buildHashConfigMap(),
-        _buildKdfConfigMap(),
+        _encryptionMode == EncryptionMode.symmetric ? _buildHashConfigMap() : null,
+        _encryptionMode == EncryptionMode.symmetric ? _buildKdfConfigMap() : null,
         hsmPlugin: _hsmType != 'none' ? _hsmType : null,
         hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
         enableIntegrity: _enableIntegrity,
+        forIdentities: _encryptionMode == EncryptionMode.asymmetric ? _recipientIdentities : null,
+        signWith: _encryptionMode == EncryptionMode.asymmetric ? _signingIdentity : null,
+        useKeyserver: _encryptionMode == EncryptionMode.asymmetric ? _useKeyserver : false,
+        identityStore: _encryptionMode == EncryptionMode.asymmetric && _identityStorePathController.text.isNotEmpty ? _identityStorePathController.text : null,
       );
 
       setState(() {
@@ -155,6 +184,22 @@ class _EncryptTabState extends State<EncryptTab> {
       return;
     }
 
+    // Validate asymmetric mode requirements
+    if (_encryptionMode == EncryptionMode.asymmetric) {
+      if (_signingIdentity.isEmpty) {
+        setState(() {
+          result = 'Please enter a signing identity for asymmetric encryption';
+        });
+        return;
+      }
+      if (_recipientIdentities.isEmpty) {
+        setState(() {
+          result = 'Please add at least one recipient identity for asymmetric encryption';
+        });
+        return;
+      }
+    }
+
     setState(() {
       _isLoading = true;
       result = 'Encrypting file...';
@@ -172,11 +217,15 @@ class _EncryptTabState extends State<EncryptTab> {
         fileContent,
         _passwordController.text,
         _selectedAlgorithm,
-        _buildHashConfigMap(),
-        _buildKdfConfigMap(),
+        _encryptionMode == EncryptionMode.symmetric ? _buildHashConfigMap() : null,
+        _encryptionMode == EncryptionMode.symmetric ? _buildKdfConfigMap() : null,
         hsmPlugin: _hsmType != 'none' ? _hsmType : null,
         hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
         enableIntegrity: _enableIntegrity,
+        forIdentities: _encryptionMode == EncryptionMode.asymmetric ? _recipientIdentities : null,
+        signWith: _encryptionMode == EncryptionMode.asymmetric ? _signingIdentity : null,
+        useKeyserver: _encryptionMode == EncryptionMode.asymmetric ? _useKeyserver : false,
+        identityStore: _encryptionMode == EncryptionMode.asymmetric && _identityStorePathController.text.isNotEmpty ? _identityStorePathController.text : null,
       );
 
       // Save encrypted file
@@ -911,6 +960,161 @@ class _EncryptTabState extends State<EncryptTab> {
     );
   }
 
+  /// Build asymmetric encryption configuration widget
+  Widget _buildAsymmetricConfig() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.people),
+                const SizedBox(width: 8),
+                const Text('Asymmetric Encryption Configuration',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Signing Identity
+            TextFormField(
+              initialValue: _signingIdentity,
+              decoration: const InputDecoration(
+                labelText: 'Signing Identity (required)',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.draw),
+                helperText: 'Your identity for signing (uses ML-DSA-65)',
+              ),
+              enabled: !_isLoading,
+              onChanged: (value) {
+                setState(() {
+                  _signingIdentity = value;
+                });
+              },
+            ),
+            const SizedBox(height: 16),
+
+            // Recipient Identities
+            const Text('Recipient Identities (Encryption)',
+                style: TextStyle(fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            if (_recipientIdentities.isNotEmpty) ...[
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _recipientIdentities.map((identity) {
+                  return Chip(
+                    label: Text(identity),
+                    deleteIcon: const Icon(Icons.close),
+                    onDeleted: _isLoading ? null : () {
+                      setState(() {
+                        _recipientIdentities.remove(identity);
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 8),
+            ],
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _recipientIdentityController,
+                    decoration: const InputDecoration(
+                      labelText: 'Add recipient identity',
+                      border: OutlineInputBorder(),
+                      hintText: 'user@example.com',
+                    ),
+                    enabled: !_isLoading,
+                    onSubmitted: (value) {
+                      if (value.isNotEmpty && !_recipientIdentities.contains(value)) {
+                        setState(() {
+                          _recipientIdentities.add(value);
+                          _recipientIdentityController.clear();
+                        });
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.add),
+                  onPressed: _isLoading ? null : () {
+                    final value = _recipientIdentityController.text.trim();
+                    if (value.isNotEmpty && !_recipientIdentities.contains(value)) {
+                      setState(() {
+                        _recipientIdentities.add(value);
+                        _recipientIdentityController.clear();
+                      });
+                    }
+                  },
+                  tooltip: 'Add recipient',
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Identity Store Path with Browse Button
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _identityStorePathController,
+                    decoration: InputDecoration(
+                      labelText: 'Identity Store Path (optional)',
+                      border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.folder),
+                      helperText: 'Custom path to identity store directory',
+                      enabled: !_useKeyserver,
+                    ),
+                    enabled: !_isLoading && !_useKeyserver,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: ElevatedButton.icon(
+                    onPressed: (_isLoading || _useKeyserver) ? null : () async {
+                      final selectedPath = await widget.fileManager.pickDirectory();
+                      if (selectedPath != null) {
+                        setState(() {
+                          _identityStorePathController.text = selectedPath;
+                        });
+                      }
+                    },
+                    icon: const Icon(Icons.folder_open),
+                    label: const Text('Browse'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Keyserver checkbox (mutually exclusive with identity store)
+            CheckboxListTile(
+              value: _useKeyserver,
+              onChanged: _isLoading ? null : (value) {
+                setState(() {
+                  _useKeyserver = value ?? false;
+                  if (_useKeyserver) {
+                    _identityStorePathController.clear(); // Clear identity store path when keyserver is enabled
+                  }
+                });
+              },
+              title: const Text('Use Keyserver'),
+              subtitle: const Text('Fetch public keys from configured keyserver (opt-in)'),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1012,9 +1216,14 @@ class _EncryptTabState extends State<EncryptTab> {
                 enabled: !_isLoading,
               ),
 
+            // Asymmetric Encryption Configuration (for asymmetric mode)
+            if (_encryptionMode == EncryptionMode.asymmetric)
+              _buildAsymmetricConfig(),
+
             const SizedBox(height: 16),
 
-            // Key Stretching Section
+            // Key Stretching Section (only for symmetric mode)
+            if (_encryptionMode == EncryptionMode.symmetric)
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(12.0),

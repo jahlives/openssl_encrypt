@@ -154,6 +154,22 @@ class FileInfo {
 }
 
 class FileManager {
+  /// Pick a directory (for identity store, etc.)
+  Future<String?> pickDirectory() async {
+    try {
+      String? selectedDirectory = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: 'Select Directory',
+      );
+      if (selectedDirectory != null) {
+        // Security: Canonicalize path to prevent symlink attacks
+        return _canonicalizePath(selectedDirectory);
+      }
+    } catch (e) {
+      CLIService.outputDebugLog('Error picking directory: $e');
+    }
+    return null;
+  }
+
   /// Pick a single file for encryption/decryption
   Future<FileInfo?> pickFile({List<String>? allowedExtensions}) async {
     try {

@@ -333,6 +333,7 @@ class CLIService {
      List<String>? forIdentities,      // Asymmetric: recipients
      String? signWith,                  // Asymmetric: signing identity
      bool useKeyserver = false,         // Asymmetric: keyserver lookup
+     String? identityStore,             // Asymmetric: identity store path
      String? cascadePreset,             // Cascade: 'standard', 'paranoia', or null for custom
      List<String>? cascadeAlgorithms,   // Cascade: custom algorithm chain
      String cascadeHash = 'sha256',     // Cascade: HKDF hash function
@@ -514,6 +515,9 @@ class CLIService {
         }
         if (signWith != null && signWith.isNotEmpty) {
           args.addAll(['--sign-with', signWith]);
+        }
+        if (identityStore != null && identityStore.isNotEmpty) {
+          args.addAll(['--identity-store', identityStore]);
         }
         if (useKeyserver) {
           args.add('--use-keyserver');
