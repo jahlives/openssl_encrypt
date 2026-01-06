@@ -465,6 +465,7 @@ flatpak-build:
     key: flatpak-${CI_COMMIT_REF_SLUG}
     paths:
       - flatpak/.flatpak-builder/
+      - flatpak/build-dir/
     policy: pull-push
   before_script:
     - dnf install -y flatpak flatpak-builder git xz unzip which

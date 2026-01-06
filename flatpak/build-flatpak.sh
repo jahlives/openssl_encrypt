@@ -147,8 +147,8 @@ else
     echo "🧹 Cleaning up repo directory (preserving build cache)..."
     rm -rf repo
     echo "🔨 Building Flatpak package with incremental build..."
-    echo "ℹ️  Using build cache from .flatpak-builder/ (if exists)"
-    flatpak-builder --disable-rofiles-fuse --force-clean --repo=repo --default-branch="$FLATPAK_BRANCH" build-dir com.opensslencrypt.OpenSSLEncrypt.json
+    echo "ℹ️  Using build cache from .flatpak-builder/ and build-dir/ (if exists)"
+    flatpak-builder --disable-rofiles-fuse --repo=repo --default-branch="$FLATPAK_BRANCH" build-dir com.opensslencrypt.OpenSSLEncrypt.json
 fi
 
 # Update the repository summary (required for remote access)
