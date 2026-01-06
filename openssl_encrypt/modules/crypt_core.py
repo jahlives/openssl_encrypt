@@ -4540,8 +4540,6 @@ def encrypt_file(
                 ciphertext_with_tag = encrypted_pepper_data[12:]
 
                 # Derive decryption key from password using SHA-256
-                import hashlib
-
                 pepper_key = hashlib.sha256(password).digest()
 
                 try:
@@ -4563,8 +4561,6 @@ def encrypt_file(
                 remote_pepper = secrets.token_bytes(32)
 
                 # Derive encryption key from password using SHA-256
-                import hashlib
-
                 pepper_key = hashlib.sha256(password).digest()
 
                 # Encrypt pepper with AES-GCM
@@ -6116,6 +6112,10 @@ def decrypt_file(
         hsm_plugin_name = None
         hsm_config = {}
 
+        # Pepper plugin not supported in older format versions
+        pepper_plugin_name = None
+        pepper_name = None
+
         # AEAD binding not supported in older format versions
         aead_binding = False
 
@@ -6416,9 +6416,6 @@ def decrypt_file(
             ciphertext_with_tag = encrypted_pepper_data[12:]
 
             # Derive decryption key from password
-            import hashlib
-            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
             pepper_key = hashlib.sha256(password).digest()
 
             try:
