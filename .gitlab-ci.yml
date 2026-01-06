@@ -16,9 +16,7 @@ stages:
   - security
   - test
   - build
-  - flatpak-build
   - publish
-  - flatpak-publish
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
@@ -457,7 +455,7 @@ mirror-github:
 # ==================== Flatpak Build Jobs ====================
 
 flatpak-build:
-  stage: flatpak-build
+  stage: build
   image: fedora:latest
   tags:
     - flatpak-builder
@@ -511,7 +509,7 @@ flatpak-build:clean:
 # ==================== Flatpak Publish Jobs ====================
 
 flatpak-publish:
-  stage: flatpak-publish
+  stage: publish
   image: fedora:latest
   tags:
     - flatpak-builder
