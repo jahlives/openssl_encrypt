@@ -5183,7 +5183,7 @@ def encrypt_file(
                 else:
                     with IntegrityPlugin(config) as plugin:
                         from pathlib import Path as PathLib
-                        file_id = IntegrityPlugin.compute_file_id(PathLib(output_file))
+                        file_id = IntegrityPlugin.compute_file_id(PathLib(input_file))
                         metadata_hash = IntegrityPlugin.compute_metadata_hash(metadata_json)
                         # Get algorithm name for description
                         algo_name = algorithm.value if hasattr(algorithm, 'value') else str(algorithm)
@@ -5380,7 +5380,7 @@ def encrypt_file(
                 else:
                     with IntegrityPlugin(config) as plugin:
                         from pathlib import Path as PathLib
-                        file_id = IntegrityPlugin.compute_file_id(PathLib(output_file))
+                        file_id = IntegrityPlugin.compute_file_id(PathLib(input_file))
                         metadata_hash = IntegrityPlugin.compute_metadata_hash(metadata_json)
                         # Get algorithm name for description
                         algo_name = algorithm.value if hasattr(algorithm, 'value') else str(algorithm)
