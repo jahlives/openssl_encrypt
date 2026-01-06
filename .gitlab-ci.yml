@@ -527,7 +527,7 @@ flatpak-publish:
     - cd flatpak
     - FLATPAK_BRANCH="${CI_COMMIT_TAG:-${CI_COMMIT_BRANCH##*/}}"
     - 'echo "Building for branch: $FLATPAK_BRANCH"'
-    - flatpak-builder --repo="$LOCAL_REPO" --gpg-sign="$FLATPAK_GPG_KEY_ID" --default-branch="$FLATPAK_BRANCH" --force-clean build-dir com.opensslencrypt.OpenSSLEncrypt.json
+    - flatpak-builder --disable-rofiles-fuse --repo="$LOCAL_REPO" --gpg-sign="$FLATPAK_GPG_KEY_ID" --default-branch="$FLATPAK_BRANCH" --force-clean build-dir com.opensslencrypt.OpenSSLEncrypt.json
     - ostree summary -u --repo="$LOCAL_REPO" --gpg-sign="$FLATPAK_GPG_KEY_ID"
     - flatpak build-update-repo --gpg-sign="$FLATPAK_GPG_KEY_ID" "$LOCAL_REPO"
     - echo "Syncing to server repository..."
@@ -571,7 +571,7 @@ flatpak-publish:clean:
     - rm -rf build-dir .flatpak-builder
     - FLATPAK_BRANCH="${CI_COMMIT_TAG:-${CI_COMMIT_BRANCH##*/}}"
     - 'echo "Building for branch: $FLATPAK_BRANCH"'
-    - flatpak-builder --repo="$LOCAL_REPO" --gpg-sign="$FLATPAK_GPG_KEY_ID" --default-branch="$FLATPAK_BRANCH" --force-clean build-dir com.opensslencrypt.OpenSSLEncrypt.json
+    - flatpak-builder --disable-rofiles-fuse --repo="$LOCAL_REPO" --gpg-sign="$FLATPAK_GPG_KEY_ID" --default-branch="$FLATPAK_BRANCH" --force-clean build-dir com.opensslencrypt.OpenSSLEncrypt.json
     - ostree summary -u --repo="$LOCAL_REPO" --gpg-sign="$FLATPAK_GPG_KEY_ID"
     - flatpak build-update-repo --gpg-sign="$FLATPAK_GPG_KEY_ID" "$LOCAL_REPO"
     - echo "Syncing to server repository..."
