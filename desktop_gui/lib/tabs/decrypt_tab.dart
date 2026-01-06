@@ -110,6 +110,7 @@ class _DecryptTabState extends State<DecryptTab> {
             }
           });
         },
+        onIntegrityPrompt: _verifyIntegrity ? _showIntegrityWarningDialog : null,
       );
 
       setState(() {
@@ -176,6 +177,7 @@ class _DecryptTabState extends State<DecryptTab> {
             }
           });
         },
+        onIntegrityPrompt: _verifyIntegrity ? _showIntegrityWarningDialog : null,
       );
 
       // Store decrypted content
@@ -217,6 +219,77 @@ class _DecryptTabState extends State<DecryptTab> {
         ),
       );
     }
+  }
+
+  /// Show warning dialog when integrity verification fails
+  Future<bool> _showIntegrityWarningDialog(String message) async {
+    if (!mounted) return false;
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,  // Force user to make a choice
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber, color: Colors.orange.shade700, size: 28),
+            const SizedBox(width: 8),
+            const Text('Integrity Verification Failed'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'The file metadata may have been tampered with.',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Proceeding could expose you to a denial-of-service attack '
+              'via malicious hash/KDF parameters that consume excessive '
+              'CPU or memory.',
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                border: Border.all(color: Colors.red.shade200),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.red),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Only proceed if you trust the source of this file.',
+                      style: TextStyle(color: Colors.red, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Abort'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+            ),
+            child: const Text('Proceed Anyway', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    return result ?? false;  // Default to false (abort) if dialog dismissed
   }
 
   @override

@@ -669,7 +669,8 @@ class CLIService {
      bool forcePassword = false,     // Force acceptance of weak passwords
      bool showProgress = false,      // CLI --progress flag
      Function(String)? onProgress,
-     Function(String)? onStatus}
+     Function(String)? onStatus,
+     Future<bool> Function(String)? onIntegrityPrompt}
   ) async {
     Directory? tempDir;
     try {
@@ -710,6 +711,10 @@ class CLIService {
 
       // Write data to the already-protected input file
       await inputFile.writeAsString(encryptedData);
+
+      // Check if file requires HSM for decryption
+      final hsmRequired = requiresHsm(encryptedData);
+      _outputDebugLog('Decrypt: HSM required = $hsmRequired');
 
       // Build CLI command - password passed via environment variable for security
       final args = [
@@ -761,23 +766,49 @@ class CLIService {
       _outputDebugLog('Full command: $maskedCommand');
       _outputDebugLog('Raw args: ${args.join(' ')}');
 
-      final result = await _runCLICommandWithProgress(
-        args,
-        environment: {'CRYPT_PASSWORD': password},
-        commandForStatus: maskedCommand,
-        onStdout: (line) {
-          if (debugEnabled) _outputDebugLog('CLI stdout: $line');
-        },
-        onStderr: (line) {
-          if (debugEnabled) _outputDebugLog('CLI stderr: $line');
-        },
-        onProgress: (line) {
-          onProgress?.call(line);
-        },
-        onStatus: (line) {
-          onStatus?.call(line);
-        },
-      );
+      // Use interactive method if integrity verification with callback is enabled
+      final ProcessResult result;
+      if (verifyIntegrity && onIntegrityPrompt != null) {
+        _outputDebugLog('Using interactive CLI for integrity verification');
+        result = await _runCLICommandWithInteraction(
+          args,
+          environment: {'CRYPT_PASSWORD': password},
+          commandForStatus: maskedCommand,
+          hsmDetectionEnabled: hsmRequired,
+          onIntegrityPrompt: onIntegrityPrompt,
+          onStdout: (line) {
+            if (debugEnabled) _outputDebugLog('CLI stdout: $line');
+          },
+          onStderr: (line) {
+            if (debugEnabled) _outputDebugLog('CLI stderr: $line');
+          },
+          onProgress: (line) {
+            onProgress?.call(line);
+          },
+          onStatus: (line) {
+            onStatus?.call(line);
+          },
+        );
+      } else {
+        result = await _runCLICommandWithProgress(
+          args,
+          environment: {'CRYPT_PASSWORD': password},
+          commandForStatus: maskedCommand,
+          hsmDetectionEnabled: hsmRequired,
+          onStdout: (line) {
+            if (debugEnabled) _outputDebugLog('CLI stdout: $line');
+          },
+          onStderr: (line) {
+            if (debugEnabled) _outputDebugLog('CLI stderr: $line');
+          },
+          onProgress: (line) {
+            onProgress?.call(line);
+          },
+          onStatus: (line) {
+            onStatus?.call(line);
+          },
+        );
+      }
 
       if (result.exitCode != 0) {
         final errorMsg = result.stderr.toString().trim();
@@ -819,6 +850,34 @@ class CLIService {
   /// Legacy decrypt method for backward compatibility
   static Future<String> decryptText(String encryptedData, String password) async {
     return decryptTextWithProgress(encryptedData, password);
+  }
+
+  /// Parse encrypted file metadata to check for HSM configuration
+  /// Returns true if the encrypted file requires HSM/YubiKey for decryption
+  static bool requiresHsm(String encryptedData) {
+    try {
+      // Format: base64(metadata):base64(encrypted_data)
+      final colonIndex = encryptedData.indexOf(':');
+      if (colonIndex == -1) {
+        _outputDebugLog('requiresHsm: No colon found in encrypted data');
+        return false;
+      }
+
+      final metadataB64 = encryptedData.substring(0, colonIndex);
+      final metadataBytes = base64Decode(metadataB64);
+      final metadataJson = utf8.decode(metadataBytes);
+      final metadata = jsonDecode(metadataJson) as Map<String, dynamic>;
+
+      // Check for hsm_plugin in encryption config
+      final encryption = metadata['encryption'] as Map<String, dynamic>?;
+      final hasHsm = encryption?.containsKey('hsm_plugin') ?? false;
+
+      _outputDebugLog('requiresHsm: HSM plugin present = $hasHsm');
+      return hasHsm;
+    } catch (e) {
+      _outputDebugLog('requiresHsm: Parse error - $e');
+      return false; // Assume no HSM on parse failure
+    }
   }
 
 
@@ -911,7 +970,7 @@ class CLIService {
   /// Run CLI command with real-time progress streaming
   static Future<ProcessResult> _runCLICommandWithProgress(
     List<String> args,
-    {Map<String, String>? environment, Function(String)? onStdout, Function(String)? onStderr, Function(String)? onProgress, Function(String)? onStatus, String? commandForStatus}
+    {Map<String, String>? environment, Function(String)? onStdout, Function(String)? onStderr, Function(String)? onProgress, Function(String)? onStatus, String? commandForStatus, bool hsmDetectionEnabled = false}
   ) async {
     Process process;
 
@@ -956,24 +1015,27 @@ class CLIService {
 
       final lowerLine = line.toLowerCase();
 
-      // Detect HSM/YubiKey touch completion (pepper derived = touch was successful)
-      if (lowerLine.contains('hardware pepper derived') ||
-          lowerLine.contains('pepper derived')) {
-        // Show executed command immediately after touch is detected
-        if (commandForStatus != null) {
-          onStatus?.call('Executed: $commandForStatus');
-        } else {
-          onStatus?.call('YubiKey touch registered, processing...');
+      // Only detect HSM/YubiKey prompts if HSM was actually used during encryption
+      if (hsmDetectionEnabled) {
+        // Detect HSM/YubiKey touch completion (pepper derived = touch was successful)
+        if (lowerLine.contains('hardware pepper derived') ||
+            lowerLine.contains('pepper derived')) {
+          // Show executed command immediately after touch is detected
+          if (commandForStatus != null) {
+            onStatus?.call('Executed: $commandForStatus');
+          } else {
+            onStatus?.call('YubiKey touch registered, processing...');
+          }
         }
-      }
-      // Detect HSM/YubiKey touch prompts (waiting for touch)
-      else if (lowerLine.contains('touch') ||
-          lowerLine.contains('press') ||
-          lowerLine.contains('yubikey') ||
-          lowerLine.contains('waiting for') ||
-          lowerLine.contains('user presence') ||
-          lowerLine.contains('confirm on device')) {
-        onStatus?.call(line);
+        // Detect HSM/YubiKey touch prompts (waiting for touch)
+        else if (lowerLine.contains('touch') ||
+            lowerLine.contains('press') ||
+            lowerLine.contains('yubikey') ||
+            lowerLine.contains('waiting for') ||
+            lowerLine.contains('user presence') ||
+            lowerLine.contains('confirm on device')) {
+          onStatus?.call(line);
+        }
       }
 
       // Pass through any status/info messages
@@ -994,24 +1056,199 @@ class CLIService {
 
       final lowerLine = line.toLowerCase();
 
-      // Detect HSM/YubiKey touch completion (pepper derived = touch was successful)
-      if (lowerLine.contains('hardware pepper derived') ||
-          lowerLine.contains('pepper derived')) {
-        // Show executed command immediately after touch is detected
-        if (commandForStatus != null) {
-          onStatus?.call('Executed: $commandForStatus');
-        } else {
-          onStatus?.call('YubiKey touch registered, processing...');
+      // Only detect HSM/YubiKey prompts if HSM was actually used during encryption
+      if (hsmDetectionEnabled) {
+        // Detect HSM/YubiKey touch completion (pepper derived = touch was successful)
+        if (lowerLine.contains('hardware pepper derived') ||
+            lowerLine.contains('pepper derived')) {
+          // Show executed command immediately after touch is detected
+          if (commandForStatus != null) {
+            onStatus?.call('Executed: $commandForStatus');
+          } else {
+            onStatus?.call('YubiKey touch registered, processing...');
+          }
+        }
+        // Detect HSM/YubiKey touch prompts in stderr as well (waiting for touch)
+        else if (lowerLine.contains('touch') ||
+            lowerLine.contains('press') ||
+            lowerLine.contains('yubikey') ||
+            lowerLine.contains('waiting for') ||
+            lowerLine.contains('user presence') ||
+            lowerLine.contains('confirm on device')) {
+          onStatus?.call(line);
         }
       }
-      // Detect HSM/YubiKey touch prompts in stderr as well (waiting for touch)
-      else if (lowerLine.contains('touch') ||
-          lowerLine.contains('press') ||
-          lowerLine.contains('yubikey') ||
-          lowerLine.contains('waiting for') ||
-          lowerLine.contains('user presence') ||
-          lowerLine.contains('confirm on device')) {
+
+      // Pass through any status/info messages
+      if (line.contains('INFO:') || line.contains('Status:')) {
         onStatus?.call(line);
+      }
+    });
+
+    // Wait for process completion
+    final exitCode = await process.exitCode;
+
+    // Return a ProcessResult-compatible object
+    return ProcessResult(
+      process.pid,
+      exitCode,
+      stdoutBuffer.toString(),
+      stderrBuffer.toString(),
+    );
+  }
+
+  /// Run CLI command with real-time progress streaming and interactive stdin support
+  /// Used for commands that may require user confirmation (e.g., integrity verification)
+  static Future<ProcessResult> _runCLICommandWithInteraction(
+    List<String> args,
+    {Map<String, String>? environment,
+     Function(String)? onStdout,
+     Function(String)? onStderr,
+     Function(String)? onProgress,
+     Function(String)? onStatus,
+     String? commandForStatus,
+     bool hsmDetectionEnabled = false,
+     Future<bool> Function(String)? onIntegrityPrompt}
+  ) async {
+    Process process;
+
+    // Merge environment variables for secure password passing
+    final processEnv = Map<String, String>.from(Platform.environment);
+    processEnv['PYTHONUNBUFFERED'] = '1';  // Force unbuffered Python output
+    if (environment != null) {
+      processEnv.addAll(environment);
+    }
+
+    // Prefer development CLI when available
+    try {
+      final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
+      process = await Process.start('python', pythonArgs,
+        workingDirectory: '/home/work/private/git/openssl_encrypt',
+        environment: processEnv);
+      _outputDebugLog('Using development CLI with interaction (python module)');
+    } catch (e) {
+      _outputDebugLog('Development CLI unavailable: $e, trying Flatpak CLI with interaction');
+      // Fallback to Flatpak CLI
+      if (await File(_cliPath).exists()) {
+        process = await Process.start(_cliPath, args, environment: processEnv);
+        _outputDebugLog('Using Flatpak CLI with interaction');
+      } else {
+        throw Exception('No CLI available');
+      }
+    }
+
+    // Capture stdout and stderr streams
+    final stdoutBuffer = StringBuffer();
+    final stderrBuffer = StringBuffer();
+    bool integrityPromptDetected = false;
+
+    // Listen to stdout stream with integrity prompt detection
+    process.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen((line) async {
+      stdoutBuffer.writeln(line);
+      onStdout?.call(line);
+
+      // Parse progress information from CLI output
+      if (line.contains('Progress:') || line.contains('%') || line.contains('Processing')) {
+        onProgress?.call(line);
+      }
+
+      final lowerLine = line.toLowerCase();
+
+      // Detect integrity verification failure prompt
+      if (!integrityPromptDetected &&
+          (line.contains('INTEGRITY VERIFICATION FAILED') ||
+           line.contains('Do you want to proceed anyway?'))) {
+        integrityPromptDetected = true;
+        _outputDebugLog('Integrity prompt detected, showing dialog');
+
+        if (onIntegrityPrompt != null) {
+          try {
+            final shouldProceed = await onIntegrityPrompt(line);
+            _outputDebugLog('User response to integrity prompt: $shouldProceed');
+
+            if (shouldProceed) {
+              // Write 'y' to stdin to continue
+              process.stdin.writeln('y');
+              await process.stdin.flush();
+              _outputDebugLog('Sent "y" to CLI stdin');
+            } else {
+              // User chose to abort, kill the process
+              _outputDebugLog('User aborted, killing process');
+              process.kill();
+            }
+          } catch (e) {
+            _outputDebugLog('Error handling integrity prompt: $e');
+            process.kill();
+          }
+        } else {
+          // No callback provided, kill process (fail-safe)
+          _outputDebugLog('No integrity callback, killing process');
+          process.kill();
+        }
+      }
+
+      // Only detect HSM/YubiKey prompts if HSM was actually used during encryption
+      if (hsmDetectionEnabled) {
+        // Detect HSM/YubiKey touch completion (pepper derived = touch was successful)
+        if (lowerLine.contains('hardware pepper derived') ||
+            lowerLine.contains('pepper derived')) {
+          // Show executed command immediately after touch is detected
+          if (commandForStatus != null) {
+            onStatus?.call('Executed: $commandForStatus');
+          } else {
+            onStatus?.call('YubiKey touch registered, processing...');
+          }
+        }
+        // Detect HSM/YubiKey touch prompts (waiting for touch)
+        else if (lowerLine.contains('touch') ||
+            lowerLine.contains('press') ||
+            lowerLine.contains('yubikey') ||
+            lowerLine.contains('waiting for') ||
+            lowerLine.contains('user presence') ||
+            lowerLine.contains('confirm on device')) {
+          onStatus?.call(line);
+        }
+      }
+
+      // Pass through any status/info messages
+      if (line.contains('INFO:') || line.contains('Status:')) {
+        onStatus?.call(line);
+      }
+    });
+
+    // Listen to stderr stream
+    process.stderr.transform(utf8.decoder).transform(const LineSplitter()).listen((line) {
+      stderrBuffer.writeln(line);
+      onStderr?.call(line);
+
+      // Some CLI tools output progress to stderr
+      if (line.contains('Progress:') || line.contains('%') || line.contains('Processing')) {
+        onProgress?.call(line);
+      }
+
+      final lowerLine = line.toLowerCase();
+
+      // Only detect HSM/YubiKey prompts if HSM was actually used during encryption
+      if (hsmDetectionEnabled) {
+        // Detect HSM/YubiKey touch completion (pepper derived = touch was successful)
+        if (lowerLine.contains('hardware pepper derived') ||
+            lowerLine.contains('pepper derived')) {
+          // Show executed command immediately after touch is detected
+          if (commandForStatus != null) {
+            onStatus?.call('Executed: $commandForStatus');
+          } else {
+            onStatus?.call('YubiKey touch registered, processing...');
+          }
+        }
+        // Detect HSM/YubiKey touch prompts in stderr as well (waiting for touch)
+        else if (lowerLine.contains('touch') ||
+            lowerLine.contains('press') ||
+            lowerLine.contains('yubikey') ||
+            lowerLine.contains('waiting for') ||
+            lowerLine.contains('user presence') ||
+            lowerLine.contains('confirm on device')) {
+          onStatus?.call(line);
+        }
       }
 
       // Pass through any status/info messages
