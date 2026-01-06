@@ -879,6 +879,7 @@ class CLIService {
 
     // Merge environment variables for secure password passing
     final processEnv = Map<String, String>.from(Platform.environment);
+    processEnv['PYTHONUNBUFFERED'] = '1';  // Force unbuffered Python output for real-time YubiKey prompts
     if (environment != null) {
       processEnv.addAll(environment);
     }
