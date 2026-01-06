@@ -1496,9 +1496,18 @@ class CLIService {
     required String password,
     String? stegoPassword,
     String algorithm = 'aes-gcm',
+    String stegoMethod = 'lsb',              // Steganography method
     int bitsPerChannel = 1,
     bool randomizePixels = false,
     bool addDecoyData = false,
+    int? jpegQuality,                        // JPEG quality (70-100)
+    // Video steganography options
+    double? videoQuantizationStep,           // default 8.0
+    double? videoAdaptationFactor,           // default 1.2
+    double? videoCompensationFactor,         // default 0.5
+    int? videoBitsPerCoefficient,            // 1-4, default 2
+    bool videoTemporalSpread = true,         // default enabled
+    int? videoQualityPreservation,           // 1-10, default 8
     Map<String, Map<String, dynamic>>? hashConfig,
     Map<String, Map<String, dynamic>>? kdfConfig,
     String? hsmPlugin,
@@ -1507,9 +1516,12 @@ class CLIService {
     List<String>? forIdentities,      // Asymmetric: recipients
     String? signWith,                  // Asymmetric: signing identity
     bool useKeyserver = false,         // Asymmetric: keyserver lookup
+    String? identityStore,             // Asymmetric: identity store path
     String? cascadePreset,             // Cascade: 'standard', 'paranoia', or null
     List<String>? cascadeAlgorithms,   // Cascade: custom algorithm chain
     String cascadeHash = 'sha256',     // Cascade: HKDF hash function
+    bool noDiversityCheck = false,     // Cascade: --no-diversity-check
+    bool strictDiversity = false,      // Cascade: --strict-diversity
   }) async {
     final args = [
       'encrypt',
@@ -1517,7 +1529,7 @@ class CLIService {
       '--stego-hide', coverImagePath,
       '-o', outputPath,
       '-a', algorithm,
-      '--stego-method', 'lsb',
+      '--stego-method', stegoMethod,
       '--stego-bits-per-channel', bitsPerChannel.toString(),
     ];
 
@@ -1534,6 +1546,32 @@ class CLIService {
     // Add decoy data if enabled
     if (addDecoyData) {
       args.add('--stego-decoy-data');
+    }
+
+    // Add JPEG quality if provided
+    if (jpegQuality != null) {
+      args.addAll(['--jpeg-quality', jpegQuality.toString()]);
+    }
+
+    // Add video steganography options if provided
+    if (videoQuantizationStep != null) {
+      args.addAll(['--video-quantization-step', videoQuantizationStep.toString()]);
+    }
+    if (videoAdaptationFactor != null) {
+      args.addAll(['--video-adaptation-factor', videoAdaptationFactor.toString()]);
+    }
+    if (videoCompensationFactor != null) {
+      args.addAll(['--video-compensation-factor', videoCompensationFactor.toString()]);
+    }
+    if (videoBitsPerCoefficient != null) {
+      args.addAll(['--video-bits-per-coefficient', videoBitsPerCoefficient.toString()]);
+    }
+    if (!videoTemporalSpread) {
+      // Only add flag if disabled (default is enabled)
+      args.add('--no-video-temporal-spread');
+    }
+    if (videoQualityPreservation != null) {
+      args.addAll(['--video-quality-preservation', videoQualityPreservation.toString()]);
     }
 
     // Add hash configuration if provided
@@ -1628,6 +1666,9 @@ class CLIService {
       if (useKeyserver) {
         args.add('--use-keyserver');
       }
+      if (identityStore != null && identityStore.isNotEmpty) {
+        args.addAll(['--identity-store', identityStore]);
+      }
     }
 
     // Add cascade encryption parameters if provided
@@ -1639,12 +1680,110 @@ class CLIService {
         args.addAll(['--algorithm', cascadeAlgorithms.join(',')]);
       }
       args.addAll(['--cascade-hash', cascadeHash]);
+      if (noDiversityCheck) {
+        args.add('--no-diversity-check');
+      }
+      if (strictDiversity) {
+        args.add('--strict-diversity');
+      }
     }
 
     return await _runCLICommandWithProgress(
       args,
       environment: {'CRYPT_PASSWORD': password},
     );
+  }
+
+  /// Encrypt text and hide in steganographic cover media
+  static Future<String> encryptTextWithSteganography({
+    required String text,
+    required String coverMediaPath,
+    required String outputPath,
+    required String password,
+    String? stegoPassword,
+    String algorithm = 'aes-gcm',
+    String stegoMethod = 'lsb',
+    int bitsPerChannel = 1,
+    bool randomizePixels = false,
+    bool addDecoyData = false,
+    int? jpegQuality,
+    // Video steganography options
+    double? videoQuantizationStep,
+    double? videoAdaptationFactor,
+    double? videoCompensationFactor,
+    int? videoBitsPerCoefficient,
+    bool videoTemporalSpread = true,
+    int? videoQualityPreservation,
+    Map<String, Map<String, dynamic>>? hashConfig,
+    Map<String, Map<String, dynamic>>? kdfConfig,
+    String? hsmPlugin,
+    int? hsmSlot,
+    bool enableIntegrity = false,
+    List<String>? forIdentities,
+    String? signWith,
+    bool useKeyserver = false,
+    String? identityStore,
+    String? cascadePreset,
+    List<String>? cascadeAlgorithms,
+    String cascadeHash = 'sha256',
+    bool noDiversityCheck = false,
+    bool strictDiversity = false,
+  }) async {
+    // Create temporary file for text
+    final tempDir = await Directory.systemTemp.createTemp('stego_text_');
+    final tempFile = File('${tempDir.path}/input.txt');
+    await tempFile.writeAsString(text);
+
+    try {
+      // Encrypt temp file with steganography
+      final result = await encryptWithSteganography(
+        inputPath: tempFile.path,
+        coverImagePath: coverMediaPath,
+        outputPath: outputPath,
+        password: password,
+        stegoPassword: stegoPassword,
+        algorithm: algorithm,
+        stegoMethod: stegoMethod,
+        bitsPerChannel: bitsPerChannel,
+        randomizePixels: randomizePixels,
+        addDecoyData: addDecoyData,
+        jpegQuality: jpegQuality,
+        videoQuantizationStep: videoQuantizationStep,
+        videoAdaptationFactor: videoAdaptationFactor,
+        videoCompensationFactor: videoCompensationFactor,
+        videoBitsPerCoefficient: videoBitsPerCoefficient,
+        videoTemporalSpread: videoTemporalSpread,
+        videoQualityPreservation: videoQualityPreservation,
+        hashConfig: hashConfig,
+        kdfConfig: kdfConfig,
+        hsmPlugin: hsmPlugin,
+        hsmSlot: hsmSlot,
+        enableIntegrity: enableIntegrity,
+        forIdentities: forIdentities,
+        signWith: signWith,
+        useKeyserver: useKeyserver,
+        identityStore: identityStore,
+        cascadePreset: cascadePreset,
+        cascadeAlgorithms: cascadeAlgorithms,
+        cascadeHash: cascadeHash,
+        noDiversityCheck: noDiversityCheck,
+        strictDiversity: strictDiversity,
+      );
+
+      if (result.exitCode != 0) {
+        throw Exception('Steganography encryption failed: ${result.stderr}');
+      }
+
+      return outputPath;
+    } finally {
+      // Clean up temp file and directory
+      try {
+        if (await tempFile.exists()) await tempFile.delete();
+        if (await tempDir.exists()) await tempDir.delete();
+      } catch (e) {
+        outputDebugLog('Failed to clean up temp file: $e');
+      }
+    }
   }
 
   /// Decrypt file from steganographic image
