@@ -345,8 +345,6 @@ class CLIService {
   ) async {
     Directory? tempDir;
     try {
-      onStatus?.call('Initializing encryption...');
-
       // Create temporary directory with restrictive permissions
       tempDir = await Directory.systemTemp.createTemp('openssl_encrypt_');
 
@@ -384,8 +382,6 @@ class CLIService {
 
       // Write data to the already-protected input file
       await inputFile.writeAsString(text);
-
-      onStatus?.call('Prepared temporary files');
 
       // Build CLI command - password passed via environment variable for security
       final args = [
@@ -561,7 +557,6 @@ class CLIService {
       _outputDebugLog('=== CLI ENCRYPT COMMAND ===');
       _outputDebugLog('Full command: $maskedCommand');
       _outputDebugLog('Raw args: ${args.join(' ')}');
-      onStatus?.call('Executing: $maskedCommand');
 
       final result = await _runCLICommandWithProgress(
         args,
@@ -589,8 +584,6 @@ class CLIService {
         throw Exception('Encryption failed: ${errorMsg.isNotEmpty ? errorMsg : stdoutMsg}\n\nCommand executed: $maskedCommand');
       }
 
-      onStatus?.call('Reading encrypted output...');
-
       // Read encrypted output
       if (!await outputFile.exists()) {
         throw Exception('CLI did not create output file');
@@ -600,7 +593,6 @@ class CLIService {
 
       // Cleanup temporary files
       await tempDir.delete(recursive: true);
-      onStatus?.call('Encryption completed successfully');
 
       return encryptedContent.trim();
     } catch (e) {
@@ -649,8 +641,6 @@ class CLIService {
   ) async {
     Directory? tempDir;
     try {
-      onStatus?.call('Initializing decryption...');
-
       // Create temporary directory with restrictive permissions
       tempDir = await Directory.systemTemp.createTemp('openssl_encrypt_');
 
@@ -688,8 +678,6 @@ class CLIService {
 
       // Write data to the already-protected input file
       await inputFile.writeAsString(encryptedData);
-
-      onStatus?.call('Prepared temporary files');
 
       // Build CLI command - password passed via environment variable for security
       final args = [
@@ -735,7 +723,6 @@ class CLIService {
       _outputDebugLog('=== CLI DECRYPT COMMAND ===');
       _outputDebugLog('Full command: $maskedCommand');
       _outputDebugLog('Raw args: ${args.join(' ')}');
-      onStatus?.call('Executing: $maskedCommand');
 
       final result = await _runCLICommandWithProgress(
         args,
@@ -763,8 +750,6 @@ class CLIService {
         throw Exception('Decryption failed: ${errorMsg.isNotEmpty ? errorMsg : stdoutMsg}\n\nCommand executed: $maskedCommand');
       }
 
-      onStatus?.call('Reading decrypted output...');
-
       // Read decrypted output
       if (!await outputFile.exists()) {
         throw Exception('CLI did not create output file');
@@ -774,7 +759,6 @@ class CLIService {
 
       // Cleanup temporary files
       await tempDir.delete(recursive: true);
-      onStatus?.call('Decryption completed successfully');
 
       return decryptedContent.trim();
     } catch (e) {
