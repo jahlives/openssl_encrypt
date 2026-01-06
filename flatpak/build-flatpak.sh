@@ -144,10 +144,10 @@ if [[ "$FORCE_CLEAN" == "true" ]]; then
     echo "🔨 Building Flatpak package (clean build)..."
     flatpak-builder --disable-rofiles-fuse --repo=repo --default-branch="$FLATPAK_BRANCH" build-dir com.opensslencrypt.OpenSSLEncrypt.json
 else
-    echo "🧹 Cleaning up repo directory (preserving build cache)..."
-    rm -rf repo
+    echo "🧹 Cleaning up build directories (preserving download cache)..."
+    rm -rf build-dir repo
     echo "🔨 Building Flatpak package with incremental build..."
-    echo "ℹ️  Using build cache from .flatpak-builder/ and build-dir/ (if exists)"
+    echo "ℹ️  Using download cache from .flatpak-builder/ (liboqs, cmake, rust, etc.)"
     flatpak-builder --disable-rofiles-fuse --repo=repo --default-branch="$FLATPAK_BRANCH" build-dir com.opensslencrypt.OpenSSLEncrypt.json
 fi
 
