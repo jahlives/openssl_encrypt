@@ -481,7 +481,7 @@ flatpak-build:
     - flatpak install -y flathub org.freedesktop.Sdk.Extension.rust-stable//24.08
   script:
     # Extract version from setup.py to use as flatpak branch
-    - export FLATPAK_BRANCH=$(python3 -c "exec(open('setup.py').read()); print(VERSION)")
+    - export FLATPAK_BRANCH=$(grep '^VERSION = ' setup.py | cut -d '"' -f 2)
     - echo "Using version from setup.py as flatpak branch - $FLATPAK_BRANCH"
     - cd desktop_gui
     - flutter pub get
@@ -498,7 +498,7 @@ flatpak-build:clean:
   cache: {}  # Disable cache
   script:
     # Extract version from setup.py to use as flatpak branch
-    - export FLATPAK_BRANCH=$(python3 -c "exec(open('setup.py').read()); print(VERSION)")
+    - export FLATPAK_BRANCH=$(grep '^VERSION = ' setup.py | cut -d '"' -f 2)
     - echo "Using version from setup.py as flatpak branch - $FLATPAK_BRANCH"
     - cd desktop_gui
     - flutter clean
@@ -539,7 +539,7 @@ flatpak-publish:
     - gpg --list-secret-keys
   script:
     # Extract version from setup.py to use as flatpak branch
-    - FLATPAK_BRANCH=$(python3 -c "exec(open('setup.py').read()); print(VERSION)")
+    - FLATPAK_BRANCH=$(grep '^VERSION = ' setup.py | cut -d '"' -f 2)
     - 'echo "Using version from setup.py as flatpak branch: $FLATPAK_BRANCH"'
     - cd flatpak
     # Use the cached repo from flatpak-build instead of rebuilding
@@ -588,7 +588,7 @@ flatpak-publish:clean:
     - echo "$FLATPAK_GPG_PRIVATE_KEY" | base64 -d | gpg --batch --import
   script:
     # Extract version from setup.py to use as flatpak branch
-    - FLATPAK_BRANCH=$(python3 -c "exec(open('setup.py').read()); print(VERSION)")
+    - FLATPAK_BRANCH=$(grep '^VERSION = ' setup.py | cut -d '"' -f 2)
     - 'echo "Using version from setup.py as flatpak branch: $FLATPAK_BRANCH"'
     - cd desktop_gui
     - flutter clean
