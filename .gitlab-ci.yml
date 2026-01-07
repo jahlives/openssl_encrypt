@@ -508,7 +508,11 @@ flatpak-build:clean:
     - cd flatpak
     - ./build-flatpak.sh --build-flutter --force
   rules:
-    - when: manual
+    - if: $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+/
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_BRANCH =~ /^releases\//
+      when: manual
       allow_failure: true
 
 # ==================== Flatpak Publish Jobs ====================
@@ -566,7 +570,8 @@ flatpak-publish:
   rules:
     - if: $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+/
       when: manual
-    - when: manual
+    - if: $CI_COMMIT_BRANCH =~ /^releases\//
+      when: manual
       allow_failure: true
 
 flatpak-publish:clean:
@@ -606,5 +611,9 @@ flatpak-publish:clean:
     - echo "Flatpak published successfully to $FLATPAK_REPO_PATH"
     - 'echo "Branch: $FLATPAK_BRANCH"'
   rules:
-    - when: manual
+    - if: $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+/
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_BRANCH =~ /^releases\//
+      when: manual
       allow_failure: true
