@@ -8,7 +8,9 @@ BUILD_FLUTTER=false
 FORCE_CLEAN=false
 LOCAL_INSTALL=false
 DEV_INSTALL=false
-FLATPAK_BRANCH="stable"
+# Use environment variable if set, otherwise default to "stable"
+FLATPAK_BRANCH="${FLATPAK_BRANCH:-stable}"
+echo "📦 Using flatpak branch: $FLATPAK_BRANCH"
 
 for arg in "$@"; do
     case $arg in
