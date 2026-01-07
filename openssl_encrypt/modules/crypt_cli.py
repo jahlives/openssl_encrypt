@@ -330,7 +330,7 @@ class StdinMetadataExtractor:
             # Extract algorithm info based on format version
             format_version = metadata.get("format_version", 1)
 
-            if format_version in [4, 5]:
+            if format_version in [4, 5, 6, 9]:
                 encryption = metadata.get("encryption", {})
                 algorithm = encryption.get("algorithm", "fernet")
                 encryption_data = encryption.get("encryption_data", "aes-gcm")
@@ -1063,7 +1063,7 @@ def output_available_algorithms_json(args):
         "kdfs": {},
         "kems": {},
         "signatures": {},
-        "libraries": {}
+        "libraries": {},
     }
 
     # Library availability checks
@@ -1071,41 +1071,46 @@ def output_available_algorithms_json(args):
         "threefish_native": {
             "available": False,
             "version": None,
-            "required_for": ["threefish-512", "threefish-1024"]
+            "required_for": ["threefish-512", "threefish-1024"],
         },
-        "blake3": {
-            "available": False,
-            "version": None,
-            "required_for": ["blake3"]
-        },
+        "blake3": {"available": False, "version": None, "required_for": ["blake3"]},
         "argon2-cffi": {
             "available": False,
             "version": None,
-            "required_for": ["argon2id", "argon2i", "argon2d"]
+            "required_for": ["argon2id", "argon2i", "argon2d"],
         },
-        "randomx": {
-            "available": False,
-            "version": None,
-            "required_for": ["randomx"]
-        },
+        "randomx": {"available": False, "version": None, "required_for": ["randomx"]},
         "liboqs": {
             "available": False,
             "version": None,
-            "required_for": ["ml-kem-*", "kyber*", "hqc-*", "mayo-*", "cross-*", "ml-dsa-*", "slh-dsa-*", "fn-dsa-*"]
-        }
+            "required_for": [
+                "ml-kem-*",
+                "kyber*",
+                "hqc-*",
+                "mayo-*",
+                "cross-*",
+                "ml-dsa-*",
+                "slh-dsa-*",
+                "fn-dsa-*",
+            ],
+        },
     }
 
     # Check threefish_native
     try:
         import threefish_native
+
         libraries["threefish_native"]["available"] = True
-        libraries["threefish_native"]["version"] = getattr(threefish_native, "__version__", "installed")
+        libraries["threefish_native"]["version"] = getattr(
+            threefish_native, "__version__", "installed"
+        )
     except ImportError:
         pass
 
     # Check blake3
     try:
         import blake3
+
         libraries["blake3"]["available"] = True
         libraries["blake3"]["version"] = getattr(blake3, "__version__", "installed")
     except ImportError:
@@ -1114,6 +1119,7 @@ def output_available_algorithms_json(args):
     # Check argon2-cffi
     try:
         import argon2
+
         libraries["argon2-cffi"]["available"] = True
         libraries["argon2-cffi"]["version"] = getattr(argon2, "__version__", "installed")
     except ImportError:
@@ -1122,8 +1128,14 @@ def output_available_algorithms_json(args):
     # Check randomx (using subprocess for safety - may cause SIGILL on unsupported CPUs)
     try:
         proc = subprocess.run(
-            [sys.executable, "-c", "import randomx; print(getattr(randomx, '__version__', 'installed'))"],
-            capture_output=True, timeout=2, check=False
+            [
+                sys.executable,
+                "-c",
+                "import randomx; print(getattr(randomx, '__version__', 'installed'))",
+            ],
+            capture_output=True,
+            timeout=2,
+            check=False,
         )
         if proc.returncode == 0:
             libraries["randomx"]["available"] = True
@@ -1134,8 +1146,13 @@ def output_available_algorithms_json(args):
     # Check liboqs
     try:
         import oqs
+
         libraries["liboqs"]["available"] = True
-        libraries["liboqs"]["version"] = oqs.get_version() if hasattr(oqs, 'get_version') else getattr(oqs, "__version__", "installed")
+        libraries["liboqs"]["version"] = (
+            oqs.get_version()
+            if hasattr(oqs, "get_version")
+            else getattr(oqs, "__version__", "installed")
+        )
     except ImportError:
         pass
 
@@ -1167,7 +1184,7 @@ def output_available_algorithms_json(args):
                 "available": available,
                 "required_library": required_lib,
                 "security_level": info.security_level.name,
-                "description": info.description or ""
+                "description": info.description or "",
             }
     except Exception:
         pass
@@ -1178,7 +1195,7 @@ def output_available_algorithms_json(args):
         "available": True,
         "required_library": None,
         "security_level": "STANDARD",
-        "description": "AES-128-CBC with HMAC authentication (Default, Legacy)"
+        "description": "AES-128-CBC with HMAC authentication (Default, Legacy)",
     }
 
     try:
@@ -1189,7 +1206,7 @@ def output_available_algorithms_json(args):
                 "available": available,
                 "required_library": required_lib,
                 "security_level": info.security_level.name,
-                "description": info.description or ""
+                "description": info.description or "",
             }
     except Exception:
         pass
@@ -1202,7 +1219,7 @@ def output_available_algorithms_json(args):
                 "available": available,
                 "required_library": required_lib,
                 "security_level": info.security_level.name,
-                "description": info.description or ""
+                "description": info.description or "",
             }
     except Exception:
         pass
@@ -1215,7 +1232,7 @@ def output_available_algorithms_json(args):
                 "available": available,
                 "required_library": required_lib,
                 "security_level": info.security_level.name,
-                "description": info.description or ""
+                "description": info.description or "",
             }
     except Exception:
         pass
@@ -1228,7 +1245,7 @@ def output_available_algorithms_json(args):
                 "available": available,
                 "required_library": required_lib,
                 "security_level": info.security_level.name,
-                "description": info.description or ""
+                "description": info.description or "",
             }
     except Exception:
         pass
@@ -1254,9 +1271,9 @@ def install_optional_dependencies(args):
     import shutil
     import subprocess
 
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("OpenSSL-Encrypt: Optional Dependencies Installer")
-    print("="*70)
+    print("=" * 70)
     print("\nThis will install:")
     print("  • liboqs 0.12.0 (post-quantum cryptography)")
     print("  • liboqs-python 0.12.0 (Python bindings)")
@@ -1265,11 +1282,11 @@ def install_optional_dependencies(args):
     print("  • cmake, ninja (or make), gcc, g++, git")
     print("  • Rust toolchain (rustc, cargo) for threefish")
     print("  • ~500MB disk space, ~10-15 minutes build time")
-    print("="*70 + "\n")
+    print("=" * 70 + "\n")
 
     if not args.yes:
         response = input("Continue? [y/N]: ").strip().lower()
-        if response not in ('y', 'yes'):
+        if response not in ("y", "yes"):
             print("Installation cancelled.")
             return
 
@@ -1279,12 +1296,12 @@ def install_optional_dependencies(args):
     # Check for required build tools
     print("\n[1/4] Checking build tools...")
     required_tools = {
-        'cmake': 'cmake',
-        'ninja or make': ['ninja', 'make'],
-        'gcc': 'gcc',
-        'g++': 'g++',
-        'git': 'git',
-        'cargo': 'cargo'  # For threefish
+        "cmake": "cmake",
+        "ninja or make": ["ninja", "make"],
+        "gcc": "gcc",
+        "g++": "g++",
+        "git": "git",
+        "cargo": "cargo",  # For threefish
     }
 
     missing_tools = []
@@ -1309,6 +1326,7 @@ def install_optional_dependencies(args):
     # Get package root directory
     try:
         import openssl_encrypt
+
         package_dir = os.path.dirname(os.path.abspath(openssl_encrypt.__file__))
         repo_root = os.path.dirname(package_dir)  # Go up one level
     except Exception as e:
@@ -1320,15 +1338,14 @@ def install_optional_dependencies(args):
     try:
         # Check if already installed
         result = subprocess.run(
-            ['pkg-config', '--modversion', 'liboqs'],
-            capture_output=True, text=True, timeout=5
+            ["pkg-config", "--modversion", "liboqs"], capture_output=True, text=True, timeout=5
         )
         if result.returncode == 0 and result.stdout.strip() == "0.12.0":
             print("  ✓ liboqs 0.12.0 already installed")
             success_count += 1
         else:
             # Try using the build script if available
-            build_script = os.path.join(repo_root, 'scripts', 'build_local_deps.sh')
+            build_script = os.path.join(repo_root, "scripts", "build_local_deps.sh")
             if not os.path.exists(build_script):
                 # Build manually
                 print("  Building from source...")
@@ -1341,32 +1358,46 @@ def install_optional_dependencies(args):
                     shutil.rmtree(liboqs_dir)
 
                 subprocess.run(
-                    ['git', 'clone', '--branch', '0.12.0', '--depth', '1',
-                     'https://github.com/open-quantum-safe/liboqs.git', liboqs_dir],
-                    check=True
+                    [
+                        "git",
+                        "clone",
+                        "--branch",
+                        "0.12.0",
+                        "--depth",
+                        "1",
+                        "https://github.com/open-quantum-safe/liboqs.git",
+                        liboqs_dir,
+                    ],
+                    check=True,
                 )
 
                 # Build
-                build_path = os.path.join(liboqs_dir, 'build')
+                build_path = os.path.join(liboqs_dir, "build")
                 os.makedirs(build_path, exist_ok=True)
 
                 subprocess.run(
-                    ['cmake', '-GNinja', '-DCMAKE_INSTALL_PREFIX=' + os.path.expanduser('~/.local'), '..'],
-                    cwd=build_path, check=True
+                    [
+                        "cmake",
+                        "-GNinja",
+                        "-DCMAKE_INSTALL_PREFIX=" + os.path.expanduser("~/.local"),
+                        "..",
+                    ],
+                    cwd=build_path,
+                    check=True,
                 )
-                subprocess.run(['ninja'], cwd=build_path, check=True)
-                subprocess.run(['ninja', 'install'], cwd=build_path, check=True)
+                subprocess.run(["ninja"], cwd=build_path, check=True)
+                subprocess.run(["ninja", "install"], cwd=build_path, check=True)
 
                 print("  ✓ liboqs 0.12.0 built and installed to ~/.local")
                 success_count += 1
             else:
                 # Use build script
                 env = os.environ.copy()
-                env['LIBOQS_INSTALL_PREFIX'] = os.path.expanduser('~/.local')
-                env['LIBOQS_VERSION'] = '0.12.0'
-                env['LIBOQS_PYTHON_VERSION'] = '0.12.0'
+                env["LIBOQS_INSTALL_PREFIX"] = os.path.expanduser("~/.local")
+                env["LIBOQS_VERSION"] = "0.12.0"
+                env["LIBOQS_PYTHON_VERSION"] = "0.12.0"
 
-                bash_cmd = shutil.which('bash') or '/bin/bash'
+                bash_cmd = shutil.which("bash") or "/bin/bash"
                 subprocess.run([bash_cmd, build_script], env=env, check=True)
                 print("  ✓ liboqs 0.12.0 built and installed")
                 success_count += 1
@@ -1379,8 +1410,10 @@ def install_optional_dependencies(args):
     try:
         # Check if already installed
         result = subprocess.run(
-            [sys.executable, '-c', 'import oqs; print(oqs.oqs_python_version())'],
-            capture_output=True, text=True, timeout=5
+            [sys.executable, "-c", "import oqs; print(oqs.oqs_python_version())"],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode == 0 and result.stdout.strip() == "0.12.0":
             print("  ✓ liboqs-python 0.12.0 already installed")
@@ -1388,9 +1421,14 @@ def install_optional_dependencies(args):
         else:
             # Install via pip
             subprocess.run(
-                [sys.executable, '-m', 'pip', 'install',
-                 'git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0'],
-                check=True
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    "git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0",
+                ],
+                check=True,
             )
             print("  ✓ liboqs-python 0.12.0 installed")
             success_count += 1
@@ -1404,11 +1442,14 @@ def install_optional_dependencies(args):
         # Check if already installed
         try:
             import threefish_native
-            print(f"  ✓ threefish_native already installed (version {getattr(threefish_native, '__version__', 'unknown')})")
+
+            print(
+                f"  ✓ threefish_native already installed (version {getattr(threefish_native, '__version__', 'unknown')})"
+            )
             success_count += 1
         except ImportError:
             # Try to build it
-            threefish_dir = os.path.join(repo_root, 'threefish_native')
+            threefish_dir = os.path.join(repo_root, "threefish_native")
             if not os.path.exists(threefish_dir):
                 print("  ✗ threefish_native source not found")
                 print("     This is only available when installing from source repository")
@@ -1416,27 +1457,33 @@ def install_optional_dependencies(args):
             else:
                 # Install maturin if needed
                 subprocess.run(
-                    [sys.executable, '-m', 'pip', 'install', 'maturin'],
-                    capture_output=True, check=True
+                    [sys.executable, "-m", "pip", "install", "maturin"],
+                    capture_output=True,
+                    check=True,
                 )
 
                 # Build with maturin
                 env = os.environ.copy()
-                env['PYO3_USE_ABI3_FORWARD_COMPATIBILITY'] = '1'
+                env["PYO3_USE_ABI3_FORWARD_COMPATIBILITY"] = "1"
 
                 subprocess.run(
-                    ['maturin', 'build', '--release'],
-                    cwd=threefish_dir, env=env, check=True
+                    ["maturin", "build", "--release"], cwd=threefish_dir, env=env, check=True
                 )
 
                 # Install the built wheel
-                wheels_dir = os.path.join(threefish_dir, 'target', 'wheels')
-                wheels = [f for f in os.listdir(wheels_dir) if f.endswith('.whl')]
+                wheels_dir = os.path.join(threefish_dir, "target", "wheels")
+                wheels = [f for f in os.listdir(wheels_dir) if f.endswith(".whl")]
                 if wheels:
                     subprocess.run(
-                        [sys.executable, '-m', 'pip', 'install', '--force-reinstall',
-                         os.path.join(wheels_dir, wheels[0])],
-                        check=True
+                        [
+                            sys.executable,
+                            "-m",
+                            "pip",
+                            "install",
+                            "--force-reinstall",
+                            os.path.join(wheels_dir, wheels[0]),
+                        ],
+                        check=True,
                     )
                     print("  ✓ threefish_native built and installed")
                     success_count += 1
@@ -1448,9 +1495,9 @@ def install_optional_dependencies(args):
         failed.append("threefish_native")
 
     # Summary
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("Installation Summary")
-    print("="*70)
+    print("=" * 70)
     print(f"  Successfully installed: {success_count}/3 components")
     if failed:
         print(f"  Failed: {', '.join(failed)}")
@@ -1459,7 +1506,7 @@ def install_optional_dependencies(args):
 
     print("\nTo verify installation, run:")
     print("  openssl-encrypt list-available-algorithms")
-    print("="*70 + "\n")
+    print("=" * 70 + "\n")
 
     if failed:
         sys.exit(1)
@@ -2383,12 +2430,12 @@ def handle_hsm_command(args):
     Args:
         args: Parsed command-line arguments
     """
-    import secrets
     import getpass
+    import secrets
 
     # Import FIDO2 plugin
     try:
-        from ..plugins.hsm.fido2_pepper import FIDO2HSMPlugin, FIDO2_AVAILABLE
+        from ..plugins.hsm.fido2_pepper import FIDO2_AVAILABLE, FIDO2HSMPlugin
     except ImportError:
         print("❌ Error: FIDO2 library not available")
         print("Install with: pip install fido2>=1.1.0")
@@ -2503,9 +2550,9 @@ def handle_hsm_command(args):
 
         # Create dummy security context
         from ..modules.plugin_system.plugin_base import PluginSecurityContext
+
         context = PluginSecurityContext(
-            plugin_id=plugin.plugin_id,
-            capabilities=plugin.get_required_capabilities()
+            plugin_id=plugin.plugin_id, capabilities=plugin.get_required_capabilities()
         )
 
         # Test pepper derivation
@@ -2578,7 +2625,7 @@ def handle_hsm_command(args):
                 prompt = f"Are you sure you want to remove credential '{target}'? This cannot be undone. (y/N): "
 
             confirmation = input(prompt).strip().lower()
-            if confirmation != 'y':
+            if confirmation != "y":
                 print("Operation cancelled.")
                 sys.exit(0)
 
@@ -2685,7 +2732,7 @@ def handle_keyserver_command(args):
         plugin = KeyserverPlugin(config)
 
         # Use custom server if specified
-        server_url = args.server if hasattr(args, 'server') and args.server else None
+        server_url = args.server if hasattr(args, "server") and args.server else None
 
         try:
             print("Registering with keyserver...")
@@ -2708,7 +2755,9 @@ def handle_keyserver_command(args):
             print("\nTroubleshooting:")
             print("  - Check network connectivity")
             print("  - Verify keyserver URL is correct")
-            print(f"  - Server: {server_url or config.servers[0] if config.servers else 'Not configured'}")
+            print(
+                f"  - Server: {server_url or config.servers[0] if config.servers else 'Not configured'}"
+            )
 
     elif action == "search":
         # Search for key on keyserver
@@ -3234,7 +3283,8 @@ def main_with_args(args=None):
         help="Show detailed debug information (WARNING: logs passwords and sensitive data - test files only!)",
     )
     global_group.add_argument(
-        "--yes", "-y",
+        "--yes",
+        "-y",
         action="store_true",
         help="Automatic yes to prompts (for install-dependencies command)",
     )
@@ -5661,7 +5711,9 @@ def main_with_args(args=None):
                         print(f"✅ Loaded HSM plugin: {hsm_plugin_instance.name}")
                         print(f"   RP ID: {hsm_plugin_instance.rp_id}")
                         if not hsm_plugin_instance.is_registered():
-                            print("   ⚠️  No credentials registered. Run: openssl_encrypt hsm fido2-register")
+                            print(
+                                "   ⚠️  No credentials registered. Run: openssl_encrypt hsm fido2-register"
+                            )
 
                 else:
                     print(f"Error: Unknown HSM plugin '{args.hsm}'. Supported: yubikey, fido2")
@@ -5670,7 +5722,9 @@ def main_with_args(args=None):
             except ImportError as e:
                 print(f"Error: Could not import HSM plugin: {e}")
                 if args.hsm.lower() == "yubikey":
-                    print("Make sure yubikey-manager is installed: pip install -r requirements-hsm.txt")
+                    print(
+                        "Make sure yubikey-manager is installed: pip install -r requirements-hsm.txt"
+                    )
                 elif args.hsm.lower() == "fido2":
                     print("Make sure fido2 library is installed: pip install fido2>=1.1.0")
                 sys.exit(1)
@@ -5683,7 +5737,7 @@ def main_with_args(args=None):
         pepper_name_to_use = None
         if hasattr(args, "pepper") and args.pepper:
             try:
-                from ..plugins.pepper import PepperPlugin, PepperConfig, PepperError
+                from ..plugins.pepper import PepperConfig, PepperError, PepperPlugin
 
                 config = PepperConfig.from_file()
                 if not config.enabled:
@@ -5710,7 +5764,7 @@ def main_with_args(args=None):
 
         elif hasattr(args, "pepper_name") and args.pepper_name:
             try:
-                from ..plugins.pepper import PepperPlugin, PepperConfig, PepperError
+                from ..plugins.pepper import PepperConfig, PepperError, PepperPlugin
 
                 config = PepperConfig.from_file()
                 if not config.enabled:
@@ -6658,7 +6712,7 @@ def main_with_args(args=None):
                             cascade=cascade_mode,
                             cipher_names=cipher_names,
                             cascade_hash=cascade_hash_func,
-                            integrity=getattr(args, 'integrity', False),
+                            integrity=getattr(args, "integrity", False),
                             pepper_plugin=pepper_plugin_instance,
                             pepper_name=pepper_name_to_use,
                         )
@@ -6907,7 +6961,7 @@ def main_with_args(args=None):
                     cascade=cascade_mode,
                     cipher_names=cipher_names,
                     cascade_hash=cascade_hash_func,
-                    integrity=getattr(args, 'integrity', False),
+                    integrity=getattr(args, "integrity", False),
                     pepper_plugin=pepper_plugin_instance,
                     pepper_name=pepper_name_to_use,
                 )
@@ -7530,7 +7584,7 @@ def main_with_args(args=None):
                         cascade=cascade_mode,
                         cipher_names=cipher_names,
                         cascade_hash=cascade_hash_func,
-                        integrity=getattr(args, 'integrity', False),
+                        integrity=getattr(args, "integrity", False),
                         pepper_plugin=pepper_plugin_instance,
                         pepper_name=pepper_name_to_use,
                     )
@@ -8387,7 +8441,7 @@ def main_with_args(args=None):
                             plugin_manager=plugin_manager,
                             hsm_plugin=hsm_plugin_instance,
                             no_estimate=getattr(args, "no_estimate", False),
-                            verify_integrity=getattr(args, 'verify_integrity', False),
+                            verify_integrity=getattr(args, "verify_integrity", False),
                         )
                     if success:
                         # Apply the original permissions to the temp file
@@ -8611,7 +8665,7 @@ def main_with_args(args=None):
                         plugin_manager=plugin_manager,
                         hsm_plugin=hsm_plugin_instance,
                         no_estimate=getattr(args, "no_estimate", False),
-                        verify_integrity=getattr(args, 'verify_integrity', False),
+                        verify_integrity=getattr(args, "verify_integrity", False),
                     )
                 if success:
                     # Security audit log for successful decryption
@@ -8781,7 +8835,7 @@ def main_with_args(args=None):
                         plugin_manager=plugin_manager,
                         hsm_plugin=hsm_plugin_instance,
                         no_estimate=getattr(args, "no_estimate", False),
-                        verify_integrity=getattr(args, 'verify_integrity', False),
+                        verify_integrity=getattr(args, "verify_integrity", False),
                     )
                 try:
                     # Try to decode as text

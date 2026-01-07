@@ -561,5 +561,181 @@ class TestKDFErrorHandling:
             kdf.derive(b"test", b"Q" * 16, params)
 
 
+# ============================================================================
+# Multi-Round KDF Tests
+# ============================================================================
+
+
+class TestMultiRoundKDF:
+    """Tests for multi-round KDF behavior."""
+
+    def test_pbkdf2_multi_round_simulation(self):
+        """Test simulating multi-round PBKDF2 (chained derivation)."""
+        kdf = PBKDF2()
+        password = b"test_password"
+        base_salt = b"R" * 16
+
+        # Simulate v9 chained salt derivation (3 rounds)
+        rounds = 3
+        current_output = password
+
+        for round_num in range(rounds):
+            if round_num == 0:
+                round_salt = base_salt
+            else:
+                # Use previous output as salt (v9 chained method)
+                round_salt = bytes(current_output[:16])
+
+            current_output = kdf.derive(bytes(current_output), round_salt)
+
+        final_key_v9 = bytes(current_output)
+        assert len(final_key_v9) == 32
+
+        # Simulate v8 predictable salt derivation (3 rounds)
+        import hashlib
+
+        current_output = password
+        for round_num in range(rounds):
+            if round_num == 0:
+                round_salt = base_salt
+            else:
+                # Use predictable derivation (v8 method)
+                salt_material = hashlib.sha256(base_salt + str(round_num).encode()).digest()
+                round_salt = salt_material[:16]
+
+            current_output = kdf.derive(bytes(current_output), round_salt)
+
+        final_key_v8 = bytes(current_output)
+
+        # v8 and v9 should produce different results
+        assert final_key_v8 != final_key_v9
+
+    @pytest.mark.skipif(not Argon2id.is_available(), reason="Argon2 not available")
+    def test_argon2_multi_round_simulation(self):
+        """Test simulating multi-round Argon2 with different salt derivation methods."""
+        kdf = Argon2id()
+        password = b"test_password"
+        base_salt = b"S" * 16
+
+        # Simulate v9 chained salt derivation (2 rounds)
+        rounds = 2
+        current_output = password
+
+        for round_num in range(rounds):
+            if round_num == 0:
+                round_salt = base_salt
+            else:
+                # Use previous output as salt (v9 chained method)
+                round_salt = bytes(current_output[:16])
+
+            current_output = kdf.derive(bytes(current_output), round_salt)
+
+        final_key_v9 = bytes(current_output)
+
+        # Simulate v8 predictable salt derivation (2 rounds)
+        import hashlib
+
+        current_output = password
+        for round_num in range(rounds):
+            if round_num == 0:
+                round_salt = base_salt
+            else:
+                # Use predictable derivation (v8 method)
+                salt_material = hashlib.sha256(base_salt + str(round_num).encode()).digest()
+                round_salt = salt_material[:16]
+
+            current_output = kdf.derive(bytes(current_output), round_salt)
+
+        final_key_v8 = bytes(current_output)
+
+        # v8 and v9 should produce different results
+        assert final_key_v8 != final_key_v9
+
+    @pytest.mark.skipif(not Scrypt.is_available(), reason="Scrypt not available")
+    def test_scrypt_multi_round_simulation(self):
+        """Test simulating multi-round Scrypt with different salt derivation methods."""
+        kdf = Scrypt()
+        password = b"test_password"
+        base_salt = b"T" * 16
+
+        # Use low params for faster testing
+        params = ScryptParams(n=1024, r=4, p=1)
+
+        # Simulate v9 chained salt derivation (2 rounds)
+        rounds = 2
+        current_output = password
+
+        for round_num in range(rounds):
+            if round_num == 0:
+                round_salt = base_salt
+            else:
+                # Use previous output as salt (v9 chained method)
+                round_salt = bytes(current_output[:16])
+
+            current_output = kdf.derive(bytes(current_output), round_salt, params)
+
+        final_key_v9 = bytes(current_output)
+
+        # Simulate v8 predictable salt derivation (2 rounds)
+        import hashlib
+
+        current_output = password
+        for round_num in range(rounds):
+            if round_num == 0:
+                round_salt = base_salt
+            else:
+                # Use predictable derivation (v8 method)
+                salt_material = hashlib.sha256(base_salt + str(round_num).encode()).digest()
+                round_salt = salt_material[:16]
+
+            current_output = kdf.derive(bytes(current_output), round_salt, params)
+
+        final_key_v8 = bytes(current_output)
+
+        # v8 and v9 should produce different results
+        assert final_key_v8 != final_key_v9
+
+    def test_single_vs_multi_round_different(self):
+        """Test that single round vs multi-round produce different output."""
+        kdf = PBKDF2()
+        password = b"test_password"
+        salt = b"U" * 16
+
+        # Single round
+        single_round_key = bytes(kdf.derive(password, salt))
+
+        # Multi-round (2 rounds with chained salt)
+        round_0_output = kdf.derive(password, salt)
+        round_1_salt = bytes(round_0_output[:16])
+        multi_round_key = bytes(kdf.derive(bytes(round_0_output), round_1_salt))
+
+        # Should be different
+        assert single_round_key != multi_round_key
+
+    def test_chained_salt_creates_dependency(self):
+        """Test that chained salt derivation creates cryptographic dependencies."""
+        kdf = PBKDF2()
+        password = b"password"
+        base_salt = b"V" * 16
+
+        # First execution with specific round 0 output
+        round_0_output_a = kdf.derive(password, base_salt)
+        round_1_salt_a = bytes(round_0_output_a[:16])
+        round_1_output_a = bytes(kdf.derive(bytes(round_0_output_a), round_1_salt_a))
+
+        # Second execution - change the "round 0 output" slightly
+        # This simulates what happens if round 0 produced different output
+        modified_password = b"password_modified"
+        round_0_output_b = kdf.derive(modified_password, base_salt)
+        round_1_salt_b = bytes(round_0_output_b[:16])
+        round_1_output_b = bytes(kdf.derive(bytes(round_0_output_b), round_1_salt_b))
+
+        # The round 1 salts should be different (dependency on previous round)
+        assert round_1_salt_a != round_1_salt_b
+
+        # The final outputs should be different
+        assert round_1_output_a != round_1_output_b
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

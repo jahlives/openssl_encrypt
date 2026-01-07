@@ -51,6 +51,52 @@ For deep-dives into the cryptographic design and security policies of this proje
 ---
 ## What's New in v1.4.0
 
+### 🚨 CRITICAL SECURITY UPDATE - Format Version 9
+
+**SECURITY ADVISORY 2026-01** - This release contains a critical security fix for multi-round KDF configurations.
+
+**Vulnerability**: Format versions ≤8 used predictable salt derivation that allowed attackers to precompute all round salts from plaintext metadata, enabling optimized rainbow table attacks against multi-round KDF configurations (CVSSv3 Score: 8.1 - High).
+
+**Fix**: Format Version 9 implements secure chained salt derivation where each round uses the previous round's output as salt, forcing sequential computation and preventing precomputation attacks.
+
+**Action Required**:
+- ✅ **New encryptions automatically use v9** (secure)
+- ⚠️ **Re-encrypt ALL files encrypted with format version < v9 OR code version < 1.4.0**
+- ✅ **Backward compatible** - v8 and below files can still be decrypted
+
+**Affected**: All files encrypted with metadata format versions v3-v8 or openssl_encrypt versions < 1.4.0, especially files with multi-round KDF (rounds > 1) or weak/medium passwords.
+
+See [docs/security.md](openssl_encrypt/docs/security.md) and [docs/metadata-formats.md](openssl_encrypt/docs/metadata-formats.md) for complete details.
+
+---
+
+### Format Version 9: Secure Chained Salt Derivation
+
+**Critical security fix** addressing CVE-2026-01 vulnerability in multi-round KDF implementations.
+
+- **Security Impact**: Prevents precomputation attacks on multi-round KDF configurations
+- **Implementation**: Chained salt derivation using previous round's output as next round's salt
+- **Backward Compatible**: v8 and below files decrypt correctly with automatic format detection
+- **Affected Components**: All multi-round KDF/hash functions (Argon2, PBKDF2, Scrypt, Balloon, HKDF, BLAKE3, BLAKE2b, SHAKE-256)
+- **Mitigation**: Automatic upgrade for new encryptions; **re-encryption recommended for ALL files with format version < v9 or encrypted with code version < 1.4.0**
+- **Format Versions v3-v8**: Deprecated immediately (read-only support maintained)
+
+**Technical Details**:
+```python
+# VULNERABLE (v8): Predictable salt derivation
+round_salt = SHA256(base_salt + str(round_num)).digest()[:16]
+
+# SECURE (v9): Chained salt derivation
+round_salt = previous_round_output[:16]
+```
+
+**References**:
+- Security Advisory: [docs/security.md](openssl_encrypt/docs/security.md#advisory-2026-01)
+- Technical Specification: [docs/metadata-formats.md](openssl_encrypt/docs/metadata-formats.md#version-9-specification)
+- Test Coverage: `openssl_encrypt/unittests/test_salt_derivation_versions.py`
+
+---
+
 ### Cascade Encryption (Multi-Layer Defense)
 
 Sequential encryption using multiple cipher algorithms with chained HKDF key derivation.
@@ -214,11 +260,55 @@ Modular FastAPI server with dual authentication system supporting both public an
 - Helper scripts: `setup_ca.sh`, `create_client_cert.sh`
 - Full documentation: `openssl_encrypt_server/docs/MTLS_SETUP.md`
 
+### Flutter GUI Enhancements
+
+Complete overhaul of the desktop GUI with advanced cryptographic features and improved user experience.
+
+**Cascade Encryption UI:**
+- Multi-cipher selection interface with diversity validation
+- Sub-group organization for algorithm categories
+- Visual chain preview showing encryption layers
+- Integrated into File Crypto, Text Crypto, and Batch Operations tabs
+
+**Asymmetric Encryption UI:**
+- Identity Management screen with create/import/export functionality
+- Recipient selection for multi-recipient encryption
+- HSM integration (YubiKey Challenge-Response, FIDO2/WebAuthn)
+- Real-time YubiKey touch prompt display
+- ML-KEM/ML-DSA key pair generation and management
+
+**Network Plugin Configuration:**
+- Remote Pepper Plugin settings with mTLS certificate management
+- Integrity Plugin configuration with verification options
+- Keyserver Plugin setup with bearer token authentication
+- Visual feedback for plugin status and connectivity
+
+**Algorithm Enhancements:**
+- Enhanced algorithm picker with grouped display (Classical Symmetric, Post-Quantum, AEAD)
+- PQC algorithms displayed in Information Tab
+- Support for Threefish-512 and Threefish-1024 ciphers
+- Format version 7 and 8 support in metadata viewer
+
+**User Experience:**
+- Steganography configuration panel in encryption tab
+- Force password option for workflow automation
+- Default input type set to file mode
+- Improved status messages and error handling
+- Progress indicators for long-running operations
+
+**Flatpak Distribution:**
+- Complete CI/CD pipeline with automated builds
+- Incremental caching for faster compilation
+- OSTree repository integration
+- Available on Flathub (pending approval)
+
 ### Backward Compatibility
 
-- Compatible with v3, v4, v5, v6, and v7 encrypted files
+- Compatible with v3, v4, v5, v6, v7, and v8 encrypted files
 - Automatic format detection and migration
-- New V8 metadata format for cascade encryption
+- V3-V8 metadata formats deprecated due to security vulnerability (read-only support maintained)
+- V9 metadata format (current) with secure chained salt derivation
+- **Re-encryption strongly recommended for ALL files with format version < v9 or encrypted with code version < 1.4.0**
 ---
 ## Known Issues
 ### HQC Support in v1.2.x

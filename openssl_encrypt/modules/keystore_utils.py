@@ -333,8 +333,8 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
             key_id = metadata["derivation_config"]["keystore_id"]
             if not getattr(args, "quiet", False):
                 print(f"Found key ID in metadata derivation_config (v6): {key_id}")
-    elif format_version == 5 and metadata:
-        # Check for key ID in format version 5 structure (same as v4)
+    elif format_version in [4, 5, 9] and metadata:
+        # Check for key ID in format version 4/5/9 structure (all use same kdf_config structure)
         if (
             "derivation_config" in metadata
             and "kdf_config" in metadata["derivation_config"]
@@ -342,17 +342,8 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
         ):
             key_id = metadata["derivation_config"]["kdf_config"]["pqc_keystore_key_id"]
             if not getattr(args, "quiet", False):
-                print(f"Found key ID in metadata derivation_config (v5): {key_id}")
-    elif format_version == 4 and metadata:
-        # Check for key ID in format version 4 structure
-        if (
-            "derivation_config" in metadata
-            and "kdf_config" in metadata["derivation_config"]
-            and "pqc_keystore_key_id" in metadata["derivation_config"]["kdf_config"]
-        ):
-            key_id = metadata["derivation_config"]["kdf_config"]["pqc_keystore_key_id"]
-            if not getattr(args, "quiet", False):
-                print(f"Found key ID in metadata derivation_config: {key_id}")
+                version_label = f"v{format_version}"
+                print(f"Found key ID in metadata derivation_config ({version_label}): {key_id}")
     elif hash_config and "pqc_keystore_key_id" in hash_config:
         # Legacy format (1-3)
         key_id = hash_config["pqc_keystore_key_id"]
@@ -384,7 +375,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                     # Get format version from metadata
                     format_version = header_config.get("format_version", 3)
 
-                    if format_version in [4, 5, 6]:
+                    if format_version in [4, 5, 6, 9]:
                         # Extract from format version 4/5/6 structure (all use encryption section)
                         if (
                             "encryption" in header_config
