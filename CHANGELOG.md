@@ -5,6 +5,26 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.4] - 2026-01-07
+
+### Security
+
+- **CRITICAL: Fixed Predictable Salt Derivation in Multi-Round KDF (CVSSv3 8.1 - High)**
+  - **CWE-330: Use of Insufficiently Random Values**
+  - **Vulnerability:** Multi-round KDF operations used predictable salt derivation where each round's salt was derived from base_salt via `sha256(base_salt + round_number)`. This allowed attackers with access to plaintext metadata to precompute all round salts, defeating the security benefits of multi-round key derivation.
+  - **Resolution:** Implemented **Format Version 7** with secure chained salt derivation. Each round now uses the previous round's output as the salt for the next round, making salt values unpredictable without executing all prior rounds.
+  - **Affected Components:**
+    - Hash algorithms: BLAKE2b, BLAKE3, SHAKE-256 (multi-round implementations)
+    - KDF algorithms: Argon2, Scrypt, Balloon, PBKDF2, HKDF (multi-round implementations)
+  - **Impact:** Files encrypted with Format Version 6 and below had weakened multi-round KDF protection. Single-round KDF usage was not affected. The encryption itself remained secure, but multi-round key derivation provided less protection than intended against precomputation attacks.
+  - **Backward Compatibility:** Full backward compatibility maintained. Format Version 7 automatically uses secure chained derivation for new encryptions. Files encrypted with Format Versions 3-6 continue to decrypt correctly using their original (legacy predictable) derivation method.
+  - **Forward Compatibility:** Files encrypted with Format Version 7 cannot be decrypted by versions prior to v1.3.4.
+
+### Fixed
+
+- **Test Infrastructure:** Fixed pytest-xdist enum serialization issues in `test_wizard_config_completeness` and `test_keystore_security_levels`
+- **Keystore Integration:** Updated keystore_wrapper.py to recognize Format Version 7 for PQC dual encryption and metadata handling
+
 ## [1.3.0] - 2025-12-15
 
 ### Added

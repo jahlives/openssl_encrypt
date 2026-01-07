@@ -75,6 +75,37 @@ We recognize and thank the following security researchers for their responsible 
 
 ---
 
+## Resolved Security Vulnerabilities
+
+### CVSSv3 8.1 (High): Predictable Salt Derivation in Multi-Round KDF - Fixed in v1.3.4 (2026-01-07)
+
+**Vulnerability ID:** CWE-330 - Use of Insufficiently Random Values
+**Severity:** High (CVSSv3 Base Score: 8.1)
+**Affected Versions:** All versions prior to v1.3.4 (Format Versions 3-6)
+**Fixed In:** v1.3.4 (Format Version 7)
+
+**Description:**
+Multi-round KDF operations in versions prior to v1.3.4 used predictable salt derivation. Each round's salt was computed as `sha256(base_salt + round_number)`, making all round salts predictable from the plaintext metadata's base salt. This allowed adversaries with access to encrypted file metadata to precompute all intermediate salts, undermining the security benefits of multi-round key derivation against precomputation attacks.
+
+**Affected Components:**
+- Hash Algorithms: BLAKE2b, BLAKE3, SHAKE-256 (multi-round modes)
+- KDF Algorithms: Argon2, Scrypt, Balloon, PBKDF2, HKDF (multi-round modes)
+
+**Impact:**
+The vulnerability weakened the defense-in-depth provided by multi-round KDF. While the encryption itself remained cryptographically sound, the predictable salt generation allowed attackers to perform precomputation attacks against the key derivation chain, partially defeating the time-cost benefits of multi-round operations.
+
+**Resolution:**
+Version 1.3.4 implements Format Version 7 with **secure chained salt derivation**. Each round now uses the previous round's output as the salt input for the next round, creating an unpredictable chain that requires executing all prior rounds.
+
+**Mitigation:**
+- **Immediate Action:** Upgrade to v1.3.4 or later
+- **Re-encryption Recommended:** Files encrypted with multi-round KDF settings in Format Versions 3-6 should be re-encrypted with v1.3.4 for maximum security
+- **Backward Compatibility:** Maintained - v1.3.4 can decrypt all previous format versions (v3-v6)
+
+**Credit:** Internal security review
+
+---
+
 ## Best Practices
 
 When using OpenSSL Encrypt, please follow these security best practices:
