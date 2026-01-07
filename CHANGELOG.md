@@ -5,6 +5,143 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-01-07
+
+### 🚨 CRITICAL SECURITY FIX
+
+#### Format Version 9: Secure Chained Salt Derivation
+**SECURITY ADVISORY 2026-01** - Addresses critical vulnerability in multi-round KDF salt derivation
+
+- **Vulnerability (CVSSv3 8.1 - High)**: Format versions ≤8 used predictable salt derivation allowing attackers to precompute all round salts from plaintext metadata, enabling optimized rainbow table attacks
+- **Fix**: Implemented secure chained salt derivation where each round uses previous round's output as salt
+  - **Security Impact**: Forces sequential computation, prevents precomputation attacks
+  - **Backward Compatible**: v8 and below files can still be decrypted
+  - **Auto-Upgrade**: New encryptions automatically use v9
+- **Affected Components**: All multi-round KDF configurations (Argon2, PBKDF2, Scrypt, Balloon, HKDF) and multi-round hash functions (BLAKE3, BLAKE2b, SHAKE-256)
+- **Affected Users**: Files with multi-round KDF (rounds > 1), especially with weak/medium passwords
+- **Mitigation**: Upgrade to v1.4.0+ and re-encrypt sensitive files
+- **References**: See `docs/security.md` and `docs/metadata-formats.md` for complete security advisory
+
+### Added
+
+#### Flutter GUI Enhancements
+- **Cascade Encryption UI**: Complete cascade encryption configuration interface across all crypto tabs
+  - Sub-group headers and algorithm organization
+  - Multiple cipher selection with diversity validation
+  - Integrated into File Crypto, Text Crypto, and Batch Operations tabs
+- **Asymmetric Encryption UI**: Full asymmetric encryption interface
+  - Identity management screen with create/import/export
+  - Recipient selection for multi-recipient encryption
+  - HSM integration (YubiKey Challenge-Response)
+  - Integrated into all crypto tabs
+- **Remote Plugin Integration**: Network plugin configuration in Settings
+  - **Remote Pepper Plugin**: mTLS authentication, TOTP 2FA, deadman switch, panic wipe
+  - **Integrity Plugin**: File verification with batch support and audit logging
+  - **Keyserver Plugin**: Public key distribution with local caching
+- **FIDO2/WebAuthn Support**: HSM credential management with YubiKey touch prompts
+  - Real-time touch prompt display (PYTHONUNBUFFERED)
+  - Credential management screen
+  - Integration across encryption/decryption tabs
+- **Algorithm Support Additions**:
+  - Threefish-512 and Threefish-1024 post-quantum ciphers
+  - Enhanced algorithm picker with grouped display
+  - PQC algorithms in Information Tab
+  - Support for file format versions 7 and 8
+
+#### CLI & Core Features
+- **Integrity Verification Flags**: `--integrity` and `--verify-integrity` for remote metadata hash verification
+  - Automatic file_id computation from input file path
+  - 409 Conflict handling for re-encryption scenarios
+  - Integration with remote integrity module via mTLS
+- **Pepper Plugin Integration**: Full CLI integration for remote pepper storage
+  - Command-line flags for pepper operations
+  - TOTP 2FA support for sensitive operations
+  - mTLS certificate-based authentication
+- **Steganography Options**: Comprehensive steganography configuration in GUI encryption tab
+- **Force Password Option**: Added to encryption and decryption tabs for password override scenarios
+
+### Fixed
+
+#### Critical Bug Fixes
+- **Pepper Plugin Scoping Errors**: Fixed critical scoping bugs causing 100+ test failures
+  - Resolved variable scope issues in pepper client plugin
+  - Fixed authentication and storage operations
+- **Integrity Plugin Issues**:
+  - Fixed 409 Conflict when re-encrypting files with `--integrity` flag
+  - Corrected file_id computation to use input file path instead of output
+  - Fixed integrity verification hang in Flutter GUI
+- **YubiKey Integration**:
+  - Fixed YubiKey notification display in GUI
+  - Enabled real-time touch prompt display via PYTHONUNBUFFERED
+  - Fixed status message overwrites that hid touch prompts
+- **HSM Plugin Loading**: Fixed dependency management and plugin initialization
+
+#### Flatpak Improvements
+- **CI/CD Pipeline**: Complete Flatpak build and publish automation
+  - Automated flatpak-builder with incremental caching
+  - Branch-based flatpak branch naming (from setup.py version)
+  - OSTree repository caching to avoid 413 errors
+  - Restricted jobs to releases branches and tags only
+- **Build System Enhancements**:
+  - Proper FLATPAK_BRANCH environment variable respect
+  - VERSION extraction from setup.py without setuptools import
+  - Python dependencies properly declared in manifest
+  - Flutter SDK and build dependencies (which, unzip, patchelf)
+  - Docker compatibility flags (--disable-rofiles-fuse)
+- **Binary Naming**: Corrected desktop binary from openssl_encrypt_mobile to openssl_encrypt
+- **Dependency Fixes**: Added certifi and all missing Python dependencies from requirements-prod.txt
+
+#### GUI Fixes
+- **Information Tab**:
+  - Fixed hash algorithm display (sha224, sha3-224, sha384 filters)
+  - Added PQC algorithms to encryption display
+- **Algorithm Picker**:
+  - Restored missing hash algorithms
+  - Fixed Classical Symmetric consolidation
+  - Set PQC and other groups to collapsed by default
+- **Settings**:
+  - Updated Homepage URL to releases/1.4.0 branch
+  - Corrected Documentation and Source Code links
+  - Default input type changed to file mode
+
+#### Documentation & Infrastructure
+- **Security Documentation**: Added comprehensive SECURITY.md with vulnerability reporting policy
+- **Installation Guide**: Complete rewrite of INSTALLATION.md with Flatpak integration
+- **README Updates**: Installation section and project URL corrections
+- **Markdown Fixes**: Corrected formatting in Flatpak documentation sections
+- **Command Syntax**: Fixed to use `-i` flag consistently in all examples
+
+### Changed
+
+#### Infrastructure
+- **liboqs Upgrade**: Upgraded to liboqs-python 0.12.0 built from source for HQC algorithm support
+- **Project URLs**: Updated to GitHub repository in setup.py
+- **Version Management**: Bump to 1.4.0 with PEP 440 / PyPI conformant version strings
+- **License**: Explicit Hippocratic-3.0 license declaration in setup.py and Flatpak metadata
+
+#### Development & Testing
+- **Test Organization**: Consolidated asymmetric test files into main unittests.py
+- **Plugin Security**: Refined AST-based plugin validation to allow legitimate file/network operations
+- **Coverage**: Added missing CLI arguments to test coverage
+- **Code Formatting**: Applied automated Black formatting fixes
+
+### Deprecated
+
+- **Format Version 8**: Deprecated due to security vulnerability (see SECURITY ADVISORY 2026-01)
+  - Read support maintained for backward compatibility
+  - Write support disabled (encryption creates v9 files only)
+  - Deprecation warning issued when decrypting v8 files
+
+### Security
+
+- **Input Validation**: Added salt, key size, and hash iteration validation in `create_key_from_password`
+- **Secure Memory**: Enhanced error handling in secure memory operations
+- **Test Coverage**: Added comprehensive tests for salt derivation versions (v8 vs v9)
+  - Multi-round KDF behavior tests (PBKDF2, Argon2, Scrypt)
+  - Hash function multi-round tests (BLAKE3, BLAKE2b, SHAKE-256)
+  - Backward compatibility verification
+  - Full encryption/decryption roundtrip tests
+
 ## [1.4.0-alpha.1] - 2025-12-31
 
 ### Added

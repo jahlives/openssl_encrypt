@@ -75,6 +75,7 @@ try:
     from ..plugins.integrity.config import ConfigError as IntegrityConfigError
     from ..plugins.integrity.config import IntegrityConfig
     from ..plugins.integrity.integrity_plugin import IntegrityPluginError
+
     _INTEGRITY_PLUGIN_AVAILABLE = True
 except ImportError:
     _INTEGRITY_PLUGIN_AVAILABLE = False
@@ -83,6 +84,7 @@ except ImportError:
 # Integrity verification exception
 class IntegrityVerificationError(Exception):
     """Raised when integrity verification fails and user aborts decryption."""
+
     pass
 
 
@@ -1366,7 +1368,14 @@ def with_progress_bar(func, message, *args, quiet=False, **kwargs):
 
 @add_timing_jitter
 def multi_hash_password(
-    password, salt, hash_config, quiet=False, progress=False, debug=False, hsm_pepper=None
+    password,
+    salt,
+    hash_config,
+    quiet=False,
+    progress=False,
+    debug=False,
+    hsm_pepper=None,
+    format_version=8,
 ):
     """
     Apply multiple rounds of different hash algorithms to a password.
@@ -1395,6 +1404,8 @@ def multi_hash_password(
         quiet (bool): Whether to suppress progress output
         progress (bool): Whether to use progress bar for progress output
         debug (bool): Whether to show detailed debug output for each hash round
+        hsm_pepper (bytes): Optional HSM-derived pepper for additional security
+        format_version (int): Metadata format version (default: 8). Version 9+ uses secure chained salt derivation.
 
     Returns:
         bytes: The hashed password
@@ -1596,7 +1607,18 @@ def multi_hash_password(
                         for i in range(params):
                             # Use salt for key to enhance security
                             # Note: key parameter is optional and limited to 64 bytes
-                            key_material = hashlib.sha256(salt + str(i).encode()).digest()
+                            if i == 0:
+                                # First round uses salt-derived key
+                                key_material = hashlib.sha256(salt + str(i).encode()).digest()
+                            else:
+                                # Version-aware key derivation
+                                if format_version >= 9:
+                                    # Chained: Use previous hash output as key (secure method)
+                                    # Prevents precomputation attacks by creating dependency chain
+                                    key_material = hashed[:32]
+                                else:
+                                    # Legacy: Predictable derivation for v8 and below (backward compatibility)
+                                    key_material = hashlib.sha256(salt + str(i).encode()).digest()
                             # Create a personalized BLAKE2b instance for each iteration
                             result = hashlib.blake2b(
                                 hashed, key=key_material[:32], digest_size=64
@@ -1620,7 +1642,20 @@ def multi_hash_password(
                             for i in range(params):
                                 # Use salt for key to enhance security and prevent length extension attacks
                                 # BLAKE3 supports keyed hashing which is more secure than plain hashing
-                                key_material = hashlib.sha256(salt + str(i).encode()).digest()
+                                if i == 0:
+                                    # First round uses salt-derived key
+                                    key_material = hashlib.sha256(salt + str(i).encode()).digest()
+                                else:
+                                    # Version-aware key derivation
+                                    if format_version >= 9:
+                                        # Chained: Use previous hash output as key (secure method)
+                                        # Prevents precomputation attacks by creating dependency chain
+                                        key_material = hashed[:32]
+                                    else:
+                                        # Legacy: Predictable derivation for v8 and below (backward compatibility)
+                                        key_material = hashlib.sha256(
+                                            salt + str(i).encode()
+                                        ).digest()
 
                                 # Create a keyed BLAKE3 instance for each iteration
                                 # BLAKE3 keyed mode provides additional security over plain hashing
@@ -1662,7 +1697,18 @@ def multi_hash_password(
                         for i in range(params):
                             # Each round combines the current hash with a round-specific salt
                             # to prevent length extension attacks
-                            round_material = hashlib.sha256(salt + str(i).encode()).digest()
+                            if i == 0:
+                                # First round uses salt-derived material
+                                round_material = hashlib.sha256(salt + str(i).encode()).digest()
+                            else:
+                                # Version-aware material derivation
+                                if format_version >= 9:
+                                    # Chained: Use previous hash output as material (secure method)
+                                    # Prevents precomputation attacks by creating dependency chain
+                                    round_material = hashed[:32]
+                                else:
+                                    # Legacy: Predictable derivation for v8 and below (backward compatibility)
+                                    round_material = hashlib.sha256(salt + str(i).encode()).digest()
 
                             # SHAKE-256 is an extendable-output function (XOF) that can produce
                             # any desired output length, which makes it very versatile
@@ -1776,6 +1822,7 @@ def generate_key(
     debug=False,
     pqc_keypair=None,
     hsm_pepper=None,
+    format_version=9,
 ):
     """
     Generate an encryption key from a password using PBKDF2 or Argon2.
@@ -1790,6 +1837,8 @@ def generate_key(
         debug (bool): Whether to show detailed debug output for each operation
         algorithm (str): The encryption algorithm to be used
         pqc_keypair (tuple, optional): Post-quantum keypair (public_key, private_key) for hybrid encryption
+        hsm_pepper (bytes, optional): HSM-derived pepper for additional security
+        format_version (int): Metadata format version (default: 9). Version 9+ uses secure chained salt derivation.
 
     Returns:
         tuple: (key, salt, hash_config)
@@ -1957,6 +2006,7 @@ def generate_key(
             progress=progress,
             debug=debug,
             hsm_pepper=hsm_pepper,
+            format_version=format_version,
         )
     else:
         # Even when no hash iterations are configured, we need to combine password with salt
@@ -2109,10 +2159,16 @@ def generate_key(
                     # Use the original salt for the first round
                     round_salt = base_salt
                 else:
-                    # For subsequent rounds, derive a new unique salt using a secure method
-                    # This prevents potential weakening due to salt reuse
-                    salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
-                    round_salt = salt_material[:16]  # Use 16 bytes for salt
+                    # Version-aware salt derivation
+                    if format_version >= 9:
+                        # Chained: Use previous output as salt (secure method)
+                        # Prevents precomputation attacks by creating dependency chain
+                        round_salt = bytes(password)[:16]
+                    else:
+                        # Legacy: Predictable derivation for v8 and below (backward compatibility)
+                        # This method is deprecated due to security concerns
+                        salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
+                        round_salt = salt_material[:16]  # Use 16 bytes for salt
 
                 # Convert password to bytes format required by argon2
                 password_bytes = bytes(password)
@@ -2218,10 +2274,16 @@ def generate_key(
                     # Use the original salt for the first round
                     round_salt = base_salt
                 else:
-                    # For subsequent rounds, derive a new unique salt using a secure method
-                    # This prevents potential weakening due to salt reuse
-                    salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
-                    round_salt = salt_material[:16]  # Use 16 bytes for salt
+                    # Version-aware salt derivation
+                    if format_version >= 9:
+                        # Chained: Use previous output as salt (secure method)
+                        # Prevents precomputation attacks by creating dependency chain
+                        round_salt = bytes(password)[:16]
+                    else:
+                        # Legacy: Predictable derivation for v8 and below (backward compatibility)
+                        # This method is deprecated due to security concerns
+                        salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
+                        round_salt = salt_material[:16]  # Use 16 bytes for salt
 
                 # Make a secure copy of the password for this operation
                 if hasattr(password, "to_bytes"):
@@ -2314,10 +2376,16 @@ def generate_key(
                     # Use the original salt for the first round
                     round_salt = base_salt
                 else:
-                    # For subsequent rounds, derive a new unique salt using a secure method
-                    # This prevents potential weakening due to salt reuse
-                    salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
-                    round_salt = salt_material[:16]  # Use 16 bytes for salt
+                    # Version-aware salt derivation
+                    if format_version >= 9:
+                        # Chained: Use previous output as salt (secure method)
+                        # Prevents precomputation attacks by creating dependency chain
+                        round_salt = password[:16]
+                    else:
+                        # Legacy: Predictable derivation for v8 and below (backward compatibility)
+                        # This method is deprecated due to security concerns
+                        salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
+                        round_salt = salt_material[:16]  # Use 16 bytes for salt
 
                 # Create the scrypt KDF with appropriate parameters
                 scrypt_kdf = Scrypt(
@@ -2429,10 +2497,19 @@ def generate_key(
                     # Use the original salt for the first round
                     round_salt = base_salt
                 else:
-                    # For subsequent rounds, derive a new unique salt using a secure method
-                    # This prevents potential weakening due to salt reuse
-                    salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
-                    round_salt = salt_material[:16]  # Use 16 bytes for salt
+                    # Version-aware salt derivation
+                    if format_version >= 9:
+                        # Chained: Use previous output as salt (secure method)
+                        # Prevents precomputation attacks by creating dependency chain
+                        if hasattr(password, "to_bytes"):
+                            round_salt = password.to_bytes()[:16]
+                        else:
+                            round_salt = password[:16]
+                    else:
+                        # Legacy: Predictable derivation for v8 and below (backward compatibility)
+                        # This method is deprecated due to security concerns
+                        salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
+                        round_salt = salt_material[:16]  # Use 16 bytes for salt
 
                 # Make a secure copy of the password for this operation
                 if hasattr(password, "to_bytes"):
@@ -2575,9 +2652,23 @@ def generate_key(
             print(f"Applying {use_pbkdf2} rounds of PBKDF2")
 
         for i in range(use_pbkdf2):
-            # Generate a unique salt for each iteration by hashing the base salt with the iteration number
-            # This ensures each iteration has a completely different salt, preventing salt reuse
-            iteration_specific_salt = hashlib.sha256(base_salt + str(i).encode("utf-8")).digest()
+            # Version-aware salt derivation
+            if format_version >= 9:
+                # V9+ secure chained salt derivation
+                if i == 0:
+                    # Use the original salt for the first iteration
+                    iteration_specific_salt = base_salt
+                else:
+                    # Chained: Use previous output as salt (secure method)
+                    # Prevents precomputation attacks by creating dependency chain
+                    iteration_specific_salt = password[:16]
+            else:
+                # Legacy: Predictable derivation for ALL rounds (v8 and below)
+                # This method is deprecated due to security concerns, but needed for backward compatibility
+                # Original code derived salt for all rounds including round 0
+                iteration_specific_salt = hashlib.sha256(
+                    base_salt + str(i).encode("utf-8")
+                ).digest()
 
             password = PBKDF2HMAC(
                 algorithm=hashes.SHA256(),
@@ -2653,7 +2744,22 @@ def generate_key(
         base_salt = salt
 
         for i in range(default_pbkdf2_iterations):
-            iteration_specific_salt = hashlib.sha256(base_salt + str(i).encode("utf-8")).digest()
+            # Version-aware salt derivation
+            if format_version >= 9:
+                # V9+ secure chained salt derivation
+                if i == 0:
+                    # Use the original salt for the first iteration
+                    iteration_specific_salt = base_salt
+                else:
+                    # Chained: Use previous output as salt (secure method)
+                    iteration_specific_salt = password[:16]
+            else:
+                # Legacy: Predictable derivation for ALL rounds (v8 and below)
+                # Original fallback code derived salt for all rounds including round 0
+                iteration_specific_salt = hashlib.sha256(
+                    base_salt + str(i).encode("utf-8")
+                ).digest()
+
             password = PBKDF2HMAC(
                 algorithm=hashes.SHA256(),
                 length=key_length,
@@ -3118,7 +3224,7 @@ def create_metadata_v6(
 
     # Create basic metadata
     metadata = {
-        "format_version": 6,  # Version 6
+        "format_version": 9,  # Version 9 (secure chained salt derivation)
         "derivation_config": {"salt": salt_b64, "hash_config": {}, "kdf_config": {}},
         "hashes": hashes_dict,
         "encryption": {"algorithm": algorithm, "encryption_data": encryption_data},
@@ -3335,7 +3441,7 @@ def create_metadata_v8(
 
     # Create basic metadata structure
     metadata = {
-        "format_version": 8,
+        "format_version": 9,
         "mode": "symmetric",
         "derivation_config": {"salt": salt_b64, "hash_config": {}, "kdf_config": {}},
         "hashes": hashes_dict,
@@ -3717,8 +3823,9 @@ def decrypt_file_asymmetric(
         raise ValueError(f"Invalid metadata format: {e}")
 
     # Verify format version
-    if metadata.get("format_version") != 7:
-        raise ValueError(f"Expected format version 7, got {metadata.get('format_version')}")
+    format_version = metadata.get("format_version", 7)
+    if format_version != 7:
+        raise ValueError(f"Expected format version 7, got {format_version}")
 
     if metadata.get("mode") != "asymmetric":
         raise ValueError(f"Expected asymmetric mode, got {metadata.get('mode')}")
@@ -3856,6 +3963,7 @@ def decrypt_file_asymmetric(
                 hash_config=hash_config,
                 quiet=quiet,
                 progress=progress,
+                format_version=format_version,  # Use version from file metadata
             )
 
             if not quiet:
@@ -4012,6 +4120,7 @@ def encrypt_file_asymmetric(
                 hash_config=hash_config,
                 quiet=quiet,
                 progress=progress,
+                format_version=7,  # Asymmetric encryption uses format v7
             )
 
             # Encrypt data
@@ -4572,7 +4681,9 @@ def encrypt_file(
                 encrypted_pepper_data = nonce + ciphertext_with_tag
 
                 # Generate file_id for pepper name
-                file_id = hashlib.sha256(os.path.abspath(input_file).encode("utf-8")).hexdigest()[:32]
+                file_id = hashlib.sha256(os.path.abspath(input_file).encode("utf-8")).hexdigest()[
+                    :32
+                ]
 
                 try:
                     pepper_plugin.store_pepper(
@@ -4600,7 +4711,9 @@ def encrypt_file(
                             if not quiet:
                                 print(f"Pepper updated on remote server (id: {file_id[:16]}...)")
                         except Exception as update_e:
-                            raise KeyDerivationError(f"Failed to update existing pepper on remote server: {update_e}")
+                            raise KeyDerivationError(
+                                f"Failed to update existing pepper on remote server: {update_e}"
+                            )
                     else:
                         raise KeyDerivationError(f"Failed to store pepper on remote server: {e}")
 
@@ -4644,6 +4757,7 @@ def encrypt_file(
         debug=debug,
         pqc_keypair=pqc_keypair,
         hsm_pepper=combined_pepper,
+        format_version=9,  # New files always use v9 (secure chained salt)
     )
     # Read the input file
     if not quiet:
@@ -5333,17 +5447,20 @@ def encrypt_file(
                 else:
                     with IntegrityPlugin(config) as plugin:
                         from pathlib import Path as PathLib
+
                         file_id = IntegrityPlugin.compute_file_id(PathLib(input_file))
                         metadata_hash = IntegrityPlugin.compute_metadata_hash(metadata_json)
                         # Get algorithm name for description
-                        algo_name = algorithm.value if hasattr(algorithm, 'value') else str(algorithm)
+                        algo_name = (
+                            algorithm.value if hasattr(algorithm, "value") else str(algorithm)
+                        )
 
                         try:
                             plugin.store_hash(
                                 file_id=file_id,
                                 metadata_hash=metadata_hash,
                                 algorithm=algo_name,
-                                description=f"Encrypted: {PathLib(output_file).name}"
+                                description=f"Encrypted: {PathLib(output_file).name}",
                             )
                             if not quiet:
                                 print(f"✓ Metadata hash uploaded to integrity server")
@@ -5356,13 +5473,15 @@ def encrypt_file(
                                     plugin.update_hash(
                                         file_id=file_id,
                                         metadata_hash=metadata_hash,
-                                        description=f"Encrypted: {PathLib(output_file).name} (updated)"
+                                        description=f"Encrypted: {PathLib(output_file).name} (updated)",
                                     )
                                     if not quiet:
                                         print(f"✓ Metadata hash updated on integrity server")
                                 except Exception as update_e:
                                     if not quiet:
-                                        print(f"Warning: Failed to update integrity hash: {update_e}")
+                                        print(
+                                            f"Warning: Failed to update integrity hash: {update_e}"
+                                        )
                             else:
                                 if not quiet:
                                     print(f"Warning: Failed to store integrity hash: {store_e}")
@@ -5553,17 +5672,20 @@ def encrypt_file(
                 else:
                     with IntegrityPlugin(config) as plugin:
                         from pathlib import Path as PathLib
+
                         file_id = IntegrityPlugin.compute_file_id(PathLib(input_file))
                         metadata_hash = IntegrityPlugin.compute_metadata_hash(metadata_json)
                         # Get algorithm name for description
-                        algo_name = algorithm.value if hasattr(algorithm, 'value') else str(algorithm)
+                        algo_name = (
+                            algorithm.value if hasattr(algorithm, "value") else str(algorithm)
+                        )
 
                         try:
                             plugin.store_hash(
                                 file_id=file_id,
                                 metadata_hash=metadata_hash,
                                 algorithm=algo_name,
-                                description=f"Encrypted: {PathLib(output_file).name}"
+                                description=f"Encrypted: {PathLib(output_file).name}",
                             )
                             if not quiet:
                                 print(f"✓ Metadata hash uploaded to integrity server")
@@ -5576,13 +5698,15 @@ def encrypt_file(
                                     plugin.update_hash(
                                         file_id=file_id,
                                         metadata_hash=metadata_hash,
-                                        description=f"Encrypted: {PathLib(output_file).name} (updated)"
+                                        description=f"Encrypted: {PathLib(output_file).name} (updated)",
                                     )
                                     if not quiet:
                                         print(f"✓ Metadata hash updated on integrity server")
                                 except Exception as update_e:
                                     if not quiet:
-                                        print(f"Warning: Failed to update integrity hash: {update_e}")
+                                        print(
+                                            f"Warning: Failed to update integrity hash: {update_e}"
+                                        )
                             else:
                                 if not quiet:
                                     print(f"Warning: Failed to store integrity hash: {store_e}")
@@ -5717,7 +5841,7 @@ def extract_file_metadata(input_file):
         format_version = metadata.get("format_version", 1)
 
         # Extract algorithm based on format version
-        if format_version in [4, 5, 6]:
+        if format_version in [4, 5, 6, 9]:
             encryption = metadata.get("encryption", {})
             algorithm = encryption.get("algorithm", EncryptionAlgorithm.FERNET.value)
             encryption_data = encryption.get("encryption_data", "aes-gcm")
@@ -5917,14 +6041,19 @@ def decrypt_file(
             config = IntegrityConfig.from_file()
             if not config.enabled:
                 if not quiet:
-                    print("Warning: --verify-integrity flag used but integrity plugin not configured")
+                    print(
+                        "Warning: --verify-integrity flag used but integrity plugin not configured"
+                    )
                     print("Configure at: ~/.openssl_encrypt/plugins/integrity/config.json")
             else:
                 with IntegrityPlugin(config) as plugin:
                     from pathlib import Path as PathLib
+
                     file_id = IntegrityPlugin.compute_file_id(PathLib(input_file))
                     # Compute hash from the base64-decoded metadata JSON
-                    current_hash = IntegrityPlugin.compute_metadata_hash(metadata_json.encode('utf-8'))
+                    current_hash = IntegrityPlugin.compute_metadata_hash(
+                        metadata_json.encode("utf-8")
+                    )
 
                     match, details = plugin.verify(file_id, current_hash)
 
@@ -5932,7 +6061,7 @@ def decrypt_file(
                         if not quiet:
                             print(f"✓ Integrity verification passed")
                     else:
-                        warning_msg = details.get('warning', 'Hash mismatch or not found')
+                        warning_msg = details.get("warning", "Hash mismatch or not found")
                         print(f"\n⚠️  INTEGRITY VERIFICATION FAILED!")
                         print(f"    Reason: {warning_msg}")
                         print(f"\n    This file's metadata may have been tampered with.")
@@ -5941,8 +6070,10 @@ def decrypt_file(
 
                         # Ask user if they want to proceed
                         try:
-                            response = input("Do you want to proceed anyway? [y/N]: ").strip().lower()
-                            if response not in ('y', 'yes'):
+                            response = (
+                                input("Do you want to proceed anyway? [y/N]: ").strip().lower()
+                            )
+                            if response not in ("y", "yes"):
                                 raise IntegrityVerificationError(
                                     f"Decryption aborted due to integrity verification failure: {warning_msg}"
                                 )
@@ -5964,9 +6095,9 @@ def decrypt_file(
     cascade_hkdf_hash = None
     cascade_salt_decrypt = None
 
-    # For format_version 4, 5, 6, 7, or 8, set correct hash_config for printing purposes
+    # For format_version 4, 5, 6, 7, 8, or 9, set correct hash_config for printing purposes
     # This doesn't change the actual metadata, just passes the right info to print_hash_config
-    if format_version in [4, 5, 6, 7, 8]:
+    if format_version in [4, 5, 6, 7, 8, 9]:
         # If verbose, pass the full metadata to print_hash_config for proper display
         if verbose:
             print_hash_config_metadata = metadata
@@ -5975,8 +6106,8 @@ def decrypt_file(
     else:
         print_hash_config_metadata = metadata.get("hash_config", {})
 
-    # Handle format version 4, 5, 6, 7, or 8
-    if format_version in [4, 5, 6, 7, 8]:
+    # Handle format version 4, 5, 6, 7, 8, or 9
+    if format_version in [4, 5, 6, 7, 8, 9]:
         # Extract information from new hierarchical structure
         derivation_config = metadata["derivation_config"]
         salt = base64.b64decode(derivation_config["salt"])
@@ -6029,10 +6160,10 @@ def decrypt_file(
         # Get encryption information
         encryption = metadata["encryption"]
 
-        # Check if this is V8 cascade format
+        # Check if this is V8+ cascade format
         is_cascade = encryption.get("cascade", False)
 
-        if format_version == 8 and is_cascade:
+        if format_version in [8, 9] and is_cascade:
             # Extract cascade information
             cascade_cipher_chain = encryption.get("cipher_chain", [])
             cascade_hkdf_hash = encryption.get("hkdf_hash", "sha256")
@@ -6287,7 +6418,10 @@ def decrypt_file(
                     # In debug mode, show detailed error with installation instructions
                     logger.debug(f"HSM Plugin Error: {init_result.message}")
                     # Check if it's a missing dependency error
-                    if "not available" in init_result.message.lower() or "not installed" in init_result.message.lower():
+                    if (
+                        "not available" in init_result.message.lower()
+                        or "not installed" in init_result.message.lower()
+                    ):
                         logger.debug("💡 To install HSM dependencies:")
                         logger.debug("   pip install openssl-encrypt[hsm]")
                         logger.debug("   # OR")
@@ -6381,7 +6515,7 @@ def decrypt_file(
             print(f"File requires remote pepper plugin '{pepper_plugin_name}'...")
 
         try:
-            from ..plugins.pepper import PepperPlugin, PepperConfig, PepperError
+            from ..plugins.pepper import PepperConfig, PepperError, PepperPlugin
 
             config = PepperConfig.from_file()
             if not config.enabled:
@@ -6469,6 +6603,7 @@ def decrypt_file(
         debug=debug,
         pqc_keypair=pqc_info,
         hsm_pepper=combined_pepper,
+        format_version=format_version,  # Use version from file metadata for backward compatibility
     )
 
     # Helper function to get expected nonce size for each algorithm
@@ -6521,8 +6656,8 @@ def decrypt_file(
     if pqc_has_private_key:
         try:
             # Handle different format versions
-            if format_version in [4, 5, 6]:
-                # Get encrypted private key from v4/v5/v6 structure
+            if format_version in [4, 5, 6, 9]:
+                # Get encrypted private key from v4/v5/v6/v9 structure
                 encrypted_private_key = base64.b64decode(metadata["encryption"]["pqc_private_key"])
             else:  # format_version 3
                 encrypted_private_key = base64.b64decode(metadata["pqc_private_key"])
@@ -6534,13 +6669,13 @@ def decrypt_file(
             if pqc_key_is_encrypted:
                 # We need to decrypt the private key using the separately derived key
                 # Get the salt from metadata based on format version
-                if format_version in [4, 5, 6]:
+                if format_version in [4, 5, 6, 9]:
                     if "pqc_key_salt" not in metadata["encryption"]:
                         if not quiet:
                             print("Failed to decrypt post-quantum private key - wrong format")
                         raise DecryptionError("Missing PQC key salt in metadata")
                     else:
-                        # Decode the salt from v4/v5 structure
+                        # Decode the salt from v4/v5/v6/v9 structure
                         private_key_salt = base64.b64decode(metadata["encryption"]["pqc_key_salt"])
                 else:  # format_version 3
                     if "pqc_key_salt" not in metadata:
