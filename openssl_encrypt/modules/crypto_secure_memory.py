@@ -370,6 +370,16 @@ def create_key_from_password(
     Returns:
         CryptoKey: A secure key derived from the password
     """
+    # Validate inputs before processing
+    if salt is None or not isinstance(salt, (bytes, bytearray)):
+        raise KeyDerivationError("Salt must be bytes or bytearray")
+
+    if not isinstance(key_size, int) or key_size <= 0:
+        raise KeyDerivationError("Key size must be a positive integer")
+
+    if not isinstance(hash_iterations, int) or hash_iterations <= 0:
+        raise KeyDerivationError("Hash iterations must be a positive integer")
+
     try:
         # Import key derivation function
         from cryptography.hazmat.primitives import hashes
