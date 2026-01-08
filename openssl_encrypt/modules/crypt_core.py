@@ -1975,6 +1975,7 @@ def generate_key(
                 "sha3_256",
                 "sha3_512",
                 "blake2b",
+                "blake3",
                 "shake256",
                 "whirlpool",
             ]
@@ -1991,6 +1992,7 @@ def generate_key(
                     "sha3_256",
                     "sha3_512",
                     "blake2b",
+                    "blake3",
                     "shake256",
                     "whirlpool",
                 ]

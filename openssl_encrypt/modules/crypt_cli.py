@@ -399,6 +399,9 @@ def debug_hash_config(args, hash_config, message="Hash configuration"):
         f"BLAKE2b: args={args.blake2b_rounds}, hash_config={hash_config.get('blake2b', 'Not set')}"
     )
     logger.debug(
+        f"BLAKE3: args={args.blake3_rounds}, hash_config={hash_config.get('blake3', 'Not set')}"
+    )
+    logger.debug(
         f"SHAKE-256: args={args.shake256_rounds}, hash_config={hash_config.get('shake256', 'Not set')}"
     )
     logger.debug(
