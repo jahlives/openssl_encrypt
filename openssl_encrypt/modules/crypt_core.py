@@ -2819,6 +2819,7 @@ def generate_key(
     if algorithm == EncryptionAlgorithm.THREEFISH_512.value:
         # Expand to 64 bytes (512 bits) for Threefish-512
         from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
         hkdf = HKDF(
             algorithm=hashes.SHA256(),
             length=64,
@@ -2830,6 +2831,7 @@ def generate_key(
     elif algorithm == EncryptionAlgorithm.THREEFISH_1024.value:
         # Expand to 128 bytes (1024 bits) for Threefish-1024
         from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
         hkdf = HKDF(
             algorithm=hashes.SHA256(),
             length=128,
@@ -4897,7 +4899,9 @@ def encrypt_file(
             logger.debug(
                 f"ENCRYPT:DATA Input data (first 64 bytes): {data[:64].hex() if len(data) >= 64 else data.hex()}"
             )
-            logger.debug(f"ENCRYPT:AAD AAD value: {aad if aad is None else f'{len(aad)} bytes: {aad[:100] if len(aad) > 100 else aad}'}")
+            logger.debug(
+                f"ENCRYPT:AAD AAD value: {aad if aad is None else f'{len(aad)} bytes: {aad[:100] if len(aad) > 100 else aad}'}"
+            )
 
         # Handle cascade encryption
         if cascade and cipher_names:
@@ -5224,20 +5228,22 @@ def encrypt_file(
             elif algorithm == EncryptionAlgorithm.THREEFISH_512:
                 if debug:
                     logger.debug(f"ENCRYPT:THREEFISH-512 Key length: {len(key)} bytes")
-                    logger.debug(f"ENCRYPT:THREEFISH-512 Using {nonce_size}-byte nonce for encryption")
+                    logger.debug(
+                        f"ENCRYPT:THREEFISH-512 Using {nonce_size}-byte nonce for encryption"
+                    )
                     logger.debug(f"ENCRYPT:THREEFISH-512 Nonce: {nonce[:nonce_size].hex()}")
 
                 import threefish_native
 
-                encrypted_payload = threefish_native.encrypt_512(
-                    key, nonce[:nonce_size], data, aad
-                )
+                encrypted_payload = threefish_native.encrypt_512(key, nonce[:nonce_size], data, aad)
 
                 if debug:
                     logger.debug(
                         f"ENCRYPT:THREEFISH-512 Encrypted payload length: {len(encrypted_payload)} bytes"
                     )
-                    logger.debug(f"ENCRYPT:THREEFISH-512 Encrypted payload: {encrypted_payload.hex()}")
+                    logger.debug(
+                        f"ENCRYPT:THREEFISH-512 Encrypted payload: {encrypted_payload.hex()}"
+                    )
 
                 return nonce + encrypted_payload
 
@@ -5245,7 +5251,9 @@ def encrypt_file(
                 if debug:
                     logger.debug(f"ENCRYPT:THREEFISH-1024 Key length: {len(key)} bytes")
                     logger.debug(f"ENCRYPT:THREEFISH-1024 Key (first 32 bytes): {key[:32].hex()}")
-                    logger.debug(f"ENCRYPT:THREEFISH-1024 Using {nonce_size}-byte nonce for encryption")
+                    logger.debug(
+                        f"ENCRYPT:THREEFISH-1024 Using {nonce_size}-byte nonce for encryption"
+                    )
                     logger.debug(f"ENCRYPT:THREEFISH-1024 Nonce: {nonce[:nonce_size].hex()}")
                     logger.debug(f"ENCRYPT:THREEFISH-1024 Data length: {len(data)} bytes")
                     logger.debug(f"ENCRYPT:THREEFISH-1024 AAD: {aad}")
@@ -5260,8 +5268,12 @@ def encrypt_file(
                     logger.debug(
                         f"ENCRYPT:THREEFISH-1024 Encrypted payload length: {len(encrypted_payload)} bytes"
                     )
-                    logger.debug(f"ENCRYPT:THREEFISH-1024 Encrypted payload (first 64 bytes): {encrypted_payload[:64].hex()}")
-                    logger.debug(f"ENCRYPT:THREEFISH-1024 Full encrypted data will be {len(nonce[:nonce_size]) + len(encrypted_payload)} bytes")
+                    logger.debug(
+                        f"ENCRYPT:THREEFISH-1024 Encrypted payload (first 64 bytes): {encrypted_payload[:64].hex()}"
+                    )
+                    logger.debug(
+                        f"ENCRYPT:THREEFISH-1024 Full encrypted data will be {len(nonce[:nonce_size]) + len(encrypted_payload)} bytes"
+                    )
 
                 return nonce + encrypted_payload
 
@@ -6883,7 +6895,9 @@ def decrypt_file(
             logger.debug(
                 f"DECRYPT:DATA Encrypted data (first 64 bytes): {encrypted_data[:64].hex() if len(encrypted_data) >= 64 else encrypted_data.hex()}"
             )
-            logger.debug(f"DECRYPT:AAD AAD value: {aad_for_decrypt if aad_for_decrypt is None else f'{len(aad_for_decrypt)} bytes: {aad_for_decrypt[:100] if len(aad_for_decrypt) > 100 else aad_for_decrypt}'}")
+            logger.debug(
+                f"DECRYPT:AAD AAD value: {aad_for_decrypt if aad_for_decrypt is None else f'{len(aad_for_decrypt)} bytes: {aad_for_decrypt[:100] if len(aad_for_decrypt) > 100 else aad_for_decrypt}'}"
+            )
 
         # Handle cascade decryption for V8 format
         if is_cascade and cascade_cipher_chain:
@@ -7359,12 +7373,14 @@ def decrypt_file(
                         elif algorithm == EncryptionAlgorithm.THREEFISH_512.value:
                             if debug:
                                 logger.debug(f"DECRYPT:THREEFISH-512 Key length: {len(key)} bytes")
-                                logger.debug(f"DECRYPT:THREEFISH-512 Ciphertext: {ciphertext.hex()}")
+                                logger.debug(
+                                    f"DECRYPT:THREEFISH-512 Ciphertext: {ciphertext.hex()}"
+                                )
 
                             import threefish_native
 
                             result = threefish_native.decrypt_512(
-                                key, nonce[:effective_size], ciphertext, aad
+                                key, nonce[:effective_size], ciphertext, aad_for_decrypt
                             )
 
                             if debug:
@@ -7379,17 +7395,27 @@ def decrypt_file(
                         elif algorithm == EncryptionAlgorithm.THREEFISH_1024.value:
                             if debug:
                                 logger.debug(f"DECRYPT:THREEFISH-1024 Key length: {len(key)} bytes")
-                                logger.debug(f"DECRYPT:THREEFISH-1024 Key (first 32 bytes): {key[:32].hex()}")
-                                logger.debug(f"DECRYPT:THREEFISH-1024 Nonce (first 32 bytes): {nonce[:min(32, effective_size)].hex()}")
-                                logger.debug(f"DECRYPT:THREEFISH-1024 Effective nonce size: {effective_size} bytes")
-                                logger.debug(f"DECRYPT:THREEFISH-1024 AAD: {aad}")
-                                logger.debug(f"DECRYPT:THREEFISH-1024 Ciphertext length: {len(ciphertext)} bytes")
-                                logger.debug(f"DECRYPT:THREEFISH-1024 Ciphertext (first 64 bytes): {ciphertext[:min(64, len(ciphertext))].hex()}")
+                                logger.debug(
+                                    f"DECRYPT:THREEFISH-1024 Key (first 32 bytes): {key[:32].hex()}"
+                                )
+                                logger.debug(
+                                    f"DECRYPT:THREEFISH-1024 Nonce (first 32 bytes): {nonce[:min(32, effective_size)].hex()}"
+                                )
+                                logger.debug(
+                                    f"DECRYPT:THREEFISH-1024 Effective nonce size: {effective_size} bytes"
+                                )
+                                logger.debug(f"DECRYPT:THREEFISH-1024 AAD: {aad_for_decrypt}")
+                                logger.debug(
+                                    f"DECRYPT:THREEFISH-1024 Ciphertext length: {len(ciphertext)} bytes"
+                                )
+                                logger.debug(
+                                    f"DECRYPT:THREEFISH-1024 Ciphertext (first 64 bytes): {ciphertext[:min(64, len(ciphertext))].hex()}"
+                                )
 
                             import threefish_native
 
                             result = threefish_native.decrypt_1024(
-                                key, nonce[:effective_size], ciphertext, aad
+                                key, nonce[:effective_size], ciphertext, aad_for_decrypt
                             )
 
                             if debug:
