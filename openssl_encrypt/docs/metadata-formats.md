@@ -21,9 +21,9 @@ OpenSSL Encrypt uses structured metadata to store encryption parameters, algorit
 - **Version 4**: Restructured metadata with logical sections
 - **Version 5**: Configurable data encryption algorithms for PQC
 - **Version 6**: Reserved for future use
-- **Version 7**: Reserved for future use
+- **Version 7**: Secure chained salt derivation (v1.3.4 branch - identical to v9)
 - **Version 8**: Multi-round KDF support (deprecated - security vulnerability)
-- **Version 9**: Secure chained salt derivation for multi-round KDFs (current)
+- **Version 9**: Secure chained salt derivation for multi-round KDFs (v1.4.0+ default)
 
 ### Metadata Purpose
 
@@ -40,23 +40,26 @@ The metadata serves several critical functions:
 ### Migration Timeline
 
 ```
-v3 (Legacy) → v4 (Restructured) → v5 (PQC Enhanced) → v8 (Multi-round KDF) → v9 (Secure Chained Salt)
-    ↓              ↓                    ↓                      ↓                        ↓
-Deprecated    Supported          Supported          Deprecated (Security)      Current Default
+v3 (Legacy) → v4 (Restructured) → v5 (PQC Enhanced) → v7/v9 (Secure Chained Salt)
+    ↓              ↓                    ↓                      ↓
+Deprecated    Supported          Supported              Current Default
+                                                         (v7: v1.3.4, v9: v1.4.0+)
+
+v8 (Multi-round KDF) - Deprecated immediately due to security vulnerability
 ```
 
 ### Key Improvements by Version
 
-| Feature | v3 | v4 | v5 | v8 | v9 | Notes |
-|---------|----|----|----|----|----|----|
-| **Structured Metadata** | ❌ | ✅ | ✅ | ✅ | ✅ | Logical section organization |
-| **Hash Configuration** | ❌ | ✅ | ✅ | ✅ | ✅ | Per-algorithm round settings |
-| **KDF Configuration** | ❌ | ✅ | ✅ | ✅ | ✅ | Detailed KDF parameters |
-| **PQC Algorithm Support** | ❌ | ✅ | ✅ | ✅ | ✅ | Post-quantum encryption |
-| **Configurable Data Encryption** | ❌ | ❌ | ✅ | ✅ | ✅ | Multiple symmetric algorithms with PQC |
-| **Enhanced Security Metadata** | ❌ | ❌ | ✅ | ✅ | ✅ | Extended security parameters |
-| **Multi-round KDF Support** | ❌ | ❌ | ❌ | ✅ | ✅ | Multiple KDF rounds for increased security |
-| **Secure Chained Salt Derivation** | ❌ | ❌ | ❌ | ❌ | ✅ | **CRITICAL SECURITY FIX** - Prevents precomputation attacks |
+| Feature | v3 | v4 | v5 | v7 | v8 | v9 | Notes |
+|---------|----|----|----|----|----|----|-------|
+| **Structured Metadata** | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | Logical section organization |
+| **Hash Configuration** | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | Per-algorithm round settings |
+| **KDF Configuration** | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | Detailed KDF parameters |
+| **PQC Algorithm Support** | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | Post-quantum encryption |
+| **Configurable Data Encryption** | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | Multiple symmetric algorithms with PQC |
+| **Enhanced Security Metadata** | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | Extended security parameters |
+| **Multi-round KDF Support** | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | Multiple KDF rounds for increased security |
+| **Secure Chained Salt Derivation** | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | **CRITICAL SECURITY FIX** - v7 and v9 are cryptographically identical |
 
 ## Version 4 Specification
 
@@ -470,6 +473,48 @@ Files at lower risk:
 - **Strong passwords** (>20 chars, high entropy): MEDIUM - Rainbow tables less effective
 - **Additional encryption layers**: MEDIUM - Defense in depth reduces risk
 
+## Version 7 and 9 Equivalence
+
+### Overview
+
+Format versions 7 and 9 are **cryptographically identical** and implement the same security fix for the salt derivation vulnerability (CVE-330). The version number difference exists due to parallel development:
+
+- **Version 7**: Introduced in v1.3.4 (releases/1.3.4 branch) - Focus on asymmetric encryption and PQC
+- **Version 9**: Introduced in v1.4.0 (feature/v1.4.0-development branch) - Multi-feature release
+
+### Implementation Unity
+
+Both v7 and v9 use identical secure chained salt derivation:
+
+```python
+# Both v7 and v9 use this pattern:
+if format_version >= 7 and format_version != 8:
+    # Secure chained salt derivation
+    round_salt = previous_output[:16]
+else:
+    # Legacy predictable derivation (v1-6, v8)
+    round_salt = hashlib.sha256(base_salt + str(round_num).encode()).digest()[:16]
+```
+
+### Key Properties
+
+1. **Cryptographic Equivalence**: v7 and v9 produce identical keys for the same inputs
+2. **Security Level**: Both provide the same security improvements over v8 and below
+3. **Interoperability**: Files encrypted with v7 decrypt correctly in v1.4.0+
+4. **v8 Exception**: v8 deliberately excluded from secure derivation for backward compatibility
+
+### Version Selection
+
+- **v1.3.4 (releases/1.3.4)**: Creates v7 files
+- **v1.4.0+ (feature/v1.4.0-development)**: Creates v9 files by default
+- **Both versions**: Can decrypt v7, v8, and v9 files correctly
+
+### Why v8 is Different
+
+Version 8 remains vulnerable to maintain backward compatibility for existing v8 files. Files encrypted with v8 can still be decrypted, but new encryptions use v7 (in v1.3.4) or v9 (in v1.4.0+).
+
+**Important**: The check `format_version != 8` ensures v8 continues to use predictable salt derivation for decryption, while v7 and v9 both use secure chained derivation.
+
 ## Migration Guide
 
 ### Automatic Migration
@@ -541,8 +586,9 @@ done
 | **v4** | ✅ Yes | ✅ Yes | Full support |
 | **v5** | ✅ Yes | ✅ Yes | Full support |
 | **v6** | ✅ Yes | ✅ Yes | Full support |
+| **v7** | ✅ Yes | ✅ Yes | **Secure chained salt** - v1.3.4 branch (cryptographically identical to v9) |
 | **v8** | ✅ Yes | ❌ No | **Deprecated - Security vulnerability** |
-| **v9** | ✅ Yes | ✅ Yes | **Current default** - Secure chained salt derivation |
+| **v9** | ✅ Yes | ✅ Yes | **Current default** - Secure chained salt derivation (v1.4.0+) |
 
 ### Compatibility Guarantees
 
@@ -702,4 +748,4 @@ def generate_metadata_v5(encryption_params):
 
 This metadata formats documentation provides comprehensive information about the file format evolution and implementation details. For algorithm-specific information, see the [Algorithm Reference](algorithm-reference.md).
 
-**Last updated**: January 7, 2026 (v1.4.1 - Format Version 9 Security Fix)
+**Last updated**: January 8, 2026 (v1.4.0 - Format Version 7 and 9 Unification)
