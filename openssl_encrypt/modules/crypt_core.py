@@ -4845,6 +4845,12 @@ def encrypt_file(
         elif alg == EncryptionAlgorithm.CAMELLIA:
             # Camellia in CBC mode requires a full block (16 bytes) for IV
             return secrets.token_bytes(16), 16
+        elif alg == EncryptionAlgorithm.THREEFISH_512:
+            # Threefish-512 requires 32-byte nonce
+            return secrets.token_bytes(32), 32
+        elif alg == EncryptionAlgorithm.THREEFISH_1024:
+            # Threefish-1024 requires 64-byte nonce
+            return secrets.token_bytes(64), 64
         else:
             # Default for unknown algorithms
             return secrets.token_bytes(16), 16
@@ -5181,6 +5187,46 @@ def encrypt_file(
                         f"ENCRYPT:CAMELLIA Encrypted payload length: {len(encrypted_payload)} bytes"
                     )
                     logger.debug(f"ENCRYPT:CAMELLIA Encrypted payload: {encrypted_payload.hex()}")
+
+                return nonce + encrypted_payload
+
+            elif algorithm == EncryptionAlgorithm.THREEFISH_512:
+                if debug:
+                    logger.debug(f"ENCRYPT:THREEFISH-512 Key length: {len(key)} bytes")
+                    logger.debug(f"ENCRYPT:THREEFISH-512 Using {nonce_size}-byte nonce for encryption")
+                    logger.debug(f"ENCRYPT:THREEFISH-512 Nonce: {nonce[:nonce_size].hex()}")
+
+                import threefish_native
+
+                encrypted_payload = threefish_native.encrypt_512(
+                    key, nonce[:nonce_size], data, aad
+                )
+
+                if debug:
+                    logger.debug(
+                        f"ENCRYPT:THREEFISH-512 Encrypted payload length: {len(encrypted_payload)} bytes"
+                    )
+                    logger.debug(f"ENCRYPT:THREEFISH-512 Encrypted payload: {encrypted_payload.hex()}")
+
+                return nonce + encrypted_payload
+
+            elif algorithm == EncryptionAlgorithm.THREEFISH_1024:
+                if debug:
+                    logger.debug(f"ENCRYPT:THREEFISH-1024 Key length: {len(key)} bytes")
+                    logger.debug(f"ENCRYPT:THREEFISH-1024 Using {nonce_size}-byte nonce for encryption")
+                    logger.debug(f"ENCRYPT:THREEFISH-1024 Nonce: {nonce[:nonce_size].hex()}")
+
+                import threefish_native
+
+                encrypted_payload = threefish_native.encrypt_1024(
+                    key, nonce[:nonce_size], data, aad
+                )
+
+                if debug:
+                    logger.debug(
+                        f"ENCRYPT:THREEFISH-1024 Encrypted payload length: {len(encrypted_payload)} bytes"
+                    )
+                    logger.debug(f"ENCRYPT:THREEFISH-1024 Encrypted payload: {encrypted_payload.hex()}")
 
                 return nonce + encrypted_payload
 
@@ -7268,6 +7314,46 @@ def decrypt_file(
                                 )
 
                             return result
+                        elif algorithm == EncryptionAlgorithm.THREEFISH_512.value:
+                            if debug:
+                                logger.debug(f"DECRYPT:THREEFISH-512 Key length: {len(key)} bytes")
+                                logger.debug(f"DECRYPT:THREEFISH-512 Ciphertext: {ciphertext.hex()}")
+
+                            import threefish_native
+
+                            result = threefish_native.decrypt_512(
+                                key, nonce[:effective_size], ciphertext, aad
+                            )
+
+                            if debug:
+                                logger.debug(
+                                    f"DECRYPT:THREEFISH-512 Decrypted plaintext length: {len(result)} bytes"
+                                )
+                                logger.debug(
+                                    f"DECRYPT:THREEFISH-512 Decrypted plaintext: {result.hex()}"
+                                )
+
+                            return SecureBytes(result)
+                        elif algorithm == EncryptionAlgorithm.THREEFISH_1024.value:
+                            if debug:
+                                logger.debug(f"DECRYPT:THREEFISH-1024 Key length: {len(key)} bytes")
+                                logger.debug(f"DECRYPT:THREEFISH-1024 Ciphertext: {ciphertext.hex()}")
+
+                            import threefish_native
+
+                            result = threefish_native.decrypt_1024(
+                                key, nonce[:effective_size], ciphertext, aad
+                            )
+
+                            if debug:
+                                logger.debug(
+                                    f"DECRYPT:THREEFISH-1024 Decrypted plaintext length: {len(result)} bytes"
+                                )
+                                logger.debug(
+                                    f"DECRYPT:THREEFISH-1024 Decrypted plaintext: {result.hex()}"
+                                )
+
+                            return SecureBytes(result)
                 except Exception as e:
                     # Save the error and try the next nonce size
                     last_error = e
