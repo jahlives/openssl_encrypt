@@ -330,7 +330,7 @@ class StdinMetadataExtractor:
             # Extract algorithm info based on format version
             format_version = metadata.get("format_version", 1)
 
-            if format_version in [4, 5, 6, 9]:
+            if format_version in [4, 5, 6, 7, 9]:
                 encryption = metadata.get("encryption", {})
                 algorithm = encryption.get("algorithm", "fernet")
                 encryption_data = encryption.get("encryption_data", "aes-gcm")
