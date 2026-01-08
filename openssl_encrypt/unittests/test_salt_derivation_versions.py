@@ -161,9 +161,7 @@ class TestSaltDerivationVersions(unittest.TestCase):
         salt = b"scrypt_test_salt"
 
         # Hash config with Scrypt multi-round (flat format)
-        scrypt_config = {
-            "scrypt": {"enabled": True, "n": 1024, "r": 4, "p": 1, "rounds": 2}
-        }
+        scrypt_config = {"scrypt": {"enabled": True, "n": 1024, "r": 4, "p": 1, "rounds": 2}}
 
         try:
             # v8: Predictable salt derivation
@@ -198,9 +196,7 @@ class TestSaltDerivationVersions(unittest.TestCase):
         salt = b"hash_test_salt16"
 
         # Hash config with BLAKE3 multi-round (flat format)
-        blake3_config = {
-            "blake3": 2  # 2 rounds
-        }
+        blake3_config = {"blake3": 2}  # 2 rounds
 
         try:
             # v8: Predictable salt derivation
@@ -226,9 +222,7 @@ class TestSaltDerivationVersions(unittest.TestCase):
 
         except Exception as e:
             # If BLAKE3 is not available, try BLAKE2b
-            blake2b_config = {
-                "blake2b": 2  # 2 rounds
-            }
+            blake2b_config = {"blake2b": 2}  # 2 rounds
 
             try:
                 key_v8 = multi_hash_password(
@@ -257,10 +251,7 @@ class TestSaltDerivationVersions(unittest.TestCase):
         salt = b"single_round_tst"
 
         # Hash config with single round (no salt derivation happens, flat format)
-        single_round_config = {
-            "pbkdf2_iterations": 1000,
-            "pbkdf2": {"rounds": 1}
-        }
+        single_round_config = {"pbkdf2_iterations": 1000, "pbkdf2": {"rounds": 1}}
 
         # v8 with single round
         key_v8 = multi_hash_password(
@@ -328,9 +319,7 @@ class TestSaltDerivationVersions(unittest.TestCase):
         salt = b"v7_test_salt_val"
 
         # Hash config with multi-round Scrypt
-        scrypt_config = {
-            "scrypt": {"enabled": True, "n": 1024, "r": 4, "p": 1, "rounds": 2}
-        }
+        scrypt_config = {"scrypt": {"enabled": True, "n": 1024, "r": 4, "p": 1, "rounds": 2}}
 
         try:
             # v7: Should use chained salt derivation
@@ -410,10 +399,7 @@ class TestSaltDerivationVersions(unittest.TestCase):
 
                 except Exception as e:
                     # Skip if dependency not available
-                    if any(
-                        word in str(e).lower()
-                        for word in ["not available", "scrypt", "blake"]
-                    ):
+                    if any(word in str(e).lower() for word in ["not available", "scrypt", "blake"]):
                         continue
                     raise
 
@@ -422,10 +408,7 @@ class TestSaltDerivationVersions(unittest.TestCase):
         salt = b"v8_compat_salt__"
 
         # Hash config with multi-round PBKDF2
-        pbkdf2_config = {
-            "pbkdf2_iterations": 1000,
-            "pbkdf2": {"rounds": 2}
-        }
+        pbkdf2_config = {"pbkdf2_iterations": 1000, "pbkdf2": {"rounds": 2}}
 
         # v8: Predictable salt derivation (vulnerable but backward compatible)
         key_v8 = multi_hash_password(
@@ -460,19 +443,25 @@ class TestSaltDerivationVersions(unittest.TestCase):
         # Test all supported KDF algorithms
         test_configs = [
             ("PBKDF2", {"pbkdf2_iterations": 1000, "pbkdf2": {"rounds": 3}}),
-            ("Argon2", {
-                "argon2": {
-                    "enabled": True,
-                    "time_cost": 2,
-                    "memory_cost": 8192,
-                    "parallelism": 1,
-                    "hash_len": 32,
-                    "type": 2,
-                    "rounds": 2,
-                }
-            }),
+            (
+                "Argon2",
+                {
+                    "argon2": {
+                        "enabled": True,
+                        "time_cost": 2,
+                        "memory_cost": 8192,
+                        "parallelism": 1,
+                        "hash_len": 32,
+                        "type": 2,
+                        "rounds": 2,
+                    }
+                },
+            ),
             ("Scrypt", {"scrypt": {"enabled": True, "n": 1024, "r": 4, "p": 1, "rounds": 2}}),
-            ("Balloon", {"balloon": {"enabled": True, "space_cost": 1024, "time_cost": 2, "rounds": 2}}),
+            (
+                "Balloon",
+                {"balloon": {"enabled": True, "space_cost": 1024, "time_cost": 2, "rounds": 2}},
+            ),
             ("BLAKE2b", {"blake2b": 3}),
             ("BLAKE3", {"blake3": 3}),
             ("SHAKE256", {"shake256": 3}),
