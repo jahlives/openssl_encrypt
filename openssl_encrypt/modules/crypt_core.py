@@ -2399,7 +2399,7 @@ def generate_key(
 
                 # Create the scrypt KDF with appropriate parameters
                 scrypt_kdf = Scrypt(
-                    salt=round_salt,
+                    salt=bytes(round_salt),
                     length=32,  # Fixed output length for consistency
                     n=hash_config["scrypt"]["n"],  # CPU/memory cost factor
                     r=hash_config["scrypt"]["r"],  # Block size factor

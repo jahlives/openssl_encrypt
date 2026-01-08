@@ -3637,8 +3637,8 @@ def main_with_args(args=None):
     scrypt_group.add_argument(
         "--scrypt-n",
         type=int,
-        default=128,
-        help="Scrypt CPU/memory cost factor N (default: 0, not used. Use power of 2 like 16384)",
+        default=0,
+        help="Scrypt CPU/memory cost factor N (default: 16384 when scrypt is enabled. Must be power of 2)",
     )
     scrypt_group.add_argument(
         "--scrypt-r",
@@ -5589,7 +5589,7 @@ def main_with_args(args=None):
                 "whirlpool": getattr(args, "whirlpool_rounds", 0),
                 "scrypt": {
                     "enabled": args.enable_scrypt,
-                    "n": args.scrypt_n if args.scrypt_n is not None else 0,
+                    "n": args.scrypt_n if args.scrypt_n and args.scrypt_n > 0 else 16384,
                     "r": args.scrypt_r if args.scrypt_r is not None else 8,
                     "p": args.scrypt_p if args.scrypt_p is not None else 1,
                     "rounds": args.scrypt_rounds,
