@@ -2812,11 +2812,10 @@ def generate_key(
 
     # Threefish algorithms require larger keys than the standard 32 bytes
     # Use HKDF to expand the derived key to the required length
+    # Note: hashes and default_backend are already imported at module level
     if algorithm == EncryptionAlgorithm.THREEFISH_512.value:
         # Expand to 64 bytes (512 bits) for Threefish-512
         from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-        from cryptography.hazmat.primitives import hashes
-        from cryptography.hazmat.backends import default_backend
         hkdf = HKDF(
             algorithm=hashes.SHA256(),
             length=64,
@@ -2828,8 +2827,6 @@ def generate_key(
     elif algorithm == EncryptionAlgorithm.THREEFISH_1024.value:
         # Expand to 128 bytes (1024 bits) for Threefish-1024
         from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-        from cryptography.hazmat.primitives import hashes
-        from cryptography.hazmat.backends import default_backend
         hkdf = HKDF(
             algorithm=hashes.SHA256(),
             length=128,
