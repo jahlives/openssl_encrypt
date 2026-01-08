@@ -1459,9 +1459,43 @@ def multi_hash_password(
         from .secure_memory import secure_buffer, secure_memcpy, secure_memzero
 
         # Use secure memory approach
+        # Buffer size depends on whether BLAKE3 is used:
+        # - With BLAKE3: Minimum 64 bytes required for keyed hashing (32-byte key)
+        # - Without BLAKE3: Use exact size (password+salt+pepper) for backward compatibility
         pepper_len = len(hsm_pepper) if hsm_pepper else 0
-        with secure_buffer(len(password) + len(salt) + pepper_len, zero=False) as hashed:
+        initial_size = len(password) + len(salt) + pepper_len
+
+        # Check if BLAKE3 is actually being used in this hash config
+        uses_blake3 = False
+        if hash_config:
+            # Handle both flat (v3) and nested (v4+) hash_config formats
+            if "derivation_config" in hash_config and "hash_config" in hash_config["derivation_config"]:
+                # Nested format (v4+)
+                hash_params = hash_config["derivation_config"]["hash_config"]
+            else:
+                # Flat format (v3) or direct hash_config
+                hash_params = hash_config
+
+            # Check if blake3 has rounds > 0
+            blake3_config = hash_params.get("blake3", 0)
+            if isinstance(blake3_config, dict):
+                uses_blake3 = blake3_config.get("rounds", 0) > 0
+            else:
+                uses_blake3 = blake3_config > 0
+
+        if uses_blake3:
+            # BLAKE3 requires larger buffer for keyed hashing
+            buffer_size = max(64, initial_size)
+            # Zero-initialize for deterministic hashing of padded bytes
+            buffer_zero = True
+        else:
+            # Use exact size for backward compatibility
+            buffer_size = initial_size
+            buffer_zero = False
+
+        with secure_buffer(buffer_size, zero=buffer_zero) as hashed:
             # Initialize the secure buffer with password + salt + hsm_pepper
+            # Rest of buffer remains zeros for deterministic hashing (when using BLAKE3)
             if hsm_pepper:
                 if debug:
                     logger.debug(f"HASH-DEBUG: Injecting HSM pepper ({len(hsm_pepper)} bytes)")
