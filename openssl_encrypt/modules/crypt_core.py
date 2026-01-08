@@ -4897,6 +4897,7 @@ def encrypt_file(
             logger.debug(
                 f"ENCRYPT:DATA Input data (first 64 bytes): {data[:64].hex() if len(data) >= 64 else data.hex()}"
             )
+            logger.debug(f"ENCRYPT:AAD AAD value: {aad if aad is None else f'{len(aad)} bytes: {aad[:100] if len(aad) > 100 else aad}'}")
 
         # Handle cascade encryption
         if cascade and cipher_names:
@@ -6882,6 +6883,7 @@ def decrypt_file(
             logger.debug(
                 f"DECRYPT:DATA Encrypted data (first 64 bytes): {encrypted_data[:64].hex() if len(encrypted_data) >= 64 else encrypted_data.hex()}"
             )
+            logger.debug(f"DECRYPT:AAD AAD value: {aad_for_decrypt if aad_for_decrypt is None else f'{len(aad_for_decrypt)} bytes: {aad_for_decrypt[:100] if len(aad_for_decrypt) > 100 else aad_for_decrypt}'}")
 
         # Handle cascade decryption for V8 format
         if is_cascade and cascade_cipher_chain:
