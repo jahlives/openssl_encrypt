@@ -168,8 +168,8 @@ class XChaCha20Poly1305:
             hkdf = HKDF(
                 algorithm=hashes.SHA256(),  # Use SHA256 which is universally available
                 length=12,  # We need 12 bytes for ChaCha20Poly1305
-                salt=nonce[:16],
-                info=nonce[16:],
+                salt=bytes(nonce[:16]),
+                info=bytes(nonce[16:]),
                 backend=default_backend(),
             )
 
@@ -2230,7 +2230,7 @@ def generate_key(
 
                 # Create the scrypt KDF with appropriate parameters
                 scrypt_kdf = Scrypt(
-                    salt=round_salt,
+                    salt=bytes(round_salt),
                     length=32,  # Fixed output length for consistency
                     n=hash_config["scrypt"]["n"],  # CPU/memory cost factor
                     r=hash_config["scrypt"]["r"],  # Block size factor
