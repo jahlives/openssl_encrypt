@@ -1612,12 +1612,13 @@ def multi_hash_password(
                                 key_material = hashlib.sha256(salt + str(i).encode()).digest()
                             else:
                                 # Version-aware key derivation
-                                if format_version >= 9:
-                                    # Chained: Use previous hash output as key (secure method)
+                                if format_version >= 7 and format_version != 8:
+                                    # Secure chained derivation (v7, v9+)
                                     # Prevents precomputation attacks by creating dependency chain
                                     key_material = hashed[:32]
                                 else:
-                                    # Legacy: Predictable derivation for v8 and below (backward compatibility)
+                                    # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
+                                    # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
                                     key_material = hashlib.sha256(salt + str(i).encode()).digest()
                             # Create a personalized BLAKE2b instance for each iteration
                             result = hashlib.blake2b(
@@ -1647,12 +1648,13 @@ def multi_hash_password(
                                     key_material = hashlib.sha256(salt + str(i).encode()).digest()
                                 else:
                                     # Version-aware key derivation
-                                    if format_version >= 9:
-                                        # Chained: Use previous hash output as key (secure method)
+                                    if format_version >= 7 and format_version != 8:
+                                        # Secure chained derivation (v7, v9+)
                                         # Prevents precomputation attacks by creating dependency chain
                                         key_material = hashed[:32]
                                     else:
-                                        # Legacy: Predictable derivation for v8 and below (backward compatibility)
+                                        # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
+                                        # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
                                         key_material = hashlib.sha256(
                                             salt + str(i).encode()
                                         ).digest()
@@ -1702,12 +1704,13 @@ def multi_hash_password(
                                 round_material = hashlib.sha256(salt + str(i).encode()).digest()
                             else:
                                 # Version-aware material derivation
-                                if format_version >= 9:
-                                    # Chained: Use previous hash output as material (secure method)
+                                if format_version >= 7 and format_version != 8:
+                                    # Secure chained derivation (v7, v9+)
                                     # Prevents precomputation attacks by creating dependency chain
                                     round_material = hashed[:32]
                                 else:
-                                    # Legacy: Predictable derivation for v8 and below (backward compatibility)
+                                    # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
+                                    # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
                                     round_material = hashlib.sha256(salt + str(i).encode()).digest()
 
                             # SHAKE-256 is an extendable-output function (XOF) that can produce
@@ -2160,13 +2163,13 @@ def generate_key(
                     round_salt = base_salt
                 else:
                     # Version-aware salt derivation
-                    if format_version >= 9:
-                        # Chained: Use previous output as salt (secure method)
+                    if format_version >= 7 and format_version != 8:
+                        # Secure chained derivation (v7, v9+)
                         # Prevents precomputation attacks by creating dependency chain
                         round_salt = bytes(password)[:16]
                     else:
-                        # Legacy: Predictable derivation for v8 and below (backward compatibility)
-                        # This method is deprecated due to security concerns
+                        # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
+                        # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
                         salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
                         round_salt = salt_material[:16]  # Use 16 bytes for salt
 
@@ -2275,13 +2278,13 @@ def generate_key(
                     round_salt = base_salt
                 else:
                     # Version-aware salt derivation
-                    if format_version >= 9:
-                        # Chained: Use previous output as salt (secure method)
+                    if format_version >= 7 and format_version != 8:
+                        # Secure chained derivation (v7, v9+)
                         # Prevents precomputation attacks by creating dependency chain
                         round_salt = bytes(password)[:16]
                     else:
-                        # Legacy: Predictable derivation for v8 and below (backward compatibility)
-                        # This method is deprecated due to security concerns
+                        # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
+                        # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
                         salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
                         round_salt = salt_material[:16]  # Use 16 bytes for salt
 
@@ -2377,13 +2380,13 @@ def generate_key(
                     round_salt = base_salt
                 else:
                     # Version-aware salt derivation
-                    if format_version >= 9:
-                        # Chained: Use previous output as salt (secure method)
+                    if format_version >= 7 and format_version != 8:
+                        # Secure chained derivation (v7, v9+)
                         # Prevents precomputation attacks by creating dependency chain
                         round_salt = password[:16]
                     else:
-                        # Legacy: Predictable derivation for v8 and below (backward compatibility)
-                        # This method is deprecated due to security concerns
+                        # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
+                        # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
                         salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
                         round_salt = salt_material[:16]  # Use 16 bytes for salt
 
@@ -2498,16 +2501,16 @@ def generate_key(
                     round_salt = base_salt
                 else:
                     # Version-aware salt derivation
-                    if format_version >= 9:
-                        # Chained: Use previous output as salt (secure method)
+                    if format_version >= 7 and format_version != 8:
+                        # Secure chained derivation (v7, v9+)
                         # Prevents precomputation attacks by creating dependency chain
                         if hasattr(password, "to_bytes"):
                             round_salt = password.to_bytes()[:16]
                         else:
                             round_salt = password[:16]
                     else:
-                        # Legacy: Predictable derivation for v8 and below (backward compatibility)
-                        # This method is deprecated due to security concerns
+                        # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
+                        # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
                         salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
                         round_salt = salt_material[:16]  # Use 16 bytes for salt
 
@@ -2653,8 +2656,8 @@ def generate_key(
 
         for i in range(use_pbkdf2):
             # Version-aware salt derivation
-            if format_version >= 9:
-                # V9+ secure chained salt derivation
+            if format_version >= 7 and format_version != 8:
+                # Secure chained derivation (v7, v9+)
                 if i == 0:
                     # Use the original salt for the first iteration
                     iteration_specific_salt = base_salt
@@ -2663,8 +2666,8 @@ def generate_key(
                     # Prevents precomputation attacks by creating dependency chain
                     iteration_specific_salt = password[:16]
             else:
-                # Legacy: Predictable derivation for ALL rounds (v8 and below)
-                # This method is deprecated due to security concerns, but needed for backward compatibility
+                # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
+                # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
                 # Original code derived salt for all rounds including round 0
                 iteration_specific_salt = hashlib.sha256(
                     base_salt + str(i).encode("utf-8")
@@ -2745,8 +2748,8 @@ def generate_key(
 
         for i in range(default_pbkdf2_iterations):
             # Version-aware salt derivation
-            if format_version >= 9:
-                # V9+ secure chained salt derivation
+            if format_version >= 7 and format_version != 8:
+                # Secure chained derivation (v7, v9+)
                 if i == 0:
                     # Use the original salt for the first iteration
                     iteration_specific_salt = base_salt
@@ -2754,7 +2757,8 @@ def generate_key(
                     # Chained: Use previous output as salt (secure method)
                     iteration_specific_salt = password[:16]
             else:
-                # Legacy: Predictable derivation for ALL rounds (v8 and below)
+                # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
+                # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
                 # Original fallback code derived salt for all rounds including round 0
                 iteration_specific_salt = hashlib.sha256(
                     base_salt + str(i).encode("utf-8")
@@ -5841,7 +5845,7 @@ def extract_file_metadata(input_file):
         format_version = metadata.get("format_version", 1)
 
         # Extract algorithm based on format version
-        if format_version in [4, 5, 6, 9]:
+        if format_version in [4, 5, 6, 7, 9]:
             encryption = metadata.get("encryption", {})
             algorithm = encryption.get("algorithm", EncryptionAlgorithm.FERNET.value)
             encryption_data = encryption.get("encryption_data", "aes-gcm")
@@ -6656,7 +6660,7 @@ def decrypt_file(
     if pqc_has_private_key:
         try:
             # Handle different format versions
-            if format_version in [4, 5, 6, 9]:
+            if format_version in [4, 5, 6, 7, 9]:
                 # Get encrypted private key from v4/v5/v6/v9 structure
                 encrypted_private_key = base64.b64decode(metadata["encryption"]["pqc_private_key"])
             else:  # format_version 3
@@ -6669,7 +6673,7 @@ def decrypt_file(
             if pqc_key_is_encrypted:
                 # We need to decrypt the private key using the separately derived key
                 # Get the salt from metadata based on format version
-                if format_version in [4, 5, 6, 9]:
+                if format_version in [4, 5, 6, 7, 9]:
                     if "pqc_key_salt" not in metadata["encryption"]:
                         if not quiet:
                             print("Failed to decrypt post-quantum private key - wrong format")
