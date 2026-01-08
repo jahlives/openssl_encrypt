@@ -763,8 +763,8 @@ class XChaCha20Poly1305(CipherBase):
             hkdf = HKDF(
                 algorithm=hashes.SHA256(),
                 length=12,
-                salt=nonce[:16],
-                info=nonce[16:],
+                salt=bytes(nonce[:16]),
+                info=bytes(nonce[16:]),
                 backend=default_backend(),
             )
             return hkdf.derive(key)
