@@ -5240,8 +5240,11 @@ def encrypt_file(
             elif algorithm == EncryptionAlgorithm.THREEFISH_1024:
                 if debug:
                     logger.debug(f"ENCRYPT:THREEFISH-1024 Key length: {len(key)} bytes")
+                    logger.debug(f"ENCRYPT:THREEFISH-1024 Key (first 32 bytes): {key[:32].hex()}")
                     logger.debug(f"ENCRYPT:THREEFISH-1024 Using {nonce_size}-byte nonce for encryption")
                     logger.debug(f"ENCRYPT:THREEFISH-1024 Nonce: {nonce[:nonce_size].hex()}")
+                    logger.debug(f"ENCRYPT:THREEFISH-1024 Data length: {len(data)} bytes")
+                    logger.debug(f"ENCRYPT:THREEFISH-1024 AAD: {aad}")
 
                 import threefish_native
 
@@ -5253,7 +5256,8 @@ def encrypt_file(
                     logger.debug(
                         f"ENCRYPT:THREEFISH-1024 Encrypted payload length: {len(encrypted_payload)} bytes"
                     )
-                    logger.debug(f"ENCRYPT:THREEFISH-1024 Encrypted payload: {encrypted_payload.hex()}")
+                    logger.debug(f"ENCRYPT:THREEFISH-1024 Encrypted payload (first 64 bytes): {encrypted_payload[:64].hex()}")
+                    logger.debug(f"ENCRYPT:THREEFISH-1024 Full encrypted data will be {len(nonce[:nonce_size]) + len(encrypted_payload)} bytes")
 
                 return nonce + encrypted_payload
 
@@ -7370,7 +7374,12 @@ def decrypt_file(
                         elif algorithm == EncryptionAlgorithm.THREEFISH_1024.value:
                             if debug:
                                 logger.debug(f"DECRYPT:THREEFISH-1024 Key length: {len(key)} bytes")
-                                logger.debug(f"DECRYPT:THREEFISH-1024 Ciphertext: {ciphertext.hex()}")
+                                logger.debug(f"DECRYPT:THREEFISH-1024 Key (first 32 bytes): {key[:32].hex()}")
+                                logger.debug(f"DECRYPT:THREEFISH-1024 Nonce (first 32 bytes): {nonce[:min(32, effective_size)].hex()}")
+                                logger.debug(f"DECRYPT:THREEFISH-1024 Effective nonce size: {effective_size} bytes")
+                                logger.debug(f"DECRYPT:THREEFISH-1024 AAD: {aad}")
+                                logger.debug(f"DECRYPT:THREEFISH-1024 Ciphertext length: {len(ciphertext)} bytes")
+                                logger.debug(f"DECRYPT:THREEFISH-1024 Ciphertext (first 64 bytes): {ciphertext[:min(64, len(ciphertext))].hex()}")
 
                             import threefish_native
 
