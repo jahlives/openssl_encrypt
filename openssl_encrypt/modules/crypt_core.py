@@ -1923,6 +1923,10 @@ def generate_key(
         key_length = 32  # AES-OCB3 requires 32 bytes
     elif algorithm == EncryptionAlgorithm.CAMELLIA.value:
         key_length = 32  # Camellia requires 32 bytes
+    elif algorithm == EncryptionAlgorithm.THREEFISH_512.value:
+        key_length = 64  # Threefish-512 requires 64 bytes
+    elif algorithm == EncryptionAlgorithm.THREEFISH_1024.value:
+        key_length = 128  # Threefish-1024 requires 128 bytes
     elif algorithm in [
         EncryptionAlgorithm.KYBER512_HYBRID.value,
         EncryptionAlgorithm.KYBER768_HYBRID.value,
