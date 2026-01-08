@@ -365,6 +365,8 @@ build:
 
 publish:
   stage: publish
+  tags:
+    - amd64  # Exclude arm64-builder, use amd64 runners
   needs:
     - job: build
       artifacts: true
@@ -383,6 +385,8 @@ publish:
 publish-pypi-test:
   stage: publish
   image: python:3.13-alpine
+  tags:
+    - amd64  # Exclude arm64-builder, use amd64 runners
   needs:
     - job: build
       artifacts: true
@@ -400,6 +404,8 @@ publish-pypi-test:
 publish-pypi-prod:
   stage: publish
   image: python:3.13-alpine
+  tags:
+    - amd64  # Exclude arm64-builder, use amd64 runners
   needs:
     - job: build
       artifacts: true
