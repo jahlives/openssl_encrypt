@@ -240,3 +240,8 @@ coverage.xml
 htmlcov/
 # Plugin config files
 openssl_encrypt/plugins/*.json
+
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
