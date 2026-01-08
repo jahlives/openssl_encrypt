@@ -2809,6 +2809,36 @@ def generate_key(
             password = base64.b64encode(hashlib.sha256(password).digest())
     elif algorithm == EncryptionAlgorithm.FERNET.value:
         password = base64.urlsafe_b64encode(password)
+
+    # Threefish algorithms require larger keys than the standard 32 bytes
+    # Use HKDF to expand the derived key to the required length
+    if algorithm == EncryptionAlgorithm.THREEFISH_512.value:
+        # Expand to 64 bytes (512 bits) for Threefish-512
+        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.backends import default_backend
+        hkdf = HKDF(
+            algorithm=hashes.SHA256(),
+            length=64,
+            salt=salt,
+            info=b"threefish-512-key-expansion",
+            backend=default_backend(),
+        )
+        password = hkdf.derive(bytes(password))
+    elif algorithm == EncryptionAlgorithm.THREEFISH_1024.value:
+        # Expand to 128 bytes (1024 bits) for Threefish-1024
+        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.backends import default_backend
+        hkdf = HKDF(
+            algorithm=hashes.SHA256(),
+            length=128,
+            salt=salt,
+            info=b"threefish-1024-key-expansion",
+            backend=default_backend(),
+        )
+        password = hkdf.derive(bytes(password))
+
     try:
         # Always convert to regular bytes to ensure consistent return type
         # whether it's SecureBytes or already a bytes object
