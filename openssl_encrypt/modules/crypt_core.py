@@ -6732,6 +6732,12 @@ def decrypt_file(
                 return [(24, 12)]
         elif alg == EncryptionAlgorithm.CAMELLIA.value:
             return [(16, 16)]
+        elif alg == EncryptionAlgorithm.THREEFISH_512.value:
+            # Threefish-512 requires 32-byte nonce
+            return [(32, 32)]
+        elif alg == EncryptionAlgorithm.THREEFISH_1024.value:
+            # Threefish-1024 requires 64-byte nonce
+            return [(64, 64)]
         else:
             # Default for unknown algorithms
             return [(16, 16)]
