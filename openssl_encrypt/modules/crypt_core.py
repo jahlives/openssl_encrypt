@@ -800,6 +800,9 @@ def is_aead_algorithm(algorithm):
         EncryptionAlgorithm.AES_OCB3,
         EncryptionAlgorithm.CHACHA20_POLY1305,
         EncryptionAlgorithm.XCHACHA20_POLY1305,
+        # Threefish with Poly1305 AEAD (CTR + Poly1305, similar to ChaCha20-Poly1305)
+        EncryptionAlgorithm.THREEFISH_512,
+        EncryptionAlgorithm.THREEFISH_1024,
         # PQC Hybrid algorithms (use AEAD for symmetric layer)
         EncryptionAlgorithm.ML_KEM_512_HYBRID,
         EncryptionAlgorithm.ML_KEM_768_HYBRID,
