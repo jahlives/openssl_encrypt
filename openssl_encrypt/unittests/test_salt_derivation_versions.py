@@ -15,6 +15,7 @@ from openssl_encrypt.modules.crypt_core import (
     decrypt_file,
     encrypt_file,
     extract_file_metadata,
+    generate_key,
     multi_hash_password,
 )
 
@@ -165,19 +166,21 @@ class TestSaltDerivationVersions(unittest.TestCase):
 
         try:
             # v8: Predictable salt derivation
-            key_v8 = multi_hash_password(
+            key_v8, _, _ = generate_key(
                 password=self.test_password,
                 salt=salt,
                 hash_config=scrypt_config,
+                algorithm=EncryptionAlgorithm.AES_GCM.value,
                 quiet=True,
                 format_version=8,
             )
 
             # v9: Chained salt derivation
-            key_v9 = multi_hash_password(
+            key_v9, _, _ = generate_key(
                 password=self.test_password,
                 salt=salt,
                 hash_config=scrypt_config,
+                algorithm=EncryptionAlgorithm.AES_GCM.value,
                 quiet=True,
                 format_version=9,
             )
@@ -200,19 +203,21 @@ class TestSaltDerivationVersions(unittest.TestCase):
 
         try:
             # v8: Predictable salt derivation
-            key_v8 = multi_hash_password(
+            key_v8, _, _ = generate_key(
                 password=self.test_password,
                 salt=salt,
                 hash_config=blake3_config,
+                algorithm=EncryptionAlgorithm.AES_GCM.value,
                 quiet=True,
                 format_version=8,
             )
 
             # v9: Chained salt derivation
-            key_v9 = multi_hash_password(
+            key_v9, _, _ = generate_key(
                 password=self.test_password,
                 salt=salt,
                 hash_config=blake3_config,
+                algorithm=EncryptionAlgorithm.AES_GCM.value,
                 quiet=True,
                 format_version=9,
             )
@@ -225,18 +230,20 @@ class TestSaltDerivationVersions(unittest.TestCase):
             blake2b_config = {"blake2b": 2}  # 2 rounds
 
             try:
-                key_v8 = multi_hash_password(
+                key_v8, _, _ = generate_key(
                     password=self.test_password,
                     salt=salt,
                     hash_config=blake2b_config,
+                    algorithm=EncryptionAlgorithm.AES_GCM.value,
                     quiet=True,
                     format_version=8,
                 )
 
-                key_v9 = multi_hash_password(
+                key_v9, _, _ = generate_key(
                     password=self.test_password,
                     salt=salt,
                     hash_config=blake2b_config,
+                    algorithm=EncryptionAlgorithm.AES_GCM.value,
                     quiet=True,
                     format_version=9,
                 )
@@ -247,36 +254,39 @@ class TestSaltDerivationVersions(unittest.TestCase):
                 self.skipTest(f"Hash functions not available: {e}, {e2}")
 
     def test_single_round_kdf_unchanged(self):
-        """Test that single-round KDF behavior is unchanged (no salt derivation needed)."""
+        """Test that v8 and v9 use different salt derivation even with single round."""
         salt = b"single_round_tst"
 
-        # Hash config with single round (no salt derivation happens, flat format)
+        # Hash config with single round
         single_round_config = {"pbkdf2_iterations": 1000, "pbkdf2": {"rounds": 1}}
 
-        # v8 with single round
-        key_v8 = multi_hash_password(
+        # v8 with single round (uses SHA256-hashed salt even for round 0)
+        key_v8, _, _ = generate_key(
             password=self.test_password,
             salt=salt,
             hash_config=single_round_config,
+            algorithm=EncryptionAlgorithm.AES_GCM.value,
             quiet=True,
             format_version=8,
         )
 
-        # v9 with single round
-        key_v9 = multi_hash_password(
+        # v9 with single round (uses base_salt directly for round 0)
+        key_v9, _, _ = generate_key(
             password=self.test_password,
             salt=salt,
             hash_config=single_round_config,
+            algorithm=EncryptionAlgorithm.AES_GCM.value,
             quiet=True,
             format_version=9,
         )
 
-        # With only 1 round, v8 and v9 should produce the same result
-        # because salt derivation only happens for rounds > 0
-        self.assertEqual(
+        # Even with 1 round, v8 and v9 should produce different results
+        # v8: Uses SHA256(salt + "0") for round 0
+        # v9: Uses salt directly for round 0
+        self.assertNotEqual(
             bytes(key_v8),
             bytes(key_v9),
-            "Single-round KDF should produce same result in v8 and v9",
+            "Single-round KDF should still differ between v8 (predictable) and v9 (secure)",
         )
 
     def test_encryption_roundtrip_with_multi_round_kdf(self):
@@ -323,19 +333,21 @@ class TestSaltDerivationVersions(unittest.TestCase):
 
         try:
             # v7: Should use chained salt derivation
-            key_v7 = multi_hash_password(
+            key_v7, _, _ = generate_key(
                 password=self.test_password,
                 salt=salt,
                 hash_config=scrypt_config,
+                algorithm=EncryptionAlgorithm.AES_GCM.value,
                 quiet=True,
                 format_version=7,
             )
 
             # v8: Uses predictable salt derivation (vulnerable)
-            key_v8 = multi_hash_password(
+            key_v8, _, _ = generate_key(
                 password=self.test_password,
                 salt=salt,
                 hash_config=scrypt_config,
+                algorithm=EncryptionAlgorithm.AES_GCM.value,
                 quiet=True,
                 format_version=8,
             )
@@ -373,19 +385,21 @@ class TestSaltDerivationVersions(unittest.TestCase):
             with self.subTest(config=config):
                 try:
                     # v7: Secure chained derivation
-                    key_v7 = multi_hash_password(
+                    key_v7, _, _ = generate_key(
                         password=self.test_password,
                         salt=salt,
                         hash_config=config,
+                        algorithm=EncryptionAlgorithm.AES_GCM.value,
                         quiet=True,
                         format_version=7,
                     )
 
                     # v9: Secure chained derivation (should be identical)
-                    key_v9 = multi_hash_password(
+                    key_v9, _, _ = generate_key(
                         password=self.test_password,
                         salt=salt,
                         hash_config=config,
+                        algorithm=EncryptionAlgorithm.AES_GCM.value,
                         quiet=True,
                         format_version=9,
                     )
@@ -411,19 +425,21 @@ class TestSaltDerivationVersions(unittest.TestCase):
         pbkdf2_config = {"pbkdf2_iterations": 1000, "pbkdf2": {"rounds": 2}}
 
         # v8: Predictable salt derivation (vulnerable but backward compatible)
-        key_v8 = multi_hash_password(
+        key_v8, _, _ = generate_key(
             password=self.test_password,
             salt=salt,
             hash_config=pbkdf2_config,
+            algorithm=EncryptionAlgorithm.AES_GCM.value,
             quiet=True,
             format_version=8,
         )
 
         # v9: Secure chained derivation
-        key_v9 = multi_hash_password(
+        key_v9, _, _ = generate_key(
             password=self.test_password,
             salt=salt,
             hash_config=pbkdf2_config,
+            algorithm=EncryptionAlgorithm.AES_GCM.value,
             quiet=True,
             format_version=9,
         )
@@ -471,28 +487,31 @@ class TestSaltDerivationVersions(unittest.TestCase):
             with self.subTest(algorithm=algo_name):
                 try:
                     # v7: Secure chained derivation
-                    key_v7 = multi_hash_password(
+                    key_v7, _, _ = generate_key(
                         password=self.test_password,
                         salt=salt,
                         hash_config=config,
+                        algorithm=EncryptionAlgorithm.AES_GCM.value,
                         quiet=True,
                         format_version=7,
                     )
 
                     # v9: Secure chained derivation (should be identical)
-                    key_v9 = multi_hash_password(
+                    key_v9, _, _ = generate_key(
                         password=self.test_password,
                         salt=salt,
                         hash_config=config,
+                        algorithm=EncryptionAlgorithm.AES_GCM.value,
                         quiet=True,
                         format_version=9,
                     )
 
                     # v8: Predictable derivation (should be different)
-                    key_v8 = multi_hash_password(
+                    key_v8, _, _ = generate_key(
                         password=self.test_password,
                         salt=salt,
                         hash_config=config,
+                        algorithm=EncryptionAlgorithm.AES_GCM.value,
                         quiet=True,
                         format_version=8,
                     )

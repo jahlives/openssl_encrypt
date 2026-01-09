@@ -1378,7 +1378,7 @@ def multi_hash_password(
     progress=False,
     debug=False,
     hsm_pepper=None,
-    format_version=8,
+    format_version=9,
 ):
     """
     Apply multiple rounds of different hash algorithms to a password.
@@ -1417,6 +1417,9 @@ def multi_hash_password(
     if debug:
         logger.debug(
             f"HASH-DEBUG: multi_hash_password called with debug=True, hash_config keys: {list(hash_config.keys()) if hash_config else 'None'}"
+        )
+        logger.debug(
+            f"SALT-DERIVATION-DEBUG: multi_hash_password called with format_version={format_version}"
         )
 
     # If hash_config is provided but doesn't specify type, use 'id' (Argon2id)
@@ -1469,7 +1472,10 @@ def multi_hash_password(
         uses_blake3 = False
         if hash_config:
             # Handle both flat (v3) and nested (v4+) hash_config formats
-            if "derivation_config" in hash_config and "hash_config" in hash_config["derivation_config"]:
+            if (
+                "derivation_config" in hash_config
+                and "hash_config" in hash_config["derivation_config"]
+            ):
                 # Nested format (v4+)
                 hash_params = hash_config["derivation_config"]["hash_config"]
             else:
@@ -1682,8 +1688,12 @@ def multi_hash_password(
                         with secure_buffer(64, zero=False) as hash_buffer:
                             for i in range(params):
                                 if debug:
-                                    logger.debug(f"BLAKE3:INPUT Round {i+1}/{params}: {hashed.hex()}")
-                                    logger.debug(f"BLAKE3:KEY Round {i+1}/{params} format_version={format_version}")
+                                    logger.debug(
+                                        f"BLAKE3:INPUT Round {i+1}/{params}: {hashed.hex()}"
+                                    )
+                                    logger.debug(
+                                        f"BLAKE3:KEY Round {i+1}/{params} format_version={format_version}"
+                                    )
 
                                 # Use salt for key to enhance security and prevent length extension attacks
                                 # BLAKE3 supports keyed hashing which is more secure than plain hashing
@@ -1704,7 +1714,9 @@ def multi_hash_password(
                                         ).digest()
 
                                 if debug:
-                                    logger.debug(f"BLAKE3:KEYMATERIAL Round {i+1}/{params}: {key_material.hex()}")
+                                    logger.debug(
+                                        f"BLAKE3:KEYMATERIAL Round {i+1}/{params}: {key_material.hex()}"
+                                    )
 
                                 # Create a keyed BLAKE3 instance for each iteration
                                 # BLAKE3 keyed mode provides additional security over plain hashing
@@ -1716,7 +1728,9 @@ def multi_hash_password(
                                 secure_memcpy(hashed, hash_buffer)
 
                                 if debug:
-                                    logger.debug(f"BLAKE3:OUTPUT Round {i+1}/{params}: {hashed.hex()}")
+                                    logger.debug(
+                                        f"BLAKE3:OUTPUT Round {i+1}/{params}: {hashed.hex()}"
+                                    )
 
                                 show_progress("BLAKE3", i + 1, params)
                                 KeyStretch.hash_stretch = True
@@ -2227,10 +2241,18 @@ def generate_key(
                     if format_version >= 7 and format_version != 8:
                         # Secure chained derivation (v7, v9+)
                         # Prevents precomputation attacks by creating dependency chain
+                        if debug and i == 1:
+                            logger.debug(
+                                f"ARGON2: Using SECURE chained derivation (format_version={format_version})"
+                            )
                         round_salt = bytes(password)[:16]
                     else:
                         # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
                         # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
+                        if debug and i == 1:
+                            logger.debug(
+                                f"ARGON2: Using PREDICTABLE derivation (format_version={format_version})"
+                            )
                         salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
                         round_salt = salt_material[:16]  # Use 16 bytes for salt
 
@@ -2342,10 +2364,18 @@ def generate_key(
                     if format_version >= 7 and format_version != 8:
                         # Secure chained derivation (v7, v9+)
                         # Prevents precomputation attacks by creating dependency chain
+                        if debug and i == 1:
+                            logger.debug(
+                                f"BALLOON: Using SECURE chained derivation (format_version={format_version})"
+                            )
                         round_salt = bytes(password)[:16]
                     else:
                         # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
                         # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
+                        if debug and i == 1:
+                            logger.debug(
+                                f"BALLOON: Using PREDICTABLE derivation (format_version={format_version})"
+                            )
                         salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
                         round_salt = salt_material[:16]  # Use 16 bytes for salt
 
@@ -2444,10 +2474,18 @@ def generate_key(
                     if format_version >= 7 and format_version != 8:
                         # Secure chained derivation (v7, v9+)
                         # Prevents precomputation attacks by creating dependency chain
+                        if debug and i == 1:
+                            logger.debug(
+                                f"SCRYPT: Using SECURE chained derivation (format_version={format_version})"
+                            )
                         round_salt = password[:16]
                     else:
                         # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
                         # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
+                        if debug and i == 1:
+                            logger.debug(
+                                f"SCRYPT: Using PREDICTABLE derivation (format_version={format_version})"
+                            )
                         salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
                         round_salt = salt_material[:16]  # Use 16 bytes for salt
 
@@ -2719,6 +2757,10 @@ def generate_key(
             # Version-aware salt derivation
             if format_version >= 7 and format_version != 8:
                 # Secure chained derivation (v7, v9+)
+                if debug and i == 0:
+                    logger.debug(
+                        f"PBKDF2: Using SECURE chained derivation (format_version={format_version})"
+                    )
                 if i == 0:
                     # Use the original salt for the first iteration
                     iteration_specific_salt = base_salt
@@ -2730,6 +2772,10 @@ def generate_key(
                 # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
                 # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
                 # Original code derived salt for all rounds including round 0
+                if debug and i == 0:
+                    logger.debug(
+                        f"PBKDF2: Using PREDICTABLE derivation (format_version={format_version})"
+                    )
                 iteration_specific_salt = hashlib.sha256(
                     base_salt + str(i).encode("utf-8")
                 ).digest()

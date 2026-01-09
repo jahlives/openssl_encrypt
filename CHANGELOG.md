@@ -5,7 +5,161 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.0] - 2026-01-07
+## [1.4.0b9] - 2026-01-09
+
+### Fixed
+
+- **Test Infrastructure**: Fixed 6 salt derivation test failures by correcting test suite to use `generate_key()` instead of `multi_hash_password()` for KDF operations
+  - **Root Cause**: Tests were calling `multi_hash_password()` with KDF configs (Scrypt, Argon2, PBKDF2, Balloon), but that function only handles regular hash algorithms (SHA-512, BLAKE2b, etc.). KDFs are processed in `generate_key()`
+  - **Resolution**: Updated all test calls to use `generate_key()` with proper algorithm parameter
+  - **Impact**: All 1535 tests now passing, 0 failures (up from 1532 passed, 6 failed)
+  - **Validation**: Format Version 9 security model validated across all KDF algorithms
+
+- **Threefish Cipher Support**: Completed Threefish-512/1024 cipher implementation with HKDF key expansion and proper AEAD integration
+  - Added Threefish to `AEAD_ALGORITHMS` list for proper AAD support
+  - Fixed nonce size handling in `get_nonce_size()` function
+  - Resolved AAD variable handling in Threefish decryption
+
+- **BLAKE3 Buffer Compatibility**: Fixed BLAKE3 buffer sizing for backward compatibility with pre-BLAKE3 encrypted files
+  - Enhanced buffer allocation logic to handle files encrypted before BLAKE3 support
+  - Zero-initialization for deterministic BLAKE3 keyed hashing
+
+- **Metadata Schema Compatibility**: Made 'mode' field optional in metadata v7 schema for v1.3.4 backward compatibility
+
+- **Type Conversions**:
+  - Fixed Scrypt bytearray to bytes conversion in salt derivation
+  - Resolved SecureBytes slice handling in XChaCha20 nonce operations
+
+### Changed
+
+- **Test Suite Quality**: Improved test infrastructure and validation
+  - 1535 tests passing, 0 failures
+  - Format Version 9 validated across PBKDF2, Argon2, Scrypt, Balloon
+  - Enhanced cross-version compatibility testing
+
+- **Debug Logging**: Enhanced debug logging for version-aware salt derivation decisions
+  - Added logging at KDF function entry points
+  - Salt derivation branch logging (SECURE vs PREDICTABLE)
+
+## [1.4.0b8] - 2026-01-08
+
+### 🚨 CRITICAL SECURITY FIX
+
+- **Format Version 9 Implementation**: Implemented secure chained salt derivation for v1.4.x branch
+  - **Vulnerability**: Same as v1.3.4 fix (CVSSv3 8.1 HIGH) - predictable salt derivation in multi-round KDF
+  - **Resolution**: Unified security model where v7 and v9 use secure chained derivation, v8 uses predictable (backward compatibility only)
+  - **Implementation**: Each round uses previous round's output as salt, preventing precomputation attacks
+  - **Affected**: All multi-round KDF/hash operations (BLAKE2b, BLAKE3, SHAKE-256, Argon2, Scrypt, Balloon, PBKDF2, HKDF)
+
+### Fixed
+
+- **Pepper Plugin**: Fixed critical scoping errors causing 100+ test failures
+  - Resolved variable scoping issues in pepper plugin implementation
+  - Fixed HSM plugin loading and dependency management
+
+### Added
+
+- **Flatpak CI/CD**: Added comprehensive Flatpak CI/CD pipeline
+  - `flatpak-build`: Regular cached build job
+  - `flatpak-build:clean`: Manual clean build without cache
+  - `flatpak-publish`: Publish to Flatpak repository
+  - `flatpak-publish:clean`: Clean publish from scratch
+  - Build and publish stages integrated into GitLab CI
+
+- **Flutter GUI Enhancements**:
+  - Remote pepper plugin integration
+  - Integrity verification UI
+  - Cascade encryption configuration UI
+  - Asymmetric encryption configuration
+  - YubiKey touch prompt improvements
+
+## [1.3.5] - 2026-01-09
+
+### Fixed
+
+- **BLAKE3 Keyed Hashing Integration**: Fixed BLAKE3 hash algorithm support with proper 32-byte key handling for Format Version 7
+  - **Issue**: BLAKE3 was not properly integrated for keyed hashing operations
+  - **Resolution**: Implemented BLAKE3-aware buffer sizing with 64-byte minimum allocation
+  - **Impact**: BLAKE3 now fully functional. No regression with existing files as BLAKE3 was not used before this bugfix
+  - **Compatibility**: Files encrypted with v1.3.5 using BLAKE3 maintain forward compatibility with v1.4.x
+
+- **Metadata Schema Compatibility**: Made 'mode' field optional in metadata v7 schema for v1.3.4 backward compatibility
+- **Scrypt Salt Handling**: Fixed bytearray to bytes conversion in Scrypt salt derivation
+- **XChaCha20 Nonce Processing**: Resolved SecureBytes slice handling in XChaCha20 nonce operations
+
+### Added
+
+- **Build Tooling**: Comprehensive build scripts for liboqs dependencies
+  - `scripts/build_local_deps.sh`: Automated dependency building with version verification
+  - `scripts/cleanup_liboqs.sh`: Clean removal of locally built dependencies
+  - Environment variable support for custom installation paths
+
+- **CI/CD Infrastructure**: Backported Flatpak build and publish jobs from v1.4.x
+  - Automated Flatpak packaging on release branches
+  - Clean build jobs for testing without cache
+
+- **Debug Logging**: Enhanced BLAKE3 operation logging for troubleshooting
+
+### Changed
+
+- **Cross-Version Compatibility**: Files encrypted with v1.3.5 are fully compatible with v1.4.x
+- **Format Version 7**: Maintains secure chained salt derivation from v1.3.4
+
+## [1.3.4] - 2026-01-07
+
+### Security
+
+- **CRITICAL: Fixed Predictable Salt Derivation in Multi-Round KDF (CVSSv3 8.1 - High)**
+  - **CWE-330: Use of Insufficiently Random Values**
+  - **Vulnerability**: Multi-round KDF used predictable salt derivation allowing precomputation attacks
+  - **Resolution**: Implemented Format Version 7 with secure chained salt derivation
+  - **Affected**: BLAKE2b, BLAKE3, SHAKE-256, Argon2, Scrypt, Balloon, PBKDF2, HKDF (multi-round)
+  - **Backward Compatibility**: Full backward compatibility maintained (Format Versions 3-6)
+  - **Forward Compatibility**: Files encrypted with Format Version 7 require v1.3.4+
+
+### Fixed
+
+- **Test Infrastructure**: Fixed pytest-xdist enum serialization issues
+- **Keystore Integration**: Updated keystore to recognize Format Version 7
+
+## [1.3.3] - 2026-01-06
+
+### Changed
+
+- **License Compliance**: Updated license from MIT to Hippocratic License 3.0
+  - Fixed Flatpak metainfo.xml project_license field
+  - Added explicit license field to setup.py
+  - Repository-wide license standardization
+  - No functional changes to cryptographic operations
+
+## [1.3.2] - 2025-12-20
+
+### Added
+
+- **Decryption Cost Estimation**: Comprehensive time/memory estimation to prevent DoS attacks
+  - Static benchmark data for all hash and KDF algorithms
+  - Pre-decryption cost display with 2-second cancellation window
+  - `--no-estimate` CLI flag for trusted files
+
+### Fixed
+
+- **CLI Argument Parsing**: Fixed `--no-estimate` flag compatibility with `--progress`
+  - Enhanced subcommand detection after global flag preprocessing
+
+## [1.3.1] - 2025-12-18
+
+### Security
+
+- **HSM Security Fix**: Removed `--device=all` from Flatpak manifest
+  - Requires explicit USB device opt-in for hardware security modules
+  - Enhanced Flatpak permissions with explicit YubiKey/smart card access
+
+### Fixed
+
+- **PQC Key Storage**: Fixed post-quantum private key storage for AEAD algorithms
+- **Flatpak Permissions**: Cleaned up invalid filesystem permissions
+
+## [1.4.0] - TBD (Target Stable Release)
 
 ### 🚨 CRITICAL SECURITY FIX
 
