@@ -1712,7 +1712,11 @@ def main():
 
     sys.argv = preprocess_global_args(sys.argv)
 
-    if len(sys.argv) > 1 and sys.argv[1] in [
+    # After preprocessing, global flags are moved to the front when they appear after the command.
+    # Check if position 1 is a subcommand to decide which parser to use.
+    # This allows backward compatibility: when global flags are BEFORE the command,
+    # the monolithic parser is used (which has all arguments).
+    subparser_commands = [
         "encrypt",
         "decrypt",
         "shred",
@@ -1728,7 +1732,11 @@ def main():
         "check-pqc",
         "version",
         "show-version-file",
-    ]:
+    ]
+
+    # Use subparser only if position 1 is a subcommand
+    # (after global flags have been moved to the front by preprocess_global_args)
+    if len(sys.argv) > 1 and sys.argv[1] in subparser_commands:
         # Use subparser for all command-specific operations
         from .crypt_cli_subparser import create_subparser_main
 
@@ -2013,6 +2021,11 @@ def main_with_args(args=None):
         "-r",
         action="store_true",
         help="Process directories recursively when shredding",
+    )
+    parser.add_argument(
+        "--no-estimate",
+        action="store_true",
+        help="Suppress decryption time/memory estimation display (useful when you trust the file)",
     )
 
     # # Add memory security option
@@ -5636,6 +5649,7 @@ def main_with_args(args=None):
                             enable_plugins=enable_plugins,
                             plugin_manager=plugin_manager,
                             hsm_plugin=hsm_plugin_instance,
+                            no_estimate=getattr(args, "no_estimate", False),
                         )
                     if success:
                         # Apply the original permissions to the temp file
@@ -5840,6 +5854,7 @@ def main_with_args(args=None):
                         enable_plugins=enable_plugins,
                         plugin_manager=plugin_manager,
                         hsm_plugin=hsm_plugin_instance,
+                        no_estimate=getattr(args, "no_estimate", False),
                     )
                 if success:
                     # Security audit log for successful decryption
@@ -6008,6 +6023,7 @@ def main_with_args(args=None):
                         enable_plugins=enable_plugins,
                         plugin_manager=plugin_manager,
                         hsm_plugin=hsm_plugin_instance,
+                        no_estimate=getattr(args, "no_estimate", False),
                     )
                 try:
                     # Try to decode as text
