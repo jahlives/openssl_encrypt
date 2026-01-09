@@ -3739,7 +3739,7 @@ def create_metadata_v6(
 
     # Create basic metadata
     metadata = {
-        "format_version": 9,  # Version 9 (secure chained salt derivation)
+        "format_version": 10,  # Version 10 (Sequential + XOR composition; compatible with 1.3 v8)
         "derivation_config": {"salt": salt_b64, "hash_config": {}, "kdf_config": {}},
         "hashes": hashes_dict,
         "encryption": {"algorithm": algorithm, "encryption_data": encryption_data},
@@ -3956,7 +3956,7 @@ def create_metadata_v8(
 
     # Create basic metadata structure
     metadata = {
-        "format_version": 9,
+        "format_version": 10,  # Version 10 (Sequential + XOR composition; compatible with 1.3 v8)
         "mode": "symmetric",
         "derivation_config": {"salt": salt_b64, "hash_config": {}, "kdf_config": {}},
         "hashes": hashes_dict,
@@ -5272,7 +5272,7 @@ def encrypt_file(
         debug=debug,
         pqc_keypair=pqc_keypair,
         hsm_pepper=combined_pepper,
-        format_version=9,  # New files always use v9 (secure chained salt)
+        format_version=10,  # New files always use v10 (Sequential + XOR composition; compatible with 1.3 v8)
     )
     # Read the input file
     if not quiet:
