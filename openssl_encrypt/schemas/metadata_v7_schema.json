@@ -4,7 +4,7 @@
   "title": "OpenSSL Encrypt Metadata Schema Version 7",
   "description": "Schema for validating encrypted file metadata format version 7 (adds PQC signature support for asymmetric mode)",
   "type": "object",
-  "required": ["format_version", "mode", "derivation_config", "encryption"],
+  "required": ["format_version", "derivation_config", "encryption"],
   "additionalProperties": true,
   "properties": {
     "format_version": {

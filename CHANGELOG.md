@@ -22,6 +22,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Mitigation**: Upgrade to v1.4.0+ and re-encrypt sensitive files
 - **References**: See `docs/security.md` and `docs/metadata-formats.md` for complete security advisory
 
+#### Format Version 7 and 9 Unification
+**CRITICAL UPDATE** - Unified v7 (from v1.3.4 branch) and v9 (from v1.4.0 branch) implementations
+
+- **Background**: The security fix was independently implemented in two branches:
+  - **Version 7**: Introduced in v1.3.4 (releases/1.3.4 branch) with focus on asymmetric encryption
+  - **Version 9**: Introduced in v1.4.0 (feature/v1.4.0-development) with multi-feature release
+- **Unification**: Both versions now use identical secure chained salt derivation
+  - Pattern: `if format_version >= 7 and format_version != 8:`
+  - v7 and v9 produce cryptographically identical keys
+  - v8 deliberately excluded for backward compatibility
+- **Compatibility**: v1.4.0+ correctly decrypts both v7 and v9 files
+- **Security**: Both v7 and v9 provide the same security improvements over v8 and below
+- **Implementation**: Updated 9 salt derivation locations, 11 keystore integration points
+- **Testing**: Comprehensive v7/v9 compatibility tests verify cryptographic equivalence
+
 ### Added
 
 #### Flutter GUI Enhancements
@@ -63,6 +78,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 #### Critical Bug Fixes
+- **Threefish Algorithm Support**: Complete implementation of Threefish-512 and Threefish-1024
+  - Added key length support (64 bytes for TF-512, 128 bytes for TF-1024)
+  - Implemented HKDF key expansion to derive required key lengths
+  - Added proper nonce sizes (32 bytes for TF-512, 64 bytes for TF-1024)
+  - Added encryption and decryption logic with AAD support
+  - Fixed nonce size mapping in `get_nonce_size()` function
 - **Pepper Plugin Scoping Errors**: Fixed critical scoping bugs causing 100+ test failures
   - Resolved variable scope issues in pepper client plugin
   - Fixed authentication and storage operations

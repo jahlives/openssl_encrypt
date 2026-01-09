@@ -800,6 +800,9 @@ def is_aead_algorithm(algorithm):
         EncryptionAlgorithm.AES_OCB3,
         EncryptionAlgorithm.CHACHA20_POLY1305,
         EncryptionAlgorithm.XCHACHA20_POLY1305,
+        # Threefish with Poly1305 AEAD (CTR + Poly1305, similar to ChaCha20-Poly1305)
+        EncryptionAlgorithm.THREEFISH_512,
+        EncryptionAlgorithm.THREEFISH_1024,
         # PQC Hybrid algorithms (use AEAD for symmetric layer)
         EncryptionAlgorithm.ML_KEM_512_HYBRID,
         EncryptionAlgorithm.ML_KEM_768_HYBRID,
@@ -1456,9 +1459,43 @@ def multi_hash_password(
         from .secure_memory import secure_buffer, secure_memcpy, secure_memzero
 
         # Use secure memory approach
+        # Buffer size depends on whether BLAKE3 is used:
+        # - With BLAKE3: Minimum 64 bytes required for keyed hashing (32-byte key)
+        # - Without BLAKE3: Use exact size (password+salt+pepper) for backward compatibility
         pepper_len = len(hsm_pepper) if hsm_pepper else 0
-        with secure_buffer(len(password) + len(salt) + pepper_len, zero=False) as hashed:
+        initial_size = len(password) + len(salt) + pepper_len
+
+        # Check if BLAKE3 is actually being used in this hash config
+        uses_blake3 = False
+        if hash_config:
+            # Handle both flat (v3) and nested (v4+) hash_config formats
+            if "derivation_config" in hash_config and "hash_config" in hash_config["derivation_config"]:
+                # Nested format (v4+)
+                hash_params = hash_config["derivation_config"]["hash_config"]
+            else:
+                # Flat format (v3) or direct hash_config
+                hash_params = hash_config
+
+            # Check if blake3 has rounds > 0
+            blake3_config = hash_params.get("blake3", 0)
+            if isinstance(blake3_config, dict):
+                uses_blake3 = blake3_config.get("rounds", 0) > 0
+            else:
+                uses_blake3 = blake3_config > 0
+
+        if uses_blake3:
+            # BLAKE3 requires larger buffer for keyed hashing
+            buffer_size = max(64, initial_size)
+            # Zero-initialize for deterministic hashing of padded bytes
+            buffer_zero = True
+        else:
+            # Use exact size for backward compatibility
+            buffer_size = initial_size
+            buffer_zero = False
+
+        with secure_buffer(buffer_size, zero=buffer_zero) as hashed:
             # Initialize the secure buffer with password + salt + hsm_pepper
+            # Rest of buffer remains zeros for deterministic hashing (when using BLAKE3)
             if hsm_pepper:
                 if debug:
                     logger.debug(f"HASH-DEBUG: Injecting HSM pepper ({len(hsm_pepper)} bytes)")
@@ -1612,12 +1649,13 @@ def multi_hash_password(
                                 key_material = hashlib.sha256(salt + str(i).encode()).digest()
                             else:
                                 # Version-aware key derivation
-                                if format_version >= 9:
-                                    # Chained: Use previous hash output as key (secure method)
+                                if format_version >= 7 and format_version != 8:
+                                    # Secure chained derivation (v7, v9+)
                                     # Prevents precomputation attacks by creating dependency chain
                                     key_material = hashed[:32]
                                 else:
-                                    # Legacy: Predictable derivation for v8 and below (backward compatibility)
+                                    # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
+                                    # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
                                     key_material = hashlib.sha256(salt + str(i).encode()).digest()
                             # Create a personalized BLAKE2b instance for each iteration
                             result = hashlib.blake2b(
@@ -1636,10 +1674,17 @@ def multi_hash_password(
                     elif not quiet:
                         print(f"Applying {params} rounds of BLAKE3")
 
+                    if debug:
+                        logger.debug(f"BLAKE3: Starting {params} rounds")
+
                     if BLAKE3_AVAILABLE:
                         # BLAKE3 produces 64 bytes for consistency with other algorithms
                         with secure_buffer(64, zero=False) as hash_buffer:
                             for i in range(params):
+                                if debug:
+                                    logger.debug(f"BLAKE3:INPUT Round {i+1}/{params}: {hashed.hex()}")
+                                    logger.debug(f"BLAKE3:KEY Round {i+1}/{params} format_version={format_version}")
+
                                 # Use salt for key to enhance security and prevent length extension attacks
                                 # BLAKE3 supports keyed hashing which is more secure than plain hashing
                                 if i == 0:
@@ -1647,15 +1692,19 @@ def multi_hash_password(
                                     key_material = hashlib.sha256(salt + str(i).encode()).digest()
                                 else:
                                     # Version-aware key derivation
-                                    if format_version >= 9:
-                                        # Chained: Use previous hash output as key (secure method)
+                                    if format_version >= 7 and format_version != 8:
+                                        # Secure chained derivation (v7, v9+)
                                         # Prevents precomputation attacks by creating dependency chain
                                         key_material = hashed[:32]
                                     else:
-                                        # Legacy: Predictable derivation for v8 and below (backward compatibility)
+                                        # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
+                                        # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
                                         key_material = hashlib.sha256(
                                             salt + str(i).encode()
                                         ).digest()
+
+                                if debug:
+                                    logger.debug(f"BLAKE3:KEYMATERIAL Round {i+1}/{params}: {key_material.hex()}")
 
                                 # Create a keyed BLAKE3 instance for each iteration
                                 # BLAKE3 keyed mode provides additional security over plain hashing
@@ -1665,8 +1714,16 @@ def multi_hash_password(
 
                                 secure_memcpy(hash_buffer, result)
                                 secure_memcpy(hashed, hash_buffer)
+
+                                if debug:
+                                    logger.debug(f"BLAKE3:OUTPUT Round {i+1}/{params}: {hashed.hex()}")
+
                                 show_progress("BLAKE3", i + 1, params)
                                 KeyStretch.hash_stretch = True
+
+                            if debug:
+                                logger.debug(f"BLAKE3:FINAL After {params} rounds: {hashed.hex()}")
+
                             if not quiet and not progress:
                                 print("✅")
                     else:
@@ -1702,12 +1759,13 @@ def multi_hash_password(
                                 round_material = hashlib.sha256(salt + str(i).encode()).digest()
                             else:
                                 # Version-aware material derivation
-                                if format_version >= 9:
-                                    # Chained: Use previous hash output as material (secure method)
+                                if format_version >= 7 and format_version != 8:
+                                    # Secure chained derivation (v7, v9+)
                                     # Prevents precomputation attacks by creating dependency chain
                                     round_material = hashed[:32]
                                 else:
-                                    # Legacy: Predictable derivation for v8 and below (backward compatibility)
+                                    # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
+                                    # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
                                     round_material = hashlib.sha256(salt + str(i).encode()).digest()
 
                             # SHAKE-256 is an extendable-output function (XOF) that can produce
@@ -1920,6 +1978,10 @@ def generate_key(
         key_length = 32  # AES-OCB3 requires 32 bytes
     elif algorithm == EncryptionAlgorithm.CAMELLIA.value:
         key_length = 32  # Camellia requires 32 bytes
+    elif algorithm == EncryptionAlgorithm.THREEFISH_512.value:
+        key_length = 64  # Threefish-512 requires 64 bytes
+    elif algorithm == EncryptionAlgorithm.THREEFISH_1024.value:
+        key_length = 128  # Threefish-1024 requires 128 bytes
     elif algorithm in [
         EncryptionAlgorithm.KYBER512_HYBRID.value,
         EncryptionAlgorithm.KYBER768_HYBRID.value,
@@ -1965,6 +2027,7 @@ def generate_key(
                 "sha3_256",
                 "sha3_512",
                 "blake2b",
+                "blake3",
                 "shake256",
                 "whirlpool",
             ]
@@ -1981,6 +2044,7 @@ def generate_key(
                     "sha3_256",
                     "sha3_512",
                     "blake2b",
+                    "blake3",
                     "shake256",
                     "whirlpool",
                 ]
@@ -2160,13 +2224,13 @@ def generate_key(
                     round_salt = base_salt
                 else:
                     # Version-aware salt derivation
-                    if format_version >= 9:
-                        # Chained: Use previous output as salt (secure method)
+                    if format_version >= 7 and format_version != 8:
+                        # Secure chained derivation (v7, v9+)
                         # Prevents precomputation attacks by creating dependency chain
                         round_salt = bytes(password)[:16]
                     else:
-                        # Legacy: Predictable derivation for v8 and below (backward compatibility)
-                        # This method is deprecated due to security concerns
+                        # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
+                        # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
                         salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
                         round_salt = salt_material[:16]  # Use 16 bytes for salt
 
@@ -2275,13 +2339,13 @@ def generate_key(
                     round_salt = base_salt
                 else:
                     # Version-aware salt derivation
-                    if format_version >= 9:
-                        # Chained: Use previous output as salt (secure method)
+                    if format_version >= 7 and format_version != 8:
+                        # Secure chained derivation (v7, v9+)
                         # Prevents precomputation attacks by creating dependency chain
                         round_salt = bytes(password)[:16]
                     else:
-                        # Legacy: Predictable derivation for v8 and below (backward compatibility)
-                        # This method is deprecated due to security concerns
+                        # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
+                        # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
                         salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
                         round_salt = salt_material[:16]  # Use 16 bytes for salt
 
@@ -2377,19 +2441,19 @@ def generate_key(
                     round_salt = base_salt
                 else:
                     # Version-aware salt derivation
-                    if format_version >= 9:
-                        # Chained: Use previous output as salt (secure method)
+                    if format_version >= 7 and format_version != 8:
+                        # Secure chained derivation (v7, v9+)
                         # Prevents precomputation attacks by creating dependency chain
                         round_salt = password[:16]
                     else:
-                        # Legacy: Predictable derivation for v8 and below (backward compatibility)
-                        # This method is deprecated due to security concerns
+                        # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
+                        # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
                         salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
                         round_salt = salt_material[:16]  # Use 16 bytes for salt
 
                 # Create the scrypt KDF with appropriate parameters
                 scrypt_kdf = Scrypt(
-                    salt=round_salt,
+                    salt=bytes(round_salt),
                     length=32,  # Fixed output length for consistency
                     n=hash_config["scrypt"]["n"],  # CPU/memory cost factor
                     r=hash_config["scrypt"]["r"],  # Block size factor
@@ -2498,16 +2562,16 @@ def generate_key(
                     round_salt = base_salt
                 else:
                     # Version-aware salt derivation
-                    if format_version >= 9:
-                        # Chained: Use previous output as salt (secure method)
+                    if format_version >= 7 and format_version != 8:
+                        # Secure chained derivation (v7, v9+)
                         # Prevents precomputation attacks by creating dependency chain
                         if hasattr(password, "to_bytes"):
                             round_salt = password.to_bytes()[:16]
                         else:
                             round_salt = password[:16]
                     else:
-                        # Legacy: Predictable derivation for v8 and below (backward compatibility)
-                        # This method is deprecated due to security concerns
+                        # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
+                        # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
                         salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
                         round_salt = salt_material[:16]  # Use 16 bytes for salt
 
@@ -2653,8 +2717,8 @@ def generate_key(
 
         for i in range(use_pbkdf2):
             # Version-aware salt derivation
-            if format_version >= 9:
-                # V9+ secure chained salt derivation
+            if format_version >= 7 and format_version != 8:
+                # Secure chained derivation (v7, v9+)
                 if i == 0:
                     # Use the original salt for the first iteration
                     iteration_specific_salt = base_salt
@@ -2663,8 +2727,8 @@ def generate_key(
                     # Prevents precomputation attacks by creating dependency chain
                     iteration_specific_salt = password[:16]
             else:
-                # Legacy: Predictable derivation for ALL rounds (v8 and below)
-                # This method is deprecated due to security concerns, but needed for backward compatibility
+                # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
+                # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
                 # Original code derived salt for all rounds including round 0
                 iteration_specific_salt = hashlib.sha256(
                     base_salt + str(i).encode("utf-8")
@@ -2745,8 +2809,8 @@ def generate_key(
 
         for i in range(default_pbkdf2_iterations):
             # Version-aware salt derivation
-            if format_version >= 9:
-                # V9+ secure chained salt derivation
+            if format_version >= 7 and format_version != 8:
+                # Secure chained derivation (v7, v9+)
                 if i == 0:
                     # Use the original salt for the first iteration
                     iteration_specific_salt = base_salt
@@ -2754,7 +2818,8 @@ def generate_key(
                     # Chained: Use previous output as salt (secure method)
                     iteration_specific_salt = password[:16]
             else:
-                # Legacy: Predictable derivation for ALL rounds (v8 and below)
+                # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
+                # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
                 # Original fallback code derived salt for all rounds including round 0
                 iteration_specific_salt = hashlib.sha256(
                     base_salt + str(i).encode("utf-8")
@@ -2801,6 +2866,35 @@ def generate_key(
             password = base64.b64encode(hashlib.sha256(password).digest())
     elif algorithm == EncryptionAlgorithm.FERNET.value:
         password = base64.urlsafe_b64encode(password)
+
+    # Threefish algorithms require larger keys than the standard 32 bytes
+    # Use HKDF to expand the derived key to the required length
+    # Note: hashes and default_backend are already imported at module level
+    if algorithm == EncryptionAlgorithm.THREEFISH_512.value:
+        # Expand to 64 bytes (512 bits) for Threefish-512
+        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+        hkdf = HKDF(
+            algorithm=hashes.SHA256(),
+            length=64,
+            salt=salt,
+            info=b"threefish-512-key-expansion",
+            backend=default_backend(),
+        )
+        password = hkdf.derive(bytes(password))
+    elif algorithm == EncryptionAlgorithm.THREEFISH_1024.value:
+        # Expand to 128 bytes (1024 bits) for Threefish-1024
+        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+        hkdf = HKDF(
+            algorithm=hashes.SHA256(),
+            length=128,
+            salt=salt,
+            info=b"threefish-1024-key-expansion",
+            backend=default_backend(),
+        )
+        password = hkdf.derive(bytes(password))
+
     try:
         # Always convert to regular bytes to ensure consistent return type
         # whether it's SecureBytes or already a bytes object
@@ -4837,6 +4931,12 @@ def encrypt_file(
         elif alg == EncryptionAlgorithm.CAMELLIA:
             # Camellia in CBC mode requires a full block (16 bytes) for IV
             return secrets.token_bytes(16), 16
+        elif alg == EncryptionAlgorithm.THREEFISH_512:
+            # Threefish-512 requires 32-byte nonce
+            return secrets.token_bytes(32), 32
+        elif alg == EncryptionAlgorithm.THREEFISH_1024:
+            # Threefish-1024 requires 64-byte nonce
+            return secrets.token_bytes(64), 64
         else:
             # Default for unknown algorithms
             return secrets.token_bytes(16), 16
@@ -4852,6 +4952,9 @@ def encrypt_file(
             logger.debug(f"ENCRYPT:DATA Input data length: {len(data)} bytes")
             logger.debug(
                 f"ENCRYPT:DATA Input data (first 64 bytes): {data[:64].hex() if len(data) >= 64 else data.hex()}"
+            )
+            logger.debug(
+                f"ENCRYPT:AAD AAD value: {aad if aad is None else f'{len(aad)} bytes: {aad[:100] if len(aad) > 100 else aad}'}"
             )
 
         # Handle cascade encryption
@@ -5173,6 +5276,58 @@ def encrypt_file(
                         f"ENCRYPT:CAMELLIA Encrypted payload length: {len(encrypted_payload)} bytes"
                     )
                     logger.debug(f"ENCRYPT:CAMELLIA Encrypted payload: {encrypted_payload.hex()}")
+
+                return nonce + encrypted_payload
+
+            elif algorithm == EncryptionAlgorithm.THREEFISH_512:
+                if debug:
+                    logger.debug(f"ENCRYPT:THREEFISH-512 Key length: {len(key)} bytes")
+                    logger.debug(
+                        f"ENCRYPT:THREEFISH-512 Using {nonce_size}-byte nonce for encryption"
+                    )
+                    logger.debug(f"ENCRYPT:THREEFISH-512 Nonce: {nonce[:nonce_size].hex()}")
+
+                import threefish_native
+
+                encrypted_payload = threefish_native.encrypt_512(key, nonce[:nonce_size], data, aad)
+
+                if debug:
+                    logger.debug(
+                        f"ENCRYPT:THREEFISH-512 Encrypted payload length: {len(encrypted_payload)} bytes"
+                    )
+                    logger.debug(
+                        f"ENCRYPT:THREEFISH-512 Encrypted payload: {encrypted_payload.hex()}"
+                    )
+
+                return nonce + encrypted_payload
+
+            elif algorithm == EncryptionAlgorithm.THREEFISH_1024:
+                if debug:
+                    logger.debug(f"ENCRYPT:THREEFISH-1024 Key length: {len(key)} bytes")
+                    logger.debug(f"ENCRYPT:THREEFISH-1024 Key (first 32 bytes): {key[:32].hex()}")
+                    logger.debug(
+                        f"ENCRYPT:THREEFISH-1024 Using {nonce_size}-byte nonce for encryption"
+                    )
+                    logger.debug(f"ENCRYPT:THREEFISH-1024 Nonce: {nonce[:nonce_size].hex()}")
+                    logger.debug(f"ENCRYPT:THREEFISH-1024 Data length: {len(data)} bytes")
+                    logger.debug(f"ENCRYPT:THREEFISH-1024 AAD: {aad}")
+
+                import threefish_native
+
+                encrypted_payload = threefish_native.encrypt_1024(
+                    key, nonce[:nonce_size], data, aad
+                )
+
+                if debug:
+                    logger.debug(
+                        f"ENCRYPT:THREEFISH-1024 Encrypted payload length: {len(encrypted_payload)} bytes"
+                    )
+                    logger.debug(
+                        f"ENCRYPT:THREEFISH-1024 Encrypted payload (first 64 bytes): {encrypted_payload[:64].hex()}"
+                    )
+                    logger.debug(
+                        f"ENCRYPT:THREEFISH-1024 Full encrypted data will be {len(nonce[:nonce_size]) + len(encrypted_payload)} bytes"
+                    )
 
                 return nonce + encrypted_payload
 
@@ -5841,7 +5996,7 @@ def extract_file_metadata(input_file):
         format_version = metadata.get("format_version", 1)
 
         # Extract algorithm based on format version
-        if format_version in [4, 5, 6, 9]:
+        if format_version in [4, 5, 6, 7, 9]:
             encryption = metadata.get("encryption", {})
             algorithm = encryption.get("algorithm", EncryptionAlgorithm.FERNET.value)
             encryption_data = encryption.get("encryption_data", "aes-gcm")
@@ -6648,6 +6803,12 @@ def decrypt_file(
                 return [(24, 12)]
         elif alg == EncryptionAlgorithm.CAMELLIA.value:
             return [(16, 16)]
+        elif alg == EncryptionAlgorithm.THREEFISH_512.value:
+            # Threefish-512 requires 32-byte nonce
+            return [(32, 32)]
+        elif alg == EncryptionAlgorithm.THREEFISH_1024.value:
+            # Threefish-1024 requires 64-byte nonce
+            return [(64, 64)]
         else:
             # Default for unknown algorithms
             return [(16, 16)]
@@ -6656,7 +6817,7 @@ def decrypt_file(
     if pqc_has_private_key:
         try:
             # Handle different format versions
-            if format_version in [4, 5, 6, 9]:
+            if format_version in [4, 5, 6, 7, 9]:
                 # Get encrypted private key from v4/v5/v6/v9 structure
                 encrypted_private_key = base64.b64decode(metadata["encryption"]["pqc_private_key"])
             else:  # format_version 3
@@ -6669,7 +6830,7 @@ def decrypt_file(
             if pqc_key_is_encrypted:
                 # We need to decrypt the private key using the separately derived key
                 # Get the salt from metadata based on format version
-                if format_version in [4, 5, 6, 9]:
+                if format_version in [4, 5, 6, 7, 9]:
                     if "pqc_key_salt" not in metadata["encryption"]:
                         if not quiet:
                             print("Failed to decrypt post-quantum private key - wrong format")
@@ -6787,6 +6948,9 @@ def decrypt_file(
             logger.debug(f"DECRYPT:DATA Encrypted data length: {len(encrypted_data)} bytes")
             logger.debug(
                 f"DECRYPT:DATA Encrypted data (first 64 bytes): {encrypted_data[:64].hex() if len(encrypted_data) >= 64 else encrypted_data.hex()}"
+            )
+            logger.debug(
+                f"DECRYPT:AAD AAD value: {aad_for_decrypt if aad_for_decrypt is None else f'{len(aad_for_decrypt)} bytes: {aad_for_decrypt[:100] if len(aad_for_decrypt) > 100 else aad_for_decrypt}'}"
             )
 
         # Handle cascade decryption for V8 format
@@ -7260,6 +7424,63 @@ def decrypt_file(
                                 )
 
                             return result
+                        elif algorithm == EncryptionAlgorithm.THREEFISH_512.value:
+                            if debug:
+                                logger.debug(f"DECRYPT:THREEFISH-512 Key length: {len(key)} bytes")
+                                logger.debug(
+                                    f"DECRYPT:THREEFISH-512 Ciphertext: {ciphertext.hex()}"
+                                )
+
+                            import threefish_native
+
+                            result = threefish_native.decrypt_512(
+                                key, nonce[:effective_size], ciphertext, aad_for_decrypt
+                            )
+
+                            if debug:
+                                logger.debug(
+                                    f"DECRYPT:THREEFISH-512 Decrypted plaintext length: {len(result)} bytes"
+                                )
+                                logger.debug(
+                                    f"DECRYPT:THREEFISH-512 Decrypted plaintext: {result.hex()}"
+                                )
+
+                            return SecureBytes(result)
+                        elif algorithm == EncryptionAlgorithm.THREEFISH_1024.value:
+                            if debug:
+                                logger.debug(f"DECRYPT:THREEFISH-1024 Key length: {len(key)} bytes")
+                                logger.debug(
+                                    f"DECRYPT:THREEFISH-1024 Key (first 32 bytes): {key[:32].hex()}"
+                                )
+                                logger.debug(
+                                    f"DECRYPT:THREEFISH-1024 Nonce (first 32 bytes): {nonce[:min(32, effective_size)].hex()}"
+                                )
+                                logger.debug(
+                                    f"DECRYPT:THREEFISH-1024 Effective nonce size: {effective_size} bytes"
+                                )
+                                logger.debug(f"DECRYPT:THREEFISH-1024 AAD: {aad_for_decrypt}")
+                                logger.debug(
+                                    f"DECRYPT:THREEFISH-1024 Ciphertext length: {len(ciphertext)} bytes"
+                                )
+                                logger.debug(
+                                    f"DECRYPT:THREEFISH-1024 Ciphertext (first 64 bytes): {ciphertext[:min(64, len(ciphertext))].hex()}"
+                                )
+
+                            import threefish_native
+
+                            result = threefish_native.decrypt_1024(
+                                key, nonce[:effective_size], ciphertext, aad_for_decrypt
+                            )
+
+                            if debug:
+                                logger.debug(
+                                    f"DECRYPT:THREEFISH-1024 Decrypted plaintext length: {len(result)} bytes"
+                                )
+                                logger.debug(
+                                    f"DECRYPT:THREEFISH-1024 Decrypted plaintext: {result.hex()}"
+                                )
+
+                            return SecureBytes(result)
                 except Exception as e:
                     # Save the error and try the next nonce size
                     last_error = e

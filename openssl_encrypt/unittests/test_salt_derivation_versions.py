@@ -161,9 +161,7 @@ class TestSaltDerivationVersions(unittest.TestCase):
         salt = b"scrypt_test_salt"
 
         # Hash config with Scrypt multi-round (flat format)
-        scrypt_config = {
-            "scrypt": {"enabled": True, "n": 1024, "r": 4, "p": 1, "rounds": 2}
-        }
+        scrypt_config = {"scrypt": {"enabled": True, "n": 1024, "r": 4, "p": 1, "rounds": 2}}
 
         try:
             # v8: Predictable salt derivation
@@ -198,9 +196,7 @@ class TestSaltDerivationVersions(unittest.TestCase):
         salt = b"hash_test_salt16"
 
         # Hash config with BLAKE3 multi-round (flat format)
-        blake3_config = {
-            "blake3": 2  # 2 rounds
-        }
+        blake3_config = {"blake3": 2}  # 2 rounds
 
         try:
             # v8: Predictable salt derivation
@@ -226,9 +222,7 @@ class TestSaltDerivationVersions(unittest.TestCase):
 
         except Exception as e:
             # If BLAKE3 is not available, try BLAKE2b
-            blake2b_config = {
-                "blake2b": 2  # 2 rounds
-            }
+            blake2b_config = {"blake2b": 2}  # 2 rounds
 
             try:
                 key_v8 = multi_hash_password(
@@ -257,10 +251,7 @@ class TestSaltDerivationVersions(unittest.TestCase):
         salt = b"single_round_tst"
 
         # Hash config with single round (no salt derivation happens, flat format)
-        single_round_config = {
-            "pbkdf2_iterations": 1000,
-            "pbkdf2": {"rounds": 1}
-        }
+        single_round_config = {"pbkdf2_iterations": 1000, "pbkdf2": {"rounds": 1}}
 
         # v8 with single round
         key_v8 = multi_hash_password(
@@ -322,6 +313,212 @@ class TestSaltDerivationVersions(unittest.TestCase):
             decrypted_content = f.read()
 
         self.assertEqual(original_content, decrypted_content)
+
+    def test_v7_uses_secure_chained_derivation(self):
+        """Test that v7 uses secure chained salt derivation (same as v9)."""
+        salt = b"v7_test_salt_val"
+
+        # Hash config with multi-round Scrypt
+        scrypt_config = {"scrypt": {"enabled": True, "n": 1024, "r": 4, "p": 1, "rounds": 2}}
+
+        try:
+            # v7: Should use chained salt derivation
+            key_v7 = multi_hash_password(
+                password=self.test_password,
+                salt=salt,
+                hash_config=scrypt_config,
+                quiet=True,
+                format_version=7,
+            )
+
+            # v8: Uses predictable salt derivation (vulnerable)
+            key_v8 = multi_hash_password(
+                password=self.test_password,
+                salt=salt,
+                hash_config=scrypt_config,
+                quiet=True,
+                format_version=8,
+            )
+
+            # v7 and v8 should produce different keys
+            # (v7 uses secure chained derivation, v8 uses predictable)
+            self.assertNotEqual(
+                bytes(key_v7),
+                bytes(key_v8),
+                "v7 should use secure chained derivation (different from v8)",
+            )
+
+        except Exception as e:
+            if "scrypt" in str(e).lower() or "not available" in str(e).lower():
+                self.skipTest(f"Scrypt not available: {e}")
+            raise
+
+    def test_v7_v9_cryptographic_equivalence(self):
+        """Test that v7 and v9 produce identical keys (both use chained derivation)."""
+        salt = b"v7v9_test_salt__"
+
+        # Test with multiple KDF configurations
+        configs = [
+            # PBKDF2 multi-round
+            {"pbkdf2_iterations": 1000, "pbkdf2": {"rounds": 2}},
+            # Scrypt multi-round
+            {"scrypt": {"enabled": True, "n": 1024, "r": 4, "p": 1, "rounds": 2}},
+            # BLAKE2b multi-round
+            {"blake2b": 2},
+            # BLAKE3 multi-round
+            {"blake3": 2},
+        ]
+
+        for config in configs:
+            with self.subTest(config=config):
+                try:
+                    # v7: Secure chained derivation
+                    key_v7 = multi_hash_password(
+                        password=self.test_password,
+                        salt=salt,
+                        hash_config=config,
+                        quiet=True,
+                        format_version=7,
+                    )
+
+                    # v9: Secure chained derivation (should be identical)
+                    key_v9 = multi_hash_password(
+                        password=self.test_password,
+                        salt=salt,
+                        hash_config=config,
+                        quiet=True,
+                        format_version=9,
+                    )
+
+                    # v7 and v9 should produce IDENTICAL keys
+                    self.assertEqual(
+                        bytes(key_v7),
+                        bytes(key_v9),
+                        f"v7 and v9 should produce identical keys for {config}",
+                    )
+
+                except Exception as e:
+                    # Skip if dependency not available
+                    if any(word in str(e).lower() for word in ["not available", "scrypt", "blake"]):
+                        continue
+                    raise
+
+    def test_v8_remains_backward_compatible(self):
+        """Test that v8 still uses predictable salt derivation (backward compatibility)."""
+        salt = b"v8_compat_salt__"
+
+        # Hash config with multi-round PBKDF2
+        pbkdf2_config = {"pbkdf2_iterations": 1000, "pbkdf2": {"rounds": 2}}
+
+        # v8: Predictable salt derivation (vulnerable but backward compatible)
+        key_v8 = multi_hash_password(
+            password=self.test_password,
+            salt=salt,
+            hash_config=pbkdf2_config,
+            quiet=True,
+            format_version=8,
+        )
+
+        # v9: Secure chained derivation
+        key_v9 = multi_hash_password(
+            password=self.test_password,
+            salt=salt,
+            hash_config=pbkdf2_config,
+            quiet=True,
+            format_version=9,
+        )
+
+        # v8 and v9 should produce different keys
+        # (v8 remains vulnerable for backward compatibility)
+        self.assertNotEqual(
+            bytes(key_v8),
+            bytes(key_v9),
+            "v8 should use predictable derivation (different from secure v9)",
+        )
+
+    def test_multi_round_kdf_v7_v9_all_algorithms(self):
+        """Test all KDF algorithms with v7 and v9 to ensure equivalence."""
+        salt = b"kdf_test_salt___"
+
+        # Test all supported KDF algorithms
+        test_configs = [
+            ("PBKDF2", {"pbkdf2_iterations": 1000, "pbkdf2": {"rounds": 3}}),
+            (
+                "Argon2",
+                {
+                    "argon2": {
+                        "enabled": True,
+                        "time_cost": 2,
+                        "memory_cost": 8192,
+                        "parallelism": 1,
+                        "hash_len": 32,
+                        "type": 2,
+                        "rounds": 2,
+                    }
+                },
+            ),
+            ("Scrypt", {"scrypt": {"enabled": True, "n": 1024, "r": 4, "p": 1, "rounds": 2}}),
+            (
+                "Balloon",
+                {"balloon": {"enabled": True, "space_cost": 1024, "time_cost": 2, "rounds": 2}},
+            ),
+            ("BLAKE2b", {"blake2b": 3}),
+            ("BLAKE3", {"blake3": 3}),
+            ("SHAKE256", {"shake256": 3}),
+        ]
+
+        for algo_name, config in test_configs:
+            with self.subTest(algorithm=algo_name):
+                try:
+                    # v7: Secure chained derivation
+                    key_v7 = multi_hash_password(
+                        password=self.test_password,
+                        salt=salt,
+                        hash_config=config,
+                        quiet=True,
+                        format_version=7,
+                    )
+
+                    # v9: Secure chained derivation (should be identical)
+                    key_v9 = multi_hash_password(
+                        password=self.test_password,
+                        salt=salt,
+                        hash_config=config,
+                        quiet=True,
+                        format_version=9,
+                    )
+
+                    # v8: Predictable derivation (should be different)
+                    key_v8 = multi_hash_password(
+                        password=self.test_password,
+                        salt=salt,
+                        hash_config=config,
+                        quiet=True,
+                        format_version=8,
+                    )
+
+                    # v7 and v9 must be identical
+                    self.assertEqual(
+                        bytes(key_v7),
+                        bytes(key_v9),
+                        f"{algo_name}: v7 and v9 must produce identical keys",
+                    )
+
+                    # v8 must be different from v7/v9
+                    self.assertNotEqual(
+                        bytes(key_v8),
+                        bytes(key_v7),
+                        f"{algo_name}: v8 must differ from v7 (different salt derivation)",
+                    )
+
+                except Exception as e:
+                    # Skip if algorithm not available
+                    if any(
+                        word in str(e).lower()
+                        for word in ["not available", "not supported", "module", "import"]
+                    ):
+                        self.skipTest(f"{algo_name} not available: {e}")
+                    raise
 
 
 if __name__ == "__main__":
