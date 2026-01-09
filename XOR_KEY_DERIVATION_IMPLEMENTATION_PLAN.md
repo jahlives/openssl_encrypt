@@ -40,14 +40,14 @@
 - [x] Step 1: Add helper functions (xor_bytes_secure, normalize_to_key_length_secure) - Commit: `7a31464`
 - [x] Step 2: Modify multi_hash_password() to return intermediates - Commit: `3dd8eec`
 - [x] Step 3: Update generate_key() with v10/v8 XOR logic - Commit: `9a11bd3`
-- [ ] Step 4: Update metadata_v9_schema.json for v8/v10 - Commit: `<pending>`
+- [x] Step 4: Update metadata_v9_schema.json for v8/v10 - Commit: `a4bf00d`
 - [ ] Step 5: Update metadata creation for v10 - Commit: `<pending>`
 - [ ] Step 6: Update default format_version to 10 - Commit: `<pending>`
 - [ ] Step 7: Add unit tests (test_format_v10.py, test_cross_version_v8_v10.py) - Commit: `<pending>`
 - [ ] Step 8: Verify all tests pass including cross-version - Commit: `<pending>`
 
-**Last Updated**: 2026-01-09 (Step 3 completed - generate_key XOR logic added)
-**Current Status**: Branch 1.4 - Step 3 completed, proceeding to Step 4
+**Last Updated**: 2026-01-09 (Step 4 completed - metadata schema updated)
+**Current Status**: Branch 1.4 - Step 4 completed, proceeding to Step 5
 
 ---
 
