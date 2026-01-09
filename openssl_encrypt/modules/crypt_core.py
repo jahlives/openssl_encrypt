@@ -2235,6 +2235,19 @@ def generate_key(
     else:
         raise ValueError(f"Unsupported algorithm: {algorithm}")
 
+    # Determine if we're using v10/v8 XOR composition approach
+    # v8: 1.3 branch XOR implementation
+    # v10: 1.4 branch XOR implementation
+    # Both use identical XOR logic for cross-version compatibility
+    use_xor_composition = (format_version >= 10 or format_version == 8)
+
+    # Initialize XOR accumulator
+    # CRITICAL: Will contain ONLY SecureBytes, all MUST be zeroed after XOR
+    xor_accumulator = [] if use_xor_composition else None
+
+    if use_xor_composition and debug:
+        logger.debug(f"KEY-DEBUG: Using v{format_version} XOR composition with key_length={key_length}")
+
     # Apply hash iterations if any are configured (SHA-256, SHA-512, SHA3-256,
     # etc.)
     # First, handle the new nested format (version 4)
@@ -2281,22 +2294,59 @@ def generate_key(
             )
         )
 
+    # For v10/v8: Add initial password+salt hash to XOR accumulator
+    # CRITICAL: Store as SecureBytes for secure cleanup
+    if use_xor_composition:
+        from .secure_memory import SecureBytes, secure_memzero
+        import hashlib
+
+        # Hash the initial password+salt combination
+        initial_hash = hashlib.sha256(password + salt).digest()
+        initial_normalized = normalize_to_key_length_secure(initial_hash, key_length)
+        xor_accumulator.append(initial_normalized)  # SecureBytes object
+        if debug:
+            logger.debug(f"V10-XOR: Added initial password+salt hash: {initial_normalized.hex()}")
+
+        # Zero the temporary hash immediately
+        secure_memzero(bytearray(initial_hash))
+        del initial_hash
+
     if has_hash_iterations:
         if not quiet and not progress:
             print("Applying hash iterations", end=" ")
         elif not quiet:
             print("Applying hash iterations")
         # Apply multiple hash algorithms in sequence
-        password = multi_hash_password(
-            password,
-            salt,
-            hash_config,
-            quiet,
-            progress=progress,
-            debug=debug,
-            hsm_pepper=hsm_pepper,
-            format_version=format_version,
-        )
+        # Call multi_hash_password with v10/v8 parameters if using XOR composition
+        if use_xor_composition:
+            password, hash_intermediates = multi_hash_password(
+                password,
+                salt,
+                hash_config,
+                quiet,
+                progress=progress,
+                debug=debug,
+                hsm_pepper=hsm_pepper,
+                format_version=format_version,
+                collect_intermediates=True,    # NEW: Collect intermediates for XOR
+                key_length=key_length,         # NEW: Normalize to key_length
+            )
+            # Add all hash intermediates to accumulator
+            xor_accumulator.extend(hash_intermediates)
+            if debug:
+                logger.debug(f"V10-XOR: Added {len(hash_intermediates)} hash intermediates")
+        else:
+            # v9 and earlier: original behavior
+            password = multi_hash_password(
+                password,
+                salt,
+                hash_config,
+                quiet,
+                progress=progress,
+                debug=debug,
+                hsm_pepper=hsm_pepper,
+                format_version=format_version,
+            )
     else:
         # Even when no hash iterations are configured, we need to combine password with salt
         # for consistency with the original key derivation behavior
@@ -2542,6 +2592,14 @@ def generate_key(
             if debug:
                 logger.debug(f"ARGON2:FINAL After {argon2_rounds} rounds: {password.hex()}")
 
+            # NEW: For v10/v8, save Argon2 final output to XOR accumulator
+            # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes
+            if use_xor_composition:
+                argon2_normalized = normalize_to_key_length_secure(password, key_length)
+                xor_accumulator.append(argon2_normalized)  # SecureBytes object
+                if debug:
+                    logger.debug(f"V10-XOR: Added Argon2 final output: {argon2_normalized.hex()}")
+
             if not quiet and not progress:
                 print("✅")
         except Exception as e:
@@ -2659,6 +2717,14 @@ def generate_key(
                 total_rounds = hash_config.get("balloon", {}).get("rounds", 1)
                 logger.debug(f"BALLOON:FINAL After {total_rounds} rounds: {password.hex()}")
 
+            # NEW: For v10/v8, save Balloon final output to XOR accumulator
+            # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes
+            if use_xor_composition:
+                balloon_normalized = normalize_to_key_length_secure(password, key_length)
+                xor_accumulator.append(balloon_normalized)  # SecureBytes object
+                if debug:
+                    logger.debug(f"V10-XOR: Added Balloon final output: {balloon_normalized.hex()}")
+
             if not quiet and not progress:
                 print("✅")
         except Exception as e:
@@ -2745,6 +2811,14 @@ def generate_key(
             if debug:
                 total_rounds = hash_config.get("scrypt", {}).get("rounds", 1)
                 logger.debug(f"SCRYPT:FINAL After {total_rounds} rounds: {password.hex()}")
+
+            # NEW: For v10/v8, save Scrypt final output to XOR accumulator
+            # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes
+            if use_xor_composition:
+                scrypt_normalized = normalize_to_key_length_secure(password, key_length)
+                xor_accumulator.append(scrypt_normalized)  # SecureBytes object
+                if debug:
+                    logger.debug(f"V10-XOR: Added Scrypt final output: {scrypt_normalized.hex()}")
 
             if not quiet and not progress:
                 print("✅")
@@ -2849,6 +2923,14 @@ def generate_key(
             if isinstance(hash_config, dict) and "hkdf" in hash_config:
                 hash_config["hkdf"]["rounds"] = hkdf_config.get("rounds", 1)
 
+            # NEW: For v10/v8, save HKDF final output to XOR accumulator
+            # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes
+            if use_xor_composition:
+                hkdf_normalized = normalize_to_key_length_secure(password, key_length)
+                xor_accumulator.append(hkdf_normalized)  # SecureBytes object
+                if debug:
+                    logger.debug(f"V10-XOR: Added HKDF final output: {hkdf_normalized.hex()}")
+
         except Exception:
             if not quiet:
                 print("❌ HKDF failed, falling back to PBKDF2")
@@ -2943,6 +3025,14 @@ def generate_key(
             if isinstance(hash_config, dict) and "randomx" in hash_config:
                 hash_config["randomx"]["rounds"] = rounds
 
+            # NEW: For v10/v8, save RandomX final output to XOR accumulator
+            # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes
+            if use_xor_composition:
+                randomx_normalized = normalize_to_key_length_secure(password, key_length)
+                xor_accumulator.append(randomx_normalized)  # SecureBytes object
+                if debug:
+                    logger.debug(f"V10-XOR: Added RandomX final output: {randomx_normalized.hex()}")
+
         except Exception as e:
             if not quiet:
                 print("❌ RandomX failed, continuing without RandomX")
@@ -3010,6 +3100,14 @@ def generate_key(
             derived_salt = password[:16]
             KeyStretch.key_stretch = True
             show_progress("PBKDF2", i + 1, use_pbkdf2)
+
+        # NEW: For v10/v8, save PBKDF2 final output to XOR accumulator
+        # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes
+        if use_xor_composition:
+            pbkdf2_normalized = normalize_to_key_length_secure(password, key_length)
+            xor_accumulator.append(pbkdf2_normalized)  # SecureBytes object
+            if debug:
+                logger.debug(f"V10-XOR: Added PBKDF2 final output: {pbkdf2_normalized.hex()}")
 
     # Check if any KDF was requested but none were successful
     # This handles cases where KDFs like RandomX fail due to unavailability
@@ -3098,6 +3196,72 @@ def generate_key(
             print(" ✅")
         KeyStretch.key_stretch = True
         show_progress("PBKDF2 (fallback)", default_pbkdf2_iterations, default_pbkdf2_iterations)
+
+    # V10/v8: XOR all accumulated intermediate values
+    # CRITICAL: This section handles multiple sensitive intermediates
+    # ALL intermediates MUST be zeroed after XOR, even on exception
+    if use_xor_composition and xor_accumulator:
+        from .secure_memory import SecureBytes, secure_memzero
+
+        if debug:
+            logger.debug(f"V10-XOR: Performing final XOR of {len(xor_accumulator)} intermediate values")
+            logger.debug(f"V10-XOR: Sequential result before XOR: {bytes(password).hex()}")
+
+        # The sequential result is NOT in the accumulator yet - add it now
+        sequential_result = normalize_to_key_length_secure(password, key_length)
+        xor_accumulator.append(sequential_result)  # SecureBytes object
+
+        if debug:
+            logger.debug(f"V10-XOR: Added sequential chain final result")
+            for idx, val in enumerate(xor_accumulator):
+                logger.debug(f"V10-XOR:   [{idx}] {val.hex()}")
+
+        # Perform XOR of all values with guaranteed cleanup
+        xor_result = None
+        try:
+            # All items in xor_accumulator are SecureBytes
+            xor_result = xor_bytes_secure(xor_accumulator)  # Returns SecureBytes
+
+            # Zero the old password before replacing
+            if isinstance(password, SecureBytes):
+                secure_memzero(password)
+
+            password = xor_result  # Already SecureBytes
+            xor_result = None  # Don't zero twice
+
+            if debug:
+                logger.debug(f"V10-XOR: Final XOR result: {bytes(password).hex()}")
+
+            if not quiet:
+                print(f"✅ Combined {len(xor_accumulator)} intermediate values using XOR")
+
+        finally:
+            # CRITICAL: Clean up ALL intermediate values
+            # This executes even if XOR fails or exception occurs
+
+            # Zero the XOR result if it wasn't transferred to password
+            if xor_result is not None:
+                try:
+                    secure_memzero(xor_result)
+                except Exception:
+                    pass
+
+            # Zero every intermediate in the accumulator
+            for intermediate in xor_accumulator:
+                try:
+                    if isinstance(intermediate, SecureBytes):
+                        secure_memzero(intermediate)
+                except Exception:
+                    # Log but don't fail on cleanup errors
+                    if debug:
+                        logger.debug(f"V10-XOR: Warning - failed to zero intermediate")
+                    pass
+
+            # Clear the list
+            xor_accumulator.clear()
+
+            if debug:
+                logger.debug(f"V10-XOR: All intermediates zeroed and cleaned up")
 
     if not KeyStretch.key_stretch and not KeyStretch.hash_stretch:
         if algorithm in [
