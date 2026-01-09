@@ -44,10 +44,19 @@
 - [x] Step 5: Update metadata creation for v10 - Commit: `6f773ea`
 - [x] Step 6: Update default format_version to 10 - Commit: `6f773ea`
 - [x] Step 7: Add unit tests (test_format_v10.py, test_cross_version_v8_v10.py) - Commit: `91817da`
-- [ ] Step 8: Verify all tests pass including cross-version - Commit: `<pending>`
+- [⏳] Step 8: Verify all tests pass including cross-version - Commit: `<in-progress>`
+  - Fixed decrypt_file() to support v10 - Commit: `e7964a9`
+  - Fixed SecureBytes import scope - Commit: `e7964a9`
+  - Added fallback PBKDF2 intermediate collection - Commit: `836d0e6`
+  - **BLOCKED**: Authentication failures in tests with multiple hash algorithms
+  - **Root cause identified**: PBKDF2 default behavior inconsistency
+    - During encryption: pbkdf2_iterations=100000 passed but PBKDF2 doesn't run (no hash_config entry)
+    - During decryption: Metadata has pbkdf2 config, so PBKDF2 DOES run
+    - Result: Different number of XOR intermediates (4 vs 5) → authentication failure
+  - **Next action**: Need to ensure PBKDF2 runs consistently or fix how pbkdf2_iterations is handled
 
-**Last Updated**: 2026-01-09 (Step 7 completed - comprehensive unit tests added)
-**Current Status**: Branch 1.4 - Implementation and tests complete (Steps 1-7), ready for test verification (Step 8)
+**Last Updated**: 2026-01-09 18:45 UTC (Step 8 debugging - PBKDF2 inconsistency found)
+**Current Status**: Branch 1.4 - Step 8 blocked by PBKDF2 intermediate collection inconsistency. User switching computers.
 
 ---
 
