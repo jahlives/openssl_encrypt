@@ -13,8 +13,9 @@
 
           <div class="stats">
               <h3>&#128196; Application Info</h3>
-              <p><strong>Version:</strong> 1.3.0-dev (Development) | <strong>Size:</strong> ~140 MB | <strong>License:</strong> MIT | <strong>Platform:</strong> Linux Flatpak</p>
-              <p><strong>Version:</strong> 1.2.1-stable (Latest Stable) | <strong>Size:</strong> 36.8 MB | <strong>License:</strong> MIT | <strong>Platform:</strong> Linux Flatpak</p>
+              <p><strong>Version:</strong> 1.3.1-stable (Latest Stable) | <strong>Size:</strong> ~140 MB | <strong>License:</strong> MIT | <strong>Platform:</strong> Linux Flatpak</p>
+              <p><strong>Version:</strong> 1.3.0-stable (Stable) | <strong>Size:</strong> ~140 MB | <strong>License:</strong> MIT | <strong>Platform:</strong> Linux Flatpak</p>
+              <p><strong>Version:</strong> 1.2.1-stable | <strong>Size:</strong> 36.8 MB | <strong>License:</strong> MIT | <strong>Platform:</strong> Linux Flatpak</p>
               <p><strong>Version:</strong> 1.1.0-stable | <strong>Size:</strong> 36.8 MB | <strong>License:</strong> MIT | <strong>Platform:</strong> Linux Flatpak</p>
           </div>
 
@@ -113,12 +114,23 @@
 
               <div class="changelog-item">
                   <div class="version">
-                      1.3.0-dev
-                      <span class="release-type development">DEVELOPMENT RELEASE</span>
-                      <span class="release-type minor">EXPERIMENTAL</span>
+                      1.3.1-stable
+                      <span class="release-type stable">STABLE RELEASE</span>
+                      <span class="release-type minor">PATCH</span>
                   </div>
                   <div class="description">
-                      <strong>WARNING:</strong> Development version with experimental features - Not for production use: Steganography support (hide encrypted data in images using LSB encoding), QR code key distribution (generate/scan QR codes for secure key exchange), enhanced debug mode with raw exception passthrough, Pillow 11.3.0 support, backward compatibility fixes for format transitions, RandomX proof-of-work KDF (light/fast modes), Docker optimization (140MB image size). Install alongside stable using: <code>flatpak install custom-repo com.opensslencrypt.OpenSSLEncrypt//development</code>
+                      Version bump release for PyPI deployment. This is a maintenance release that increments the version number to enable redeployment on PyPI. All functionality remains the same as 1.3.0.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      1.3.0-stable
+                      <span class="release-type stable">STABLE RELEASE</span>
+                      <span class="release-type minor">MINOR</span>
+                  </div>
+                  <div class="description">
+                      Stable release with advanced features: Steganography support (hide encrypted data in images using LSB encoding), QR code key distribution (generate/scan QR codes for secure key exchange), enhanced debug mode with raw exception passthrough, Pillow 11.3.0 support, backward compatibility fixes for format transitions, RandomX proof-of-work KDF (light/fast modes), Docker optimization (140MB image size). Production-ready for secure file encryption.
                   </div>
               </div>
 

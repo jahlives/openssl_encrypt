@@ -4,7 +4,7 @@
 
 OpenSSL Encrypt follows [Semantic Versioning (SemVer)](https://semver.org/) for version numbering and maintains comprehensive version history to track the evolution of cryptographic security features, post-quantum implementations, and security enhancements.
 
-**Current Version:** `1.3.0` (Production Release)
+**Current Version:** `1.3.1` (Production Release)
 
 **Development Status:** Production/Stable
 
@@ -17,7 +17,15 @@ OpenSSL Encrypt follows [Semantic Versioning (SemVer)](https://semver.org/) for 
 
 ## Release History
 
-### 1.3.0 (Current) - RandomX PoW & Advanced Testing Release
+### 1.3.1 (Current) - Maintenance Release
+**Release Date:** December 2025
+**Status:** Production Release
+
+**Improvements:**
+- Version bump for next release cycle
+- Maintenance updates and bug fixes
+
+### 1.3.0 - RandomX PoW & Advanced Testing Release
 **Release Date:** December 2025
 **Status:** Production Release
 

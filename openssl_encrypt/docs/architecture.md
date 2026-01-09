@@ -12,7 +12,7 @@ The architecture of `openssl_encrypt` is built on a "Defense in Depth" strategy.
 To achieve maximum security, the tool employs a **"Double-Wrap"** mechanism that layers classical cryptography with Post-Quantum algorithms.
 
 ### Step 1: Post-Quantum Layer (Inner Wrap)
-A high-entropy secret ($S_{pqc}$) is generated using a NIST-standardized Post-Quantum Key Encapsulation Mechanism (KEM). 
+A high-entropy secret ($S_{pqc}$) is generated using a NIST-standardized Post-Quantum Key Encapsulation Mechanism (KEM).
 * **Algorithms:** Supports **HQC** (Hamming Quasi-Cyclic), **CROSS**, and **MAYO**.
 * **Purpose:** This layer ensures that even if an adversary "harvests" the data today, it cannot be decrypted by a quantum computer in the future.
 
@@ -60,7 +60,7 @@ For broad compatibility and legacy support, the tool includes the **Fernet** pro
 ---
 
 ## 5. Key Derivation Integrity (Hardened Salt Policy)
-A critical design decision in `openssl_encrypt` is the use of **strictly random, non-deterministic salts**. 
+A critical design decision in `openssl_encrypt` is the use of **strictly random, non-deterministic salts**.
 
 ### 5.1 Resistance to Pre-computation & Fast-Fail Attacks
 We consciously avoid embedding any information derived from the user's password (such as hashes of password fragments) into the salt or the metadata. While "password-derived salts" might seem like an extra layer of security, they introduce two major vulnerabilities:
@@ -79,7 +79,7 @@ This ensures that every single guess in a brute-force attack incurs the **maximu
 
 ## 6. Salt Independence & Brute-Force Resistance
 
-A fundamental design principle of `openssl_encrypt` is the strict separation of the **User Password** and the **Cryptographic Salt**. 
+A fundamental design principle of `openssl_encrypt` is the strict separation of the **User Password** and the **Cryptographic Salt**.
 
 ### 6.1 Why we avoid Password-Derived Salts
 During development, the idea of mixing parts of the user's password into the salt (even at runtime) was evaluated and rejected for the following cryptographic reasons:
@@ -95,6 +95,6 @@ The current implementation utilizes a **CSPRNG (Cryptographically Secure Pseudo-
 3. The workload for a brute-force attacker is maximized by the full complexity of the KDF chain.
 ---
 ## 7. Anti-Oracle Policy (Generic Errors)
-To prevent side-channel and padding oracle attacks, the application implements a strict **generic error policy**. 
-* Any failure during KDF derivation, metadata parsing, or AEAD verification returns an identical `Decryption Failed` message. 
+To prevent side-channel and padding oracle attacks, the application implements a strict **generic error policy**.
+* Any failure during KDF derivation, metadata parsing, or AEAD verification returns an identical `Decryption Failed` message.
 * This prevents an attacker from gaining information about which specific layer of the security stack they have successfully bypassed.
