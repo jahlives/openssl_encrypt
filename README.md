@@ -37,6 +37,7 @@ Version 1.3.0 focuses on **security hardening**, **testing capabilities**, and *
 - **Security**: O_NOFOLLOW symlink attack prevention in D-Bus service, audit logging, debug mode warnings
 - **Features**: Steganography support, enhanced plugin system with process isolation, improved RandomX KDF
 - **Quality**: 8.8/10 security score (independent review), 950+ tests, zero vulnerable dependencies
+
 ---
 ## Known Issues
 ### HQC Support in v1.2.x
@@ -68,6 +69,7 @@ Version 1.3.0 focuses on **security hardening**, **testing capabilities**, and *
 
   **Workaround**: No workaround needed for data security. To mitigate DoS risks, ensure file permissions prevent unauthorized write access to encrypted files.
 ---
+
 
 ## Security Architecture
 
