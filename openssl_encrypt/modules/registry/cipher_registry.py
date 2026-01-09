@@ -939,8 +939,12 @@ class Threefish512(CipherBase):
 
             import threefish_native
 
+            # Convert to bytes if bytearray (native functions require bytes)
+            nonce_bytes = bytes(nonce) if isinstance(nonce, bytearray) else nonce
+            aad_bytes = bytes(associated_data) if isinstance(associated_data, bytearray) else associated_data if associated_data else None
+
             encrypted = threefish_native.encrypt_512(
-                key_bytes, nonce, plaintext_bytes, associated_data
+                key_bytes, nonce_bytes, plaintext_bytes, aad_bytes
             )
 
             # Return nonce + ciphertext+tag (same pattern as AES-GCM)
@@ -986,8 +990,13 @@ class Threefish512(CipherBase):
             import threefish_native
 
             try:
+                # Convert to bytes if bytearray (native functions require bytes)
+                nonce_bytes = bytes(nonce) if isinstance(nonce, bytearray) else nonce
+                ciphertext_bytes = bytes(ciphertext) if isinstance(ciphertext, bytearray) else ciphertext
+                aad_bytes = bytes(associated_data) if isinstance(associated_data, bytearray) else associated_data if associated_data else None
+
                 plaintext = threefish_native.decrypt_512(
-                    key_bytes, nonce, ciphertext, associated_data
+                    key_bytes, nonce_bytes, ciphertext_bytes, aad_bytes
                 )
                 return SecureBytes(plaintext)
             except RuntimeError as e:
@@ -1079,8 +1088,12 @@ class Threefish1024(CipherBase):
 
             import threefish_native
 
+            # Convert to bytes if bytearray (native functions require bytes)
+            nonce_bytes = bytes(nonce) if isinstance(nonce, bytearray) else nonce
+            aad_bytes = bytes(associated_data) if isinstance(associated_data, bytearray) else associated_data if associated_data else None
+
             encrypted = threefish_native.encrypt_1024(
-                key_bytes, nonce, plaintext_bytes, associated_data
+                key_bytes, nonce_bytes, plaintext_bytes, aad_bytes
             )
 
             # Return nonce + ciphertext+tag (same pattern as AES-GCM)
@@ -1126,8 +1139,13 @@ class Threefish1024(CipherBase):
             import threefish_native
 
             try:
+                # Convert to bytes if bytearray (native functions require bytes)
+                nonce_bytes = bytes(nonce) if isinstance(nonce, bytearray) else nonce
+                ciphertext_bytes = bytes(ciphertext) if isinstance(ciphertext, bytearray) else ciphertext
+                aad_bytes = bytes(associated_data) if isinstance(associated_data, bytearray) else associated_data if associated_data else None
+
                 plaintext = threefish_native.decrypt_1024(
-                    key_bytes, nonce, ciphertext, associated_data
+                    key_bytes, nonce_bytes, ciphertext_bytes, aad_bytes
                 )
                 return SecureBytes(plaintext)
             except RuntimeError as e:

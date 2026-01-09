@@ -6760,7 +6760,7 @@ def decrypt_file(
         # Check if this is V8+ cascade format
         is_cascade = encryption.get("cascade", False)
 
-        if format_version in [8, 9] and is_cascade:
+        if format_version in [8, 9, 10] and is_cascade:
             # Extract cascade information
             cascade_cipher_chain = encryption.get("cipher_chain", [])
             cascade_hkdf_hash = encryption.get("hkdf_hash", "sha256")
