@@ -2,6 +2,8 @@
 
 A Python-based file encryption tool with modern ciphers, post-quantum algorithms, and defense-in-depth key derivation.
 
+> **Looking for the stable release?** The latest stable version is [v1.3.5](https://github.com/jahlives/openssl_encrypt/tree/releases/1.3.x) on the releases/1.3.x branch.
+
 ## History
 
 The project is historically named `openssl-encrypt` because it once was a Python script wrapper around OpenSSL. That approach stopped working with recent Python versions, so I did a complete rewrite in pure Python using modern ciphers and hashes. The project name is a “homage” to its roots
@@ -49,11 +51,20 @@ For deep-dives into the cryptographic design and security policies of this proje
 * **Metadata Integrity**: Cryptographic binding of headers to prevent tampering (on AEAD-supported ciphers).
 * **Hardware-Resistant KDF**: Sequential Argon2id and RandomX hashing to neutralize ASIC/GPU brute-force clusters.
 ---
-## What's New in v1.4.0
+## 🚧 v1.4.0 Beta Series - Under Active Development
 
-### 🚨 CRITICAL SECURITY UPDATE - Format Version 9
+**Current Beta:** v1.4.0b9 | **Status:** Pre-release testing | **Target:** Stable v1.4.0 release
 
-**SECURITY ADVISORY 2026-01** - This release contains a critical security fix for multi-round KDF configurations.
+> ⚠️ **BETA SOFTWARE**: This is pre-release software under active development. While extensively tested (1535+ tests passing), it should be used with caution in production environments. Backward compatibility with v1.3.x is maintained, but the v1.4.0 API and features may change before stable release.
+
+**Recent Beta Releases:**
+- **v1.4.0b9** (Current) - Test infrastructure improvements, Threefish cipher support, cross-version compatibility fixes
+- **v1.4.0b8** - Critical security fix: Format Version 9 with secure chained salt derivation
+- See [version.py.template](openssl_encrypt/version.py.template) for complete beta history
+
+### 🚨 CRITICAL SECURITY FIX - Format Version 9 (Beta)
+
+**SECURITY ADVISORY 2026-01** - The v1.4.0 beta series includes a critical security fix for multi-round KDF configurations (implemented in v1.4.0b8, validated in v1.4.0b9).
 
 **Vulnerability**: Format versions ≤8 used predictable salt derivation that allowed attackers to precompute all round salts from plaintext metadata, enabling optimized rainbow table attacks against multi-round KDF configurations (CVSSv3 Score: 8.1 - High).
 
@@ -94,6 +105,21 @@ round_salt = previous_round_output[:16]
 - Security Advisory: [docs/security.md](openssl_encrypt/docs/security.md#advisory-2026-01)
 - Technical Specification: [docs/metadata-formats.md](openssl_encrypt/docs/metadata-formats.md#version-9-specification)
 - Test Coverage: `openssl_encrypt/unittests/test_salt_derivation_versions.py`
+
+---
+
+### Beta Testing & Feedback
+
+v1.4.0 is currently in beta testing. We welcome feedback and bug reports:
+
+- **Test Suite:** 1535 tests passing, 0 failures
+- **Security Audit:** Format Version 9 validated across all KDF algorithms (PBKDF2, Argon2, Scrypt, Balloon)
+- **Backward Compatibility:** Fully compatible with v1.3.x encrypted files
+- **Forward Compatibility:** v1.3.5 files compatible with v1.4.x
+
+**Report Issues:**
+- GitLab: https://gitlab.rm-rf.ch/world/openssl_encrypt/-/issues
+- GitHub: https://github.com/jahlives/openssl_encrypt/issues
 
 ---
 
