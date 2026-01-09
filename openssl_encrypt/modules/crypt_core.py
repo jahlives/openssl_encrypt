@@ -1882,6 +1882,110 @@ from .crypt_errors import (
 )
 
 
+def xor_bytes_secure(values: list) -> "SecureBytes":
+    """
+    XOR multiple SecureBytes arrays of equal length.
+
+    CRITICAL: This function handles sensitive key material.
+    - All inputs MUST be SecureBytes
+    - Returns SecureBytes (caller MUST zero after use)
+    - Uses secure operations to prevent leakage
+
+    Args:
+        values: List of SecureBytes objects (must all be same length)
+
+    Returns:
+        XORed result as SecureBytes (CALLER MUST ZERO AFTER USE!)
+
+    Raises:
+        ValueError: If values have different lengths or are not SecureBytes
+    """
+    from .secure_memory import SecureBytes, secure_memzero
+
+    if not values:
+        raise ValueError("Cannot XOR empty list")
+
+    # Verify all are SecureBytes
+    if not all(isinstance(v, SecureBytes) for v in values):
+        raise ValueError("All values must be SecureBytes for secure XOR operation")
+
+    if len(values) == 1:
+        # Return a copy, don't expose original
+        return SecureBytes(values[0])
+
+    # Verify all same length
+    length = len(values[0])
+    if not all(len(v) == length for v in values):
+        raise ValueError(f"All values must be same length for XOR, got lengths: {[len(v) for v in values]}")
+
+    # XOR all values together using SecureBytes
+    result = SecureBytes(values[0])  # Copy first value
+
+    try:
+        for value in values[1:]:
+            for i in range(length):
+                result[i] ^= value[i]
+
+        return result
+    except Exception:
+        # On any error, zero the result before re-raising
+        secure_memzero(result)
+        raise
+
+
+def normalize_to_key_length_secure(data, target_length: int) -> "SecureBytes":
+    """
+    Normalize data to target length using HKDF, returning SecureBytes.
+
+    CRITICAL: This function handles sensitive key material.
+    - Accepts bytes or SecureBytes input
+    - Always returns SecureBytes (caller MUST zero after use)
+    - Zeros intermediate values
+
+    If data is too short, expand it. If too long, compress it.
+    This ensures all intermediate values can be XORed at the same length.
+
+    Args:
+        data: Input bytes or SecureBytes
+        target_length: Desired output length
+
+    Returns:
+        Normalized SecureBytes of exactly target_length (CALLER MUST ZERO!)
+    """
+    from .secure_memory import SecureBytes, secure_memzero
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    from cryptography.hazmat.backends import default_backend
+
+    # Convert to bytes for HKDF (which doesn't accept SecureBytes)
+    data_bytes = bytes(data) if isinstance(data, SecureBytes) else data
+
+    try:
+        if len(data_bytes) == target_length:
+            result = SecureBytes(data_bytes)
+        else:
+            # Use HKDF to normalize length
+            hkdf = HKDF(
+                algorithm=hashes.SHA256(),
+                length=target_length,
+                salt=None,
+                info=b"v10_xor_normalize",
+                backend=default_backend()
+            )
+
+            derived = hkdf.derive(data_bytes)
+            result = SecureBytes(derived)
+
+            # Zero the HKDF output if we created it
+            secure_memzero(bytearray(derived))
+
+        return result
+    finally:
+        # Zero the temporary bytes copy if we created one
+        if isinstance(data, SecureBytes) and data_bytes is not data:
+            secure_memzero(bytearray(data_bytes))
+
+
 @secure_key_derivation_error_handler
 def generate_key(
     password,
