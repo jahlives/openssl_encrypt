@@ -38,7 +38,7 @@
 
 ### Branch 1.4 (feature/v1.4.x-development)
 - [x] Step 1: Add helper functions (xor_bytes_secure, normalize_to_key_length_secure) - Commit: `7a31464`
-- [ ] Step 2: Modify multi_hash_password() to return intermediates - Commit: `<pending>`
+- [x] Step 2: Modify multi_hash_password() to return intermediates - Commit: `3dd8eec`
 - [ ] Step 3: Update generate_key() with v10/v8 XOR logic - Commit: `<pending>`
 - [ ] Step 4: Update metadata_v9_schema.json for v8/v10 - Commit: `<pending>`
 - [ ] Step 5: Update metadata creation for v10 - Commit: `<pending>`
@@ -46,8 +46,8 @@
 - [ ] Step 7: Add unit tests (test_format_v10.py, test_cross_version_v8_v10.py) - Commit: `<pending>`
 - [ ] Step 8: Verify all tests pass including cross-version - Commit: `<pending>`
 
-**Last Updated**: 2026-01-09 (Step 1 completed - helper functions added)
-**Current Status**: Branch 1.4 - Step 1 completed, proceeding to Step 2
+**Last Updated**: 2026-01-09 (Step 2 completed - multi_hash_password modified)
+**Current Status**: Branch 1.4 - Step 2 completed, proceeding to Step 3
 
 ---
 
