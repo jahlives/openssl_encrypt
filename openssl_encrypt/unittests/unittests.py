@@ -1801,7 +1801,7 @@ class TestCLIInterface(unittest.TestCase):
         """Test that the --debug flag produces debug output."""
         # Set up mock password input
         mock_getpass.return_value = "TestPassword123!"
-        
+
         # Output files
         encrypted_file = os.path.join(self.test_dir, "debug_test_encrypted.bin")
         decrypted_file = os.path.join(self.test_dir, "debug_test_decrypted.txt")
@@ -1809,21 +1809,24 @@ class TestCLIInterface(unittest.TestCase):
         try:
             # Clear any existing log records
             self.log_capture.records.clear()
-            
+
             # Test encryption with debug flag
             sys.argv = [
                 "crypt_cli.py",
                 "encrypt",
-                "--input", self.test_file,
-                "--output", encrypted_file,
+                "--input",
+                self.test_file,
+                "--output",
+                encrypted_file,
                 "--debug",  # Enable debug output
-                "--algorithm", "fernet",
-                "--force-password"  # Skip password validation
+                "--algorithm",
+                "fernet",
+                "--force-password",  # Skip password validation
             ]
 
             # Import and run main function
             from openssl_encrypt.modules import crypt_cli
-            
+
             # Capture any exceptions and allow the test to complete
             try:
                 crypt_cli.main()
@@ -1832,27 +1835,34 @@ class TestCLIInterface(unittest.TestCase):
                 pass
 
             # Check that debug output was produced
-            debug_records = [record for record in self.log_capture.records if record.levelno == logging.DEBUG]
-            
+            debug_records = [
+                record for record in self.log_capture.records if record.levelno == logging.DEBUG
+            ]
+
             # Verify we got some debug output
             self.assertGreater(
-                len(debug_records), 0, 
-                "No debug output produced when --debug flag was used during encryption"
+                len(debug_records),
+                0,
+                "No debug output produced when --debug flag was used during encryption",
             )
-            
+
             # Look for specific debug messages that should be present
             debug_messages = [record.getMessage() for record in debug_records]
             debug_text = " ".join(debug_messages)
-            
+
             # Check for key debug message patterns
             debug_patterns = [
-                "KEY-DEBUG:", "ENCRYPT:", "HASH-DEBUG:", "Hash configuration after setup"
+                "KEY-DEBUG:",
+                "ENCRYPT:",
+                "HASH-DEBUG:",
+                "Hash configuration after setup",
             ]
-            
+
             found_patterns = [pattern for pattern in debug_patterns if pattern in debug_text]
             self.assertGreater(
-                len(found_patterns), 0,
-                f"Expected debug patterns not found in output. Found: {debug_text}"
+                len(found_patterns),
+                0,
+                f"Expected debug patterns not found in output. Found: {debug_text}",
             )
 
             # Clear log records for decryption test
@@ -1860,12 +1870,14 @@ class TestCLIInterface(unittest.TestCase):
 
             # Test decryption with debug flag
             sys.argv = [
-                "crypt_cli.py", 
+                "crypt_cli.py",
                 "decrypt",
-                "--input", encrypted_file,
-                "--output", decrypted_file,
+                "--input",
+                encrypted_file,
+                "--output",
+                decrypted_file,
                 "--debug",  # Enable debug output
-                "--force-password"  # Skip password validation
+                "--force-password",  # Skip password validation
             ]
 
             # Run decryption
@@ -1876,23 +1888,29 @@ class TestCLIInterface(unittest.TestCase):
                 pass
 
             # Check that debug output was produced during decryption
-            debug_records = [record for record in self.log_capture.records if record.levelno == logging.DEBUG]
-            
+            debug_records = [
+                record for record in self.log_capture.records if record.levelno == logging.DEBUG
+            ]
+
             # Verify we got debug output during decryption too
             self.assertGreater(
-                len(debug_records), 0,
-                "No debug output produced when --debug flag was used during decryption"
+                len(debug_records),
+                0,
+                "No debug output produced when --debug flag was used during decryption",
             )
 
             # Check for decryption-specific debug patterns
             debug_messages = [record.getMessage() for record in debug_records]
             debug_text = " ".join(debug_messages)
-            
+
             decrypt_patterns = ["DECRYPT:", "HASH-DEBUG:"]
-            found_decrypt_patterns = [pattern for pattern in decrypt_patterns if pattern in debug_text]
+            found_decrypt_patterns = [
+                pattern for pattern in decrypt_patterns if pattern in debug_text
+            ]
             self.assertGreater(
-                len(found_decrypt_patterns), 0,
-                f"Expected decryption debug patterns not found. Found: {debug_text}"
+                len(found_decrypt_patterns),
+                0,
+                f"Expected decryption debug patterns not found. Found: {debug_text}",
             )
 
         except FileNotFoundError:
@@ -3358,7 +3376,10 @@ class TestPostQuantumCrypto(unittest.TestCase):
             # Create a test config with format_version 5
             hash_config = {
                 "format_version": 5,
-                "encryption": {"algorithm": "ml-kem-768-hybrid", "encryption_data": encryption_data},
+                "encryption": {
+                    "algorithm": "ml-kem-768-hybrid",
+                    "encryption_data": encryption_data,
+                },
             }
 
             # Create args for key generation
@@ -3616,7 +3637,10 @@ class TestPostQuantumCrypto(unittest.TestCase):
         # Create v5 hash config with encryption_data
         v5_config = {
             "format_version": 5,
-            "encryption": {"algorithm": "ml-kem-768-hybrid", "encryption_data": "chacha20-poly1305"},
+            "encryption": {
+                "algorithm": "ml-kem-768-hybrid",
+                "encryption_data": "chacha20-poly1305",
+            },
         }
 
         # Encrypt with v4 format
@@ -3689,7 +3713,10 @@ class TestPostQuantumCrypto(unittest.TestCase):
         # Create hash config with an invalid encryption_data
         hash_config = {
             "format_version": 5,
-            "encryption": {"algorithm": "ml-kem-768-hybrid", "encryption_data": "invalid-algorithm"},
+            "encryption": {
+                "algorithm": "ml-kem-768-hybrid",
+                "encryption_data": "invalid-algorithm",
+            },
         }
 
         # Test that encryption works even with invalid value (should default to aes-gcm)
@@ -6455,7 +6482,7 @@ class TestAlgorithmWarnings(unittest.TestCase):
             # Verify we get the correct algorithm and that it's NOT deprecated
             self.assertEqual(metadata["algorithm"], "ml-kem-512-hybrid")
             self.assertFalse(self.is_deprecated(metadata["algorithm"]))
-            
+
             # Test the deprecation system with actually deprecated algorithms
             self.assertTrue(self.is_deprecated("kyber512-hybrid"))
             self.assertEqual(
