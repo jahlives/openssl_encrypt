@@ -2130,6 +2130,10 @@ def generate_key(
         ValidationError: If input parameters are invalid
         KeyDerivationError: If key derivation fails
     """
+    # Import secure memory handling at function start
+    # (needed by Argon2 and XOR composition code)
+    from .secure_memory import SecureBytes, secure_memzero
+
     # Debug trace to check if debug parameter is reaching generate_key
     if debug:
         logger.debug("KEY-DEBUG: generate_key called with debug=True")
@@ -2297,7 +2301,6 @@ def generate_key(
     # For v10/v8: Add initial password+salt hash to XOR accumulator
     # CRITICAL: Store as SecureBytes for secure cleanup
     if use_xor_composition:
-        from .secure_memory import SecureBytes, secure_memzero
         import hashlib
 
         # Hash the initial password+salt combination
@@ -3201,8 +3204,6 @@ def generate_key(
     # CRITICAL: This section handles multiple sensitive intermediates
     # ALL intermediates MUST be zeroed after XOR, even on exception
     if use_xor_composition and xor_accumulator:
-        from .secure_memory import SecureBytes, secure_memzero
-
         if debug:
             logger.debug(f"V10-XOR: Performing final XOR of {len(xor_accumulator)} intermediate values")
             logger.debug(f"V10-XOR: Sequential result before XOR: {bytes(password).hex()}")
@@ -6417,7 +6418,7 @@ def extract_file_metadata(input_file):
         format_version = metadata.get("format_version", 1)
 
         # Extract algorithm based on format version
-        if format_version in [4, 5, 6, 7, 9]:
+        if format_version in [4, 5, 6, 7, 8, 9, 10]:
             encryption = metadata.get("encryption", {})
             algorithm = encryption.get("algorithm", EncryptionAlgorithm.FERNET.value)
             encryption_data = encryption.get("encryption_data", "aes-gcm")
@@ -6671,9 +6672,9 @@ def decrypt_file(
     cascade_hkdf_hash = None
     cascade_salt_decrypt = None
 
-    # For format_version 4, 5, 6, 7, 8, or 9, set correct hash_config for printing purposes
+    # For format_version 4, 5, 6, 7, 8, 9, or 10, set correct hash_config for printing purposes
     # This doesn't change the actual metadata, just passes the right info to print_hash_config
-    if format_version in [4, 5, 6, 7, 8, 9]:
+    if format_version in [4, 5, 6, 7, 8, 9, 10]:
         # If verbose, pass the full metadata to print_hash_config for proper display
         if verbose:
             print_hash_config_metadata = metadata
@@ -6682,8 +6683,8 @@ def decrypt_file(
     else:
         print_hash_config_metadata = metadata.get("hash_config", {})
 
-    # Handle format version 4, 5, 6, 7, 8, or 9
-    if format_version in [4, 5, 6, 7, 8, 9]:
+    # Handle format version 4, 5, 6, 7, 8, 9, or 10
+    if format_version in [4, 5, 6, 7, 8, 9, 10]:
         # Extract information from new hierarchical structure
         derivation_config = metadata["derivation_config"]
         salt = base64.b64decode(derivation_config["salt"])
@@ -7238,7 +7239,7 @@ def decrypt_file(
     if pqc_has_private_key:
         try:
             # Handle different format versions
-            if format_version in [4, 5, 6, 7, 9]:
+            if format_version in [4, 5, 6, 7, 8, 9, 10]:
                 # Get encrypted private key from v4/v5/v6/v9 structure
                 encrypted_private_key = base64.b64decode(metadata["encryption"]["pqc_private_key"])
             else:  # format_version 3
@@ -7251,7 +7252,7 @@ def decrypt_file(
             if pqc_key_is_encrypted:
                 # We need to decrypt the private key using the separately derived key
                 # Get the salt from metadata based on format version
-                if format_version in [4, 5, 6, 7, 9]:
+                if format_version in [4, 5, 6, 7, 8, 9, 10]:
                     if "pqc_key_salt" not in metadata["encryption"]:
                         if not quiet:
                             print("Failed to decrypt post-quantum private key - wrong format")
