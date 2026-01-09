@@ -5,6 +5,40 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.5] - 2026-01-09
+
+### Fixed
+
+- **BLAKE3 Keyed Hashing Integration**: Fixed BLAKE3 hash algorithm support with proper 32-byte key handling for Format Version 7
+  - **Issue:** BLAKE3 was not properly integrated for keyed hashing operations, preventing its use in encryption despite being listed as supported
+  - **Resolution:** Implemented BLAKE3-aware buffer sizing with 64-byte minimum allocation for deterministic key derivation
+  - **Buffer Management:** Enhanced BLAKE3 detection in both flat (v3) and nested (v4+) hash configuration formats with zero-initialization for consistent keyed hashing
+  - **Impact:** BLAKE3 is now fully functional for encryption. No regression with existing files as BLAKE3 was not used in encryption before this bugfix
+  - **Compatibility:** Files encrypted with v1.3.5 using BLAKE3 maintain forward compatibility with v1.4.x releases
+
+- **Metadata Schema Compatibility**: Made 'mode' field optional in metadata v7 schema for v1.3.4 backward compatibility
+- **Scrypt Salt Handling**: Fixed bytearray to bytes conversion in Scrypt salt derivation for proper secure operations
+- **XChaCha20 Nonce Processing**: Resolved SecureBytes slice handling in XChaCha20 nonce operations
+
+### Added
+
+- **Build Tooling**: Added comprehensive build scripts for liboqs and liboqs-python dependencies
+  - `scripts/build_local_deps.sh`: Automated dependency building with version verification
+  - `scripts/cleanup_liboqs.sh`: Clean removal of locally built dependencies
+  - Environment variable support for custom installation paths
+
+- **CI/CD Infrastructure**: Backported Flatpak build and publish jobs from v1.4.x
+  - Automated Flatpak packaging on release branches
+  - Separate clean build jobs for testing without cache
+  - Integration with Flatpak repository for distribution
+
+- **Debug Logging**: Enhanced BLAKE3 operation logging for troubleshooting hash iterations and buffer management
+
+### Changed
+
+- **Cross-Version Compatibility**: Files encrypted with v1.3.5 are fully compatible with upcoming v1.4.x releases
+- **Format Version 7**: Maintains secure chained salt derivation introduced in v1.3.4
+
 ## [1.3.4] - 2026-01-07
 
 ### Security
