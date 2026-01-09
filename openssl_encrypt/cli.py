@@ -37,13 +37,23 @@ def main():
         if len(sys.argv) == 2 and ("--help" in sys.argv or "-h" in sys.argv):
             print("usage: openssl-encrypt [--gui] | [command] [options...]")
             print("")
-            print("Encrypt or decrypt files with a password")
+            print("Encrypt or decrypt files with password protection")
             print("")
-            print("options:")
-            print("  --gui                 Launch graphical user interface")
-            print("  -h, --help            Show help for command-line interface")
+            print("Available commands:")
+            print("  encrypt              Encrypt files with password protection")
+            print("  decrypt              Decrypt previously encrypted files")
+            print("  shred                Securely delete files")
+            print("  generate-password    Generate cryptographically secure passwords")
+            print("  security-info        Display security information and algorithms")
+            print("  check-argon2         Verify Argon2 implementation")
+            print("  check-pqc           Check post-quantum cryptography support")
+            print("  version             Show version information")
             print("")
-            print("For command-line interface help, use: openssl-encrypt encrypt --help")
+            print("Global options:")
+            print("  --gui               Launch graphical user interface")
+            print("  -h, --help          Show this help message")
+            print("")
+            print("For detailed help on a command: openssl-encrypt <command> --help")
             return
 
     # Otherwise, delegate to the CLI

@@ -261,28 +261,32 @@ def clear_password_environment():
 
 def debug_hash_config(args, hash_config, message="Hash configuration"):
     """Debug output for hash configuration"""
-    print(f"\n{message}:")
-    print(
+    logger.debug(f"\n{message}:")
+    logger.debug(
         f"SHA3-512: args={args.sha3_512_rounds}, hash_config={hash_config.get('sha3_512', 'Not set')}"
     )
-    print(
+    logger.debug(
         f"SHA3-256: args={args.sha3_256_rounds}, hash_config={hash_config.get('sha3_256', 'Not set')}"
     )
-    print(f"SHA-512: args={args.sha512_rounds}, hash_config={hash_config.get('sha512', 'Not set')}")
-    print(f"SHA-256: args={args.sha256_rounds}, hash_config={hash_config.get('sha256', 'Not set')}")
-    print(
+    logger.debug(
+        f"SHA-512: args={args.sha512_rounds}, hash_config={hash_config.get('sha512', 'Not set')}"
+    )
+    logger.debug(
+        f"SHA-256: args={args.sha256_rounds}, hash_config={hash_config.get('sha256', 'Not set')}"
+    )
+    logger.debug(
         f"BLAKE2b: args={args.blake2b_rounds}, hash_config={hash_config.get('blake2b', 'Not set')}"
     )
-    print(
+    logger.debug(
         f"SHAKE-256: args={args.shake256_rounds}, hash_config={hash_config.get('shake256', 'Not set')}"
     )
-    print(
+    logger.debug(
         f"PBKDF2: args={args.pbkdf2_iterations}, hash_config={hash_config.get('pbkdf2_iterations', 'Not set')}"
     )
-    print(
+    logger.debug(
         f"Scrypt: args.n={args.scrypt_n}, hash_config.n={hash_config.get('scrypt', {}).get('n', 'Not set')}"
     )
-    print(
+    logger.debug(
         f"Argon2: args.enable_argon2={args.enable_argon2}, hash_config.enabled={hash_config.get('argon2', {}).get('enabled', 'Not set')}"
     )
 
@@ -357,6 +361,31 @@ def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
     Returns:
         Template configuration dict or None if template not found
     """
+    # Security: Validate template name to prevent path traversal attacks
+    if not template_name or not isinstance(template_name, str):
+        print("Error: Invalid template name provided")
+        sys.exit(1)
+
+    # Remove any path separators and parent directory references
+    safe_template_name = os.path.basename(template_name)
+
+    # Additional check for path traversal attempts
+    if (
+        ".." in template_name
+        or os.sep in template_name
+        or "/" in template_name
+        or "\\" in template_name
+    ):
+        print(
+            f"Error: Invalid template name '{template_name}'. Template names cannot contain path separators or parent directory references."
+        )
+        sys.exit(1)
+
+    # Ensure the cleaned name is not empty
+    if not safe_template_name:
+        print("Error: Empty template name after security validation")
+        sys.exit(1)
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
     # Move up one level from the modules directory to the project root
@@ -367,7 +396,27 @@ def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
 
     # Try different extensions
     for ext in [".json", ".yaml", ".yml"]:
-        template_path = os.path.join(template_dir, template_name + ext)
+        template_path = os.path.join(template_dir, safe_template_name + ext)
+
+        # Additional security check: ensure the resolved path is still within template_dir
+        resolved_template_path = os.path.abspath(template_path)
+        resolved_template_dir = os.path.abspath(template_dir)
+
+        # Use os.path.commonpath for robust path traversal prevention
+        try:
+            common_path = os.path.commonpath([resolved_template_path, resolved_template_dir])
+            if common_path != resolved_template_dir:
+                print(
+                    f"Error: Security violation - template path '{template_path}' is outside allowed directory"
+                )
+                sys.exit(1)
+        except ValueError:
+            # Different drives/roots on Windows - definitely not under template_dir
+            print(
+                f"Error: Security violation - template path '{template_path}' is outside allowed directory"
+            )
+            sys.exit(1)
+
         if os.path.exists(template_path):
             try:
                 with open(template_path, "r") as f:
@@ -379,7 +428,7 @@ def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
                 print(f"Error loading template {template_path}: {e}")
                 sys.exit(1)
 
-    print(f"Template {template_name} not found in {template_dir}")
+    print(f"Template {safe_template_name} not found in {template_dir}")
     sys.exit(1)
 
 
@@ -493,6 +542,32 @@ def main():
     """
     Main function that handles the command-line interface.
     """
+    # Check if we should use subparser-based help
+    import sys
+
+    if (
+        len(sys.argv) > 1
+        and sys.argv[1]
+        in [
+            "encrypt",
+            "decrypt",
+            "shred",
+            "generate-password",
+            "security-info",
+            "check-argon2",
+            "check-pqc",
+            "version",
+            "show-version-file",
+        ]
+        and ("--help" in sys.argv or "-h" in sys.argv)
+    ):
+        # Use subparser for command-specific help
+        from .crypt_cli_subparser import create_subparser_main
+
+        parser, args = create_subparser_main()
+        return
+
+    # Original main function continues below...
     # Global variable to track temporary files that need cleanup
     temp_files_to_cleanup = []
 
@@ -579,7 +654,7 @@ def main():
             "show-version-file",
         ],
         help="Action to perform: encrypt/decrypt files, shred data, generate passwords, "
-        "show security recommendations, check Argon2 support, check post-quantum cryptography support or display version file contents",
+        "show security recommendations, check Argon2 support, check post-quantum cryptography support",
     )
 
     # Get all available algorithms, marking deprecated ones
@@ -640,6 +715,7 @@ def main():
     data_algorithms = [
         "aes-gcm",
         "aes-gcm-siv",
+        # "aes-ocb3",  # Removed - deprecated due to security concerns
         "aes-siv",
         "chacha20-poly1305",
         "xchacha20-poly1305",
@@ -752,12 +828,28 @@ def main():
         help="Number of SHA-512 iterations (default: 1,000,000 if flag provided without value)",
     )
     hash_group.add_argument(
+        "--sha384-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA-384 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
         "--sha256-rounds",
         type=int,
         nargs="?",
         const=1,
         default=0,
         help="Number of SHA-256 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--sha224-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA-224 iterations (default: 1,000,000 if flag provided without value)",
     )
     hash_group.add_argument(
         "--sha3-256-rounds",
@@ -776,6 +868,22 @@ def main():
         help="Number of SHA3-512 iterations (default: 1,000,000 if flag provided without value)",
     )
     hash_group.add_argument(
+        "--sha3-384-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA3-384 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--sha3-224-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA3-224 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
         "--blake2b-rounds",
         type=int,
         nargs="?",
@@ -784,12 +892,28 @@ def main():
         help="Number of BLAKE2b iterations (default: 1,000,000 if flag provided without value)",
     )
     hash_group.add_argument(
+        "--blake3-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of BLAKE3 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
         "--shake256-rounds",
         type=int,
         nargs="?",
         const=1,
         default=0,
         help="Number of SHAKE-256 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--shake128-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHAKE-128 iterations (default: 1,000,000 if flag provided without value)",
     )
     hash_group.add_argument(
         "--whirlpool-rounds",
@@ -849,11 +973,43 @@ def main():
         help=argparse.SUPPRESS,  # Hidden legacy option
     )
 
+    # HKDF options
+    hkdf_group = parser.add_argument_group(
+        "HKDF Options", "Configure HMAC-based Key Derivation Function"
+    )
+    hkdf_group.add_argument(
+        "--enable-hkdf",
+        action="store_true",
+        help="Enable HKDF key derivation",
+        default=False,
+    )
+    hkdf_group.add_argument(
+        "--hkdf-rounds",
+        type=int,
+        default=1,
+        help="Number of HKDF chained rounds (default: 1)",
+    )
+    hkdf_group.add_argument(
+        "--hkdf-algorithm",
+        choices=["sha224", "sha256", "sha384", "sha512"],
+        default="sha256",
+        help="Hash algorithm for HKDF (default: sha256)",
+    )
+    hkdf_group.add_argument(
+        "--hkdf-info",
+        type=str,
+        default="openssl_encrypt_hkdf",
+        help="HKDF info string for context (default: openssl_encrypt_hkdf)",
+    )
+
     # Add Keystore options
     keystore_group = parser.add_argument_group(
         "Keystore Options", "Configure keystore integration for key management"
     )
     keystore_group.add_argument("--keystore", help="Path to the keystore file")
+    keystore_group.add_argument(
+        "--keystore-path", dest="keystore", help="Path to the keystore file (alias for --keystore)"
+    )
     keystore_group.add_argument(
         "--keystore-password",
         help="Password for the keystore (will prompt if not provided)",
@@ -1077,16 +1233,14 @@ def main():
 
     args = parser.parse_args()
 
+    # Configure logging level based on debug flag
+    if args.debug:
+        import logging
+
+        logging.basicConfig(level=logging.DEBUG, format="%(levelname)s - %(name)s - %(message)s")
+
     # Enhance the args with better defaults for extended algorithms
     args = enhance_cli_args(args)
-
-    # DEPRECATED: AES-OCB3 is no longer supported for new encryptions due to security concerns
-    if hasattr(args, "algorithm") and args.algorithm == "aes-ocb3":
-        print("ERROR: AES-OCB3 is deprecated for new encryptions.")
-        print("Please use AES-GCM or AES-GCM-SIV instead.")
-        print("AES-OCB3 has security concerns with short nonces and implementation issues.")
-        print("Existing files encrypted with AES-OCB3 can still be decrypted.")
-        sys.exit(1)
 
     # Configure algorithm warnings based on verbose and debug flags
     AlgorithmWarningConfig.configure(verbose_mode=args.verbose or args.debug)
@@ -1316,7 +1470,14 @@ def main():
         sys.exit(0)
 
     # For other actions, input file is required
-    if args.input is None:
+    if args.input is None and args.action not in [
+        "generate-password",
+        "security-info",
+        "check-argon2",
+        "check-pqc",
+        "version",
+        "show-version-file",
+    ]:
         parser.error("the following arguments are required: --input/-i")
 
     # Get password (only for encrypt/decrypt actions)
@@ -1647,35 +1808,65 @@ def main():
 
     # If user specified to use SHA-256, SHA-512, or SHA3 but didn't provide
     # iterations
-    if args.sha256_rounds == 1:  # When flag is provided without value
-        args.sha256_rounds = MIN_SHA_ITERATIONS
-        if not args.quiet:
-            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-256")
-
     if args.sha512_rounds == 1:  # When flag is provided without value
         args.sha512_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
             print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-512")
 
-    if args.sha3_256_rounds == 1:  # When flag is provided without value
-        args.sha3_256_rounds = MIN_SHA_ITERATIONS
+    if args.sha384_rounds == 1:  # When flag is provided without value
+        args.sha384_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
-            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-256")
+            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-384")
+
+    if args.sha256_rounds == 1:  # When flag is provided without value
+        args.sha256_rounds = MIN_SHA_ITERATIONS
+        if not args.quiet:
+            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-256")
+
+    if args.sha224_rounds == 1:  # When flag is provided without value
+        args.sha224_rounds = MIN_SHA_ITERATIONS
+        if not args.quiet:
+            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-224")
 
     if args.sha3_512_rounds == 1:  # When flag is provided without value
         args.sha3_512_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
             print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-512")
 
+    if args.sha3_384_rounds == 1:  # When flag is provided without value
+        args.sha3_384_rounds = MIN_SHA_ITERATIONS
+        if not args.quiet:
+            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-384")
+
+    if args.sha3_256_rounds == 1:  # When flag is provided without value
+        args.sha3_256_rounds = MIN_SHA_ITERATIONS
+        if not args.quiet:
+            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-256")
+
+    if args.sha3_224_rounds == 1:  # When flag is provided without value
+        args.sha3_224_rounds = MIN_SHA_ITERATIONS
+        if not args.quiet:
+            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-224")
+
     if args.blake2b_rounds == 1:  # When flag is provided without value
         args.blake2b_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
             print(f"Using default of {MIN_SHA_ITERATIONS} iterations for BLAKE2b")
 
+    if args.blake3_rounds == 1:  # When flag is provided without value
+        args.blake3_rounds = MIN_SHA_ITERATIONS
+        if not args.quiet:
+            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for BLAKE3")
+
     if args.shake256_rounds == 1:  # When flag is provided without value
         args.shake256_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
             print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHAKE-256")
+
+    if args.shake128_rounds == 1:  # When flag is provided without value
+        args.shake128_rounds = MIN_SHA_ITERATIONS
+        if not args.quiet:
+            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHAKE-128")
 
     # Determine default rounds value to use - either from --kdf-rounds or default of 10
     default_rounds = args.kdf_rounds if args.kdf_rounds > 0 else 10
@@ -1798,7 +1989,9 @@ def main():
             hash_config["hash_config"]["algorithm"] = "xchacha20-poly1305"
         elif args.quick:
             hash_config = get_template_config(SecurityTemplate.QUICK)
-            hash_config["hash_config"]["algorithm"] = "aes-gcm"
+            hash_config["hash_config"][
+                "algorithm"
+            ] = "aes-gcm"  # Changed from aes-ocb3 due to deprecation
         elif args.standard:
             hash_config = get_template_config(SecurityTemplate.STANDARD)
             hash_config["hash_config"]["algorithm"] = "aes-gcm-siv"
@@ -1815,12 +2008,18 @@ def main():
     else:
         hash_config = {
             "sha512": args.sha512_rounds,
+            "sha384": args.sha384_rounds,
             "sha256": args.sha256_rounds,
-            "sha3_256": args.sha3_256_rounds,
+            "sha224": args.sha224_rounds,
             "sha3_512": args.sha3_512_rounds,
+            "sha3_384": args.sha3_384_rounds,
+            "sha3_256": args.sha3_256_rounds,
+            "sha3_224": args.sha3_224_rounds,
             "blake2b": args.blake2b_rounds,
+            "blake3": args.blake3_rounds,
             "shake256": args.shake256_rounds,
-            "whirlpool": args.whirlpool_rounds,
+            "shake128": args.shake128_rounds,
+            "whirlpool": getattr(args, "whirlpool_rounds", 0),
             "scrypt": {
                 "enabled": args.enable_scrypt,
                 "n": args.scrypt_n,
@@ -1845,15 +2044,58 @@ def main():
                 "parallelism": args.balloon_parallelism,
                 "rounds": args.balloon_rounds,
             },
-            "pbkdf2_iterations": args.pbkdf2_iterations,
+            "hkdf": {
+                "enabled": args.enable_hkdf,
+                "rounds": args.hkdf_rounds,
+                "algorithm": args.hkdf_algorithm,
+                "info": args.hkdf_info,
+            },
+            "pbkdf2_iterations": getattr(args, "pbkdf2_iterations", 0),
         }
 
-    # Uncomment this line to debug the hash configuration
-    # debug_hash_config(args, hash_config, "Hash configuration after setup")
+    # Debug the hash configuration if debug mode is enabled
+    if args.debug:
+        debug_hash_config(args, hash_config, "Hash configuration after setup")
 
     exit_code = 0
     try:
         if args.action == "encrypt":
+            # DEPRECATED: Whirlpool is no longer supported for new encryptions
+            if hasattr(args, "whirlpool_rounds") and getattr(args, "whirlpool_rounds", 0) > 0:
+                print("ERROR: Whirlpool is deprecated for new encryptions.")
+                print("Please use BLAKE2b, BLAKE3, or SHA-3 instead.")
+                print("Existing files encrypted with Whirlpool can still be decrypted.")
+                sys.exit(1)
+
+            # DEPRECATED: PBKDF2 is no longer supported for new encryptions
+            if hasattr(args, "pbkdf2_iterations") and getattr(args, "pbkdf2_iterations", 0) > 0:
+                print("ERROR: PBKDF2 is deprecated for new encryptions.")
+                print("Please use Argon2, Scrypt, or Balloon hashing instead.")
+                print("Existing files encrypted with PBKDF2 can still be decrypted.")
+                sys.exit(1)
+
+            # DEPRECATED: AES-OCB3 is no longer supported for new encryptions due to security concerns
+            if hasattr(args, "algorithm") and args.algorithm == "aes-ocb3":
+                print("ERROR: AES-OCB3 is deprecated for new encryptions.")
+                print("Please use AES-GCM or AES-GCM-SIV instead.")
+                print("AES-OCB3 has security concerns with short nonces and implementation issues.")
+                print("Existing files encrypted with AES-OCB3 can still be decrypted.")
+                sys.exit(1)
+
+            # DEPRECATED: Kyber algorithms are no longer supported for new encryptions
+            kyber_algorithms = ["kyber512-hybrid", "kyber768-hybrid", "kyber1024-hybrid"]
+            if hasattr(args, "algorithm") and args.algorithm in kyber_algorithms:
+                ml_kem_mapping = {
+                    "kyber512-hybrid": "ml-kem-512-hybrid",
+                    "kyber768-hybrid": "ml-kem-768-hybrid",
+                    "kyber1024-hybrid": "ml-kem-1024-hybrid",
+                }
+                recommended = ml_kem_mapping[args.algorithm]
+                print(f"ERROR: {args.algorithm} is deprecated for new encryptions.")
+                print(f"Please use {recommended} instead (NIST standardized equivalent).")
+                print(f"Existing files encrypted with {args.algorithm} can still be decrypted.")
+                sys.exit(1)
+
             # Check if main algorithm is deprecated and issue warning
             if is_deprecated(args.algorithm):
                 replacement = get_recommended_replacement(args.algorithm)
@@ -2251,7 +2493,7 @@ def main():
                             temp_output,
                             password,
                             hash_config=hash_config,
-                            pbkdf2_iterations=args.pbkdf2_iterations,
+                            pbkdf2_iterations=getattr(args, "pbkdf2_iterations", 0),
                             quiet=args.quiet,
                             algorithm=args.algorithm,
                             pqc_keypair=(pqc_keypair if "pqc_keypair" in locals() else None),
@@ -2307,9 +2549,64 @@ def main():
                     raise e
             elif not args.output:
                 # Default output file name if not specified
-                output_file = args.input + ".encrypted"
+                if args.input == "/dev/stdin":
+                    # When input is stdin and no output specified, we'll output to stdout
+                    # This will be handled in a separate code path below
+                    output_file = None
+                else:
+                    # For regular files, append .encrypted extension
+                    output_file = args.input + ".encrypted"
             else:
+                print(f"FLOW-DEBUG: Using normal output path: {args.output}")
                 output_file = args.output
+
+            # Handle stdout output for stdin input
+            if output_file is None:
+                # Encrypt stdin to stdout - create temporary output file first
+                import tempfile
+
+                with tempfile.NamedTemporaryFile(
+                    mode="w+b", delete=False, suffix=".encrypted"
+                ) as temp_file:
+                    temp_output_file = temp_file.name
+
+                # Use standard encryption to temporary file
+                success = encrypt_file(
+                    args.input,
+                    temp_output_file,
+                    password,
+                    hash_config,
+                    args.pbkdf2_iterations,
+                    quiet=True,  # Suppress normal output for stdout
+                    algorithm=args.algorithm,
+                    progress=False,  # No progress bar for stdout
+                    verbose=False,  # No verbose output for stdout
+                    debug=args.debug,
+                    encryption_data=args.encryption_data,
+                )
+
+                if success:
+                    # Output the encrypted content to stdout
+                    try:
+                        with open(temp_output_file, "rb") as f:
+                            sys.stdout.buffer.write(f.read())
+                        sys.stdout.buffer.flush()
+                    except Exception as e:
+                        if not args.quiet:
+                            print(f"Error writing to stdout: {e}", file=sys.stderr)
+                        success = False
+                    finally:
+                        # Clean up temporary file
+                        try:
+                            os.unlink(temp_output_file)
+                        except:
+                            pass
+
+                # Skip the normal encryption logic
+                if success:
+                    return
+                else:
+                    sys.exit(1)
 
             # Handle PQC key operations (for non-overwriting case)
             pqc_keypair = None
@@ -2936,7 +3233,6 @@ def main():
                     # If we can't read metadata, continue with decryption (it will fail with proper error)
                     if args.verbose:
                         print(f"Warning: Could not check file for deprecated algorithms: {e}")
-
             if args.overwrite:
                 output_file = args.input
                 # Create a temporary file for the decryption
@@ -3355,6 +3651,7 @@ def main():
                         args.quiet,
                         progress=args.progress,
                         verbose=args.verbose,
+                        debug=args.debug,
                         pqc_private_key=pqc_private_key,
                     )
                 try:

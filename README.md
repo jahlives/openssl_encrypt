@@ -5,9 +5,7 @@ A Python-based file encryption tool with modern ciphers, post-quantum algorithms
 ## History
 
 The project is historically named `openssl-encrypt` because it once was a Python script wrapper around OpenSSL. That approach stopped working with recent Python versions, so I did a complete rewrite in pure Python using modern ciphers and hashes. The project name is a “homage” to its roots.
-
 ---
-
 ## Ethical Commitment & Usage Restrictions
 
 This project is committed to the protection of human rights and the prevention of mass surveillance. To reflect these values, it is licensed under the **Hippocratic License 2.1**.
@@ -29,7 +27,6 @@ Technological tools are not neutral. We believe that encryption should empower i
 > **Note:** Because of these ethical protections, this project is considered **Ethical Source**, not "Open Source" according to the OSI definition, as we intentionally restrict usage for harmful purposes.
 
 > "The Software shall be used for Good, not Evil." — *Inspired by the JSON License & HL 2.1*
-
 ---
 
 ## What’s New in v1.3.0

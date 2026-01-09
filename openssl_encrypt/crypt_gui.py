@@ -392,9 +392,17 @@ class CryptGUI:
             ("hqc-128-hybrid", "HQC-128 Hybrid"),
             ("hqc-192-hybrid", "HQC-192 Hybrid"),
             ("hqc-256-hybrid", "HQC-256 Hybrid"),
+            # Post-quantum hybrid algorithms - MAYO (Multivariate)
+            ("mayo-1-hybrid", "MAYO-1 Hybrid"),
+            ("mayo-3-hybrid", "MAYO-3 Hybrid"),
+            ("mayo-5-hybrid", "MAYO-5 Hybrid"),
+            # Post-quantum hybrid algorithms - CROSS (Code-based)
+            ("cross-128-hybrid", "CROSS-128 Hybrid"),
+            ("cross-192-hybrid", "CROSS-192 Hybrid"),
+            ("cross-256-hybrid", "CROSS-256 Hybrid"),
         ]
 
-        # Define post-quantum algorithms (only ML-KEM and HQC, no separate Kyber entries)
+        # Define post-quantum algorithms (ML-KEM, HQC, MAYO, and CROSS)
         self.pqc_algorithms = {
             "ml-kem-512-hybrid",
             "ml-kem-768-hybrid",
@@ -402,6 +410,12 @@ class CryptGUI:
             "hqc-128-hybrid",
             "hqc-192-hybrid",
             "hqc-256-hybrid",
+            "mayo-1-hybrid",
+            "mayo-3-hybrid",
+            "mayo-5-hybrid",
+            "cross-128-hybrid",
+            "cross-192-hybrid",
+            "cross-256-hybrid",
         }
 
         # Create frame for algorithm dropdowns (side by side)
@@ -1520,6 +1534,22 @@ class CryptGUI:
                 # Add rounds parameter if present
                 if "rounds" in balloon_config and balloon_config["rounds"] > 1:
                     cmd.extend(["--balloon-rounds", str(balloon_config["rounds"])])
+
+            # HKDF parameters (if present)
+            if "hkdf" in hash_config and hash_config["hkdf"].get("enabled", False):
+                cmd.append("--enable-hkdf")
+
+                hkdf_config = hash_config["hkdf"]
+
+                if "algorithm" in hkdf_config:
+                    cmd.extend(["--hkdf-algorithm", str(hkdf_config["algorithm"])])
+
+                if "info" in hkdf_config:
+                    cmd.extend(["--hkdf-info", str(hkdf_config["info"])])
+
+                # Add rounds parameter if present
+                if "rounds" in hkdf_config and hkdf_config["rounds"] > 1:
+                    cmd.extend(["--hkdf-rounds", str(hkdf_config["rounds"])])
 
         # Add force password flag if checkbox is checked
         if self.encrypt_force_password_var.get():

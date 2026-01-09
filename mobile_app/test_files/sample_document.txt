@@ -1,0 +1,29 @@
+OpenSSL Encrypt Mobile Test Document
+====================================
+
+This is a sample document for testing the mobile application's file encryption 
+and decryption capabilities. 
+
+Features being tested:
+- File selection and reading
+- Content preservation during encryption
+- Metadata format compatibility (CLI format version 5)
+- Cross-platform file compatibility
+- Proper error handling
+
+Test Instructions:
+1. Use the mobile app to encrypt this file with any password
+2. Verify the encrypted file is created
+3. Use the mobile app to decrypt the encrypted file
+4. Compare the decrypted content with this original
+
+Expected Result:
+The decrypted file should contain exactly the same content as this original file,
+preserving all text formatting, line breaks, and special characters.
+
+Password Suggestions for Testing:
+- SimpleTest123
+- MobileApp2024!
+- CLI_Compatible_Pass
+
+This document contains exactly 200 words for testing purposes.

@@ -1,11 +1,17 @@
 {
   "hash_config": {
     "sha512": 10000,
+    "sha384": 5000,
     "sha256": 10000,
-    "sha3_256": 10000,
+    "sha224": 0,
     "sha3_512": 800000,
+    "sha3_384": 400000,
+    "sha3_256": 10000,
+    "sha3_224": 0,
     "blake2b": 800000,
+    "blake3": 1000000,
     "shake256": 400000,
+    "shake128": 200000,
     "scrypt": {
       "enabled": true,
       "n": 256,
@@ -29,6 +35,12 @@
       "parallelism": 4,
       "hash_len": 64,
       "rounds": 5
+    },
+    "hkdf": {
+      "enabled": true,
+      "rounds": 50,
+      "algorithm": "sha512",
+      "info": "openssl_encrypt_paranoid_hkdf"
     },
     "pbkdf2_iterations": 0,
     "type": "id",

@@ -1,0 +1,24 @@
+{
+  "encrypted_data": "Z0FBQUFBQm9sbURTNmpIWUhYR0owUWpUZWY3WTRndDluRUh2dlBhNDFxbXh3dXJIdWlMUDlXNHJTSnJWa0p5OVo0MV9BM1VTRTlmOVVRVmJ4dFR4SGUxLXJGRG1DYkp5cGRSZmpfd0FhT1A1NGt2dXMtY3hvZ3hKWnhLMFU1cEdFbms2WVdFdmk3cnM0bjdJOUJySlg1eEV0ZmlwcTl2UVlVUGhna0RURzZiS0tyeDM2SlkyRGRJbENLQWpIQ1RwYVZTbE9yN3lIbjlB",
+  "metadata": {
+    "format_version": 5,
+    "derivation_config": {
+      "salt": "2U/VM/VAz5NaH2EhSnB4Tw==",
+      "hash_config": {
+        "sha256": {
+          "rounds": 1000
+        }
+      },
+      "kdf_config": {
+        "pbkdf2": {
+          "rounds": 50000
+        }
+      }
+    },
+    "encryption": {
+      "algorithm": "fernet"
+    },
+    "mobile_version": "2.1",
+    "original_size": 89
+  }
+}
