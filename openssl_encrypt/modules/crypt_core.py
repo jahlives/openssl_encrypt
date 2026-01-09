@@ -3200,6 +3200,14 @@ def generate_key(
         KeyStretch.key_stretch = True
         show_progress("PBKDF2 (fallback)", default_pbkdf2_iterations, default_pbkdf2_iterations)
 
+        # NEW: For v10/v8, save fallback PBKDF2 final output to XOR accumulator
+        # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes
+        if use_xor_composition:
+            pbkdf2_fallback_normalized = normalize_to_key_length_secure(password, key_length)
+            xor_accumulator.append(pbkdf2_fallback_normalized)  # SecureBytes object
+            if debug:
+                logger.debug(f"V10-XOR: Added PBKDF2 fallback final output: {pbkdf2_fallback_normalized.hex()}")
+
     # V10/v8: XOR all accumulated intermediate values
     # CRITICAL: This section handles multiple sensitive intermediates
     # ALL intermediates MUST be zeroed after XOR, even on exception
