@@ -1210,7 +1210,14 @@ def with_progress_bar(func, message, *args, quiet=False, **kwargs):
 
 @add_timing_jitter
 def multi_hash_password(
-    password, salt, hash_config, quiet=False, progress=False, debug=False, hsm_pepper=None, format_version=6
+    password,
+    salt,
+    hash_config,
+    quiet=False,
+    progress=False,
+    debug=False,
+    hsm_pepper=None,
+    format_version=6,
 ):
     """
     Apply multiple rounds of different hash algorithms to a password.
@@ -1293,7 +1300,42 @@ def multi_hash_password(
 
         # Use secure memory approach
         pepper_len = len(hsm_pepper) if hsm_pepper else 0
-        with secure_buffer(len(password) + len(salt) + pepper_len, zero=False) as hashed:
+        initial_size = len(password) + len(salt) + pepper_len
+
+        # Check if BLAKE3 is actually being used in hash config
+        uses_blake3 = False
+        if hash_config:
+            # Handle both flat (v3) and nested (v4+) formats
+            if (
+                "derivation_config" in hash_config
+                and "hash_config" in hash_config["derivation_config"]
+            ):
+                hash_params = hash_config["derivation_config"]["hash_config"]
+            else:
+                hash_params = hash_config
+
+            blake3_config = hash_params.get("blake3", 0)
+            if isinstance(blake3_config, dict):
+                uses_blake3 = blake3_config.get("rounds", 0) > 0
+            else:
+                uses_blake3 = blake3_config > 0
+
+        if uses_blake3:
+            # BLAKE3 requires larger buffer for keyed hashing
+            buffer_size = max(64, initial_size)
+            buffer_zero = True  # Zero-initialize for deterministic hashing
+            if debug:
+                logger.debug(
+                    f"HASH-DEBUG: BLAKE3 detected, using buffer size {buffer_size} (initial: {initial_size})"
+                )
+        else:
+            # Use exact size for backward compatibility
+            buffer_size = initial_size
+            buffer_zero = False
+            if debug:
+                logger.debug(f"HASH-DEBUG: No BLAKE3, using exact buffer size {buffer_size}")
+
+        with secure_buffer(buffer_size, zero=buffer_zero) as hashed:
             # Initialize the secure buffer with password + salt + hsm_pepper
             if hsm_pepper:
                 if debug:
@@ -1489,7 +1531,9 @@ def multi_hash_password(
                                         key_material = hashed[:32]
                                     else:
                                         # Legacy: Predictable derivation for v6 and below (backward compatibility)
-                                        key_material = hashlib.sha256(salt + str(i).encode()).digest()
+                                        key_material = hashlib.sha256(
+                                            salt + str(i).encode()
+                                        ).digest()
 
                                 # Create a keyed BLAKE3 instance for each iteration
                                 # BLAKE3 keyed mode provides additional security over plain hashing
@@ -1519,7 +1563,9 @@ def multi_hash_password(
                                         key_material = hashed[:32]
                                     else:
                                         # Legacy: Predictable derivation for v6 and below
-                                        key_material = hashlib.sha256(salt + str(i).encode()).digest()
+                                        key_material = hashlib.sha256(
+                                            salt + str(i).encode()
+                                        ).digest()
                                 result = hashlib.blake2b(
                                     hashed, key=key_material[:32], digest_size=64
                                 ).digest()
@@ -1806,6 +1852,7 @@ def generate_key(
                 "sha3_256",
                 "sha3_512",
                 "blake2b",
+                "blake3",
                 "shake256",
                 "whirlpool",
             ]
@@ -1822,6 +1869,7 @@ def generate_key(
                     "sha3_256",
                     "sha3_512",
                     "blake2b",
+                    "blake3",
                     "shake256",
                     "whirlpool",
                 ]
@@ -2507,7 +2555,9 @@ def generate_key(
                 # Legacy: Predictable derivation for ALL rounds (v6 and below)
                 # Generate a unique salt for each iteration by hashing the base salt with the iteration number
                 # This ensures each iteration has a completely different salt, preventing salt reuse
-                iteration_specific_salt = hashlib.sha256(base_salt + str(i).encode("utf-8")).digest()
+                iteration_specific_salt = hashlib.sha256(
+                    base_salt + str(i).encode("utf-8")
+                ).digest()
 
             password = PBKDF2HMAC(
                 algorithm=hashes.SHA256(),
