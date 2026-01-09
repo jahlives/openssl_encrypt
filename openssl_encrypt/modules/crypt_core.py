@@ -1431,7 +1431,9 @@ def multi_hash_password(
     # CRITICAL: All intermediates MUST be SecureBytes and zeroed after XOR
     intermediate_outputs = [] if collect_intermediates else None
     if collect_intermediates and debug:
-        logger.debug(f"XOR-COLLECT: Collecting intermediates for v10/v8 XOR composition (key_length={key_length})")
+        logger.debug(
+            f"XOR-COLLECT: Collecting intermediates for v10/v8 XOR composition (key_length={key_length})"
+        )
 
     # If hash_config is provided but doesn't specify type, use 'id' (Argon2id)
     # as default
@@ -1822,7 +1824,9 @@ def multi_hash_password(
                                 normalized = normalize_to_key_length_secure(hashed, key_length)
                                 intermediate_outputs.append(normalized)  # SecureBytes object
                                 if debug:
-                                    logger.debug(f"BLAKE3-FALLBACK:XOR-INTERMEDIATE: {normalized.hex()}")
+                                    logger.debug(
+                                        f"BLAKE3-FALLBACK:XOR-INTERMEDIATE: {normalized.hex()}"
+                                    )
 
                             if not quiet and not progress:
                                 print("✅")
@@ -1948,7 +1952,9 @@ def multi_hash_password(
                                 normalized = normalize_to_key_length_secure(hashed, key_length)
                                 intermediate_outputs.append(normalized)  # SecureBytes object
                                 if debug:
-                                    logger.debug(f"Whirlpool-FALLBACK:XOR-INTERMEDIATE: {normalized.hex()}")
+                                    logger.debug(
+                                        f"Whirlpool-FALLBACK:XOR-INTERMEDIATE: {normalized.hex()}"
+                                    )
 
                             if not quiet and not progress:
                                 print("✅")
@@ -2243,14 +2249,16 @@ def generate_key(
     # v8: 1.3 branch XOR implementation
     # v10: 1.4 branch XOR implementation
     # Both use identical XOR logic for cross-version compatibility
-    use_xor_composition = (format_version >= 10 or format_version == 8)
+    use_xor_composition = format_version >= 10 or format_version == 8
 
     # Initialize XOR accumulator
     # CRITICAL: Will contain ONLY SecureBytes, all MUST be zeroed after XOR
     xor_accumulator = [] if use_xor_composition else None
 
     if use_xor_composition and debug:
-        logger.debug(f"KEY-DEBUG: Using v{format_version} XOR composition with key_length={key_length}")
+        logger.debug(
+            f"KEY-DEBUG: Using v{format_version} XOR composition with key_length={key_length}"
+        )
 
     # Apply hash iterations if any are configured (SHA-256, SHA-512, SHA3-256,
     # etc.)
@@ -2331,8 +2339,8 @@ def generate_key(
                 debug=debug,
                 hsm_pepper=hsm_pepper,
                 format_version=format_version,
-                collect_intermediates=True,    # NEW: Collect intermediates for XOR
-                key_length=key_length,         # NEW: Normalize to key_length
+                collect_intermediates=True,  # NEW: Collect intermediates for XOR
+                key_length=key_length,  # NEW: Normalize to key_length
             )
             # Add all hash intermediates to accumulator
             xor_accumulator.extend(hash_intermediates)
@@ -3206,14 +3214,18 @@ def generate_key(
             pbkdf2_fallback_normalized = normalize_to_key_length_secure(password, key_length)
             xor_accumulator.append(pbkdf2_fallback_normalized)  # SecureBytes object
             if debug:
-                logger.debug(f"V10-XOR: Added PBKDF2 fallback final output: {pbkdf2_fallback_normalized.hex()}")
+                logger.debug(
+                    f"V10-XOR: Added PBKDF2 fallback final output: {pbkdf2_fallback_normalized.hex()}"
+                )
 
     # V10/v8: XOR all accumulated intermediate values
     # CRITICAL: This section handles multiple sensitive intermediates
     # ALL intermediates MUST be zeroed after XOR, even on exception
     if use_xor_composition and xor_accumulator:
         if debug:
-            logger.debug(f"V10-XOR: Performing final XOR of {len(xor_accumulator)} intermediate values")
+            logger.debug(
+                f"V10-XOR: Performing final XOR of {len(xor_accumulator)} intermediate values"
+            )
             logger.debug(f"V10-XOR: Sequential result before XOR: {bytes(password).hex()}")
 
         # The sequential result is NOT in the accumulator yet - add it now
