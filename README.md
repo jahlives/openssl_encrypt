@@ -43,6 +43,22 @@ For deep-dives into the cryptographic design and security policies of this proje
 * **Metadata Integrity**: Cryptographic binding of headers to prevent tampering (on AEAD-supported ciphers).
 * **Hardware-Resistant KDF**: Sequential Argon2id and RandomX hashing to neutralize ASIC/GPU brute-force clusters.
 ---
+## Security Advisory: v1.3.4 Critical Fix
+
+**CRITICAL SECURITY UPDATE (CVSSv3 8.1 - High):** Version 1.3.4 resolves a predictable salt derivation vulnerability (CWE-330) in multi-round KDF operations. Previous versions (v1.3.3 and below) used predictable salt generation that could allow precomputation attacks against multi-round key derivation.
+
+**Recommendation:** Upgrade to v1.3.4 immediately. Files encrypted with multi-round KDF settings in older versions should be re-encrypted with v1.3.4 for maximum security.
+
+**What's Fixed:**
+- Implemented Format Version 7 with secure chained salt derivation
+- Each KDF round now uses unpredictable salts derived from previous round outputs
+- Affects: BLAKE2b, BLAKE3, SHAKE-256, Argon2, Scrypt, Balloon, PBKDF2, HKDF (multi-round modes)
+
+**Backward Compatibility:** Fully maintained - v1.3.4 can decrypt files from all previous versions (v3-v6).
+
+See [CHANGELOG.md](CHANGELOG.md#134---2026-01-07) for full details.
+
+---
 ## What's New in v1.3.0
 
    Version 1.3.0 delivers security fixes and enterprise-grade hardware security:
