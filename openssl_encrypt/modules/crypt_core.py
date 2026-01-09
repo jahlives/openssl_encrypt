@@ -1535,6 +1535,7 @@ def multi_hash_password(
                 hash_params = hash_config
 
             # Apply each hash algorithm in sequence (only if iterations > 0)
+            # IMPORTANT: Preserve dict iteration order for deterministic XOR composition
             for algorithm, params in hash_params.items():
                 # Normalize params to handle both flat and nested structures
                 # Flat: {"sha512": 100000}
@@ -1701,13 +1702,13 @@ def multi_hash_password(
                                 key_material = hashlib.sha256(salt + str(i).encode()).digest()
                             else:
                                 # Version-aware key derivation
-                                if format_version >= 7 and format_version != 8:
-                                    # Secure chained derivation (v7, v9+)
+                                if format_version >= 7:
+                                    # Secure chained derivation (v7, v8, v9, v10+)
                                     # Prevents precomputation attacks by creating dependency chain
                                     key_material = hashed[:32]
                                 else:
-                                    # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
-                                    # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
+                                    # Legacy: Predictable derivation for v1-6 (backward compatibility only)
+                                    # 
                                     key_material = hashlib.sha256(salt + str(i).encode()).digest()
                             # Create a personalized BLAKE2b instance for each iteration
                             result = hashlib.blake2b(
@@ -1757,13 +1758,13 @@ def multi_hash_password(
                                     key_material = hashlib.sha256(salt + str(i).encode()).digest()
                                 else:
                                     # Version-aware key derivation
-                                    if format_version >= 7 and format_version != 8:
-                                        # Secure chained derivation (v7, v9+)
+                                    if format_version >= 7:
+                                        # Secure chained derivation (v7, v8, v9, v10+)
                                         # Prevents precomputation attacks by creating dependency chain
                                         key_material = hashed[:32]
                                     else:
-                                        # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
-                                        # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
+                                        # Legacy: Predictable derivation for v1-6 (backward compatibility only)
+                                        # 
                                         key_material = hashlib.sha256(
                                             salt + str(i).encode()
                                         ).digest()
@@ -1847,13 +1848,13 @@ def multi_hash_password(
                                 round_material = hashlib.sha256(salt + str(i).encode()).digest()
                             else:
                                 # Version-aware material derivation
-                                if format_version >= 7 and format_version != 8:
-                                    # Secure chained derivation (v7, v9+)
+                                if format_version >= 7:
+                                    # Secure chained derivation (v7, v8, v9, v10+)
                                     # Prevents precomputation attacks by creating dependency chain
                                     round_material = hashed[:32]
                                 else:
-                                    # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
-                                    # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
+                                    # Legacy: Predictable derivation for v1-6 (backward compatibility only)
+                                    # 
                                     round_material = hashlib.sha256(salt + str(i).encode()).digest()
 
                             # SHAKE-256 is an extendable-output function (XOF) that can produce
@@ -2510,8 +2511,8 @@ def generate_key(
                     round_salt = base_salt
                 else:
                     # Version-aware salt derivation
-                    if format_version >= 7 and format_version != 8:
-                        # Secure chained derivation (v7, v9+)
+                    if format_version >= 7:
+                        # Secure chained derivation (v7, v8, v9, v10+)
                         # Prevents precomputation attacks by creating dependency chain
                         if debug and i == 1:
                             logger.debug(
@@ -2519,8 +2520,8 @@ def generate_key(
                             )
                         round_salt = bytes(password)[:16]
                     else:
-                        # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
-                        # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
+                        # Legacy: Predictable derivation for v1-6 (backward compatibility only)
+                        # 
                         if debug and i == 1:
                             logger.debug(
                                 f"ARGON2: Using PREDICTABLE derivation (format_version={format_version})"
@@ -2641,8 +2642,8 @@ def generate_key(
                     round_salt = base_salt
                 else:
                     # Version-aware salt derivation
-                    if format_version >= 7 and format_version != 8:
-                        # Secure chained derivation (v7, v9+)
+                    if format_version >= 7:
+                        # Secure chained derivation (v7, v8, v9, v10+)
                         # Prevents precomputation attacks by creating dependency chain
                         if debug and i == 1:
                             logger.debug(
@@ -2650,8 +2651,8 @@ def generate_key(
                             )
                         round_salt = bytes(password)[:16]
                     else:
-                        # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
-                        # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
+                        # Legacy: Predictable derivation for v1-6 (backward compatibility only)
+                        # 
                         if debug and i == 1:
                             logger.debug(
                                 f"BALLOON: Using PREDICTABLE derivation (format_version={format_version})"
@@ -2759,8 +2760,8 @@ def generate_key(
                     round_salt = base_salt
                 else:
                     # Version-aware salt derivation
-                    if format_version >= 7 and format_version != 8:
-                        # Secure chained derivation (v7, v9+)
+                    if format_version >= 7:
+                        # Secure chained derivation (v7, v8, v9, v10+)
                         # Prevents precomputation attacks by creating dependency chain
                         if debug and i == 1:
                             logger.debug(
@@ -2768,8 +2769,8 @@ def generate_key(
                             )
                         round_salt = password[:16]
                     else:
-                        # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
-                        # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
+                        # Legacy: Predictable derivation for v1-6 (backward compatibility only)
+                        # 
                         if debug and i == 1:
                             logger.debug(
                                 f"SCRYPT: Using PREDICTABLE derivation (format_version={format_version})"
@@ -2849,12 +2850,14 @@ def generate_key(
     # 2. For backward compatibility, check if pbkdf2_iterations is in hash_config directly
     else:
         pbkdf2_from_hash_config = hash_config.get("pbkdf2_iterations")
-        # Only inject PBKDF2 in pytest during encryption, not decryption
+        # Only inject PBKDF2 in pytest during encryption for legacy versions, not v10/v8
         # During decryption, we must strictly follow the metadata configuration
+        # IMPORTANT: For v10/v8, NEVER inject PBKDF2 - it causes XOR intermediate mismatch
         if (
             os.environ.get("PYTEST_CURRENT_TEST") is not None
             and pbkdf2_from_hash_config is None
             and not hash_config.get("_is_from_decryption_metadata", False)
+            and not use_xor_composition  # Don't inject for v10/v8
         ):
             use_pbkdf2 = 100000
         elif pbkdf2_from_hash_config is not None and pbkdf2_from_hash_config > 0:
@@ -2896,16 +2899,16 @@ def generate_key(
                     round_salt = base_salt
                 else:
                     # Version-aware salt derivation
-                    if format_version >= 7 and format_version != 8:
-                        # Secure chained derivation (v7, v9+)
+                    if format_version >= 7:
+                        # Secure chained derivation (v7, v8, v9, v10+)
                         # Prevents precomputation attacks by creating dependency chain
                         if hasattr(password, "to_bytes"):
                             round_salt = password.to_bytes()[:16]
                         else:
                             round_salt = password[:16]
                     else:
-                        # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
-                        # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
+                        # Legacy: Predictable derivation for v1-6 (backward compatibility only)
+                        # 
                         salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
                         round_salt = salt_material[:16]  # Use 16 bytes for salt
 
@@ -3067,8 +3070,8 @@ def generate_key(
 
         for i in range(use_pbkdf2):
             # Version-aware salt derivation
-            if format_version >= 7 and format_version != 8:
-                # Secure chained derivation (v7, v9+)
+            if format_version >= 7:
+                # Secure chained derivation (v7, v8, v9, v10+)
                 if debug and i == 0:
                     logger.debug(
                         f"PBKDF2: Using SECURE chained derivation (format_version={format_version})"
@@ -3081,8 +3084,8 @@ def generate_key(
                     # Prevents precomputation attacks by creating dependency chain
                     iteration_specific_salt = password[:16]
             else:
-                # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
-                # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
+                # Legacy: Predictable derivation for v1-6 (backward compatibility only)
+                # 
                 # Original code derived salt for all rounds including round 0
                 if debug and i == 0:
                     logger.debug(
@@ -3165,9 +3168,10 @@ def generate_key(
         )
 
     # If KDFs were requested but none succeeded, apply default PBKDF2 as fallback
-    if any_kdf_requested and not KeyStretch.key_stretch:
+    # IMPORTANT: For v10/v8, DO NOT use PBKDF2 fallback - it's only for backward compat decryption
+    if any_kdf_requested and not KeyStretch.key_stretch and not use_xor_composition:
         if not quiet:
-            print("⚠️ Requested KDFs failed, applying default PBKDF2 fallback")
+            print("⚠️ Requested KDFs failed, applying default PBKDF2 fallback (legacy)")
 
         # Apply default PBKDF2 with 100000 iterations
         default_pbkdf2_iterations = 100000
@@ -3175,8 +3179,8 @@ def generate_key(
 
         for i in range(default_pbkdf2_iterations):
             # Version-aware salt derivation
-            if format_version >= 7 and format_version != 8:
-                # Secure chained derivation (v7, v9+)
+            if format_version >= 7:
+                # Secure chained derivation (v7, v8, v9, v10+)
                 if i == 0:
                     # Use the original salt for the first iteration
                     iteration_specific_salt = base_salt
@@ -3184,8 +3188,8 @@ def generate_key(
                     # Chained: Use previous output as salt (secure method)
                     iteration_specific_salt = password[:16]
             else:
-                # Legacy: Predictable derivation for v1-6,v8 (backward compatibility only)
-                # Note: v8 remains vulnerable for backward compat; v7,v9+ use secure chained derivation
+                # Legacy: Predictable derivation for v1-6 (backward compatibility only)
+                # 
                 # Original fallback code derived salt for all rounds including round 0
                 iteration_specific_salt = hashlib.sha256(
                     base_salt + str(i).encode("utf-8")
@@ -3630,31 +3634,25 @@ def create_metadata_v5(
         metadata["aead_binding"] = True
 
     # Process hash algorithms to use nested structure
-    hash_algorithms = [
-        "sha512",
-        "sha384",
-        "sha256",
-        "sha224",
-        "sha3_512",
-        "sha3_384",
-        "sha3_256",
-        "sha3_224",
-        "blake2b",
-        "blake3",
-        "shake256",
-        "shake128",
-        "whirlpool",
-    ]
-    for algo in hash_algorithms:
-        if algo in hash_config:
-            metadata["derivation_config"]["hash_config"][algo] = {"rounds": hash_config[algo]}
+    # Process hash algorithms - PRESERVE USER'S DICT ORDER for deterministic XOR
+    # Critical for v8/v10 XOR composition: order must match during encrypt/decrypt
+    for algo, rounds in hash_config.items():
+        # Only process known hash algorithms (skip KDFs, they're handled separately)
+        if algo in ["sha512", "sha384", "sha256", "sha224",
+                    "sha3_512", "sha3_384", "sha3_256", "sha3_224",
+                    "blake2b", "blake2s", "blake3",
+                    "shake256", "shake128", "whirlpool"]:
+            metadata["derivation_config"]["hash_config"][algo] = {"rounds": rounds}
 
-    # Add PBKDF2 config if used
-    # Use the effective pbkdf2_iterations from hash_config if available (for default template compatibility)
-    effective_pbkdf2_iterations = hash_config.get("pbkdf2_iterations", pbkdf2_iterations)
-    if effective_pbkdf2_iterations > 0:
+    # Add PBKDF2 config if explicitly configured in hash_config
+    # IMPORTANT: Only add PBKDF2 to metadata if it's explicitly in hash_config
+    # For v10+, PBKDF2 should not be used for encryption (only backward compat decryption)
+    # Check for both pbkdf2 dict format and pbkdf2_iterations int format
+    if "pbkdf2" in hash_config and isinstance(hash_config["pbkdf2"], dict) and "rounds" in hash_config["pbkdf2"]:
+        metadata["derivation_config"]["kdf_config"]["pbkdf2"] = hash_config["pbkdf2"]
+    elif "pbkdf2_iterations" in hash_config and hash_config["pbkdf2_iterations"] > 0:
         metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {
-            "rounds": effective_pbkdf2_iterations
+            "rounds": hash_config["pbkdf2_iterations"]
         }
 
     # Move KDF configurations from hash_config if present
@@ -3771,31 +3769,25 @@ def create_metadata_v6(
         metadata["aead_binding"] = True
 
     # Process hash algorithms to use nested structure
-    hash_algorithms = [
-        "sha512",
-        "sha384",
-        "sha256",
-        "sha224",
-        "sha3_512",
-        "sha3_384",
-        "sha3_256",
-        "sha3_224",
-        "blake2b",
-        "blake3",
-        "shake256",
-        "shake128",
-        "whirlpool",
-    ]
-    for algo in hash_algorithms:
-        if algo in hash_config:
-            metadata["derivation_config"]["hash_config"][algo] = {"rounds": hash_config[algo]}
+    # Process hash algorithms - PRESERVE USER'S DICT ORDER for deterministic XOR
+    # Critical for v8/v10 XOR composition: order must match during encrypt/decrypt
+    for algo, rounds in hash_config.items():
+        # Only process known hash algorithms (skip KDFs, they're handled separately)
+        if algo in ["sha512", "sha384", "sha256", "sha224",
+                    "sha3_512", "sha3_384", "sha3_256", "sha3_224",
+                    "blake2b", "blake2s", "blake3",
+                    "shake256", "shake128", "whirlpool"]:
+            metadata["derivation_config"]["hash_config"][algo] = {"rounds": rounds}
 
-    # Add PBKDF2 config if used
-    # Use the effective pbkdf2_iterations from hash_config if available (for default template compatibility)
-    effective_pbkdf2_iterations = hash_config.get("pbkdf2_iterations", pbkdf2_iterations)
-    if effective_pbkdf2_iterations > 0:
+    # Add PBKDF2 config if explicitly configured in hash_config
+    # IMPORTANT: Only add PBKDF2 to metadata if it's explicitly in hash_config
+    # For v10+, PBKDF2 should not be used for encryption (only backward compat decryption)
+    # Check for both pbkdf2 dict format and pbkdf2_iterations int format
+    if "pbkdf2" in hash_config and isinstance(hash_config["pbkdf2"], dict) and "rounds" in hash_config["pbkdf2"]:
+        metadata["derivation_config"]["kdf_config"]["pbkdf2"] = hash_config["pbkdf2"]
+    elif "pbkdf2_iterations" in hash_config and hash_config["pbkdf2_iterations"] > 0:
         metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {
-            "rounds": effective_pbkdf2_iterations
+            "rounds": hash_config["pbkdf2_iterations"]
         }
 
     # Move KDF configurations from hash_config if present
@@ -3988,31 +3980,25 @@ def create_metadata_v8(
     if aad_mode:
         metadata["aead_binding"] = True
 
-    # Process hash algorithms
-    hash_algorithms = [
-        "sha512",
-        "sha384",
-        "sha256",
-        "sha224",
-        "sha3_512",
-        "sha3_384",
-        "sha3_256",
-        "sha3_224",
-        "blake2b",
-        "blake3",
-        "shake256",
-        "shake128",
-        "whirlpool",
-    ]
-    for algo in hash_algorithms:
-        if algo in hash_config:
-            metadata["derivation_config"]["hash_config"][algo] = {"rounds": hash_config[algo]}
+    # Process hash algorithms - PRESERVE USER'S DICT ORDER for deterministic XOR
+    # Critical for v8/v10 XOR composition: order must match during encrypt/decrypt
+    for algo, rounds in hash_config.items():
+        # Only process known hash algorithms (skip KDFs, they're handled separately)
+        if algo in ["sha512", "sha384", "sha256", "sha224",
+                    "sha3_512", "sha3_384", "sha3_256", "sha3_224",
+                    "blake2b", "blake2s", "blake3",
+                    "shake256", "shake128", "whirlpool"]:
+            metadata["derivation_config"]["hash_config"][algo] = {"rounds": rounds}
 
-    # Add PBKDF2 config if used
-    effective_pbkdf2_iterations = hash_config.get("pbkdf2_iterations", pbkdf2_iterations)
-    if effective_pbkdf2_iterations > 0:
+    # Add PBKDF2 config if explicitly configured in hash_config
+    # IMPORTANT: Only add PBKDF2 to metadata if it's explicitly in hash_config
+    # For v10+, PBKDF2 should not be used for encryption (only backward compat decryption)
+    # Check for both pbkdf2 dict format and pbkdf2_iterations int format
+    if "pbkdf2" in hash_config and isinstance(hash_config["pbkdf2"], dict) and "rounds" in hash_config["pbkdf2"]:
+        metadata["derivation_config"]["kdf_config"]["pbkdf2"] = hash_config["pbkdf2"]
+    elif "pbkdf2_iterations" in hash_config and hash_config["pbkdf2_iterations"] > 0:
         metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {
-            "rounds": effective_pbkdf2_iterations
+            "rounds": hash_config["pbkdf2_iterations"]
         }
 
     # Move KDF configurations from hash_config
@@ -4193,24 +4179,15 @@ def create_metadata_v7(
         metadata["aead_binding"] = True
 
     # Process hash algorithms to use nested structure (same as V6)
-    hash_algorithms = [
-        "sha512",
-        "sha384",
-        "sha256",
-        "sha224",
-        "sha3_512",
-        "sha3_384",
-        "sha3_256",
-        "sha3_224",
-        "blake2b",
-        "blake3",
-        "shake256",
-        "shake128",
-        "whirlpool",
-    ]
-    for algo in hash_algorithms:
-        if algo in hash_config:
-            metadata["derivation_config"]["hash_config"][algo] = {"rounds": hash_config[algo]}
+    # Process hash algorithms - PRESERVE USER'S DICT ORDER for deterministic XOR
+    # Critical for v8/v10 XOR composition: order must match during encrypt/decrypt
+    for algo, rounds in hash_config.items():
+        # Only process known hash algorithms (skip KDFs, they're handled separately)
+        if algo in ["sha512", "sha384", "sha256", "sha224",
+                    "sha3_512", "sha3_384", "sha3_256", "sha3_224",
+                    "blake2b", "blake2s", "blake3",
+                    "shake256", "shake128", "whirlpool"]:
+            metadata["derivation_config"]["hash_config"][algo] = {"rounds": rounds}
 
     # Add PBKDF2 config if used
     pbkdf2_iterations = hash_config.get("pbkdf2_iterations", 0)

@@ -177,7 +177,14 @@ class TestCrossVersionV8V10(unittest.TestCase):
         self.assertEqual(key1, key2, "v10 key derivation should be deterministic")
 
     def test_v8_v10_with_multiple_algorithms(self):
-        """Test v8/v10 key equivalence with multiple algorithms."""
+        """Test v8/v10 key equivalence with multiple algorithms.
+
+        Both v8 and v10 use SECURE CHAINED derivation (prevents precomputation attacks).
+        v8 has no legacy files (it was introduced fresh in 1.3 with XOR), so it uses
+        the same secure derivation as v10 for full compatibility between 1.3 and 1.4.
+
+        Both preserve dict order to ensure deterministic encryption/decryption.
+        """
         password = b"multi_algo_test"
         salt = b"salt_for_testing"
         hash_config = {
@@ -200,6 +207,7 @@ class TestCrossVersionV8V10(unittest.TestCase):
             password, salt, hash_config, format_version=10, quiet=True
         )
 
+        # v8 and v10 should produce SAME keys (both use secure derivation)
         self.assertEqual(key_v8, key_v10, "Keys should match with multiple algorithms")
 
     def test_v8_v10_with_pbkdf2(self):
