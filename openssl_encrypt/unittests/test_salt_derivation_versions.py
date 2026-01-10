@@ -81,7 +81,7 @@ class TestSaltDerivationVersions(unittest.TestCase):
 
         # Extract and verify metadata
         metadata = extract_file_metadata(encrypted_file)
-        self.assertEqual(metadata["format_version"], 9, "New files should use format version 9")
+        self.assertEqual(metadata["format_version"], 10, "New files should use format version 10")
 
     def test_decrypt_v9_file(self):
         """Test that v9 encrypted files can be decrypted."""
@@ -135,8 +135,8 @@ class TestSaltDerivationVersions(unittest.TestCase):
         metadata = extract_file_metadata(encrypted_v9)
         self.assertEqual(
             metadata["format_version"],
-            9,
-            "New encryptions should use format version 9",
+            10,
+            "New encryptions should use format version 10",
         )
 
     def test_multi_round_kdf_v8_v9_security(self):
@@ -304,9 +304,9 @@ class TestSaltDerivationVersions(unittest.TestCase):
             quiet=True,
         )
 
-        # Verify metadata shows v9
+        # Verify metadata shows v10
         metadata = extract_file_metadata(encrypted_file)
-        self.assertEqual(metadata["format_version"], 9)
+        self.assertEqual(metadata["format_version"], 10)
 
         # Decrypt
         decrypt_file(

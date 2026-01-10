@@ -149,8 +149,8 @@ def encrypt_file_with_keystore(
 
                     # Check if private key is in metadata based on format version
                     pqc_private_key_present = False
-                    if format_version in [4, 5, 6, 7, 9]:
-                        # Format version 4/5/6 - check in encryption section
+                    if format_version in [4, 5, 6, 7, 8, 9, 10]:
+                        # Format version 4/5/6/7/8/9/10 - check in encryption section
                         if "encryption" in metadata and "pqc_private_key" in metadata["encryption"]:
                             pqc_private_key_present = True
                     else:
@@ -172,8 +172,8 @@ def encrypt_file_with_keystore(
 
                         clean_metadata = copy.deepcopy(metadata)
 
-                        if format_version in [4, 5, 6, 7, 9]:
-                            # Format version 4/5/6 structure
+                        if format_version in [4, 5, 6, 7, 8, 9, 10]:
+                            # Format version 4/5/6/7/8/9/10 structure
                             # Remove private key fields from encryption section
                             if "encryption" in clean_metadata:
                                 keys_to_remove = [
@@ -513,8 +513,8 @@ def decrypt_file_with_keystore(
         # Check if this file uses dual encryption
         if metadata:
             # Check based on format version
-            if format_version in [4, 5, 6, 7, 9]:
-                # Version 4/5/6/9 format - check in derivation_config.kdf_config
+            if format_version in [4, 5, 6, 7, 8, 9, 10]:
+                # Version 4/5/6/7/8/9/10 format - check in derivation_config.kdf_config
                 if (
                     "derivation_config" in metadata
                     and "kdf_config" in metadata["derivation_config"]
@@ -548,10 +548,10 @@ def decrypt_file_with_keystore(
                         metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
                         metadata = json.loads(metadata_json)
 
-                        # Check for dual encryption flag, handling v3, v4, v5, v6, and v9 formats
+                        # Check for dual encryption flag, handling v3, v4, v5, v6, v7, v8, v9, and v10 formats
                         format_version = metadata.get("format_version", 1)
-                        if format_version in [4, 5, 6, 7, 9]:
-                            # Version 4/5/6/9 format - check in derivation_config.kdf_config
+                        if format_version in [4, 5, 6, 7, 8, 9, 10]:
+                            # Version 4/5/6/7/8/9/10 format - check in derivation_config.kdf_config
                             if (
                                 "derivation_config" in metadata
                                 and "kdf_config" in metadata["derivation_config"]
@@ -622,8 +622,8 @@ def decrypt_file_with_keystore(
             verify_hash = None
             verify_salt = None
 
-            if format_version in [4, 5, 6, 7, 9]:
-                # Version 4/5/6 format - check in derivation_config.kdf_config
+            if format_version in [4, 5, 6, 7, 8, 9, 10]:
+                # Version 4/5/6/7/8/9/10 format - check in derivation_config.kdf_config
                 if (
                     "derivation_config" in metadata
                     and "kdf_config" in metadata["derivation_config"]

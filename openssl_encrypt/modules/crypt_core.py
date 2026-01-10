@@ -2310,8 +2310,6 @@ def generate_key(
     # For v10/v8: Add initial password+salt hash to XOR accumulator
     # CRITICAL: Store as SecureBytes for secure cleanup
     if use_xor_composition:
-        import hashlib
-
         # Hash the initial password+salt combination
         initial_hash = hashlib.sha256(password + salt).digest()
         initial_normalized = normalize_to_key_length_secure(initial_hash, key_length)
@@ -4493,8 +4491,6 @@ def decrypt_file_asymmetric(
             plaintext = aead.decrypt(nonce, ciphertext, None)
 
             # Step 7: Verify hash
-            import hashlib
-
             original_hash_computed = hashlib.sha256(plaintext).hexdigest()
             original_hash_expected = metadata["hashes"]["original_hash"]
 
@@ -4622,8 +4618,6 @@ def encrypt_file_asymmetric(
             salt = secrets.token_bytes(16)
 
             # Calculate original hash
-            import hashlib
-
             original_hash = hashlib.sha256(plaintext).hexdigest()
 
             # Derive encryption key using KDF chain

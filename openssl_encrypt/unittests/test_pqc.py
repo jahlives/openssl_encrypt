@@ -297,11 +297,11 @@ class TestPostQuantumCrypto(unittest.TestCase):
             metadata_json = base64.b64decode(metadata_b64)
             metadata = json.loads(metadata_json)
 
-            # Check that we have format_version 5, 6, or 9
+            # Check that we have format_version 5, 6, 9, or 10
             self.assertIn(
                 metadata["format_version"],
-                [5, 6, 9],
-                f"Expected format_version 5, 6, or 9, got {metadata.get('format_version')}",
+                [5, 6, 9, 10],
+                f"Expected format_version 5, 6, 9, or 10, got {metadata.get('format_version')}",
             )
 
             # Check that encryption_data is set correctly
@@ -413,8 +413,8 @@ class TestPostQuantumCrypto(unittest.TestCase):
                 metadata_json = base64.b64decode(metadata_b64)
                 metadata = json.loads(metadata_json)
 
-                # Check format version (can be 5, 6, or 9)
-                self.assertIn(metadata.get("format_version"), [5, 6, 9])
+                # Check format version (can be 5, 6, 9, or 10)
+                self.assertIn(metadata.get("format_version"), [5, 6, 9, 10])
 
                 # Check encryption_data field
                 self.assertIn("encryption", metadata)
@@ -663,8 +663,8 @@ class TestPostQuantumCrypto(unittest.TestCase):
         metadata_json = base64.b64decode(metadata_b64)
         v4_metadata = json.loads(metadata_json)
 
-        # Allow v4, v5, v6, or v9, since the implementation may auto-convert
-        self.assertIn(v4_metadata["format_version"], [4, 5, 6, 9])
+        # Allow v4, v5, v6, v9, or v10, since the implementation may auto-convert
+        self.assertIn(v4_metadata["format_version"], [4, 5, 6, 9, 10])
 
         # If it was converted to v5 or v6, encryption_data might exist but should be aes-gcm
         if v4_metadata["format_version"] in [5, 6] and "encryption_data" in v4_metadata.get(
@@ -681,7 +681,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         metadata_json = base64.b64decode(metadata_b64)
         v5_metadata = json.loads(metadata_json)
 
-        self.assertIn(v5_metadata["format_version"], [5, 6, 9])
+        self.assertIn(v5_metadata["format_version"], [5, 6, 9, 10])
         self.assertIn("encryption_data", v5_metadata["encryption"])
         # Allow either the specified value or aes-gcm if the implementation defaults to it
         self.assertIn(
