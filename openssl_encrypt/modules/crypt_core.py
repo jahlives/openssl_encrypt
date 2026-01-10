@@ -3591,6 +3591,10 @@ def create_metadata_v8(
     # Override format version to 8
     metadata["format_version"] = 8
 
+    # Add mode field for cross-compatibility with 1.4 branch v10
+    # Mode is "asymmetric" when using PQC, otherwise "symmetric"
+    metadata["mode"] = "asymmetric" if pqc_info else "symmetric"
+
     return metadata
 
 
