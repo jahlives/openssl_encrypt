@@ -795,6 +795,18 @@ def setup_analyze_security_parser(subparser):
         help="Hash algorithm for HKDF (default: sha256)",
     )
 
+    # XOR composition key derivation
+    kdf_group.add_argument(
+        "--use-xor-composition",
+        action="store_true",
+        default=False,
+        help="Enable XOR composition key derivation (format v8). "
+        "When enabled, intermediate KDF outputs are XOR'd together for enhanced security. "
+        "Provides 'strongest component' security guarantee: if any hash algorithm is secure, "
+        "the derived key is secure. Compatible with 1.3 branch v8 format. "
+        "Files encrypted with this flag require openssl_encrypt 1.3.5+ to decrypt.",
+    )
+
     # Encryption algorithm options
     algo_group = subparser.add_argument_group("Encryption algorithm options")
     algo_group.add_argument(
