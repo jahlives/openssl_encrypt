@@ -2859,9 +2859,9 @@ def generate_key(
 
         if not quiet and not progress:
             print(" ✅")
-        derived_salt = password[:16]
-        KeyStretch.key_stretch = True
-        show_progress("PBKDF2", i + 1, use_pbkdf2)
+            derived_salt = password[:16]
+            KeyStretch.key_stretch = True
+            show_progress("PBKDF2", i + 1, use_pbkdf2)
 
         # NEW: For v8, save PBKDF2 final output to XOR accumulator
         # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes
