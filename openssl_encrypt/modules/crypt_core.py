@@ -3713,6 +3713,7 @@ def create_metadata_v6(
     keystore_id=None,
     pepper_plugin_name=None,
     pepper_name=None,
+    format_version=10,
 ):
     """
     Create metadata in format version 6 with formal HSM validation.
@@ -3756,7 +3757,7 @@ def create_metadata_v6(
 
     # Create basic metadata
     metadata = {
-        "format_version": 10,  # Version 10 (Sequential + XOR composition; compatible with 1.3 v8)
+        "format_version": format_version,  # v9 (default): Legacy derivation, v10: XOR composition
         "derivation_config": {"salt": salt_b64, "hash_config": {}, "kdf_config": {}},
         "hashes": hashes_dict,
         "encryption": {"algorithm": algorithm, "encryption_data": encryption_data},
@@ -3899,6 +3900,7 @@ def create_metadata_v8(
     keystore_id: str = None,
     pepper_plugin_name: str = None,
     pepper_name: str = None,
+    format_version: int = 9,
 ):
     """
     Create metadata in format version 8 with cascade encryption support.
@@ -3967,7 +3969,7 @@ def create_metadata_v8(
 
     # Create basic metadata structure
     metadata = {
-        "format_version": 10,  # Version 10 (Sequential + XOR composition; compatible with 1.3 v8)
+        "format_version": format_version,  # v9 (default): Legacy derivation, v10: XOR composition
         "mode": "symmetric",
         "derivation_config": {"salt": salt_b64, "hash_config": {}, "kdf_config": {}},
         "hashes": hashes_dict,
@@ -4819,6 +4821,7 @@ def encrypt_file(
     integrity=False,
     pepper_plugin=None,
     pepper_name=None,
+    format_version=10,
 ):
     """
     Encrypt a file with a password using the specified algorithm.
@@ -5264,7 +5267,7 @@ def encrypt_file(
         debug=debug,
         pqc_keypair=pqc_keypair,
         hsm_pepper=combined_pepper,
-        format_version=10,  # New files always use v10 (Sequential + XOR composition; compatible with 1.3 v8)
+        format_version=format_version,  # v9 (default): Legacy derivation, v10: XOR composition (compatible with 1.3 v8)
     )
     # Read the input file
     if not quiet:
@@ -5955,9 +5958,10 @@ def encrypt_file(
                 print(f"   Post-quantum security: {pq_security_level} bits")
 
         # Create metadata WITHOUT encrypted_hash (before encryption)
-        # Use V8 format if cascade is enabled, otherwise use V6 for backward compatibility
-        if cascade and cipher_names:
-            # V8 format with cascade support
+        # Use V8 format if cascade is enabled OR format version is 8/10
+        # v8 and v10 require the v8 metadata structure even without cascade
+        if (cascade and cipher_names) or format_version in [8, 10]:
+            # V8 format with or without cascade support
             metadata = create_metadata_v8(
                 salt=salt,
                 hash_config=hash_config,
@@ -5965,9 +5969,9 @@ def encrypt_file(
                 algorithm=algorithm.value,
                 pbkdf2_iterations=pbkdf2_iterations,
                 encryption_data=encryption_data,
-                cascade=True,
-                cipher_chain=cipher_names,
-                hkdf_hash=cascade_hash,
+                cascade=cascade and bool(cipher_names),
+                cipher_chain=cipher_names if (cascade and cipher_names) else None,
+                hkdf_hash=cascade_hash if (cascade and cipher_names) else None,
                 cascade_salt=cascade_salt_bytes,
                 layer_info=layer_info_list,
                 total_overhead=total_overhead_bytes,
@@ -5981,6 +5985,7 @@ def encrypt_file(
                 keystore_id=keystore_id,
                 pepper_plugin_name="remote" if remote_pepper else None,
                 pepper_name=remote_pepper_name,
+                format_version=format_version,
             )
         else:
             # V6 format for backward compatibility
@@ -6000,6 +6005,7 @@ def encrypt_file(
                 keystore_id=keystore_id,  # Pass keystore ID if present
                 pepper_plugin_name="remote" if remote_pepper else None,
                 pepper_name=remote_pepper_name,
+                format_version=format_version,
             )
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_b64 = base64.b64encode(metadata_json)
@@ -6208,22 +6214,52 @@ def encrypt_file(
             hash_config.get("pqc_keystore_key_id") if isinstance(hash_config, dict) else None
         )
 
-        # Create metadata in version 6 format using the helper function
-        metadata = create_metadata_v6(
-            salt=salt,
-            hash_config=hash_config,
-            original_hash=original_hash,
-            encrypted_hash=encrypted_hash,
-            algorithm=algorithm.value,
-            pbkdf2_iterations=pbkdf2_iterations,
-            pqc_info=pqc_info,
-            encryption_data=encryption_data,
-            hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
-            hsm_slot_used=hsm_slot_used,
-            keystore_id=keystore_id,  # Pass keystore ID if present
-            pepper_plugin_name="remote" if remote_pepper else None,
-            pepper_name=remote_pepper_name,
-        )
+        # Create metadata - use V8 format for v8/v10, otherwise use V6 for backward compatibility
+        if format_version in [8, 10]:
+            # V8 format for v8/v10 (even without cascade)
+            metadata = create_metadata_v8(
+                salt=salt,
+                hash_config=hash_config,
+                original_hash=original_hash,
+                algorithm=algorithm.value,
+                pbkdf2_iterations=pbkdf2_iterations,
+                encryption_data=encryption_data,
+                cascade=False,  # Non-AEAD path doesn't support cascade
+                cipher_chain=None,
+                hkdf_hash=None,
+                cascade_salt=None,
+                layer_info=None,
+                total_overhead=None,
+                pq_security_bits=None,
+                include_encrypted_hash=True,
+                encrypted_hash=encrypted_hash,
+                aad_mode=False,  # Non-AEAD mode
+                pqc_info=pqc_info,
+                hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
+                hsm_slot_used=hsm_slot_used,
+                keystore_id=keystore_id,
+                pepper_plugin_name="remote" if remote_pepper else None,
+                pepper_name=remote_pepper_name,
+                format_version=format_version,
+            )
+        else:
+            # V6 format for backward compatibility
+            metadata = create_metadata_v6(
+                salt=salt,
+                hash_config=hash_config,
+                original_hash=original_hash,
+                encrypted_hash=encrypted_hash,
+                algorithm=algorithm.value,
+                pbkdf2_iterations=pbkdf2_iterations,
+                pqc_info=pqc_info,
+                encryption_data=encryption_data,
+                hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
+                hsm_slot_used=hsm_slot_used,
+                keystore_id=keystore_id,  # Pass keystore ID if present
+                pepper_plugin_name="remote" if remote_pepper else None,
+                pepper_name=remote_pepper_name,
+                format_version=format_version,
+            )
         # If scrypt is used, add rounds to hash_config
         # Serialize and encode the metadata
         metadata_json = json.dumps(metadata).encode("utf-8")

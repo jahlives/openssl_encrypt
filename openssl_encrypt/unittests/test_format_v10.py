@@ -79,6 +79,7 @@ class TestFormatV10(unittest.TestCase):
             self.test_password,
             hash_config=self.minimal_config,
             quiet=True,
+            format_version=10,
         )
 
         # Verify metadata has v10
@@ -113,6 +114,7 @@ class TestFormatV10(unittest.TestCase):
             self.test_password,
             hash_config=config,
             quiet=True,
+            format_version=10,
         )
 
         decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
@@ -147,6 +149,7 @@ class TestFormatV10(unittest.TestCase):
             self.test_password,
             hash_config=config,
             quiet=True,
+            format_version=10,
         )
 
         decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
@@ -185,6 +188,7 @@ class TestFormatV10(unittest.TestCase):
             self.test_password,
             hash_config=config,
             quiet=True,
+            format_version=10,
         )
 
         decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
@@ -219,6 +223,7 @@ class TestFormatV10(unittest.TestCase):
             self.test_password,
             hash_config=config,
             quiet=True,
+            format_version=10,
         )
 
         decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
@@ -288,6 +293,7 @@ class TestFormatV10(unittest.TestCase):
                     hash_config=self.minimal_config,
                     algorithm=algorithm.value,
                     quiet=True,
+                    format_version=10,
                 )
 
                 decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
@@ -309,6 +315,7 @@ class TestFormatV10(unittest.TestCase):
             self.test_password,
             hash_config=self.minimal_config,
             quiet=True,
+            format_version=10,
         )
 
         # Try to decrypt with wrong password - should fail
@@ -326,6 +333,7 @@ class TestFormatV10(unittest.TestCase):
             self.test_password,
             hash_config=self.minimal_config,
             quiet=True,
+            format_version=10,
         )
 
         metadata = extract_file_metadata(encrypted_file)
@@ -361,6 +369,7 @@ class TestFormatV10(unittest.TestCase):
             self.test_password,
             hash_config=config,
             quiet=True,
+            format_version=10,
         )
 
         decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
@@ -386,6 +395,7 @@ class TestFormatV10(unittest.TestCase):
             self.test_password,
             hash_config=self.minimal_config,
             quiet=True,
+            format_version=10,
         )
 
         decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
@@ -413,6 +423,7 @@ class TestFormatV10(unittest.TestCase):
             self.test_password,
             hash_config=self.minimal_config,
             quiet=True,
+            format_version=10,
         )
 
         decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
@@ -440,6 +451,7 @@ class TestFormatV10(unittest.TestCase):
             self.test_password,
             hash_config=self.minimal_config,
             quiet=True,
+            format_version=10,
         )
 
         decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)

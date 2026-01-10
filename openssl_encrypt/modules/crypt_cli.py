@@ -6695,6 +6695,9 @@ def main_with_args(args=None):
                                 cascade_hash_func = args.cascade_hash
 
                         # Use standard encryption
+                        # Determine format version based on --use-xor-composition flag
+                        format_version = 10 if getattr(args, "use_xor_composition", False) else 9
+
                         success = encrypt_file(
                             args.input,
                             temp_output,
@@ -6718,6 +6721,7 @@ def main_with_args(args=None):
                             integrity=getattr(args, "integrity", False),
                             pepper_plugin=pepper_plugin_instance,
                             pepper_name=pepper_name_to_use,
+                            format_version=format_version,
                         )
 
                     if success:
@@ -6946,6 +6950,9 @@ def main_with_args(args=None):
                         cascade_hash_func = args.cascade_hash
 
                 # Use standard encryption to temporary file
+                # Determine format version based on --use-xor-composition flag
+                format_version = 10 if getattr(args, "use_xor_composition", False) else 9
+
                 success = encrypt_file(
                     args.input,
                     temp_output_file,
@@ -6967,6 +6974,7 @@ def main_with_args(args=None):
                     integrity=getattr(args, "integrity", False),
                     pepper_plugin=pepper_plugin_instance,
                     pepper_name=pepper_name_to_use,
+                    format_version=format_version,
                 )
 
                 if success:
@@ -7567,6 +7575,9 @@ def main_with_args(args=None):
                             cascade_hash_func = args.cascade_hash
 
                     # Use standard encryption
+                    # Determine format version based on --use-xor-composition flag
+                    format_version = 10 if getattr(args, "use_xor_composition", False) else 9
+
                     success = encrypt_file(
                         args.input,
                         output_file,
@@ -7590,6 +7601,7 @@ def main_with_args(args=None):
                         integrity=getattr(args, "integrity", False),
                         pepper_plugin=pepper_plugin_instance,
                         pepper_name=pepper_name_to_use,
+                        format_version=format_version,
                     )
 
                 # Handle steganography if requested

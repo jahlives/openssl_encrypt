@@ -728,6 +728,18 @@ def setup_encrypt_parser(subparser):
         "The pepper will be retrieved and decrypted with the file password.",
     )
 
+    # Format version options
+    format_group = subparser.add_argument_group("Format version options")
+    format_group.add_argument(
+        "--use-xor-composition",
+        action="store_true",
+        default=False,
+        help="Enable XOR composition key derivation (format v10). "
+        "When enabled, intermediate KDF outputs are XOR'd together for enhanced security. "
+        "Compatible with 1.3 branch v8 format. "
+        "Files encrypted with this flag require openssl_encrypt 1.3.5+ or 1.4+ to decrypt.",
+    )
+
     # Integrity verification options
     integrity_group = subparser.add_argument_group("Integrity verification options")
     integrity_group.add_argument(

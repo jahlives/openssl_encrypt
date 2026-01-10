@@ -112,21 +112,19 @@ class TestCrossVersionV8V10(unittest.TestCase):
             original_content = f.read()
 
         # Encrypt with v8 (simulating 1.3 branch)
-        # Note: In production, this would be done by actual 1.3 code
-        # Here we simulate by explicitly setting format_version=8
+        # We can now explicitly set format_version=8
         encrypt_file(
             self.test_file,
             encrypted_file,
             self.test_password,
             hash_config=self.minimal_config,
             quiet=True,
-            # Note: Would need to modify encrypt_file to accept format_version
-            # For now, this test documents the requirement
+            format_version=8,
         )
 
-        # Verify metadata shows v8 (would be set by 1.3)
-        # metadata = extract_file_metadata(encrypted_file)
-        # self.assertEqual(metadata["format_version"], 8)
+        # Verify metadata shows v8
+        metadata = extract_file_metadata(encrypted_file)
+        self.assertEqual(metadata["format_version"], 8)
 
         # Decrypt with current 1.4 code (should auto-detect v8 and use XOR logic)
         decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
