@@ -2114,7 +2114,6 @@ def generate_key(
                 # Combine XOR result with the final password hash using concatenation
                 # This ensures both the sequential chain (password) and parallel composition (XOR)
                 # contribute to the final key material
-                from .secure_memory import SecureBytes
                 password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
                 combined = SecureBytes(password_bytes + bytes(xor_result))
 
@@ -2128,13 +2127,11 @@ def generate_key(
                     logger.debug(f"V8:FINAL: {password.hex()}")
 
                 # Clean up intermediate values
-                from .secure_memory import secure_memzero
                 secure_memzero(xor_result)
                 secure_memzero(combined)
 
             finally:
                 # CRITICAL: Always zero all intermediate outputs to prevent key leakage
-                from .secure_memory import secure_memzero
                 for intermediate in intermediate_outputs:
                     secure_memzero(intermediate)
                 intermediate_outputs.clear()
