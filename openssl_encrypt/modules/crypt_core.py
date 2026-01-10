@@ -3530,6 +3530,73 @@ def create_metadata_v7(
     return metadata
 
 
+def create_metadata_v8(
+    salt,
+    hash_config,
+    original_hash,
+    encrypted_hash,
+    algorithm,
+    pbkdf2_iterations=0,
+    pqc_info=None,
+    encryption_data="aes-gcm",
+    hsm_plugin_name=None,
+    hsm_slot_used=None,
+    include_encrypted_hash=True,
+    aad_mode=False,
+    keystore_id=None,
+):
+    """
+    Create metadata in format version 8 with XOR composition key derivation.
+
+    Changes from v7:
+    - Uses format_version 8 to indicate XOR composition key derivation
+    - Provides "strongest component" security guarantee
+    - No metadata structure changes, only enhanced key derivation security
+
+    Args:
+        salt (bytes): Salt used for key derivation
+        hash_config (dict): Hash configuration
+        original_hash (str): Hash of original content
+        encrypted_hash (str): Hash of encrypted content (can be None if aad_mode=True)
+        algorithm (str): Encryption algorithm used
+        pbkdf2_iterations (int): PBKDF2 iterations if used
+        pqc_info (dict): Post-quantum cryptography information
+        encryption_data (str): The symmetric encryption algorithm to use for data encryption
+        hsm_plugin_name (str): HSM plugin identifier (optional)
+        hsm_slot_used (int): HSM slot number used (optional)
+        include_encrypted_hash (bool): Whether to include encrypted_hash in metadata (default: True)
+        aad_mode (bool): Whether metadata will be used as AAD for AEAD binding (default: False)
+        keystore_id (str): PQC keystore key ID (optional)
+
+    Returns:
+        dict: Metadata in format version 8
+
+    Raises:
+        ValueError: If HSM parameters don't meet validation requirements
+    """
+    # Call v7 implementation and change version
+    metadata = create_metadata_v7(
+        salt=salt,
+        hash_config=hash_config,
+        original_hash=original_hash,
+        encrypted_hash=encrypted_hash,
+        algorithm=algorithm,
+        pbkdf2_iterations=pbkdf2_iterations,
+        pqc_info=pqc_info,
+        encryption_data=encryption_data,
+        hsm_plugin_name=hsm_plugin_name,
+        hsm_slot_used=hsm_slot_used,
+        include_encrypted_hash=include_encrypted_hash,
+        aad_mode=aad_mode,
+        keystore_id=keystore_id,
+    )
+
+    # Override format version to 8
+    metadata["format_version"] = 8
+
+    return metadata
+
+
 def create_metadata_v4(
     salt,
     hash_config,
@@ -4453,7 +4520,23 @@ def encrypt_file(
 
         # Create metadata WITHOUT encrypted_hash (before encryption)
         # Choose metadata function based on use_format_version
-        if use_format_version >= 7:
+        if use_format_version == 8:
+            metadata = create_metadata_v8(
+                salt=salt,
+                hash_config=hash_config,
+                original_hash=original_hash,
+                encrypted_hash=None,  # Not available yet - will be protected by AAD
+                algorithm=algorithm.value,
+                pbkdf2_iterations=pbkdf2_iterations,
+                pqc_info=pqc_info,
+                encryption_data=encryption_data,
+                hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
+                hsm_slot_used=hsm_slot_used,
+                include_encrypted_hash=False,  # AEAD mode: no encrypted_hash
+                aad_mode=True,  # Mark as AEAD binding
+                keystore_id=keystore_id,  # Pass keystore ID if present
+            )
+        elif use_format_version == 7:
             metadata = create_metadata_v7(
                 salt=salt,
                 hash_config=hash_config,
@@ -4640,7 +4723,21 @@ def encrypt_file(
         )
 
         # Create metadata using the helper function based on use_format_version
-        if use_format_version >= 7:
+        if use_format_version == 8:
+            metadata = create_metadata_v8(
+                salt=salt,
+                hash_config=hash_config,
+                original_hash=original_hash,
+                encrypted_hash=encrypted_hash,
+                algorithm=algorithm.value,
+                pbkdf2_iterations=pbkdf2_iterations,
+                pqc_info=pqc_info,
+                encryption_data=encryption_data,
+                hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
+                hsm_slot_used=hsm_slot_used,
+                keystore_id=keystore_id,  # Pass keystore ID if present
+            )
+        elif use_format_version == 7:
             metadata = create_metadata_v7(
                 salt=salt,
                 hash_config=hash_config,
