@@ -1880,7 +1880,7 @@ def normalize_to_key_length_secure(
                 algorithm=hashes.SHA256(),
                 length=target_length,
                 salt=None,
-                info=b"v8_xor_normalize",
+                info=b"v10_xor_normalize",  # Use v10 for cross-compatibility with 1.4
                 backend=default_backend(),
             )
 
