@@ -1218,6 +1218,8 @@ def multi_hash_password(
     debug=False,
     hsm_pepper=None,
     format_version=6,
+    collect_intermediates=False,
+    key_length=32,
 ):
     """
     Apply multiple rounds of different hash algorithms to a password.
@@ -1258,6 +1260,10 @@ def multi_hash_password(
         logger.debug(
             f"HASH-DEBUG: multi_hash_password called with debug=True, hash_config keys: {list(hash_config.keys()) if hash_config else 'None'}"
         )
+
+    # For v8: collect intermediate outputs for XOR composition
+    # CRITICAL: All intermediates MUST be SecureBytes and zeroed after XOR
+    intermediate_outputs = [] if collect_intermediates else None
 
     # If hash_config is provided but doesn't specify type, use 'id' (Argon2id)
     # as default
@@ -1392,6 +1398,14 @@ def multi_hash_password(
                         if debug:
                             logger.debug(f"SHA-512:FINAL After {params} rounds: {hashed.hex()}")
 
+                        # V8: Collect intermediate for XOR composition
+                        # CRITICAL: Store as SecureBytes, will be zeroed in generate_key() after XOR
+                        if collect_intermediates:
+                            normalized = normalize_to_key_length_secure(hashed, key_length)
+                            intermediate_outputs.append(normalized)  # SecureBytes object
+                            if debug:
+                                logger.debug(f"SHA-512:XOR-INTERMEDIATE: {normalized.hex()}")
+
                         if not quiet and not progress:
                             print("✅")
 
@@ -1422,6 +1436,13 @@ def multi_hash_password(
 
                         if debug:
                             logger.debug(f"SHA-256:FINAL After {params} rounds: {hashed.hex()}")
+
+                        # V8: Collect intermediate for XOR composition
+                        if collect_intermediates:
+                            normalized = normalize_to_key_length_secure(hashed, key_length)
+                            intermediate_outputs.append(normalized)
+                            if debug:
+                                logger.debug(f"SHA-256:XOR-INTERMEDIATE: {normalized.hex()}")
 
                         if not quiet and not progress:
                             print("✅")
@@ -1456,6 +1477,13 @@ def multi_hash_password(
                         if debug:
                             logger.debug(f"SHA3-256:FINAL After {params} rounds: {hashed.hex()}")
 
+                        # V8: Collect intermediate for XOR composition
+                        if collect_intermediates:
+                            normalized = normalize_to_key_length_secure(hashed, key_length)
+                            intermediate_outputs.append(normalized)
+                            if debug:
+                                logger.debug(f"SHA3-256:XOR-INTERMEDIATE: {normalized.hex()}")
+
                         if not quiet and not progress:
                             print("✅")
 
@@ -1472,6 +1500,14 @@ def multi_hash_password(
                             secure_memcpy(hashed, hash_buffer)
                             show_progress("SHA3-512", i + 1, params)
                             KeyStretch.hash_stretch = True
+
+                        # V8: Collect intermediate for XOR composition
+                        if collect_intermediates:
+                            normalized = normalize_to_key_length_secure(hashed, key_length)
+                            intermediate_outputs.append(normalized)
+                            if debug:
+                                logger.debug(f"SHA3-512:XOR-INTERMEDIATE: {normalized.hex()}")
+
                         if not quiet and not progress:
                             print("✅")
 
@@ -1505,6 +1541,14 @@ def multi_hash_password(
                             secure_memcpy(hashed, hash_buffer)
                             show_progress("BLAKE2b", i + 1, params)
                             KeyStretch.hash_stretch = True
+
+                        # V8: Collect intermediate for XOR composition
+                        if collect_intermediates:
+                            normalized = normalize_to_key_length_secure(hashed, key_length)
+                            intermediate_outputs.append(normalized)
+                            if debug:
+                                logger.debug(f"BLAKE2b:XOR-INTERMEDIATE: {normalized.hex()}")
+
                         if not quiet and not progress:
                             print("✅")
 
@@ -1545,6 +1589,14 @@ def multi_hash_password(
                                 secure_memcpy(hashed, hash_buffer)
                                 show_progress("BLAKE3", i + 1, params)
                                 KeyStretch.hash_stretch = True
+
+                            # V8: Collect intermediate for XOR composition
+                            if collect_intermediates:
+                                normalized = normalize_to_key_length_secure(hashed, key_length)
+                                intermediate_outputs.append(normalized)
+                                if debug:
+                                    logger.debug(f"BLAKE3:XOR-INTERMEDIATE: {normalized.hex()}")
+
                             if not quiet and not progress:
                                 print("✅")
                     else:
@@ -1573,6 +1625,14 @@ def multi_hash_password(
                                 secure_memcpy(hashed, hash_buffer)
                                 show_progress("BLAKE2b (fallback)", i + 1, params)
                                 KeyStretch.hash_stretch = True
+
+                            # V8: Collect intermediate for XOR composition (BLAKE3 fallback)
+                            if collect_intermediates:
+                                normalized = normalize_to_key_length_secure(hashed, key_length)
+                                intermediate_outputs.append(normalized)
+                                if debug:
+                                    logger.debug(f"BLAKE2b(fallback):XOR-INTERMEDIATE: {normalized.hex()}")
+
                             if not quiet and not progress:
                                 print("✅")
 
@@ -1615,6 +1675,14 @@ def multi_hash_password(
                         if not quiet and not progress:
                             print("✅")
 
+                    # V8: Collect intermediate for XOR composition
+                    # CRITICAL: Store as SecureBytes, will be zeroed in generate_key() after XOR
+                    if collect_intermediates:
+                        normalized = normalize_to_key_length_secure(hashed, key_length)
+                        intermediate_outputs.append(normalized)  # SecureBytes object
+                        if debug:
+                            logger.debug(f"SHAKE-256:XOR-INTERMEDIATE: {normalized.hex()}")
+
                 elif algorithm == "whirlpool" and params > 0:
                     if not quiet and WHIRLPOOL_AVAILABLE and not progress:
                         print(f"Applying {params} rounds of Whirlpool", end=" ")
@@ -1654,6 +1722,14 @@ def multi_hash_password(
                                     KeyStretch.hash_stretch = True
                             if not quiet and not progress:
                                 print("✅")
+
+                        # V8: Collect intermediate for XOR composition
+                        # CRITICAL: Store as SecureBytes, will be zeroed in generate_key() after XOR
+                        if collect_intermediates:
+                            normalized = normalize_to_key_length_secure(hashed, key_length)
+                            intermediate_outputs.append(normalized)  # SecureBytes object
+                            if debug:
+                                logger.debug(f"Whirlpool:XOR-INTERMEDIATE: {normalized.hex()}")
                     else:
                         # Fall back to SHA-512 if Whirlpool is not
                         # available
@@ -1673,8 +1749,21 @@ def multi_hash_password(
                                 KeyStretch.hash_stretch = True
                             if not quiet and not progress:
                                 print("✅")
+
+                        # V8: Collect intermediate for XOR composition (fallback path)
+                        # CRITICAL: Store as SecureBytes, will be zeroed in generate_key() after XOR
+                        if collect_intermediates:
+                            normalized = normalize_to_key_length_secure(hashed, key_length)
+                            intermediate_outputs.append(normalized)  # SecureBytes object
+                            if debug:
+                                logger.debug(f"Whirlpool-Fallback:XOR-INTERMEDIATE: {normalized.hex()}")
             result = SecureBytes.copy_from(hashed)
-        return result
+
+        # V8: Return both final hash and intermediates if collecting
+        if collect_intermediates:
+            return result, intermediate_outputs
+        else:
+            return result
     except ImportError:
         # Fall back to standard method if secure_memory is not available
         if not quiet:
