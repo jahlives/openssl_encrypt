@@ -270,6 +270,18 @@ def setup_encrypt_parser(subparser):
         help="Number of SHAKE-128 iterations (default: 1,000,000 if flag provided without value)",
     )
 
+    # XOR composition key derivation
+    hash_group.add_argument(
+        "--use-xor-composition",
+        action="store_true",
+        default=False,
+        help="Enable XOR composition key derivation (format v8). "
+        "When enabled, intermediate KDF outputs are XOR'd together for enhanced security. "
+        "Provides 'strongest component' security guarantee: if any hash algorithm is secure, "
+        "the derived key is secure. Compatible with 1.3 branch v8 format. "
+        "Files encrypted with this flag require openssl_encrypt 1.3.5+ to decrypt.",
+    )
+
     # Scrypt options for encryption
     scrypt_group = subparser.add_argument_group("Scrypt options")
     scrypt_group.add_argument(
@@ -793,18 +805,6 @@ def setup_analyze_security_parser(subparser):
         choices=["sha256", "sha512", "sha224", "sha384"],
         default="sha256",
         help="Hash algorithm for HKDF (default: sha256)",
-    )
-
-    # XOR composition key derivation
-    kdf_group.add_argument(
-        "--use-xor-composition",
-        action="store_true",
-        default=False,
-        help="Enable XOR composition key derivation (format v8). "
-        "When enabled, intermediate KDF outputs are XOR'd together for enhanced security. "
-        "Provides 'strongest component' security guarantee: if any hash algorithm is secure, "
-        "the derived key is secure. Compatible with 1.3 branch v8 format. "
-        "Files encrypted with this flag require openssl_encrypt 1.3.5+ to decrypt.",
     )
 
     # Encryption algorithm options
