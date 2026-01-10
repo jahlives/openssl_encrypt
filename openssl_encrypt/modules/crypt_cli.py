@@ -2566,7 +2566,8 @@ def main_with_args(args=None):
     # Don't parse args again if they're already provided from subparser
     # This avoids the "unrecognized arguments" error for steganography options
     if args is None:
-        args = parser.parse_args()
+        # Use parse_intermixed_args to allow global flags anywhere in command line
+        args = parser.parse_intermixed_args()
 
         # Process CLI aliases and apply overrides
         args, alias_errors = process_cli_aliases(args, alias_processor)
