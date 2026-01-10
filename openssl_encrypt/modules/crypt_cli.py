@@ -4041,6 +4041,15 @@ def main_with_args(args=None):
                 "pbkdf2_iterations": getattr(args, "pbkdf2_iterations", 0),
             }
 
+    # V8: Set format_version based on --use-xor-composition flag
+    # This applies to all hash_config initialization paths (templates and custom)
+    # Default is v7 (secure chained salt derivation)
+    # With --use-xor-composition: use v8 (XOR composition key derivation)
+    if hasattr(args, "use_xor_composition") and args.use_xor_composition:
+        hash_config["format_version"] = 8
+    else:
+        hash_config["format_version"] = 7
+
     # Debug the hash configuration if debug mode is enabled
     if args.debug:
         debug_hash_config(args, hash_config, "Hash configuration after setup")
