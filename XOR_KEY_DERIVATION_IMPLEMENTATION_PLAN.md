@@ -27,14 +27,22 @@
 **Each completed step includes the commit ID for easy rollback if needed.**
 
 ### Branch 1.3 (feature/v1.3.x-development)
+
+**IMPORTANT NOTES FOR 1.3 IMPLEMENTATION**:
+- ⚠️ **AVOID PBKDF2 CODE PATH**: Do NOT make any changes related to deprecated PBKDF2. PBKDF2 is deprecated and only supported for backward compatibility during decryption.
+- 🔧 **CLI Parameter Required**: Must implement `--use-xor-composition` CLI flag similar to 1.4
+- 🎯 **Default Behavior**: v7 should be default format, v8 only when `--use-xor-composition` is provided
+- 📝 **API vs CLI**: API default should remain v7 for backward compatibility, CLI explicitly chooses version
+
 - [ ] Step 1: Add helper functions (xor_bytes_secure, normalize_to_key_length_secure) - Commit: `<pending>`
 - [ ] Step 2: Modify multi_hash_password() to return intermediates - Commit: `<pending>`
 - [ ] Step 3: Update generate_key() with v8 XOR logic - Commit: `<pending>`
 - [ ] Step 4: Create metadata_v8_schema.json - Commit: `<pending>`
 - [ ] Step 5: Update metadata creation for v8 - Commit: `<pending>`
-- [ ] Step 6: Update default format_version to 8 - Commit: `<pending>`
-- [ ] Step 7: Add unit tests (test_format_v8.py) - Commit: `<pending>`
-- [ ] Step 8: Verify all tests pass - Commit: `<pending>`
+- [ ] Step 6: Add CLI parameter --use-xor-composition (default=false, enables v8) - Commit: `<pending>`
+- [ ] Step 7: Wire CLI to pass format_version (7 by default, 8 with flag) - Commit: `<pending>`
+- [ ] Step 8: Add unit tests (test_format_v8.py) - Commit: `<pending>`
+- [ ] Step 9: Verify all tests pass - Commit: `<pending>`
 
 ### Branch 1.4 (feature/v1.4.x-development)
 - [x] Step 1: Add helper functions (xor_bytes_secure, normalize_to_key_length_secure) - Commit: `7a31464`
@@ -42,21 +50,14 @@
 - [x] Step 3: Update generate_key() with v10/v8 XOR logic - Commit: `9a11bd3`
 - [x] Step 4: Update metadata_v9_schema.json for v8/v10 - Commit: `a4bf00d`
 - [x] Step 5: Update metadata creation for v10 - Commit: `6f773ea`
-- [x] Step 6: Update default format_version to 10 - Commit: `6f773ea`
+- [x] Step 6: Keep API default as v10, add CLI switch for version control - Commit: `819f12d`
 - [x] Step 7: Add unit tests (test_format_v10.py, test_cross_version_v8_v10.py) - Commit: `91817da`
-- [⏳] Step 8: Verify all tests pass including cross-version - Commit: `<in-progress>`
-  - Fixed decrypt_file() to support v10 - Commit: `e7964a9`
-  - Fixed SecureBytes import scope - Commit: `e7964a9`
-  - Added fallback PBKDF2 intermediate collection - Commit: `836d0e6`
-  - **BLOCKED**: Authentication failures in tests with multiple hash algorithms
-  - **Root cause identified**: PBKDF2 default behavior inconsistency
-    - During encryption: pbkdf2_iterations=100000 passed but PBKDF2 doesn't run (no hash_config entry)
-    - During decryption: Metadata has pbkdf2 config, so PBKDF2 DOES run
-    - Result: Different number of XOR intermediates (4 vs 5) → authentication failure
-  - **Next action**: Need to ensure PBKDF2 runs consistently or fix how pbkdf2_iterations is handled
+- [x] Step 8: Add --use-xor-composition CLI flag (v9 default, v10 with flag) - Commit: `819f12d`
+- [x] Step 9: Fix v8/v10 format schema validation (mode field requirement) - Commit: `819f12d`
+- [x] Step 10: Verify all 1562 tests pass - Commit: `819f12d` ✅ **PUSHED TO REMOTE**
 
-**Last Updated**: 2026-01-09 18:45 UTC (Step 8 debugging - PBKDF2 inconsistency found)
-**Current Status**: Branch 1.4 - Step 8 blocked by PBKDF2 intermediate collection inconsistency. User switching computers.
+**Last Updated**: 2026-01-10 20:30 UTC
+**Current Status**: Branch 1.4 - ✅ **COMPLETED AND PUSHED**. All 1562 tests passing. Ready for 1.3 implementation.
 
 ---
 
@@ -113,7 +114,10 @@ This is non-negotiable because:
 - Add `metadata_v8_schema.json` to `openssl_encrypt/schemas/`
 - Update `crypt_core.py` to support v8 with XOR logic
 - Update `create_metadata_v7()` or add `create_metadata_v8()`
-- Set default `format_version=8` for new encryptions
+- **API default remains v7** for backward compatibility (do NOT change encrypt_file default)
+- **Add CLI parameter**: `--use-xor-composition` flag (similar to 1.4 implementation)
+- **CLI behavior**: Default to v7, use v8 only when `--use-xor-composition` is provided
+- **CRITICAL**: ⚠️ **DO NOT modify PBKDF2 code path** - PBKDF2 is deprecated, avoid all changes to it
 - Add unit tests for v8 encryption/decryption
 
 ### Branch 1.4 (feature/v1.4.x-development)
@@ -683,20 +687,30 @@ def normalize_to_key_length_secure(data: Union[bytes, "SecureBytes"], target_len
 - Update to set `"format_version": 8` instead of 7
 - Add comment explaining v8 XOR feature
 
-**Option B: Create new create_metadata_v8()**:
+**Option B: Create new create_metadata_v8()** ✅ **RECOMMENDED**:
 - Clone `create_metadata_v7()`
 - Set `"format_version": 8`
-- Update default in `encrypt_file()` to call `create_metadata_v8()`
+- Add `format_version` parameter to `encrypt_file()` with **default=7** (NOT 8!)
+- Preserves v7 for backward compatibility
 
-**Recommended**: Option B (cleaner, preserves v7 for backward compat)
-
-**Default version update**:
+**API Default (IMPORTANT)**:
 ```python
-# In encrypt_file(), change:
-format_version=7  # Old
-# To:
-format_version=8  # v8: Sequential execution + XOR composition
+# In encrypt_file(), keep existing default:
+format_version=7  # API default remains v7 for backward compatibility
 ```
+
+**CLI Implementation**:
+```python
+# In CLI (crypt_cli.py), add version selection:
+format_version = 8 if getattr(args, "use_xor_composition", False) else 7
+# Pass format_version to encrypt_file()
+```
+
+**⚠️ CRITICAL - AVOID PBKDF2**:
+- Do NOT modify any PBKDF2-related code paths
+- Do NOT add PBKDF2 intermediate collection
+- PBKDF2 is deprecated and only exists for backward compatibility
+- Focus only on enabled hash algorithms and modern KDFs (Argon2, Scrypt, etc.)
 
 #### Branch 1.4 (feature/v1.4.x-development)
 
