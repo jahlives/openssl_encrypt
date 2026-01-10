@@ -2155,6 +2155,18 @@ def main_with_args(args=None):
         help="Number of Whirlpool iterations (default: 0, not used)",
     )
 
+    # XOR composition key derivation
+    hash_group.add_argument(
+        "--use-xor-composition",
+        action="store_true",
+        default=False,
+        help="Enable XOR composition key derivation (format v8). "
+        "When enabled, intermediate KDF outputs are XOR'd together for enhanced security. "
+        "Provides 'strongest component' security guarantee: if any hash algorithm is secure, "
+        "the derived key is secure. Compatible with 1.3 branch v8 format. "
+        "Files encrypted with this flag require openssl_encrypt 1.3.5+ to decrypt.",
+    )
+
     # PBKDF2 option - renamed for consistency
     hash_group.add_argument(
         "--pbkdf2-iterations",
