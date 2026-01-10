@@ -2083,17 +2083,75 @@ def generate_key(
             print("Applying hash iterations", end=" ")
         elif not quiet:
             print("Applying hash iterations")
-        # Apply multiple hash algorithms in sequence
-        password = multi_hash_password(
-            password,
-            salt,
-            hash_config,
-            quiet,
-            progress=progress,
-            debug=debug,
-            hsm_pepper=hsm_pepper,
-            format_version=format_version,
-        )
+
+        # V8: Use XOR composition key derivation
+        if format_version == 8:
+            # Call multi_hash_password with intermediate collection enabled
+            password, intermediate_outputs = multi_hash_password(
+                password,
+                salt,
+                hash_config,
+                quiet,
+                progress=progress,
+                debug=debug,
+                hsm_pepper=hsm_pepper,
+                format_version=format_version,
+                collect_intermediates=True,
+                key_length=key_length,
+            )
+
+            try:
+                if debug:
+                    logger.debug(f"V8:XOR-COMPOSITION: Collected {len(intermediate_outputs)} intermediates")
+
+                # XOR all intermediate outputs together for "strongest component" security
+                # CRITICAL: This provides security equal to the strongest hash algorithm
+                xor_result = xor_bytes_secure(intermediate_outputs)
+
+                if debug:
+                    logger.debug(f"V8:XOR-RESULT: {xor_result.hex()}")
+
+                # Combine XOR result with the final password hash using concatenation
+                # This ensures both the sequential chain (password) and parallel composition (XOR)
+                # contribute to the final key material
+                from .secure_memory import SecureBytes
+                password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
+                combined = SecureBytes(password_bytes + bytes(xor_result))
+
+                if debug:
+                    logger.debug(f"V8:COMBINED: {combined.hex()}")
+
+                # Normalize to key_length using HKDF to ensure proper length
+                password = normalize_to_key_length_secure(combined, key_length)
+
+                if debug:
+                    logger.debug(f"V8:FINAL: {password.hex()}")
+
+                # Clean up intermediate values
+                from .secure_memory import secure_memzero
+                secure_memzero(xor_result)
+                secure_memzero(combined)
+
+            finally:
+                # CRITICAL: Always zero all intermediate outputs to prevent key leakage
+                from .secure_memory import secure_memzero
+                for intermediate in intermediate_outputs:
+                    secure_memzero(intermediate)
+                intermediate_outputs.clear()
+
+        else:
+            # V6/V7: Standard sequential-only key derivation
+            # Apply multiple hash algorithms in sequence
+            password = multi_hash_password(
+                password,
+                salt,
+                hash_config,
+                quiet,
+                progress=progress,
+                debug=debug,
+                hsm_pepper=hsm_pepper,
+                format_version=format_version,
+            )
     else:
         # Even when no hash iterations are configured, we need to combine password with salt
         # for consistency with the original key derivation behavior
