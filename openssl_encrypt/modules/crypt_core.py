@@ -2229,16 +2229,151 @@ def compute_kdf_independent(
     Raises:
         ValueError: If kdf_type is not supported
     """
-    from .secure_memory import SecureBytes
+    from .secure_memory import SecureBytes, secure_memzero
 
     if debug:
         logger.debug(
             f"INDEPENDENT-XOR: Computing {kdf_type} KDF on original input (target length: {key_length})"
         )
 
-    # Implementation will be added in Step 4
-    # For now, placeholder
-    raise NotImplementedError(f"KDF {kdf_type} not yet implemented for independent XOR")
+    if kdf_type == "argon2":
+        import argon2.low_level
+
+        # Extract Argon2 parameters from config
+        time_cost = kdf_config.get("time_cost", 2)
+        memory_cost = kdf_config.get("memory_cost", 102400)
+        parallelism = kdf_config.get("parallelism", 8)
+        argon2_type_str = kdf_config.get("type", "id")
+
+        # Map type string to Argon2 Type enum
+        if argon2_type_str == "i":
+            argon2_type = argon2.low_level.Type.I
+        elif argon2_type_str == "d":
+            argon2_type = argon2.low_level.Type.D
+        else:  # "id" or default
+            argon2_type = argon2.low_level.Type.ID
+
+        if debug:
+            logger.debug(
+                f"INDEPENDENT-XOR: Argon2 params - time={time_cost}, memory={memory_cost}, parallelism={parallelism}, type={argon2_type_str}"
+            )
+
+        # Run Argon2 on original password+salt
+        result = argon2.low_level.hash_secret_raw(
+            secret=password,
+            salt=salt,
+            time_cost=time_cost,
+            memory_cost=memory_cost,
+            parallelism=parallelism,
+            hash_len=key_length,
+            type=argon2_type,
+        )
+
+        return SecureBytes(result)
+
+    elif kdf_type == "scrypt":
+        import hashlib
+
+        # Extract Scrypt parameters
+        n = kdf_config.get("n", 32768)
+        r = kdf_config.get("r", 8)
+        p = kdf_config.get("p", 1)
+
+        if debug:
+            logger.debug(
+                f"INDEPENDENT-XOR: Scrypt params - n={n}, r={r}, p={p}"
+            )
+
+        # Run Scrypt on original password+salt
+        result = hashlib.scrypt(
+            password=password,
+            salt=salt,
+            n=n,
+            r=r,
+            p=p,
+            maxmem=2 * (128 * n * r * p),
+            dklen=key_length,
+        )
+
+        return SecureBytes(result)
+
+    elif kdf_type == "balloon":
+        # Import balloon hash if available
+        try:
+            from .balloon_hash import balloon_hash
+        except ImportError:
+            raise ValueError("Balloon hash not available")
+
+        # Extract Balloon parameters
+        space_cost = kdf_config.get("space_cost", 16)
+        time_cost = kdf_config.get("time_cost", 20)
+        delta = kdf_config.get("delta", 4)
+
+        if debug:
+            logger.debug(
+                f"INDEPENDENT-XOR: Balloon params - space={space_cost}, time={time_cost}, delta={delta}"
+            )
+
+        # Run Balloon on original password+salt
+        result = balloon_hash(
+            password=password,
+            salt=salt,
+            space_cost=space_cost,
+            time_cost=time_cost,
+            delta=delta,
+            hash_len=key_length,
+        )
+
+        return SecureBytes(result)
+
+    elif kdf_type == "hkdf":
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+        from cryptography.hazmat.backends import default_backend
+
+        # Extract HKDF parameters
+        info = kdf_config.get("info", b"independent-xor-hkdf")
+
+        if debug:
+            logger.debug(f"INDEPENDENT-XOR: HKDF with info={info}")
+
+        # Run HKDF on original password+salt
+        hkdf = HKDF(
+            algorithm=hashes.SHA256(),
+            length=key_length,
+            salt=salt,
+            info=info if isinstance(info, bytes) else info.encode(),
+            backend=default_backend(),
+        )
+
+        result = hkdf.derive(password)
+        return SecureBytes(result)
+
+    elif kdf_type == "pbkdf2":
+        import hashlib
+
+        # Extract PBKDF2 parameters
+        iterations = kdf_config.get("iterations", 100000)
+        hash_name = kdf_config.get("hash_name", "sha256")
+
+        if debug:
+            logger.debug(
+                f"INDEPENDENT-XOR: PBKDF2 params - iterations={iterations}, hash={hash_name}"
+            )
+
+        # Run PBKDF2 on original password+salt
+        result = hashlib.pbkdf2_hmac(
+            hash_name=hash_name,
+            password=password,
+            salt=salt,
+            iterations=iterations,
+            dklen=key_length,
+        )
+
+        return SecureBytes(result)
+
+    else:
+        raise ValueError(f"Unsupported KDF type: {kdf_type}")
 
 
 def generate_key_independent_xor(
