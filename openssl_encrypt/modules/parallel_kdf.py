@@ -394,9 +394,6 @@ class ParallelProgressAggregator:
             # Mark worker as completed
             self.completed_workers.add(msg.worker_id)
             self.completed_times[msg.worker_id] = msg.elapsed
-            if not self.quiet and self.progress_enabled:
-                # Clear current line and show completion
-                print(f"\r{' ' * 100}\r  {msg.worker_id.upper()} completed ({msg.elapsed:.1f}s)")
 
         elif msg.progress_type == ProgressType.KDF_START:
             # Initialize KDF progress (won't update until complete)
@@ -406,9 +403,6 @@ class ParallelProgressAggregator:
             # Mark KDF as completed
             self.completed_workers.add(msg.worker_id)
             self.completed_times[msg.worker_id] = msg.elapsed
-            if not self.quiet and self.progress_enabled:
-                # Clear current line and show completion
-                print(f"\r{' ' * 100}\r  {msg.worker_id.upper()} completed ({msg.elapsed:.1f}s)")
 
         elif msg.progress_type == ProgressType.WORKER_ERROR:
             # Don't update display for errors - let exception propagate
