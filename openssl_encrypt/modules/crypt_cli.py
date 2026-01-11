@@ -686,7 +686,7 @@ def preprocess_global_args(argv):
     anywhere in the command line, maintaining backward compatibility with v1.2.1 behavior.
     """
     # Flags that are truly global and can appear anywhere
-    TRULY_GLOBAL_FLAGS = {"--debug", "--verbose", "--quiet", "-q", "--progress"}
+    TRULY_GLOBAL_FLAGS = {"--debug", "--verbose", "--quiet", "-q", "--progress", "--parallel-kdf", "--kdf-workers"}
 
     # Find the command position
     commands = {
@@ -727,9 +727,9 @@ def preprocess_global_args(argv):
 
         if arg in TRULY_GLOBAL_FLAGS:
             global_args.append(arg)
-            # Check if this flag takes a value (currently none of our global flags do, but future-proof)
+            # Check if this flag takes a value
             if (
-                arg in ["--template", "-t"]
+                arg in ["--template", "-t", "--kdf-workers"]
                 and i + 1 < len(argv)
                 and not argv[i + 1].startswith("-")
             ):
@@ -3279,6 +3279,21 @@ def main_with_args(args=None):
         "Global Options (can be specified anywhere in command line)"
     )
     global_group.add_argument("--progress", action="store_true", help="Show progress bar")
+    global_group.add_argument(
+        "--parallel-kdf",
+        action="store_true",
+        help="Use parallel processing for key derivation (v11 only, requires --independent-xor). "
+             "Speeds up encryption by running hash algorithms and KDFs concurrently. "
+             "Requires multiprocessing support."
+    )
+    global_group.add_argument(
+        "--kdf-workers",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Number of parallel workers for KDF (default: auto-detect, max: CPU count). "
+             "Only used with --parallel-kdf."
+    )
     global_group.add_argument("--verbose", action="store_true", help="Show hash/kdf details")
     global_group.add_argument(
         "--debug",
@@ -6739,6 +6754,8 @@ def main_with_args(args=None):
                             pepper_plugin=pepper_plugin_instance,
                             pepper_name=pepper_name_to_use,
                             format_version=format_version,
+                            parallel_kdf=getattr(args, "parallel_kdf", False),
+                            kdf_workers=getattr(args, "kdf_workers", None),
                         )
 
                     if success:
@@ -8508,6 +8525,8 @@ def main_with_args(args=None):
                             hsm_plugin=hsm_plugin_instance,
                             no_estimate=getattr(args, "no_estimate", False),
                             verify_integrity=getattr(args, "verify_integrity", False),
+                            parallel_kdf=getattr(args, "parallel_kdf", False),
+                            kdf_workers=getattr(args, "kdf_workers", None),
                         )
                     if success:
                         # Apply the original permissions to the temp file

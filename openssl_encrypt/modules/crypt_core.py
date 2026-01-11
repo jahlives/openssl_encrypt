@@ -5473,6 +5473,8 @@ def encrypt_file(
     pepper_plugin=None,
     pepper_name=None,
     format_version=10,
+    parallel_kdf=False,
+    kdf_workers=None,
 ):
     """
     Encrypt a file with a password using the specified algorithm.
@@ -5910,19 +5912,38 @@ def encrypt_file(
     # v11: Independent XOR (Massey), v10: Sequential XOR, v9: Secure chained salt
     if format_version == 11:
         # Independent XOR mode - each algorithm processes original input
-        key, salt, _ = generate_key_independent_xor(
-            password,
-            salt,
-            hash_config,
-            pbkdf2_iterations=pbkdf2_iterations,
-            quiet=quiet,
-            algorithm=algorithm_value,
-            progress=progress,
-            debug=debug,
-            pqc_keypair=pqc_keypair,
-            hsm_pepper=combined_pepper,
-            format_version=format_version,
-        )
+        if parallel_kdf:
+            # Parallel execution via multiprocessing
+            from .parallel_kdf import generate_key_independent_xor_parallel
+            key, salt, _ = generate_key_independent_xor_parallel(
+                password,
+                salt,
+                hash_config,
+                pbkdf2_iterations=pbkdf2_iterations,
+                quiet=quiet,
+                algorithm=algorithm_value,
+                progress=progress,
+                debug=debug,
+                pqc_keypair=pqc_keypair,
+                hsm_pepper=combined_pepper,
+                format_version=format_version,
+                max_workers=kdf_workers,
+            )
+        else:
+            # Sequential execution (default)
+            key, salt, _ = generate_key_independent_xor(
+                password,
+                salt,
+                hash_config,
+                pbkdf2_iterations=pbkdf2_iterations,
+                quiet=quiet,
+                algorithm=algorithm_value,
+                progress=progress,
+                debug=debug,
+                pqc_keypair=pqc_keypair,
+                hsm_pepper=combined_pepper,
+                format_version=format_version,
+            )
         # Note: hash_config is still available from the function parameter
         # Independent XOR returns (key, salt, iv) but we discard iv as it's generated later
     else:
@@ -7158,6 +7179,8 @@ def decrypt_file(
     hsm_plugin=None,
     no_estimate=False,
     verify_integrity=False,
+    parallel_kdf=False,
+    kdf_workers=None,
 ):
     """
     Decrypt a file with a password.
@@ -7880,19 +7903,38 @@ def decrypt_file(
     # v11 uses independent XOR, v1-v10 use sequential (including v8/v10 sequential XOR)
     if format_version == 11 or xor_mode == "independent":
         # Independent XOR mode (Massey)
-        key, _, _ = generate_key_independent_xor(
-            password,
-            salt,
-            hash_config,
-            pbkdf2_iterations=pbkdf2_iterations,
-            quiet=quiet,
-            algorithm=algorithm,
-            progress=progress,
-            debug=debug,
-            pqc_keypair=pqc_info,
-            hsm_pepper=combined_pepper,
-            format_version=format_version,
-        )
+        if parallel_kdf:
+            # Parallel execution via multiprocessing
+            from .parallel_kdf import generate_key_independent_xor_parallel
+            key, _, _ = generate_key_independent_xor_parallel(
+                password,
+                salt,
+                hash_config,
+                pbkdf2_iterations=pbkdf2_iterations,
+                quiet=quiet,
+                algorithm=algorithm,
+                progress=progress,
+                debug=debug,
+                pqc_keypair=pqc_info,
+                hsm_pepper=combined_pepper,
+                format_version=format_version,
+                max_workers=kdf_workers,
+            )
+        else:
+            # Sequential execution (default)
+            key, _, _ = generate_key_independent_xor(
+                password,
+                salt,
+                hash_config,
+                pbkdf2_iterations=pbkdf2_iterations,
+                quiet=quiet,
+                algorithm=algorithm,
+                progress=progress,
+                debug=debug,
+                pqc_keypair=pqc_info,
+                hsm_pepper=combined_pepper,
+                format_version=format_version,
+            )
     else:
         # Sequential mode (v1-v10, including v8/v10 sequential XOR)
         key, _, _ = generate_key(
