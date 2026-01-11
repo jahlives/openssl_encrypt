@@ -1809,6 +1809,21 @@ def create_subparser_main():
 
     # Global options
     parser.add_argument("--progress", action="store_true", help="Show progress bar")
+    parser.add_argument(
+        "--parallel-kdf",
+        action="store_true",
+        help="Use parallel processing for key derivation (v11 only, requires --independent-xor). "
+             "Speeds up encryption by running hash algorithms and KDFs concurrently. "
+             "Requires multiprocessing support."
+    )
+    parser.add_argument(
+        "--kdf-workers",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Number of parallel workers for KDF (default: auto-detect, max: CPU count). "
+             "Only used with --parallel-kdf."
+    )
     parser.add_argument("--verbose", action="store_true", help="Show hash/kdf details")
     parser.add_argument(
         "--debug",
