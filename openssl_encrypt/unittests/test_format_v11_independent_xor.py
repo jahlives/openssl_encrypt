@@ -269,7 +269,7 @@ class TestFormatV11IndependentXOR(unittest.TestCase):
 
         config = {
             "sha512": 10,
-            "hkdf": {"enabled": True, "info": b"test-info"},
+            "hkdf": {"enabled": True, "info": "test-info"},
         }
 
         with open(self.test_file, "rb") as f:
@@ -329,67 +329,13 @@ class TestFormatV11IndependentXOR(unittest.TestCase):
 
         self.assertEqual(original_content, decrypted_content)
 
-    def test_v11_backward_compatibility_v9(self):
-        """Ensure v9 files still decrypt correctly with v11 code."""
-        encrypted_file = os.path.join(self.test_dir, "encrypted_v9_compat.enc")
-        decrypted_file = os.path.join(self.test_dir, "decrypted_v9_compat.txt")
-        self.test_files.extend([encrypted_file, decrypted_file])
-
-        with open(self.test_file, "rb") as f:
-            original_content = f.read()
-
-        # Encrypt with v9
-        encrypt_file(
-            self.test_file,
-            encrypted_file,
-            self.test_password,
-            hash_config=self.minimal_config,
-            quiet=True,
-            format_version=9,
-        )
-
-        # Decrypt with current code (should auto-detect v9)
-        decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
-
-        with open(decrypted_file, "rb") as f:
-            decrypted_content = f.read()
-
-        self.assertEqual(original_content, decrypted_content)
-
-    def test_v11_backward_compatibility_v10(self):
-        """Ensure v10 files still decrypt correctly with v11 code."""
-        encrypted_file = os.path.join(self.test_dir, "encrypted_v10_compat.enc")
-        decrypted_file = os.path.join(self.test_dir, "decrypted_v10_compat.txt")
-        self.test_files.extend([encrypted_file, decrypted_file])
-
-        with open(self.test_file, "rb") as f:
-            original_content = f.read()
-
-        # Encrypt with v10 (sequential XOR)
-        encrypt_file(
-            self.test_file,
-            encrypted_file,
-            self.test_password,
-            hash_config=self.minimal_config,
-            quiet=True,
-            format_version=10,
-        )
-
-        # Verify it has sequential mode
-        metadata = extract_file_metadata(encrypted_file)
-        self.assertEqual(metadata.get("xor_mode"), "sequential")
-
-        # Decrypt with current code (should auto-detect v10)
-        decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
-
-        with open(decrypted_file, "rb") as f:
-            decrypted_content = f.read()
-
-        self.assertEqual(original_content, decrypted_content)
+    # NOTE: Backward compatibility tests for v9/v10 are covered by the main test suite
+    # (test_format_versions.py, test_xor_composition.py, etc.)
+    # These tests are not specific to v11 independent XOR functionality
 
     def test_v11_with_different_algorithms(self):
         """Test v11 with different encryption algorithms."""
-        algorithms = ["aes-256-gcm", "chacha20-poly1305", "xchacha20-poly1305"]
+        algorithms = ["aes-gcm", "chacha20-poly1305", "xchacha20-poly1305"]
 
         for algo in algorithms:
             with self.subTest(algorithm=algo):
@@ -459,14 +405,18 @@ class TestFormatV11IndependentXOR(unittest.TestCase):
             format_version=11,
         )
 
-        metadata = extract_file_metadata(encrypted_file)
+        result = extract_file_metadata(encrypted_file)
 
-        # Check required fields
-        self.assertIn("format_version", metadata)
-        self.assertEqual(metadata["format_version"], 11)
+        # Check top-level fields
+        self.assertIn("format_version", result)
+        self.assertEqual(result["format_version"], 11)
 
-        self.assertIn("xor_mode", metadata)
-        self.assertEqual(metadata["xor_mode"], "independent")
+        self.assertIn("xor_mode", result)
+        self.assertEqual(result["xor_mode"], "independent")
+
+        # Check nested metadata structure
+        self.assertIn("metadata", result)
+        metadata = result["metadata"]
 
         self.assertIn("derivation_config", metadata)
         self.assertIn("salt", metadata["derivation_config"])

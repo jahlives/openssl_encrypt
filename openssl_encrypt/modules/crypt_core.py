@@ -2425,6 +2425,8 @@ def generate_key_independent_xor(
     """
     from .secure_memory import SecureBytes, secure_memzero
     import os
+    import base64
+    import hashlib
 
     if debug:
         logger.debug(
@@ -2601,35 +2603,9 @@ def generate_key_independent_xor(
             if debug:
                 logger.debug(f"INDEPENDENT-XOR: Added HKDF component #{len(xor_components)}")
 
-        # Check and process PBKDF2
-        if pbkdf2_iterations > 0 and not any(
-            kdf_config_section.get(k, {}).get("enabled", False)
-            for k in ["argon2", "scrypt", "balloon", "hkdf"]
-        ):
-            if not quiet and not progress:
-                print(f"Computing PBKDF2 ({pbkdf2_iterations} iterations)...", end=" ")
-
-            pbkdf2_config = {
-                "iterations": pbkdf2_iterations,
-                "hash_name": "sha256",
-            }
-            result = compute_kdf_independent(
-                password=password,
-                salt=salt,
-                kdf_type="pbkdf2",
-                kdf_config=pbkdf2_config,
-                key_length=key_length,
-                quiet=quiet,
-                progress=progress,
-                debug=debug,
-            )
-            xor_components.append(result)
-
-            if not quiet and not progress:
-                print("✅")
-
-            if debug:
-                logger.debug(f"INDEPENDENT-XOR: Added PBKDF2 component #{len(xor_components)}")
+        # NOTE: PBKDF2 is deprecated and NOT used for v11 encryption
+        # It's only supported for decryption of legacy files (v1-v9)
+        # For v11, only modern KDFs (Argon2, Scrypt, Balloon, HKDF) and hashes are used
 
         # Verify we have at least one component
         if len(xor_components) == 0:
@@ -2660,8 +2636,72 @@ def generate_key_independent_xor(
             )
             logger.debug(f"INDEPENDENT-XOR: IV length = {len(iv)} bytes")
 
+        # 5. Apply algorithm-specific key formatting
+        # Convert final_key to bytes for hashing/encoding
+        final_key_bytes = bytes(final_key)
+
+        if algorithm == "fernet":
+            # Fernet requires base64-encoded key
+            final_key_bytes = base64.urlsafe_b64encode(final_key_bytes)
+            if debug:
+                logger.debug("INDEPENDENT-XOR: Applied Fernet base64 encoding")
+        elif algorithm in [
+            "aes-256-gcm", "aes-gcm", "aes-gcm-siv", "aes-ocb3",
+            "chacha20-poly1305", "xchacha20-poly1305", "camellia",
+            # PQC hybrid algorithms
+            "kyber512-hybrid", "kyber768-hybrid", "kyber1024-hybrid",
+            "ml-kem-512-hybrid", "ml-kem-768-hybrid", "ml-kem-1024-hybrid",
+            "ml-kem-512-chacha20", "ml-kem-768-chacha20", "ml-kem-1024-chacha20",
+            "hqc-128-hybrid", "hqc-192-hybrid", "hqc-256-hybrid",
+            "mayo-1-hybrid", "mayo-3-hybrid", "mayo-5-hybrid",
+            "cross-128-hybrid", "cross-192-hybrid", "cross-256-hybrid"
+        ]:
+            # These algorithms use raw SHA-256 hash
+            final_key_bytes = hashlib.sha256(final_key_bytes).digest()
+            if debug:
+                logger.debug("INDEPENDENT-XOR: Applied SHA-256 final hash")
+        elif algorithm == "aes-siv":
+            # AES-SIV uses SHA-512
+            final_key_bytes = hashlib.sha512(final_key_bytes).digest()
+            if debug:
+                logger.debug("INDEPENDENT-XOR: Applied SHA-512 final hash")
+        elif algorithm in ["threefish-512", "threefish-1024"]:
+            # Threefish algorithms need HKDF expansion
+            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+            from cryptography.hazmat.primitives import hashes
+            from cryptography.hazmat.backends import default_backend
+
+            if algorithm == "threefish-512":
+                hkdf = HKDF(
+                    algorithm=hashes.SHA256(),
+                    length=64,
+                    salt=salt,
+                    info=b"threefish-512-key-expansion",
+                    backend=default_backend(),
+                )
+                final_key_bytes = hkdf.derive(final_key_bytes)
+                if debug:
+                    logger.debug("INDEPENDENT-XOR: Expanded to 64 bytes for Threefish-512")
+            else:  # threefish-1024
+                hkdf = HKDF(
+                    algorithm=hashes.SHA256(),
+                    length=128,
+                    salt=salt,
+                    info=b"threefish-1024-key-expansion",
+                    backend=default_backend(),
+                )
+                final_key_bytes = hkdf.derive(final_key_bytes)
+                if debug:
+                    logger.debug("INDEPENDENT-XOR: Expanded to 128 bytes for Threefish-1024")
+        elif algorithm == "cascade":
+            # Cascade mode uses raw key
+            pass
+        else:
+            # Default: base64 encode for unknown algorithms
+            final_key_bytes = base64.b64encode(hashlib.sha256(final_key_bytes).digest())
+
         # Return as tuple
-        return bytes(final_key), salt, iv
+        return final_key_bytes, salt, iv
 
     finally:
         # CRITICAL: Zero all intermediate components
@@ -5842,7 +5882,7 @@ def encrypt_file(
     # v11: Independent XOR (Massey), v10: Sequential XOR, v9: Secure chained salt
     if format_version == 11:
         # Independent XOR mode - each algorithm processes original input
-        key, salt, iv = generate_key_independent_xor(
+        key, salt, _ = generate_key_independent_xor(
             password,
             salt,
             hash_config,
@@ -5855,8 +5895,8 @@ def encrypt_file(
             hsm_pepper=combined_pepper,
             format_version=format_version,
         )
-        # Note: Independent XOR returns (key, salt, iv) but we don't use iv here
-        # as it's generated later. We'll discard it.
+        # Note: hash_config is still available from the function parameter
+        # Independent XOR returns (key, salt, iv) but we discard iv as it's generated later
     else:
         # Sequential mode (v1-v10)
         key, salt, hash_config = generate_key(
@@ -7048,7 +7088,7 @@ def extract_file_metadata(input_file):
         format_version = metadata.get("format_version", 1)
 
         # Extract algorithm based on format version
-        if format_version in [4, 5, 6, 7, 8, 9, 10]:
+        if format_version in [4, 5, 6, 7, 8, 9, 10, 11]:
             encryption = metadata.get("encryption", {})
             algorithm = encryption.get("algorithm", EncryptionAlgorithm.FERNET.value)
             encryption_data = encryption.get("encryption_data", "aes-gcm")
@@ -7056,12 +7096,19 @@ def extract_file_metadata(input_file):
             algorithm = metadata.get("algorithm", EncryptionAlgorithm.FERNET.value)
             encryption_data = "aes-gcm"  # Default for older formats
 
-        return {
+        # For convenience, also return xor_mode at top level for v8/v10/v11
+        result = {
             "format_version": format_version,
             "algorithm": algorithm,
             "encryption_data": encryption_data,
             "metadata": metadata,
         }
+
+        # Add xor_mode if present in metadata
+        if "xor_mode" in metadata:
+            result["xor_mode"] = metadata["xor_mode"]
+
+        return result
     except Exception as e:
         raise ValueError(f"Invalid file format: {str(e)}")
 
@@ -7302,9 +7349,9 @@ def decrypt_file(
     cascade_hkdf_hash = None
     cascade_salt_decrypt = None
 
-    # For format_version 4, 5, 6, 7, 8, 9, or 10, set correct hash_config for printing purposes
+    # For format_version 4, 5, 6, 7, 8, 9, 10, or 11, set correct hash_config for printing purposes
     # This doesn't change the actual metadata, just passes the right info to print_hash_config
-    if format_version in [4, 5, 6, 7, 8, 9, 10]:
+    if format_version in [4, 5, 6, 7, 8, 9, 10, 11]:
         # If verbose, pass the full metadata to print_hash_config for proper display
         if verbose:
             print_hash_config_metadata = metadata
@@ -7313,8 +7360,8 @@ def decrypt_file(
     else:
         print_hash_config_metadata = metadata.get("hash_config", {})
 
-    # Handle format version 4, 5, 6, 7, 8, 9, or 10
-    if format_version in [4, 5, 6, 7, 8, 9, 10]:
+    # Handle format version 4, 5, 6, 7, 8, 9, 10, or 11
+    if format_version in [4, 5, 6, 7, 8, 9, 10, 11]:
         # Extract information from new hierarchical structure
         derivation_config = metadata["derivation_config"]
         salt = base64.b64decode(derivation_config["salt"])
@@ -7370,7 +7417,7 @@ def decrypt_file(
         # Check if this is V8+ cascade format
         is_cascade = encryption.get("cascade", False)
 
-        if format_version in [8, 9, 10] and is_cascade:
+        if format_version in [8, 9, 10, 11] and is_cascade:
             # Extract cascade information
             cascade_cipher_chain = encryption.get("cipher_chain", [])
             cascade_hkdf_hash = encryption.get("hkdf_hash", "sha256")
