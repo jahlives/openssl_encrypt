@@ -2100,6 +2100,208 @@ def normalize_to_key_length_secure(data, target_length: int) -> "SecureBytes":
             secure_memzero(bytearray(data_bytes))
 
 
+def compute_hash_independent(
+    password: bytes,
+    salt: bytes,
+    algorithm: str,
+    rounds: int,
+    key_length: int,
+    quiet: bool = False,
+    progress: bool = False,
+    debug: bool = False,
+) -> "SecureBytes":
+    """
+    Compute a single hash algorithm on password+salt independently.
+
+    For Independent XOR mode (v11/v9): each algorithm gets the SAME original input,
+    providing "strongest component" security guarantee (Massey).
+
+    This is different from sequential XOR (v8/v10) where each algorithm
+    processes the output of the previous algorithm.
+
+    Args:
+        password: Original password bytes
+        salt: Original salt bytes
+        algorithm: Hash algorithm name (sha256, sha512, sha3_256, sha3_512,
+                   blake2b, blake3, shake256, whirlpool)
+        rounds: Number of iterations to apply
+        key_length: Target output length in bytes
+        quiet: Suppress output messages
+        progress: Show progress indicators
+        debug: Enable debug logging
+
+    Returns:
+        SecureBytes of normalized hash output (length = key_length)
+
+    Raises:
+        ValueError: If algorithm is not supported
+    """
+    from .secure_memory import SecureBytes
+    import hashlib
+
+    if debug:
+        logger.debug(
+            f"INDEPENDENT-XOR: Computing {algorithm} with {rounds} rounds on original input"
+        )
+
+    # Start with password+salt
+    current = SecureBytes(password + salt)
+
+    try:
+        # Apply hash iterations
+        for i in range(rounds):
+            if algorithm == "sha256":
+                h = hashlib.sha256(bytes(current)).digest()
+            elif algorithm == "sha512":
+                h = hashlib.sha512(bytes(current)).digest()
+            elif algorithm == "sha3_256":
+                h = hashlib.sha3_256(bytes(current)).digest()
+            elif algorithm == "sha3_512":
+                h = hashlib.sha3_512(bytes(current)).digest()
+            elif algorithm == "blake2b":
+                h = hashlib.blake2b(bytes(current)).digest()
+            elif algorithm == "blake3":
+                import blake3
+
+                h = blake3.blake3(bytes(current)).digest()
+            elif algorithm == "shake256":
+                h = hashlib.shake_256(bytes(current)).digest(64)
+            elif algorithm == "whirlpool":
+                import whirlpool
+
+                h = whirlpool.new(bytes(current)).digest()
+            else:
+                raise ValueError(f"Unsupported hash algorithm: {algorithm}")
+
+            # Secure cleanup of old current
+            if i < rounds - 1:  # Not last iteration
+                secure_memzero(current)
+                current = SecureBytes(h)
+            else:
+                # Last iteration - normalize to target length
+                secure_memzero(current)
+                result = normalize_to_key_length_secure(h, key_length)
+
+        if debug:
+            logger.debug(
+                f"INDEPENDENT-XOR: {algorithm} result (normalized): {result.hex()}"
+            )
+
+        return result
+
+    except Exception:
+        # Clean up on error
+        if "current" in locals():
+            secure_memzero(current)
+        if "result" in locals():
+            secure_memzero(result)
+        raise
+
+
+def compute_kdf_independent(
+    password: bytes,
+    salt: bytes,
+    kdf_type: str,
+    kdf_config: dict,
+    key_length: int,
+    quiet: bool = False,
+    progress: bool = False,
+    debug: bool = False,
+) -> "SecureBytes":
+    """
+    Compute a single KDF on password+salt independently.
+
+    For Independent XOR mode (v11/v9): each KDF gets the SAME original input.
+
+    Args:
+        password: Original password bytes
+        salt: Original salt bytes
+        kdf_type: KDF type (argon2, scrypt, balloon, hkdf, pbkdf2)
+        kdf_config: KDF-specific configuration dict
+        key_length: Target output length in bytes
+        quiet: Suppress output messages
+        progress: Show progress indicators
+        debug: Enable debug logging
+
+    Returns:
+        SecureBytes of KDF output (length = key_length)
+
+    Raises:
+        ValueError: If kdf_type is not supported
+    """
+    from .secure_memory import SecureBytes
+
+    if debug:
+        logger.debug(
+            f"INDEPENDENT-XOR: Computing {kdf_type} KDF on original input (target length: {key_length})"
+        )
+
+    # Implementation will be added in Step 4
+    # For now, placeholder
+    raise NotImplementedError(f"KDF {kdf_type} not yet implemented for independent XOR")
+
+
+def generate_key_independent_xor(
+    password: bytes,
+    salt: bytes,
+    hash_config: dict,
+    pbkdf2_iterations: int = 100000,
+    quiet: bool = False,
+    algorithm: str = "aes-256-gcm",
+    progress: bool = False,
+    debug: bool = False,
+    pqc_keypair: tuple = None,
+    hsm_pepper: bytes = None,
+    format_version: int = 11,
+) -> tuple:
+    """
+    Generate encryption key using Independent XOR composition.
+
+    Based on Massey's work: K = H1(x) ⊕ H2(x) ⊕ ... ⊕ Hn(x)
+
+    Each algorithm receives the SAME input (password + salt).
+    The XOR of all outputs provides "strongest component" security -
+    the key is at least as secure as its strongest constituent algorithm.
+
+    Trade-off: Attackers can parallelize computation of individual algorithms,
+    but the key remains secure as long as at least one algorithm is unbroken.
+
+    Args:
+        password: User password (bytes)
+        salt: Random salt (bytes)
+        hash_config: Configuration dict for enabled algorithms
+        pbkdf2_iterations: PBKDF2 iterations (if PBKDF2 enabled)
+        quiet: Suppress output messages
+        algorithm: Encryption algorithm (determines key length)
+        progress: Show progress indicators
+        debug: Enable debug logging
+        pqc_keypair: Post-quantum keypair (if applicable)
+        hsm_pepper: HSM pepper (if applicable)
+        format_version: Metadata format version (11 for 1.4, 9 for 1.3)
+
+    Returns:
+        Tuple of (key, salt, iv) where:
+        - key: Derived encryption key (bytes)
+        - salt: The salt used (bytes)
+        - iv: Generated initialization vector (bytes)
+
+    Raises:
+        ValueError: If no algorithms are enabled
+    """
+    from .secure_memory import SecureBytes, secure_memzero
+    import os
+
+    if debug:
+        logger.debug(
+            f"INDEPENDENT-XOR: Starting key derivation with format_version={format_version}"
+        )
+        logger.debug(f"INDEPENDENT-XOR: Algorithm: {algorithm}")
+
+    # Implementation will be added in Step 5
+    # For now, placeholder
+    raise NotImplementedError("Independent XOR key generation not yet fully implemented")
+
+
 @secure_key_derivation_error_handler
 def generate_key(
     password,
