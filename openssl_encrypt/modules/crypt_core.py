@@ -7799,19 +7799,40 @@ def decrypt_file(
     if not quiet:
         print("Generating decryption key ✅")  # Green check symbol)
 
-    key, _, _ = generate_key(
-        password,
-        salt,
-        hash_config,
-        pbkdf2_iterations,
-        quiet,
-        algorithm,
-        progress=progress,
-        debug=debug,
-        pqc_keypair=pqc_info,
-        hsm_pepper=combined_pepper,
-        format_version=format_version,  # Use version from file metadata for backward compatibility
-    )
+    # Check XOR mode from metadata to determine which key generation function to use
+    xor_mode = metadata.get("xor_mode", "sequential")  # Default to sequential for backward compat
+
+    # v11 uses independent XOR, v1-v10 use sequential (including v8/v10 sequential XOR)
+    if format_version == 11 or xor_mode == "independent":
+        # Independent XOR mode (Massey)
+        key, _, _ = generate_key_independent_xor(
+            password,
+            salt,
+            hash_config,
+            pbkdf2_iterations=pbkdf2_iterations,
+            quiet=quiet,
+            algorithm=algorithm,
+            progress=progress,
+            debug=debug,
+            pqc_keypair=pqc_info,
+            hsm_pepper=combined_pepper,
+            format_version=format_version,
+        )
+    else:
+        # Sequential mode (v1-v10, including v8/v10 sequential XOR)
+        key, _, _ = generate_key(
+            password,
+            salt,
+            hash_config,
+            pbkdf2_iterations,
+            quiet,
+            algorithm,
+            progress=progress,
+            debug=debug,
+            pqc_keypair=pqc_info,
+            hsm_pepper=combined_pepper,
+            format_version=format_version,  # Use version from file metadata for backward compatibility
+        )
 
     # Helper function to get expected nonce size for each algorithm
     def get_nonce_size(alg, include_legacy=True):
