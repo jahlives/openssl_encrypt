@@ -589,7 +589,7 @@ def preprocess_global_args(argv):
     anywhere in the command line, maintaining backward compatibility with v1.2.1 behavior.
     """
     # Flags that are truly global and can appear anywhere
-    TRULY_GLOBAL_FLAGS = {"--debug", "--verbose", "--quiet", "-q", "--progress"}
+    TRULY_GLOBAL_FLAGS = {"--debug", "--verbose", "--quiet", "-q", "--progress", "--parallel-kdf", "--kdf-workers"}
 
     # Find the command position
     commands = {
@@ -1831,6 +1831,21 @@ def main_with_args(args=None):
         "Global Options (can be specified anywhere in command line)"
     )
     global_group.add_argument("--progress", action="store_true", help="Show progress bar")
+    global_group.add_argument(
+        "--parallel-kdf",
+        action="store_true",
+        help="Use parallel processing for key derivation (v9 only, requires --independent-xor). "
+             "Speeds up encryption by running hash algorithms and KDFs concurrently. "
+             "Requires multiprocessing support."
+    )
+    global_group.add_argument(
+        "--kdf-workers",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Number of parallel workers for KDF (default: auto-detect, max: CPU count). "
+             "Only used with --parallel-kdf."
+    )
     global_group.add_argument("--verbose", action="store_true", help="Show hash/kdf details")
     global_group.add_argument(
         "--debug",
@@ -2153,6 +2168,31 @@ def main_with_args(args=None):
         type=int,
         default=0,
         help="Number of Whirlpool iterations (default: 0, not used)",
+    )
+
+    # XOR composition key derivation
+    hash_group.add_argument(
+        "--use-xor-composition",
+        action="store_true",
+        default=False,
+        help="Enable XOR composition key derivation (format v8). "
+        "When enabled, intermediate KDF outputs are XOR'd together for enhanced security. "
+        "Provides 'strongest component' security guarantee: if any hash algorithm is secure, "
+        "the derived key is secure. Compatible with 1.3 branch v8 format. "
+        "Files encrypted with this flag require openssl_encrypt 1.3.5+ to decrypt.",
+    )
+
+    # Independent XOR key derivation (Massey composition)
+    hash_group.add_argument(
+        "--independent-xor",
+        action="store_true",
+        default=False,
+        help="Enable Independent XOR key derivation (format v9, Massey composition). "
+        "Each hash/KDF algorithm processes the same original input independently, "
+        "and outputs are XOR'd together. Provides 'strongest component' security guarantee "
+        "even if all algorithms except the strongest are compromised. "
+        "Enables parallel execution with --parallel-kdf for ~2.7x performance improvement. "
+        "Files encrypted with this flag require openssl_encrypt 1.3.6+ to decrypt.",
     )
 
     # PBKDF2 option - renamed for consistency
@@ -2566,7 +2606,8 @@ def main_with_args(args=None):
     # Don't parse args again if they're already provided from subparser
     # This avoids the "unrecognized arguments" error for steganography options
     if args is None:
-        args = parser.parse_args()
+        # Use parse_intermixed_args to allow global flags anywhere in command line
+        args = parser.parse_intermixed_args()
 
         # Process CLI aliases and apply overrides
         args, alias_errors = process_cli_aliases(args, alias_processor)
@@ -4041,6 +4082,33 @@ def main_with_args(args=None):
                 "pbkdf2_iterations": getattr(args, "pbkdf2_iterations", 0),
             }
 
+    # Validate XOR composition flags (v8 and v9 are mutually exclusive)
+    use_xor_v8 = hasattr(args, "use_xor_composition") and args.use_xor_composition
+    use_independent_xor_v9 = hasattr(args, "independent_xor") and args.independent_xor
+
+    if use_xor_v8 and use_independent_xor_v9:
+        print("Error: --use-xor-composition and --independent-xor are mutually exclusive", file=sys.stderr)
+        print("  --use-xor-composition enables format v8 (sequential XOR)", file=sys.stderr)
+        print("  --independent-xor enables format v9 (independent XOR)", file=sys.stderr)
+        return 1
+
+    # Validate --parallel-kdf requires --independent-xor
+    if hasattr(args, "parallel_kdf") and args.parallel_kdf and not use_independent_xor_v9:
+        print("Error: --parallel-kdf requires --independent-xor", file=sys.stderr)
+        print("  Parallel KDF processing is only supported with Independent XOR (format v9)", file=sys.stderr)
+        return 1
+
+    # Set format_version based on XOR composition flags
+    # Default is v7 (secure chained salt derivation)
+    # With --use-xor-composition: use v8 (sequential XOR composition)
+    # With --independent-xor: use v9 (independent XOR composition, Massey)
+    if use_independent_xor_v9:
+        hash_config["format_version"] = 9
+    elif use_xor_v8:
+        hash_config["format_version"] = 8
+    else:
+        hash_config["format_version"] = 7
+
     # Debug the hash configuration if debug mode is enabled
     if args.debug:
         debug_hash_config(args, hash_config, "Hash configuration after setup")
@@ -4629,6 +4697,8 @@ def main_with_args(args=None):
                             enable_plugins=enable_plugins,
                             plugin_manager=plugin_manager,
                             hsm_plugin=hsm_plugin_instance,
+                            parallel_kdf=getattr(args, "parallel_kdf", False),
+                            kdf_workers=getattr(args, "kdf_workers", None),
                         )
 
                     if success:
@@ -4726,6 +4796,8 @@ def main_with_args(args=None):
                     enable_plugins=enable_plugins,
                     plugin_manager=plugin_manager,
                     hsm_plugin=hsm_plugin_instance,
+                    parallel_kdf=getattr(args, "parallel_kdf", False),
+                    kdf_workers=getattr(args, "kdf_workers", None),
                 )
 
                 if success:
@@ -5199,6 +5271,8 @@ def main_with_args(args=None):
                         enable_plugins=enable_plugins,
                         plugin_manager=plugin_manager,
                         hsm_plugin=hsm_plugin_instance,
+                        parallel_kdf=getattr(args, "parallel_kdf", False),
+                        kdf_workers=getattr(args, "kdf_workers", None),
                     )
 
                 # Handle steganography if requested

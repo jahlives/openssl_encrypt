@@ -43,20 +43,20 @@ For deep-dives into the cryptographic design and security policies of this proje
 * **Metadata Integrity**: Cryptographic binding of headers to prevent tampering (on AEAD-supported ciphers).
 * **Hardware-Resistant KDF**: Sequential Argon2id and RandomX hashing to neutralize ASIC/GPU brute-force clusters.
 ---
-## Current Release: v1.3.5 - BLAKE3 Integration & Compatibility
+## Current Release: v1.3.6 - Independent XOR & Parallel Processing
 
-**Version 1.3.5** is the latest stable release in the v1.3.x series, delivering critical bugfixes and forward compatibility:
+**Version 1.3.6** is the latest stable release in the v1.3.x series, delivering advanced cryptographic features and performance optimizations:
 
 **What's New:**
-- **BLAKE3 Hash Support**: Fixed BLAKE3 keyed hashing integration with proper 32-byte key support
-- **Enhanced Buffer Management**: BLAKE3-aware buffer sizing (64-byte minimum) for deterministic key derivation
-- **Format Version 7**: Secure chained salt derivation with cross-version compatibility
-- **Future-Proof**: Files encrypted with v1.3.5 are fully compatible with upcoming v1.4.x releases
-- **Build Tools**: Included liboqs dependency build scripts and Flatpak CI/CD integration
+- **Format Version 9: Independent XOR Key Derivation (Massey)**: New `--independent-xor` flag enables Massey's Independent XOR composition providing "strongest component" security guarantee - key remains secure even if all algorithms except the strongest are broken
+- **Parallel KDF Processing**: Optional `--parallel-kdf` flag for ~2.7x performance improvement (8.5s → 3.1s with 8 algorithms on 8-core CPU) using multiprocessing for true CPU parallelism
+- **Worker Control**: `--kdf-workers N` flag to specify parallel worker count (default: auto-detect based on CPU cores)
+- **Enhanced Security Guarantee**: Independent XOR provides maximum cryptographic assurance against future algorithm breaks, distinct from v8 sequential XOR's anti-parallelization approach
+- **Cross-Branch Compatibility**: v9 format compatible with v11 format in the 1.4.x branch for seamless migration
 
-**Backward Compatibility:** Fully maintained - v1.3.5 can encrypt/decrypt files from all previous versions (v1.3.0-v1.3.4). No regression with existing encrypted files as BLAKE3 was not used in encryption before this bugfix.
+**Backward Compatibility:** Fully maintained - v1.3.6 can encrypt/decrypt files from all previous versions (v1.3.0-v1.3.5). Files encrypted with v9 Independent XOR format require v1.3.6+ to decrypt.
 
-**Security Note:** v1.3.4 (included in v1.3.5) resolved a critical CVSSv3 8.1 HIGH vulnerability (CWE-330) in multi-round KDF salt derivation. Users on v1.3.3 or earlier should upgrade to v1.3.5 for both security and compatibility improvements.
+**Security Note:** v1.3.4 (included in v1.3.6) resolved a critical CVSSv3 8.1 HIGH vulnerability (CWE-330) in multi-round KDF salt derivation. Users on v1.3.3 or earlier should upgrade to v1.3.6 for security, performance, and advanced cryptographic features.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

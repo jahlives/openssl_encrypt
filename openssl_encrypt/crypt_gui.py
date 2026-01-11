@@ -1123,6 +1123,10 @@ class CryptGUI:
                 memory_processing_regex = re.compile(r"([\w\-]+) processing")
                 # Match Balloon specific messages
                 balloon_regex = re.compile(r"Balloon hashing.*")
+                # Match parallel KDF progress: "Parallel KDF: [████████        ] 53.2% (4/8 complete) Active: SHA-512, Argon2"
+                parallel_kdf_regex = re.compile(
+                    r"Parallel KDF: \[(.*?)\] (\d+\.\d+)% \((\d+)/(\d+) complete\)"
+                )
                 # Match integrity check results
                 integrity_regex = re.compile(r"(✓|⚠️).*integrity.*")
 
@@ -1147,6 +1151,7 @@ class CryptGUI:
                     param_match = param_processing_regex.search(line)
                     memory_match = memory_processing_regex.search(line)
                     balloon_match = balloon_regex.search(line)
+                    parallel_kdf_match = parallel_kdf_regex.search(line)
 
                     if hash_match:
                         # Standard hashing progress
@@ -1192,6 +1197,21 @@ class CryptGUI:
                             # Use indeterminate progress for balloon
                             self.progress_bar.configure(mode="indeterminate")
                             self.progress_bar.start()
+
+                    elif parallel_kdf_match:
+                        # Parallel KDF progress
+                        bar, percent, completed, total = parallel_kdf_match.groups()
+                        percent_float = float(percent)
+
+                        # Update progress bar
+                        self.progress_var.set(percent_float)
+
+                        # Update status text
+                        self.current_algorithm = "Parallel KDF"
+                        progress_text = f"Parallel KDF: {percent}% ({completed}/{total} complete)"
+                        if progress_text != self.last_progress_text:
+                            self.status_var.set(progress_text)
+                            self.last_progress_text = progress_text
 
                     elif processing_match:
                         # Starting a new hashing process

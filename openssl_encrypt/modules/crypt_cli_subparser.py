@@ -270,6 +270,18 @@ def setup_encrypt_parser(subparser):
         help="Number of SHAKE-128 iterations (default: 1,000,000 if flag provided without value)",
     )
 
+    # XOR composition key derivation
+    hash_group.add_argument(
+        "--use-xor-composition",
+        action="store_true",
+        default=False,
+        help="Enable XOR composition key derivation (format v8). "
+        "When enabled, intermediate KDF outputs are XOR'd together for enhanced security. "
+        "Provides 'strongest component' security guarantee: if any hash algorithm is secure, "
+        "the derived key is secure. Compatible with 1.3 branch v8 format. "
+        "Files encrypted with this flag require openssl_encrypt 1.3.5+ to decrypt.",
+    )
+
     # Scrypt options for encryption
     scrypt_group = subparser.add_argument_group("Scrypt options")
     scrypt_group.add_argument(
@@ -1145,24 +1157,27 @@ def create_subparser_main():
     This is a replacement for the main() function in crypt_cli.py for 1.0.0 compatibility.
     """
     # Set up main argument parser with subcommands
-    parser = argparse.ArgumentParser(
-        description="Encrypt or decrypt files with password protection\n\nEnvironment Variables:\n  CRYPT_PASSWORD    Password for encryption/decryption (alternative to -p)",
-        formatter_class=argparse.RawTextHelpFormatter,
-    )
-
-    # Global options
-    parser.add_argument("--progress", action="store_true", help="Show progress bar")
-    parser.add_argument("--verbose", action="store_true", help="Show hash/kdf details")
-    parser.add_argument(
+    # Create parent parser with global options that will be shared by all subcommands
+    parent_parser = argparse.ArgumentParser(add_help=False)
+    parent_parser.add_argument("--progress", action="store_true", help="Show progress bar")
+    parent_parser.add_argument("--verbose", action="store_true", help="Show hash/kdf details")
+    parent_parser.add_argument(
         "--debug",
         action="store_true",
         help="Show detailed debug information (WARNING: logs passwords and sensitive data - test files only!)",
     )
-    parser.add_argument(
+    parent_parser.add_argument(
         "--quiet",
         "-q",
         action="store_true",
         help="Suppress all output except decrypted content and exit code",
+    )
+
+    # Main parser
+    parser = argparse.ArgumentParser(
+        description="Encrypt or decrypt files with password protection\n\nEnvironment Variables:\n  CRYPT_PASSWORD    Password for encryption/decryption (alternative to -p)",
+        formatter_class=argparse.RawTextHelpFormatter,
+        parents=[parent_parser],
     )
 
     # Create subparsers for each command
@@ -1172,11 +1187,12 @@ def create_subparser_main():
         metavar="command",
     )
 
-    # Set up subparsers for each command
+    # Set up subparsers for each command (all inherit global options from parent_parser)
     encrypt_parser = subparsers.add_parser(
         "encrypt",
         help="Encrypt files with password protection",
         formatter_class=argparse.RawTextHelpFormatter,
+        parents=[parent_parser],
     )
     setup_encrypt_parser(encrypt_parser)
 
@@ -1184,6 +1200,7 @@ def create_subparser_main():
         "decrypt",
         help="Decrypt previously encrypted files",
         formatter_class=argparse.RawTextHelpFormatter,
+        parents=[parent_parser],
     )
     setup_decrypt_parser(decrypt_parser)
 
@@ -1191,6 +1208,7 @@ def create_subparser_main():
         "shred",
         help="Securely delete files",
         formatter_class=argparse.RawTextHelpFormatter,
+        parents=[parent_parser],
     )
     setup_shred_parser(shred_parser)
 
@@ -1198,6 +1216,7 @@ def create_subparser_main():
         "generate-password",
         help="Generate cryptographically secure passwords",
         formatter_class=argparse.RawTextHelpFormatter,
+        parents=[parent_parser],
     )
     setup_generate_password_parser(generate_password_parser)
 
@@ -1205,6 +1224,7 @@ def create_subparser_main():
         "security-info",
         help="Display security information and algorithms",
         formatter_class=argparse.RawTextHelpFormatter,
+        parents=[parent_parser],
     )
     setup_simple_parser(security_info_parser)
 
@@ -1212,6 +1232,7 @@ def create_subparser_main():
         "analyze-security",
         help="Analyze current security configuration and display security score",
         formatter_class=argparse.RawTextHelpFormatter,
+        parents=[parent_parser],
     )
     setup_analyze_security_parser(analyze_security_parser)
 
@@ -1219,6 +1240,7 @@ def create_subparser_main():
         "config-wizard",
         help="Interactive configuration wizard for security settings",
         formatter_class=argparse.RawTextHelpFormatter,
+        parents=[parent_parser],
     )
     setup_simple_parser(config_wizard_parser)
 
@@ -1226,6 +1248,7 @@ def create_subparser_main():
         "analyze-config",
         help="Analyze configuration for security, performance, and compatibility",
         formatter_class=argparse.RawTextHelpFormatter,
+        parents=[parent_parser],
     )
     setup_analyze_config_parser(analyze_config_parser)
 
@@ -1233,6 +1256,7 @@ def create_subparser_main():
         "template",
         help="Template management operations",
         formatter_class=argparse.RawTextHelpFormatter,
+        parents=[parent_parser],
     )
     setup_template_parser(template_parser)
 
@@ -1240,6 +1264,7 @@ def create_subparser_main():
         "smart-recommendations",
         help="AI-powered security recommendations",
         formatter_class=argparse.RawTextHelpFormatter,
+        parents=[parent_parser],
     )
     setup_smart_recommendations_parser(smart_recommendations_parser)
 
@@ -1254,6 +1279,7 @@ def create_subparser_main():
         "check-argon2",
         help="Verify Argon2 implementation",
         formatter_class=argparse.RawTextHelpFormatter,
+        parents=[parent_parser],
     )
     setup_simple_parser(check_argon2_parser)
 
@@ -1261,6 +1287,7 @@ def create_subparser_main():
         "check-pqc",
         help="Check post-quantum cryptography support",
         formatter_class=argparse.RawTextHelpFormatter,
+        parents=[parent_parser],
     )
     setup_simple_parser(check_pqc_parser)
 
@@ -1268,6 +1295,7 @@ def create_subparser_main():
         "version",
         help="Show version information",
         formatter_class=argparse.RawTextHelpFormatter,
+        parents=[parent_parser],
     )
     setup_simple_parser(version_parser)
 
@@ -1275,6 +1303,7 @@ def create_subparser_main():
         "show-version-file",
         help="Show detailed version file information",
         formatter_class=argparse.RawTextHelpFormatter,
+        parents=[parent_parser],
     )
     setup_simple_parser(show_version_file_parser)
 
