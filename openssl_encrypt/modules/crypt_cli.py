@@ -6695,8 +6695,25 @@ def main_with_args(args=None):
                                 cascade_hash_func = args.cascade_hash
 
                         # Use standard encryption
-                        # Determine format version based on --use-xor-composition flag
-                        format_version = 10 if getattr(args, "use_xor_composition", False) else 9
+                        # Determine format version based on XOR composition flags
+                        use_xor = getattr(args, "use_xor_composition", False)
+                        use_independent_xor = getattr(args, "independent_xor", False)
+
+                        # Check mutual exclusivity
+                        if use_xor and use_independent_xor:
+                            print(
+                                "Error: Cannot use both --use-xor-composition and --independent-xor. "
+                                "Choose one XOR mode.",
+                                file=sys.stderr,
+                            )
+                            sys.exit(1)
+
+                        if use_independent_xor:
+                            format_version = 11  # Independent XOR (Massey)
+                        elif use_xor:
+                            format_version = 10  # Sequential XOR
+                        else:
+                            format_version = 9   # Default (secure chained salt)
 
                         success = encrypt_file(
                             args.input,
@@ -6950,8 +6967,25 @@ def main_with_args(args=None):
                         cascade_hash_func = args.cascade_hash
 
                 # Use standard encryption to temporary file
-                # Determine format version based on --use-xor-composition flag
-                format_version = 10 if getattr(args, "use_xor_composition", False) else 9
+                # Determine format version based on XOR composition flags
+                use_xor = getattr(args, "use_xor_composition", False)
+                use_independent_xor = getattr(args, "independent_xor", False)
+
+                # Check mutual exclusivity
+                if use_xor and use_independent_xor:
+                    print(
+                        "Error: Cannot use both --use-xor-composition and --independent-xor. "
+                        "Choose one XOR mode.",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+
+                if use_independent_xor:
+                    format_version = 11  # Independent XOR (Massey)
+                elif use_xor:
+                    format_version = 10  # Sequential XOR
+                else:
+                    format_version = 9   # Default (secure chained salt)
 
                 success = encrypt_file(
                     args.input,
@@ -7575,8 +7609,25 @@ def main_with_args(args=None):
                             cascade_hash_func = args.cascade_hash
 
                     # Use standard encryption
-                    # Determine format version based on --use-xor-composition flag
-                    format_version = 10 if getattr(args, "use_xor_composition", False) else 9
+                    # Determine format version based on XOR composition flags
+                    use_xor = getattr(args, "use_xor_composition", False)
+                    use_independent_xor = getattr(args, "independent_xor", False)
+
+                    # Check mutual exclusivity
+                    if use_xor and use_independent_xor:
+                        print(
+                            "Error: Cannot use both --use-xor-composition and --independent-xor. "
+                            "Choose one XOR mode.",
+                            file=sys.stderr,
+                        )
+                        sys.exit(1)
+
+                    if use_independent_xor:
+                        format_version = 11  # Independent XOR (Massey)
+                    elif use_xor:
+                        format_version = 10  # Sequential XOR
+                    else:
+                        format_version = 9   # Default (secure chained salt)
 
                     success = encrypt_file(
                         args.input,

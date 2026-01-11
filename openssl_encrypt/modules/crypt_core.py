@@ -5833,19 +5833,39 @@ def encrypt_file(
         combined_pepper = remote_pepper
 
     # Generate key (now with combined pepper)
-    key, salt, hash_config = generate_key(
-        password,
-        salt,
-        hash_config,
-        pbkdf2_iterations,
-        quiet,
-        algorithm_value,
-        progress=progress,
-        debug=debug,
-        pqc_keypair=pqc_keypair,
-        hsm_pepper=combined_pepper,
-        format_version=format_version,  # v9 (default): Legacy derivation, v10: XOR composition (compatible with 1.3 v8)
-    )
+    # v11: Independent XOR (Massey), v10: Sequential XOR, v9: Secure chained salt
+    if format_version == 11:
+        # Independent XOR mode - each algorithm processes original input
+        key, salt, iv = generate_key_independent_xor(
+            password,
+            salt,
+            hash_config,
+            pbkdf2_iterations=pbkdf2_iterations,
+            quiet=quiet,
+            algorithm=algorithm_value,
+            progress=progress,
+            debug=debug,
+            pqc_keypair=pqc_keypair,
+            hsm_pepper=combined_pepper,
+            format_version=format_version,
+        )
+        # Note: Independent XOR returns (key, salt, iv) but we don't use iv here
+        # as it's generated later. We'll discard it.
+    else:
+        # Sequential mode (v1-v10)
+        key, salt, hash_config = generate_key(
+            password,
+            salt,
+            hash_config,
+            pbkdf2_iterations,
+            quiet,
+            algorithm_value,
+            progress=progress,
+            debug=debug,
+            pqc_keypair=pqc_keypair,
+            hsm_pepper=combined_pepper,
+            format_version=format_version,  # v10: Sequential XOR, v9: Secure chained salt
+        )
     # Read the input file
     if not quiet:
         print(f"Reading file: {input_file}")
