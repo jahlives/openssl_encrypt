@@ -2111,17 +2111,18 @@ def compute_hash_independent(
     debug: bool = False,
 ) -> "SecureBytes":
     """
-    Compute a single hash algorithm on password+salt independently.
+    Compute a single hash algorithm independently for v11 Independent XOR.
 
-    For Independent XOR mode (v11/v9): each algorithm gets the SAME original input,
-    providing "strongest component" security guarantee (Massey).
+    For Independent XOR mode (v11/v9): each algorithm gets the SAME input
+    (initial SHA-256 hash of password+salt), providing "strongest component"
+    security guarantee (Massey).
 
     This is different from sequential XOR (v8/v10) where each algorithm
     processes the output of the previous algorithm.
 
     Args:
-        password: Original password bytes
-        salt: Original salt bytes
+        password: Initial hash (SHA-256 of password+salt), not raw password
+        salt: Original salt bytes (used for iteration context)
         algorithm: Hash algorithm name (sha256, sha512, sha3_256, sha3_512,
                    blake2b, blake3, shake256, whirlpool)
         rounds: Number of iterations to apply
@@ -2209,12 +2210,13 @@ def compute_kdf_independent(
     debug: bool = False,
 ) -> "SecureBytes":
     """
-    Compute a single KDF on password+salt independently.
+    Compute a single KDF independently for v11 Independent XOR.
 
-    For Independent XOR mode (v11/v9): each KDF gets the SAME original input.
+    For Independent XOR mode (v11/v9): each KDF gets the SAME input
+    (initial SHA-256 hash of password+salt).
 
     Args:
-        password: Original password bytes
+        password: Initial hash (SHA-256 of password+salt), not raw password
         salt: Original salt bytes
         kdf_type: KDF type (argon2, scrypt, balloon, hkdf, pbkdf2)
         kdf_config: KDF-specific configuration dict
@@ -2233,8 +2235,11 @@ def compute_kdf_independent(
 
     if debug:
         logger.debug(
-            f"INDEPENDENT-XOR: Computing {kdf_type} KDF on original input (target length: {key_length})"
+            f"INDEPENDENT-XOR: Computing {kdf_type} KDF on initial hash (target length: {key_length})"
         )
+
+    # Convert password to bytes if it's SecureBytes (from initial hash)
+    password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
 
     if kdf_type == "argon2":
         import argon2.low_level
@@ -2258,9 +2263,9 @@ def compute_kdf_independent(
                 f"INDEPENDENT-XOR: Argon2 params - time={time_cost}, memory={memory_cost}, parallelism={parallelism}, type={argon2_type_str}"
             )
 
-        # Run Argon2 on original password+salt
+        # Run Argon2 on initial hash
         result = argon2.low_level.hash_secret_raw(
-            secret=password,
+            secret=password_bytes,
             salt=salt,
             time_cost=time_cost,
             memory_cost=memory_cost,
@@ -2284,9 +2289,9 @@ def compute_kdf_independent(
                 f"INDEPENDENT-XOR: Scrypt params - n={n}, r={r}, p={p}"
             )
 
-        # Run Scrypt on original password+salt
+        # Run Scrypt on initial hash
         result = hashlib.scrypt(
-            password=password,
+            password=password_bytes,
             salt=salt,
             n=n,
             r=r,
@@ -2314,9 +2319,9 @@ def compute_kdf_independent(
                 f"INDEPENDENT-XOR: Balloon params - space={space_cost}, time={time_cost}, delta={delta}"
             )
 
-        # Run Balloon on original password+salt
+        # Run Balloon on initial hash
         result = balloon_hash(
-            password=password,
+            password=password_bytes,
             salt=salt,
             space_cost=space_cost,
             time_cost=time_cost,
@@ -2337,7 +2342,7 @@ def compute_kdf_independent(
         if debug:
             logger.debug(f"INDEPENDENT-XOR: HKDF with info={info}")
 
-        # Run HKDF on original password+salt
+        # Run HKDF on initial hash
         hkdf = HKDF(
             algorithm=hashes.SHA256(),
             length=key_length,
@@ -2346,7 +2351,7 @@ def compute_kdf_independent(
             backend=default_backend(),
         )
 
-        result = hkdf.derive(password)
+        result = hkdf.derive(password_bytes)
         return SecureBytes(result)
 
     elif kdf_type == "pbkdf2":
@@ -2361,10 +2366,10 @@ def compute_kdf_independent(
                 f"INDEPENDENT-XOR: PBKDF2 params - iterations={iterations}, hash={hash_name}"
             )
 
-        # Run PBKDF2 on original password+salt
+        # Run PBKDF2 on initial hash (note: PBKDF2 deprecated for v11, decryption-only)
         result = hashlib.pbkdf2_hmac(
             hash_name=hash_name,
-            password=password,
+            password=password_bytes,
             salt=salt,
             iterations=iterations,
             dklen=key_length,
@@ -2468,6 +2473,19 @@ def generate_key_independent_xor(
     xor_components = []  # List[SecureBytes]
 
     try:
+        # 0. Add initial hash of password+salt to XOR (defense-in-depth, like v10)
+        # This provides input normalization and additional key stretching
+        initial_hash = hashlib.sha256(bytes(password) + salt).digest()
+        initial_normalized = normalize_to_key_length_secure(initial_hash, key_length)
+        xor_components.append(initial_normalized)  # SecureBytes object
+
+        if debug:
+            logger.debug(f"INDEPENDENT-XOR: Added initial password+salt hash to XOR")
+
+        # Each algorithm will process this initial hash instead of raw password+salt
+        # This ensures all algorithms work with normalized 256-bit input
+        algorithm_input = SecureBytes(initial_hash)
+
         # 1. Process each enabled hash algorithm
         hash_algorithms = [
             "sha256", "sha512", "sha3_256", "sha3_512",
@@ -2481,7 +2499,7 @@ def generate_key_independent_xor(
                     print(f"Computing {algo.upper()} hash ({rounds} rounds)...", end=" ")
 
                 result = compute_hash_independent(
-                    password=password,
+                    password=algorithm_input,  # Use initial hash instead of raw password
                     salt=salt,
                     algorithm=algo,
                     rounds=rounds,
@@ -2514,7 +2532,7 @@ def generate_key_independent_xor(
 
             argon2_config = kdf_config_section["argon2"]
             result = compute_kdf_independent(
-                password=password,
+                password=algorithm_input,  # Use initial hash instead of raw password
                 salt=salt,
                 kdf_type="argon2",
                 kdf_config=argon2_config,
@@ -2538,7 +2556,7 @@ def generate_key_independent_xor(
 
             scrypt_config = kdf_config_section["scrypt"]
             result = compute_kdf_independent(
-                password=password,
+                password=algorithm_input,  # Use initial hash instead of raw password
                 salt=salt,
                 kdf_type="scrypt",
                 kdf_config=scrypt_config,
@@ -2562,7 +2580,7 @@ def generate_key_independent_xor(
 
             balloon_config = kdf_config_section["balloon"]
             result = compute_kdf_independent(
-                password=password,
+                password=algorithm_input,  # Use initial hash instead of raw password
                 salt=salt,
                 kdf_type="balloon",
                 kdf_config=balloon_config,
@@ -2586,7 +2604,7 @@ def generate_key_independent_xor(
 
             hkdf_config = kdf_config_section["hkdf"]
             result = compute_kdf_independent(
-                password=password,
+                password=algorithm_input,  # Use initial hash instead of raw password
                 salt=salt,
                 kdf_type="hkdf",
                 kdf_config=hkdf_config,
@@ -2713,6 +2731,16 @@ def generate_key_independent_xor(
         if "final_key" in locals():
             try:
                 secure_memzero(final_key)
+            except Exception:
+                pass
+        if "initial_hash" in locals():
+            try:
+                secure_memzero(bytearray(initial_hash))
+            except Exception:
+                pass
+        if "algorithm_input" in locals():
+            try:
+                secure_memzero(algorithm_input)
             except Exception:
                 pass
 
