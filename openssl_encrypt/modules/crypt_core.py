@@ -2305,7 +2305,7 @@ def compute_kdf_independent(
     elif kdf_type == "balloon":
         # Import balloon hash if available
         try:
-            from .balloon_hash import balloon_hash
+            from .balloon import _balloon
         except ImportError:
             raise ValueError("Balloon hash not available")
 
@@ -2320,14 +2320,40 @@ def compute_kdf_independent(
             )
 
         # Run Balloon on initial hash
-        result = balloon_hash(
-            password=password_bytes,
+        # Note: _balloon expects password as string and salt as bytes
+        # Convert password_bytes to hex string for compatibility
+        password_str = password_bytes.hex()
+        balloon_result = _balloon(
+            password=password_str,
             salt=salt,
             space_cost=space_cost,
             time_cost=time_cost,
             delta=delta,
-            hash_len=key_length,
         )
+
+        # Balloon hash always returns 32 bytes (SHA256 output)
+        # If we need a different length, use HKDF to derive the correct length
+        if len(balloon_result) != key_length:
+            from cryptography.hazmat.primitives import hashes
+            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+            from cryptography.hazmat.backends import default_backend
+
+            if debug:
+                logger.debug(
+                    f"INDEPENDENT-XOR: Balloon returned {len(balloon_result)} bytes, "
+                    f"using HKDF to derive {key_length} bytes"
+                )
+
+            hkdf = HKDF(
+                algorithm=hashes.SHA256(),
+                length=key_length,
+                salt=salt,
+                info=b"balloon-hkdf-expand",
+                backend=default_backend(),
+            )
+            result = hkdf.derive(balloon_result)
+        else:
+            result = balloon_result
 
         return SecureBytes(result)
 
@@ -4403,6 +4429,7 @@ def create_metadata_v6(
     # Create basic metadata
     metadata = {
         "format_version": format_version,  # v9 (default): Legacy derivation, v10: XOR composition, v11: Independent XOR
+        "mode": "symmetric",  # Required by v10/v11 schema
         "derivation_config": {"salt": salt_b64, "hash_config": {}, "kdf_config": {}},
         "hashes": hashes_dict,
         "encryption": {"algorithm": algorithm, "encryption_data": encryption_data},
