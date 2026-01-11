@@ -2685,29 +2685,8 @@ def generate_key(
 
     # Determine if we're using v8 XOR composition approach
     # v8: 1.3 branch XOR implementation (compatible with 1.4 v10)
+    # Note: v9 Independent XOR is handled directly in encrypt_file/decrypt_file
     use_xor_composition = format_version == 8
-
-    # V9: Independent XOR composition (Massey) - each algorithm processes same input
-    if format_version == 9:
-        if debug:
-            logger.debug(
-                f"KEY-DEBUG: Using v9 Independent XOR composition (Massey) with key_length={key_length}"
-            )
-
-        # Call the independent XOR function and return early
-        return generate_key_independent_xor(
-            password=password,
-            salt=salt,
-            hash_config=hash_config,
-            pbkdf2_iterations=pbkdf2_iterations,
-            quiet=quiet,
-            algorithm=algorithm,
-            progress=progress,
-            debug=debug,
-            pqc_keypair=pqc_keypair,
-            hsm_pepper=hsm_pepper,
-            format_version=format_version,
-        )
 
     # Initialize XOR accumulator for v8
     # CRITICAL: Will contain ONLY SecureBytes, all MUST be zeroed after XOR
@@ -4520,6 +4499,8 @@ def encrypt_file(
     plugin_manager=None,
     secure_mode=False,
     hsm_plugin=None,
+    parallel_kdf=False,
+    kdf_workers=None,
 ):
     """
     Encrypt a file with a password using the specified algorithm.
@@ -4824,19 +4805,55 @@ def encrypt_file(
     use_format_version = requested_format_version if requested_format_version is not None else 7
 
     # Generate key (now with hsm_pepper and version-aware)
-    key, salt, hash_config = generate_key(
-        password,
-        salt,
-        hash_config,
-        pbkdf2_iterations,
-        quiet,
-        algorithm_value,
-        progress=progress,
-        debug=debug,
-        pqc_keypair=pqc_keypair,
-        hsm_pepper=hsm_pepper,
-        format_version=use_format_version,
-    )
+    # v9: Independent XOR (Massey), can use parallel or sequential
+    if use_format_version == 9:
+        if parallel_kdf:
+            # Parallel execution via multiprocessing
+            from .parallel_kdf import generate_key_independent_xor_parallel
+            key, salt, hash_config = generate_key_independent_xor_parallel(
+                password,
+                salt,
+                hash_config,
+                pbkdf2_iterations=pbkdf2_iterations,
+                quiet=quiet,
+                algorithm=algorithm_value,
+                progress=progress,
+                debug=debug,
+                pqc_keypair=pqc_keypair,
+                hsm_pepper=hsm_pepper,
+                format_version=use_format_version,
+                max_workers=kdf_workers,
+            )
+        else:
+            # Sequential execution
+            key, salt, hash_config = generate_key_independent_xor(
+                password,
+                salt,
+                hash_config,
+                pbkdf2_iterations=pbkdf2_iterations,
+                quiet=quiet,
+                algorithm=algorithm_value,
+                progress=progress,
+                debug=debug,
+                pqc_keypair=pqc_keypair,
+                hsm_pepper=hsm_pepper,
+                format_version=use_format_version,
+            )
+    else:
+        # v7, v8, and other versions use generate_key()
+        key, salt, hash_config = generate_key(
+            password,
+            salt,
+            hash_config,
+            pbkdf2_iterations,
+            quiet,
+            algorithm_value,
+            progress=progress,
+            debug=debug,
+            pqc_keypair=pqc_keypair,
+            hsm_pepper=hsm_pepper,
+            format_version=use_format_version,
+        )
 
     # For v9, if hash_config has nested structure, flatten it for metadata creation
     if use_format_version == 9 and hash_config and "derivation_config" in hash_config:
@@ -5847,6 +5864,8 @@ def decrypt_file(
     secure_mode=False,
     hsm_plugin=None,
     no_estimate=False,
+    parallel_kdf=False,
+    kdf_workers=None,
 ):
     """
     Decrypt a file with a password.
@@ -6367,19 +6386,55 @@ def decrypt_file(
     if not quiet:
         print("Generating decryption key ✅")  # Green check symbol)
 
-    key, _, _ = generate_key(
-        password,
-        salt,
-        hash_config,
-        pbkdf2_iterations,
-        quiet,
-        algorithm,
-        progress=progress,
-        debug=debug,
-        pqc_keypair=pqc_info,
-        hsm_pepper=hsm_pepper,
-        format_version=format_version,
-    )
+    # v9: Independent XOR (Massey), can use parallel or sequential
+    if format_version == 9:
+        if parallel_kdf:
+            # Parallel execution via multiprocessing
+            from .parallel_kdf import generate_key_independent_xor_parallel
+            key, _, _ = generate_key_independent_xor_parallel(
+                password,
+                salt,
+                hash_config,
+                pbkdf2_iterations=pbkdf2_iterations,
+                quiet=quiet,
+                algorithm=algorithm,
+                progress=progress,
+                debug=debug,
+                pqc_keypair=pqc_info,
+                hsm_pepper=hsm_pepper,
+                format_version=format_version,
+                max_workers=kdf_workers,
+            )
+        else:
+            # Sequential execution
+            key, _, _ = generate_key_independent_xor(
+                password,
+                salt,
+                hash_config,
+                pbkdf2_iterations=pbkdf2_iterations,
+                quiet=quiet,
+                algorithm=algorithm,
+                progress=progress,
+                debug=debug,
+                pqc_keypair=pqc_info,
+                hsm_pepper=hsm_pepper,
+                format_version=format_version,
+            )
+    else:
+        # v7, v8, and other versions use generate_key()
+        key, _, _ = generate_key(
+            password,
+            salt,
+            hash_config,
+            pbkdf2_iterations,
+            quiet,
+            algorithm,
+            progress=progress,
+            debug=debug,
+            pqc_keypair=pqc_info,
+            hsm_pepper=hsm_pepper,
+            format_version=format_version,
+        )
 
     # Helper function to get expected nonce size for each algorithm
     def get_nonce_size(alg, include_legacy=True):

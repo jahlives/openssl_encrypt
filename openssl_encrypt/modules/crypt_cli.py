@@ -589,7 +589,7 @@ def preprocess_global_args(argv):
     anywhere in the command line, maintaining backward compatibility with v1.2.1 behavior.
     """
     # Flags that are truly global and can appear anywhere
-    TRULY_GLOBAL_FLAGS = {"--debug", "--verbose", "--quiet", "-q", "--progress"}
+    TRULY_GLOBAL_FLAGS = {"--debug", "--verbose", "--quiet", "-q", "--progress", "--parallel-kdf", "--kdf-workers"}
 
     # Find the command position
     commands = {
@@ -1831,6 +1831,21 @@ def main_with_args(args=None):
         "Global Options (can be specified anywhere in command line)"
     )
     global_group.add_argument("--progress", action="store_true", help="Show progress bar")
+    global_group.add_argument(
+        "--parallel-kdf",
+        action="store_true",
+        help="Use parallel processing for key derivation (v9 only, requires --independent-xor). "
+             "Speeds up encryption by running hash algorithms and KDFs concurrently. "
+             "Requires multiprocessing support."
+    )
+    global_group.add_argument(
+        "--kdf-workers",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Number of parallel workers for KDF (default: auto-detect, max: CPU count). "
+             "Only used with --parallel-kdf."
+    )
     global_group.add_argument("--verbose", action="store_true", help="Show hash/kdf details")
     global_group.add_argument(
         "--debug",
