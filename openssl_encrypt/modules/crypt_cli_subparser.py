@@ -739,6 +739,17 @@ def setup_encrypt_parser(subparser):
         "Compatible with 1.3 branch v8 format. "
         "Files encrypted with this flag require openssl_encrypt 1.3.5+ or 1.4+ to decrypt.",
     )
+    format_group.add_argument(
+        "--independent-xor",
+        action="store_true",
+        default=False,
+        help="Enable independent XOR key derivation (format v11). "
+        "Each algorithm processes the original password+salt independently (no chaining). "
+        "Provides strongest-component security guarantee (Massey). "
+        "Trade-off: Attackers can parallelize, but key is as strong as strongest algorithm. "
+        "Mutually exclusive with --use-xor-composition. "
+        "Files require openssl_encrypt 1.4.x+ to decrypt.",
+    )
 
     # Integrity verification options
     integrity_group = subparser.add_argument_group("Integrity verification options")
