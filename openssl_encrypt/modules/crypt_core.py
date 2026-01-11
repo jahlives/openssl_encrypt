@@ -2432,9 +2432,249 @@ def generate_key_independent_xor(
         )
         logger.debug(f"INDEPENDENT-XOR: Algorithm: {algorithm}")
 
-    # Implementation will be added in Step 5
-    # For now, placeholder
-    raise NotImplementedError("Independent XOR key generation not yet fully implemented")
+    # Determine required key length based on algorithm
+    if algorithm == "fernet":
+        key_length = 32  # Fernet requires 32 bytes
+    elif algorithm in ["aes-256-gcm", "chacha20-poly1305", "xchacha20-poly1305", "aes-gcm-siv", "aes-ocb3", "camellia", "cascade"]:
+        key_length = 32
+    elif algorithm == "aes-siv":
+        key_length = 64  # AES-SIV requires 64 bytes
+    elif algorithm == "threefish-512":
+        key_length = 64
+    elif algorithm == "threefish-1024":
+        key_length = 128
+    else:
+        # Default to 32 for PQC hybrid and other modes
+        key_length = 32
+
+    if debug:
+        logger.debug(f"INDEPENDENT-XOR: Target key_length = {key_length} bytes")
+
+    # Ensure password and salt are bytes
+    if isinstance(password, str):
+        password = password.encode("utf-8")
+    if isinstance(salt, str):
+        salt = salt.encode("utf-8")
+
+    # Apply HSM pepper if provided
+    if hsm_pepper:
+        if debug:
+            logger.debug("INDEPENDENT-XOR: Mixing HSM pepper into password")
+        password = SecureBytes(password + hsm_pepper)
+
+    # Collect all algorithm outputs independently
+    xor_components = []  # List[SecureBytes]
+
+    try:
+        # 1. Process each enabled hash algorithm
+        hash_algorithms = [
+            "sha256", "sha512", "sha3_256", "sha3_512",
+            "blake2b", "blake3", "shake256", "whirlpool"
+        ]
+
+        for algo in hash_algorithms:
+            rounds = get_hash_rounds(hash_config, algo)
+            if rounds > 0:
+                if not quiet and not progress:
+                    print(f"Computing {algo.upper()} hash ({rounds} rounds)...", end=" ")
+
+                result = compute_hash_independent(
+                    password=password,
+                    salt=salt,
+                    algorithm=algo,
+                    rounds=rounds,
+                    key_length=key_length,
+                    quiet=quiet,
+                    progress=progress,
+                    debug=debug,
+                )
+                xor_components.append(result)
+
+                if not quiet and not progress:
+                    print("✅")
+
+                if debug:
+                    logger.debug(
+                        f"INDEPENDENT-XOR: Added {algo} component #{len(xor_components)}"
+                    )
+
+        # 2. Process each enabled KDF
+        # Extract KDF config (handle both nested and flat formats)
+        if hash_config and "derivation_config" in hash_config:
+            kdf_config_section = hash_config["derivation_config"].get("kdf_config", {})
+        else:
+            kdf_config_section = hash_config if hash_config else {}
+
+        # Check and process Argon2
+        if kdf_config_section.get("argon2", {}).get("enabled", False):
+            if not quiet and not progress:
+                print("Computing Argon2 KDF...", end=" ")
+
+            argon2_config = kdf_config_section["argon2"]
+            result = compute_kdf_independent(
+                password=password,
+                salt=salt,
+                kdf_type="argon2",
+                kdf_config=argon2_config,
+                key_length=key_length,
+                quiet=quiet,
+                progress=progress,
+                debug=debug,
+            )
+            xor_components.append(result)
+
+            if not quiet and not progress:
+                print("✅")
+
+            if debug:
+                logger.debug(f"INDEPENDENT-XOR: Added Argon2 component #{len(xor_components)}")
+
+        # Check and process Scrypt
+        if kdf_config_section.get("scrypt", {}).get("enabled", False):
+            if not quiet and not progress:
+                print("Computing Scrypt KDF...", end=" ")
+
+            scrypt_config = kdf_config_section["scrypt"]
+            result = compute_kdf_independent(
+                password=password,
+                salt=salt,
+                kdf_type="scrypt",
+                kdf_config=scrypt_config,
+                key_length=key_length,
+                quiet=quiet,
+                progress=progress,
+                debug=debug,
+            )
+            xor_components.append(result)
+
+            if not quiet and not progress:
+                print("✅")
+
+            if debug:
+                logger.debug(f"INDEPENDENT-XOR: Added Scrypt component #{len(xor_components)}")
+
+        # Check and process Balloon
+        if kdf_config_section.get("balloon", {}).get("enabled", False):
+            if not quiet and not progress:
+                print("Computing Balloon KDF...", end=" ")
+
+            balloon_config = kdf_config_section["balloon"]
+            result = compute_kdf_independent(
+                password=password,
+                salt=salt,
+                kdf_type="balloon",
+                kdf_config=balloon_config,
+                key_length=key_length,
+                quiet=quiet,
+                progress=progress,
+                debug=debug,
+            )
+            xor_components.append(result)
+
+            if not quiet and not progress:
+                print("✅")
+
+            if debug:
+                logger.debug(f"INDEPENDENT-XOR: Added Balloon component #{len(xor_components)}")
+
+        # Check and process HKDF
+        if kdf_config_section.get("hkdf", {}).get("enabled", False):
+            if not quiet and not progress:
+                print("Computing HKDF...", end=" ")
+
+            hkdf_config = kdf_config_section["hkdf"]
+            result = compute_kdf_independent(
+                password=password,
+                salt=salt,
+                kdf_type="hkdf",
+                kdf_config=hkdf_config,
+                key_length=key_length,
+                quiet=quiet,
+                progress=progress,
+                debug=debug,
+            )
+            xor_components.append(result)
+
+            if not quiet and not progress:
+                print("✅")
+
+            if debug:
+                logger.debug(f"INDEPENDENT-XOR: Added HKDF component #{len(xor_components)}")
+
+        # Check and process PBKDF2
+        if pbkdf2_iterations > 0 and not any(
+            kdf_config_section.get(k, {}).get("enabled", False)
+            for k in ["argon2", "scrypt", "balloon", "hkdf"]
+        ):
+            if not quiet and not progress:
+                print(f"Computing PBKDF2 ({pbkdf2_iterations} iterations)...", end=" ")
+
+            pbkdf2_config = {
+                "iterations": pbkdf2_iterations,
+                "hash_name": "sha256",
+            }
+            result = compute_kdf_independent(
+                password=password,
+                salt=salt,
+                kdf_type="pbkdf2",
+                kdf_config=pbkdf2_config,
+                key_length=key_length,
+                quiet=quiet,
+                progress=progress,
+                debug=debug,
+            )
+            xor_components.append(result)
+
+            if not quiet and not progress:
+                print("✅")
+
+            if debug:
+                logger.debug(f"INDEPENDENT-XOR: Added PBKDF2 component #{len(xor_components)}")
+
+        # Verify we have at least one component
+        if len(xor_components) == 0:
+            raise ValueError(
+                "No algorithms enabled for key derivation. "
+                "Enable at least one hash algorithm or KDF."
+            )
+
+        if debug:
+            logger.debug(
+                f"INDEPENDENT-XOR: Collected {len(xor_components)} components, performing XOR"
+            )
+
+        # 3. XOR all components together
+        final_key = xor_bytes_secure(xor_components)
+
+        if not quiet:
+            print(
+                f"✅ Combined {len(xor_components)} independent components using XOR (Massey)"
+            )
+
+        # 4. Generate IV
+        iv = os.urandom(16)
+
+        if debug:
+            logger.debug(
+                f"INDEPENDENT-XOR: Final key length = {len(final_key)} bytes"
+            )
+            logger.debug(f"INDEPENDENT-XOR: IV length = {len(iv)} bytes")
+
+        # Return as tuple
+        return bytes(final_key), salt, iv
+
+    finally:
+        # CRITICAL: Zero all intermediate components
+        for component in xor_components:
+            try:
+                secure_memzero(component)
+            except Exception:
+                pass  # Best effort cleanup
+        if "final_key" in locals():
+            try:
+                secure_memzero(final_key)
+            except Exception:
+                pass
 
 
 @secure_key_derivation_error_handler
