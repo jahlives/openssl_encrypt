@@ -1897,6 +1897,657 @@ def normalize_to_key_length_secure(
             secure_memzero(bytearray(data_bytes))
 
 
+def compute_hash_independent(
+    password: bytes,
+    salt: bytes,
+    algorithm: str,
+    rounds: int,
+    key_length: int,
+    quiet: bool = False,
+    progress: bool = False,
+    debug: bool = False,
+) -> "SecureBytes":
+    """
+    Compute a single hash algorithm independently for v11 Independent XOR.
+
+    For Independent XOR mode (v11/v9): each algorithm gets the SAME input
+    (initial SHA-256 hash of password+salt), providing "strongest component"
+    security guarantee (Massey).
+
+    This is different from sequential XOR (v8/v10) where each algorithm
+    processes the output of the previous algorithm.
+
+    Args:
+        password: Initial hash (SHA-256 of password+salt), not raw password
+        salt: Original salt bytes (used for iteration context)
+        algorithm: Hash algorithm name (sha256, sha512, sha3_256, sha3_512,
+                   blake2b, blake3, shake256, whirlpool)
+        rounds: Number of iterations to apply
+        key_length: Target output length in bytes
+        quiet: Suppress output messages
+        progress: Show progress indicators
+        debug: Enable debug logging
+
+    Returns:
+        SecureBytes of normalized hash output (length = key_length)
+
+    Raises:
+        ValueError: If algorithm is not supported
+    """
+    from .secure_memory import SecureBytes
+    import hashlib
+
+    if debug:
+        logger.debug(
+            f"INDEPENDENT-XOR: Computing {algorithm} with {rounds} rounds on original input"
+        )
+
+    # Start with password+salt
+    current = SecureBytes(password + salt)
+
+    try:
+        # Apply hash iterations
+        for i in range(rounds):
+            if algorithm == "sha256":
+                h = hashlib.sha256(bytes(current)).digest()
+            elif algorithm == "sha512":
+                h = hashlib.sha512(bytes(current)).digest()
+            elif algorithm == "sha3_256":
+                h = hashlib.sha3_256(bytes(current)).digest()
+            elif algorithm == "sha3_512":
+                h = hashlib.sha3_512(bytes(current)).digest()
+            elif algorithm == "blake2b":
+                h = hashlib.blake2b(bytes(current)).digest()
+            elif algorithm == "blake3":
+                import blake3
+
+                h = blake3.blake3(bytes(current)).digest()
+            elif algorithm == "shake256":
+                h = hashlib.shake_256(bytes(current)).digest(64)
+            elif algorithm == "whirlpool":
+                import whirlpool
+
+                h = whirlpool.new(bytes(current)).digest()
+            else:
+                raise ValueError(f"Unsupported hash algorithm: {algorithm}")
+
+            # Secure cleanup of old current
+            if i < rounds - 1:  # Not last iteration
+                secure_memzero(current)
+                current = SecureBytes(h)
+            else:
+                # Last iteration - normalize to target length
+                secure_memzero(current)
+                result = normalize_to_key_length_secure(h, key_length)
+
+        if debug:
+            logger.debug(
+                f"INDEPENDENT-XOR: {algorithm} result (normalized): {result.hex()}"
+            )
+
+        return result
+
+    except Exception:
+        # Clean up on error
+        if "current" in locals():
+            secure_memzero(current)
+        if "result" in locals():
+            secure_memzero(result)
+        raise
+
+
+def compute_kdf_independent(
+    password: bytes,
+    salt: bytes,
+    kdf_type: str,
+    kdf_config: dict,
+    key_length: int,
+    quiet: bool = False,
+    progress: bool = False,
+    debug: bool = False,
+) -> "SecureBytes":
+    """
+    Compute a single KDF independently for v11 Independent XOR.
+
+    For Independent XOR mode (v11/v9): each KDF gets the SAME input
+    (initial SHA-256 hash of password+salt).
+
+    Args:
+        password: Initial hash (SHA-256 of password+salt), not raw password
+        salt: Original salt bytes
+        kdf_type: KDF type (argon2, scrypt, balloon, hkdf, pbkdf2)
+        kdf_config: KDF-specific configuration dict
+        key_length: Target output length in bytes
+        quiet: Suppress output messages
+        progress: Show progress indicators
+        debug: Enable debug logging
+
+    Returns:
+        SecureBytes of KDF output (length = key_length)
+
+    Raises:
+        ValueError: If kdf_type is not supported
+    """
+    from .secure_memory import SecureBytes, secure_memzero
+
+    if debug:
+        logger.debug(
+            f"INDEPENDENT-XOR: Computing {kdf_type} KDF on initial hash (target length: {key_length})"
+        )
+
+    # Convert password to bytes if it's SecureBytes (from initial hash)
+    password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
+
+    if kdf_type == "argon2":
+        import argon2.low_level
+
+        # Extract Argon2 parameters from config
+        time_cost = kdf_config.get("time_cost", 2)
+        memory_cost = kdf_config.get("memory_cost", 102400)
+        parallelism = kdf_config.get("parallelism", 8)
+        argon2_type_str = kdf_config.get("type", "id")
+
+        # Map type string to Argon2 Type enum
+        if argon2_type_str == "i":
+            argon2_type = argon2.low_level.Type.I
+        elif argon2_type_str == "d":
+            argon2_type = argon2.low_level.Type.D
+        else:  # "id" or default
+            argon2_type = argon2.low_level.Type.ID
+
+        if debug:
+            logger.debug(
+                f"INDEPENDENT-XOR: Argon2 params - time={time_cost}, memory={memory_cost}, parallelism={parallelism}, type={argon2_type_str}"
+            )
+
+        # Run Argon2 on initial hash
+        result = argon2.low_level.hash_secret_raw(
+            secret=password_bytes,
+            salt=salt,
+            time_cost=time_cost,
+            memory_cost=memory_cost,
+            parallelism=parallelism,
+            hash_len=key_length,
+            type=argon2_type,
+        )
+
+        return SecureBytes(result)
+
+    elif kdf_type == "scrypt":
+        import hashlib
+
+        # Extract Scrypt parameters
+        n = kdf_config.get("n", 32768)
+        r = kdf_config.get("r", 8)
+        p = kdf_config.get("p", 1)
+
+        if debug:
+            logger.debug(
+                f"INDEPENDENT-XOR: Scrypt params - n={n}, r={r}, p={p}"
+            )
+
+        # Run Scrypt on initial hash
+        result = hashlib.scrypt(
+            password=password_bytes,
+            salt=salt,
+            n=n,
+            r=r,
+            p=p,
+            maxmem=2 * (128 * n * r * p),
+            dklen=key_length,
+        )
+
+        return SecureBytes(result)
+
+    elif kdf_type == "balloon":
+        # Import balloon hash if available
+        try:
+            from .balloon_hash import balloon_hash
+        except ImportError:
+            raise ValueError("Balloon hash not available")
+
+        # Extract Balloon parameters
+        space_cost = kdf_config.get("space_cost", 16)
+        time_cost = kdf_config.get("time_cost", 20)
+        delta = kdf_config.get("delta", 4)
+
+        if debug:
+            logger.debug(
+                f"INDEPENDENT-XOR: Balloon params - space={space_cost}, time={time_cost}, delta={delta}"
+            )
+
+        # Run Balloon on initial hash
+        result = balloon_hash(
+            password=password_bytes,
+            salt=salt,
+            space_cost=space_cost,
+            time_cost=time_cost,
+            delta=delta,
+            hash_len=key_length,
+        )
+
+        return SecureBytes(result)
+
+    elif kdf_type == "hkdf":
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+        from cryptography.hazmat.backends import default_backend
+
+        # Extract HKDF parameters
+        info = kdf_config.get("info", b"independent-xor-hkdf")
+
+        if debug:
+            logger.debug(f"INDEPENDENT-XOR: HKDF with info={info}")
+
+        # Run HKDF on initial hash
+        hkdf = HKDF(
+            algorithm=hashes.SHA256(),
+            length=key_length,
+            salt=salt,
+            info=info if isinstance(info, bytes) else info.encode(),
+            backend=default_backend(),
+        )
+
+        result = hkdf.derive(password_bytes)
+        return SecureBytes(result)
+
+    elif kdf_type == "pbkdf2":
+        import hashlib
+
+        # Extract PBKDF2 parameters
+        iterations = kdf_config.get("iterations", 100000)
+        hash_name = kdf_config.get("hash_name", "sha256")
+
+        if debug:
+            logger.debug(
+                f"INDEPENDENT-XOR: PBKDF2 params - iterations={iterations}, hash={hash_name}"
+            )
+
+        # Run PBKDF2 on initial hash (note: PBKDF2 deprecated for v11, decryption-only)
+        result = hashlib.pbkdf2_hmac(
+            hash_name=hash_name,
+            password=password_bytes,
+            salt=salt,
+            iterations=iterations,
+            dklen=key_length,
+        )
+
+        return SecureBytes(result)
+
+    else:
+        raise ValueError(f"Unsupported KDF type: {kdf_type}")
+
+
+def generate_key_independent_xor(
+    password: bytes,
+    salt: bytes,
+    hash_config: dict,
+    pbkdf2_iterations: int = 100000,
+    quiet: bool = False,
+    algorithm: str = "aes-256-gcm",
+    progress: bool = False,
+    debug: bool = False,
+    pqc_keypair: tuple = None,
+    hsm_pepper: bytes = None,
+    format_version: int = 11,
+) -> tuple:
+    """
+    Generate encryption key using Independent XOR composition.
+
+    Based on Massey's work: K = H1(x) ⊕ H2(x) ⊕ ... ⊕ Hn(x)
+
+    Each algorithm receives the SAME input (password + salt).
+    The XOR of all outputs provides "strongest component" security -
+    the key is at least as secure as its strongest constituent algorithm.
+
+    Trade-off: Attackers can parallelize computation of individual algorithms,
+    but the key remains secure as long as at least one algorithm is unbroken.
+
+    Args:
+        password: User password (bytes)
+        salt: Random salt (bytes)
+        hash_config: Configuration dict for enabled algorithms
+        pbkdf2_iterations: PBKDF2 iterations (if PBKDF2 enabled)
+        quiet: Suppress output messages
+        algorithm: Encryption algorithm (determines key length)
+        progress: Show progress indicators
+        debug: Enable debug logging
+        pqc_keypair: Post-quantum keypair (if applicable)
+        hsm_pepper: HSM pepper (if applicable)
+        format_version: Metadata format version (11 for 1.4, 9 for 1.3)
+
+    Returns:
+        Tuple of (key, salt, iv) where:
+        - key: Derived encryption key (bytes)
+        - salt: The salt used (bytes)
+        - iv: Generated initialization vector (bytes)
+
+    Raises:
+        ValueError: If no algorithms are enabled
+    """
+    from .secure_memory import SecureBytes, secure_memzero
+    import os
+    import base64
+    import hashlib
+
+    if debug:
+        logger.debug(
+            f"INDEPENDENT-XOR: Starting key derivation with format_version={format_version}"
+        )
+        logger.debug(f"INDEPENDENT-XOR: Algorithm: {algorithm}")
+
+    # Determine required key length based on algorithm
+    if algorithm == "fernet":
+        key_length = 32  # Fernet requires 32 bytes
+    elif algorithm in ["aes-256-gcm", "chacha20-poly1305", "xchacha20-poly1305", "aes-gcm-siv", "aes-ocb3", "camellia", "cascade"]:
+        key_length = 32
+    elif algorithm == "aes-siv":
+        key_length = 64  # AES-SIV requires 64 bytes
+    elif algorithm == "threefish-512":
+        key_length = 64
+    elif algorithm == "threefish-1024":
+        key_length = 128
+    else:
+        # Default to 32 for PQC hybrid and other modes
+        key_length = 32
+
+    if debug:
+        logger.debug(f"INDEPENDENT-XOR: Target key_length = {key_length} bytes")
+
+    # Ensure password and salt are bytes
+    if isinstance(password, str):
+        password = password.encode("utf-8")
+    if isinstance(salt, str):
+        salt = salt.encode("utf-8")
+
+    # Apply HSM pepper if provided
+    if hsm_pepper:
+        if debug:
+            logger.debug("INDEPENDENT-XOR: Mixing HSM pepper into password")
+        password = SecureBytes(password + hsm_pepper)
+
+    # Collect all algorithm outputs independently
+    xor_components = []  # List[SecureBytes]
+
+    try:
+        # 0. Add initial hash of password+salt to XOR (defense-in-depth, like v10)
+        # This provides input normalization and additional key stretching
+        initial_hash = hashlib.sha256(bytes(password) + salt).digest()
+        initial_normalized = normalize_to_key_length_secure(initial_hash, key_length)
+        xor_components.append(initial_normalized)  # SecureBytes object
+
+        if debug:
+            logger.debug(f"INDEPENDENT-XOR: Added initial password+salt hash to XOR")
+
+        # Each algorithm will process this initial hash instead of raw password+salt
+        # This ensures all algorithms work with normalized 256-bit input
+        algorithm_input = SecureBytes(initial_hash)
+
+        # 1. Process each enabled hash algorithm
+        # Extract hash params (handle both nested and flat formats)
+        if hash_config and "derivation_config" in hash_config and "hash_config" in hash_config["derivation_config"]:
+            hash_params = hash_config["derivation_config"]["hash_config"]
+        else:
+            hash_params = hash_config
+
+        hash_algorithms = [
+            "sha256", "sha512", "sha3_256", "sha3_512",
+            "blake2b", "blake3", "shake256", "whirlpool"
+        ]
+
+        for algo in hash_algorithms:
+            rounds = get_hash_rounds(hash_params, algo)
+            if rounds > 0:
+                if not quiet and not progress:
+                    print(f"Computing {algo.upper()} hash ({rounds} rounds)...", end=" ")
+
+                result = compute_hash_independent(
+                    password=algorithm_input,  # Use initial hash instead of raw password
+                    salt=salt,
+                    algorithm=algo,
+                    rounds=rounds,
+                    key_length=key_length,
+                    quiet=quiet,
+                    progress=progress,
+                    debug=debug,
+                )
+                xor_components.append(result)
+
+                if not quiet and not progress:
+                    print("✅")
+
+                if debug:
+                    logger.debug(
+                        f"INDEPENDENT-XOR: Added {algo} component #{len(xor_components)}"
+                    )
+
+        # 2. Process each enabled KDF
+        # Extract KDF config (handle both nested and flat formats)
+        if hash_config and "derivation_config" in hash_config:
+            kdf_config_section = hash_config["derivation_config"].get("kdf_config", {})
+        else:
+            kdf_config_section = hash_config if hash_config else {}
+
+        # Check and process Argon2
+        if kdf_config_section.get("argon2", {}).get("enabled", False):
+            if not quiet and not progress:
+                print("Computing Argon2 KDF...", end=" ")
+
+            argon2_config = kdf_config_section["argon2"]
+            result = compute_kdf_independent(
+                password=algorithm_input,  # Use initial hash instead of raw password
+                salt=salt,
+                kdf_type="argon2",
+                kdf_config=argon2_config,
+                key_length=key_length,
+                quiet=quiet,
+                progress=progress,
+                debug=debug,
+            )
+            xor_components.append(result)
+
+            if not quiet and not progress:
+                print("✅")
+
+            if debug:
+                logger.debug(f"INDEPENDENT-XOR: Added Argon2 component #{len(xor_components)}")
+
+        # Check and process Scrypt
+        if kdf_config_section.get("scrypt", {}).get("enabled", False):
+            if not quiet and not progress:
+                print("Computing Scrypt KDF...", end=" ")
+
+            scrypt_config = kdf_config_section["scrypt"]
+            result = compute_kdf_independent(
+                password=algorithm_input,  # Use initial hash instead of raw password
+                salt=salt,
+                kdf_type="scrypt",
+                kdf_config=scrypt_config,
+                key_length=key_length,
+                quiet=quiet,
+                progress=progress,
+                debug=debug,
+            )
+            xor_components.append(result)
+
+            if not quiet and not progress:
+                print("✅")
+
+            if debug:
+                logger.debug(f"INDEPENDENT-XOR: Added Scrypt component #{len(xor_components)}")
+
+        # Check and process Balloon
+        if kdf_config_section.get("balloon", {}).get("enabled", False):
+            if not quiet and not progress:
+                print("Computing Balloon KDF...", end=" ")
+
+            balloon_config = kdf_config_section["balloon"]
+            result = compute_kdf_independent(
+                password=algorithm_input,  # Use initial hash instead of raw password
+                salt=salt,
+                kdf_type="balloon",
+                kdf_config=balloon_config,
+                key_length=key_length,
+                quiet=quiet,
+                progress=progress,
+                debug=debug,
+            )
+            xor_components.append(result)
+
+            if not quiet and not progress:
+                print("✅")
+
+            if debug:
+                logger.debug(f"INDEPENDENT-XOR: Added Balloon component #{len(xor_components)}")
+
+        # Check and process HKDF
+        if kdf_config_section.get("hkdf", {}).get("enabled", False):
+            if not quiet and not progress:
+                print("Computing HKDF...", end=" ")
+
+            hkdf_config = kdf_config_section["hkdf"]
+            result = compute_kdf_independent(
+                password=algorithm_input,  # Use initial hash instead of raw password
+                salt=salt,
+                kdf_type="hkdf",
+                kdf_config=hkdf_config,
+                key_length=key_length,
+                quiet=quiet,
+                progress=progress,
+                debug=debug,
+            )
+            xor_components.append(result)
+
+            if not quiet and not progress:
+                print("✅")
+
+            if debug:
+                logger.debug(f"INDEPENDENT-XOR: Added HKDF component #{len(xor_components)}")
+
+        # NOTE: PBKDF2 is deprecated and NOT used for v11 encryption
+        # It's only supported for decryption of legacy files (v1-v9)
+        # For v11, only modern KDFs (Argon2, Scrypt, Balloon, HKDF) and hashes are used
+
+        # Verify we have at least one component
+        if len(xor_components) == 0:
+            raise ValueError(
+                "No algorithms enabled for key derivation. "
+                "Enable at least one hash algorithm or KDF."
+            )
+
+        if debug:
+            logger.debug(
+                f"INDEPENDENT-XOR: Collected {len(xor_components)} components, performing XOR"
+            )
+
+        # 3. XOR all components together
+        final_key = xor_bytes_secure(xor_components)
+
+        if not quiet:
+            print(
+                f"✅ Combined {len(xor_components)} independent components using XOR (Massey)"
+            )
+
+        # 4. Generate IV
+        iv = os.urandom(16)
+
+        if debug:
+            logger.debug(
+                f"INDEPENDENT-XOR: Final key length = {len(final_key)} bytes"
+            )
+            logger.debug(f"INDEPENDENT-XOR: IV length = {len(iv)} bytes")
+
+        # 5. Apply algorithm-specific key formatting
+        # Convert final_key to bytes for hashing/encoding
+        final_key_bytes = bytes(final_key)
+
+        if algorithm == "fernet":
+            # Fernet requires base64-encoded key
+            final_key_bytes = base64.urlsafe_b64encode(final_key_bytes)
+            if debug:
+                logger.debug("INDEPENDENT-XOR: Applied Fernet base64 encoding")
+        elif algorithm in [
+            "aes-256-gcm", "aes-gcm", "aes-gcm-siv", "aes-ocb3",
+            "chacha20-poly1305", "xchacha20-poly1305", "camellia",
+            # PQC hybrid algorithms
+            "kyber512-hybrid", "kyber768-hybrid", "kyber1024-hybrid",
+            "ml-kem-512-hybrid", "ml-kem-768-hybrid", "ml-kem-1024-hybrid",
+            "ml-kem-512-chacha20", "ml-kem-768-chacha20", "ml-kem-1024-chacha20",
+            "hqc-128-hybrid", "hqc-192-hybrid", "hqc-256-hybrid",
+            "mayo-1-hybrid", "mayo-3-hybrid", "mayo-5-hybrid",
+            "cross-128-hybrid", "cross-192-hybrid", "cross-256-hybrid"
+        ]:
+            # These algorithms use raw SHA-256 hash
+            final_key_bytes = hashlib.sha256(final_key_bytes).digest()
+            if debug:
+                logger.debug("INDEPENDENT-XOR: Applied SHA-256 final hash")
+        elif algorithm == "aes-siv":
+            # AES-SIV uses SHA-512
+            final_key_bytes = hashlib.sha512(final_key_bytes).digest()
+            if debug:
+                logger.debug("INDEPENDENT-XOR: Applied SHA-512 final hash")
+        elif algorithm in ["threefish-512", "threefish-1024"]:
+            # Threefish algorithms need HKDF expansion
+            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+            from cryptography.hazmat.primitives import hashes
+            from cryptography.hazmat.backends import default_backend
+
+            if algorithm == "threefish-512":
+                hkdf = HKDF(
+                    algorithm=hashes.SHA256(),
+                    length=64,
+                    salt=salt,
+                    info=b"threefish-512-key-expansion",
+                    backend=default_backend(),
+                )
+                final_key_bytes = hkdf.derive(final_key_bytes)
+                if debug:
+                    logger.debug("INDEPENDENT-XOR: Expanded to 64 bytes for Threefish-512")
+            else:  # threefish-1024
+                hkdf = HKDF(
+                    algorithm=hashes.SHA256(),
+                    length=128,
+                    salt=salt,
+                    info=b"threefish-1024-key-expansion",
+                    backend=default_backend(),
+                )
+                final_key_bytes = hkdf.derive(final_key_bytes)
+                if debug:
+                    logger.debug("INDEPENDENT-XOR: Expanded to 128 bytes for Threefish-1024")
+        elif algorithm == "cascade":
+            # Cascade mode uses raw key
+            pass
+        else:
+            # Default: base64 encode for unknown algorithms
+            final_key_bytes = base64.b64encode(hashlib.sha256(final_key_bytes).digest())
+
+        # Return as tuple
+        return final_key_bytes, salt, hash_config
+
+    finally:
+        # CRITICAL: Zero all intermediate components
+        for component in xor_components:
+            try:
+                secure_memzero(component)
+            except Exception:
+                pass  # Best effort cleanup
+        if "final_key" in locals():
+            try:
+                secure_memzero(final_key)
+            except Exception:
+                pass
+        if "initial_hash" in locals():
+            try:
+                secure_memzero(bytearray(initial_hash))
+            except Exception:
+                pass
+        if "algorithm_input" in locals():
+            try:
+                secure_memzero(algorithm_input)
+            except Exception:
+                pass
+
+
 @secure_key_derivation_error_handler
 def generate_key(
     password,
@@ -2035,6 +2686,28 @@ def generate_key(
     # Determine if we're using v8 XOR composition approach
     # v8: 1.3 branch XOR implementation (compatible with 1.4 v10)
     use_xor_composition = format_version == 8
+
+    # V9: Independent XOR composition (Massey) - each algorithm processes same input
+    if format_version == 9:
+        if debug:
+            logger.debug(
+                f"KEY-DEBUG: Using v9 Independent XOR composition (Massey) with key_length={key_length}"
+            )
+
+        # Call the independent XOR function and return early
+        return generate_key_independent_xor(
+            password=password,
+            salt=salt,
+            hash_config=hash_config,
+            pbkdf2_iterations=pbkdf2_iterations,
+            quiet=quiet,
+            algorithm=algorithm,
+            progress=progress,
+            debug=debug,
+            pqc_keypair=pqc_keypair,
+            hsm_pepper=hsm_pepper,
+            format_version=format_version,
+        )
 
     # Initialize XOR accumulator for v8
     # CRITICAL: Will contain ONLY SecureBytes, all MUST be zeroed after XOR
@@ -3714,6 +4387,82 @@ def create_metadata_v8(
     return metadata
 
 
+def create_metadata_v9(
+    salt,
+    hash_config,
+    original_hash,
+    encrypted_hash,
+    algorithm,
+    pbkdf2_iterations=0,
+    pqc_info=None,
+    encryption_data="aes-gcm",
+    hsm_plugin_name=None,
+    hsm_slot_used=None,
+    include_encrypted_hash=True,
+    aad_mode=False,
+    keystore_id=None,
+):
+    """
+    Create metadata in format version 9 with Independent XOR composition key derivation (Massey).
+
+    Changes from v8:
+    - Uses format_version 9 to indicate Independent XOR composition
+    - Adds xor_mode field set to "independent" to distinguish from v8 "sequential"
+    - Each hash/KDF algorithm processes the same original input (password+salt)
+    - Provides "strongest component" security guarantee per Massey's paper
+    - Allows parallel processing unlike v8 sequential XOR
+
+    Args:
+        salt (bytes): Salt used for key derivation
+        hash_config (dict): Hash configuration
+        original_hash (str): Hash of original content
+        encrypted_hash (str): Hash of encrypted content (can be None if aad_mode=True)
+        algorithm (str): Encryption algorithm used
+        pbkdf2_iterations (int): PBKDF2 iterations if used
+        pqc_info (dict): Post-quantum cryptography information
+        encryption_data (str): The symmetric encryption algorithm to use for data encryption
+        hsm_plugin_name (str): HSM plugin identifier (optional)
+        hsm_slot_used (int): HSM slot number used (optional)
+        include_encrypted_hash (bool): Whether to include encrypted_hash in metadata (default: True)
+        aad_mode (bool): Whether metadata will be used as AAD for AEAD binding (default: False)
+        keystore_id (str): PQC keystore key ID (optional)
+
+    Returns:
+        dict: Metadata in format version 9
+
+    Raises:
+        ValueError: If HSM parameters don't meet validation requirements
+    """
+    # Call v7 implementation as base
+    metadata = create_metadata_v7(
+        salt=salt,
+        hash_config=hash_config,
+        original_hash=original_hash,
+        encrypted_hash=encrypted_hash,
+        algorithm=algorithm,
+        pbkdf2_iterations=pbkdf2_iterations,
+        pqc_info=pqc_info,
+        encryption_data=encryption_data,
+        hsm_plugin_name=hsm_plugin_name,
+        hsm_slot_used=hsm_slot_used,
+        include_encrypted_hash=include_encrypted_hash,
+        aad_mode=aad_mode,
+        keystore_id=keystore_id,
+    )
+
+    # Override format version to 9
+    metadata["format_version"] = 9
+
+    # Add mode field for cross-compatibility with 1.4 branch
+    # Mode is "asymmetric" when using PQC, otherwise "symmetric"
+    metadata["mode"] = "asymmetric" if pqc_info else "symmetric"
+
+    # Add xor_mode field to distinguish Independent (v9) from Sequential (v8) XOR
+    metadata["xor_mode"] = "independent"
+
+    return metadata
+
+
 def create_metadata_v4(
     salt,
     hash_config,
@@ -4088,6 +4837,32 @@ def encrypt_file(
         hsm_pepper=hsm_pepper,
         format_version=use_format_version,
     )
+
+    # For v9, if hash_config has nested structure, flatten it for metadata creation
+    if use_format_version == 9 and hash_config and "derivation_config" in hash_config:
+        flat_hash_config = {}
+        derivation_config = hash_config["derivation_config"]
+
+        # Extract hash algorithms
+        nested_hash_config = derivation_config.get("hash_config", {})
+        for algo, config in nested_hash_config.items():
+            if isinstance(config, dict) and "rounds" in config:
+                flat_hash_config[algo] = config["rounds"]
+            else:
+                flat_hash_config[algo] = config
+
+        # Extract KDF configs
+        kdf_config = derivation_config.get("kdf_config", {})
+        for kdf_name, kdf_params in kdf_config.items():
+            if kdf_name == "pbkdf2" and isinstance(kdf_params, dict):
+                flat_hash_config["pbkdf2_iterations"] = kdf_params.get("rounds", pbkdf2_iterations)
+                flat_hash_config["pbkdf2"] = kdf_params
+            elif kdf_name in ["scrypt", "argon2", "balloon", "hkdf", "randomx"]:
+                flat_hash_config[kdf_name] = kdf_params
+
+        # Replace hash_config with flattened version
+        hash_config = flat_hash_config
+
     # Read the input file
     if not quiet:
         print(f"Reading file: {input_file}")
@@ -4637,7 +5412,23 @@ def encrypt_file(
 
         # Create metadata WITHOUT encrypted_hash (before encryption)
         # Choose metadata function based on use_format_version
-        if use_format_version == 8:
+        if use_format_version == 9:
+            metadata = create_metadata_v9(
+                salt=salt,
+                hash_config=hash_config,
+                original_hash=original_hash,
+                encrypted_hash=None,  # Not available yet - will be protected by AAD
+                algorithm=algorithm.value,
+                pbkdf2_iterations=pbkdf2_iterations,
+                pqc_info=pqc_info,
+                encryption_data=encryption_data,
+                hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
+                hsm_slot_used=hsm_slot_used,
+                include_encrypted_hash=False,  # AEAD mode: no encrypted_hash
+                aad_mode=True,  # Mark as AEAD binding
+                keystore_id=keystore_id,  # Pass keystore ID if present
+            )
+        elif use_format_version == 8:
             metadata = create_metadata_v8(
                 salt=salt,
                 hash_config=hash_config,
@@ -4840,7 +5631,21 @@ def encrypt_file(
         )
 
         # Create metadata using the helper function based on use_format_version
-        if use_format_version == 8:
+        if use_format_version == 9:
+            metadata = create_metadata_v9(
+                salt=salt,
+                hash_config=hash_config,
+                original_hash=original_hash,
+                encrypted_hash=encrypted_hash,
+                algorithm=algorithm.value,
+                pbkdf2_iterations=pbkdf2_iterations,
+                pqc_info=pqc_info,
+                encryption_data=encryption_data,
+                hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
+                hsm_slot_used=hsm_slot_used,
+                keystore_id=keystore_id,  # Pass keystore ID if present
+            )
+        elif use_format_version == 8:
             metadata = create_metadata_v8(
                 salt=salt,
                 hash_config=hash_config,
@@ -5008,7 +5813,7 @@ def extract_file_metadata(input_file):
         format_version = metadata.get("format_version", 1)
 
         # Extract algorithm based on format version
-        if format_version in [4, 5, 6, 7, 8]:
+        if format_version in [4, 5, 6, 7, 8, 9]:
             encryption = metadata.get("encryption", {})
             algorithm = encryption.get("algorithm", EncryptionAlgorithm.FERNET.value)
             encryption_data = encryption.get("encryption_data", "aes-gcm")
@@ -5202,7 +6007,7 @@ def decrypt_file(
 
     # For format_version 4, 5, or 6, set correct hash_config for printing purposes
     # This doesn't change the actual metadata, just passes the right info to print_hash_config
-    if format_version in [4, 5, 6, 7, 8]:
+    if format_version in [4, 5, 6, 7, 8, 9]:
         # If verbose, pass the full metadata to print_hash_config for proper display
         if verbose:
             print_hash_config_metadata = metadata
@@ -5212,7 +6017,7 @@ def decrypt_file(
         print_hash_config_metadata = metadata.get("hash_config", {})
 
     # Handle format version 4, 5, 6, or 7
-    if format_version in [4, 5, 6, 7, 8]:
+    if format_version in [4, 5, 6, 7, 8, 9]:
         # Extract information from new hierarchical structure
         derivation_config = metadata["derivation_config"]
         salt = base64.b64decode(derivation_config["salt"])
@@ -5626,7 +6431,7 @@ def decrypt_file(
     if pqc_has_private_key:
         try:
             # Handle different format versions
-            if format_version in [4, 5, 6, 7, 8]:
+            if format_version in [4, 5, 6, 7, 8, 9]:
                 # Get encrypted private key from v4/v5/v6/v7 structure
                 encrypted_private_key = base64.b64decode(metadata["encryption"]["pqc_private_key"])
             else:  # format_version 3
@@ -5639,7 +6444,7 @@ def decrypt_file(
             if pqc_key_is_encrypted:
                 # We need to decrypt the private key using the separately derived key
                 # Get the salt from metadata based on format version
-                if format_version in [4, 5, 6, 7, 8]:
+                if format_version in [4, 5, 6, 7, 8, 9]:
                     if "pqc_key_salt" not in metadata["encryption"]:
                         if not quiet:
                             print("Failed to decrypt post-quantum private key - wrong format")

@@ -81,6 +81,7 @@ from openssl_encrypt.modules.crypt_core import (
     XChaCha20Poly1305,
     decrypt_file,
     encrypt_file,
+    extract_file_metadata,
     generate_key,
     is_aead_algorithm,
     multi_hash_password,
@@ -14874,6 +14875,284 @@ class TestAEADBinding(unittest.TestCase):
                 with open(output_file, "r") as f:
                     decrypted_data = f.read()
                 self.assertEqual(decrypted_data, test_data, f"{algorithm.value} decryption failed")
+
+
+
+
+class TestIndependentXORv9(unittest.TestCase):
+    """Test suite for v9 Independent XOR composition (Massey)."""
+
+    def setUp(self):
+        """Set up test environment."""
+        self.test_dir = tempfile.mkdtemp()
+        self.test_file = os.path.join(self.test_dir, "test.txt")
+        self.test_password = "TestPassword123!"
+        self.test_files = []
+
+        # Create a test file
+        with open(self.test_file, "w") as f:
+            f.write("Test content for Independent XOR v9")
+        self.test_files.append(self.test_file)
+
+        # Create hash config with multiple algorithms for proper XOR testing
+        self.hash_config_v9 = {
+            "format_version": 9,
+            "derivation_config": {
+                "hash_config": {
+                    "sha256": {"rounds": 100},
+                    "sha512": {"rounds": 100},
+                    "blake2b": {"rounds": 100},
+                },
+                "kdf_config": {
+                    "pbkdf2": {"rounds": 1000},
+                    "argon2": {
+                        "enabled": True,
+                        "time_cost": 1,
+                        "memory_cost": 8192,
+                        "parallelism": 1,
+                        "hash_len": 32,
+                        "type": 2,
+                        "rounds": 1,
+                    },
+                    "scrypt": {
+                        "enabled": True,
+                        "n": 1024,
+                        "r": 8,
+                        "p": 1,
+                        "rounds": 1,
+                    },
+                },
+            },
+        }
+
+    def tearDown(self):
+        """Clean up test files."""
+        for file_path in self.test_files:
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except Exception:
+                    pass
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_v9_basic_encrypt_decrypt(self):
+        """Test basic v9 encryption and decryption."""
+        encrypted_file = os.path.join(self.test_dir, "encrypted_v9.bin")
+        decrypted_file = os.path.join(self.test_dir, "decrypted_v9.txt")
+        self.test_files.extend([encrypted_file, decrypted_file])
+
+        # Encrypt with v9
+        result = encrypt_file(
+            self.test_file,
+            encrypted_file,
+            self.test_password,
+            self.hash_config_v9,
+            quiet=True,
+            algorithm=EncryptionAlgorithm.AES_GCM,
+        )
+        self.assertTrue(result)
+        self.assertTrue(os.path.exists(encrypted_file))
+
+        # Verify metadata format version
+        metadata_dict = extract_file_metadata(encrypted_file)
+        self.assertEqual(metadata_dict["format_version"], 9)
+        self.assertEqual(metadata_dict["metadata"]["xor_mode"], "independent")
+
+        # Decrypt
+        result = decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
+        self.assertTrue(result)
+
+        # Verify content
+        with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
+            self.assertEqual(original.read(), decrypted.read())
+
+    def test_v9_with_different_algorithms(self):
+        """Test v9 works with various encryption algorithms."""
+        algorithms = [
+            EncryptionAlgorithm.AES_GCM,
+            EncryptionAlgorithm.CHACHA20_POLY1305,
+            EncryptionAlgorithm.AES_GCM_SIV,
+        ]
+
+        for algorithm in algorithms:
+            with self.subTest(algorithm=algorithm.value):
+                encrypted_file = os.path.join(
+                    self.test_dir, f"encrypted_v9_{algorithm.value}.bin"
+                )
+                decrypted_file = os.path.join(
+                    self.test_dir, f"decrypted_v9_{algorithm.value}.txt"
+                )
+                self.test_files.extend([encrypted_file, decrypted_file])
+
+                # Encrypt
+                result = encrypt_file(
+                    self.test_file,
+                    encrypted_file,
+                    self.test_password,
+                    self.hash_config_v9,
+                    quiet=True,
+                    algorithm=algorithm,
+                )
+                self.assertTrue(result)
+
+                # Decrypt
+                result = decrypt_file(
+                    encrypted_file, decrypted_file, self.test_password, quiet=True
+                )
+                self.assertTrue(result)
+
+                # Verify
+                with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
+                    self.assertEqual(original.read(), decrypted.read())
+
+    def test_v9_wrong_password_fails(self):
+        """Test v9 decryption fails with wrong password."""
+        encrypted_file = os.path.join(self.test_dir, "encrypted_v9_wrongpw.bin")
+        decrypted_file = os.path.join(self.test_dir, "decrypted_v9_wrongpw.txt")
+        self.test_files.extend([encrypted_file, decrypted_file])
+
+        # Encrypt
+        result = encrypt_file(
+            self.test_file,
+            encrypted_file,
+            self.test_password,
+            self.hash_config_v9,
+            quiet=True,
+        )
+        self.assertTrue(result)
+
+        # Try to decrypt with wrong password
+        with self.assertRaises(Exception):
+            decrypt_file(encrypted_file, decrypted_file, "WrongPassword123!", quiet=True)
+
+    def test_v9_metadata_structure(self):
+        """Test v9 metadata has correct structure."""
+        encrypted_file = os.path.join(self.test_dir, "encrypted_v9_metadata.bin")
+        self.test_files.append(encrypted_file)
+
+        # Encrypt
+        result = encrypt_file(
+            self.test_file,
+            encrypted_file,
+            self.test_password,
+            self.hash_config_v9,
+            quiet=True,
+        )
+        self.assertTrue(result)
+
+        # Extract and verify metadata
+        metadata_dict = extract_file_metadata(encrypted_file)
+        metadata = metadata_dict["metadata"]
+
+        self.assertEqual(metadata["format_version"], 9)
+        self.assertEqual(metadata["xor_mode"], "independent")
+        self.assertEqual(metadata["mode"], "symmetric")
+        self.assertIn("derivation_config", metadata)
+        self.assertIn("encryption", metadata)
+
+    def test_v9_cross_compatibility_with_v8(self):
+        """Test that v9 produces different keys than v8 (as expected)."""
+        # This test verifies that v8 (sequential) and v9 (independent)
+        # produce different encrypted outputs for the same input
+        encrypted_file_v8 = os.path.join(self.test_dir, "encrypted_v8.bin")
+        encrypted_file_v9 = os.path.join(self.test_dir, "encrypted_v9.bin")
+        self.test_files.extend([encrypted_file_v8, encrypted_file_v9])
+
+        # Create v8 config
+        hash_config_v8 = {
+            "format_version": 8,
+            "derivation_config": self.hash_config_v9["derivation_config"],
+        }
+
+        # Encrypt with v8
+        result = encrypt_file(
+            self.test_file,
+            encrypted_file_v8,
+            self.test_password,
+            hash_config_v8,
+            quiet=True,
+        )
+        self.assertTrue(result)
+
+        # Encrypt with v9
+        result = encrypt_file(
+            self.test_file,
+            encrypted_file_v9,
+            self.test_password,
+            self.hash_config_v9,
+            quiet=True,
+        )
+        self.assertTrue(result)
+
+        # Verify files are different (different key derivation)
+        with open(encrypted_file_v8, "rb") as f8, open(encrypted_file_v9, "rb") as f9:
+            self.assertNotEqual(f8.read(), f9.read())
+
+    def test_v9_with_single_algorithm(self):
+        """Test v9 works with single hash algorithm."""
+        hash_config_single = {
+            "format_version": 9,
+            "derivation_config": {
+                "hash_config": {
+                    "sha256": {"rounds": 100},
+                },
+                "kdf_config": {
+                    "pbkdf2": {"rounds": 1000},
+                },
+            },
+        }
+
+        encrypted_file = os.path.join(self.test_dir, "encrypted_v9_single.bin")
+        decrypted_file = os.path.join(self.test_dir, "decrypted_v9_single.txt")
+        self.test_files.extend([encrypted_file, decrypted_file])
+
+        # Encrypt
+        result = encrypt_file(
+            self.test_file,
+            encrypted_file,
+            self.test_password,
+            hash_config_single,
+            quiet=True,
+        )
+        self.assertTrue(result)
+
+        # Decrypt
+        result = decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
+        self.assertTrue(result)
+
+        # Verify
+        with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
+            self.assertEqual(original.read(), decrypted.read())
+
+    def test_v9_binary_file(self):
+        """Test v9 encryption/decryption of binary files."""
+        binary_file = os.path.join(self.test_dir, "binary.bin")
+        encrypted_file = os.path.join(self.test_dir, "encrypted_binary_v9.bin")
+        decrypted_file = os.path.join(self.test_dir, "decrypted_binary_v9.bin")
+        self.test_files.extend([binary_file, encrypted_file, decrypted_file])
+
+        # Create binary file
+        binary_data = bytes(range(256)) * 100
+        with open(binary_file, "wb") as f:
+            f.write(binary_data)
+
+        # Encrypt
+        result = encrypt_file(
+            binary_file,
+            encrypted_file,
+            self.test_password,
+            self.hash_config_v9,
+            quiet=True,
+        )
+        self.assertTrue(result)
+
+        # Decrypt
+        result = decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
+        self.assertTrue(result)
+
+        # Verify
+        with open(binary_file, "rb") as original, open(decrypted_file, "rb") as decrypted:
+            self.assertEqual(original.read(), decrypted.read())
 
 
 if __name__ == "__main__":
