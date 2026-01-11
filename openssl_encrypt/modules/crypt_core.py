@@ -4334,7 +4334,7 @@ def create_metadata_v6(
 
     # Create basic metadata
     metadata = {
-        "format_version": format_version,  # v9 (default): Legacy derivation, v10: XOR composition
+        "format_version": format_version,  # v9 (default): Legacy derivation, v10: XOR composition, v11: Independent XOR
         "derivation_config": {"salt": salt_b64, "hash_config": {}, "kdf_config": {}},
         "hashes": hashes_dict,
         "encryption": {"algorithm": algorithm, "encryption_data": encryption_data},
@@ -4344,9 +4344,15 @@ def create_metadata_v6(
     if aad_mode:
         metadata["aead_binding"] = True
 
+    # Add XOR mode indicator for v8/v10/v11
+    if format_version == 11:
+        metadata["xor_mode"] = "independent"  # Independent XOR (Massey)
+    elif format_version in [8, 10]:
+        metadata["xor_mode"] = "sequential"  # Sequential chained XOR
+
     # Process hash algorithms to use nested structure
     # Process hash algorithms - PRESERVE USER'S DICT ORDER for deterministic XOR
-    # Critical for v8/v10 XOR composition: order must match during encrypt/decrypt
+    # Critical for v8/v10/v11 XOR composition: order must match during encrypt/decrypt
     for algo, rounds in hash_config.items():
         # Only process known hash algorithms (skip KDFs, they're handled separately)
         if algo in ["sha512", "sha384", "sha256", "sha224",
