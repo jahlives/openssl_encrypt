@@ -5,6 +5,51 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0b10] - 2026-01-11
+
+### Added
+
+- **Format Version 11: Independent XOR Key Derivation (Massey Composition)**
+  - **New Cryptographic Approach**: Implements Massey's Independent XOR composition where each hash/KDF algorithm processes the same original input (password + salt), and outputs are XOR'd together
+  - **Security Guarantee**: Provides "strongest component" security - the derived key is at least as secure as the strongest constituent algorithm, even if all others are compromised
+  - **CLI Flag**: New `--independent-xor` flag enables v11 format with Independent XOR composition
+  - **Distinction from v10**: Unlike v10 sequential XOR (chains algorithms for anti-parallelization), v11 processes all algorithms independently for maximum cryptographic assurance
+  - **Use Cases**: Ideal for scenarios requiring maximum cryptographic confidence and resistance against future algorithm breaks
+  - **Initial Normalization**: Adds initial SHA-256 hash of input for defense-in-depth and consistent input normalization
+  - **Backward Compatibility**: Files encrypted with v11 format require openssl_encrypt 1.4.0b10+ to decrypt
+  - **Cross-Branch Compatibility**: v11 format is compatible with v9 format in the 1.3.x branch
+
+- **Parallel KDF Processing for Performance Optimization**
+  - **Multiprocessing Support**: Optional parallel execution of hash algorithms and KDFs using ProcessPoolExecutor
+  - **Performance Improvement**: ~2.7x speedup with 8 algorithms on 8-core CPU (sequential: ~8.5s → parallel: ~3.1s)
+  - **CLI Flags**:
+    - `--parallel-kdf`: Enable parallel processing for key derivation (requires `--independent-xor`)
+    - `--kdf-workers N`: Specify number of parallel workers (default: auto-detect based on CPU count)
+  - **Progress Reporting**: Queue-based progress aggregation with unified display showing active workers and completion percentage
+  - **GUI Integration**: Added parallel KDF progress regex pattern for GUI progress bar support
+  - **Key Consistency**: Parallel and sequential modes produce identical keys through deterministic XOR ordering
+  - **GIL Bypass**: Uses multiprocessing instead of threading for true CPU parallelism on compute-bound operations
+
+- **New Metadata Schema**: `metadata_v11_schema.json` with `xor_mode` field to distinguish Independent XOR (v11) from Sequential XOR (v10)
+
+- **Comprehensive Test Coverage**:
+  - 7 new v11 Independent XOR tests covering basic operations, cross-compatibility, and various encryption algorithms
+  - 11 new parallel KDF tests for key consistency, round-trip encryption, worker configuration, and error handling
+  - Total: 1573 tests passing (up from 1535)
+
+### Changed
+
+- **Key Derivation Architecture**: v11 format bypasses `generate_key()` function, directly calling `generate_key_independent_xor()` or `generate_key_independent_xor_parallel()` in `encrypt_file()` and `decrypt_file()`
+- **Hash Config Handling**: Added automatic flattening of nested hash config structures for v11 metadata creation
+- **Format Version Support**: Updated decrypt path to recognize format version 11 in 5 key locations for proper metadata extraction and key derivation
+
+### Performance
+
+- **Sequential v11**: Baseline performance equivalent to v10 (~8.5s for 8 algorithms)
+- **Parallel v11**: ~2.7x faster than sequential on 8-core systems (~3.1s for 8 algorithms)
+- **Scalability**: Performance scales with CPU core count and number of enabled algorithms
+- **Bottleneck**: Slowest algorithm determines parallel mode completion time
+
 ## [1.4.0b9] - 2026-01-09
 
 ### Fixed

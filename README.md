@@ -53,12 +53,21 @@ For deep-dives into the cryptographic design and security policies of this proje
 ---
 ## 🚧 v1.4.0 Beta Series - Under Active Development
 
-**Current Beta:** v1.4.0b9 | **Status:** Pre-release testing | **Target:** Stable v1.4.0 release
+**Current Beta:** v1.4.0b10 | **Status:** Pre-release testing | **Target:** Stable v1.4.0 release
 
-> ⚠️ **BETA SOFTWARE**: This is pre-release software under active development. While extensively tested (1535+ tests passing), it should be used with caution in production environments. Backward compatibility with v1.3.x is maintained, but the v1.4.0 API and features may change before stable release.
+> ⚠️ **BETA SOFTWARE**: This is pre-release software under active development. While extensively tested (1573+ tests passing), it should be used with caution in production environments. Backward compatibility with v1.3.x is maintained, but the v1.4.0 API and features may change before stable release.
+
+**What's New in v1.4.0b10:**
+- **Format Version 11: Independent XOR Key Derivation (Massey)**: New `--independent-xor` flag enables Massey's Independent XOR composition providing "strongest component" security guarantee - key remains secure even if all algorithms except the strongest are broken
+- **Parallel KDF Processing**: Optional `--parallel-kdf` flag for ~2.7x performance improvement (8.5s → 3.1s with 8 algorithms on 8-core CPU) using multiprocessing for true CPU parallelism
+- **Worker Control**: `--kdf-workers N` flag to specify parallel worker count (default: auto-detect based on CPU cores)
+- **Enhanced Security Guarantee**: Independent XOR provides maximum cryptographic assurance against future algorithm breaks, distinct from v10 sequential XOR's anti-parallelization approach
+- **Cross-Branch Compatibility**: v11 format compatible with v9 format in the 1.3.x branch for seamless migration
+- **Test Coverage**: 1573 tests passing (up from 1535) including 18 new tests for v11 and parallel processing
 
 **Recent Beta Releases:**
-- **v1.4.0b9** (Current) - Test infrastructure improvements, Threefish cipher support, cross-version compatibility fixes
+- **v1.4.0b10** (Current) - Format Version 11: Independent XOR & Parallel Processing
+- **v1.4.0b9** - Test infrastructure improvements, Threefish cipher support, cross-version compatibility fixes
 - **v1.4.0b8** - Critical security fix: Format Version 9 with secure chained salt derivation
 - See [version.py.template](openssl_encrypt/version.py.template) for complete beta history
 
