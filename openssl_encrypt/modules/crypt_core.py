@@ -1937,6 +1937,19 @@ def compute_hash_independent(
     from .secure_memory import SecureBytes
     import hashlib
 
+    # Map algorithm names to display names
+    algo_display_names = {
+        "sha256": "SHA-256",
+        "sha512": "SHA-512",
+        "sha3_256": "SHA3-256",
+        "sha3_512": "SHA3-512",
+        "blake2b": "BLAKE2b",
+        "blake3": "BLAKE3",
+        "shake256": "SHAKE-256",
+        "whirlpool": "Whirlpool"
+    }
+    algo_display = algo_display_names.get(algorithm, algorithm.upper())
+
     if debug:
         logger.debug(
             f"INDEPENDENT-XOR: Computing {algorithm} with {rounds} rounds on original input"
@@ -1971,6 +1984,19 @@ def compute_hash_independent(
             else:
                 raise ValueError(f"Unsupported hash algorithm: {algorithm}")
 
+            # Show progress if enabled
+            if progress and not quiet:
+                # Update every 10% or at least every 100 iterations
+                update_frequency = max(1, min(rounds // 10, 100))
+                if (i + 1) % update_frequency == 0 or (i + 1) == rounds:
+                    percent = ((i + 1) / rounds) * 100
+                    # Create progress bar (30 chars wide)
+                    bar_length = 30
+                    filled = int(bar_length * (i + 1) / rounds)
+                    bar = "█" * filled + " " * (bar_length - filled)
+                    # Overwrite current line with progress bar
+                    print(f"\r{algo_display} hashing: [{bar}] {percent:.1f}% ({i+1}/{rounds})", end="", flush=True)
+
             # Secure cleanup of old current
             if i < rounds - 1:  # Not last iteration
                 secure_memzero(current)
@@ -1979,6 +2005,10 @@ def compute_hash_independent(
                 # Last iteration - normalize to target length
                 secure_memzero(current)
                 result = normalize_to_key_length_secure(h, key_length)
+
+                # Move to new line after progress bar completes
+                if progress and not quiet:
+                    print()  # Move to next line
 
         if debug:
             logger.debug(
@@ -2102,31 +2132,33 @@ def compute_kdf_independent(
     elif kdf_type == "balloon":
         # Import balloon hash if available
         try:
-            from .balloon_hash import balloon_hash
+            from .balloon import balloon_m
         except ImportError:
             raise ValueError("Balloon hash not available")
 
         # Extract Balloon parameters
         space_cost = kdf_config.get("space_cost", 16)
         time_cost = kdf_config.get("time_cost", 20)
-        delta = kdf_config.get("delta", 4)
+        parallelism = kdf_config.get("parallelism", 1)
 
         if debug:
             logger.debug(
-                f"INDEPENDENT-XOR: Balloon params - space={space_cost}, time={time_cost}, delta={delta}"
+                f"INDEPENDENT-XOR: Balloon params - space={space_cost}, time={time_cost}, parallelism={parallelism}"
             )
 
         # Run Balloon on initial hash
-        result = balloon_hash(
-            password=password_bytes,
-            salt=salt,
+        # balloon_m returns fixed 32-byte output, normalize to key_length
+        result = balloon_m(
+            password=password_bytes.decode('latin-1') if isinstance(password_bytes, bytes) else str(password_bytes),
+            salt=salt.decode('latin-1') if isinstance(salt, bytes) else str(salt),
             space_cost=space_cost,
             time_cost=time_cost,
-            delta=delta,
-            hash_len=key_length,
+            parallel_cost=parallelism,
         )
 
-        return SecureBytes(result)
+        # Normalize to target key length using HKDF
+        normalized = normalize_to_key_length_secure(result, key_length)
+        return normalized
 
     elif kdf_type == "hkdf":
         from cryptography.hazmat.primitives import hashes
@@ -2298,8 +2330,25 @@ def generate_key_independent_xor(
         for algo in hash_algorithms:
             rounds = get_hash_rounds(hash_params, algo)
             if rounds > 0:
+                algo_display = algo.upper()
+
                 if not quiet and not progress:
-                    print(f"Computing {algo.upper()} hash ({rounds} rounds)...", end=" ")
+                    # Only print initial message if progress bars disabled
+                    print(f"Computing {algo_display} hash ({rounds} rounds)...", end=" ", flush=True)
+                elif not quiet and progress:
+                    # Print header before progress bar
+                    algo_names = {
+                        "sha256": "SHA-256",
+                        "sha512": "SHA-512",
+                        "sha3_256": "SHA3-256",
+                        "sha3_512": "SHA3-512",
+                        "blake2b": "BLAKE2b",
+                        "blake3": "BLAKE3",
+                        "shake256": "SHAKE-256",
+                        "whirlpool": "Whirlpool"
+                    }
+                    algo_name = algo_names.get(algo, algo.upper())
+                    print(f"Applying {rounds} rounds of {algo_name}")
 
                 result = compute_hash_independent(
                     password=algorithm_input,  # Use initial hash instead of raw password
@@ -2330,10 +2379,13 @@ def generate_key_independent_xor(
 
         # Check and process Argon2
         if kdf_config_section.get("argon2", {}).get("enabled", False):
-            if not quiet and not progress:
-                print("Computing Argon2 KDF...", end=" ")
-
             argon2_config = kdf_config_section["argon2"]
+
+            if not quiet and not progress:
+                print("Computing Argon2 KDF...", end=" ", flush=True)
+            elif not quiet and progress:
+                print("Using Argon2 for key derivation")
+
             result = compute_kdf_independent(
                 password=algorithm_input,  # Use initial hash instead of raw password
                 salt=salt,
@@ -2341,7 +2393,7 @@ def generate_key_independent_xor(
                 kdf_config=argon2_config,
                 key_length=key_length,
                 quiet=quiet,
-                progress=progress,
+                progress=False,  # Don't show progress in the function itself
                 debug=debug,
             )
             xor_components.append(result)
@@ -2354,10 +2406,13 @@ def generate_key_independent_xor(
 
         # Check and process Scrypt
         if kdf_config_section.get("scrypt", {}).get("enabled", False):
-            if not quiet and not progress:
-                print("Computing Scrypt KDF...", end=" ")
-
             scrypt_config = kdf_config_section["scrypt"]
+
+            if not quiet and not progress:
+                print("Computing Scrypt KDF...", end=" ", flush=True)
+            elif not quiet and progress:
+                print("Using Scrypt for key derivation")
+
             result = compute_kdf_independent(
                 password=algorithm_input,  # Use initial hash instead of raw password
                 salt=salt,
@@ -2365,7 +2420,7 @@ def generate_key_independent_xor(
                 kdf_config=scrypt_config,
                 key_length=key_length,
                 quiet=quiet,
-                progress=progress,
+                progress=False,
                 debug=debug,
             )
             xor_components.append(result)
@@ -2378,10 +2433,13 @@ def generate_key_independent_xor(
 
         # Check and process Balloon
         if kdf_config_section.get("balloon", {}).get("enabled", False):
-            if not quiet and not progress:
-                print("Computing Balloon KDF...", end=" ")
-
             balloon_config = kdf_config_section["balloon"]
+
+            if not quiet and not progress:
+                print("Computing Balloon KDF...", end=" ", flush=True)
+            elif not quiet and progress:
+                print("Using Balloon-Hashing for key derivation")
+
             result = compute_kdf_independent(
                 password=algorithm_input,  # Use initial hash instead of raw password
                 salt=salt,
@@ -2389,7 +2447,7 @@ def generate_key_independent_xor(
                 kdf_config=balloon_config,
                 key_length=key_length,
                 quiet=quiet,
-                progress=progress,
+                progress=False,
                 debug=debug,
             )
             xor_components.append(result)
@@ -2402,8 +2460,8 @@ def generate_key_independent_xor(
 
         # Check and process HKDF
         if kdf_config_section.get("hkdf", {}).get("enabled", False):
-            if not quiet and not progress:
-                print("Computing HKDF...", end=" ")
+            if not quiet:
+                print("Computing HKDF...", end=" ", flush=True)
 
             hkdf_config = kdf_config_section["hkdf"]
             result = compute_kdf_independent(
@@ -2418,7 +2476,7 @@ def generate_key_independent_xor(
             )
             xor_components.append(result)
 
-            if not quiet and not progress:
+            if not quiet:
                 print("✅")
 
             if debug:

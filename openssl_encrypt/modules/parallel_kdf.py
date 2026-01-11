@@ -248,29 +248,34 @@ def _kdf_worker(
             import sys
             import importlib.util
 
-            # Find the balloon_hash module
-            spec = importlib.util.find_spec("openssl_encrypt.modules.balloon_hash")
+            # Find the balloon module
+            spec = importlib.util.find_spec("openssl_encrypt.modules.balloon")
             if spec is None:
                 raise ValueError("Balloon hash module not found")
 
             balloon_module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(balloon_module)
-            balloon_hash = balloon_module.balloon_hash
+            balloon_m = balloon_module.balloon_m
+
+            # Import normalize function for key length normalization
+            from openssl_encrypt.modules.crypt_core import normalize_to_key_length_secure
 
             # Extract Balloon parameters
             space_cost = kdf_config.get("space_cost", 16)
             time_cost = kdf_config.get("time_cost", 20)
-            delta = kdf_config.get("delta", 4)
+            parallelism = kdf_config.get("parallelism", 1)
 
-            # Run Balloon
-            result = balloon_hash(
-                password=password_bytes,
-                salt=salt,
+            # Run Balloon (returns fixed 32-byte output)
+            raw_result = balloon_m(
+                password=password_bytes.decode('latin-1') if isinstance(password_bytes, bytes) else str(password_bytes),
+                salt=salt.decode('latin-1') if isinstance(salt, bytes) else str(salt),
                 space_cost=space_cost,
                 time_cost=time_cost,
-                delta=delta,
-                hash_len=key_length,
+                parallel_cost=parallelism,
             )
+
+            # Normalize to target key length using HKDF
+            result = bytes(normalize_to_key_length_secure(raw_result, key_length))
 
         elif kdf_type == "hkdf":
             from cryptography.hazmat.primitives import hashes
@@ -394,9 +399,6 @@ class ParallelProgressAggregator:
             # Mark worker as completed
             self.completed_workers.add(msg.worker_id)
             self.completed_times[msg.worker_id] = msg.elapsed
-            if not self.quiet and self.progress_enabled:
-                # Clear current line and show completion
-                print(f"\r{' ' * 100}\r  {msg.worker_id.upper()} completed ({msg.elapsed:.1f}s)")
 
         elif msg.progress_type == ProgressType.KDF_START:
             # Initialize KDF progress (won't update until complete)
@@ -406,9 +408,6 @@ class ParallelProgressAggregator:
             # Mark KDF as completed
             self.completed_workers.add(msg.worker_id)
             self.completed_times[msg.worker_id] = msg.elapsed
-            if not self.quiet and self.progress_enabled:
-                # Clear current line and show completion
-                print(f"\r{' ' * 100}\r  {msg.worker_id.upper()} completed ({msg.elapsed:.1f}s)")
 
         elif msg.progress_type == ProgressType.WORKER_ERROR:
             # Don't update display for errors - let exception propagate
@@ -662,9 +661,6 @@ def generate_key_independent_xor_parallel(
                 f"[{parallel_time:.1f}s parallel, ~{sequential_estimate:.1f}s sequential estimate]"
             )
 
-        # Generate IV
-        iv = os.urandom(16)
-
         # Apply algorithm-specific key formatting
         final_key_bytes = bytes(final_key)
 
@@ -712,7 +708,8 @@ def generate_key_independent_xor_parallel(
             # Default: base64 encode
             final_key_bytes = base64.b64encode(hashlib.sha256(final_key_bytes).digest())
 
-        return final_key_bytes, salt, iv
+        # Return key, salt, and hash_config (matching sequential signature)
+        return final_key_bytes, salt, hash_config
 
     finally:
         # CRITICAL: Zero all intermediate components
