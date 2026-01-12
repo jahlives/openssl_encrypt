@@ -113,7 +113,7 @@ pathspec==0.12.1
     # via black
 pbr==6.1.1
     # via stevedore
-pillow==10.4.0
+pillow==12.1.0
     # via
     #   -r /home/work/private/git/openssl_encrypt/requirements-prod.in
     #   qrcode
@@ -202,7 +202,7 @@ typing-extensions==4.13.2
     #   safety
     #   safety-schemas
     #   typer
-urllib3==2.4.0
+urllib3==2.6.3
     # via requests
 virtualenv==20.31.2
     # via pre-commit
