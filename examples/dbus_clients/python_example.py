@@ -152,7 +152,9 @@ def main():
     print("\n5. Post-Quantum Key Generation Example")
     print("-" * 60)
 
-    keystore_file = tempfile.mktemp(suffix=".pqc")
+    keystore_temp = tempfile.NamedTemporaryFile(suffix=".pqc", delete=False)
+    keystore_file = keystore_temp.name
+    keystore_temp.close()
     print(f"Keystore file: {keystore_file}")
 
     print("\nGenerating ML-KEM-768 key...")

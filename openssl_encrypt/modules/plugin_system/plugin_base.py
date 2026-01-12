@@ -93,7 +93,9 @@ class PluginSecurityContext:
     This is the ONLY data interface plugins can access.
     """
 
-    def __init__(self, plugin_id: str, capabilities: Set[PluginCapability], plugin_file_directory: str = None):
+    def __init__(
+        self, plugin_id: str, capabilities: Set[PluginCapability], plugin_file_directory: str = None
+    ):
         self.plugin_id = plugin_id
         self.capabilities = capabilities
         self.metadata = {}  # Only non-sensitive metadata
@@ -119,7 +121,12 @@ class PluginSecurityContext:
         """Generate safe temporary file path for plugin use."""
         import tempfile
 
-        return tempfile.mktemp(suffix=suffix, prefix=f"plugin_{self.plugin_id}_")
+        temp_file = tempfile.NamedTemporaryFile(
+            suffix=suffix, prefix=f"plugin_{self.plugin_id}_", delete=False
+        )
+        temp_path = temp_file.name
+        temp_file.close()
+        return temp_path
 
     @staticmethod
     def _is_sensitive_key(key: str) -> bool:
