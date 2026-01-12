@@ -5,6 +5,7 @@ Version requirements and verification for external dependencies
 LIBOQS_VERSION = "0.12.0"
 LIBOQS_PYTHON_VERSION = "0.12.0"
 
+
 def check_liboqs_version():
     """
     Check if liboqs is installed with correct version
@@ -13,50 +14,63 @@ def check_liboqs_version():
     Returns:
         tuple: (installed: bool, version: str or None, message: str)
     """
-    import subprocess
     import os
+    import subprocess
 
     # Common paths where liboqs might be installed
     common_pkgconfig_paths = [
         None,  # Use default PKG_CONFIG_PATH first
-        os.path.expanduser('~/.local/lib64/pkgconfig'),
-        os.path.expanduser('~/.local/lib/pkgconfig'),
-        '/usr/local/lib64/pkgconfig',
-        '/usr/local/lib/pkgconfig',
+        os.path.expanduser("~/.local/lib64/pkgconfig"),
+        os.path.expanduser("~/.local/lib/pkgconfig"),
+        "/usr/local/lib64/pkgconfig",
+        "/usr/local/lib/pkgconfig",
     ]
 
+    pkg_config_not_found = False
     for pkg_path in common_pkgconfig_paths:
         try:
             env = os.environ.copy()
             if pkg_path is not None:
                 # Add this path to PKG_CONFIG_PATH
-                existing_path = env.get('PKG_CONFIG_PATH', '')
+                existing_path = env.get("PKG_CONFIG_PATH", "")
                 if existing_path:
-                    env['PKG_CONFIG_PATH'] = f"{pkg_path}:{existing_path}"
+                    env["PKG_CONFIG_PATH"] = f"{pkg_path}:{existing_path}"
                 else:
-                    env['PKG_CONFIG_PATH'] = pkg_path
+                    env["PKG_CONFIG_PATH"] = pkg_path
 
             result = subprocess.run(
-                ['pkg-config', '--modversion', 'liboqs'],
+                ["pkg-config", "--modversion", "liboqs"],
                 capture_output=True,
                 text=True,
                 timeout=5,
-                env=env
+                env=env,
             )
             if result.returncode == 0:
                 version = result.stdout.strip()
                 if version == LIBOQS_VERSION:
                     return (True, version, f"✓ liboqs {version}")
                 else:
-                    return (False, version, f"✗ liboqs version mismatch: found {version}, need {LIBOQS_VERSION}")
+                    return (
+                        False,
+                        version,
+                        f"✗ liboqs version mismatch: found {version}, need {LIBOQS_VERSION}",
+                    )
         except FileNotFoundError:
-            return (False, None, "✗ pkg-config not found, cannot verify liboqs")
+            pkg_config_not_found = True
+            break  # No point trying other paths if pkg-config doesn't exist
         except subprocess.TimeoutExpired:
             continue  # Try next path
         except Exception:
             continue  # Try next path
 
+    # If pkg-config is not found, we can't verify via pkg-config
+    # But if liboqs-python works, that means liboqs is available
+    # This is common in containerized/sandboxed environments like flatpak
+    if pkg_config_not_found:
+        return (None, None, "✗ pkg-config not found, cannot verify liboqs")
+
     return (False, None, "✗ liboqs not found via pkg-config")
+
 
 def check_liboqs_python_version():
     """
@@ -67,15 +81,21 @@ def check_liboqs_python_version():
     """
     try:
         import oqs
+
         version = oqs.oqs_python_version()
         if version == LIBOQS_PYTHON_VERSION:
             return (True, version, f"✓ liboqs-python {version}")
         else:
-            return (False, version, f"✗ liboqs-python version mismatch: found {version}, need {LIBOQS_PYTHON_VERSION}")
+            return (
+                False,
+                version,
+                f"✗ liboqs-python version mismatch: found {version}, need {LIBOQS_PYTHON_VERSION}",
+            )
     except ImportError:
         return (False, None, "✗ liboqs-python not installed")
     except Exception as e:
         return (False, None, f"✗ Error checking liboqs-python: {e}")
+
 
 def check_all_dependencies(verbose=True):
     """
@@ -93,15 +113,26 @@ def check_all_dependencies(verbose=True):
     liboqs_ok, liboqs_ver, liboqs_msg = check_liboqs_version()
     if verbose:
         print(liboqs_msg)
-    all_ok = all_ok and liboqs_ok
 
     # Check liboqs-python
     liboqs_python_ok, liboqs_python_ver, liboqs_python_msg = check_liboqs_python_version()
     if verbose:
         print(liboqs_python_msg)
-    all_ok = all_ok and liboqs_python_ok
+
+    # If liboqs check returned None (pkg-config not available),
+    # but liboqs-python works, consider that sufficient
+    # This is common in sandboxed environments like flatpak
+    if liboqs_ok is None and liboqs_python_ok:
+        all_ok = True
+    elif liboqs_ok is None:
+        # pkg-config not available and liboqs-python doesn't work
+        all_ok = False
+    else:
+        # Normal case: both must be OK
+        all_ok = liboqs_ok and liboqs_python_ok
 
     return all_ok
+
 
 def get_installation_instructions():
     """Get manual installation instructions"""
@@ -135,6 +166,7 @@ Manual Installation Instructions:
    python -m openssl_encrypt.versions
 """
 
+
 def main():
     """Main entry point for command-line usage"""
     print("Checking openssl_encrypt dependencies...")
@@ -152,6 +184,8 @@ def main():
         print(get_installation_instructions())
         return 1
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     import sys
+
     sys.exit(main())

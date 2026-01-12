@@ -3,13 +3,13 @@ openssl_encrypt - Secure file encryption and decryption package
 """
 
 import os
-import sys
 import subprocess
+import sys
 from pathlib import Path
 
 # Version will be set by setup.py
 try:
-    from .version import __version__, __git_commit__
+    from .version import __git_commit__, __version__
 except ImportError:
     __version__ = "unknown"
     __git_commit__ = "unknown"
@@ -18,33 +18,49 @@ except ImportError:
 REQUIRED_LIBOQS_VERSION = "0.12.0"
 REQUIRED_LIBOQS_PYTHON_VERSION = "0.12.0"
 
+# Track if we've already checked dependencies in this process
+_dependencies_checked = False
+
 
 def _check_and_build_dependencies():
     """
     Check if liboqs dependencies are installed with correct versions.
     If not, and if we're in development mode, offer to build them.
     """
+    global _dependencies_checked
+
     # Check if we should skip this check (for CI, containers, etc.)
-    if os.environ.get('SKIP_LIBOQS_CHECK', '').lower() in ('1', 'true', 'yes'):
+    if os.environ.get("SKIP_LIBOQS_CHECK", "").lower() in ("1", "true", "yes"):
         return
 
     # Check if we've already checked in this process
-    if hasattr(_check_and_build_dependencies, '_checked'):
+    if _dependencies_checked:
         return
-    _check_and_build_dependencies._checked = True
+    _dependencies_checked = True
 
     # Enable verbose mode with environment variable
-    verbose = os.environ.get('LIBOQS_CHECK_VERBOSE', '').lower() in ('1', 'true', 'yes')
+    verbose = os.environ.get("LIBOQS_CHECK_VERBOSE", "").lower() in ("1", "true", "yes")
 
-    from .versions import check_liboqs_version, check_liboqs_python_version
+    from .versions import check_liboqs_python_version, check_liboqs_version
 
     liboqs_ok, liboqs_ver, liboqs_msg = check_liboqs_version()
     liboqs_python_ok, liboqs_python_ver, liboqs_python_msg = check_liboqs_python_version()
 
+    # If liboqs check returned None (pkg-config not available),
+    # but liboqs-python works, consider that sufficient
+    # This is common in sandboxed environments like flatpak
+    if liboqs_ok is None and liboqs_python_ok:
+        # pkg-config not available but liboqs-python works - this is fine
+        if verbose:
+            print("✓ liboqs dependencies satisfied:", file=sys.stderr)
+            print(f"  {liboqs_msg}", file=sys.stderr)
+            print(f"  {liboqs_python_msg}", file=sys.stderr)
+        return
+
     if liboqs_ok and liboqs_python_ok:
         # All good, return silently (or verbosely if requested)
         if verbose:
-            print(f"✓ liboqs dependencies satisfied:", file=sys.stderr)
+            print("✓ liboqs dependencies satisfied:", file=sys.stderr)
             print(f"  {liboqs_msg}", file=sys.stderr)
             print(f"  {liboqs_python_msg}", file=sys.stderr)
         return
@@ -68,21 +84,29 @@ def _check_and_build_dependencies():
         print(f"  python {package_path / 'setup.py'} develop", file=sys.stderr)
 
         # For interactive sessions, offer to build automatically
-        if sys.stdin.isatty() and not os.environ.get('CI'):
-            print("\nWould you like to build dependencies now? (y/N): ", end='', file=sys.stderr, flush=True)
+        if sys.stdin.isatty() and not os.environ.get("CI"):
+            print(
+                "\nWould you like to build dependencies now? (y/N): ",
+                end="",
+                file=sys.stderr,
+                flush=True,
+            )
             try:
                 response = input().strip().lower()
-                if response in ('y', 'yes'):
+                if response in ("y", "yes"):
                     print("\nBuilding dependencies...", file=sys.stderr)
                     env = os.environ.copy()
-                    env['LIBOQS_INSTALL_PREFIX'] = os.path.expanduser('~/.local')
-                    env['LIBOQS_VERSION'] = REQUIRED_LIBOQS_VERSION
-                    env['LIBOQS_PYTHON_VERSION'] = REQUIRED_LIBOQS_PYTHON_VERSION
+                    env["LIBOQS_INSTALL_PREFIX"] = os.path.expanduser("~/.local")
+                    env["LIBOQS_VERSION"] = REQUIRED_LIBOQS_VERSION
+                    env["LIBOQS_PYTHON_VERSION"] = REQUIRED_LIBOQS_PYTHON_VERSION
 
                     try:
-                        subprocess.check_call(['/bin/bash', str(build_script)], env=env)
+                        subprocess.check_call(["/bin/bash", str(build_script)], env=env)
                         print("\n✓ Dependencies built successfully!", file=sys.stderr)
-                        print("Please restart your Python session to use the new libraries.", file=sys.stderr)
+                        print(
+                            "Please restart your Python session to use the new libraries.",
+                            file=sys.stderr,
+                        )
                     except subprocess.CalledProcessError as e:
                         print(f"\n✗ Build failed: {e}", file=sys.stderr)
                         print("Please install manually (see INSTALLATION.md)", file=sys.stderr)
@@ -106,4 +130,4 @@ except Exception as e:
     print(f"Warning: Failed to check liboqs dependencies: {e}", file=sys.stderr)
 
 
-__all__ = ['__version__', '__git_commit__']
+__all__ = ["__version__", "__git_commit__"]
