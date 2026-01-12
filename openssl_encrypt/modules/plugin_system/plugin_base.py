@@ -106,7 +106,12 @@ class PluginSecurityContext:
         """Generate safe temporary file path for plugin use."""
         import tempfile
 
-        return tempfile.mktemp(suffix=suffix, prefix=f"plugin_{self.plugin_id}_")
+        temp_file = tempfile.NamedTemporaryFile(
+            suffix=suffix, prefix=f"plugin_{self.plugin_id}_", delete=False
+        )
+        temp_path = temp_file.name
+        temp_file.close()
+        return temp_path
 
     @staticmethod
     def _is_sensitive_key(key: str) -> bool:
@@ -173,7 +178,10 @@ class PluginResult:
     """
 
     def __init__(
-        self, success: bool = True, message: str = "", data: Optional[Dict[str, Any]] = None
+        self,
+        success: bool = True,
+        message: str = "",
+        data: Optional[Dict[str, Any]] = None,
     ):
         self.success = success
         self.message = message
@@ -331,7 +339,8 @@ class PreProcessorPlugin(BasePlugin):
                 return result  # Fail fast on first error
 
         return PluginResult.success_result(
-            f"Pre-processed {len(results)} files successfully", {"processed_files": len(results)}
+            f"Pre-processed {len(results)} files successfully",
+            {"processed_files": len(results)},
         )
 
 
@@ -544,7 +553,8 @@ class UtilityPlugin(BasePlugin):
             function_args = context.metadata.get("function_args", {})
             result = function(**function_args)
             return PluginResult.success_result(
-                f"Utility function '{function_name}' executed successfully", {"result": result}
+                f"Utility function '{function_name}' executed successfully",
+                {"result": result},
             )
         except Exception as e:
             return PluginResult.error_result(f"Utility function failed: {str(e)}")
