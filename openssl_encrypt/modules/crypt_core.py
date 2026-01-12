@@ -1708,7 +1708,7 @@ def multi_hash_password(
                                     key_material = hashed[:32]
                                 else:
                                     # Legacy: Predictable derivation for v1-6 (backward compatibility only)
-                                    # 
+                                    #
                                     key_material = hashlib.sha256(salt + str(i).encode()).digest()
                             # Create a personalized BLAKE2b instance for each iteration
                             result = hashlib.blake2b(
@@ -1764,7 +1764,7 @@ def multi_hash_password(
                                         key_material = hashed[:32]
                                     else:
                                         # Legacy: Predictable derivation for v1-6 (backward compatibility only)
-                                        # 
+                                        #
                                         key_material = hashlib.sha256(
                                             salt + str(i).encode()
                                         ).digest()
@@ -1854,7 +1854,7 @@ def multi_hash_password(
                                     round_material = hashed[:32]
                                 else:
                                     # Legacy: Predictable derivation for v1-6 (backward compatibility only)
-                                    # 
+                                    #
                                     round_material = hashlib.sha256(salt + str(i).encode()).digest()
 
                             # SHAKE-256 is an extendable-output function (XOF) that can produce
@@ -2137,8 +2137,9 @@ def compute_hash_independent(
     Raises:
         ValueError: If algorithm is not supported
     """
-    from .secure_memory import SecureBytes
     import hashlib
+
+    from .secure_memory import SecureBytes
 
     # Map algorithm names to display names
     algo_display_names = {
@@ -2149,7 +2150,7 @@ def compute_hash_independent(
         "blake2b": "BLAKE2b",
         "blake3": "BLAKE3",
         "shake256": "SHAKE-256",
-        "whirlpool": "Whirlpool"
+        "whirlpool": "Whirlpool",
     }
     algo_display = algo_display_names.get(algorithm, algorithm.upper())
 
@@ -2198,7 +2199,11 @@ def compute_hash_independent(
                     filled = int(bar_length * (i + 1) / rounds)
                     bar = "█" * filled + " " * (bar_length - filled)
                     # Overwrite current line with progress bar
-                    print(f"\r{algo_display} hashing: [{bar}] {percent:.1f}% ({i+1}/{rounds})", end="", flush=True)
+                    print(
+                        f"\r{algo_display} hashing: [{bar}] {percent:.1f}% ({i+1}/{rounds})",
+                        end="",
+                        flush=True,
+                    )
 
             # Secure cleanup of old current
             if i < rounds - 1:  # Not last iteration
@@ -2214,9 +2219,7 @@ def compute_hash_independent(
                     print()  # Move to next line
 
         if debug:
-            logger.debug(
-                f"INDEPENDENT-XOR: {algorithm} result (normalized): {result.hex()}"
-            )
+            logger.debug(f"INDEPENDENT-XOR: {algorithm} result (normalized): {result.hex()}")
 
         return result
 
@@ -2315,9 +2318,7 @@ def compute_kdf_independent(
         p = kdf_config.get("p", 1)
 
         if debug:
-            logger.debug(
-                f"INDEPENDENT-XOR: Scrypt params - n={n}, r={r}, p={p}"
-            )
+            logger.debug(f"INDEPENDENT-XOR: Scrypt params - n={n}, r={r}, p={p}")
 
         # Run Scrypt on initial hash
         result = hashlib.scrypt(
@@ -2364,9 +2365,9 @@ def compute_kdf_independent(
         # Balloon hash always returns 32 bytes (SHA256 output)
         # If we need a different length, use HKDF to derive the correct length
         if len(balloon_result) != key_length:
+            from cryptography.hazmat.backends import default_backend
             from cryptography.hazmat.primitives import hashes
             from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-            from cryptography.hazmat.backends import default_backend
 
             if debug:
                 logger.debug(
@@ -2388,9 +2389,9 @@ def compute_kdf_independent(
         return SecureBytes(result)
 
     elif kdf_type == "hkdf":
+        from cryptography.hazmat.backends import default_backend
         from cryptography.hazmat.primitives import hashes
         from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-        from cryptography.hazmat.backends import default_backend
 
         # Extract HKDF parameters
         info = kdf_config.get("info", b"independent-xor-hkdf")
@@ -2484,10 +2485,11 @@ def generate_key_independent_xor(
     Raises:
         ValueError: If no algorithms are enabled
     """
-    from .secure_memory import SecureBytes, secure_memzero
-    import os
     import base64
     import hashlib
+    import os
+
+    from .secure_memory import SecureBytes, secure_memzero
 
     if debug:
         logger.debug(
@@ -2498,7 +2500,15 @@ def generate_key_independent_xor(
     # Determine required key length based on algorithm
     if algorithm == "fernet":
         key_length = 32  # Fernet requires 32 bytes
-    elif algorithm in ["aes-256-gcm", "chacha20-poly1305", "xchacha20-poly1305", "aes-gcm-siv", "aes-ocb3", "camellia", "cascade"]:
+    elif algorithm in [
+        "aes-256-gcm",
+        "chacha20-poly1305",
+        "xchacha20-poly1305",
+        "aes-gcm-siv",
+        "aes-ocb3",
+        "camellia",
+        "cascade",
+    ]:
         key_length = 32
     elif algorithm == "aes-siv":
         key_length = 64  # AES-SIV requires 64 bytes
@@ -2544,8 +2554,14 @@ def generate_key_independent_xor(
 
         # 1. Process each enabled hash algorithm
         hash_algorithms = [
-            "sha256", "sha512", "sha3_256", "sha3_512",
-            "blake2b", "blake3", "shake256", "whirlpool"
+            "sha256",
+            "sha512",
+            "sha3_256",
+            "sha3_512",
+            "blake2b",
+            "blake3",
+            "shake256",
+            "whirlpool",
         ]
 
         for algo in hash_algorithms:
@@ -2555,7 +2571,9 @@ def generate_key_independent_xor(
 
                 if not quiet and not progress:
                     # Only print initial message if progress bars disabled
-                    print(f"Computing {algo_display} hash ({rounds} rounds)...", end=" ", flush=True)
+                    print(
+                        f"Computing {algo_display} hash ({rounds} rounds)...", end=" ", flush=True
+                    )
                 elif not quiet and progress:
                     # Print header before progress bar
                     algo_names = {
@@ -2566,7 +2584,7 @@ def generate_key_independent_xor(
                         "blake2b": "BLAKE2b",
                         "blake3": "BLAKE3",
                         "shake256": "SHAKE-256",
-                        "whirlpool": "Whirlpool"
+                        "whirlpool": "Whirlpool",
                     }
                     algo_name = algo_names.get(algo, algo.upper())
                     print(f"Applying {rounds} rounds of {algo_name}")
@@ -2587,9 +2605,7 @@ def generate_key_independent_xor(
                     print("✅")
 
                 if debug:
-                    logger.debug(
-                        f"INDEPENDENT-XOR: Added {algo} component #{len(xor_components)}"
-                    )
+                    logger.debug(f"INDEPENDENT-XOR: Added {algo} component #{len(xor_components)}")
 
         # 2. Process each enabled KDF
         # Extract KDF config (handle both nested and flat formats)
@@ -2723,17 +2739,13 @@ def generate_key_independent_xor(
         final_key = xor_bytes_secure(xor_components)
 
         if not quiet:
-            print(
-                f"✅ Combined {len(xor_components)} independent components using XOR (Massey)"
-            )
+            print(f"✅ Combined {len(xor_components)} independent components using XOR (Massey)")
 
         # 4. Generate IV
         iv = os.urandom(16)
 
         if debug:
-            logger.debug(
-                f"INDEPENDENT-XOR: Final key length = {len(final_key)} bytes"
-            )
+            logger.debug(f"INDEPENDENT-XOR: Final key length = {len(final_key)} bytes")
             logger.debug(f"INDEPENDENT-XOR: IV length = {len(iv)} bytes")
 
         # 5. Apply algorithm-specific key formatting
@@ -2746,15 +2758,32 @@ def generate_key_independent_xor(
             if debug:
                 logger.debug("INDEPENDENT-XOR: Applied Fernet base64 encoding")
         elif algorithm in [
-            "aes-256-gcm", "aes-gcm", "aes-gcm-siv", "aes-ocb3",
-            "chacha20-poly1305", "xchacha20-poly1305", "camellia",
+            "aes-256-gcm",
+            "aes-gcm",
+            "aes-gcm-siv",
+            "aes-ocb3",
+            "chacha20-poly1305",
+            "xchacha20-poly1305",
+            "camellia",
             # PQC hybrid algorithms
-            "kyber512-hybrid", "kyber768-hybrid", "kyber1024-hybrid",
-            "ml-kem-512-hybrid", "ml-kem-768-hybrid", "ml-kem-1024-hybrid",
-            "ml-kem-512-chacha20", "ml-kem-768-chacha20", "ml-kem-1024-chacha20",
-            "hqc-128-hybrid", "hqc-192-hybrid", "hqc-256-hybrid",
-            "mayo-1-hybrid", "mayo-3-hybrid", "mayo-5-hybrid",
-            "cross-128-hybrid", "cross-192-hybrid", "cross-256-hybrid"
+            "kyber512-hybrid",
+            "kyber768-hybrid",
+            "kyber1024-hybrid",
+            "ml-kem-512-hybrid",
+            "ml-kem-768-hybrid",
+            "ml-kem-1024-hybrid",
+            "ml-kem-512-chacha20",
+            "ml-kem-768-chacha20",
+            "ml-kem-1024-chacha20",
+            "hqc-128-hybrid",
+            "hqc-192-hybrid",
+            "hqc-256-hybrid",
+            "mayo-1-hybrid",
+            "mayo-3-hybrid",
+            "mayo-5-hybrid",
+            "cross-128-hybrid",
+            "cross-192-hybrid",
+            "cross-256-hybrid",
         ]:
             # These algorithms use raw SHA-256 hash
             final_key_bytes = hashlib.sha256(final_key_bytes).digest()
@@ -2767,9 +2796,9 @@ def generate_key_independent_xor(
                 logger.debug("INDEPENDENT-XOR: Applied SHA-512 final hash")
         elif algorithm in ["threefish-512", "threefish-1024"]:
             # Threefish algorithms need HKDF expansion
-            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-            from cryptography.hazmat.primitives import hashes
             from cryptography.hazmat.backends import default_backend
+            from cryptography.hazmat.primitives import hashes
+            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
             if algorithm == "threefish-512":
                 hkdf = HKDF(
@@ -3246,7 +3275,7 @@ def generate_key(
                         round_salt = bytes(password)[:16]
                     else:
                         # Legacy: Predictable derivation for v1-6 (backward compatibility only)
-                        # 
+                        #
                         if debug and i == 1:
                             logger.debug(
                                 f"ARGON2: Using PREDICTABLE derivation (format_version={format_version})"
@@ -3377,7 +3406,7 @@ def generate_key(
                         round_salt = bytes(password)[:16]
                     else:
                         # Legacy: Predictable derivation for v1-6 (backward compatibility only)
-                        # 
+                        #
                         if debug and i == 1:
                             logger.debug(
                                 f"BALLOON: Using PREDICTABLE derivation (format_version={format_version})"
@@ -3495,7 +3524,7 @@ def generate_key(
                         round_salt = password[:16]
                     else:
                         # Legacy: Predictable derivation for v1-6 (backward compatibility only)
-                        # 
+                        #
                         if debug and i == 1:
                             logger.debug(
                                 f"SCRYPT: Using PREDICTABLE derivation (format_version={format_version})"
@@ -3633,7 +3662,7 @@ def generate_key(
                             round_salt = password[:16]
                     else:
                         # Legacy: Predictable derivation for v1-6 (backward compatibility only)
-                        # 
+                        #
                         salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
                         round_salt = salt_material[:16]  # Use 16 bytes for salt
 
@@ -3810,7 +3839,7 @@ def generate_key(
                     iteration_specific_salt = password[:16]
             else:
                 # Legacy: Predictable derivation for v1-6 (backward compatibility only)
-                # 
+                #
                 # Original code derived salt for all rounds including round 0
                 if debug and i == 0:
                     logger.debug(
@@ -3914,7 +3943,7 @@ def generate_key(
                     iteration_specific_salt = password[:16]
             else:
                 # Legacy: Predictable derivation for v1-6 (backward compatibility only)
-                # 
+                #
                 # Original fallback code derived salt for all rounds including round 0
                 iteration_specific_salt = hashlib.sha256(
                     base_salt + str(i).encode("utf-8")
@@ -4363,17 +4392,33 @@ def create_metadata_v5(
     # Critical for v8/v10 XOR composition: order must match during encrypt/decrypt
     for algo, rounds in hash_config.items():
         # Only process known hash algorithms (skip KDFs, they're handled separately)
-        if algo in ["sha512", "sha384", "sha256", "sha224",
-                    "sha3_512", "sha3_384", "sha3_256", "sha3_224",
-                    "blake2b", "blake2s", "blake3",
-                    "shake256", "shake128", "whirlpool"]:
+        if algo in [
+            "sha512",
+            "sha384",
+            "sha256",
+            "sha224",
+            "sha3_512",
+            "sha3_384",
+            "sha3_256",
+            "sha3_224",
+            "blake2b",
+            "blake2s",
+            "blake3",
+            "shake256",
+            "shake128",
+            "whirlpool",
+        ]:
             metadata["derivation_config"]["hash_config"][algo] = {"rounds": rounds}
 
     # Add PBKDF2 config if explicitly configured in hash_config
     # IMPORTANT: Only add PBKDF2 to metadata if it's explicitly in hash_config
     # For v10+, PBKDF2 should not be used for encryption (only backward compat decryption)
     # Check for both pbkdf2 dict format and pbkdf2_iterations int format
-    if "pbkdf2" in hash_config and isinstance(hash_config["pbkdf2"], dict) and "rounds" in hash_config["pbkdf2"]:
+    if (
+        "pbkdf2" in hash_config
+        and isinstance(hash_config["pbkdf2"], dict)
+        and "rounds" in hash_config["pbkdf2"]
+    ):
         metadata["derivation_config"]["kdf_config"]["pbkdf2"] = hash_config["pbkdf2"]
     elif "pbkdf2_iterations" in hash_config and hash_config["pbkdf2_iterations"] > 0:
         metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {
@@ -4506,17 +4551,33 @@ def create_metadata_v6(
     # Critical for v8/v10/v11 XOR composition: order must match during encrypt/decrypt
     for algo, rounds in hash_config.items():
         # Only process known hash algorithms (skip KDFs, they're handled separately)
-        if algo in ["sha512", "sha384", "sha256", "sha224",
-                    "sha3_512", "sha3_384", "sha3_256", "sha3_224",
-                    "blake2b", "blake2s", "blake3",
-                    "shake256", "shake128", "whirlpool"]:
+        if algo in [
+            "sha512",
+            "sha384",
+            "sha256",
+            "sha224",
+            "sha3_512",
+            "sha3_384",
+            "sha3_256",
+            "sha3_224",
+            "blake2b",
+            "blake2s",
+            "blake3",
+            "shake256",
+            "shake128",
+            "whirlpool",
+        ]:
             metadata["derivation_config"]["hash_config"][algo] = {"rounds": rounds}
 
     # Add PBKDF2 config if explicitly configured in hash_config
     # IMPORTANT: Only add PBKDF2 to metadata if it's explicitly in hash_config
     # For v10+, PBKDF2 should not be used for encryption (only backward compat decryption)
     # Check for both pbkdf2 dict format and pbkdf2_iterations int format
-    if "pbkdf2" in hash_config and isinstance(hash_config["pbkdf2"], dict) and "rounds" in hash_config["pbkdf2"]:
+    if (
+        "pbkdf2" in hash_config
+        and isinstance(hash_config["pbkdf2"], dict)
+        and "rounds" in hash_config["pbkdf2"]
+    ):
         metadata["derivation_config"]["kdf_config"]["pbkdf2"] = hash_config["pbkdf2"]
     elif "pbkdf2_iterations" in hash_config and hash_config["pbkdf2_iterations"] > 0:
         metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {
@@ -4718,17 +4779,33 @@ def create_metadata_v8(
     # Critical for v8/v10 XOR composition: order must match during encrypt/decrypt
     for algo, rounds in hash_config.items():
         # Only process known hash algorithms (skip KDFs, they're handled separately)
-        if algo in ["sha512", "sha384", "sha256", "sha224",
-                    "sha3_512", "sha3_384", "sha3_256", "sha3_224",
-                    "blake2b", "blake2s", "blake3",
-                    "shake256", "shake128", "whirlpool"]:
+        if algo in [
+            "sha512",
+            "sha384",
+            "sha256",
+            "sha224",
+            "sha3_512",
+            "sha3_384",
+            "sha3_256",
+            "sha3_224",
+            "blake2b",
+            "blake2s",
+            "blake3",
+            "shake256",
+            "shake128",
+            "whirlpool",
+        ]:
             metadata["derivation_config"]["hash_config"][algo] = {"rounds": rounds}
 
     # Add PBKDF2 config if explicitly configured in hash_config
     # IMPORTANT: Only add PBKDF2 to metadata if it's explicitly in hash_config
     # For v10+, PBKDF2 should not be used for encryption (only backward compat decryption)
     # Check for both pbkdf2 dict format and pbkdf2_iterations int format
-    if "pbkdf2" in hash_config and isinstance(hash_config["pbkdf2"], dict) and "rounds" in hash_config["pbkdf2"]:
+    if (
+        "pbkdf2" in hash_config
+        and isinstance(hash_config["pbkdf2"], dict)
+        and "rounds" in hash_config["pbkdf2"]
+    ):
         metadata["derivation_config"]["kdf_config"]["pbkdf2"] = hash_config["pbkdf2"]
     elif "pbkdf2_iterations" in hash_config and hash_config["pbkdf2_iterations"] > 0:
         metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {
@@ -4917,10 +4994,22 @@ def create_metadata_v7(
     # Critical for v8/v10 XOR composition: order must match during encrypt/decrypt
     for algo, rounds in hash_config.items():
         # Only process known hash algorithms (skip KDFs, they're handled separately)
-        if algo in ["sha512", "sha384", "sha256", "sha224",
-                    "sha3_512", "sha3_384", "sha3_256", "sha3_224",
-                    "blake2b", "blake2s", "blake3",
-                    "shake256", "shake128", "whirlpool"]:
+        if algo in [
+            "sha512",
+            "sha384",
+            "sha256",
+            "sha224",
+            "sha3_512",
+            "sha3_384",
+            "sha3_256",
+            "sha3_224",
+            "blake2b",
+            "blake2s",
+            "blake3",
+            "shake256",
+            "shake128",
+            "whirlpool",
+        ]:
             metadata["derivation_config"]["hash_config"][algo] = {"rounds": rounds}
 
     # Add PBKDF2 config if used
@@ -5998,6 +6087,7 @@ def encrypt_file(
         if parallel_kdf:
             # Parallel execution via multiprocessing
             from .parallel_kdf import generate_key_independent_xor_parallel
+
             key, salt, _ = generate_key_independent_xor_parallel(
                 password,
                 salt,
@@ -7989,6 +8079,7 @@ def decrypt_file(
         if parallel_kdf:
             # Parallel execution via multiprocessing
             from .parallel_kdf import generate_key_independent_xor_parallel
+
             key, _, _ = generate_key_independent_xor_parallel(
                 password,
                 salt,

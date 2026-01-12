@@ -118,9 +118,7 @@ class TestFormatV11IndependentXOR(unittest.TestCase):
         }
 
         # Generate key with v10 (sequential XOR)
-        key_v10, _, _ = generate_key(
-            password, salt, config, quiet=True, format_version=10
-        )
+        key_v10, _, _ = generate_key(password, salt, config, quiet=True, format_version=10)
 
         # Generate key with v11 (independent XOR)
         key_v11, _, _ = generate_key_independent_xor(
@@ -339,12 +337,8 @@ class TestFormatV11IndependentXOR(unittest.TestCase):
 
         for algo in algorithms:
             with self.subTest(algorithm=algo):
-                encrypted_file = os.path.join(
-                    self.test_dir, f"encrypted_{algo}_v11.enc"
-                )
-                decrypted_file = os.path.join(
-                    self.test_dir, f"decrypted_{algo}_v11.txt"
-                )
+                encrypted_file = os.path.join(self.test_dir, f"encrypted_{algo}_v11.enc")
+                decrypted_file = os.path.join(self.test_dir, f"decrypted_{algo}_v11.txt")
                 self.test_files.extend([encrypted_file, decrypted_file])
 
                 with open(self.test_file, "rb") as f:
@@ -360,9 +354,7 @@ class TestFormatV11IndependentXOR(unittest.TestCase):
                     format_version=11,
                 )
 
-                decrypt_file(
-                    encrypted_file, decrypted_file, self.test_password, quiet=True
-                )
+                decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
 
                 with open(decrypted_file, "rb") as f:
                     decrypted_content = f.read()
@@ -387,9 +379,7 @@ class TestFormatV11IndependentXOR(unittest.TestCase):
 
         # Try to decrypt with wrong password - should fail
         with self.assertRaises(Exception):
-            decrypt_file(
-                encrypted_file, decrypted_file, "wrong_password", quiet=True
-            )
+            decrypt_file(encrypted_file, decrypted_file, "wrong_password", quiet=True)
 
     def test_v11_metadata_structure(self):
         """Verify v11 metadata has correct structure."""

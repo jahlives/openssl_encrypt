@@ -82,14 +82,10 @@ class TestCrossVersionV8V10(unittest.TestCase):
         }
 
         # Generate key with v8 (1.3 branch format)
-        key_v8, _, _ = generate_key(
-            password, salt, hash_config, format_version=8, quiet=True
-        )
+        key_v8, _, _ = generate_key(password, salt, hash_config, format_version=8, quiet=True)
 
         # Generate key with v10 (1.4 branch format)
-        key_v10, _, _ = generate_key(
-            password, salt, hash_config, format_version=10, quiet=True
-        )
+        key_v10, _, _ = generate_key(password, salt, hash_config, format_version=10, quiet=True)
 
         # Keys MUST be identical for cross-version compatibility
         self.assertEqual(
@@ -147,12 +143,8 @@ class TestCrossVersionV8V10(unittest.TestCase):
             "argon2": {"enabled": True, "time_cost": 1, "memory_cost": 512},
         }
 
-        key1, _, _ = generate_key(
-            password, salt, hash_config, format_version=8, quiet=True
-        )
-        key2, _, _ = generate_key(
-            password, salt, hash_config, format_version=8, quiet=True
-        )
+        key1, _, _ = generate_key(password, salt, hash_config, format_version=8, quiet=True)
+        key2, _, _ = generate_key(password, salt, hash_config, format_version=8, quiet=True)
 
         self.assertEqual(key1, key2, "v8 key derivation should be deterministic")
 
@@ -165,12 +157,8 @@ class TestCrossVersionV8V10(unittest.TestCase):
             "argon2": {"enabled": True, "time_cost": 1, "memory_cost": 512},
         }
 
-        key1, _, _ = generate_key(
-            password, salt, hash_config, format_version=10, quiet=True
-        )
-        key2, _, _ = generate_key(
-            password, salt, hash_config, format_version=10, quiet=True
-        )
+        key1, _, _ = generate_key(password, salt, hash_config, format_version=10, quiet=True)
+        key2, _, _ = generate_key(password, salt, hash_config, format_version=10, quiet=True)
 
         self.assertEqual(key1, key2, "v10 key derivation should be deterministic")
 
@@ -198,12 +186,8 @@ class TestCrossVersionV8V10(unittest.TestCase):
             "scrypt": {"enabled": True, "n": 1024, "r": 8, "p": 1},
         }
 
-        key_v8, _, _ = generate_key(
-            password, salt, hash_config, format_version=8, quiet=True
-        )
-        key_v10, _, _ = generate_key(
-            password, salt, hash_config, format_version=10, quiet=True
-        )
+        key_v8, _, _ = generate_key(password, salt, hash_config, format_version=8, quiet=True)
+        key_v10, _, _ = generate_key(password, salt, hash_config, format_version=10, quiet=True)
 
         # v8 and v10 should produce SAME keys (both use secure derivation)
         self.assertEqual(key_v8, key_v10, "Keys should match with multiple algorithms")
@@ -214,12 +198,8 @@ class TestCrossVersionV8V10(unittest.TestCase):
         salt = b"pbkdf2_salt_1234"
         hash_config = {"sha512": 10, "pbkdf2_iterations": 1000}
 
-        key_v8, _, _ = generate_key(
-            password, salt, hash_config, format_version=8, quiet=True
-        )
-        key_v10, _, _ = generate_key(
-            password, salt, hash_config, format_version=10, quiet=True
-        )
+        key_v8, _, _ = generate_key(password, salt, hash_config, format_version=8, quiet=True)
+        key_v10, _, _ = generate_key(password, salt, hash_config, format_version=10, quiet=True)
 
         self.assertEqual(key_v8, key_v10, "Keys should match with PBKDF2")
 
@@ -229,12 +209,8 @@ class TestCrossVersionV8V10(unittest.TestCase):
         salt = b"single_hash_salt"
         hash_config = {"sha512": 100}
 
-        key_v8, _, _ = generate_key(
-            password, salt, hash_config, format_version=8, quiet=True
-        )
-        key_v10, _, _ = generate_key(
-            password, salt, hash_config, format_version=10, quiet=True
-        )
+        key_v8, _, _ = generate_key(password, salt, hash_config, format_version=8, quiet=True)
+        key_v10, _, _ = generate_key(password, salt, hash_config, format_version=10, quiet=True)
 
         self.assertEqual(key_v8, key_v10, "Keys should match with single hash")
 
@@ -251,12 +227,8 @@ class TestCrossVersionV8V10(unittest.TestCase):
             }
         }
 
-        key_v8, _, _ = generate_key(
-            password, salt, hash_config, format_version=8, quiet=True
-        )
-        key_v10, _, _ = generate_key(
-            password, salt, hash_config, format_version=10, quiet=True
-        )
+        key_v8, _, _ = generate_key(password, salt, hash_config, format_version=8, quiet=True)
+        key_v10, _, _ = generate_key(password, salt, hash_config, format_version=10, quiet=True)
 
         self.assertEqual(key_v8, key_v10, "Keys should match with KDF only")
 
@@ -269,24 +241,16 @@ class TestCrossVersionV8V10(unittest.TestCase):
             "argon2": {"enabled": True, "time_cost": 1, "memory_cost": 512},
         }
 
-        key_v8, _, _ = generate_key(
-            password, salt, hash_config, format_version=8, quiet=True
-        )
-        key_v9, _, _ = generate_key(
-            password, salt, hash_config, format_version=9, quiet=True
-        )
-        key_v10, _, _ = generate_key(
-            password, salt, hash_config, format_version=10, quiet=True
-        )
+        key_v8, _, _ = generate_key(password, salt, hash_config, format_version=8, quiet=True)
+        key_v9, _, _ = generate_key(password, salt, hash_config, format_version=9, quiet=True)
+        key_v10, _, _ = generate_key(password, salt, hash_config, format_version=10, quiet=True)
 
         # v8 and v10 should be identical
         self.assertEqual(key_v8, key_v10)
 
         # But both should differ from v9 (no XOR)
         self.assertNotEqual(key_v8, key_v9, "v8 should differ from v9 (XOR vs no XOR)")
-        self.assertNotEqual(
-            key_v10, key_v9, "v10 should differ from v9 (XOR vs no XOR)"
-        )
+        self.assertNotEqual(key_v10, key_v9, "v10 should differ from v9 (XOR vs no XOR)")
 
     def test_v8_v10_with_different_salts(self):
         """Verify v8/v10 produce different keys with different salts."""
@@ -303,7 +267,9 @@ class TestCrossVersionV8V10(unittest.TestCase):
             password, salt2, hash_config, format_version=8, quiet=True
         )
 
-        self.assertNotEqual(key_v8_salt1, key_v8_salt2, "Different salts should produce different keys")
+        self.assertNotEqual(
+            key_v8_salt1, key_v8_salt2, "Different salts should produce different keys"
+        )
 
     def test_v8_v10_with_different_passwords(self):
         """Verify v8/v10 produce different keys with different passwords."""
@@ -312,12 +278,8 @@ class TestCrossVersionV8V10(unittest.TestCase):
         salt = b"common_salt_1234"
         hash_config = {"sha512": 10, "argon2": {"enabled": True, "time_cost": 1}}
 
-        key_v8_pw1, _, _ = generate_key(
-            password1, salt, hash_config, format_version=8, quiet=True
-        )
-        key_v8_pw2, _, _ = generate_key(
-            password2, salt, hash_config, format_version=8, quiet=True
-        )
+        key_v8_pw1, _, _ = generate_key(password1, salt, hash_config, format_version=8, quiet=True)
+        key_v8_pw2, _, _ = generate_key(password2, salt, hash_config, format_version=8, quiet=True)
 
         self.assertNotEqual(
             key_v8_pw1, key_v8_pw2, "Different passwords should produce different keys"

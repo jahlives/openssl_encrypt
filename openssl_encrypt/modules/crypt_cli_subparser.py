@@ -713,7 +713,9 @@ def setup_encrypt_parser(subparser):
     )
 
     # Remote Pepper plugin arguments for remote pepper storage
-    pepper_group = subparser.add_argument_group("Remote Pepper Options", "Remote pepper server integration")
+    pepper_group = subparser.add_argument_group(
+        "Remote Pepper Options", "Remote pepper server integration"
+    )
     pepper_group.add_argument(
         "--pepper",
         action="store_true",
@@ -1614,8 +1616,7 @@ def setup_hsm_parser(subparser):
 
     # FIDO2 registration subcommand
     fido2_register_parser = hsm_subparsers.add_parser(
-        "fido2-register",
-        help="Register new FIDO2 credential for hardware-bound encryption"
+        "fido2-register", help="Register new FIDO2 credential for hardware-bound encryption"
     )
     fido2_register_parser.add_argument(
         "--description",
@@ -1634,8 +1635,7 @@ def setup_hsm_parser(subparser):
 
     # FIDO2 status subcommand
     fido2_status_parser = hsm_subparsers.add_parser(
-        "fido2-status",
-        help="Show FIDO2 registration status and list registered credentials"
+        "fido2-status", help="Show FIDO2 registration status and list registered credentials"
     )
     fido2_status_parser.add_argument(
         "--rp-id",
@@ -1644,8 +1644,7 @@ def setup_hsm_parser(subparser):
 
     # FIDO2 test subcommand
     fido2_test_parser = hsm_subparsers.add_parser(
-        "fido2-test",
-        help="Test FIDO2 pepper derivation with a random salt"
+        "fido2-test", help="Test FIDO2 pepper derivation with a random salt"
     )
     fido2_test_parser.add_argument(
         "--rp-id",
@@ -1654,14 +1653,12 @@ def setup_hsm_parser(subparser):
 
     # FIDO2 list devices subcommand
     hsm_subparsers.add_parser(
-        "fido2-list",
-        help="List connected FIDO2 devices and their capabilities"
+        "fido2-list", help="List connected FIDO2 devices and their capabilities"
     )
 
     # FIDO2 unregister subcommand
     fido2_unregister_parser = hsm_subparsers.add_parser(
-        "fido2-unregister",
-        help="Remove FIDO2 credential registration"
+        "fido2-unregister", help="Remove FIDO2 credential registration"
     )
     fido2_unregister_parser.add_argument(
         "--credential-id",
@@ -1813,8 +1810,8 @@ def create_subparser_main():
         "--parallel-kdf",
         action="store_true",
         help="Use parallel processing for key derivation (v11 only, requires --independent-xor). "
-             "Speeds up encryption by running hash algorithms and KDFs concurrently. "
-             "Requires multiprocessing support."
+        "Speeds up encryption by running hash algorithms and KDFs concurrently. "
+        "Requires multiprocessing support.",
     )
     parser.add_argument(
         "--kdf-workers",
@@ -1822,7 +1819,7 @@ def create_subparser_main():
         default=None,
         metavar="N",
         help="Number of parallel workers for KDF (default: auto-detect, max: CPU count). "
-             "Only used with --parallel-kdf."
+        "Only used with --parallel-kdf.",
     )
     parser.add_argument("--verbose", action="store_true", help="Show hash/kdf details")
     parser.add_argument(
@@ -1837,7 +1834,8 @@ def create_subparser_main():
         help="Suppress all output except decrypted content and exit code",
     )
     parser.add_argument(
-        "--yes", "-y",
+        "--yes",
+        "-y",
         action="store_true",
         help="Automatic yes to prompts (for install-dependencies command)",
     )

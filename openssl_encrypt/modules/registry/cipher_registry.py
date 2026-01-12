@@ -941,7 +941,13 @@ class Threefish512(CipherBase):
 
             # Convert to bytes if bytearray (native functions require bytes)
             nonce_bytes = bytes(nonce) if isinstance(nonce, bytearray) else nonce
-            aad_bytes = bytes(associated_data) if isinstance(associated_data, bytearray) else associated_data if associated_data else None
+            aad_bytes = (
+                bytes(associated_data)
+                if isinstance(associated_data, bytearray)
+                else associated_data
+                if associated_data
+                else None
+            )
 
             encrypted = threefish_native.encrypt_512(
                 key_bytes, nonce_bytes, plaintext_bytes, aad_bytes
@@ -992,8 +998,16 @@ class Threefish512(CipherBase):
             try:
                 # Convert to bytes if bytearray (native functions require bytes)
                 nonce_bytes = bytes(nonce) if isinstance(nonce, bytearray) else nonce
-                ciphertext_bytes = bytes(ciphertext) if isinstance(ciphertext, bytearray) else ciphertext
-                aad_bytes = bytes(associated_data) if isinstance(associated_data, bytearray) else associated_data if associated_data else None
+                ciphertext_bytes = (
+                    bytes(ciphertext) if isinstance(ciphertext, bytearray) else ciphertext
+                )
+                aad_bytes = (
+                    bytes(associated_data)
+                    if isinstance(associated_data, bytearray)
+                    else associated_data
+                    if associated_data
+                    else None
+                )
 
                 plaintext = threefish_native.decrypt_512(
                     key_bytes, nonce_bytes, ciphertext_bytes, aad_bytes
@@ -1090,7 +1104,13 @@ class Threefish1024(CipherBase):
 
             # Convert to bytes if bytearray (native functions require bytes)
             nonce_bytes = bytes(nonce) if isinstance(nonce, bytearray) else nonce
-            aad_bytes = bytes(associated_data) if isinstance(associated_data, bytearray) else associated_data if associated_data else None
+            aad_bytes = (
+                bytes(associated_data)
+                if isinstance(associated_data, bytearray)
+                else associated_data
+                if associated_data
+                else None
+            )
 
             encrypted = threefish_native.encrypt_1024(
                 key_bytes, nonce_bytes, plaintext_bytes, aad_bytes
@@ -1141,8 +1161,16 @@ class Threefish1024(CipherBase):
             try:
                 # Convert to bytes if bytearray (native functions require bytes)
                 nonce_bytes = bytes(nonce) if isinstance(nonce, bytearray) else nonce
-                ciphertext_bytes = bytes(ciphertext) if isinstance(ciphertext, bytearray) else ciphertext
-                aad_bytes = bytes(associated_data) if isinstance(associated_data, bytearray) else associated_data if associated_data else None
+                ciphertext_bytes = (
+                    bytes(ciphertext) if isinstance(ciphertext, bytearray) else ciphertext
+                )
+                aad_bytes = (
+                    bytes(associated_data)
+                    if isinstance(associated_data, bytearray)
+                    else associated_data
+                    if associated_data
+                    else None
+                )
 
                 plaintext = threefish_native.decrypt_1024(
                     key_bytes, nonce_bytes, ciphertext_bytes, aad_bytes

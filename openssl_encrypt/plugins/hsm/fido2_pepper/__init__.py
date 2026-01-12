@@ -22,31 +22,31 @@ Usage:
     openssl_encrypt decrypt --hsm fido2 secret.txt.enc
 """
 
-import os
-import json
-import secrets
 import getpass
+import json
 import logging
-from pathlib import Path
-from typing import Dict, List, Optional, Any
+import os
+import secrets
+from base64 import b64decode, b64encode
 from datetime import datetime
-from base64 import b64encode, b64decode
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 try:
-    from fido2.hid import CtapHidDevice
-    from fido2.client import Fido2Client, UserInteraction, DefaultClientDataCollector
-    from fido2.ctap2.extensions import HmacSecretExtension
-    from fido2.webauthn import (
-        PublicKeyCredentialCreationOptions,
-        PublicKeyCredentialRequestOptions,
-        PublicKeyCredentialDescriptor,
-        PublicKeyCredentialRpEntity,
-        PublicKeyCredentialUserEntity,
-        PublicKeyCredentialParameters,
-        AuthenticatorSelectionCriteria,
-    )
+    from fido2.client import DefaultClientDataCollector, Fido2Client, UserInteraction
     from fido2.ctap2 import Ctap2
     from fido2.ctap2.extensions import HmacSecretExtension
+    from fido2.hid import CtapHidDevice
+    from fido2.webauthn import (
+        AuthenticatorSelectionCriteria,
+        PublicKeyCredentialCreationOptions,
+        PublicKeyCredentialDescriptor,
+        PublicKeyCredentialParameters,
+        PublicKeyCredentialRequestOptions,
+        PublicKeyCredentialRpEntity,
+        PublicKeyCredentialUserEntity,
+    )
+
     FIDO2_AVAILABLE = True
 
     class CLIUserInteraction(UserInteraction):
@@ -71,9 +71,9 @@ except ImportError:
 
 from ....modules.plugin_system.plugin_base import (
     HSMPlugin,
+    PluginCapability,
     PluginResult,
     PluginSecurityContext,
-    PluginCapability,
 )
 from ....modules.plugin_system.plugin_config import ensure_plugin_data_dir
 
@@ -118,11 +118,7 @@ class FIDO2HSMPlugin(HSMPlugin):
             timeout: Operation timeout in milliseconds
             credential_file: Custom credential file path
         """
-        super().__init__(
-            plugin_id=self.plugin_id,
-            name=self.name,
-            version=self.version
-        )
+        super().__init__(plugin_id=self.plugin_id, name=self.name, version=self.version)
 
         self.rp_id = rp_id or self.DEFAULT_RP_ID
         self.require_uv = require_uv
@@ -143,7 +139,9 @@ class FIDO2HSMPlugin(HSMPlugin):
         """Create config directory with secure permissions (0o700)."""
         try:
             # Check if using default config directory or custom path
-            if self.config_dir == self.DEFAULT_CONFIG_DIR or str(self.config_dir).startswith(str(Path.home() / ".openssl_encrypt" / "plugins")):
+            if self.config_dir == self.DEFAULT_CONFIG_DIR or str(self.config_dir).startswith(
+                str(Path.home() / ".openssl_encrypt" / "plugins")
+            ):
                 # Use centralized helper for default config directories
                 config_dir = ensure_plugin_data_dir("fido2", "")
                 if config_dir is None:
@@ -208,9 +206,7 @@ class FIDO2HSMPlugin(HSMPlugin):
             if "credential_file" in config:
                 self.credential_file = Path(config["credential_file"])
 
-        return PluginResult.success_result(
-            f"FIDO2 HSM plugin initialized (RP ID: {self.rp_id})"
-        )
+        return PluginResult.success_result(f"FIDO2 HSM plugin initialized (RP ID: {self.rp_id})")
 
     def _find_device(self) -> Optional[CtapHidDevice]:
         """
@@ -337,6 +333,7 @@ class FIDO2HSMPlugin(HSMPlugin):
 
         # Debug output
         import binascii
+
         logger.debug(f"Input salt (hex): {binascii.hexlify(salt).decode()}")
         logger.debug(f"Padded salt (hex): {binascii.hexlify(salt_32).decode()}")
 
@@ -371,15 +368,12 @@ class FIDO2HSMPlugin(HSMPlugin):
             device,
             client_data_collector,
             user_interaction=CLIUserInteraction(),
-            extensions=[hmac_ext]
+            extensions=[hmac_ext],
         )
 
         # 6. Build allow_credentials list (all registered credentials)
         allow_list = [
-            PublicKeyCredentialDescriptor(
-                type="public-key",
-                id=b64decode(cred["credential_id"])
-            )
+            PublicKeyCredentialDescriptor(type="public-key", id=b64decode(cred["credential_id"]))
             for cred in credentials
         ]
 
@@ -410,36 +404,48 @@ class FIDO2HSMPlugin(HSMPlugin):
             using_raw = False
 
             # Method 1: Get from result._get_extension_results (should be processed)
-            if hasattr(result, '_get_extension_results'):
+            if hasattr(result, "_get_extension_results"):
                 try:
                     extension_results = result._get_extension_results(0)
-                    if extension_results and ('prf' in extension_results or 'hmac-secret' in extension_results):
-                        logger.debug(f"Method 1: Using _get_extension_results: {list(extension_results.keys())}")
+                    if extension_results and (
+                        "prf" in extension_results or "hmac-secret" in extension_results
+                    ):
+                        logger.debug(
+                            f"Method 1: Using _get_extension_results: {list(extension_results.keys())}"
+                        )
                 except Exception as e:
                     logger.debug(f"Method 1 failed: {e}")
                     extension_results = None
 
             # Method 2: Try get_response().client_extension_results (WebAuthn API)
-            if not extension_results or (not extension_results.get('prf') and not extension_results.get('hmac-secret')):
+            if not extension_results or (
+                not extension_results.get("prf") and not extension_results.get("hmac-secret")
+            ):
                 try:
                     auth_response = result.get_response(0)
-                    if hasattr(auth_response, 'client_extension_results'):
+                    if hasattr(auth_response, "client_extension_results"):
                         client_ext = auth_response.client_extension_results
-                        if client_ext and ('prf' in client_ext or 'hmac-secret' in client_ext):
+                        if client_ext and ("prf" in client_ext or "hmac-secret" in client_ext):
                             extension_results = client_ext
-                            logger.debug(f"Method 2: Using client_extension_results: {list(extension_results.keys())}")
+                            logger.debug(
+                                f"Method 2: Using client_extension_results: {list(extension_results.keys())}"
+                            )
                 except Exception as e:
                     logger.debug(f"Method 2 failed: {e}")
 
             # Method 3: Fall back to raw auth_data.extensions (WILL NOT WORK - encrypted!)
-            if not extension_results or (not extension_results.get('prf') and not extension_results.get('hmac-secret')):
-                if hasattr(result, '_assertions') and result._assertions:
+            if not extension_results or (
+                not extension_results.get("prf") and not extension_results.get("hmac-secret")
+            ):
+                if hasattr(result, "_assertions") and result._assertions:
                     first_assertion = result._assertions[0]
                     auth_data = first_assertion.auth_data
-                    if hasattr(auth_data, 'extensions') and auth_data.extensions:
+                    if hasattr(auth_data, "extensions") and auth_data.extensions:
                         using_raw = True
                         extension_results = auth_data.extensions
-                        logger.debug(f"Method 3: Using RAW auth_data.extensions (ENCRYPTED - WILL FAIL!): {list(extension_results.keys())}")
+                        logger.debug(
+                            f"Method 3: Using RAW auth_data.extensions (ENCRYPTED - WILL FAIL!): {list(extension_results.keys())}"
+                        )
                     else:
                         extension_results = {}
                 else:
@@ -448,15 +454,19 @@ class FIDO2HSMPlugin(HSMPlugin):
             # Warn if using encrypted data
             if using_raw:
                 logger.warning("Using encrypted hmac-secret data - decryption will fail!")
-                logger.warning("This indicates the HmacSecretExtension is not processing results correctly")
+                logger.warning(
+                    "This indicates the HmacSecretExtension is not processing results correctly"
+                )
 
             prf_data = None
             if extension_results:
                 # Try prf first (WebAuthn 3)
-                prf_data = extension_results.get('prf') or extension_results.get(b'prf')
+                prf_data = extension_results.get("prf") or extension_results.get(b"prf")
                 # Fallback to hmac-secret
                 if not prf_data:
-                    prf_data = extension_results.get('hmac-secret') or extension_results.get(b'hmac-secret')
+                    prf_data = extension_results.get("hmac-secret") or extension_results.get(
+                        b"hmac-secret"
+                    )
 
             if not prf_data:
                 return PluginResult.error_result(
@@ -470,22 +480,25 @@ class FIDO2HSMPlugin(HSMPlugin):
             if isinstance(prf_data, dict):
                 logger.debug(f"prf_data keys: {list(prf_data.keys())}")
                 for key, val in prf_data.items():
-                    logger.debug(f"  {key}: type={type(val)}, len={len(val) if hasattr(val, '__len__') else 'N/A'}")
+                    logger.debug(
+                        f"  {key}: type={type(val)}, len={len(val) if hasattr(val, '__len__') else 'N/A'}"
+                    )
 
             # The prf extension returns {"results": {"first": <base64url string>}}
             # The hmac-secret extension returns {"output1": <32 bytes>} or just bytes
             if isinstance(prf_data, dict):
-                if 'results' in prf_data and 'first' in prf_data['results']:
-                    pepper_value = prf_data['results']['first']
+                if "results" in prf_data and "first" in prf_data["results"]:
+                    pepper_value = prf_data["results"]["first"]
                     # WebAuthn prf returns base64url-encoded strings, need to decode
                     if isinstance(pepper_value, str):
                         from fido2.utils import websafe_decode
+
                         pepper = websafe_decode(pepper_value)
                         logger.debug("Decoded base64url pepper from prf extension")
                     else:
                         pepper = pepper_value
-                elif 'output1' in prf_data:
-                    pepper = prf_data['output1']
+                elif "output1" in prf_data:
+                    pepper = prf_data["output1"]
                 else:
                     return PluginResult.error_result(
                         f"Unexpected prf/hmac-secret data format: {prf_data}"
@@ -507,13 +520,13 @@ class FIDO2HSMPlugin(HSMPlugin):
 
             # Debug output
             import binascii
+
             logger.debug(f"Derived pepper (hex): {binascii.hexlify(pepper).decode()}")
 
             logger.info(f"Successfully derived FIDO2 pepper ({len(pepper)} bytes)")
 
             return PluginResult.success_result(
-                f"FIDO2 pepper derived ({len(pepper)} bytes)",
-                data={"hsm_pepper": pepper}
+                f"FIDO2 pepper derived ({len(pepper)} bytes)", data={"hsm_pepper": pepper}
             )
 
         except Exception as e:
@@ -563,7 +576,7 @@ class FIDO2HSMPlugin(HSMPlugin):
             device,
             client_data_collector,
             user_interaction=CLIUserInteraction(),
-            extensions=[hmac_ext]
+            extensions=[hmac_ext],
         )
 
         # 4. Generate credential ID
@@ -589,9 +602,7 @@ class FIDO2HSMPlugin(HSMPlugin):
         # Create proper WebAuthn objects
         rp = PublicKeyCredentialRpEntity(id=self.rp_id, name="OpenSSL Encrypt")
         user = PublicKeyCredentialUserEntity(
-            id=user_id,
-            name="openssl-encrypt-user",
-            display_name="OpenSSL Encrypt User"
+            id=user_id, name="openssl-encrypt-user", display_name="OpenSSL Encrypt User"
         )
 
         challenge = secrets.token_bytes(32)
@@ -648,7 +659,7 @@ class FIDO2HSMPlugin(HSMPlugin):
 
             return PluginResult.success_result(
                 f"FIDO2 credential registered successfully: {credential_data['description']}",
-                data={"credential_id": credential_id}
+                data={"credential_id": credential_id},
             )
 
         except Exception as e:
@@ -668,20 +679,26 @@ class FIDO2HSMPlugin(HSMPlugin):
                 ctap2 = Ctap2(device)
                 info = ctap2.get_info()
 
-                devices.append({
-                    "product_name": getattr(device, "product_name", "Unknown"),
-                    "manufacturer": getattr(device, "manufacturer", "Unknown"),
-                    "aaguid": str(info.aaguid) if hasattr(info, "aaguid") else "Unknown",
-                    "versions": info.versions if hasattr(info, "versions") else [],
-                    "extensions": list(info.extensions) if hasattr(info, "extensions") and info.extensions else [],
-                    "hmac_secret_support": self._check_hmac_secret_support(device),
-                })
+                devices.append(
+                    {
+                        "product_name": getattr(device, "product_name", "Unknown"),
+                        "manufacturer": getattr(device, "manufacturer", "Unknown"),
+                        "aaguid": str(info.aaguid) if hasattr(info, "aaguid") else "Unknown",
+                        "versions": info.versions if hasattr(info, "versions") else [],
+                        "extensions": list(info.extensions)
+                        if hasattr(info, "extensions") and info.extensions
+                        else [],
+                        "hmac_secret_support": self._check_hmac_secret_support(device),
+                    }
+                )
             except Exception as e:
                 logger.error(f"Failed to get device info: {e}")
-                devices.append({
-                    "product_name": "Unknown",
-                    "error": str(e),
-                })
+                devices.append(
+                    {
+                        "product_name": "Unknown",
+                        "error": str(e),
+                    }
+                )
 
         return devices
 
@@ -694,7 +711,9 @@ class FIDO2HSMPlugin(HSMPlugin):
         """
         return len(self._load_credentials()) > 0
 
-    def unregister(self, credential_id: Optional[str] = None, remove_all: bool = False) -> PluginResult:
+    def unregister(
+        self, credential_id: Optional[str] = None, remove_all: bool = False
+    ) -> PluginResult:
         """
         Remove FIDO2 credential(s).
 

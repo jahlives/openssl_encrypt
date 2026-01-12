@@ -8,36 +8,38 @@ Implements Massey's Independent XOR composition where each algorithm processes
 the same input in parallel, providing "strongest component" security guarantee.
 """
 
+import base64
+import hashlib
 import multiprocessing as mp
-from concurrent.futures import ProcessPoolExecutor, as_completed
+import os
+import queue
 import threading
 import time
-import os
-import hashlib
-import base64
-import queue
-from typing import Dict, List, Tuple, Optional
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from enum import Enum
+from typing import Dict, List, Optional, Tuple
 
 
 class ProgressType(Enum):
     """Type of progress message sent from worker to main process."""
-    HASH_PROGRESS = "hash_progress"      # Per-round progress for hash algorithms
-    HASH_COMPLETE = "hash_complete"      # Hash algorithm finished
-    KDF_START = "kdf_start"              # KDF starting
-    KDF_COMPLETE = "kdf_complete"        # KDF finished
-    WORKER_ERROR = "worker_error"        # Worker encountered an error
+
+    HASH_PROGRESS = "hash_progress"  # Per-round progress for hash algorithms
+    HASH_COMPLETE = "hash_complete"  # Hash algorithm finished
+    KDF_START = "kdf_start"  # KDF starting
+    KDF_COMPLETE = "kdf_complete"  # KDF finished
+    WORKER_ERROR = "worker_error"  # Worker encountered an error
 
 
 @dataclass
 class ProgressMessage:
     """Message sent from worker process to main process via Queue."""
-    worker_id: str           # Algorithm name (e.g., "sha256", "argon2")
+
+    worker_id: str  # Algorithm name (e.g., "sha256", "argon2")
     progress_type: ProgressType
-    current: int = 0         # Current progress (e.g., round number)
-    total: int = 0           # Total iterations
-    elapsed: float = 0.0     # Time elapsed in seconds
+    current: int = 0  # Current progress (e.g., round number)
+    total: int = 0  # Total iterations
+    elapsed: float = 0.0  # Time elapsed in seconds
     error: Optional[str] = None
 
 
@@ -48,9 +50,9 @@ def _normalize_bytes(data: bytes, target_length: int) -> bytes:
     This is a simplified version that doesn't use SecureBytes since we need
     it to be picklable for multiprocessing.
     """
-    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-    from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.backends import default_backend
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
     if len(data) == target_length:
         return data
@@ -75,7 +77,7 @@ def _hash_worker(
     key_length: int,
     progress_queue: mp.Queue,
     report_interval: int = 1000,
-    debug: bool = False
+    debug: bool = False,
 ) -> Tuple[str, bytes]:
     """
     Worker function for hash algorithm computation.
@@ -116,46 +118,52 @@ def _hash_worker(
                 current = hashlib.blake2b(current).digest()
             elif algorithm == "blake3":
                 import blake3
+
                 current = blake3.blake3(current).digest()
             elif algorithm == "shake256":
                 current = hashlib.shake_256(current).digest(64)
             elif algorithm == "whirlpool":
                 import whirlpool
+
                 current = whirlpool.new(current).digest()
             else:
                 raise ValueError(f"Unsupported hash algorithm: {algorithm}")
 
             # Report progress periodically
             if (i + 1) % report_interval == 0 or (i + 1) == rounds:
-                progress_queue.put(ProgressMessage(
-                    worker_id=worker_id,
-                    progress_type=ProgressType.HASH_PROGRESS,
-                    current=i + 1,
-                    total=rounds,
-                    elapsed=time.time() - start_time
-                ))
+                progress_queue.put(
+                    ProgressMessage(
+                        worker_id=worker_id,
+                        progress_type=ProgressType.HASH_PROGRESS,
+                        current=i + 1,
+                        total=rounds,
+                        elapsed=time.time() - start_time,
+                    )
+                )
 
         # Normalize to key length
         result = _normalize_bytes(current, key_length)
 
         # Report completion
-        progress_queue.put(ProgressMessage(
-            worker_id=worker_id,
-            progress_type=ProgressType.HASH_COMPLETE,
-            current=rounds,
-            total=rounds,
-            elapsed=time.time() - start_time
-        ))
+        progress_queue.put(
+            ProgressMessage(
+                worker_id=worker_id,
+                progress_type=ProgressType.HASH_COMPLETE,
+                current=rounds,
+                total=rounds,
+                elapsed=time.time() - start_time,
+            )
+        )
 
         return (worker_id, result)
 
     except Exception as e:
         # Report error
-        progress_queue.put(ProgressMessage(
-            worker_id=worker_id,
-            progress_type=ProgressType.WORKER_ERROR,
-            error=str(e)
-        ))
+        progress_queue.put(
+            ProgressMessage(
+                worker_id=worker_id, progress_type=ProgressType.WORKER_ERROR, error=str(e)
+            )
+        )
         raise
 
 
@@ -167,7 +175,7 @@ def _kdf_worker(
     kdf_config: dict,
     key_length: int,
     progress_queue: mp.Queue,
-    debug: bool = False
+    debug: bool = False,
 ) -> Tuple[str, bytes]:
     """
     Worker function for KDF computation.
@@ -189,11 +197,9 @@ def _kdf_worker(
         Tuple of (worker_id, result_bytes)
     """
     # Report start
-    progress_queue.put(ProgressMessage(
-        worker_id=worker_id,
-        progress_type=ProgressType.KDF_START,
-        total=1
-    ))
+    progress_queue.put(
+        ProgressMessage(worker_id=worker_id, progress_type=ProgressType.KDF_START, total=1)
+    )
 
     start_time = time.time()
 
@@ -245,8 +251,8 @@ def _kdf_worker(
 
         elif kdf_type == "balloon":
             # Import balloon hash (local import to avoid issues)
-            import sys
             import importlib.util
+            import sys
 
             # Find the balloon_hash module
             spec = importlib.util.find_spec("openssl_encrypt.modules.balloon_hash")
@@ -273,9 +279,9 @@ def _kdf_worker(
             )
 
         elif kdf_type == "hkdf":
+            from cryptography.hazmat.backends import default_backend
             from cryptography.hazmat.primitives import hashes
             from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-            from cryptography.hazmat.backends import default_backend
 
             # Extract HKDF parameters
             info = kdf_config.get("info", b"independent-xor-hkdf")
@@ -295,23 +301,25 @@ def _kdf_worker(
             raise ValueError(f"Unsupported KDF type: {kdf_type}")
 
         # Report completion
-        progress_queue.put(ProgressMessage(
-            worker_id=worker_id,
-            progress_type=ProgressType.KDF_COMPLETE,
-            current=1,
-            total=1,
-            elapsed=time.time() - start_time
-        ))
+        progress_queue.put(
+            ProgressMessage(
+                worker_id=worker_id,
+                progress_type=ProgressType.KDF_COMPLETE,
+                current=1,
+                total=1,
+                elapsed=time.time() - start_time,
+            )
+        )
 
         return (worker_id, result)
 
     except Exception as e:
         # Report error
-        progress_queue.put(ProgressMessage(
-            worker_id=worker_id,
-            progress_type=ProgressType.WORKER_ERROR,
-            error=str(e)
-        ))
+        progress_queue.put(
+            ProgressMessage(
+                worker_id=worker_id, progress_type=ProgressType.WORKER_ERROR, error=str(e)
+            )
+        )
         raise
 
 
@@ -327,7 +335,7 @@ class ParallelProgressAggregator:
         progress_queue: mp.Queue,
         total_workers: int,
         quiet: bool = False,
-        progress_enabled: bool = True
+        progress_enabled: bool = True,
     ):
         self.queue = progress_queue
         self.total_workers = total_workers
@@ -381,7 +389,8 @@ class ParallelProgressAggregator:
         print(
             f"\rParallel KDF: [{bar}] {percent:.1f}% "
             f"({completed}/{self.total_workers} complete){active_display}",
-            end="", flush=True
+            end="",
+            flush=True,
         )
 
     def _handle_message(self, msg: ProgressMessage):
@@ -477,8 +486,8 @@ def generate_key_independent_xor_parallel(
         ValueError: If no algorithms are enabled
     """
     # Import here to avoid circular imports
-    from .secure_memory import SecureBytes, secure_memzero
     from . import crypt_core
+    from .secure_memory import SecureBytes, secure_memzero
 
     if debug:
         print(f"DEBUG: Parallel KDF starting with format_version={format_version}")
@@ -486,7 +495,15 @@ def generate_key_independent_xor_parallel(
     # Determine required key length based on algorithm
     if algorithm == "fernet":
         key_length = 32
-    elif algorithm in ["aes-256-gcm", "chacha20-poly1305", "xchacha20-poly1305", "aes-gcm-siv", "aes-ocb3", "camellia", "cascade"]:
+    elif algorithm in [
+        "aes-256-gcm",
+        "chacha20-poly1305",
+        "xchacha20-poly1305",
+        "aes-gcm-siv",
+        "aes-ocb3",
+        "camellia",
+        "cascade",
+    ]:
         key_length = 32
     elif algorithm == "aes-siv":
         key_length = 64
@@ -516,17 +533,21 @@ def generate_key_independent_xor_parallel(
     tasks = []
 
     # Hash algorithm tasks
-    hash_algorithms = ["sha256", "sha512", "sha3_256", "sha3_512", "blake2b", "blake3", "shake256", "whirlpool"]
+    hash_algorithms = [
+        "sha256",
+        "sha512",
+        "sha3_256",
+        "sha3_512",
+        "blake2b",
+        "blake3",
+        "shake256",
+        "whirlpool",
+    ]
 
     for algo in hash_algorithms:
         rounds = crypt_core.get_hash_rounds(hash_config, algo)
         if rounds > 0:
-            tasks.append({
-                "type": "hash",
-                "worker_id": algo,
-                "algorithm": algo,
-                "rounds": rounds
-            })
+            tasks.append({"type": "hash", "worker_id": algo, "algorithm": algo, "rounds": rounds})
 
     # KDF tasks
     if hash_config and "derivation_config" in hash_config:
@@ -536,12 +557,14 @@ def generate_key_independent_xor_parallel(
 
     for kdf_type in ["argon2", "scrypt", "balloon", "hkdf"]:
         if kdf_config_section.get(kdf_type, {}).get("enabled", False):
-            tasks.append({
-                "type": "kdf",
-                "worker_id": kdf_type,
-                "kdf_type": kdf_type,
-                "kdf_config": kdf_config_section[kdf_type]
-            })
+            tasks.append(
+                {
+                    "type": "kdf",
+                    "worker_id": kdf_type,
+                    "kdf_type": kdf_type,
+                    "kdf_config": kdf_config_section[kdf_type],
+                }
+            )
 
     if not tasks:
         raise ValueError("No algorithms enabled for key derivation")
@@ -555,9 +578,7 @@ def generate_key_independent_xor_parallel(
     progress_queue = manager.Queue()
 
     # Start progress aggregator thread
-    aggregator = ParallelProgressAggregator(
-        progress_queue, len(tasks), quiet, progress
-    )
+    aggregator = ParallelProgressAggregator(progress_queue, len(tasks), quiet, progress)
     aggregator_thread = threading.Thread(target=aggregator.run, daemon=True)
     aggregator_thread.start()
 
@@ -566,10 +587,7 @@ def generate_key_independent_xor_parallel(
     max_workers = max_workers or min(len(tasks), mp.cpu_count())
 
     try:
-        with ProcessPoolExecutor(
-            max_workers=max_workers,
-            mp_context=ctx
-        ) as executor:
+        with ProcessPoolExecutor(max_workers=max_workers, mp_context=ctx) as executor:
             futures = {}
 
             for task in tasks:
@@ -584,7 +602,7 @@ def generate_key_independent_xor_parallel(
                         key_length,
                         progress_queue,
                         1000,  # report_interval
-                        debug
+                        debug,
                     )
                 else:  # KDF
                     future = executor.submit(
@@ -596,7 +614,7 @@ def generate_key_independent_xor_parallel(
                         task["kdf_config"],
                         key_length,
                         progress_queue,
-                        debug
+                        debug,
                     )
                 futures[future] = task["worker_id"]
 
@@ -648,8 +666,12 @@ def generate_key_independent_xor_parallel(
 
         if not quiet:
             # Calculate rough time savings estimate
-            parallel_time = max(aggregator.completed_times.values()) if aggregator.completed_times else 0
-            sequential_estimate = sum(aggregator.completed_times.values()) if aggregator.completed_times else 0
+            parallel_time = (
+                max(aggregator.completed_times.values()) if aggregator.completed_times else 0
+            )
+            sequential_estimate = (
+                sum(aggregator.completed_times.values()) if aggregator.completed_times else 0
+            )
 
             print(
                 f"✅ Combined {len(xor_components)} independent components using XOR (Massey) "
@@ -665,22 +687,39 @@ def generate_key_independent_xor_parallel(
         if algorithm == "fernet":
             final_key_bytes = base64.urlsafe_b64encode(final_key_bytes)
         elif algorithm in [
-            "aes-256-gcm", "aes-gcm", "aes-gcm-siv", "aes-ocb3",
-            "chacha20-poly1305", "xchacha20-poly1305", "camellia",
-            "kyber512-hybrid", "kyber768-hybrid", "kyber1024-hybrid",
-            "ml-kem-512-hybrid", "ml-kem-768-hybrid", "ml-kem-1024-hybrid",
-            "ml-kem-512-chacha20", "ml-kem-768-chacha20", "ml-kem-1024-chacha20",
-            "hqc-128-hybrid", "hqc-192-hybrid", "hqc-256-hybrid",
-            "mayo-1-hybrid", "mayo-3-hybrid", "mayo-5-hybrid",
-            "cross-128-hybrid", "cross-192-hybrid", "cross-256-hybrid"
+            "aes-256-gcm",
+            "aes-gcm",
+            "aes-gcm-siv",
+            "aes-ocb3",
+            "chacha20-poly1305",
+            "xchacha20-poly1305",
+            "camellia",
+            "kyber512-hybrid",
+            "kyber768-hybrid",
+            "kyber1024-hybrid",
+            "ml-kem-512-hybrid",
+            "ml-kem-768-hybrid",
+            "ml-kem-1024-hybrid",
+            "ml-kem-512-chacha20",
+            "ml-kem-768-chacha20",
+            "ml-kem-1024-chacha20",
+            "hqc-128-hybrid",
+            "hqc-192-hybrid",
+            "hqc-256-hybrid",
+            "mayo-1-hybrid",
+            "mayo-3-hybrid",
+            "mayo-5-hybrid",
+            "cross-128-hybrid",
+            "cross-192-hybrid",
+            "cross-256-hybrid",
         ]:
             final_key_bytes = hashlib.sha256(final_key_bytes).digest()
         elif algorithm == "aes-siv":
             final_key_bytes = hashlib.sha512(final_key_bytes).digest()
         elif algorithm in ["threefish-512", "threefish-1024"]:
-            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-            from cryptography.hazmat.primitives import hashes
             from cryptography.hazmat.backends import default_backend
+            from cryptography.hazmat.primitives import hashes
+            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
             if algorithm == "threefish-512":
                 hkdf = HKDF(

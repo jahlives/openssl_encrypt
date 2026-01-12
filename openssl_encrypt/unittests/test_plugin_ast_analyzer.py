@@ -7,10 +7,11 @@ to ensure dangerous patterns are detected and bypass attempts blocked.
 """
 
 import pytest
+
 from openssl_encrypt.modules.plugin_system.plugin_ast_analyzer import (
-    analyze_plugin_code,
     DangerousPatternVisitor,
-    SecurityViolation
+    SecurityViolation,
+    analyze_plugin_code,
 )
 
 
@@ -19,11 +20,11 @@ class TestDirectFunctionCalls:
 
     def test_direct_eval_call_detected(self):
         """eval() call should be detected"""
-        code = '''
+        code = """
 def plugin_function():
     result = eval("1 + 1")
     return result
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert not is_safe
@@ -34,11 +35,11 @@ def plugin_function():
 
     def test_direct_exec_call_detected(self):
         """exec() call should be detected"""
-        code = '''
+        code = """
 def plugin_function():
     exec("import os")
     return True
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert not is_safe
@@ -48,11 +49,11 @@ def plugin_function():
 
     def test_compile_call_detected(self):
         """compile() call should be detected"""
-        code = '''
+        code = """
 def plugin_function():
     code_obj = compile("print('hello')", "string", "exec")
     return code_obj
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert not is_safe
@@ -62,11 +63,11 @@ def plugin_function():
 
     def test_dunder_import_detected(self):
         """__import__() call should be detected"""
-        code = '''
+        code = """
 def plugin_function():
     os_module = __import__("os")
     return os_module
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert not is_safe
@@ -80,11 +81,11 @@ class TestBypassAttempts:
 
     def test_getattr_builtins_bypass_detected(self):
         """getattr(__builtins__, 'eval') should be detected"""
-        code = '''
+        code = """
 def plugin_function():
     eval_func = getattr(__builtins__, "eval")
     return eval_func("1 + 1")
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert not is_safe
@@ -95,11 +96,11 @@ def plugin_function():
 
     def test_builtins_subscript_access_detected(self):
         """__builtins__['exec'] should be detected"""
-        code = '''
+        code = """
 def plugin_function():
     exec_func = __builtins__["exec"]
     return exec_func
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert not is_safe
@@ -109,13 +110,13 @@ def plugin_function():
 
     def test_sys_modules_access_detected(self):
         """sys.modules['subprocess'] should be detected"""
-        code = '''
+        code = """
 import sys
 
 def plugin_function():
     subprocess = sys.modules["subprocess"]
     return subprocess
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert not is_safe
@@ -125,10 +126,10 @@ def plugin_function():
 
     def test_builtins_attribute_access_detected(self):
         """Direct __builtins__.eval access should be detected"""
-        code = '''
+        code = """
 def plugin_function():
     return __builtins__.eval
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert not is_safe
@@ -141,13 +142,13 @@ class TestDangerousOSFunctions:
 
     def test_os_system_call_detected(self):
         """os.system() call should be detected"""
-        code = '''
+        code = """
 import os
 
 def plugin_function():
     os.system("ls")
     return True
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert not is_safe
@@ -158,13 +159,13 @@ def plugin_function():
 
     def test_os_popen_call_detected(self):
         """os.popen() call should be detected"""
-        code = '''
+        code = """
 import os
 
 def plugin_function():
     result = os.popen("cat /etc/passwd")
     return result.read()
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert not is_safe
@@ -173,19 +174,21 @@ def plugin_function():
 
     def test_os_spawn_variants_detected(self):
         """os.spawn* family should be detected"""
-        code = '''
+        code = """
 import os
 
 def plugin_function():
     os.spawnl(os.P_WAIT, "/bin/ls", "ls")
     os.spawnv(os.P_NOWAIT, "/bin/sh", [])
     return True
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert not is_safe
         # Multiple spawn calls should be detected
-        dangerous_os_violations = [v for v in violations if v.violation_type == "dangerous_os_function"]
+        dangerous_os_violations = [
+            v for v in violations if v.violation_type == "dangerous_os_function"
+        ]
         assert len(dangerous_os_violations) >= 2
 
 
@@ -194,12 +197,12 @@ class TestDangerousImports:
 
     def test_subprocess_import_detected(self):
         """import subprocess should be detected"""
-        code = '''
+        code = """
 import subprocess
 
 def plugin_function():
     return True
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert not is_safe
@@ -209,12 +212,12 @@ def plugin_function():
 
     def test_from_import_detected(self):
         """from subprocess import Popen should be detected"""
-        code = '''
+        code = """
 from subprocess import Popen
 
 def plugin_function():
     return True
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert not is_safe
@@ -225,12 +228,16 @@ def plugin_function():
         """All dangerous modules should be detected"""
         # Note: 'os' and 'socket' are now allowed (file/network access controlled by sandbox)
         dangerous_modules = [
-            'subprocess', 'ctypes', 'multiprocessing',
-            'importlib', 'sys', 'shutil'
+            "subprocess",
+            "ctypes",
+            "multiprocessing",
+            "importlib",
+            "sys",
+            "shutil",
         ]
 
         for module in dangerous_modules:
-            code = f'import {module}\n\ndef test(): pass'
+            code = f"import {module}\n\ndef test(): pass"
 
             is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
@@ -240,13 +247,13 @@ def plugin_function():
 
     def test_subprocess_call_detected(self):
         """subprocess.Popen() call should be detected"""
-        code = '''
+        code = """
 import subprocess
 
 def plugin_function():
     subprocess.Popen(["ls", "-la"])
     return True
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert not is_safe
@@ -286,18 +293,26 @@ def plugin_function(data):
     def test_safe_imports_allowed(self):
         """Common safe imports should be allowed"""
         safe_imports = [
-            'json', 'datetime', 'hashlib', 'base64', 'uuid',
-            'collections', 'itertools', 'functools', 'typing',
-            'os', 'socket'  # Now allowed (file/network access controlled by sandbox)
+            "json",
+            "datetime",
+            "hashlib",
+            "base64",
+            "uuid",
+            "collections",
+            "itertools",
+            "functools",
+            "typing",
+            "os",
+            "socket",  # Now allowed (file/network access controlled by sandbox)
         ]
 
         for module in safe_imports:
-            code = f'''
+            code = f"""
 import {module}
 
 def plugin_function():
     return True
-'''
+"""
             is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
             assert is_safe, f"Safe module '{module}' was incorrectly flagged as dangerous"
@@ -305,7 +320,7 @@ def plugin_function():
 
     def test_file_operations_allowed(self):
         """File operations (open) should be allowed - sandbox controls access"""
-        code = '''
+        code = """
 import os
 import json
 
@@ -320,7 +335,7 @@ def plugin_function(config_dir):
         json.dump(config, f)
 
     return config
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert is_safe, "File operations should be allowed"
@@ -332,11 +347,11 @@ class TestSyntaxErrors:
 
     def test_syntax_error_handled(self):
         """Invalid Python syntax should be caught"""
-        code = '''
+        code = """
 def plugin_function(
     # Missing closing parenthesis
     return True
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert not is_safe
@@ -346,10 +361,10 @@ def plugin_function(
 
     def test_incomplete_code_handled(self):
         """Incomplete code should be rejected"""
-        code = '''
+        code = """
 def plugin_function():
     if True:
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert not is_safe
@@ -361,13 +376,13 @@ class TestViolationDetails:
 
     def test_violation_includes_line_and_column(self):
         """Violations should include line and column numbers"""
-        code = '''
+        code = """
 def plugin_function():
     x = 1
     y = 2
     result = eval("x + y")
     return result
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert len(violations) == 1
@@ -376,10 +391,10 @@ def plugin_function():
 
     def test_violation_includes_description(self):
         """Violations should have clear descriptions"""
-        code = '''
+        code = """
 def test():
     exec("code")
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert len(violations) == 1
@@ -388,10 +403,10 @@ def test():
 
     def test_violation_has_severity(self):
         """Violations should have severity levels"""
-        code = '''
+        code = """
 def test():
     eval("1 + 1")
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert len(violations) == 1
@@ -403,10 +418,10 @@ class TestStrictVsPermissiveMode:
 
     def test_strict_mode_blocks_critical_violations(self):
         """Strict mode should block code with critical violations"""
-        code = '''
+        code = """
 def test():
     eval("1 + 1")
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert not is_safe
@@ -414,10 +429,10 @@ def test():
 
     def test_permissive_mode_allows_with_warnings(self):
         """Permissive mode should allow code but return violations"""
-        code = '''
+        code = """
 def test():
     eval("1 + 1")
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=False)
 
         # In permissive mode, is_safe is True but violations are still returned
@@ -430,7 +445,7 @@ class TestMultipleViolations:
 
     def test_multiple_violations_all_detected(self):
         """Code with multiple violations should detect all"""
-        code = '''
+        code = """
 import subprocess
 import socket
 
@@ -438,7 +453,7 @@ def test():
     eval("1 + 1")
     exec("code")
     os.system("ls")
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert not is_safe
@@ -447,7 +462,7 @@ def test():
 
     def test_complex_bypass_attempts_detected(self):
         """Complex code with multiple bypass attempts"""
-        code = '''
+        code = """
 import sys
 
 def test():
@@ -459,7 +474,7 @@ def test():
     # Direct dangerous calls
     compile("code", "file", "exec")
     __import__("socket")
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert not is_safe
@@ -471,7 +486,7 @@ class TestEdgeCases:
 
     def test_empty_file(self):
         """Empty file should be safe"""
-        code = ''
+        code = ""
 
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
@@ -480,10 +495,10 @@ class TestEdgeCases:
 
     def test_only_comments(self):
         """File with only comments should be safe"""
-        code = '''
+        code = """
 # This is a comment
 # Another comment
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert is_safe
@@ -504,12 +519,12 @@ It describes the module.
 
     def test_dangerous_pattern_in_string_literal(self):
         """Dangerous patterns in string literals are not calls"""
-        code = '''
+        code = """
 def test():
     message = "Use eval() for evaluation"
     doc = "The exec() function is dangerous"
     return message + doc
-'''
+"""
         # String literals containing "eval(" or "exec(" should not trigger violations
         # Only actual function calls should be detected
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
@@ -519,12 +534,12 @@ def test():
 
     def test_dangerous_pattern_in_comment(self):
         """Dangerous patterns in comments should be ignored"""
-        code = '''
+        code = """
 def test():
     # Don't use eval() in production
     # exec() is also dangerous
     return True
-'''
+"""
         is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
         assert is_safe
