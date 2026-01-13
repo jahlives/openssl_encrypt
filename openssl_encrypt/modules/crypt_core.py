@@ -27,7 +27,7 @@ import time
 import warnings
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, Optional, TypeVar, cast
+from typing import Any, Callable, Optional, TypeVar, Union, cast
 
 import cryptography.exceptions
 from cryptography.fernet import Fernet
