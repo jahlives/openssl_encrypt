@@ -100,6 +100,22 @@ def _hash_worker(
     """
     start_time = time.time()
 
+    # Setup whirlpool module compatibility if needed
+    if algorithm == "whirlpool":
+        try:
+            # Try importing whirlpool directly first
+            import whirlpool  # noqa: F401
+        except ImportError:
+            try:
+                # Try whirlpool_py311 and alias it
+                import sys
+
+                import whirlpool_py311
+
+                sys.modules["whirlpool"] = whirlpool_py311
+            except ImportError:
+                pass  # Will fail later if whirlpool is truly unavailable
+
     try:
         # Start with password+salt
         current = password_bytes + salt
