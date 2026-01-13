@@ -18,7 +18,7 @@ import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 
 class ProgressType(Enum):
@@ -100,17 +100,6 @@ def _hash_worker(
     """
     start_time = time.time()
 
-    # Setup whirlpool module compatibility - determine which module to use
-    whirlpool_module = None
-    if algorithm == "whirlpool":
-        try:
-            import whirlpool as whirlpool_module
-        except ImportError:
-            try:
-                import whirlpool_py311 as whirlpool_module
-            except ImportError:
-                pass  # Will fail later if whirlpool is truly unavailable
-
     try:
         # Start with password+salt
         current = password_bytes + salt
@@ -133,8 +122,6 @@ def _hash_worker(
                 current = blake3.blake3(current).digest()
             elif algorithm == "shake256":
                 current = hashlib.shake_256(current).digest(64)
-            elif algorithm == "whirlpool":
-                current = whirlpool_module.new(current).digest()
             else:
                 raise ValueError(f"Unsupported hash algorithm: {algorithm}")
 
@@ -261,7 +248,6 @@ def _kdf_worker(
         elif kdf_type == "balloon":
             # Import balloon hash (local import to avoid issues)
             import importlib.util
-            import sys
 
             # Find the balloon_hash module
             spec = importlib.util.find_spec("openssl_encrypt.modules.balloon_hash")
@@ -542,6 +528,7 @@ def generate_key_independent_xor_parallel(
     tasks = []
 
     # Hash algorithm tasks
+    # Note: whirlpool excluded - deprecated and has multiprocessing import issues
     hash_algorithms = [
         "sha256",
         "sha512",
@@ -550,7 +537,6 @@ def generate_key_independent_xor_parallel(
         "blake2b",
         "blake3",
         "shake256",
-        "whirlpool",
     ]
 
     for algo in hash_algorithms:
