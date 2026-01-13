@@ -181,7 +181,16 @@
                 "aes-siv",
                 "chacha20-poly1305",
                 "xchacha20-poly1305",
-                "cascade"
+                "cascade",
+                "ml-kem-512-hybrid",
+                "ml-kem-768-hybrid",
+                "ml-kem-1024-hybrid",
+                "kyber512-hybrid",
+                "kyber768-hybrid",
+                "kyber1024-hybrid",
+                "kyber-512-hybrid",
+                "kyber-768-hybrid",
+                "kyber-1024-hybrid"
               ],
               "description": "Encryption algorithm used"
             },
