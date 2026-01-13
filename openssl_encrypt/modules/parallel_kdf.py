@@ -100,6 +100,17 @@ def _hash_worker(
     """
     start_time = time.time()
 
+    # Setup whirlpool module compatibility - determine which module to use
+    whirlpool_module = None
+    if algorithm == "whirlpool":
+        try:
+            import whirlpool as whirlpool_module
+        except ImportError:
+            try:
+                import whirlpool_py311 as whirlpool_module
+            except ImportError:
+                pass  # Will fail later if whirlpool is truly unavailable
+
     try:
         # Start with password+salt
         current = password_bytes + salt
@@ -123,9 +134,7 @@ def _hash_worker(
             elif algorithm == "shake256":
                 current = hashlib.shake_256(current).digest(64)
             elif algorithm == "whirlpool":
-                import whirlpool
-
-                current = whirlpool.new(current).digest()
+                current = whirlpool_module.new(current).digest()
             else:
                 raise ValueError(f"Unsupported hash algorithm: {algorithm}")
 
