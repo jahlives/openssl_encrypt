@@ -223,7 +223,9 @@ typing-inspection==0.4.2
 urllib3==2.6.3
     # via requests
 virtualenv==20.36.1
-    # via pre-commit
+    # via
+    #   -r requirements-dev.in
+    #   pre-commit
 wheel==0.45.1
     # via pip-tools
 whirlpool-py311==1 ; python_version >= "3.11"
