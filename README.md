@@ -2,7 +2,7 @@
 
 A Python-based file encryption tool with modern ciphers, post-quantum algorithms, and defense-in-depth key derivation.
 
-> **Looking for the stable release?** The latest stable version is [v1.3.5](https://github.com/jahlives/openssl_encrypt/tree/releases/1.3.x) on the releases/1.3.x branch.
+> **Looking for the stable release?** The latest stable version is [v1.3.6](https://github.com/jahlives/openssl_encrypt/tree/releases/1.3.x) on the releases/1.3.x branch.
 
 ## History
 
