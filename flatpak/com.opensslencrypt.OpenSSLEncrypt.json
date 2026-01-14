@@ -122,7 +122,7 @@
         "pip3 install --prefix=${FLATPAK_DEST} 'certifi==2026.1.4'",
         "pip3 install --prefix=${FLATPAK_DEST} 'charset-normalizer==3.4.4'",
         "pip3 install --prefix=${FLATPAK_DEST} 'idna==3.11'",
-        "pip3 install --prefix=${FLATPAK_DEST} 'urllib3==2.6.2'",
+        "pip3 install --prefix=${FLATPAK_DEST} 'urllib3==2.6.3'",
         "pip3 install --prefix=${FLATPAK_DEST} 'requests==2.32.5'",
         "pip3 install --prefix=${FLATPAK_DEST} 'cryptography==44.0.3'",
         "pip3 install --prefix=${FLATPAK_DEST} 'argon2-cffi==23.1.0'",
@@ -190,7 +190,7 @@
       "build-commands": [
         "echo '🦀 Building Threefish Rust extension...'",
         "if [ -d threefish_native ]; then echo '✅ Found threefish_native directory' && cd threefish_native && rm -rf target/wheels/*.whl && maturin build --release --strip --manylinux off && pip3 install --prefix=${FLATPAK_DEST} target/wheels/*.whl && cd .. && echo '✅ Threefish extension built and installed'; else echo '⚠️  No threefish_native directory found, skipping Threefish build'; fi",
-        "pip3 install --verbose --exists-action=i --no-index --find-links=\"file://${PWD}\" --prefix=${FLATPAK_DEST} . --no-build-isolation"
+        "pip3 install --verbose --exists-action=i --no-index --find-links=\"file://${PWD}\" --prefix=${FLATPAK_DEST} --no-deps . --no-build-isolation"
       ],
       "post-install": [
         "install -Dm644 flatpak/com.opensslencrypt.OpenSSLEncrypt.desktop /app/share/applications/com.opensslencrypt.OpenSSLEncrypt.desktop",
