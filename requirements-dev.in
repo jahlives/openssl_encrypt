@@ -15,4 +15,5 @@ pip-tools>=7.4.0,<8.0.0
 pre-commit>=3.6.0,<4.0.0
 bandit>=1.7.8,<1.8.0
 safety>=3.7.0
-filelock>=3.20.3  # Security fix for TOCTOU symlink vulnerability (CVE-2024-XXXXX)
+filelock>=3.20.3  # Security fix for TOCTOU symlink vulnerability
+virtualenv>=20.36.1  # Security fix for TOCTOU symlink vulnerability in directory creation
