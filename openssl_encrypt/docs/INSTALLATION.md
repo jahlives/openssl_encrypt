@@ -27,6 +27,7 @@ flatpak run com.opensslencrypt.OpenSSLEncrypt encrypt -i myfile.txt
 ## Table of Contents
 - [Quick Install](#-quick-install-recommended-for-most-users)
 - [Prerequisites](#prerequisites)
+- [Build from Source](cross-platform)
 - [Installation Methods](#installation-methods)
   - [Method 1: PyPI + install-dependencies](#method-1-pypi--install-dependencies)
   - [Method 2: Local Development Install](#method-2-local-development-install)

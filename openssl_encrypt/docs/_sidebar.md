@@ -1,5 +1,5 @@
 * **Getting Started**
-  * [Home](../../README)
+  * [Home](home)
   * [Installation](INSTALLATION)
   * [User Guide](user-guide)
   * [Keystore Guide](keystore-guide)
