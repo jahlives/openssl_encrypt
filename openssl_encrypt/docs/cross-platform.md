@@ -1,15 +1,52 @@
-# Cross-Platform Build Guide
+# Cross-Platform Installation and Build Guide
 
-This documentation explains how to build openssl_encrypt for Windows, macOS, and Linux.
+This documentation explains how to install and build openssl_encrypt for Windows, macOS, and Linux.
 
 ## Overview
 
 | Platform | Build System | CLI Packaging | Native Deps |
 |----------|--------------|---------------|-------------|
 | Linux (Flatpak) | flatpak-builder | Python directly | liboqs from source |
-| Linux (Tarball) | GitHub Actions | PyInstaller | liboqs from source |
-| Windows | GitHub Actions | PyInstaller | liboqs with MSVC |
-| macOS | GitHub Actions | PyInstaller | liboqs with clang |
+| Linux (Source) | pip install | Python package | liboqs from source |
+| Windows | pip install / PyInstaller (optional) | Python package or standalone | liboqs with MSVC |
+| macOS | pip install / PyInstaller (optional) | Python package or standalone | liboqs with clang |
+
+## Installation Methods
+
+There are multiple ways to install openssl_encrypt, from easiest to most advanced:
+
+### Option 1: Flatpak (Recommended for Linux)
+```bash
+# Add the repository
+flatpak remote-add --if-not-exists openssl-encrypt https://flatpak.rm-rf.ch/openssl-encrypt.flatpakrepo
+
+# Install
+flatpak install openssl-encrypt com.opensslencrypt.OpenSSLEncrypt
+```
+Includes all dependencies (Python, liboqs, Flutter GUI) in a sandboxed environment.
+
+### Option 2: Install from PyPI (Easiest for Windows/macOS)
+```bash
+pip install openssl-encrypt
+```
+Note: This provides core functionality but does not include post-quantum algorithms (requires building liboqs separately).
+
+### Option 3: Install from Source (Recommended for Full Features)
+```bash
+# Clone the repository
+git clone https://github.com/jahlives/openssl_encrypt.git
+# Alternative: git clone https://gitlab.rm-rf.ch/world/openssl_encrypt.git
+
+cd openssl_encrypt
+
+# Install dependencies and the package
+pip install -r requirements-prod.txt
+pip install .
+```
+Requires building liboqs separately for post-quantum support (see platform-specific instructions below).
+
+### Option 4: Build Standalone Executables (Advanced)
+For users who want a single-file executable without Python installed, follow the platform-specific build instructions below using PyInstaller.
 
 ## Local Building
 
@@ -38,7 +75,12 @@ nmake
 nmake install
 cd ..\..
 
-# 4. Install liboqs-python against the built liboqs
+# 4. Clone openssl_encrypt repository
+git clone https://github.com/jahlives/openssl_encrypt.git
+# Alternative: git clone https://gitlab.rm-rf.ch/world/openssl_encrypt.git
+cd openssl_encrypt
+
+# 5. Install liboqs-python against the built liboqs
 # IMPORTANT: Set environment variables BEFORE running pip install
 $env:LIBOQS_INSTALL_PATH = "C:\liboqs"
 $env:CMAKE_PREFIX_PATH = "C:\liboqs"
@@ -51,16 +93,17 @@ pip install git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0
 # Verify it works
 python -c "import oqs; print(oqs.get_enabled_kem_mechanisms())"
 
-# 5. Install remaining Python dependencies
+# 6. Install remaining Python dependencies
 pip install -r requirements-prod.txt
 pip install .
 
-# 6. Create PyInstaller bundle
+# 7. (Optional) Create PyInstaller bundle for standalone executable
+# Skip this if you just want to use the package directly
 pip install pyinstaller
 pyinstaller --onefile openssl_encrypt/crypt.py --name openssl-encrypt `
     --add-binary "C:\liboqs\bin\oqs.dll;."
 
-# 7. Build Flutter GUI
+# 8. Build Flutter GUI
 cd desktop_gui
 flutter build windows --release
 ```
@@ -88,7 +131,12 @@ ninja
 sudo ninja install
 cd ../..
 
-# 4. Install liboqs-python against the built liboqs
+# 4. Clone openssl_encrypt repository
+git clone https://github.com/jahlives/openssl_encrypt.git
+# Alternative: git clone https://gitlab.rm-rf.ch/world/openssl_encrypt.git
+cd openssl_encrypt
+
+# 5. Install liboqs-python against the built liboqs
 # IMPORTANT: Set environment variables BEFORE running pip install
 export LIBOQS_INSTALL_PATH=/usr/local/liboqs
 export CMAKE_PREFIX_PATH=/usr/local/liboqs
@@ -102,16 +150,17 @@ pip install git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0
 # Verify it works
 python -c "import oqs; print(oqs.get_enabled_kem_mechanisms())"
 
-# 5. Install remaining Python dependencies
+# 6. Install remaining Python dependencies
 pip install -r requirements-prod.txt
 pip install .
 
-# 6. Create PyInstaller bundle
+# 7. (Optional) Create PyInstaller bundle for standalone executable
+# Skip this if you just want to use the package directly
 pip install pyinstaller
 pyinstaller --onefile openssl_encrypt/crypt.py --name openssl-encrypt \
     --add-binary "/usr/local/liboqs/lib/liboqs.dylib:."
 
-# 7. Build Flutter GUI
+# 8. Build Flutter GUI
 cd desktop_gui
 flutter build macos --release
 ```
@@ -138,7 +187,12 @@ ninja
 sudo ninja install
 cd ../..
 
-# 3. Install liboqs-python against the built liboqs
+# 3. Clone openssl_encrypt repository
+git clone https://github.com/jahlives/openssl_encrypt.git
+# Alternative: git clone https://gitlab.rm-rf.ch/world/openssl_encrypt.git
+cd openssl_encrypt
+
+# 4. Install liboqs-python against the built liboqs
 export LIBOQS_INSTALL_PATH=/usr/local/liboqs
 export CMAKE_PREFIX_PATH=/usr/local/liboqs
 export CFLAGS="-I/usr/local/liboqs/include"
@@ -151,21 +205,22 @@ pip install git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0
 # Verify it works
 python -c "import oqs; print(oqs.get_enabled_kem_mechanisms())"
 
-# 4. Install remaining Python dependencies
+# 5. Install remaining Python dependencies
 pip install -r requirements-prod.txt
 pip install .
 
-# 5. Create PyInstaller bundle (optional, Flatpak is recommended)
+# 6. (Optional) Create PyInstaller bundle for standalone executable
+# Skip this if you just want to use the package directly
 pip install pyinstaller
 pyinstaller --onefile openssl_encrypt/crypt.py --name openssl-encrypt \
     --add-binary "/usr/local/liboqs/lib/liboqs.so:." \
     --add-binary "/usr/local/liboqs/lib/liboqs.so.6:."
 
-# 6. Build Flutter GUI
+# 7. Build Flutter GUI
 cd desktop_gui
 flutter build linux --release
 
-# 7. Or simply build Flatpak (recommended):
+# 8. Or simply build Flatpak (recommended):
 cd flatpak
 ./build-flatpak.sh --build-flutter --local-install
 ```
