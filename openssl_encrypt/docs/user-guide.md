@@ -11,6 +11,7 @@
 7. [Security Templates](#security-templates)
 8. [Advanced Features](#advanced-features)
 9. [Troubleshooting](#troubleshooting)
+10. [Build from Source](cross-platform.md)
 
 ## Installation
 
