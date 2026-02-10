@@ -326,21 +326,21 @@ class PublicKeyBundle:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict) -> "PublicKeyBundle":
+    def from_dict(cls, data: Dict, verify: bool = True) -> "PublicKeyBundle":
         """
         Create bundle from dictionary.
 
-        SECURITY: Does NOT verify signature. Call verify_signature() after creation.
-
         Args:
             data: Dictionary from to_dict()
+            verify: If True (default), verify self_signature before returning.
+                    Set to False only if verification happens separately.
 
         Returns:
-            PublicKeyBundle (unverified)
+            PublicKeyBundle (verified if verify=True)
 
         Raises:
             KeyError: If required fields missing
-            ValueError: If data format invalid
+            ValueError: If data format invalid or signature verification fails
         """
         try:
             bundle = cls(
@@ -354,9 +354,16 @@ class PublicKeyBundle:
                 signing_algorithm=data["signing_algorithm"],
                 self_signature=base64.b64decode(data["self_signature"]),
             )
+            if verify:
+                try:
+                    bundle.verify_signature()
+                except Exception as e:
+                    raise ValueError(f"Bundle signature verification failed: {e}")
             return bundle
         except KeyError as e:
             raise ValueError(f"Missing required field in bundle data: {e}")
+        except ValueError:
+            raise
         except Exception as e:
             raise ValueError(f"Invalid bundle data format: {e}")
 
