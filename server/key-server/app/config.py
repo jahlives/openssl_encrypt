@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     # Security - MUST be set via environment variable (min 32 chars)
     api_token_secret: str = os.getenv("API_TOKEN_SECRET", "")
-    cors_origins: List[str] = ["*"]  # Configure appropriately in production
+    cors_origins: List[str] = []  # Set via CORS_ORIGINS env var for production
 
     # Rate limiting
     rate_limit_enabled: bool = True
@@ -68,6 +68,18 @@ def validate_settings(s: Settings) -> None:
             raise ValueError(
                 "DATABASE_URL environment variable is required. "
                 "Example: DATABASE_URL=postgresql://user:pass@host/dbname"
+            )
+
+    if "*" in s.cors_origins:
+        if s.debug:
+            logger.warning(
+                "SECURITY WARNING: CORS wildcard '*' is active. "
+                "This should only be used in debug mode."
+            )
+        else:
+            raise ValueError(
+                "CORS wildcard '*' is not allowed in production. "
+                "Set CORS_ORIGINS to specific allowed origins."
             )
 
     if not s.api_token_secret or len(s.api_token_secret) < 32:

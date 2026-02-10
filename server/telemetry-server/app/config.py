@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     raw_data_retention_days: int = 90
 
     # CORS (for public stats endpoint)
-    cors_origins: list = ["*"]  # Configure for production
+    cors_origins: list = []  # Set via CORS_ORIGINS env var for production
 
     class Config:
         env_file = ".env"
@@ -58,6 +58,18 @@ def validate_settings(s: Settings) -> None:
     Raises:
         ValueError: If required settings are missing or insecure.
     """
+    if "*" in s.cors_origins:
+        if s.debug:
+            logger.warning(
+                "SECURITY WARNING: CORS wildcard '*' is active. "
+                "This should only be used in debug mode."
+            )
+        else:
+            raise ValueError(
+                "CORS wildcard '*' is not allowed in production. "
+                "Set CORS_ORIGINS to specific allowed origins."
+            )
+
     if not s.database_url:
         if s.debug:
             logger.warning(
