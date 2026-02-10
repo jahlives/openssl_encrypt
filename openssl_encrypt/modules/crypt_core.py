@@ -3929,46 +3929,64 @@ def generate_key(
     # IMPORTANT: For v10/v8, DO NOT use PBKDF2 fallback - it's only for backward compat decryption
     if any_kdf_requested and not KeyStretch.key_stretch and not use_xor_composition:
         if not quiet:
-            print("⚠️ Requested KDFs failed, applying default PBKDF2 fallback (legacy)")
+            logger.warning(
+                "Requested KDFs failed, applying PBKDF2 fallback — consider re-encrypting"
+            )
+            print("⚠️ Requested KDFs failed, applying PBKDF2 fallback")
 
-        # Apply default PBKDF2 with 100000 iterations
-        default_pbkdf2_iterations = 100000
-        base_salt = salt
+        is_decrypting = KeyStretch.kind_action == "decrypt"
 
-        for i in range(default_pbkdf2_iterations):
-            # Version-aware salt derivation
-            if format_version >= 7:
-                # Secure chained derivation (v7, v8, v9, v10+)
-                if i == 0:
-                    # Use the original salt for the first iteration
-                    iteration_specific_salt = base_salt
-                else:
-                    # Chained: Use previous output as salt (secure method)
-                    iteration_specific_salt = password[:16]
-            else:
-                # Legacy: Predictable derivation for v1-6 (backward compatibility only)
-                #
-                # Original fallback code derived salt for all rounds including round 0
-                iteration_specific_salt = hashlib.sha256(
-                    base_salt + str(i).encode("utf-8")
-                ).digest()
-
+        if not is_decrypting and format_version >= 10:
+            # New encryptions: use standard PBKDF2HMAC with 600000 iterations
             password = PBKDF2HMAC(
                 algorithm=hashes.SHA256(),
                 length=key_length,
-                salt=iteration_specific_salt,
-                iterations=1,
+                salt=salt,
+                iterations=600000,
                 backend=default_backend(),
             ).derive(password)
+            if not quiet and not progress:
+                print(" ✅")
+            KeyStretch.key_stretch = True
+            show_progress("PBKDF2 (fallback)", 600000, 600000)
+        else:
+            # Legacy fallback for decryption or older format versions:
+            # Non-standard loop of 100k single-iteration PBKDF2 calls
+            default_pbkdf2_iterations = 100000
+            base_salt = salt
 
-            # Update progress every 10000 iterations for default PBKDF2
-            if not quiet and i > 0 and i % 10000 == 0 and not progress:
-                print(".", end="", flush=True)
+            for i in range(default_pbkdf2_iterations):
+                # Version-aware salt derivation
+                if format_version >= 7:
+                    # Secure chained derivation (v7, v8, v9, v10+)
+                    if i == 0:
+                        # Use the original salt for the first iteration
+                        iteration_specific_salt = base_salt
+                    else:
+                        # Chained: Use previous output as salt (secure method)
+                        iteration_specific_salt = password[:16]
+                else:
+                    # Legacy: Predictable derivation for v1-6 (backward compatibility only)
+                    iteration_specific_salt = hashlib.sha256(
+                        base_salt + str(i).encode("utf-8")
+                    ).digest()
 
-        if not quiet and not progress:
-            print(" ✅")
-        KeyStretch.key_stretch = True
-        show_progress("PBKDF2 (fallback)", default_pbkdf2_iterations, default_pbkdf2_iterations)
+                password = PBKDF2HMAC(
+                    algorithm=hashes.SHA256(),
+                    length=key_length,
+                    salt=iteration_specific_salt,
+                    iterations=1,
+                    backend=default_backend(),
+                ).derive(password)
+
+                # Update progress every 10000 iterations for default PBKDF2
+                if not quiet and i > 0 and i % 10000 == 0 and not progress:
+                    print(".", end="", flush=True)
+
+            if not quiet and not progress:
+                print(" ✅")
+            KeyStretch.key_stretch = True
+            show_progress("PBKDF2 (fallback)", default_pbkdf2_iterations, default_pbkdf2_iterations)
 
         # NEW: For v10/v8, save fallback PBKDF2 final output to XOR accumulator
         # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes
