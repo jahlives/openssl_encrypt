@@ -321,6 +321,8 @@ def validate_config(settings: Settings):
     Ensures:
     - Token secrets are different between modules
     - Token secrets are at least 32 characters
+    - Token secrets are not insecure defaults (when debug=False)
+    - Database credentials are explicitly configured (when debug=False)
     - Pepper TOTP encryption key is configured if pepper enabled
 
     Raises:
@@ -328,18 +330,55 @@ def validate_config(settings: Settings):
     """
     logger = logging.getLogger(__name__)
 
+    # CRIT-8: Check for insecure default patterns in secrets
+    _insecure_secret_markers = [
+        "change-me",
+        "changeme",
+        "change_me",
+        "change_this",
+        "secret-change",
+        "not-for-production",
+    ]
+
+    def _is_insecure_default(value: str) -> bool:
+        """Check if a value contains known insecure default markers."""
+        lower = value.lower()
+        return any(marker in lower for marker in _insecure_secret_markers)
+
     secrets = []
 
     if settings.keyserver_enabled:
         ks_secret = settings.keyserver_token_secret
         if len(ks_secret) < 32:
             raise ValueError("KEYSERVER_TOKEN_SECRET must be at least 32 characters long")
+        if not settings.debug and _is_insecure_default(ks_secret):
+            raise ValueError(
+                "SECURITY ERROR: KEYSERVER_TOKEN_SECRET contains a default/insecure value. "
+                "Set a proper secret via environment variable. "
+                'Generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"'
+            )
+        if settings.debug and _is_insecure_default(ks_secret):
+            logger.warning(
+                "SECURITY WARNING: KEYSERVER_TOKEN_SECRET uses a default value. "
+                "This is only acceptable in debug mode."
+            )
         secrets.append(("Keyserver", ks_secret))
 
     if settings.telemetry_enabled:
         tm_secret = settings.telemetry_token_secret
         if len(tm_secret) < 32:
             raise ValueError("TELEMETRY_TOKEN_SECRET must be at least 32 characters long")
+        if not settings.debug and _is_insecure_default(tm_secret):
+            raise ValueError(
+                "SECURITY ERROR: TELEMETRY_TOKEN_SECRET contains a default/insecure value. "
+                "Set a proper secret via environment variable. "
+                'Generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"'
+            )
+        if settings.debug and _is_insecure_default(tm_secret):
+            logger.warning(
+                "SECURITY WARNING: TELEMETRY_TOKEN_SECRET uses a default value. "
+                "This is only acceptable in debug mode."
+            )
         secrets.append(("Telemetry", tm_secret))
 
     # Check all secrets are unique
