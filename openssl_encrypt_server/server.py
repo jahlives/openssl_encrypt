@@ -172,7 +172,8 @@ def create_app() -> FastAPI:
 
             return {"status": "ready"}
         except Exception as e:
-            return {"status": "not_ready", "reason": str(e)}
+            logger.warning("Readiness check failed: %s", e)
+            return {"status": "not_ready", "reason": "database check failed"}
 
     @app.get("/info")
     async def server_info():
