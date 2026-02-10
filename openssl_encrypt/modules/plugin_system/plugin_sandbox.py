@@ -97,6 +97,7 @@ class PluginImportGuard:
         """
         self.context = context
         self.hidden_modules = {}
+        self._modules_lock = threading.Lock()
 
     def _should_block_module(self, module_name: str) -> bool:
         """Check if a module should be blocked based on capabilities.
@@ -130,23 +131,33 @@ class PluginImportGuard:
         Remove dangerous modules from sys.modules to prevent access.
 
         Saves removed modules so they can be restored later.
+        Thread-safe: uses _modules_lock to prevent concurrent modification.
         """
-        # Get all modules that should be blocked
-        modules_to_hide = set(self.ALWAYS_BLOCKED) | set(self.CAPABILITY_GATED.keys())
+        with self._modules_lock:
+            # Get all modules that should be blocked
+            modules_to_hide = set(self.ALWAYS_BLOCKED) | set(self.CAPABILITY_GATED.keys())
 
-        for module_name in modules_to_hide:
-            # Check if module should actually be blocked based on capabilities
-            if self._should_block_module(module_name) and module_name in sys.modules:
-                self.hidden_modules[module_name] = sys.modules[module_name]
-                del sys.modules[module_name]
-                logger.debug(f"Hidden module from sys.modules: {module_name}")
+            for module_name in modules_to_hide:
+                # Check if module should actually be blocked based on capabilities
+                if self._should_block_module(module_name) and module_name in sys.modules:
+                    self.hidden_modules[module_name] = sys.modules[module_name]
+                    del sys.modules[module_name]
+                    logger.debug(f"Hidden module from sys.modules: {module_name}")
 
     def restore_hidden_modules(self):
-        """Restore previously hidden modules to sys.modules."""
-        for module_name, module in self.hidden_modules.items():
-            sys.modules[module_name] = module
-        self.hidden_modules.clear()
-        logger.debug(f"Restored {len(self.hidden_modules)} hidden modules")
+        """Restore previously hidden modules to sys.modules.
+
+        Thread-safe: uses _modules_lock to prevent concurrent modification.
+        Wrapped in try/finally to ensure modules are restored even on error.
+        """
+        with self._modules_lock:
+            count = len(self.hidden_modules)
+            try:
+                for module_name, module in self.hidden_modules.items():
+                    sys.modules[module_name] = module
+            finally:
+                self.hidden_modules.clear()
+            logger.debug(f"Restored {count} hidden modules")
 
     def find_module(self, fullname, path=None):
         """
