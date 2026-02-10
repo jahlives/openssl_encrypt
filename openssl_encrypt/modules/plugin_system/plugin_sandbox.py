@@ -181,6 +181,7 @@ def _plugin_worker(plugin, context, result_queue):
     Worker function for multiprocessing-based plugin execution.
 
     This function must be at module level to be picklable.
+    Applies sandbox restrictions in the child process before execution.
 
     Args:
         plugin: Plugin instance to execute
@@ -188,7 +189,38 @@ def _plugin_worker(plugin, context, result_queue):
         result_queue: Queue to return results
     """
     try:
-        # Execute plugin
+        # Apply resource limits in child process (Linux only)
+        try:
+            import resource as _resource
+
+            # CPU time limit: 60 seconds
+            if hasattr(_resource, "RLIMIT_CPU"):
+                _resource.setrlimit(_resource.RLIMIT_CPU, (60, 60))
+
+            # Max file size: 50MB
+            if hasattr(_resource, "RLIMIT_FSIZE"):
+                max_fsize = 50 * 1024 * 1024
+                _resource.setrlimit(_resource.RLIMIT_FSIZE, (max_fsize, max_fsize))
+
+            # Max number of open files: 64
+            if hasattr(_resource, "RLIMIT_NOFILE"):
+                _resource.setrlimit(_resource.RLIMIT_NOFILE, (64, 64))
+        except (ImportError, OSError, ValueError):
+            pass  # Resource limits not available on this platform
+
+        # Install import guard to block dangerous modules
+        guard = PluginImportGuard(context)
+        guard.hide_dangerous_modules()
+        sys.meta_path.insert(0, guard)
+
+        # Run AST validation on plugin source
+        try:
+            _validate_plugin_source(plugin)
+        except SandboxViolationError as e:
+            result_queue.put(("error", str(e)))
+            return
+
+        # Execute plugin with restrictions applied
         result = plugin.execute(context)
         result_queue.put(("success", result))
     except Exception as e:
