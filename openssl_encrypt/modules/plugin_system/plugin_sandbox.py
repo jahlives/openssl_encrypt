@@ -86,6 +86,7 @@ class PluginImportGuard:
 
     # Modules that are blocked unless specific capability is granted
     CAPABILITY_GATED = {
+        "os": None,  # Always blocked at runtime (AST checks DANGEROUS_OS_FUNCTIONS separately)
         "socket": PluginCapability.NETWORK_ACCESS,  # Allowed with NETWORK_ACCESS
     }
 
@@ -339,19 +340,13 @@ class PluginSandbox:
 
         # Reject path separators, traversal, and null bytes
         if any(c in plugin_id for c in ("/", "\\", "\x00")):
-            raise SandboxViolationError(
-                f"Plugin ID contains unsafe characters: {plugin_id!r}"
-            )
+            raise SandboxViolationError(f"Plugin ID contains unsafe characters: {plugin_id!r}")
         if ".." in plugin_id:
-            raise SandboxViolationError(
-                f"Plugin ID contains path traversal: {plugin_id!r}"
-            )
+            raise SandboxViolationError(f"Plugin ID contains path traversal: {plugin_id!r}")
 
         # Only allow alphanumeric, hyphens, underscores
         if not re.match(r"^[a-zA-Z0-9_-]+$", plugin_id):
-            raise SandboxViolationError(
-                f"Plugin ID contains disallowed characters: {plugin_id!r}"
-            )
+            raise SandboxViolationError(f"Plugin ID contains disallowed characters: {plugin_id!r}")
 
         return plugin_id
 
@@ -570,9 +565,7 @@ class PluginSandbox:
             def blocked(self_path, *args, **kwargs):
                 abs_path = os.path.abspath(str(self_path))
                 if not sandbox._is_safe_path(abs_path, context, is_write):
-                    raise SandboxViolationError(
-                        f"File access denied via pathlib: {self_path}"
-                    )
+                    raise SandboxViolationError(f"File access denied via pathlib: {self_path}")
                 return original(self_path, *args, **kwargs)
 
             return blocked

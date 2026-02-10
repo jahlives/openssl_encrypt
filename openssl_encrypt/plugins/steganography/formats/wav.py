@@ -380,8 +380,6 @@ class WAVSteganography(SteganographyBase):
             # Generate sample order (crypto shuffle if password provided)
             sample_indices = list(range(len(flat_samples)))
             if self.password:
-                from ..core.utils import SteganographyUtils
-
                 SteganographyUtils.crypto_seeded_shuffle_np(sample_indices, self.shuffle_key)
 
             # Hide data using LSB
@@ -448,8 +446,6 @@ class WAVSteganography(SteganographyBase):
             # Generate same sample order used during hiding
             sample_indices = list(range(len(flat_samples)))
             if self.password:
-                from ..core.utils import SteganographyUtils
-
                 SteganographyUtils.crypto_seeded_shuffle_np(sample_indices, self.shuffle_key)
 
             # Extract length first (4 bytes = 32 bits)

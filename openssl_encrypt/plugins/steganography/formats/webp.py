@@ -358,8 +358,6 @@ class WEBPSteganography(SteganographyBase):
             # Generate pixel order (crypto shuffle if password provided)
             pixel_indices = list(range(len(flat_image)))
             if self.password:
-                from ..core.utils import SteganographyUtils
-
                 SteganographyUtils.crypto_seeded_shuffle_np(pixel_indices, self.shuffle_key)
 
             # Hide data using LSB
@@ -463,8 +461,6 @@ class WEBPSteganography(SteganographyBase):
             # Generate same pixel order used during hiding
             pixel_indices = list(range(len(flat_image)))
             if self.password:
-                from ..core.utils import SteganographyUtils
-
                 SteganographyUtils.crypto_seeded_shuffle_np(pixel_indices, self.shuffle_key)
 
             # Extract length first (4 bytes = 32 bits)
