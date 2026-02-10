@@ -454,7 +454,7 @@ class PluginSandbox:
         # Restrict file access based on capabilities
         if PluginCapability.READ_FILES not in context.capabilities:
             # Override file operations to restrict access
-            saved_state["file_ops"] = self._restrict_file_operations()
+            self._restrict_file_operations(saved_state)
 
         # Restrict network access
         if PluginCapability.NETWORK_ACCESS not in context.capabilities:
@@ -476,35 +476,69 @@ class PluginSandbox:
 
         return saved_state
 
-    def _restrict_file_operations(self):
+    def _restrict_file_operations(self, saved_state):
         """Restrict file system operations.
 
-        Returns:
-            Original open function for restoration
+        Monkey-patches builtins.open, pathlib.Path file methods, and io.open
+        to enforce sandbox path restrictions.
+
+        Args:
+            saved_state: Dict to store original functions for restoration
         """
         import builtins
+        import io
+        import pathlib
 
-        # Store original function
+        # Store original functions for restoration
         original_open = builtins.open
+        saved_state["builtins_open"] = original_open
+        saved_state["io_open"] = io.open
+        saved_state["pathlib_open"] = pathlib.Path.open
+        saved_state["pathlib_read_text"] = pathlib.Path.read_text
+        saved_state["pathlib_write_text"] = pathlib.Path.write_text
+        saved_state["pathlib_read_bytes"] = pathlib.Path.read_bytes
+        saved_state["pathlib_write_bytes"] = pathlib.Path.write_bytes
+        saved_state["pathlib_unlink"] = pathlib.Path.unlink
+        saved_state["pathlib_mkdir"] = pathlib.Path.mkdir
+        saved_state["pathlib_rmdir"] = pathlib.Path.rmdir
 
         # Capture context for use in restricted_open
         context = self.current_context
+        sandbox = self
 
         def restricted_open(file, mode="r", **kwargs):
-            # Only allow access to temp directory and explicitly safe paths
-            abs_path = os.path.abspath(file)
-
-            # Check if this is a write operation
+            abs_path = os.path.abspath(str(file))
             is_write = any(c in mode for c in ["w", "a", "+", "x"])
-
-            if not self._is_safe_path(abs_path, context, is_write):
+            if not sandbox._is_safe_path(abs_path, context, is_write):
                 raise SandboxViolationError(f"File access denied: {file} (mode: {mode})")
-
             return original_open(file, mode, **kwargs)
 
-        # Replace open function
+        def _make_pathlib_blocker(method_name, is_write=False):
+            original = getattr(pathlib.Path, method_name)
+
+            def blocked(self_path, *args, **kwargs):
+                abs_path = os.path.abspath(str(self_path))
+                if not sandbox._is_safe_path(abs_path, context, is_write):
+                    raise SandboxViolationError(
+                        f"File access denied via pathlib: {self_path}"
+                    )
+                return original(self_path, *args, **kwargs)
+
+            return blocked
+
+        # Replace open functions
         builtins.open = restricted_open
-        return original_open
+        io.open = restricted_open
+
+        # Monkey-patch pathlib.Path methods
+        pathlib.Path.open = _make_pathlib_blocker("open")
+        pathlib.Path.read_text = _make_pathlib_blocker("read_text")
+        pathlib.Path.read_bytes = _make_pathlib_blocker("read_bytes")
+        pathlib.Path.write_text = _make_pathlib_blocker("write_text", is_write=True)
+        pathlib.Path.write_bytes = _make_pathlib_blocker("write_bytes", is_write=True)
+        pathlib.Path.unlink = _make_pathlib_blocker("unlink", is_write=True)
+        pathlib.Path.mkdir = _make_pathlib_blocker("mkdir", is_write=True)
+        pathlib.Path.rmdir = _make_pathlib_blocker("rmdir", is_write=True)
 
     def _restrict_network_operations(self, saved_state):
         """Restrict network operations.
@@ -611,11 +645,22 @@ class PluginSandbox:
 
         # Now restore other operations (safe to import modules now)
 
-        # Restore file operations
-        if "file_ops" in saved_state:
+        # Restore file operations (builtins.open, io.open, pathlib methods)
+        if "builtins_open" in saved_state:
             import builtins
+            import io
+            import pathlib
 
-            builtins.open = saved_state["file_ops"]
+            builtins.open = saved_state["builtins_open"]
+            io.open = saved_state["io_open"]
+            pathlib.Path.open = saved_state["pathlib_open"]
+            pathlib.Path.read_text = saved_state["pathlib_read_text"]
+            pathlib.Path.write_text = saved_state["pathlib_write_text"]
+            pathlib.Path.read_bytes = saved_state["pathlib_read_bytes"]
+            pathlib.Path.write_bytes = saved_state["pathlib_write_bytes"]
+            pathlib.Path.unlink = saved_state["pathlib_unlink"]
+            pathlib.Path.mkdir = saved_state["pathlib_mkdir"]
+            pathlib.Path.rmdir = saved_state["pathlib_rmdir"]
 
         # Restore network operations
         if "socket" in saved_state:
