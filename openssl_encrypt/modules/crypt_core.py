@@ -841,8 +841,6 @@ class CamelliaCipher:
             self.key = SecureBytes(key)
             # Derive a separate HMAC key from the provided key to prevent key reuse
             self.hmac_key = SecureBytes(hashlib.sha256(bytes(self.key) + b"hmac_key").digest())
-            # Detect if we're in test mode
-            self.test_mode = os.environ.get("PYTEST_CURRENT_TEST") is not None
         except Exception as e:
             raise ValidationError("Invalid key material for Camellia cipher", original_exception=e)
 
@@ -884,10 +882,6 @@ class CamelliaCipher:
 
             # Encrypt the padded data
             ciphertext = encryptor.update(padded_data) + encryptor.finalize()
-
-            # In test mode, don't add HMAC for backward compatibility
-            if self.test_mode:
-                return ciphertext
 
             # Add authentication with HMAC
             # Include nonce and associated data in HMAC computation for context binding
@@ -940,18 +934,6 @@ class CamelliaCipher:
             # Import the constant-time functions from our secure operations module
             from .secure_ops import constant_time_compare, constant_time_pkcs7_unpad, verify_mac
 
-            # In test mode, process without HMAC for backward compatibility
-            if self.test_mode:
-                cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
-                decryptor = cipher.decryptor()
-                padded_data = decryptor.update(data) + decryptor.finalize()
-
-                # For test mode, use standard cryptography library for unpadding
-                # This is for backward compatibility and ensures tests pass
-                unpadder = padding.PKCS7(algorithms.Camellia.block_size).unpadder()
-                return unpadder.update(padded_data) + unpadder.finalize()
-
-            # Production mode with HMAC authentication
             # Split ciphertext and authentication tag
             tag_size = 32  # SHA-256 HMAC produces 32 bytes
             if len(data) < tag_size:
