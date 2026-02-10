@@ -667,7 +667,7 @@ class PQCipher:
                         # Use secure memory for hash operations
                         with SecureBytes(data) as secure_data:
                             reference_id = hashlib.sha256(secure_data).digest()[:8]
-                        encapsulated_key = marker + b"\xFF\xFF\xFF\xFF" + reference_id
+                        encapsulated_key = marker + b"\xff\xff\xff\xff" + reference_id
                         # Pad to the correct length
                         encapsulated_key = encapsulated_key.ljust(ciphertext_len, b"\0")
 
@@ -931,7 +931,7 @@ class PQCipher:
                     # Found our test format marker - will be able to recover plaintext
                     data_len_bytes = encapsulated_key[8:12]
 
-                    if data_len_bytes == b"\xFF\xFF\xFF\xFF":
+                    if data_len_bytes == b"\xff\xff\xff\xff":
                         # Data is too large and stored in the "ciphertext" part
                         reference_id = encapsulated_key[12:20]
 
@@ -1398,52 +1398,10 @@ class PQCipher:
                         return bytes(secure_plaintext)
 
                 except Exception as e:
-                    # Use generic error message to prevent oracle attacks
+                    # CRIT-2: AES-CTR fallback has been removed.
+                    # All PQC decryption now requires authenticated AEAD ciphers.
                     if not self.quiet:
-                        print(f"AES-GCM decryption failed: {e}")
-
-                    # Special handling for test files - if all else fails
-                    try:
-                        # For testing only - try with no associated data and no authenticated tag
-                        if len(ciphertext) > 16:  # Need at least the tag size
-                            from cryptography.hazmat.primitives.ciphers import (
-                                Cipher,
-                                algorithms,
-                                modes,
-                            )
-
-                            # Last resort - attempt unauthenticated AES decryption (for testing only)
-                            if not self.quiet:
-                                print(
-                                    "WARNING: Attempting fallback, simplified decryption (test only)"
-                                )
-                            # Use only the first 16 bytes of the symmetric key for AES-128
-                            # Use secure memory for fallback decryption
-                            with SecureBytes() as secure_key:
-                                # Copy just what we need into secure memory
-                                secure_key.extend(symmetric_key[:16])
-
-                                # Create decryptor with secure key
-                                aes = Cipher(
-                                    algorithms.AES(secure_key), modes.CTR(nonce[:16]), backend=None
-                                ).decryptor()
-
-                                # Decrypt into secure memory
-                                with SecureBytes() as secure_plaintext:
-                                    plaintext = aes.update(ciphertext) + aes.finalize()
-                                    secure_plaintext.extend(plaintext)
-
-                                    # Zero out the intermediate plaintext
-                                    if isinstance(plaintext, bytearray):
-                                        secure_memzero(plaintext)
-
-                                    # Return a copy, secure memory will be auto-cleared
-                                    return bytes(secure_plaintext)
-                    except Exception as fallback_error:
-                        if not self.quiet:
-                            print(f"Fallback decryption also failed: {fallback_error}")
-
-                    # If all approaches fail, raise a clear error
+                        print(f"AEAD decryption failed: {e}")
                     raise ValueError("Decryption failed: authentication error")
         except Exception as e:
             if not self.quiet:
