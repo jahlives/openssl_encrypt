@@ -33,11 +33,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...core.security_logger import (
-    SecurityEventSeverity,
-    SecurityEventType,
-    get_security_logger,
-)
+from ...core.security_logger import SecurityEventSeverity, SecurityEventType, get_security_logger
 from .models import PPClient, PPTOTPBackupCode
 
 logger = logging.getLogger(__name__)
@@ -86,9 +82,7 @@ class InMemoryBackend(RateLimitBackend):
         now = datetime.now(timezone.utc)
         cutoff = now - window
         if client_id in self.attempts:
-            self.attempts[client_id] = [
-                ts for ts in self.attempts[client_id] if ts > cutoff
-            ]
+            self.attempts[client_id] = [ts for ts in self.attempts[client_id] if ts > cutoff]
             if not self.attempts[client_id]:
                 del self.attempts[client_id]
         return len(self.attempts.get(client_id, []))
@@ -130,7 +124,9 @@ class DatabaseBackend(RateLimitBackend):
             return
         from sqlalchemy import text
 
-        session.execute(text("""
+        session.execute(
+            text(
+                """
             CREATE TABLE IF NOT EXISTS pp_totp_rate_limits (
                 id SERIAL PRIMARY KEY,
                 client_id VARCHAR(64) NOT NULL,
@@ -138,10 +134,12 @@ class DatabaseBackend(RateLimitBackend):
                 lockout_until TIMESTAMP WITH TIME ZONE,
                 CONSTRAINT idx_rl_client_id_attempt UNIQUE (client_id, attempt_at)
             )
-        """))
-        session.execute(text(
-            "CREATE INDEX IF NOT EXISTS idx_rl_client_id ON pp_totp_rate_limits (client_id)"
-        ))
+        """
+            )
+        )
+        session.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_rl_client_id ON pp_totp_rate_limits (client_id)")
+        )
         session.commit()
         self._table_created = True
 
@@ -156,7 +154,9 @@ class DatabaseBackend(RateLimitBackend):
             self._ensure_table(session)
             # Clean expired entries on access
             session.execute(
-                text("DELETE FROM pp_totp_rate_limits WHERE attempt_at < :cutoff AND lockout_until IS NULL"),
+                text(
+                    "DELETE FROM pp_totp_rate_limits WHERE attempt_at < :cutoff AND lockout_until IS NULL"
+                ),
                 {"cutoff": cutoff},
             )
             result = session.execute(
@@ -172,20 +172,20 @@ class DatabaseBackend(RateLimitBackend):
 
     def record_attempt(self, client_id: str) -> None:
         from sqlalchemy import text
+
         from ...core.database import get_sync_session
 
         with get_sync_session() as session:
             self._ensure_table(session)
             session.execute(
-                text(
-                    "INSERT INTO pp_totp_rate_limits (client_id, attempt_at) VALUES (:cid, :now)"
-                ),
+                text("INSERT INTO pp_totp_rate_limits (client_id, attempt_at) VALUES (:cid, :now)"),
                 {"cid": client_id, "now": datetime.now(timezone.utc)},
             )
             session.commit()
 
     def clear_attempts(self, client_id: str) -> None:
         from sqlalchemy import text
+
         from ...core.database import get_sync_session
 
         with get_sync_session() as session:
@@ -198,6 +198,7 @@ class DatabaseBackend(RateLimitBackend):
 
     def get_lockout_until(self, client_id: str) -> Optional[datetime]:
         from sqlalchemy import text
+
         from ...core.database import get_sync_session
 
         with get_sync_session() as session:
@@ -214,6 +215,7 @@ class DatabaseBackend(RateLimitBackend):
 
     def set_lockout(self, client_id: str, until: datetime) -> None:
         from sqlalchemy import text
+
         from ...core.database import get_sync_session
 
         with get_sync_session() as session:
@@ -229,6 +231,7 @@ class DatabaseBackend(RateLimitBackend):
 
     def clear_lockout(self, client_id: str) -> None:
         from sqlalchemy import text
+
         from ...core.database import get_sync_session
 
         with get_sync_session() as session:
@@ -316,10 +319,11 @@ class TOTPRateLimiter:
                 if remaining_minutes > 0:
                     detail_msg = f"Too many failed TOTP attempts. Try again in {remaining_minutes} minute(s)."
                 else:
-                    detail_msg = f"Too many failed TOTP attempts. Try again in {remaining_seconds} seconds."
+                    detail_msg = (
+                        f"Too many failed TOTP attempts. Try again in {remaining_seconds} seconds."
+                    )
                 raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=detail_msg
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=detail_msg
                 )
             else:
                 # Lockout expired, remove it
@@ -344,12 +348,12 @@ class TOTPRateLimiter:
             security_logger.log_totp_lockout(
                 client_id=client_id,
                 attempts=attempt_count,
-                lockout_duration_seconds=lockout_seconds
+                lockout_duration_seconds=lockout_seconds,
             )
 
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Too many failed TOTP attempts. Locked out for {lockout_seconds} seconds."
+                detail=f"Too many failed TOTP attempts. Locked out for {lockout_seconds} seconds.",
             )
 
     def record_attempt(self, client_id: str):
@@ -388,7 +392,9 @@ class TOTPService:
     # Shared rate limiter across all TOTPService instances
     _rate_limiter = TOTPRateLimiter()
 
-    def __init__(self, db: AsyncSession, issuer: str = "openssl_encrypt", fernet_key: Optional[str] = None):
+    def __init__(
+        self, db: AsyncSession, issuer: str = "openssl_encrypt", fernet_key: Optional[str] = None
+    ):
         """
         Initialize TOTP service.
 
@@ -472,6 +478,7 @@ class TOTPService:
 
         # For SVG, use factory
         from qrcode.image.svg import SvgPathImage
+
         qr_svg = qrcode.QRCode(image_factory=SvgPathImage)
         qr_svg.add_data(uri)
         qr_svg.make(fit=True)
@@ -490,7 +497,7 @@ class TOTPService:
             "secret": secret,
             "qr_svg": svg_str,
             "uri": uri,
-            "message": "Scan QR code with your authenticator app, then verify with a code"
+            "message": "Scan QR code with your authenticator app, then verify with a code",
         }
 
     async def verify_setup(self, client: PPClient, code: str) -> dict:
@@ -533,7 +540,7 @@ class TOTPService:
         return {
             "message": "TOTP enabled successfully",
             "backup_codes": backup_codes,
-            "backup_codes_warning": "Save these backup codes in a secure location. Each can only be used once."
+            "backup_codes_warning": "Save these backup codes in a secure location. Each can only be used once.",
         }
 
     async def verify_code(self, client: PPClient, code: str) -> bool:
@@ -593,7 +600,7 @@ class TOTPService:
                 SecurityEventSeverity.WARNING,
                 client.cert_fingerprint,
                 {"attempt_count": attempt_count, "max_attempts": self._rate_limiter.max_attempts},
-                f"Failed TOTP verification ({attempt_count}/{self._rate_limiter.max_attempts})"
+                f"Failed TOTP verification ({attempt_count}/{self._rate_limiter.max_attempts})",
             )
 
             return False
@@ -652,9 +659,7 @@ class TOTPService:
             ValueError: If TOTP code invalid
         """
         # Get client
-        result = await self.db.execute(
-            select(PPClient).where(PPClient.id == client_id)
-        )
+        result = await self.db.execute(select(PPClient).where(PPClient.id == client_id))
         client = result.scalar_one_or_none()
         if not client:
             raise ValueError("Client not found")
@@ -719,8 +724,7 @@ class TOTPService:
         # Get unused backup codes
         result = await self.db.execute(
             select(PPTOTPBackupCode).where(
-                PPTOTPBackupCode.client_id == client_id,
-                PPTOTPBackupCode.used_at.is_(None)
+                PPTOTPBackupCode.client_id == client_id, PPTOTPBackupCode.used_at.is_(None)
             )
         )
         codes = result.scalars().all()

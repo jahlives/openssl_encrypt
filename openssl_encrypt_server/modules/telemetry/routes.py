@@ -11,11 +11,11 @@ Endpoints:
 import logging
 
 from fastapi import APIRouter, Body, Depends, Query, Request, Security, status
-from pydantic import BaseModel
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.database import get_db
 from .auth import get_telemetry_auth
@@ -128,7 +128,7 @@ async def refresh_token(
         refresh_token=result["refresh_token"],
         expires_at=result["access_token_expires_at"],
         refresh_expires_at=result["refresh_token_expires_at"],
-        token_type=result["token_type"]
+        token_type=result["token_type"],
     )
 
 

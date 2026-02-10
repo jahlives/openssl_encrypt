@@ -196,9 +196,7 @@ class CryptoKey(CryptoSecureBuffer):
         # Clear the temporary random data to avoid leaving traces
         random_data = None
 
-    def derive_subkey(
-        self, info: bytes, length: int, salt: bytes = None
-    ) -> "CryptoKey":
+    def derive_subkey(self, info: bytes, length: int, salt: bytes = None) -> "CryptoKey":
         """
         Derive a subkey from this key using HKDF-SHA256.
 

@@ -545,9 +545,7 @@ class MP3Steganography(SteganographyBase):
                         _hl.sha256,
                     ).digest()
                     seed_int = int.from_bytes(frame_key[:16], byteorder="big")
-                    rng = np.random.Generator(
-                        np.random.PCG64(np.random.SeedSequence(seed_int))
-                    )
+                    rng = np.random.Generator(np.random.PCG64(np.random.SeedSequence(seed_int)))
                     rng.shuffle(coeff_indices)
 
                 for coeff_idx in coeff_indices:
@@ -634,9 +632,7 @@ class MP3Steganography(SteganographyBase):
                         _hl.sha256,
                     ).digest()
                     seed_int = int.from_bytes(frame_key[:16], byteorder="big")
-                    rng = np.random.Generator(
-                        np.random.PCG64(np.random.SeedSequence(seed_int))
-                    )
+                    rng = np.random.Generator(np.random.PCG64(np.random.SeedSequence(seed_int)))
                     rng.shuffle(coeff_indices)
 
                 for coeff_idx in coeff_indices:

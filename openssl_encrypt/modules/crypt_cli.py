@@ -686,7 +686,15 @@ def preprocess_global_args(argv):
     anywhere in the command line, maintaining backward compatibility with v1.2.1 behavior.
     """
     # Flags that are truly global and can appear anywhere
-    TRULY_GLOBAL_FLAGS = {"--debug", "--verbose", "--quiet", "-q", "--progress", "--parallel-kdf", "--kdf-workers"}
+    TRULY_GLOBAL_FLAGS = {
+        "--debug",
+        "--verbose",
+        "--quiet",
+        "-q",
+        "--progress",
+        "--parallel-kdf",
+        "--kdf-workers",
+    }
 
     # Find the command position
     commands = {
@@ -3148,14 +3156,27 @@ def main():
     # Use subparser only if a subcommand is present
     # (after global flags have been moved to the front by preprocess_global_args)
     # Find the first non-flag argument (skip global flags)
-    global_flags = {"--progress", "--verbose", "--debug", "--quiet", "--yes", "-y", "--parallel-kdf", "--kdf-workers"}
+    global_flags = {
+        "--progress",
+        "--verbose",
+        "--debug",
+        "--quiet",
+        "--yes",
+        "-y",
+        "--parallel-kdf",
+        "--kdf-workers",
+    }
     first_command = None
     for i in range(1, len(sys.argv)):
         arg = sys.argv[i]
         # Skip global flags (and their values if applicable)
         if arg in global_flags:
             # Skip the flag and its value if it takes one
-            if arg in ["--kdf-workers"] and i + 1 < len(sys.argv) and not sys.argv[i + 1].startswith("-"):
+            if (
+                arg in ["--kdf-workers"]
+                and i + 1 < len(sys.argv)
+                and not sys.argv[i + 1].startswith("-")
+            ):
                 continue  # Will skip the value in next iteration
             continue
         # Found a non-flag argument
@@ -3286,8 +3307,8 @@ def main_with_args(args=None):
         "--parallel-kdf",
         action="store_true",
         help="Use parallel processing for key derivation (v11 only, requires --independent-xor). "
-             "Speeds up encryption by running hash algorithms and KDFs concurrently. "
-             "Requires multiprocessing support."
+        "Speeds up encryption by running hash algorithms and KDFs concurrently. "
+        "Requires multiprocessing support.",
     )
     global_group.add_argument(
         "--kdf-workers",
@@ -3295,7 +3316,7 @@ def main_with_args(args=None):
         default=None,
         metavar="N",
         help="Number of parallel workers for KDF (default: auto-detect, max: CPU count). "
-             "Only used with --parallel-kdf."
+        "Only used with --parallel-kdf.",
     )
     global_group.add_argument("--verbose", action="store_true", help="Show hash/kdf details")
     global_group.add_argument(
@@ -5049,7 +5070,11 @@ def main_with_args(args=None):
                     except KeyError:
                         pass
 
-            if args.password and not getattr(args, "password_file", None) and not getattr(args, "password_fd", None):
+            if (
+                args.password
+                and not getattr(args, "password_file", None)
+                and not getattr(args, "password_fd", None)
+            ):
                 # Warn about --password being visible in process list
                 if not args.quiet:
                     print(
@@ -6771,7 +6796,7 @@ def main_with_args(args=None):
                         elif use_xor:
                             format_version = 10  # Sequential XOR
                         else:
-                            format_version = 9   # Default (secure chained salt)
+                            format_version = 9  # Default (secure chained salt)
 
                         success = encrypt_file(
                             args.input,
@@ -7045,7 +7070,7 @@ def main_with_args(args=None):
                 elif use_xor:
                     format_version = 10  # Sequential XOR
                 else:
-                    format_version = 9   # Default (secure chained salt)
+                    format_version = 9  # Default (secure chained salt)
 
                 success = encrypt_file(
                     args.input,
@@ -7687,7 +7712,7 @@ def main_with_args(args=None):
                     elif use_xor:
                         format_version = 10  # Sequential XOR
                     else:
-                        format_version = 9   # Default (secure chained salt)
+                        format_version = 9  # Default (secure chained salt)
 
                     success = encrypt_file(
                         args.input,

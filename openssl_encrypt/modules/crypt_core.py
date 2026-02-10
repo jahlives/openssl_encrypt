@@ -978,9 +978,7 @@ class CamelliaCipher:
             expected_tag = hmac_obj.digest()
 
             # Also compute with legacy key for backward compatibility
-            legacy_hmac_obj = hmac.new(
-                bytes(self._legacy_hmac_key), hmac_data, hashlib.sha256
-            )
+            legacy_hmac_obj = hmac.new(bytes(self._legacy_hmac_key), hmac_data, hashlib.sha256)
             legacy_expected_tag = legacy_hmac_obj.digest()
 
             # Always decrypt data regardless of tag verification outcome
@@ -998,9 +996,7 @@ class CamelliaCipher:
             # Try HKDF-derived key first, then fall back to legacy SHA-256 key
             hmac_valid = verify_mac(expected_tag, received_tag, associated_data)
             if not hmac_valid:
-                hmac_valid = verify_mac(
-                    legacy_expected_tag, received_tag, associated_data
-                )
+                hmac_valid = verify_mac(legacy_expected_tag, received_tag, associated_data)
 
             if not hmac_valid:
                 raise AuthenticationError("Message authentication failed")

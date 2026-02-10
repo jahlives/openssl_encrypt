@@ -78,8 +78,7 @@ def find_whirlpool_modules():
                 logger.info(f"Found whirlpool module: {real_path}")
             else:
                 logger.warning(
-                    f"Skipping whirlpool module outside site-packages: "
-                    f"{fpath} -> {real_path}"
+                    f"Skipping whirlpool module outside site-packages: " f"{fpath} -> {real_path}"
                 )
 
     return whirlpool_modules

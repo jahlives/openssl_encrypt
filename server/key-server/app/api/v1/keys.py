@@ -379,9 +379,7 @@ async def revoke_key(
             signing_public_key_b64=bundle_data["signing_public_key"],
             signing_algorithm=bundle_data["signing_algorithm"],
         )
-        logger.info(
-            f"Revocation signature verified (ownership proven) for: {fingerprint[:20]}..."
-        )
+        logger.info(f"Revocation signature verified (ownership proven) for: {fingerprint[:20]}...")
     except VerificationError as e:
         logger.error(f"Revocation signature verification failed: {e}")
         raise HTTPException(
