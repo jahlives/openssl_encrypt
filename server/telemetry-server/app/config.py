@@ -28,8 +28,8 @@ class Settings(BaseSettings):
     # Database - MUST be set via environment variable
     database_url: str = os.getenv("DATABASE_URL", "")
 
-    # Security
-    secret_key: str = os.getenv("SECRET_KEY", "CHANGE_THIS_IN_PRODUCTION")
+    # Security - MUST be set via environment variable (min 32 chars)
+    secret_key: str = os.getenv("SECRET_KEY", "")
     api_key_expiry_days: int = 365
     api_key_hash_algorithm: str = "sha256"
 
@@ -70,6 +70,27 @@ def validate_settings(s: Settings) -> None:
                 "DATABASE_URL environment variable is required. "
                 "Example: DATABASE_URL=postgresql://user:pass@host:5432/dbname"
             )
+
+    if not s.secret_key or len(s.secret_key) < 32:
+        if s.debug:
+            logger.warning(
+                "SECURITY WARNING: SECRET_KEY not set or too short. "
+                "Using insecure default for debug mode only."
+            )
+            s.secret_key = "debug-only-insecure-secret-not-for-production!!"
+        else:
+            raise ValueError(
+                "SECRET_KEY environment variable is required (min 32 characters). "
+                'Generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"'
+            )
+
+    # Reject known insecure defaults even in non-debug mode
+    insecure_defaults = {"CHANGE_THIS_IN_PRODUCTION", "changeme", "secret"}
+    if s.secret_key in insecure_defaults:
+        raise ValueError(
+            "SECRET_KEY contains an insecure default value. "
+            'Generate a proper secret with: python -c "import secrets; print(secrets.token_urlsafe(48))"'
+        )
 
 
 # Global settings instance
