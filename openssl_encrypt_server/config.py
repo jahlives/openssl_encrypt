@@ -96,12 +96,10 @@ class IntegrityProxyConfig(BaseSettings):
     fingerprint_header: str = "X-Client-Cert-Fingerprint"
     dn_header: Optional[str] = "X-Client-Cert-DN"
     verify_header: Optional[str] = "X-Client-Cert-Verify"
+    # Default to localhost only. Set TRUSTED_PROXIES env var for your reverse proxy IPs.
     trusted_proxies: List[str] = [
         "127.0.0.1",
         "::1",
-        "10.0.0.0/8",
-        "172.16.0.0/12",
-        "192.168.0.0/16",
     ]
 
 
