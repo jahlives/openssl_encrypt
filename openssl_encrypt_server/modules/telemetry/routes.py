@@ -10,7 +10,8 @@ Endpoints:
 
 import logging
 
-from fastapi import APIRouter, Depends, Query, Request, Security, status
+from fastapi import APIRouter, Body, Depends, Query, Request, Security, status
+from pydantic import BaseModel
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi import Limiter
@@ -76,6 +77,12 @@ async def register(request: Request):
     return await auth.register_client()
 
 
+class RefreshRequest(BaseModel):
+    """Request body for token refresh."""
+
+    refresh_token: str
+
+
 @router.post(
     "/refresh",
     response_model=RegisterResponse,
@@ -88,31 +95,31 @@ async def register(request: Request):
 @limiter.limit("60/hour")
 async def refresh_token(
     request: Request,
-    refresh_token: str = Query(..., description="Refresh token")
+    body: RefreshRequest = Body(...),
 ):
     """
     Use refresh token to get new access and refresh tokens (sliding expiration).
 
     SECURITY:
-    - Requires valid refresh token (7-day expiry)
+    - Requires valid refresh token (7-day expiry) in POST body (not query params)
     - Returns new token pair with extended expiration
     - Implements sliding expiration: tokens auto-extend on use within TTL
 
     Token Flow:
     1. Client uses access token (1-hour expiry) for API calls
-    2. Before access token expires, client uses refresh token
+    2. Before access token expires, client sends refresh token in POST body
     3. Server returns NEW access token (1 hour) + NEW refresh token (7 days)
     4. This provides sliding expiration - active clients never locked out
 
     Args:
         request: FastAPI request
-        refresh_token: Valid refresh token (from registration or previous refresh)
+        body: RefreshRequest containing the refresh token
 
     Returns:
         RegisterResponse: New access and refresh tokens
     """
     auth = get_telemetry_auth()
-    result = auth.refresh_access_token(refresh_token)
+    result = auth.refresh_access_token(body.refresh_token)
 
     return RegisterResponse(
         client_id=result["client_id"],
