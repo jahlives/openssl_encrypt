@@ -839,8 +839,20 @@ class CamelliaCipher:
 
         try:
             self.key = SecureBytes(key)
-            # Derive a separate HMAC key from the provided key to prevent key reuse
-            self.hmac_key = SecureBytes(hashlib.sha256(bytes(self.key) + b"hmac_key").digest())
+            # Derive a separate HMAC key using HKDF-SHA256 for proper key separation
+            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+            hkdf = HKDF(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=None,
+                info=b"camellia-hmac-key",
+            )
+            self.hmac_key = SecureBytes(hkdf.derive(bytes(self.key)))
+            # Keep legacy key derivation for backward-compatible decryption
+            self._legacy_hmac_key = SecureBytes(
+                hashlib.sha256(bytes(self.key) + b"hmac_key").digest()
+            )
         except Exception as e:
             raise ValidationError("Invalid key material for Camellia cipher", original_exception=e)
 
@@ -961,9 +973,15 @@ class CamelliaCipher:
             if associated_data:
                 hmac_data += associated_data
 
-            # Compute expected HMAC
+            # Compute expected HMAC with HKDF-derived key
             hmac_obj = hmac.new(bytes(self.hmac_key), hmac_data, hashlib.sha256)
             expected_tag = hmac_obj.digest()
+
+            # Also compute with legacy key for backward compatibility
+            legacy_hmac_obj = hmac.new(
+                bytes(self._legacy_hmac_key), hmac_data, hashlib.sha256
+            )
+            legacy_expected_tag = legacy_hmac_obj.digest()
 
             # Always decrypt data regardless of tag verification outcome
             # to ensure constant-time operation
@@ -977,10 +995,14 @@ class CamelliaCipher:
             )
 
             # After decryption, verify HMAC using constant-time MAC verification
-            # This ensures timing sidechannels don't leak whether the tag
-            # is valid or the padding is correct
-            if not verify_mac(expected_tag, received_tag, associated_data):
-                # Standardized authentication error
+            # Try HKDF-derived key first, then fall back to legacy SHA-256 key
+            hmac_valid = verify_mac(expected_tag, received_tag, associated_data)
+            if not hmac_valid:
+                hmac_valid = verify_mac(
+                    legacy_expected_tag, received_tag, associated_data
+                )
+
+            if not hmac_valid:
                 raise AuthenticationError("Message authentication failed")
 
             # Only after HMAC verification do we check padding validity
