@@ -31,6 +31,9 @@ from .plugin_base import BasePlugin, PluginCapability, PluginResult, PluginSecur
 
 logger = logging.getLogger(__name__)
 
+# Import the shared blocked modules constant (single source of truth)
+from .plugin_security_constants import BLOCKED_MODULES
+
 
 def _validate_plugin_source(plugin: BasePlugin) -> None:
     """Run AST security analysis on a plugin's source code before execution.
@@ -78,17 +81,12 @@ class PluginImportGuard:
     access to already-imported modules.
     """
 
-    # Modules that should always be blocked
-    ALWAYS_BLOCKED = {
-        "ctypes",  # Load arbitrary C code
-        "__builtin__",  # Access to builtins
-        "__builtins__",  # Access to builtins
-    }
+    # All modules from the shared BLOCKED_MODULES set are always blocked
+    ALWAYS_BLOCKED = BLOCKED_MODULES
 
     # Modules that are blocked unless specific capability is granted
     CAPABILITY_GATED = {
-        "subprocess": None,  # Always blocked (no capability for this)
-        "os": None,  # Always blocked (contains os.system, etc.)
+        "os": None,  # Always blocked at runtime (AST checks DANGEROUS_OS_FUNCTIONS separately)
         "socket": PluginCapability.NETWORK_ACCESS,  # Allowed with NETWORK_ACCESS
     }
 
@@ -100,6 +98,7 @@ class PluginImportGuard:
         """
         self.context = context
         self.hidden_modules = {}
+        self._modules_lock = threading.Lock()
 
     def _should_block_module(self, module_name: str) -> bool:
         """Check if a module should be blocked based on capabilities.
@@ -133,23 +132,33 @@ class PluginImportGuard:
         Remove dangerous modules from sys.modules to prevent access.
 
         Saves removed modules so they can be restored later.
+        Thread-safe: uses _modules_lock to prevent concurrent modification.
         """
-        # Get all modules that should be blocked
-        modules_to_hide = set(self.ALWAYS_BLOCKED) | set(self.CAPABILITY_GATED.keys())
+        with self._modules_lock:
+            # Get all modules that should be blocked
+            modules_to_hide = set(self.ALWAYS_BLOCKED) | set(self.CAPABILITY_GATED.keys())
 
-        for module_name in modules_to_hide:
-            # Check if module should actually be blocked based on capabilities
-            if self._should_block_module(module_name) and module_name in sys.modules:
-                self.hidden_modules[module_name] = sys.modules[module_name]
-                del sys.modules[module_name]
-                logger.debug(f"Hidden module from sys.modules: {module_name}")
+            for module_name in modules_to_hide:
+                # Check if module should actually be blocked based on capabilities
+                if self._should_block_module(module_name) and module_name in sys.modules:
+                    self.hidden_modules[module_name] = sys.modules[module_name]
+                    del sys.modules[module_name]
+                    logger.debug(f"Hidden module from sys.modules: {module_name}")
 
     def restore_hidden_modules(self):
-        """Restore previously hidden modules to sys.modules."""
-        for module_name, module in self.hidden_modules.items():
-            sys.modules[module_name] = module
-        self.hidden_modules.clear()
-        logger.debug(f"Restored {len(self.hidden_modules)} hidden modules")
+        """Restore previously hidden modules to sys.modules.
+
+        Thread-safe: uses _modules_lock to prevent concurrent modification.
+        Wrapped in try/finally to ensure modules are restored even on error.
+        """
+        with self._modules_lock:
+            count = len(self.hidden_modules)
+            try:
+                for module_name, module in self.hidden_modules.items():
+                    sys.modules[module_name] = module
+            finally:
+                self.hidden_modules.clear()
+            logger.debug(f"Restored {count} hidden modules")
 
     def find_module(self, fullname, path=None):
         """
@@ -311,6 +320,36 @@ class PluginSandbox:
         self.monitor = ResourceMonitor()
         self.current_context = None  # Store current plugin context for file access checks
 
+    @staticmethod
+    def _sanitize_plugin_id(plugin_id: str) -> str:
+        """Validate and sanitize plugin_id to prevent path traversal.
+
+        Args:
+            plugin_id: Plugin identifier to sanitize
+
+        Returns:
+            The plugin_id if valid
+
+        Raises:
+            SandboxViolationError: If plugin_id contains unsafe characters
+        """
+        import re
+
+        if not plugin_id:
+            raise SandboxViolationError("Plugin ID cannot be empty")
+
+        # Reject path separators, traversal, and null bytes
+        if any(c in plugin_id for c in ("/", "\\", "\x00")):
+            raise SandboxViolationError(f"Plugin ID contains unsafe characters: {plugin_id!r}")
+        if ".." in plugin_id:
+            raise SandboxViolationError(f"Plugin ID contains path traversal: {plugin_id!r}")
+
+        # Only allow alphanumeric, hyphens, underscores
+        if not re.match(r"^[a-zA-Z0-9_-]+$", plugin_id):
+            raise SandboxViolationError(f"Plugin ID contains disallowed characters: {plugin_id!r}")
+
+        return plugin_id
+
     def execute_plugin(
         self,
         plugin: BasePlugin,
@@ -338,6 +377,10 @@ class PluginSandbox:
             perform blocking operations.
         """
         try:
+            # Sanitize plugin_id to prevent path traversal
+            if context and context.plugin_id:
+                self._sanitize_plugin_id(context.plugin_id)
+
             # CRIT-4: Run AST security analysis before execution
             _validate_plugin_source(plugin)
 
@@ -457,7 +500,7 @@ class PluginSandbox:
         # Restrict file access based on capabilities
         if PluginCapability.READ_FILES not in context.capabilities:
             # Override file operations to restrict access
-            saved_state["file_ops"] = self._restrict_file_operations()
+            self._restrict_file_operations(saved_state)
 
         # Restrict network access
         if PluginCapability.NETWORK_ACCESS not in context.capabilities:
@@ -479,35 +522,67 @@ class PluginSandbox:
 
         return saved_state
 
-    def _restrict_file_operations(self):
+    def _restrict_file_operations(self, saved_state):
         """Restrict file system operations.
 
-        Returns:
-            Original open function for restoration
+        Monkey-patches builtins.open, pathlib.Path file methods, and io.open
+        to enforce sandbox path restrictions.
+
+        Args:
+            saved_state: Dict to store original functions for restoration
         """
         import builtins
+        import io
+        import pathlib
 
-        # Store original function
+        # Store original functions for restoration
         original_open = builtins.open
+        saved_state["builtins_open"] = original_open
+        saved_state["io_open"] = io.open
+        saved_state["pathlib_open"] = pathlib.Path.open
+        saved_state["pathlib_read_text"] = pathlib.Path.read_text
+        saved_state["pathlib_write_text"] = pathlib.Path.write_text
+        saved_state["pathlib_read_bytes"] = pathlib.Path.read_bytes
+        saved_state["pathlib_write_bytes"] = pathlib.Path.write_bytes
+        saved_state["pathlib_unlink"] = pathlib.Path.unlink
+        saved_state["pathlib_mkdir"] = pathlib.Path.mkdir
+        saved_state["pathlib_rmdir"] = pathlib.Path.rmdir
 
         # Capture context for use in restricted_open
         context = self.current_context
+        sandbox = self
 
         def restricted_open(file, mode="r", **kwargs):
-            # Only allow access to temp directory and explicitly safe paths
-            abs_path = os.path.abspath(file)
-
-            # Check if this is a write operation
+            abs_path = os.path.abspath(str(file))
             is_write = any(c in mode for c in ["w", "a", "+", "x"])
-
-            if not self._is_safe_path(abs_path, context, is_write):
+            if not sandbox._is_safe_path(abs_path, context, is_write):
                 raise SandboxViolationError(f"File access denied: {file} (mode: {mode})")
-
             return original_open(file, mode, **kwargs)
 
-        # Replace open function
+        def _make_pathlib_blocker(method_name, is_write=False):
+            original = getattr(pathlib.Path, method_name)
+
+            def blocked(self_path, *args, **kwargs):
+                abs_path = os.path.abspath(str(self_path))
+                if not sandbox._is_safe_path(abs_path, context, is_write):
+                    raise SandboxViolationError(f"File access denied via pathlib: {self_path}")
+                return original(self_path, *args, **kwargs)
+
+            return blocked
+
+        # Replace open functions
         builtins.open = restricted_open
-        return original_open
+        io.open = restricted_open
+
+        # Monkey-patch pathlib.Path methods
+        pathlib.Path.open = _make_pathlib_blocker("open")
+        pathlib.Path.read_text = _make_pathlib_blocker("read_text")
+        pathlib.Path.read_bytes = _make_pathlib_blocker("read_bytes")
+        pathlib.Path.write_text = _make_pathlib_blocker("write_text", is_write=True)
+        pathlib.Path.write_bytes = _make_pathlib_blocker("write_bytes", is_write=True)
+        pathlib.Path.unlink = _make_pathlib_blocker("unlink", is_write=True)
+        pathlib.Path.mkdir = _make_pathlib_blocker("mkdir", is_write=True)
+        pathlib.Path.rmdir = _make_pathlib_blocker("rmdir", is_write=True)
 
     def _restrict_network_operations(self, saved_state):
         """Restrict network operations.
@@ -614,11 +689,22 @@ class PluginSandbox:
 
         # Now restore other operations (safe to import modules now)
 
-        # Restore file operations
-        if "file_ops" in saved_state:
+        # Restore file operations (builtins.open, io.open, pathlib methods)
+        if "builtins_open" in saved_state:
             import builtins
+            import io
+            import pathlib
 
-            builtins.open = saved_state["file_ops"]
+            builtins.open = saved_state["builtins_open"]
+            io.open = saved_state["io_open"]
+            pathlib.Path.open = saved_state["pathlib_open"]
+            pathlib.Path.read_text = saved_state["pathlib_read_text"]
+            pathlib.Path.write_text = saved_state["pathlib_write_text"]
+            pathlib.Path.read_bytes = saved_state["pathlib_read_bytes"]
+            pathlib.Path.write_bytes = saved_state["pathlib_write_bytes"]
+            pathlib.Path.unlink = saved_state["pathlib_unlink"]
+            pathlib.Path.mkdir = saved_state["pathlib_mkdir"]
+            pathlib.Path.rmdir = saved_state["pathlib_rmdir"]
 
         # Restore network operations
         if "socket" in saved_state:
@@ -711,7 +797,8 @@ class PluginSandbox:
 
         # Plugin-specific directory access (if context available)
         if context and context.plugin_id:
-            plugin_id = context.plugin_id
+            # Sanitize plugin_id before using in path construction
+            plugin_id = self._sanitize_plugin_id(context.plugin_id)
 
             # Plugin config directory: ~/.openssl_encrypt/plugins/<plugin_id>/
             # Allow read/write access
@@ -719,10 +806,6 @@ class PluginSandbox:
                 os.path.expanduser(f"~/.openssl_encrypt/plugins/{plugin_id}")
             )
             if abs_path.startswith(config_dir):
-                # Double-check path didn't escape via symlink resolution
-                if not abs_path.startswith(config_dir):
-                    logger.warning(f"Path traversal attempt detected: {path} -> {abs_path}")
-                    return False
                 return True
 
             # Plugin code directory: Use actual file location from context

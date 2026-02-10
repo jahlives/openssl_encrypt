@@ -534,10 +534,19 @@ class MP3Steganography(SteganographyBase):
 
                 # Apply consistent randomization if password is provided
                 if self.password:
-                    # Use frame index in seed to ensure consistency
-                    frame_seed = (hash(self.password) + frame_idx) & 0xFFFFFFFF
-                    local_random = np.random.RandomState(frame_seed)
-                    local_random.shuffle(coeff_indices)
+                    import hashlib as _hl
+                    import hmac as _hmac
+                    import struct as _st
+
+                    # Derive per-frame key using HMAC-SHA256
+                    frame_key = _hmac.new(
+                        self.shuffle_key,
+                        _st.pack(">I", frame_idx),
+                        _hl.sha256,
+                    ).digest()
+                    seed_int = int.from_bytes(frame_key[:16], byteorder="big")
+                    rng = np.random.Generator(np.random.PCG64(np.random.SeedSequence(seed_int)))
+                    rng.shuffle(coeff_indices)
 
                 for coeff_idx in coeff_indices:
                     byte_pos = (coeff_idx * 4) % len(frame_payload)
@@ -612,10 +621,19 @@ class MP3Steganography(SteganographyBase):
 
                 # Apply consistent randomization if password is provided
                 if self.password:
-                    # Use frame index in seed to ensure consistency
-                    frame_seed = (hash(self.password) + frame_idx) & 0xFFFFFFFF
-                    local_random = np.random.RandomState(frame_seed)
-                    local_random.shuffle(coeff_indices)
+                    import hashlib as _hl
+                    import hmac as _hmac
+                    import struct as _st
+
+                    # Derive per-frame key using HMAC-SHA256
+                    frame_key = _hmac.new(
+                        self.shuffle_key,
+                        _st.pack(">I", frame_idx),
+                        _hl.sha256,
+                    ).digest()
+                    seed_int = int.from_bytes(frame_key[:16], byteorder="big")
+                    rng = np.random.Generator(np.random.PCG64(np.random.SeedSequence(seed_int)))
+                    rng.shuffle(coeff_indices)
 
                 for coeff_idx in coeff_indices:
                     byte_pos = (coeff_idx * 4) % len(frame_payload)

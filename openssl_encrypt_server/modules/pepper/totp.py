@@ -33,15 +33,217 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...core.security_logger import (
-    SecurityEventSeverity,
-    SecurityEventType,
-    get_security_logger,
-)
+from ...core.security_logger import SecurityEventSeverity, SecurityEventType, get_security_logger
 from .models import PPClient, PPTOTPBackupCode
 
 logger = logging.getLogger(__name__)
 security_logger = get_security_logger()
+
+
+import abc
+
+
+class RateLimitBackend(abc.ABC):
+    """Abstract backend for TOTP rate limiting storage."""
+
+    @abc.abstractmethod
+    def get_attempt_count(self, client_id: str, window: timedelta) -> int:
+        """Get the number of attempts within the time window."""
+
+    @abc.abstractmethod
+    def record_attempt(self, client_id: str) -> None:
+        """Record a failed attempt."""
+
+    @abc.abstractmethod
+    def clear_attempts(self, client_id: str) -> None:
+        """Clear all attempts for a client."""
+
+    @abc.abstractmethod
+    def get_lockout_until(self, client_id: str) -> Optional[datetime]:
+        """Get lockout expiry time, or None if not locked out."""
+
+    @abc.abstractmethod
+    def set_lockout(self, client_id: str, until: datetime) -> None:
+        """Set a lockout for a client."""
+
+    @abc.abstractmethod
+    def clear_lockout(self, client_id: str) -> None:
+        """Clear lockout for a client."""
+
+
+class InMemoryBackend(RateLimitBackend):
+    """In-memory rate limit backend (single-instance, lost on restart)."""
+
+    def __init__(self):
+        self.attempts: Dict[str, List[datetime]] = defaultdict(list)
+        self.lockouts: Dict[str, datetime] = {}
+
+    def get_attempt_count(self, client_id: str, window: timedelta) -> int:
+        now = datetime.now(timezone.utc)
+        cutoff = now - window
+        if client_id in self.attempts:
+            self.attempts[client_id] = [ts for ts in self.attempts[client_id] if ts > cutoff]
+            if not self.attempts[client_id]:
+                del self.attempts[client_id]
+        return len(self.attempts.get(client_id, []))
+
+    def record_attempt(self, client_id: str) -> None:
+        self.attempts[client_id].append(datetime.now(timezone.utc))
+
+    def clear_attempts(self, client_id: str) -> None:
+        self.attempts.pop(client_id, None)
+
+    def get_lockout_until(self, client_id: str) -> Optional[datetime]:
+        return self.lockouts.get(client_id)
+
+    def set_lockout(self, client_id: str, until: datetime) -> None:
+        self.lockouts[client_id] = until
+
+    def clear_lockout(self, client_id: str) -> None:
+        self.lockouts.pop(client_id, None)
+
+
+class DatabaseBackend(RateLimitBackend):
+    """Database-backed rate limit backend using existing SQLAlchemy session.
+
+    Uses the pp_totp_rate_limits table. Creates the table if it doesn't exist.
+    Performs on-access cleanup of expired entries.
+    """
+
+    def __init__(self, get_session_func):
+        """
+        Args:
+            get_session_func: Callable that returns an AsyncSession context manager
+        """
+        self._get_session = get_session_func
+        self._table_created = False
+
+    def _ensure_table(self, session):
+        """Create rate limit table if it doesn't exist (sync)."""
+        if self._table_created:
+            return
+        from sqlalchemy import text
+
+        session.execute(
+            text(
+                """
+            CREATE TABLE IF NOT EXISTS pp_totp_rate_limits (
+                id SERIAL PRIMARY KEY,
+                client_id VARCHAR(64) NOT NULL,
+                attempt_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                lockout_until TIMESTAMP WITH TIME ZONE,
+                CONSTRAINT idx_rl_client_id_attempt UNIQUE (client_id, attempt_at)
+            )
+        """
+            )
+        )
+        session.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_rl_client_id ON pp_totp_rate_limits (client_id)")
+        )
+        session.commit()
+        self._table_created = True
+
+    def get_attempt_count(self, client_id: str, window: timedelta) -> int:
+        from sqlalchemy import text
+
+        cutoff = datetime.now(timezone.utc) - window
+        # Use sync fallback — rate limiter is called in sync context
+        from ...core.database import get_sync_session
+
+        with get_sync_session() as session:
+            self._ensure_table(session)
+            # Clean expired entries on access
+            session.execute(
+                text(
+                    "DELETE FROM pp_totp_rate_limits WHERE attempt_at < :cutoff AND lockout_until IS NULL"
+                ),
+                {"cutoff": cutoff},
+            )
+            result = session.execute(
+                text(
+                    "SELECT COUNT(*) FROM pp_totp_rate_limits "
+                    "WHERE client_id = :cid AND attempt_at > :cutoff AND lockout_until IS NULL"
+                ),
+                {"cid": client_id, "cutoff": cutoff},
+            )
+            count = result.scalar() or 0
+            session.commit()
+            return count
+
+    def record_attempt(self, client_id: str) -> None:
+        from sqlalchemy import text
+
+        from ...core.database import get_sync_session
+
+        with get_sync_session() as session:
+            self._ensure_table(session)
+            session.execute(
+                text("INSERT INTO pp_totp_rate_limits (client_id, attempt_at) VALUES (:cid, :now)"),
+                {"cid": client_id, "now": datetime.now(timezone.utc)},
+            )
+            session.commit()
+
+    def clear_attempts(self, client_id: str) -> None:
+        from sqlalchemy import text
+
+        from ...core.database import get_sync_session
+
+        with get_sync_session() as session:
+            self._ensure_table(session)
+            session.execute(
+                text("DELETE FROM pp_totp_rate_limits WHERE client_id = :cid"),
+                {"cid": client_id},
+            )
+            session.commit()
+
+    def get_lockout_until(self, client_id: str) -> Optional[datetime]:
+        from sqlalchemy import text
+
+        from ...core.database import get_sync_session
+
+        with get_sync_session() as session:
+            self._ensure_table(session)
+            result = session.execute(
+                text(
+                    "SELECT MAX(lockout_until) FROM pp_totp_rate_limits "
+                    "WHERE client_id = :cid AND lockout_until IS NOT NULL"
+                ),
+                {"cid": client_id},
+            )
+            val = result.scalar()
+            return val if val else None
+
+    def set_lockout(self, client_id: str, until: datetime) -> None:
+        from sqlalchemy import text
+
+        from ...core.database import get_sync_session
+
+        with get_sync_session() as session:
+            self._ensure_table(session)
+            session.execute(
+                text(
+                    "INSERT INTO pp_totp_rate_limits (client_id, attempt_at, lockout_until) "
+                    "VALUES (:cid, :now, :until)"
+                ),
+                {"cid": client_id, "now": datetime.now(timezone.utc), "until": until},
+            )
+            session.commit()
+
+    def clear_lockout(self, client_id: str) -> None:
+        from sqlalchemy import text
+
+        from ...core.database import get_sync_session
+
+        with get_sync_session() as session:
+            self._ensure_table(session)
+            session.execute(
+                text(
+                    "DELETE FROM pp_totp_rate_limits "
+                    "WHERE client_id = :cid AND lockout_until IS NOT NULL"
+                ),
+                {"cid": client_id},
+            )
+            session.commit()
 
 
 class TOTPRateLimiter:
@@ -53,14 +255,15 @@ class TOTPRateLimiter:
     - Locking out client for 15 minutes after 5 failed attempts
     - Cleaning up old attempt records automatically
 
-    Thread-safe for concurrent requests.
+    Supports pluggable backends: InMemoryBackend (default) or DatabaseBackend.
     """
 
     def __init__(
         self,
         max_attempts: int = 5,
         window_minutes: int = 5,
-        lockout_minutes: int = 15
+        lockout_minutes: int = 15,
+        backend: Optional[RateLimitBackend] = None,
     ):
         """
         Initialize rate limiter.
@@ -69,36 +272,27 @@ class TOTPRateLimiter:
             max_attempts: Maximum attempts allowed in window
             window_minutes: Time window for counting attempts (minutes)
             lockout_minutes: Lockout duration after max attempts exceeded (minutes)
+            backend: Rate limit storage backend (default: InMemoryBackend with warning)
         """
         self.max_attempts = max_attempts
         self.window = timedelta(minutes=window_minutes)
         self.lockout_duration = timedelta(minutes=lockout_minutes)
 
-        # Track attempts: client_id -> list of attempt timestamps
-        self.attempts: Dict[str, List[datetime]] = defaultdict(list)
-
-        # Track lockouts: client_id -> lockout_until timestamp
-        self.lockouts: Dict[str, datetime] = {}
+        if backend is None:
+            logger.warning(
+                "TOTP rate limiter using in-memory backend — state will be lost "
+                "on restart and is not shared across instances. Configure a "
+                "DatabaseBackend for production use."
+            )
+            self.backend: RateLimitBackend = InMemoryBackend()
+        else:
+            self.backend = backend
 
         logger.info(
             f"TOTP rate limiter initialized: {max_attempts} attempts per "
-            f"{window_minutes} minutes, {lockout_minutes} minute lockout"
+            f"{window_minutes} minutes, {lockout_minutes} minute lockout, "
+            f"backend={type(self.backend).__name__}"
         )
-
-    def _clean_old_attempts(self, client_id: str):
-        """Remove attempts older than the time window."""
-        now = datetime.now(timezone.utc)
-        cutoff = now - self.window
-
-        if client_id in self.attempts:
-            self.attempts[client_id] = [
-                timestamp for timestamp in self.attempts[client_id]
-                if timestamp > cutoff
-            ]
-
-            # Remove empty lists to save memory
-            if not self.attempts[client_id]:
-                del self.attempts[client_id]
 
     def check_rate_limit(self, client_id: str) -> None:
         """
@@ -113,8 +307,8 @@ class TOTPRateLimiter:
         now = datetime.now(timezone.utc)
 
         # Check if client is locked out
-        if client_id in self.lockouts:
-            lockout_until = self.lockouts[client_id]
+        lockout_until = self.backend.get_lockout_until(client_id)
+        if lockout_until is not None:
             if now < lockout_until:
                 remaining_seconds = int((lockout_until - now).total_seconds())
                 remaining_minutes = remaining_seconds // 60
@@ -125,25 +319,23 @@ class TOTPRateLimiter:
                 if remaining_minutes > 0:
                     detail_msg = f"Too many failed TOTP attempts. Try again in {remaining_minutes} minute(s)."
                 else:
-                    detail_msg = f"Too many failed TOTP attempts. Try again in {remaining_seconds} seconds."
+                    detail_msg = (
+                        f"Too many failed TOTP attempts. Try again in {remaining_seconds} seconds."
+                    )
                 raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=detail_msg
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=detail_msg
                 )
             else:
                 # Lockout expired, remove it
-                del self.lockouts[client_id]
+                self.backend.clear_lockout(client_id)
                 logger.info(f"TOTP lockout expired for {client_id[:16]}...")
 
-        # Clean old attempts
-        self._clean_old_attempts(client_id)
-
-        # Check attempt count
-        attempt_count = len(self.attempts.get(client_id, []))
+        # Check attempt count (backend handles cleanup of old attempts)
+        attempt_count = self.backend.get_attempt_count(client_id, self.window)
         if attempt_count >= self.max_attempts:
             # Lock out the client
             lockout_until = now + self.lockout_duration
-            self.lockouts[client_id] = lockout_until
+            self.backend.set_lockout(client_id, lockout_until)
 
             lockout_seconds = int(self.lockout_duration.total_seconds())
 
@@ -156,12 +348,12 @@ class TOTPRateLimiter:
             security_logger.log_totp_lockout(
                 client_id=client_id,
                 attempts=attempt_count,
-                lockout_duration_seconds=lockout_seconds
+                lockout_duration_seconds=lockout_seconds,
             )
 
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Too many failed TOTP attempts. Locked out for {lockout_seconds} seconds."
+                detail=f"Too many failed TOTP attempts. Locked out for {lockout_seconds} seconds.",
             )
 
     def record_attempt(self, client_id: str):
@@ -171,10 +363,8 @@ class TOTPRateLimiter:
         Args:
             client_id: Client identifier (cert fingerprint)
         """
-        now = datetime.now(timezone.utc)
-        self.attempts[client_id].append(now)
-
-        attempt_count = len(self.attempts[client_id])
+        self.backend.record_attempt(client_id)
+        attempt_count = self.backend.get_attempt_count(client_id, self.window)
         logger.debug(
             f"TOTP attempt recorded for {client_id[:16]}... "
             f"({attempt_count}/{self.max_attempts})"
@@ -187,13 +377,9 @@ class TOTPRateLimiter:
         Args:
             client_id: Client identifier (cert fingerprint)
         """
-        if client_id in self.attempts:
-            del self.attempts[client_id]
-            logger.debug(f"TOTP attempts cleared for {client_id[:16]}...")
-
-        # Also clear any lockout
-        if client_id in self.lockouts:
-            del self.lockouts[client_id]
+        self.backend.clear_attempts(client_id)
+        self.backend.clear_lockout(client_id)
+        logger.debug(f"TOTP attempts cleared for {client_id[:16]}...")
 
 
 class TOTPService:
@@ -206,7 +392,9 @@ class TOTPService:
     # Shared rate limiter across all TOTPService instances
     _rate_limiter = TOTPRateLimiter()
 
-    def __init__(self, db: AsyncSession, issuer: str = "openssl_encrypt", fernet_key: Optional[str] = None):
+    def __init__(
+        self, db: AsyncSession, issuer: str = "openssl_encrypt", fernet_key: Optional[str] = None
+    ):
         """
         Initialize TOTP service.
 
@@ -290,6 +478,7 @@ class TOTPService:
 
         # For SVG, use factory
         from qrcode.image.svg import SvgPathImage
+
         qr_svg = qrcode.QRCode(image_factory=SvgPathImage)
         qr_svg.add_data(uri)
         qr_svg.make(fit=True)
@@ -308,7 +497,7 @@ class TOTPService:
             "secret": secret,
             "qr_svg": svg_str,
             "uri": uri,
-            "message": "Scan QR code with your authenticator app, then verify with a code"
+            "message": "Scan QR code with your authenticator app, then verify with a code",
         }
 
     async def verify_setup(self, client: PPClient, code: str) -> dict:
@@ -351,7 +540,7 @@ class TOTPService:
         return {
             "message": "TOTP enabled successfully",
             "backup_codes": backup_codes,
-            "backup_codes_warning": "Save these backup codes in a secure location. Each can only be used once."
+            "backup_codes_warning": "Save these backup codes in a secure location. Each can only be used once.",
         }
 
     async def verify_code(self, client: PPClient, code: str) -> bool:
@@ -411,7 +600,7 @@ class TOTPService:
                 SecurityEventSeverity.WARNING,
                 client.cert_fingerprint,
                 {"attempt_count": attempt_count, "max_attempts": self._rate_limiter.max_attempts},
-                f"Failed TOTP verification ({attempt_count}/{self._rate_limiter.max_attempts})"
+                f"Failed TOTP verification ({attempt_count}/{self._rate_limiter.max_attempts})",
             )
 
             return False
@@ -470,9 +659,7 @@ class TOTPService:
             ValueError: If TOTP code invalid
         """
         # Get client
-        result = await self.db.execute(
-            select(PPClient).where(PPClient.id == client_id)
-        )
+        result = await self.db.execute(select(PPClient).where(PPClient.id == client_id))
         client = result.scalar_one_or_none()
         if not client:
             raise ValueError("Client not found")
@@ -537,8 +724,7 @@ class TOTPService:
         # Get unused backup codes
         result = await self.db.execute(
             select(PPTOTPBackupCode).where(
-                PPTOTPBackupCode.client_id == client_id,
-                PPTOTPBackupCode.used_at.is_(None)
+                PPTOTPBackupCode.client_id == client_id, PPTOTPBackupCode.used_at.is_(None)
             )
         )
         codes = result.scalars().all()

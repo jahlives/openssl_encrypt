@@ -839,10 +839,20 @@ class CamelliaCipher:
 
         try:
             self.key = SecureBytes(key)
-            # Derive a separate HMAC key from the provided key to prevent key reuse
-            self.hmac_key = SecureBytes(hashlib.sha256(bytes(self.key) + b"hmac_key").digest())
-            # Detect if we're in test mode
-            self.test_mode = os.environ.get("PYTEST_CURRENT_TEST") is not None
+            # Derive a separate HMAC key using HKDF-SHA256 for proper key separation
+            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+            hkdf = HKDF(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=None,
+                info=b"camellia-hmac-key",
+            )
+            self.hmac_key = SecureBytes(hkdf.derive(bytes(self.key)))
+            # Keep legacy key derivation for backward-compatible decryption
+            self._legacy_hmac_key = SecureBytes(
+                hashlib.sha256(bytes(self.key) + b"hmac_key").digest()
+            )
         except Exception as e:
             raise ValidationError("Invalid key material for Camellia cipher", original_exception=e)
 
@@ -884,10 +894,6 @@ class CamelliaCipher:
 
             # Encrypt the padded data
             ciphertext = encryptor.update(padded_data) + encryptor.finalize()
-
-            # In test mode, don't add HMAC for backward compatibility
-            if self.test_mode:
-                return ciphertext
 
             # Add authentication with HMAC
             # Include nonce and associated data in HMAC computation for context binding
@@ -940,18 +946,6 @@ class CamelliaCipher:
             # Import the constant-time functions from our secure operations module
             from .secure_ops import constant_time_compare, constant_time_pkcs7_unpad, verify_mac
 
-            # In test mode, process without HMAC for backward compatibility
-            if self.test_mode:
-                cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
-                decryptor = cipher.decryptor()
-                padded_data = decryptor.update(data) + decryptor.finalize()
-
-                # For test mode, use standard cryptography library for unpadding
-                # This is for backward compatibility and ensures tests pass
-                unpadder = padding.PKCS7(algorithms.Camellia.block_size).unpadder()
-                return unpadder.update(padded_data) + unpadder.finalize()
-
-            # Production mode with HMAC authentication
             # Split ciphertext and authentication tag
             tag_size = 32  # SHA-256 HMAC produces 32 bytes
             if len(data) < tag_size:
@@ -979,9 +973,13 @@ class CamelliaCipher:
             if associated_data:
                 hmac_data += associated_data
 
-            # Compute expected HMAC
+            # Compute expected HMAC with HKDF-derived key
             hmac_obj = hmac.new(bytes(self.hmac_key), hmac_data, hashlib.sha256)
             expected_tag = hmac_obj.digest()
+
+            # Also compute with legacy key for backward compatibility
+            legacy_hmac_obj = hmac.new(bytes(self._legacy_hmac_key), hmac_data, hashlib.sha256)
+            legacy_expected_tag = legacy_hmac_obj.digest()
 
             # Always decrypt data regardless of tag verification outcome
             # to ensure constant-time operation
@@ -995,10 +993,12 @@ class CamelliaCipher:
             )
 
             # After decryption, verify HMAC using constant-time MAC verification
-            # This ensures timing sidechannels don't leak whether the tag
-            # is valid or the padding is correct
-            if not verify_mac(expected_tag, received_tag, associated_data):
-                # Standardized authentication error
+            # Try HKDF-derived key first, then fall back to legacy SHA-256 key
+            hmac_valid = verify_mac(expected_tag, received_tag, associated_data)
+            if not hmac_valid:
+                hmac_valid = verify_mac(legacy_expected_tag, received_tag, associated_data)
+
+            if not hmac_valid:
                 raise AuthenticationError("Message authentication failed")
 
             # Only after HMAC verification do we check padding validity
@@ -3925,46 +3925,64 @@ def generate_key(
     # IMPORTANT: For v10/v8, DO NOT use PBKDF2 fallback - it's only for backward compat decryption
     if any_kdf_requested and not KeyStretch.key_stretch and not use_xor_composition:
         if not quiet:
-            print("⚠️ Requested KDFs failed, applying default PBKDF2 fallback (legacy)")
+            logger.warning(
+                "Requested KDFs failed, applying PBKDF2 fallback — consider re-encrypting"
+            )
+            print("⚠️ Requested KDFs failed, applying PBKDF2 fallback")
 
-        # Apply default PBKDF2 with 100000 iterations
-        default_pbkdf2_iterations = 100000
-        base_salt = salt
+        is_decrypting = KeyStretch.kind_action == "decrypt"
 
-        for i in range(default_pbkdf2_iterations):
-            # Version-aware salt derivation
-            if format_version >= 7:
-                # Secure chained derivation (v7, v8, v9, v10+)
-                if i == 0:
-                    # Use the original salt for the first iteration
-                    iteration_specific_salt = base_salt
-                else:
-                    # Chained: Use previous output as salt (secure method)
-                    iteration_specific_salt = password[:16]
-            else:
-                # Legacy: Predictable derivation for v1-6 (backward compatibility only)
-                #
-                # Original fallback code derived salt for all rounds including round 0
-                iteration_specific_salt = hashlib.sha256(
-                    base_salt + str(i).encode("utf-8")
-                ).digest()
-
+        if not is_decrypting and format_version >= 10:
+            # New encryptions: use standard PBKDF2HMAC with 600000 iterations
             password = PBKDF2HMAC(
                 algorithm=hashes.SHA256(),
                 length=key_length,
-                salt=iteration_specific_salt,
-                iterations=1,
+                salt=salt,
+                iterations=600000,
                 backend=default_backend(),
             ).derive(password)
+            if not quiet and not progress:
+                print(" ✅")
+            KeyStretch.key_stretch = True
+            show_progress("PBKDF2 (fallback)", 600000, 600000)
+        else:
+            # Legacy fallback for decryption or older format versions:
+            # Non-standard loop of 100k single-iteration PBKDF2 calls
+            default_pbkdf2_iterations = 100000
+            base_salt = salt
 
-            # Update progress every 10000 iterations for default PBKDF2
-            if not quiet and i > 0 and i % 10000 == 0 and not progress:
-                print(".", end="", flush=True)
+            for i in range(default_pbkdf2_iterations):
+                # Version-aware salt derivation
+                if format_version >= 7:
+                    # Secure chained derivation (v7, v8, v9, v10+)
+                    if i == 0:
+                        # Use the original salt for the first iteration
+                        iteration_specific_salt = base_salt
+                    else:
+                        # Chained: Use previous output as salt (secure method)
+                        iteration_specific_salt = password[:16]
+                else:
+                    # Legacy: Predictable derivation for v1-6 (backward compatibility only)
+                    iteration_specific_salt = hashlib.sha256(
+                        base_salt + str(i).encode("utf-8")
+                    ).digest()
 
-        if not quiet and not progress:
-            print(" ✅")
-        KeyStretch.key_stretch = True
-        show_progress("PBKDF2 (fallback)", default_pbkdf2_iterations, default_pbkdf2_iterations)
+                password = PBKDF2HMAC(
+                    algorithm=hashes.SHA256(),
+                    length=key_length,
+                    salt=iteration_specific_salt,
+                    iterations=1,
+                    backend=default_backend(),
+                ).derive(password)
+
+                # Update progress every 10000 iterations for default PBKDF2
+                if not quiet and i > 0 and i % 10000 == 0 and not progress:
+                    print(".", end="", flush=True)
+
+            if not quiet and not progress:
+                print(" ✅")
+            KeyStretch.key_stretch = True
+            show_progress("PBKDF2 (fallback)", default_pbkdf2_iterations, default_pbkdf2_iterations)
 
         # NEW: For v10/v8, save fallback PBKDF2 final output to XOR accumulator
         # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes

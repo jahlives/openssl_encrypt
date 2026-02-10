@@ -73,32 +73,10 @@ class DangerousPatternVisitor(ast.NodeVisitor):
         "__reduce_ex__",
     }
 
-    # Modules that should never be imported
-    # Note: 'os' and 'socket' are NOT blocked here:
-    #   - 'os' is needed for path operations; file access is restricted by sandbox allowed_paths
-    #   - 'socket' is needed for network plugins; dangerous OS functions are checked separately
-    DANGEROUS_MODULES = {
-        "subprocess",
-        "ctypes",
-        "multiprocessing",
-        "importlib",
-        "__builtin__",
-        "__builtins__",
-        "sys",
-        "shutil",
-        "pickle",
-        "shelve",
-        "commands",
-        "pty",
-        "fcntl",
-        "pwd",
-        "grp",
-        "signal",
-        "resource",
-        "pipes",
-        "popen2",
-        "platform",
-    }
+    # Use the shared blocked modules set to keep AST and runtime in sync
+    from .plugin_security_constants import BLOCKED_MODULES
+
+    DANGEROUS_MODULES = BLOCKED_MODULES
 
     # os module functions that are dangerous
     DANGEROUS_OS_FUNCTIONS = {

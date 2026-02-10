@@ -41,7 +41,7 @@ def find_whirlpool_modules():
 
     # Check for modules in all site-packages
     for site_pkg in site_packages:
-        if not os.path.exists(site_pkg):
+        if not site_pkg or not os.path.exists(site_pkg):
             continue
 
         # Look for any whirlpool-related files
@@ -63,8 +63,23 @@ def find_whirlpool_modules():
         pattern = os.path.join(site_pkg, "pywhirlpool*.pyd")
         whirlpool_files.extend(glob.glob(pattern))
 
-        # Add all found modules to the list
-        whirlpool_modules.extend(whirlpool_files)
+        # Validate found files: resolve symlinks and verify they're within
+        # expected site-packages paths
+        for fpath in whirlpool_files:
+            real_path = os.path.realpath(fpath)
+            # Verify the resolved path is within a known site-packages directory
+            in_known_path = any(
+                real_path.startswith(os.path.realpath(sp))
+                for sp in site_packages
+                if sp and os.path.exists(sp)
+            )
+            if in_known_path:
+                whirlpool_modules.append(real_path)
+                logger.info(f"Found whirlpool module: {real_path}")
+            else:
+                logger.warning(
+                    f"Skipping whirlpool module outside site-packages: " f"{fpath} -> {real_path}"
+                )
 
     return whirlpool_modules
 

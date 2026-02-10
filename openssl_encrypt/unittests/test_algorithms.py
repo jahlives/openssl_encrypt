@@ -93,10 +93,7 @@ class TestCamelliaImplementation(unittest.TestCase):
         self.test_aad = b"Additional authenticated data"
 
     def test_encrypt_decrypt_basic(self):
-        """Test basic encryption and decryption functionality."""
-        # Force test mode for this test
-        self.cipher.test_mode = True
-
+        """Test basic encryption and decryption functionality with HMAC authentication."""
         # Encrypt data
         encrypted = self.cipher.encrypt(self.test_nonce, self.test_data, self.test_aad)
 
@@ -107,10 +104,7 @@ class TestCamelliaImplementation(unittest.TestCase):
         self.assertEqual(self.test_data, decrypted)
 
     def test_decrypt_modified_ciphertext(self):
-        """Test decryption with modified ciphertext (should fail)."""
-        # Force test mode with HMAC for this test
-        self.cipher.test_mode = False
-
+        """Test decryption with modified ciphertext (should fail with HMAC)."""
         # Encrypt data
         encrypted = self.cipher.encrypt(self.test_nonce, self.test_data, self.test_aad)
 
@@ -193,9 +187,6 @@ class TestCamelliaImplementation(unittest.TestCase):
 
     def test_different_data_sizes(self):
         """Test with different data sizes to ensure consistent behavior."""
-        # Force test mode for this test
-        self.cipher.test_mode = True
-
         sizes = [10, 100, 500]  # Reduced from [10, 100, 1000] for faster test runs
         for size in sizes:
             data = os.urandom(size)

@@ -216,13 +216,10 @@ class LSBImageStego(ImageSteganography):
         pixels = self._get_image_pixels(image)
         channels = len(image.getbands())
 
-        # Generate pixel order (random if password provided)
+        # Generate pixel order (crypto shuffle if password provided)
         pixel_indices = list(range(len(pixels)))
         if self.password and self.config.randomize_pixel_order:
-            import random
-
-            random.seed(self.seed)
-            random.shuffle(pixel_indices)
+            SteganographyUtils.crypto_seeded_shuffle(pixel_indices, self.shuffle_key)
 
         # Hide data in pixels
         modified_pixels = list(pixels)  # Copy pixel data
@@ -280,10 +277,7 @@ class LSBImageStego(ImageSteganography):
         # Generate same pixel order as hiding
         pixel_indices = list(range(len(pixels)))
         if self.password and self.config.randomize_pixel_order:
-            import random
-
-            random.seed(self.seed)
-            random.shuffle(pixel_indices)
+            SteganographyUtils.crypto_seeded_shuffle(pixel_indices, self.shuffle_key)
 
         # Extract binary data
         binary_bits = []

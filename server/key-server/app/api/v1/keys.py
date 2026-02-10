@@ -367,7 +367,11 @@ async def revoke_key(
     # Parse bundle to get signing public key
     bundle_data = json.loads(key.bundle_json)
 
-    # Verify revocation signature
+    # Verify revocation signature — this IS the ownership check.
+    # The revocation must be signed with the private key corresponding to
+    # the bundle's signing public key. Only the key owner possesses this
+    # private key, making this cryptographic proof of ownership (stronger
+    # than account-based checks).
     try:
         verify_revocation_signature(
             fingerprint=fingerprint,
@@ -375,6 +379,7 @@ async def revoke_key(
             signing_public_key_b64=bundle_data["signing_public_key"],
             signing_algorithm=bundle_data["signing_algorithm"],
         )
+        logger.info(f"Revocation signature verified (ownership proven) for: {fingerprint[:20]}...")
     except VerificationError as e:
         logger.error(f"Revocation signature verification failed: {e}")
         raise HTTPException(

@@ -8,12 +8,12 @@ Unified FastAPI server for Keyserver and Telemetry modules.
 import logging
 from contextlib import asynccontextmanager
 
+import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from .config import Settings, settings, validate_config
 from .core.database import close_db, init_db, init_engine
@@ -161,6 +161,7 @@ def create_app() -> FastAPI:
         """Readiness check (database connectivity)"""
         try:
             from sqlalchemy import text
+
             from .core.database import _engine
 
             if not _engine:
@@ -172,7 +173,8 @@ def create_app() -> FastAPI:
 
             return {"status": "ready"}
         except Exception as e:
-            return {"status": "not_ready", "reason": str(e)}
+            logger.warning("Readiness check failed: %s", e)
+            return {"status": "not_ready", "reason": "database check failed"}
 
     @app.get("/info")
     async def server_info():

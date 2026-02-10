@@ -196,27 +196,34 @@ class CryptoKey(CryptoSecureBuffer):
         # Clear the temporary random data to avoid leaving traces
         random_data = None
 
-    def derive_subkey(self, info: bytes, length: int) -> "CryptoKey":
+    def derive_subkey(self, info: bytes, length: int, salt: bytes = None) -> "CryptoKey":
         """
-        Derive a subkey from this key using HKDF-like approach.
+        Derive a subkey from this key using HKDF-SHA256.
 
         Args:
             info: Context and application specific information
             length: Length of the derived key in bytes
+            salt: Optional salt for domain separation (default: random 32 bytes).
+                  Caller must store the salt alongside the derived key.
 
         Returns:
             CryptoKey: A new key derived from this key
         """
         try:
+            import os
+
             # Import HKDF from cryptography if available
             from cryptography.hazmat.primitives import hashes
             from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+            if salt is None:
+                salt = os.urandom(32)
 
             # Get the current key material (temporarily)
             key_material = self.get_bytes()
 
             # Derive the new key
-            hkdf = HKDF(algorithm=hashes.SHA256(), length=length, salt=None, info=info)
+            hkdf = HKDF(algorithm=hashes.SHA256(), length=length, salt=salt, info=info)
             derived_key = hkdf.derive(key_material)
 
             # Clear the temporary copy of the key material

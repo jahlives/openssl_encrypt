@@ -150,7 +150,20 @@ def setup_encrypt_parser(subparser):
     subparser.add_argument(
         "--password",
         "-p",
-        help="Password (will prompt if not provided, or use CRYPT_PASSWORD environment variable)",
+        help="Password (DEPRECATED: visible in process list. "
+        "Use --password-file or OPENSSL_ENCRYPT_PASSWORD env var instead)",
+    )
+    subparser.add_argument(
+        "--password-file",
+        metavar="FILE",
+        help="Read password from FILE (use '-' for stdin). "
+        "Recommended over --password to avoid process list exposure",
+    )
+    subparser.add_argument(
+        "--password-fd",
+        type=int,
+        metavar="FD",
+        help="Read password from file descriptor FD",
     )
     subparser.add_argument(
         "--random",
@@ -769,7 +782,20 @@ def setup_decrypt_parser(subparser):
     subparser.add_argument(
         "--password",
         "-p",
-        help="Password (will prompt if not provided, or use CRYPT_PASSWORD environment variable)",
+        help="Password (DEPRECATED: visible in process list. "
+        "Use --password-file or OPENSSL_ENCRYPT_PASSWORD env var instead)",
+    )
+    subparser.add_argument(
+        "--password-file",
+        metavar="FILE",
+        help="Read password from FILE (use '-' for stdin). "
+        "Recommended over --password to avoid process list exposure",
+    )
+    subparser.add_argument(
+        "--password-fd",
+        type=int,
+        metavar="FD",
+        help="Read password from file descriptor FD",
     )
     subparser.add_argument(
         "--force-password",
