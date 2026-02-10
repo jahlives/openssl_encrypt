@@ -110,6 +110,7 @@ packaging==25.0
     #   pytest
     #   safety
     #   safety-schemas
+    #   wheel
 pathspec==1.0.3
     # via black
 pillow==12.1.0
@@ -208,7 +209,7 @@ virtualenv==20.36.1
     # via
     #   -r requirements-dev.in
     #   pre-commit
-wheel==0.45.1
+wheel==0.46.2
     # via pip-tools
 whirlpool-py311==1 ; python_version >= "3.11"
     # via -r requirements-prod.in
