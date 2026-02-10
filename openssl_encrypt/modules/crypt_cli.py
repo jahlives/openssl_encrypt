@@ -5018,6 +5018,46 @@ def main_with_args(args=None):
         try:
             from .secure_memory import secure_string
 
+            # Resolve password from --password-file, --password-fd, or
+            # OPENSSL_ENCRYPT_PASSWORD before entering the secure block.
+            if not args.password:
+                password_file = getattr(args, "password_file", None)
+                password_fd = getattr(args, "password_fd", None)
+                env_pw = os.environ.get("OPENSSL_ENCRYPT_PASSWORD")
+
+                if password_file:
+                    try:
+                        if password_file == "-":
+                            args.password = sys.stdin.readline().rstrip("\n")
+                        else:
+                            with open(password_file, "r") as f:
+                                args.password = f.readline().rstrip("\n")
+                    except (IOError, OSError) as e:
+                        print(f"Error reading password file: {e}", file=sys.stderr)
+                        sys.exit(1)
+                elif password_fd is not None:
+                    try:
+                        with os.fdopen(password_fd, "r", closefd=False) as f:
+                            args.password = f.readline().rstrip("\n")
+                    except (IOError, OSError) as e:
+                        print(f"Error reading from fd {password_fd}: {e}", file=sys.stderr)
+                        sys.exit(1)
+                elif env_pw:
+                    args.password = env_pw
+                    try:
+                        del os.environ["OPENSSL_ENCRYPT_PASSWORD"]
+                    except KeyError:
+                        pass
+
+            if args.password and not getattr(args, "password_file", None) and not getattr(args, "password_fd", None):
+                # Warn about --password being visible in process list
+                if not args.quiet:
+                    print(
+                        "WARNING: --password is visible in process list. "
+                        "Use --password-file or OPENSSL_ENCRYPT_PASSWORD env var instead.",
+                        file=sys.stderr,
+                    )
+
             # Initialize a secure string to hold the password
             with secure_string() as password_secure:
                 # Handle random password generation for encryption
