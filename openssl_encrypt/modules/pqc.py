@@ -12,7 +12,6 @@ import hashlib
 import json
 import logging
 import os
-import random
 import secrets
 import sys
 import time
@@ -32,8 +31,12 @@ logger = logging.getLogger(__name__)
 
 def public_key_part(private_key: bytes) -> bytes:
     """
-    Extract a deterministic public-key-like value from a private key
-    for use in simulation mode.
+    Extract a deterministic public-key-like value from a private key.
+
+    .. deprecated::
+        This function is only retained for backward-compatible decryption of
+        files encrypted with the legacy simulation mode. It MUST NOT be used
+        for new encryptions (CRIT-3).
 
     Args:
         private_key: The private key bytes
@@ -43,19 +46,11 @@ def public_key_part(private_key: bytes) -> bytes:
     """
     # Use secure memory for operations with private key data
     with SecureBytes(private_key) as secure_private_key:
-        # Take the first 16 bytes (or all if smaller) to act as an identifier
-        # This is only used for simulation mode
         if len(secure_private_key) <= 16:
-            # Create a copy to ensure the original is not shared
             return bytes(secure_private_key)
         else:
-            # Use first 16 bytes which should be enough to uniquely identify the key
-            # but not enough to reveal the entire key
             return bytes(secure_private_key[:16])
 
-
-# Environment variable to control PQC initialization messages
-import os
 
 # Try to import PQC libraries, provide fallbacks if not available
 LIBOQS_AVAILABLE = False
@@ -1042,99 +1037,70 @@ class PQCipher:
 
                 # No need for debug output on nonce
 
-                # Check if this is a simulated ciphertext (created during encryption)
+                # Check if this is a simulated ciphertext (legacy format)
                 sim_header = b"SIMULATED_PQC_v1"
-                simulation_mode = False
+                simulation_detected = False
 
                 if (
                     len(encapsulated_key) >= len(sim_header)
                     and encapsulated_key[: len(sim_header)] == sim_header
                 ):
-                    # Detected simulation header
-                    simulation_mode = True
-                    if not self.quiet:
-                        print(
-                            "Detected simulated ciphertext, using matching simulation for decryption"
-                        )
-                elif len(encapsulated_key) > 0 and encapsulated_key[0] == ord(b"S"):
-                    # Detected marker byte for short simulation
-                    simulation_mode = True
-                    if not self.quiet:
-                        print(
-                            "Detected simulation marker, using matching simulation for decryption"
-                        )
+                    simulation_detected = True
 
                 # Initialize the shared secret with None to detect success
                 shared_secret = None
-                simulation_detected = False
 
-                # Check if this is a simulated encryption from the encrypt method
-                if simulation_mode:
-                    # This was detected as a simulation mode ciphertext
-                    simulation_detected = True
-                else:
-                    # Check the first few bytes for a marker
-                    # Even if not detected via header, it could still be simulation mode
-                    sim_marker = b"S"
-                    if len(encapsulated_key) > 0 and encapsulated_key[0] == ord(sim_marker):
-                        simulation_detected = True
-                        if not self.quiet:
-                            print("Detected simulation marker byte")
-
-                # If simulation was detected, use the same deterministic approach
+                # SECURITY (CRIT-3): Simulation mode is only allowed for
+                # backward-compatible DECRYPTION of legacy files.
+                # New encryptions never use simulation mode.
                 if simulation_detected:
-                    # Use secure memory for hashing operations
+                    # Legacy simulation mode detected - warn prominently
+                    logger.warning(
+                        "SECURITY WARNING: This file was encrypted with weak "
+                        "simulation mode (deterministic shared secret). "
+                        "Re-encrypt this file with real PQC keys for proper security."
+                    )
+                    if not self.quiet:
+                        print(
+                            "SECURITY WARNING: Decrypting legacy simulation-mode file. "
+                            "This mode uses a weak deterministic secret. "
+                            "Re-encrypt with real PQC keys."
+                        )
+                    # Use the legacy deterministic approach for decryption only
                     with SecureBytes() as secure_input:
                         secure_input.extend(encapsulated_key)
                         secure_input.extend(public_key_part(private_key))
                         shared_secret = SecureBytes(
                             hashlib.sha256(secure_input).digest()[:shared_secret_len]
                         )
-                    if not self.quiet:
-                        print("Using SIMULATION MODE for decapsulation")
                 else:
-                    # Always try simulation mode first as a fallback
-                    # Store the simulation result in case real decryption fails
-                    with SecureBytes() as secure_input:
-                        secure_input.extend(encapsulated_key)
-                        secure_input.extend(public_key_part(private_key))
-                        simulation_secret = SecureBytes(
-                            hashlib.sha256(secure_input).digest()[:shared_secret_len]
-                        )
-
-                    # Now try standard decryption approaches
+                    # Standard KEM decapsulation (production path)
                     try:
-                        # Direct approach - just use decap_secret with ciphertext
-                        try:
-                            shared_secret = kem.decap_secret(encapsulated_key)
-                            # Suppress verbose success messages
-                        except Exception as e1:
-                            if not self.quiet:
-                                print(f"Direct decap_secret failed: {e1}")
+                        shared_secret = kem.decap_secret(encapsulated_key)
+                    except Exception as e1:
+                        if self.debug:
+                            logger.debug(f"decap_secret failed: {e1}")
 
-                            # Try decaps_cb if available
-                            if hasattr(kem, "decaps_cb") and callable(kem.decaps_cb):
-                                try:
-                                    shared_secret_buffer = bytearray(shared_secret_len)
-                                    result = kem.decaps_cb(
-                                        shared_secret_buffer, encapsulated_key, private_key
-                                    )
-                                    if result == 0:  # Success
-                                        shared_secret = bytes(shared_secret_buffer)
-                                        # Success but no need for verbose messages
-                                except Exception as e2:
-                                    if not self.quiet:
-                                        print(f"decaps_cb approach failed: {e2}")
+                        # Try decaps_cb if available as alternative API
+                        if hasattr(kem, "decaps_cb") and callable(kem.decaps_cb):
+                            try:
+                                shared_secret_buffer = bytearray(shared_secret_len)
+                                result = kem.decaps_cb(
+                                    shared_secret_buffer, encapsulated_key, private_key
+                                )
+                                if result == 0:  # Success
+                                    shared_secret = bytes(shared_secret_buffer)
+                            except Exception as e2:
+                                if self.debug:
+                                    logger.debug(f"decaps_cb failed: {e2}")
 
-                    except Exception as e:
-                        if not self.quiet:
-                            print(f"All standard decapsulation approaches failed: {e}")
-
-                    # If all approaches failed, use simulation mode
+                    # SECURITY (CRIT-3): Do NOT fall back to simulation mode
+                    # when real decapsulation fails. Raise an error instead.
                     if shared_secret is None:
-                        shared_secret = simulation_secret
-                        if not self.quiet:
-                            print("FALLING BACK TO SIMULATION MODE FOR DECRYPTION")
+                        raise ValueError(
+                            "KEM decapsulation failed. Unable to recover shared secret. "
+                            "The file may be corrupted or the wrong private key was provided."
+                        )
 
                 # No need to log shared secret details
 
