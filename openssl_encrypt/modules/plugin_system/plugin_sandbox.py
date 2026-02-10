@@ -31,6 +31,9 @@ from .plugin_base import BasePlugin, PluginCapability, PluginResult, PluginSecur
 
 logger = logging.getLogger(__name__)
 
+# Import the shared blocked modules constant (single source of truth)
+from .plugin_security_constants import BLOCKED_MODULES
+
 
 def _validate_plugin_source(plugin: BasePlugin) -> None:
     """Run AST security analysis on a plugin's source code before execution.
@@ -78,17 +81,11 @@ class PluginImportGuard:
     access to already-imported modules.
     """
 
-    # Modules that should always be blocked
-    ALWAYS_BLOCKED = {
-        "ctypes",  # Load arbitrary C code
-        "__builtin__",  # Access to builtins
-        "__builtins__",  # Access to builtins
-    }
+    # All modules from the shared BLOCKED_MODULES set are always blocked
+    ALWAYS_BLOCKED = BLOCKED_MODULES
 
     # Modules that are blocked unless specific capability is granted
     CAPABILITY_GATED = {
-        "subprocess": None,  # Always blocked (no capability for this)
-        "os": None,  # Always blocked (contains os.system, etc.)
         "socket": PluginCapability.NETWORK_ACCESS,  # Allowed with NETWORK_ACCESS
     }
 
