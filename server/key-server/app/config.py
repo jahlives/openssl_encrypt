@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     Server settings with environment variable support.
 
     All settings can be overridden via environment variables.
-    Example: DATABASE_URL, API_TOKEN_SALT, etc.
+    Example: DATABASE_URL, API_TOKEN_SECRET, etc.
     """
 
     # Application
@@ -33,8 +33,8 @@ class Settings(BaseSettings):
     # Database - MUST be set via environment variable
     database_url: str = os.getenv("DATABASE_URL", "")
 
-    # Security
-    api_token_salt: str = os.getenv("API_TOKEN_SALT", "change-me-in-production")
+    # Security - MUST be set via environment variable (min 32 chars)
+    api_token_secret: str = os.getenv("API_TOKEN_SECRET", "")
     cors_origins: List[str] = ["*"]  # Configure appropriately in production
 
     # Rate limiting
@@ -68,6 +68,19 @@ def validate_settings(s: Settings) -> None:
             raise ValueError(
                 "DATABASE_URL environment variable is required. "
                 "Example: DATABASE_URL=postgresql://user:pass@host/dbname"
+            )
+
+    if not s.api_token_secret or len(s.api_token_secret) < 32:
+        if s.debug:
+            logger.warning(
+                "SECURITY WARNING: API_TOKEN_SECRET not set or too short. "
+                "Using insecure default for debug mode only."
+            )
+            s.api_token_secret = "debug-only-insecure-secret-not-for-production!!"
+        else:
+            raise ValueError(
+                "API_TOKEN_SECRET environment variable is required (min 32 characters). "
+                'Generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"'
             )
 
 
