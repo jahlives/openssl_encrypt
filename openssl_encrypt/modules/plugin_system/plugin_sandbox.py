@@ -308,6 +308,42 @@ class PluginSandbox:
         self.monitor = ResourceMonitor()
         self.current_context = None  # Store current plugin context for file access checks
 
+    @staticmethod
+    def _sanitize_plugin_id(plugin_id: str) -> str:
+        """Validate and sanitize plugin_id to prevent path traversal.
+
+        Args:
+            plugin_id: Plugin identifier to sanitize
+
+        Returns:
+            The plugin_id if valid
+
+        Raises:
+            SandboxViolationError: If plugin_id contains unsafe characters
+        """
+        import re
+
+        if not plugin_id:
+            raise SandboxViolationError("Plugin ID cannot be empty")
+
+        # Reject path separators, traversal, and null bytes
+        if any(c in plugin_id for c in ("/", "\\", "\x00")):
+            raise SandboxViolationError(
+                f"Plugin ID contains unsafe characters: {plugin_id!r}"
+            )
+        if ".." in plugin_id:
+            raise SandboxViolationError(
+                f"Plugin ID contains path traversal: {plugin_id!r}"
+            )
+
+        # Only allow alphanumeric, hyphens, underscores
+        if not re.match(r"^[a-zA-Z0-9_-]+$", plugin_id):
+            raise SandboxViolationError(
+                f"Plugin ID contains disallowed characters: {plugin_id!r}"
+            )
+
+        return plugin_id
+
     def execute_plugin(
         self,
         plugin: BasePlugin,
@@ -335,6 +371,10 @@ class PluginSandbox:
             perform blocking operations.
         """
         try:
+            # Sanitize plugin_id to prevent path traversal
+            if context and context.plugin_id:
+                self._sanitize_plugin_id(context.plugin_id)
+
             # CRIT-4: Run AST security analysis before execution
             _validate_plugin_source(plugin)
 
@@ -753,7 +793,8 @@ class PluginSandbox:
 
         # Plugin-specific directory access (if context available)
         if context and context.plugin_id:
-            plugin_id = context.plugin_id
+            # Sanitize plugin_id before using in path construction
+            plugin_id = self._sanitize_plugin_id(context.plugin_id)
 
             # Plugin config directory: ~/.openssl_encrypt/plugins/<plugin_id>/
             # Allow read/write access
@@ -761,10 +802,6 @@ class PluginSandbox:
                 os.path.expanduser(f"~/.openssl_encrypt/plugins/{plugin_id}")
             )
             if abs_path.startswith(config_dir):
-                # Double-check path didn't escape via symlink resolution
-                if not abs_path.startswith(config_dir):
-                    logger.warning(f"Path traversal attempt detected: {path} -> {abs_path}")
-                    return False
                 return True
 
             # Plugin code directory: Use actual file location from context
