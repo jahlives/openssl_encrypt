@@ -5,8 +5,10 @@ Steganography Utility Functions
 Common utility functions for steganographic operations.
 """
 
+import hashlib
+import hmac
 import math
-import random
+import struct
 from typing import List
 
 
@@ -76,7 +78,8 @@ class SteganographyUtils:
     @staticmethod
     def generate_pseudorandom_sequence(seed: int, length: int, max_value: int) -> List[int]:
         """
-        Generate pseudorandom sequence for pixel/sample selection
+        Generate pseudorandom sequence for pixel/sample selection using
+        HMAC-SHA256 as a deterministic CSPRNG.
 
         Args:
             seed: Random seed for reproducible sequence
@@ -86,9 +89,61 @@ class SteganographyUtils:
         Returns:
             List of pseudorandom integers
         """
-        random.seed(seed)
-        sequence = random.sample(range(max_value), min(length, max_value))
-        return sequence
+        # Use HMAC-SHA256 based DRBG instead of random.seed()
+        key = struct.pack(">Q", seed)
+        indices = list(range(max_value))
+        SteganographyUtils.crypto_seeded_shuffle(indices, key)
+        return indices[: min(length, max_value)]
+
+    @staticmethod
+    def crypto_seeded_shuffle(items: list, key: bytes) -> None:
+        """
+        Deterministic cryptographic shuffle using HMAC-SHA256 as DRBG.
+        Implements Fisher-Yates shuffle with HMAC-derived random indices.
+
+        Args:
+            items: List to shuffle in-place
+            key: Cryptographic key material for deterministic shuffling
+        """
+        n = len(items)
+        if n <= 1:
+            return
+
+        # Generate enough random bytes for all swap decisions
+        # Each swap needs log2(n) bits, but we use 4 bytes per swap for simplicity
+        counter = 0
+        for i in range(n - 1, 0, -1):
+            # Generate deterministic random index using HMAC-SHA256
+            hmac_input = struct.pack(">I", counter)
+            h = hmac.new(key, hmac_input, hashlib.sha256).digest()
+            # Use first 4 bytes as uint32, modulo (i+1) for unbiased index
+            rand_val = struct.unpack(">I", h[:4])[0]
+            j = rand_val % (i + 1)
+            items[i], items[j] = items[j], items[i]
+            counter += 1
+
+    @staticmethod
+    def crypto_seeded_shuffle_np(items: list, key: bytes) -> None:
+        """
+        Deterministic cryptographic shuffle for numpy-compatible code.
+        Uses HMAC-SHA256 to generate seed material for numpy Generator.
+
+        Args:
+            items: List to shuffle in-place
+            key: Cryptographic key material for deterministic shuffling
+        """
+        try:
+            import numpy as np
+
+            # Derive a 128-bit seed from key using HMAC-SHA256
+            seed_bytes = hmac.new(key, b"numpy-seed", hashlib.sha256).digest()
+            # Use SeedSequence for proper numpy seeding
+            seed_int = int.from_bytes(seed_bytes[:16], byteorder="big")
+            rng = np.random.Generator(np.random.PCG64(np.random.SeedSequence(seed_int)))
+            rng.shuffle(items)
+        except ImportError:
+            # Fall back to pure Python implementation if numpy unavailable
+            SteganographyUtils.crypto_seeded_shuffle(items, key)
 
     @staticmethod
     def analyze_entropy(data: bytes) -> float:

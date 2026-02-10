@@ -40,13 +40,20 @@ class SteganographyBase(abc.ABC):
         self.security_level = security_level
         self.eof_marker = b"\xFF\xFF\xFF\xFE"
 
-        # Generate deterministic seed from password if provided
+        # Generate deterministic key material from password for crypto shuffle
         if password:
-            # Simple password-to-seed conversion (no secure memory needed for plugin)
+            import hmac as _hmac
+
             password_bytes = password.encode()
+            # Use HMAC-SHA256 for proper key derivation instead of plain hash
+            self.shuffle_key = _hmac.new(
+                password_bytes, b"stego-shuffle-key", hashlib.sha256
+            ).digest()
+            # Keep integer seed for backward compatibility detection
             hash_digest = hashlib.sha256(password_bytes).digest()
             self.seed = int.from_bytes(hash_digest[:8], byteorder="big")
         else:
+            self.shuffle_key = None
             self.seed = None
 
     @abc.abstractmethod

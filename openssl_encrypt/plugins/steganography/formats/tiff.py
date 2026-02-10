@@ -324,13 +324,12 @@ class TIFFSteganography(SteganographyBase):
             else:
                 flat_pixels = working_array.flatten()
 
-            # Generate pixel order (random if password provided)
+            # Generate pixel order (crypto shuffle if password provided)
             pixel_indices = list(range(len(flat_pixels)))
             if self.password and self.config.randomize_pixel_order:
-                import random
+                from ..core.utils import SteganographyUtils
 
-                random.seed(self.seed)
-                random.shuffle(pixel_indices)
+                SteganographyUtils.crypto_seeded_shuffle(pixel_indices, self.shuffle_key)
 
             # Hide data in pixels
             data_index = 0
@@ -391,10 +390,9 @@ class TIFFSteganography(SteganographyBase):
             # Generate same pixel order as hiding
             pixel_indices = list(range(len(flat_pixels)))
             if self.password and self.config.randomize_pixel_order:
-                import random
+                from ..core.utils import SteganographyUtils
 
-                random.seed(self.seed)
-                random.shuffle(pixel_indices)
+                SteganographyUtils.crypto_seeded_shuffle(pixel_indices, self.shuffle_key)
 
             # Extract LSBs
             binary_bits = []
