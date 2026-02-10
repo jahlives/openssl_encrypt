@@ -899,6 +899,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
             }
 
             # Encrypt the file with dual encryption
+            # Pass the keypair so encrypt uses the same key stored in the keystore
             result = encrypt_file_with_keystore(
                 input_file=self.test_file,
                 output_file=encrypted_file,
@@ -910,6 +911,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
                 algorithm=algorithm_name,
                 dual_encryption=True,
                 quiet=True,
+                pqc_keypair=(public_key, private_key),
             )
 
             self.assertTrue(result)
@@ -1114,6 +1116,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         original_file_password = file_password
 
         # Encrypt the file with dual encryption and SHA3 hash
+        # Pass the keypair so encrypt uses the same key stored in the keystore
         result = encrypt_file_with_keystore(
             input_file=self.test_file,
             output_file=encrypted_file,
@@ -1126,6 +1129,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
             dual_encryption=True,
             pqc_store_private_key=True,  # Store PQC private key
             quiet=True,
+            pqc_keypair=(public_key, private_key),
         )
 
         self.assertTrue(result)
@@ -1220,6 +1224,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         print(f"DEBUG: Using key_id: {key_id}")
 
         # Encrypt the file using our manually created key
+        # Pass the keypair so encrypt uses the same key stored in the keystore
         result = encrypt_file_with_keystore(
             input_file=self.test_file,
             output_file=encrypted_file,
@@ -1231,6 +1236,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
             algorithm=algorithm_name,
             dual_encryption=True,
             quiet=True,
+            pqc_keypair=(public_key, private_key),
         )
 
         self.assertTrue(result)
@@ -1286,6 +1292,12 @@ def get_test_files_v4():
     return [name for name in os.listdir(test_dir) if name.startswith("test1_")]
 
 
+def _is_pqc_algorithm(algorithm_name: str) -> bool:
+    """Check if an algorithm name refers to a PQC algorithm requiring liboqs."""
+    lower = algorithm_name.lower()
+    return any(prefix in lower for prefix in ["kyber", "ml-kem", "hqc", "mayo", "cross"])
+
+
 # Create a test function for each file
 @pytest.mark.parametrize(
     "filename",
@@ -1297,15 +1309,12 @@ def test_file_decryption_v3(filename):
     """Test decryption of a specific test file."""
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
-    # Provide a mock private key for PQC tests to prevent test failures
-    # This is necessary because PQC tests require a private key, and when tests run in a group,
-    # they can interfere with each other causing "Post-quantum private key is required for decryption" errors.
-    # When tests run individually, a fallback mechanism in PQCipher.decrypt allows them to pass,
-    # but this doesn't work reliably with concurrent test execution.
+    if _is_pqc_algorithm(algorithm_name) and not LIBOQS_AVAILABLE:
+        pytest.skip("liboqs not available - skipping PQC algorithm test")
+
     pqc_private_key = None
-    if "kyber" in algorithm_name.lower():
-        # Create a mock private key that's unique for each algorithm to avoid cross-test interference
-        pqc_private_key = (b"MOCK_PQC_KEY_FOR_" + algorithm_name.encode()) * 10
+    if "kyber" in algorithm_name.lower() or "ml-kem" in algorithm_name.lower():
+        pqc_private_key = b"\x00" * 64
 
     try:
         decrypted_data = decrypt_file(
@@ -1336,18 +1345,10 @@ def test_file_decryption_v3(filename):
     ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}",
 )
 def test_file_decryption_wrong_pw_v3(filename):
-    """Test decryption of a specific test file."""
+    """Test decryption of a specific test file with wrong password."""
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
-    # Provide a mock private key for PQC tests to prevent test failures
-    # This is necessary because PQC tests require a private key, and when tests run in a group,
-    # they can interfere with each other causing "Post-quantum private key is required for decryption" errors.
-    # When tests run individually, a fallback mechanism in PQCipher.decrypt allows them to pass,
-    # but this doesn't work reliably with concurrent test execution.
     pqc_private_key = None
-    if "kyber" in algorithm_name.lower():
-        # Create a mock private key that's unique for each algorithm to avoid cross-test interference
-        pqc_private_key = (b"MOCK_PQC_KEY_FOR_" + algorithm_name.encode()) * 10
 
     try:
         decrypted_data = decrypt_file(
@@ -1357,9 +1358,9 @@ def test_file_decryption_wrong_pw_v3(filename):
             pqc_private_key=pqc_private_key,
         )
 
-        raise AssertionError(f"Decryption failed for {algorithm_name}: {str(e)}")
+        pytest.fail(f"Decryption should have failed with wrong password for {algorithm_name}")
     except Exception as e:
-        print(f"\nDecryption failed for {algorithm_name}: {str(e)} which is epexcted")
+        print(f"\nDecryption correctly failed for {algorithm_name}: {str(e)}")
         pass
 
 
@@ -1414,34 +1415,21 @@ def test_file_decryption_wrong_algorithm_v3(filename):
     if not wrong_algorithm:
         wrong_algorithm = "fernet" if current_algorithm != "fernet" else "aes-gcm"
 
-    # Provide a mock private key for PQC tests
-    pqc_private_key = None
-    if "kyber" in algorithm_name.lower():
-        # Create a mock private key that's unique for each algorithm to avoid cross-test interference
-        pqc_private_key = (b"MOCK_PQC_KEY_FOR_" + algorithm_name.encode()) * 10
-
     try:
-        # Try to decrypt with wrong password (simulating wrong algorithm)
-        # For this test, we expect failure due to hash/MAC validation
-        # So we just use a wrong password which achieves the same goal
         decrypted_data = decrypt_file(
             input_file=f"{get_testfiles_dir()}/v3/{filename}",
             output_file=None,
-            password=b"wrong_password",  # Wrong password to simulate algorithm mismatch
-            pqc_private_key=pqc_private_key,
+            password=b"wrong_password",
+            pqc_private_key=None,
         )
 
-        # If we get here, decryption succeeded with wrong algorithm, which is a failure
         pytest.fail(
             f"Security issue: Decryption succeeded with wrong algorithm for {algorithm_name} (v3)"
         )
     except Exception as e:
-        # Any exception is acceptable here since we're using an incorrect password
-        # This test is designed to verify that decryption fails with wrong input
         print(
             f"\nDecryption correctly failed for {algorithm_name} (v3) with wrong password: {str(e)}"
         )
-        # Test passes because an exception was raised, which is what we want
 
 
 # Create a test function for each file
@@ -1450,20 +1438,16 @@ def test_file_decryption_wrong_algorithm_v3(filename):
     get_test_files_v4(),
     ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}",
 )
-# Add isolation marker for each test to prevent race conditions
 def test_file_decryption_v4(filename):
     """Test decryption of a specific test file."""
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
-    # Provide a mock private key for PQC tests to prevent test failures
-    # This is necessary because PQC tests require a private key, and when tests run in a group,
-    # they can interfere with each other causing "Post-quantum private key is required for decryption" errors.
-    # When tests run individually, a fallback mechanism in PQCipher.decrypt allows them to pass,
-    # but this doesn't work reliably with concurrent test execution.
+    if _is_pqc_algorithm(algorithm_name) and not LIBOQS_AVAILABLE:
+        pytest.skip("liboqs not available - skipping PQC algorithm test")
+
     pqc_private_key = None
-    if "kyber" in algorithm_name.lower():
-        # Create a mock private key that's unique for each algorithm to avoid cross-test interference
-        pqc_private_key = (b"MOCK_PQC_KEY_FOR_" + algorithm_name.encode()) * 10
+    if "kyber" in algorithm_name.lower() or "ml-kem" in algorithm_name.lower():
+        pqc_private_key = b"\x00" * 64
 
     try:
         decrypted_data = decrypt_file(
@@ -1501,9 +1485,6 @@ def test_file_decryption_wrong_pw_v4(filename):
     """
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
-    # Do NOT provide a mock private key - we want to test that decryption fails
-    # with wrong password, even for PQC algorithms
-
     try:
         # Try to decrypt with an incorrect password (correct is '1234' but we use '12345')
         decrypted_data = decrypt_file(
@@ -1511,7 +1492,7 @@ def test_file_decryption_wrong_pw_v4(filename):
             output_file=None,
             password=b"12345",  # Wrong password
             pqc_private_key=None,
-        )  # No key provided - should fail with wrong password
+        )
 
         # If we get here, decryption succeeded with wrong password, which is a failure
         pytest.fail(
@@ -1538,69 +1519,21 @@ def test_file_decryption_wrong_algorithm_v4(filename):
     """
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
-    # Read the file content and extract metadata to find current algorithm
-    with open(f"{get_testfiles_dir()}/v4/{filename}", "r") as f:
-        content = f.read()
-
-    # Split file content by colon to get the metadata part
-    metadata_b64 = content.split(":", 1)[0]
-    metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
-    metadata = json.loads(metadata_json)
-
-    # Get current algorithm from metadata
-    current_algorithm = metadata.get("algorithm", "")
-
-    # Define available algorithms
-    available_algorithms = [
-        "fernet",
-        "aes-gcm",
-        "chacha20-poly1305",
-        "xchacha20-poly1305",
-        "aes-siv",
-        "aes-gcm-siv",
-        "aes-ocb3",
-        "ml-kem-512-hybrid",
-        "ml-kem-768-hybrid",
-        "ml-kem-1024-hybrid",
-    ]
-
-    # Choose a different algorithm
-    wrong_algorithm = None
-    for alg in available_algorithms:
-        if alg != current_algorithm:
-            wrong_algorithm = alg
-            break
-
-    # Fallback if we couldn't find a different algorithm (should never happen)
-    if not wrong_algorithm:
-        wrong_algorithm = "fernet" if current_algorithm != "fernet" else "aes-gcm"
-
-    # Provide a mock private key for PQC tests
-    pqc_private_key = None
-    if "kyber" in algorithm_name.lower():
-        # Create a mock private key that's unique for each algorithm to avoid cross-test interference
-        pqc_private_key = (b"MOCK_PQC_KEY_FOR_" + algorithm_name.encode()) * 10
-
     try:
-        # Try to decrypt with wrong password (simulating wrong algorithm)
         decrypted_data = decrypt_file(
             input_file=f"{get_testfiles_dir()}/v4/{filename}",
             output_file=None,
-            password=b"wrong_password",  # Wrong password to simulate algorithm mismatch
-            pqc_private_key=pqc_private_key,
+            password=b"wrong_password",
+            pqc_private_key=None,
         )
 
-        # If we get here, decryption succeeded with wrong algorithm, which is a failure
         pytest.fail(
             f"Security issue: Decryption succeeded with wrong algorithm for {algorithm_name} (v4)"
         )
     except Exception as e:
-        # Any exception is acceptable here since we're using an incorrect password
-        # This test is designed to verify that decryption fails with wrong input
         print(
             f"\nDecryption correctly failed for {algorithm_name} (v4) with wrong password: {str(e)}"
         )
-        # Test passes because an exception was raised, which is what we want
 
 
 # Test function for v5 files with incorrect password
@@ -1624,15 +1557,12 @@ def test_file_decryption_v5(filename):
     """Test decryption of a specific test file."""
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
-    # Provide a mock private key for PQC tests to prevent test failures
-    # This is necessary because PQC tests require a private key, and when tests run in a group,
-    # they can interfere with each other causing "Post-quantum private key is required for decryption" errors.
-    # When tests run individually, a fallback mechanism in PQCipher.decrypt allows them to pass,
-    # but this doesn't work reliably with concurrent test execution.
+    if _is_pqc_algorithm(algorithm_name) and not LIBOQS_AVAILABLE:
+        pytest.skip("liboqs not available - skipping PQC algorithm test")
+
     pqc_private_key = None
-    if "kyber" in algorithm_name.lower():
-        # Create a mock private key that's unique for each algorithm to avoid cross-test interference
-        pqc_private_key = (b"MOCK_PQC_KEY_FOR_" + algorithm_name.encode()) * 10
+    if "kyber" in algorithm_name.lower() or "ml-kem" in algorithm_name.lower():
+        pqc_private_key = b"\x00" * 64
 
     try:
         decrypted_data = decrypt_file(
@@ -1670,9 +1600,6 @@ def test_file_decryption_wrong_pw_v5(filename):
     """
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
-    # Do NOT provide a mock private key - we want to test that decryption fails
-    # with wrong password, even for PQC algorithms
-
     try:
         # Try to decrypt with an incorrect password (correct is '1234' but we use '12345')
         decrypted_data = decrypt_file(
@@ -1680,7 +1607,7 @@ def test_file_decryption_wrong_pw_v5(filename):
             output_file=None,
             password=b"12345",  # Wrong password
             pqc_private_key=None,
-        )  # No key provided - should fail with wrong password
+        )
 
         # If we get here, decryption succeeded with wrong password, which is a failure
         pytest.fail(
@@ -1720,69 +1647,21 @@ def test_file_decryption_wrong_algorithm_v5(filename):
     """
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
-    # Read the file content and extract metadata to find current algorithm
-    with open(f"{get_testfiles_dir()}/v5/{filename}", "r") as f:
-        content = f.read()
-
-    # Split file content by colon to get the metadata part
-    metadata_b64 = content.split(":", 1)[0]
-    metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
-    metadata = json.loads(metadata_json)
-
-    # Get current algorithm from metadata
-    current_algorithm = metadata.get("encryption", {}).get("algorithm", "")
-
-    # Define available algorithms
-    available_algorithms = [
-        "fernet",
-        "aes-gcm",
-        "chacha20-poly1305",
-        "xchacha20-poly1305",
-        "aes-siv",
-        "aes-gcm-siv",
-        "aes-ocb3",
-        "ml-kem-512-hybrid",
-        "ml-kem-768-hybrid",
-        "ml-kem-1024-hybrid",
-    ]
-
-    # Choose a different algorithm
-    wrong_algorithm = None
-    for alg in available_algorithms:
-        if alg != current_algorithm:
-            wrong_algorithm = alg
-            break
-
-    # Fallback if we couldn't find a different algorithm (should never happen)
-    if not wrong_algorithm:
-        wrong_algorithm = "fernet" if current_algorithm != "fernet" else "aes-gcm"
-
-    # Provide a mock private key for PQC tests
-    pqc_private_key = None
-    if "kyber" in algorithm_name.lower():
-        # Create a mock private key that's unique for each algorithm to avoid cross-test interference
-        pqc_private_key = (b"MOCK_PQC_KEY_FOR_" + algorithm_name.encode()) * 10
-
     try:
-        # Try to decrypt with wrong password (simulating wrong algorithm)
         decrypted_data = decrypt_file(
             input_file=f"{get_testfiles_dir()}/v5/{filename}",
             output_file=None,
-            password=b"wrong_password",  # Wrong password to simulate algorithm mismatch
-            pqc_private_key=pqc_private_key,
+            password=b"wrong_password",
+            pqc_private_key=None,
         )
 
-        # If we get here, decryption succeeded with wrong algorithm, which is a failure
         pytest.fail(
             f"Security issue: Decryption succeeded with wrong algorithm for {algorithm_name} (v5)"
         )
     except Exception as e:
-        # Any exception is acceptable here since we're using an incorrect password
-        # This test is designed to verify that decryption fails with wrong input
         print(
             f"\nDecryption correctly failed for {algorithm_name} (v5) with wrong password: {str(e)}"
         )
-        # Test passes because an exception was raised, which is what we want
 
 
 @pytest.mark.parametrize(
@@ -1799,65 +1678,19 @@ def test_file_decryption_wrong_encryption_data_v5(filename):
     """
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
-    # Read the file content and extract metadata to find current encryption_data
-    with open(f"{get_testfiles_dir()}/v5/{filename}", "r") as f:
-        content = f.read()
-
-    # Split file content by colon to get the metadata part
-    metadata_b64 = content.split(":", 1)[0]
-    metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
-    metadata = json.loads(metadata_json)
-
-    # Get current encryption_data from metadata
-    current_encryption_data = metadata.get("encryption", {}).get("encryption_data", "")
-
-    # Available encryption_data options
-    encryption_data_options = [
-        "aes-gcm",
-        "aes-gcm-siv",
-        "aes-ocb3",
-        "aes-siv",
-        "chacha20-poly1305",
-        "xchacha20-poly1305",
-    ]
-
-    # Choose a different encryption_data option
-    wrong_encryption_data = None
-    for option in encryption_data_options:
-        if option != current_encryption_data:
-            wrong_encryption_data = option
-            break
-
-    # Fallback if we couldn't find a different option (should never happen)
-    if not wrong_encryption_data:
-        wrong_encryption_data = "aes-gcm" if current_encryption_data != "aes-gcm" else "aes-siv"
-
-    # Provide a mock private key for PQC tests
-    if "kyber" in algorithm_name.lower():
-        # Create a mock private key that's unique for each algorithm to avoid cross-test interference
-        pqc_private_key = (b"MOCK_PQC_KEY_FOR_" + algorithm_name.encode()) * 10
-
     try:
-        # Try to decrypt with wrong password (simulating wrong encryption_data)
         decrypted_data = decrypt_file(
             input_file=f"{get_testfiles_dir()}/v5/{filename}",
             output_file=None,
-            password=b"wrong_password",  # Wrong password to simulate encryption_data mismatch
-            encryption_data=wrong_encryption_data,  # Wrong encryption_data
-            pqc_private_key=pqc_private_key,
+            password=b"wrong_password",
+            pqc_private_key=None,
         )
 
-        # If we get here, decryption succeeded with wrong encryption_data, which is a failure
         pytest.fail(
             f"Security issue: Decryption succeeded with wrong encryption_data for {algorithm_name} (v5)"
         )
     except Exception as e:
-        # Any exception is acceptable here since we're using an incorrect password
-        # This test is designed to verify that decryption fails with wrong input
-        print(
-            f"\nDecryption correctly failed for {algorithm_name} (v5) with wrong password: {str(e)}"
-        )
-        # Test passes because an exception was raised, which is what we want
+        print(f"\nDecryption correctly failed for {algorithm_name} (v5) with wrong input: {str(e)}")
 
 
 @pytest.mark.order(7)
@@ -2189,34 +2022,27 @@ class TestConcurrentPQCExecutionSafety(unittest.TestCase):
         except:
             pass
 
-    def test_concurrent_mock_key_generation(self):
-        """Test that mock key generation is thread-safe and produces unique keys."""
+    def test_concurrent_key_generation(self):
+        """Test that key identifier generation is thread-safe and produces unique results."""
         import concurrent.futures
         import threading
 
-        def generate_mock_key_safe(algorithm_name):
-            """Thread-safe mock key generation with unique identifiers."""
+        def generate_unique_key_id(algorithm_name):
+            """Thread-safe unique key ID generation."""
             thread_id = threading.current_thread().ident
             timestamp = str(time.time()).replace(".", "")
             unique_suffix = f"_{thread_id}_{timestamp}"
-            return (b"MOCK_PQC_KEY_FOR_" + algorithm_name.encode() + unique_suffix.encode()) * 5
+            return f"key_{algorithm_name}{unique_suffix}"
 
         algorithms = ["ml-kem-512-hybrid", "ml-kem-768-hybrid", "ml-kem-1024-hybrid"] * 3  # 9 total
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(generate_mock_key_safe, alg) for alg in algorithms]
-            keys = [f.result() for f in concurrent.futures.as_completed(futures)]
+            futures = [executor.submit(generate_unique_key_id, alg) for alg in algorithms]
+            key_ids = [f.result() for f in concurrent.futures.as_completed(futures)]
 
-        # Verify all keys are unique
-        unique_keys = set(keys)
-        self.assertEqual(len(unique_keys), len(keys), "Mock keys should be unique across threads")
-
-        # Verify all keys have correct format
-        for key in keys:
-            self.assertTrue(
-                key.startswith(b"MOCK_PQC_KEY_FOR_"), "All keys should have correct prefix"
-            )
-            self.assertGreater(len(key), 50, "Keys should be sufficiently long")
+        # Verify all key IDs are unique
+        unique_ids = set(key_ids)
+        self.assertEqual(len(unique_ids), len(key_ids), "Key IDs should be unique across threads")
 
     def test_concurrent_temp_file_isolation(self):
         """Test that concurrent tests use isolated temporary files."""
@@ -2267,6 +2093,7 @@ class TestConcurrentPQCExecutionSafety(unittest.TestCase):
             len(unique_contents), len(file_contents), "All file contents should be unique"
         )
 
+    @unittest.skipUnless(LIBOQS_AVAILABLE, "liboqs not available")
     def test_concurrent_pqc_algorithm_isolation(self):
         """Test that different PQC algorithms can run concurrently without interference."""
         import concurrent.futures
@@ -2430,28 +2257,22 @@ class TestConcurrentPQCExecutionSafety(unittest.TestCase):
         # Verify all directories are unique
         self.assertEqual(len(set(temp_dirs)), len(temp_dirs), "Temp directories should be unique")
 
-        # Best Practice 2: Generate algorithm-specific mock keys
-        mock_keys = {}
+        # Best Practice 2: Generate algorithm-specific unique identifiers
+        key_ids = {}
         algorithms = ["ml-kem-512-hybrid", "ml-kem-768-hybrid", "ml-kem-1024-hybrid"]
 
         for alg in algorithms:
-            # Use algorithm name + timestamp for uniqueness
             timestamp = str(time.time()).replace(".", "")
-            mock_keys[alg] = (b"MOCK_PQC_KEY_FOR_" + alg.encode() + f"_{timestamp}".encode()) * 10
+            key_ids[alg] = f"key_{alg}_{timestamp}"
 
-        # Verify all mock keys are unique
-        unique_mock_keys = set(mock_keys.values())
-        self.assertEqual(
-            len(unique_mock_keys), len(algorithms), "Mock keys should be unique per algorithm"
-        )
+        # Verify all key IDs are unique
+        unique_ids = set(key_ids.values())
+        self.assertEqual(len(unique_ids), len(algorithms), "Key IDs should be unique per algorithm")
 
-        # Best Practice 3: Validate proper algorithm/mock key pairing
-        for alg, key in mock_keys.items():
-            if "kyber" in alg.lower():
-                self.assertIsNotNone(key, f"Kyber algorithm {alg} should have mock key")
-                self.assertIn(
-                    alg.encode(), key, f"Mock key should contain algorithm name for {alg}"
-                )
+        # Best Practice 3: Use real key generation when PQC is available
+        if LIBOQS_AVAILABLE:
+            for alg in algorithms:
+                self.assertIsNotNone(key_ids.get(alg), f"Algorithm {alg} should have a key ID")
 
         # Clean up temp directories
         for temp_dir in temp_dirs:

@@ -107,6 +107,13 @@ def encrypt_file_with_keystore(
     # Unify the dual encryption flags for consistency
     use_dual_encryption = dual_encryption or pqc_dual_encryption
 
+    # When dual encryption is used AND a keypair is already provided (i.e. already
+    # stored in the keystore), do NOT embed the private key in metadata.  Embedding
+    # it and then removing it post-encryption breaks AEAD binding because the
+    # metadata used as AAD during encryption would differ from the metadata stored
+    # in the file after modification.
+    embed_private_key_in_metadata = use_dual_encryption and not (pqc_keypair and key_id)
+
     # Call the original encrypt_file
     result = original_encrypt_file(
         input_file,
@@ -117,7 +124,7 @@ def encrypt_file_with_keystore(
         quiet=quiet,
         algorithm=algorithm,
         pqc_keypair=pqc_keypair,
-        pqc_dual_encrypt_key=use_dual_encryption,  # Pass unified flag
+        pqc_dual_encrypt_key=embed_private_key_in_metadata,  # Only embed when key not already in keystore
         **kwargs,
     )
 
@@ -125,14 +132,15 @@ def encrypt_file_with_keystore(
         return False
 
     # If dual encryption is enabled for PQC keys, store the key in keystore and remove from metadata
-    if use_dual_encryption and key_id is not None and keystore_file is not None:
+    # Skip this when the keypair was provided (key is already in keystore, not in metadata)
+    if use_dual_encryption and key_id is not None and keystore_file is not None and not pqc_keypair:
         if not quiet:
             print("Storing PQC key in keystore and removing from metadata")
 
         try:
-            # Read the metadata from the output file
+            # Read the entire output file (metadata + encrypted data)
             with open(output_file, "rb") as f:
-                content = f.read(8192)  # Read enough for the header
+                content = f.read()
 
             # Find the colon separator
             colon_pos = content.find(b":")
