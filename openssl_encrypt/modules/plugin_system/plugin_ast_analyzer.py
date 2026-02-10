@@ -56,6 +56,23 @@ class DangerousPatternVisitor(ast.NodeVisitor):
         "__import__",
     }
 
+    # Dunder attributes that enable type hierarchy traversal / sandbox escape.
+    # Note: __init__, __new__, __del__, __dict__, __func__, __self__, __class__
+    # are NOT included here because they are standard Python and commonly used
+    # in legitimate plugin code.  Only attributes that enable sandbox escapes
+    # (type hierarchy traversal, scope access, code manipulation, pickle exploits)
+    # are blocked.
+    DANGEROUS_DUNDER_ATTRIBUTES = {
+        "__mro__",
+        "__subclasses__",
+        "__bases__",
+        "__globals__",
+        "__builtins__",
+        "__code__",
+        "__reduce__",
+        "__reduce_ex__",
+    }
+
     # Modules that should never be imported
     # Note: 'os' and 'socket' are NOT blocked here:
     #   - 'os' is needed for path operations; file access is restricted by sandbox allowed_paths
@@ -216,21 +233,41 @@ class DangerousPatternVisitor(ast.NodeVisitor):
                         "critical",
                     )
 
-        # getattr patterns: getattr(__builtins__, 'eval')
+        # Check for .__subclasses__() calls on any object (sandbox escape)
+        if isinstance(node.func, ast.Attribute):
+            if node.func.attr == "__subclasses__":
+                self.add_violation(
+                    node,
+                    "subclasses_call",
+                    "Call to __subclasses__() detected. "
+                    "This is a known sandbox escape technique via type hierarchy traversal.",
+                    "critical",
+                )
+
+        # getattr patterns: getattr(__builtins__, 'eval') or getattr(obj, '__class__')
         if isinstance(node.func, ast.Name) and node.func.id == "getattr":
             if len(node.args) >= 2:
-                # Check if first arg is __builtins__ or similar
-                if isinstance(node.args[0], ast.Name):
-                    obj_name = node.args[0].id
-                    if obj_name in ("__builtins__", "__builtin__", "builtins"):
-                        # Check if trying to get a dangerous function
-                        if isinstance(node.args[1], ast.Constant):
-                            attr_name = node.args[1].value
-                            if attr_name in self.DANGEROUS_FUNCTIONS:
+                if isinstance(node.args[1], ast.Constant):
+                    attr_name = node.args[1].value
+                    # Check for dangerous dunder access via getattr
+                    if isinstance(attr_name, str) and attr_name in self.DANGEROUS_DUNDER_ATTRIBUTES:
+                        self.add_violation(
+                            node,
+                            "getattr_dunder_bypass",
+                            f"Attempt to access '{attr_name}' via getattr(). "
+                            f"This is a known sandbox bypass technique.",
+                            "critical",
+                        )
+                    # Check if first arg is __builtins__ or similar
+                    if isinstance(node.args[0], ast.Name):
+                        obj_name = node.args[0].id
+                        if obj_name in ("__builtins__", "__builtin__", "builtins"):
+                            if isinstance(attr_name, str) and attr_name in self.DANGEROUS_FUNCTIONS:
                                 self.add_violation(
                                     node,
                                     "getattr_bypass",
-                                    f"Attempt to access '{attr_name}' via getattr(__builtins__, ...). "
+                                    f"Attempt to access '{attr_name}' via "
+                                    f"getattr(__builtins__, ...). "
                                     f"This is a known sandbox bypass technique.",
                                     "critical",
                                 )
@@ -244,7 +281,20 @@ class DangerousPatternVisitor(ast.NodeVisitor):
         Detects:
         - __builtins__.eval
         - sys.modules['os']
+        - x.__class__.__mro__[1].__subclasses__() (type hierarchy traversal)
+        - obj.__globals__, obj.__code__, etc.
         """
+        # Check for dangerous dunder attribute access (sandbox escape via type hierarchy)
+        if node.attr in self.DANGEROUS_DUNDER_ATTRIBUTES:
+            self.add_violation(
+                node,
+                "dunder_access",
+                f"Access to dangerous dunder attribute '{node.attr}' detected. "
+                f"Dunder attribute traversal can be used to escape the sandbox.",
+                "critical",
+            )
+
+        # Check for builtins access to dangerous functions
         if isinstance(node.value, ast.Name):
             if node.value.id in ("__builtins__", "__builtin__", "builtins"):
                 if node.attr in self.DANGEROUS_FUNCTIONS:

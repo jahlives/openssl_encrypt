@@ -26,9 +26,44 @@ import time
 from contextlib import contextmanager
 from typing import Any, Dict
 
+from .plugin_ast_analyzer import analyze_plugin_code
 from .plugin_base import BasePlugin, PluginCapability, PluginResult, PluginSecurityContext
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_plugin_source(plugin: BasePlugin) -> None:
+    """Run AST security analysis on a plugin's source code before execution.
+
+    Args:
+        plugin: Plugin instance to validate
+
+    Raises:
+        SandboxViolationError: If plugin code fails security analysis
+    """
+    import inspect
+    import textwrap
+
+    try:
+        source = inspect.getsource(type(plugin))
+    except (OSError, TypeError):
+        # Can't get source (e.g., built-in or C extension) - skip validation
+        logger.debug(f"Could not get source for plugin {plugin.plugin_id}, skipping AST validation")
+        return
+
+    # Dedent the source code so ast.parse() works even when the class is
+    # defined inside an indented block (e.g., inside a try/except).
+    source = textwrap.dedent(source)
+
+    is_safe, violations = analyze_plugin_code(
+        source, f"<plugin:{plugin.plugin_id}>", strict_mode=True
+    )
+    if not is_safe:
+        critical = [v for v in violations if v.severity == "critical"]
+        violation_msgs = "; ".join(f"Line {v.line}: {v.description}" for v in critical[:5])
+        raise SandboxViolationError(
+            f"Plugin '{plugin.plugin_id}' failed security analysis: {violation_msgs}"
+        )
 
 
 class PluginImportGuard:
@@ -45,16 +80,16 @@ class PluginImportGuard:
 
     # Modules that should always be blocked
     ALWAYS_BLOCKED = {
-        'ctypes',         # Load arbitrary C code
-        '__builtin__',    # Access to builtins
-        '__builtins__',   # Access to builtins
+        "ctypes",  # Load arbitrary C code
+        "__builtin__",  # Access to builtins
+        "__builtins__",  # Access to builtins
     }
 
     # Modules that are blocked unless specific capability is granted
     CAPABILITY_GATED = {
-        'subprocess': None,  # Always blocked (no capability for this)
-        'os': None,          # Always blocked (contains os.system, etc.)
-        'socket': PluginCapability.NETWORK_ACCESS,  # Allowed with NETWORK_ACCESS
+        "subprocess": None,  # Always blocked (no capability for this)
+        "os": None,  # Always blocked (contains os.system, etc.)
+        "socket": PluginCapability.NETWORK_ACCESS,  # Allowed with NETWORK_ACCESS
     }
 
     def __init__(self, context: PluginSecurityContext = None):
@@ -123,7 +158,7 @@ class PluginImportGuard:
         Returns self if module should be blocked, None otherwise.
         """
         # Check if the top-level module is blocked
-        module_base = fullname.split('.')[0]
+        module_base = fullname.split(".")[0]
         if self._should_block_module(module_base):
             logger.warning(f"Blocked import attempt: {fullname}")
             raise ImportError(
@@ -146,6 +181,7 @@ def _plugin_worker(plugin, context, result_queue):
     Worker function for multiprocessing-based plugin execution.
 
     This function must be at module level to be picklable.
+    Applies sandbox restrictions in the child process before execution.
 
     Args:
         plugin: Plugin instance to execute
@@ -153,7 +189,38 @@ def _plugin_worker(plugin, context, result_queue):
         result_queue: Queue to return results
     """
     try:
-        # Execute plugin
+        # Apply resource limits in child process (Linux only)
+        try:
+            import resource as _resource
+
+            # CPU time limit: 60 seconds
+            if hasattr(_resource, "RLIMIT_CPU"):
+                _resource.setrlimit(_resource.RLIMIT_CPU, (60, 60))
+
+            # Max file size: 50MB
+            if hasattr(_resource, "RLIMIT_FSIZE"):
+                max_fsize = 50 * 1024 * 1024
+                _resource.setrlimit(_resource.RLIMIT_FSIZE, (max_fsize, max_fsize))
+
+            # Max number of open files: 64
+            if hasattr(_resource, "RLIMIT_NOFILE"):
+                _resource.setrlimit(_resource.RLIMIT_NOFILE, (64, 64))
+        except (ImportError, OSError, ValueError):
+            pass  # Resource limits not available on this platform
+
+        # Install import guard to block dangerous modules
+        guard = PluginImportGuard(context)
+        guard.hide_dangerous_modules()
+        sys.meta_path.insert(0, guard)
+
+        # Run AST validation on plugin source
+        try:
+            _validate_plugin_source(plugin)
+        except SandboxViolationError as e:
+            result_queue.put(("error", str(e)))
+            return
+
+        # Execute plugin with restrictions applied
         result = plugin.execute(context)
         result_queue.put(("success", result))
     except Exception as e:
@@ -271,6 +338,9 @@ class PluginSandbox:
             perform blocking operations.
         """
         try:
+            # CRIT-4: Run AST security analysis before execution
+            _validate_plugin_source(plugin)
+
             if use_process_isolation:
                 # Use multiprocessing for reliable timeout (recommended)
                 return self._execute_in_process(plugin, context, max_execution_time, max_memory_mb)
@@ -428,7 +498,7 @@ class PluginSandbox:
             abs_path = os.path.abspath(file)
 
             # Check if this is a write operation
-            is_write = any(c in mode for c in ['w', 'a', '+', 'x'])
+            is_write = any(c in mode for c in ["w", "a", "+", "x"])
 
             if not self._is_safe_path(abs_path, context, is_write):
                 raise SandboxViolationError(f"File access denied: {file} (mode: {mode})")
@@ -470,8 +540,8 @@ class PluginSandbox:
         Args:
             saved_state: Dict to store original functions for restoration
         """
-        import subprocess
         import os
+        import subprocess
 
         # Store original subprocess.Popen function
         saved_state["subprocess"] = subprocess.Popen
@@ -484,23 +554,33 @@ class PluginSandbox:
         subprocess.Popen = restricted_popen
 
         # Block os.system
-        if hasattr(os, 'system'):
+        if hasattr(os, "system"):
             saved_state["os.system"] = os.system
             os.system = lambda *args, **kwargs: self._raise_process_execution_error()
 
         # Block os.popen
-        if hasattr(os, 'popen'):
+        if hasattr(os, "popen"):
             saved_state["os.popen"] = os.popen
             os.popen = lambda *args, **kwargs: self._raise_process_execution_error()
 
         # Block os.spawn* family
-        spawn_functions = ['spawnl', 'spawnle', 'spawnlp', 'spawnlpe',
-                          'spawnv', 'spawnve', 'spawnvp', 'spawnvpe']
+        spawn_functions = [
+            "spawnl",
+            "spawnle",
+            "spawnlp",
+            "spawnlpe",
+            "spawnv",
+            "spawnve",
+            "spawnvp",
+            "spawnvpe",
+        ]
 
         for func_name in spawn_functions:
             if hasattr(os, func_name):
                 saved_state[f"os.{func_name}"] = getattr(os, func_name)
-                setattr(os, func_name, lambda *args, **kwargs: self._raise_process_execution_error())
+                setattr(
+                    os, func_name, lambda *args, **kwargs: self._raise_process_execution_error()
+                )
 
     def _raise_process_execution_error(self):
         """Raise error for blocked process execution attempts."""
@@ -537,38 +617,54 @@ class PluginSandbox:
         # Restore file operations
         if "file_ops" in saved_state:
             import builtins
+
             builtins.open = saved_state["file_ops"]
 
         # Restore network operations
         if "socket" in saved_state:
             import socket
+
             socket.socket = saved_state["socket"]
 
         # Restore process operations
         if "subprocess" in saved_state:
             import subprocess
+
             subprocess.Popen = saved_state["subprocess"]
 
         # Restore os.system
         if "os.system" in saved_state:
             import os
+
             os.system = saved_state["os.system"]
 
         # Restore os.popen
         if "os.popen" in saved_state:
             import os
+
             os.popen = saved_state["os.popen"]
 
         # Restore os.spawn* family
-        spawn_functions = ['spawnl', 'spawnle', 'spawnlp', 'spawnlpe',
-                          'spawnv', 'spawnve', 'spawnvp', 'spawnvpe']
+        spawn_functions = [
+            "spawnl",
+            "spawnle",
+            "spawnlp",
+            "spawnlpe",
+            "spawnv",
+            "spawnve",
+            "spawnvp",
+            "spawnvpe",
+        ]
         for func_name in spawn_functions:
             key = f"os.{func_name}"
             if key in saved_state:
                 import os
+
                 setattr(os, func_name, saved_state[key])
 
-    def _is_safe_path(self, path: str, context: PluginSecurityContext = None, is_write: bool = False) -> bool:
+    def _is_safe_path(
+        self, path: str, context: PluginSecurityContext = None, is_write: bool = False
+    ) -> bool:
         """Check if file path is safe for plugin access.
 
         SECURITY: Uses realpath() to resolve symlinks and prevent traversal attacks.
@@ -625,9 +721,7 @@ class PluginSandbox:
             if abs_path.startswith(config_dir):
                 # Double-check path didn't escape via symlink resolution
                 if not abs_path.startswith(config_dir):
-                    logger.warning(
-                        f"Path traversal attempt detected: {path} -> {abs_path}"
-                    )
+                    logger.warning(f"Path traversal attempt detected: {path} -> {abs_path}")
                     return False
                 return True
 

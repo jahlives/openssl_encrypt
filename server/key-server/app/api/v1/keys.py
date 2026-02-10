@@ -47,7 +47,10 @@ router = APIRouter(prefix="/api/v1", tags=["keys"])
 
 def verify_api_token(authorization: Optional[str] = Header(None)) -> bool:
     """
-    Verify Bearer token authentication.
+    Verify Bearer token authentication using HMAC-signed tokens.
+
+    Token format: base64(payload_json).base64(hmac_signature)
+    Payload must contain: exp (expiration timestamp), iss (issuer)
 
     Args:
         authorization: Authorization header (Bearer token)
@@ -58,6 +61,12 @@ def verify_api_token(authorization: Optional[str] = Header(None)) -> bool:
     Raises:
         HTTPException: If authentication fails
     """
+    import base64
+    import hashlib
+    import hmac
+    import json
+    import time
+
     if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -74,17 +83,67 @@ def verify_api_token(authorization: Optional[str] = Header(None)) -> bool:
 
     token = authorization[7:]  # Remove "Bearer " prefix
 
-    # In production, validate token against database or JWT
-    # For now, simple token check (replace with proper validation)
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API token",
+            detail="Empty API token",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    logger.debug("API token validated successfully")
-    return True
+    # Validate HMAC-signed token
+    try:
+        parts = token.split(".")
+        if len(parts) != 2:
+            raise ValueError("Invalid token format")
+
+        payload_b64, signature_b64 = parts
+
+        # Verify HMAC signature
+        expected_sig = hmac.new(
+            settings.api_token_secret.encode("utf-8"),
+            payload_b64.encode("utf-8"),
+            hashlib.sha256,
+        ).digest()
+
+        provided_sig = base64.urlsafe_b64decode(signature_b64 + "==")  # Pad base64
+
+        if not hmac.compare_digest(expected_sig, provided_sig):
+            raise ValueError("Invalid token signature")
+
+        # Decode and validate payload
+        # Add padding for base64
+        padded = payload_b64 + "=" * (4 - len(payload_b64) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded))
+
+        # Validate expiration
+        if "exp" not in payload:
+            raise ValueError("Token missing expiration claim")
+
+        if time.time() > payload["exp"]:
+            raise ValueError("Token has expired")
+
+        # Validate issuer
+        expected_issuer = "openssl_encrypt_keyserver"
+        if payload.get("iss") != expected_issuer:
+            raise ValueError(f"Invalid token issuer: expected '{expected_issuer}'")
+
+        logger.debug("API token validated successfully")
+        return True
+
+    except ValueError as e:
+        logger.warning(f"Token validation failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired API token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except Exception as e:
+        logger.error(f"Unexpected token validation error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token validation failed",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 @router.post(

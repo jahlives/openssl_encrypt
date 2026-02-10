@@ -47,9 +47,7 @@ class TestSensitiveDataProtection(unittest.TestCase):
 
     def test_password_not_in_context(self):
         """Verify passwords are never added to plugin context"""
-        context = PluginSecurityContext(
-            "test_plugin", {PluginCapability.READ_FILES}
-        )
+        context = PluginSecurityContext("test_plugin", {PluginCapability.READ_FILES})
 
         # Attempt to add password
         context.add_metadata("password", "super_secret_password")
@@ -60,9 +58,7 @@ class TestSensitiveDataProtection(unittest.TestCase):
 
     def test_salt_not_in_context(self):
         """Verify salts are never added to plugin context"""
-        context = PluginSecurityContext(
-            "test_plugin", {PluginCapability.READ_FILES}
-        )
+        context = PluginSecurityContext("test_plugin", {PluginCapability.READ_FILES})
 
         # Attempt to add salt
         context.add_metadata("salt", b"random_salt_bytes")
@@ -73,9 +69,7 @@ class TestSensitiveDataProtection(unittest.TestCase):
 
     def test_secret_key_not_in_context(self):
         """Verify secret keys are never added to plugin context"""
-        context = PluginSecurityContext(
-            "test_plugin", {PluginCapability.READ_FILES}
-        )
+        context = PluginSecurityContext("test_plugin", {PluginCapability.READ_FILES})
 
         # Attempt to add secret key
         context.add_metadata("secret_key", "deadbeef" * 8)
@@ -86,9 +80,7 @@ class TestSensitiveDataProtection(unittest.TestCase):
 
     def test_auth_token_not_in_context(self):
         """Verify auth tokens are never added to plugin context"""
-        context = PluginSecurityContext(
-            "test_plugin", {PluginCapability.READ_FILES}
-        )
+        context = PluginSecurityContext("test_plugin", {PluginCapability.READ_FILES})
 
         # Attempt to add auth token
         context.add_metadata("auth_token", "Bearer abc123xyz")
@@ -99,9 +91,7 @@ class TestSensitiveDataProtection(unittest.TestCase):
 
     def test_only_safe_metadata_in_context(self):
         """Verify only safe metadata is accessible to plugins"""
-        context = PluginSecurityContext(
-            "test_plugin", {PluginCapability.READ_FILES}
-        )
+        context = PluginSecurityContext("test_plugin", {PluginCapability.READ_FILES})
 
         # Add safe metadata
         context.add_metadata("operation", "encrypt")
@@ -119,9 +109,7 @@ class TestSensitiveDataProtection(unittest.TestCase):
 
     def test_sensitive_key_patterns(self):
         """Test comprehensive sensitive key pattern detection"""
-        context = PluginSecurityContext(
-            "test_plugin", {PluginCapability.READ_FILES}
-        )
+        context = PluginSecurityContext("test_plugin", {PluginCapability.READ_FILES})
 
         sensitive_keys = [
             "password",
@@ -151,12 +139,13 @@ class TestStaticCodeAnalysis(unittest.TestCase):
         self.config_manager = PluginConfigManager()
         self.plugin_manager = PluginManager(
             config_manager=self.config_manager,
-            strict_security_mode=True  # Strict mode - block dangerous patterns
+            strict_security_mode=True,  # Strict mode - block dangerous patterns
         )
         self.temp_dir = tempfile.mkdtemp()
 
     def tearDown(self):
         import shutil
+
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
@@ -183,7 +172,7 @@ class MaliciousPlugin(PreProcessorPlugin):
         return PluginResult.success_result("Done")
 """
         plugin_path = os.path.join(self.temp_dir, "malicious_plugin.py")
-        with open(plugin_path, 'w') as f:
+        with open(plugin_path, "w") as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -220,7 +209,7 @@ class MaliciousPlugin(PreProcessorPlugin):
         plugin_path = os.path.join(self.temp_dir, "huge_plugin.py")
 
         # Create a plugin larger than 1MB
-        with open(plugin_path, 'w') as f:
+        with open(plugin_path, "w") as f:
             f.write("# " + "A" * (1024 * 1024 + 1000))  # > 1MB
 
         result = self.plugin_manager.load_plugin(plugin_path)
@@ -234,18 +223,23 @@ class TestNetworkAccessControl(unittest.TestCase):
         self.config_manager = PluginConfigManager()
         self.plugin_manager = PluginManager(
             config_manager=self.config_manager,
-            strict_security_mode=False  # Allow loading for runtime testing
+            strict_security_mode=False,  # Allow loading for runtime testing
         )
         self.temp_dir = tempfile.mkdtemp()
 
     def tearDown(self):
         import shutil
+
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
     def _create_network_plugin(self, has_capability: bool) -> str:
         """Create a plugin that attempts network access"""
-        caps = "PluginCapability.NETWORK_ACCESS, PluginCapability.READ_FILES" if has_capability else "PluginCapability.READ_FILES"
+        caps = (
+            "PluginCapability.NETWORK_ACCESS, PluginCapability.READ_FILES"
+            if has_capability
+            else "PluginCapability.READ_FILES"
+        )
 
         plugin_content = f"""
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginCapability, PluginResult, PluginType
@@ -273,7 +267,7 @@ class NetworkPlugin(PreProcessorPlugin):
             return PluginResult.error_result(str(e))
 """
         plugin_path = os.path.join(self.temp_dir, "network_plugin.py")
-        with open(plugin_path, 'w') as f:
+        with open(plugin_path, "w") as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -287,14 +281,13 @@ class NetworkPlugin(PreProcessorPlugin):
             return
 
         # Create test file
-        test_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+        test_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
         test_file.write("test")
         test_file.close()
 
         try:
             context = PluginSecurityContext(
-                "network_test",
-                capabilities={PluginCapability.READ_FILES}  # NO NETWORK_ACCESS
+                "network_test", capabilities={PluginCapability.READ_FILES}  # NO NETWORK_ACCESS
             )
             context.file_paths = [test_file.name]
 
@@ -302,7 +295,7 @@ class NetworkPlugin(PreProcessorPlugin):
             result = self.plugin_manager.execute_plugin(
                 "network_test",
                 context,
-                use_process_isolation=False  # Use threading for error visibility
+                use_process_isolation=False,  # Use threading for error visibility
             )
 
             # Should fail due to import blocking or usage blocking (defense-in-depth)
@@ -311,9 +304,9 @@ class NetworkPlugin(PreProcessorPlugin):
             self.assertFalse(result.success)
             # Accept either error message (import blocking is preferred/earlier)
             self.assertTrue(
-                "network access denied" in result.message.lower() or
-                "import of 'socket' blocked" in result.message.lower(),
-                f"Expected network blocking error, got: {result.message}"
+                "network access denied" in result.message.lower()
+                or "import of 'socket' blocked" in result.message.lower(),
+                f"Expected network blocking error, got: {result.message}",
             )
 
         finally:
@@ -327,18 +320,23 @@ class TestSubprocessControl(unittest.TestCase):
         self.config_manager = PluginConfigManager()
         self.plugin_manager = PluginManager(
             config_manager=self.config_manager,
-            strict_security_mode=False  # Allow loading for runtime testing
+            strict_security_mode=False,  # Allow loading for runtime testing
         )
         self.temp_dir = tempfile.mkdtemp()
 
     def tearDown(self):
         import shutil
+
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
     def _create_subprocess_plugin(self, has_capability: bool) -> str:
         """Create a plugin that attempts subprocess execution"""
-        caps = "PluginCapability.EXECUTE_PROCESSES, PluginCapability.READ_FILES" if has_capability else "PluginCapability.READ_FILES"
+        caps = (
+            "PluginCapability.EXECUTE_PROCESSES, PluginCapability.READ_FILES"
+            if has_capability
+            else "PluginCapability.READ_FILES"
+        )
 
         plugin_content = f"""
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginCapability, PluginResult, PluginType
@@ -366,7 +364,7 @@ class SubprocessPlugin(PreProcessorPlugin):
             return PluginResult.error_result(str(e))
 """
         plugin_path = os.path.join(self.temp_dir, "subprocess_plugin.py")
-        with open(plugin_path, 'w') as f:
+        with open(plugin_path, "w") as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -380,14 +378,14 @@ class SubprocessPlugin(PreProcessorPlugin):
             return
 
         # Create test file
-        test_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+        test_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
         test_file.write("test")
         test_file.close()
 
         try:
             context = PluginSecurityContext(
                 "subprocess_test",
-                capabilities={PluginCapability.READ_FILES}  # NO EXECUTE_PROCESSES
+                capabilities={PluginCapability.READ_FILES},  # NO EXECUTE_PROCESSES
             )
             context.file_paths = [test_file.name]
 
@@ -395,18 +393,20 @@ class SubprocessPlugin(PreProcessorPlugin):
             result = self.plugin_manager.execute_plugin(
                 "subprocess_test",
                 context,
-                use_process_isolation=False  # Use threading for error visibility
+                use_process_isolation=False,  # Use threading for error visibility
             )
 
             # Should fail due to import blocking or usage blocking (defense-in-depth)
+            # AST analyzer blocks at static analysis before execution (newest layer)
             # Import hooks block at 'import subprocess' (new security layer)
             # Sandbox blocks at 'subprocess.Popen()' usage (original security layer)
             self.assertFalse(result.success)
-            # Accept either error message (import blocking is preferred/earlier)
+            # Accept any of the defense-in-depth error messages
             self.assertTrue(
-                "process execution denied" in result.message.lower() or
-                "import of 'subprocess' blocked" in result.message.lower(),
-                f"Expected subprocess blocking error, got: {result.message}"
+                "process execution denied" in result.message.lower()
+                or "import of 'subprocess' blocked" in result.message.lower()
+                or "failed security analysis" in result.message.lower(),
+                f"Expected subprocess blocking error, got: {result.message}",
             )
 
         finally:
@@ -419,14 +419,14 @@ class TestResourceLimits(unittest.TestCase):
     def setUp(self):
         self.config_manager = PluginConfigManager()
         self.plugin_manager = PluginManager(
-            config_manager=self.config_manager,
-            strict_security_mode=False
+            config_manager=self.config_manager, strict_security_mode=False
         )
         self.plugin_manager.max_execution_time = 2.0  # 2 second timeout for testing
         self.temp_dir = tempfile.mkdtemp()
 
     def tearDown(self):
         import shutil
+
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
@@ -454,7 +454,7 @@ class TimeoutPlugin(PreProcessorPlugin):
         return PluginResult.success_result("Should not reach here")
 """
         plugin_path = os.path.join(self.temp_dir, "timeout_plugin.py")
-        with open(plugin_path, 'w') as f:
+        with open(plugin_path, "w") as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -465,14 +465,13 @@ class TimeoutPlugin(PreProcessorPlugin):
         self.assertTrue(load_result.success, "Plugin should load successfully")
 
         # Create test file
-        test_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+        test_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
         test_file.write("test")
         test_file.close()
 
         try:
             context = PluginSecurityContext(
-                "timeout_test",
-                capabilities={PluginCapability.READ_FILES}
+                "timeout_test", capabilities={PluginCapability.READ_FILES}
             )
             context.file_paths = [test_file.name]
 
@@ -481,7 +480,7 @@ class TimeoutPlugin(PreProcessorPlugin):
             result = self.plugin_manager.execute_plugin(
                 "timeout_test",
                 context,
-                use_process_isolation=True  # Process isolation for reliable timeout
+                use_process_isolation=True,  # Process isolation for reliable timeout
             )
             elapsed = time.time() - start_time
 
@@ -522,8 +521,7 @@ class TestCapabilityValidation(unittest.TestCase):
 
         # Create context WITHOUT NETWORK_ACCESS capability
         context = PluginSecurityContext(
-            "test",
-            capabilities={PluginCapability.READ_FILES}  # Missing NETWORK_ACCESS
+            "test", capabilities={PluginCapability.READ_FILES}  # Missing NETWORK_ACCESS
         )
 
         # Validation should fail
@@ -552,8 +550,7 @@ class TestCapabilityValidation(unittest.TestCase):
 
         # Create context with ALL required capabilities
         context = PluginSecurityContext(
-            "test",
-            capabilities={PluginCapability.READ_FILES, PluginCapability.WRITE_LOGS}
+            "test", capabilities={PluginCapability.READ_FILES, PluginCapability.WRITE_LOGS}
         )
 
         # Validation should succeed
@@ -601,6 +598,7 @@ class TestSecurityModes(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
@@ -627,15 +625,14 @@ class EvalPlugin(PreProcessorPlugin):
         return PluginResult.success_result(str(result))
 """
         plugin_path = os.path.join(self.temp_dir, "eval_plugin.py")
-        with open(plugin_path, 'w') as f:
+        with open(plugin_path, "w") as f:
             f.write(plugin_content)
         return plugin_path
 
     def test_strict_mode_blocks_dangerous_patterns(self):
         """Verify strict mode blocks dangerous patterns"""
         plugin_manager = PluginManager(
-            config_manager=self.config_manager,
-            strict_security_mode=True  # STRICT
+            config_manager=self.config_manager, strict_security_mode=True  # STRICT
         )
 
         plugin_path = self._create_eval_plugin()
@@ -648,8 +645,7 @@ class EvalPlugin(PreProcessorPlugin):
     def test_permissive_mode_allows_with_warning(self):
         """Verify permissive mode allows dangerous patterns with warning"""
         plugin_manager = PluginManager(
-            config_manager=self.config_manager,
-            strict_security_mode=False  # PERMISSIVE
+            config_manager=self.config_manager, strict_security_mode=False  # PERMISSIVE
         )
 
         plugin_path = self._create_eval_plugin()
@@ -669,6 +665,7 @@ class TestConfigDirectoryPermissions(unittest.TestCase):
     def tearDown(self):
         """Clean up test directories."""
         import shutil
+
         for test_dir in self.test_dirs:
             if test_dir.exists():
                 try:
@@ -678,8 +675,9 @@ class TestConfigDirectoryPermissions(unittest.TestCase):
 
     def test_ensure_plugin_data_dir_creates_with_0o700(self):
         """Verify directories are created with 0o700 permissions."""
-        from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
         import stat
+
+        from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
 
         test_dir = ensure_plugin_data_dir("test_security_plugin", "")
         self.assertIsNotNone(test_dir, "Directory creation should succeed")
@@ -692,8 +690,9 @@ class TestConfigDirectoryPermissions(unittest.TestCase):
 
     def test_ensure_plugin_data_dir_with_subdir(self):
         """Verify subdirectories are created with 0o700 permissions."""
-        from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
         import stat
+
+        from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
 
         test_dir = ensure_plugin_data_dir("test_security_plugin", "subdir")
         self.assertIsNotNone(test_dir, "Subdirectory creation should succeed")
@@ -710,8 +709,9 @@ class TestConfigDirectoryPermissions(unittest.TestCase):
 
     def test_ensure_plugin_data_dir_fixes_existing_permissions(self):
         """Verify existing directories have permissions corrected."""
-        from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
         import stat
+
+        from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
 
         # First create with correct permissions
         test_dir = ensure_plugin_data_dir("test_security_plugin2", "")
@@ -735,13 +735,15 @@ class TestConfigDirectoryPermissions(unittest.TestCase):
     def test_plugin_load_fails_on_insecure_config_dir(self):
         """Verify plugins don't load if config dir permissions cannot be secured."""
         from unittest.mock import patch
+
         from openssl_encrypt.modules.plugin_system.plugin_config import PluginConfigManager
 
         # Create temporary directories for both plugin and config
         with tempfile.TemporaryDirectory() as temp_dir:
             with tempfile.TemporaryDirectory() as config_dir:
                 plugin_file = Path(temp_dir) / "test_plugin.py"
-                plugin_file.write_text("""
+                plugin_file.write_text(
+                    """
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
 
 class TestPlugin(PreProcessorPlugin):
@@ -756,7 +758,8 @@ class TestPlugin(PreProcessorPlugin):
 
     def process_file(self, file_path, context):
         return PluginResult.success_result("OK")
-""")
+"""
+                )
 
                 # Use temp config directory to avoid loading existing configs
                 config_manager = PluginConfigManager(config_dir)
@@ -764,14 +767,18 @@ class TestPlugin(PreProcessorPlugin):
                 plugin_manager.add_plugin_directory(temp_dir)
 
                 # Mock ensure_plugin_data_dir to return None (permission failure)
-                with patch('openssl_encrypt.modules.plugin_system.plugin_manager.ensure_plugin_data_dir') as mock:
+                with patch(
+                    "openssl_encrypt.modules.plugin_system.plugin_manager.ensure_plugin_data_dir"
+                ) as mock:
                     mock.return_value = None
 
                     result = plugin_manager.load_plugin(str(plugin_file))
 
                     # Should fail to load
                     if hasattr(os, "chmod"):  # Only on Unix systems
-                        self.assertFalse(result.success, "Plugin load should fail with insecure permissions")
+                        self.assertFalse(
+                            result.success, "Plugin load should fail with insecure permissions"
+                        )
                         self.assertIn("insecure permissions", result.message.lower())
 
 
@@ -789,6 +796,7 @@ class TestPackagePluginDiscovery(unittest.TestCase):
     def tearDown(self):
         """Clean up test directories."""
         import shutil
+
         if self.test_dir.exists():
             shutil.rmtree(self.test_dir)
         if self.config_dir.exists():
@@ -800,7 +808,8 @@ class TestPackagePluginDiscovery(unittest.TestCase):
         pkg_dir = self.test_dir / "test_package_plugin"
         pkg_dir.mkdir()
         init_file = pkg_dir / "__init__.py"
-        init_file.write_text("""
+        init_file.write_text(
+            """
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
 
 class PackagePlugin(PreProcessorPlugin):
@@ -815,7 +824,8 @@ class PackagePlugin(PreProcessorPlugin):
 
     def process_file(self, file_path, context):
         return PluginResult.success_result("OK")
-""")
+"""
+        )
 
         # Discover plugins
         discovered = self.plugin_manager.discover_plugins()
@@ -823,14 +833,15 @@ class PackagePlugin(PreProcessorPlugin):
         # Should find the package plugin
         self.assertTrue(
             any("test_package_plugin" in p for p in discovered),
-            f"Package plugin not discovered in: {discovered}"
+            f"Package plugin not discovered in: {discovered}",
         )
 
     def test_discovers_both_file_and_package_plugins(self):
         """Verify both flat files and packages are discovered."""
         # Create a flat file plugin
         flat_file = self.test_dir / "flat_plugin.py"
-        flat_file.write_text("""
+        flat_file.write_text(
+            """
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
 
 class FlatPlugin(PreProcessorPlugin):
@@ -845,13 +856,15 @@ class FlatPlugin(PreProcessorPlugin):
 
     def process_file(self, file_path, context):
         return PluginResult.success_result("OK")
-""")
+"""
+        )
 
         # Create a package plugin
         pkg_dir = self.test_dir / "package_plugin"
         pkg_dir.mkdir()
         init_file = pkg_dir / "__init__.py"
-        init_file.write_text("""
+        init_file.write_text(
+            """
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
 
 class PackagePlugin(PreProcessorPlugin):
@@ -866,7 +879,8 @@ class PackagePlugin(PreProcessorPlugin):
 
     def process_file(self, file_path, context):
         return PluginResult.success_result("OK")
-""")
+"""
+        )
 
         # Discover plugins
         discovered = self.plugin_manager.discover_plugins()
@@ -881,7 +895,8 @@ class PackagePlugin(PreProcessorPlugin):
         pkg_dir = self.test_dir / "dir_test_plugin"
         pkg_dir.mkdir()
         init_file = pkg_dir / "__init__.py"
-        init_file.write_text("""
+        init_file.write_text(
+            """
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
 
 class DirTestPlugin(PreProcessorPlugin):
@@ -896,7 +911,8 @@ class DirTestPlugin(PreProcessorPlugin):
 
     def process_file(self, file_path, context):
         return PluginResult.success_result("OK")
-""")
+"""
+        )
 
         # Load the plugin
         result = self.plugin_manager.load_plugin(str(init_file))
@@ -910,7 +926,7 @@ class DirTestPlugin(PreProcessorPlugin):
         self.assertEqual(
             registration.file_directory,
             str(pkg_dir),
-            "file_directory should point to package directory"
+            "file_directory should point to package directory",
         )
 
 
@@ -925,6 +941,7 @@ class TestUnifiedConfigPaths(unittest.TestCase):
     def tearDown(self):
         """Clean up test directories."""
         import shutil
+
         for test_dir in self.test_dirs:
             if test_dir.exists():
                 try:
@@ -938,9 +955,7 @@ class TestUnifiedConfigPaths(unittest.TestCase):
 
         expected = Path.home() / ".openssl_encrypt" / "plugins" / "test_plugin" / "config.json"
         self.assertEqual(
-            config_path,
-            expected,
-            f"Config path should be {expected}, got {config_path}"
+            config_path, expected, f"Config path should be {expected}, got {config_path}"
         )
 
         # Clean up
@@ -959,18 +974,16 @@ class TestUnifiedConfigPaths(unittest.TestCase):
         expected_full = expected_base / "data"
 
         self.assertEqual(
-            test_dir,
-            expected_full,
-            f"Data dir should be {expected_full}, got {test_dir}"
+            test_dir, expected_full, f"Data dir should be {expected_full}, got {test_dir}"
         )
 
         # Verify parent is also under plugins/
         self.assertTrue(
             str(test_dir.parent).startswith(str(Path.home() / ".openssl_encrypt" / "plugins")),
-            "Plugin data should be under ~/.openssl_encrypt/plugins/"
+            "Plugin data should be under ~/.openssl_encrypt/plugins/",
         )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Run tests
     unittest.main(verbosity=2)

@@ -10,6 +10,7 @@ SECURITY:
 - CORS settings for security
 """
 
+import logging
 import os
 from typing import List
 
@@ -21,7 +22,7 @@ class Settings(BaseSettings):
     Server settings with environment variable support.
 
     All settings can be overridden via environment variables.
-    Example: DATABASE_URL, API_TOKEN_SALT, etc.
+    Example: DATABASE_URL, API_TOKEN_SECRET, etc.
     """
 
     # Application
@@ -29,13 +30,11 @@ class Settings(BaseSettings):
     version: str = "1.0.0"
     debug: bool = False
 
-    # Database
-    database_url: str = os.getenv(
-        "DATABASE_URL", "postgresql://keyserver:keyserver@localhost/keyserver"
-    )
+    # Database - MUST be set via environment variable
+    database_url: str = os.getenv("DATABASE_URL", "")
 
-    # Security
-    api_token_salt: str = os.getenv("API_TOKEN_SALT", "change-me-in-production")
+    # Security - MUST be set via environment variable (min 32 chars)
+    api_token_secret: str = os.getenv("API_TOKEN_SECRET", "")
     cors_origins: List[str] = ["*"]  # Configure appropriately in production
 
     # Rate limiting
@@ -52,5 +51,41 @@ class Settings(BaseSettings):
         case_sensitive = False
 
 
+def validate_settings(s: Settings) -> None:
+    """Validate critical settings at startup.
+
+    Raises:
+        ValueError: If required settings are missing or insecure.
+    """
+    if not s.database_url:
+        if s.debug:
+            logger.warning(
+                "SECURITY WARNING: DATABASE_URL not set. "
+                "Using in-memory SQLite for debug mode only."
+            )
+            s.database_url = "sqlite:///./debug_keyserver.db"
+        else:
+            raise ValueError(
+                "DATABASE_URL environment variable is required. "
+                "Example: DATABASE_URL=postgresql://user:pass@host/dbname"
+            )
+
+    if not s.api_token_secret or len(s.api_token_secret) < 32:
+        if s.debug:
+            logger.warning(
+                "SECURITY WARNING: API_TOKEN_SECRET not set or too short. "
+                "Using insecure default for debug mode only."
+            )
+            s.api_token_secret = "debug-only-insecure-secret-not-for-production!!"
+        else:
+            raise ValueError(
+                "API_TOKEN_SECRET environment variable is required (min 32 characters). "
+                'Generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"'
+            )
+
+
+logger = logging.getLogger(__name__)
+
 # Global settings instance
 settings = Settings()
+validate_settings(settings)

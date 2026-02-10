@@ -12,7 +12,6 @@ import hashlib
 import json
 import logging
 import os
-import random
 import secrets
 import sys
 import time
@@ -32,8 +31,12 @@ logger = logging.getLogger(__name__)
 
 def public_key_part(private_key: bytes) -> bytes:
     """
-    Extract a deterministic public-key-like value from a private key
-    for use in simulation mode.
+    Extract a deterministic public-key-like value from a private key.
+
+    .. deprecated::
+        This function is only retained for backward-compatible decryption of
+        files encrypted with the legacy simulation mode. It MUST NOT be used
+        for new encryptions (CRIT-3).
 
     Args:
         private_key: The private key bytes
@@ -43,19 +46,13 @@ def public_key_part(private_key: bytes) -> bytes:
     """
     # Use secure memory for operations with private key data
     with SecureBytes(private_key) as secure_private_key:
-        # Take the first 16 bytes (or all if smaller) to act as an identifier
-        # This is only used for simulation mode
         if len(secure_private_key) <= 16:
-            # Create a copy to ensure the original is not shared
             return bytes(secure_private_key)
         else:
-            # Use first 16 bytes which should be enough to uniquely identify the key
-            # but not enough to reveal the entire key
             return bytes(secure_private_key[:16])
 
 
 # Environment variable to control PQC initialization messages
-import os
 
 # Try to import PQC libraries, provide fallbacks if not available
 LIBOQS_AVAILABLE = False
@@ -637,98 +634,68 @@ class PQCipher:
             logger.debug(f"ENCRYPT:PQC_KEM Input data length: {len(data)} bytes")
             logger.debug(f"ENCRYPT:PQC_KEM Symmetric encryption: {self.encryption_data}")
 
-        # Check if we're in a test environment
-        is_test_environment = False
-        test_name = os.environ.get("PYTEST_CURRENT_TEST", "")
-        if test_name or "pytest" in sys.modules or "unittest" in sys.modules:
-            is_test_environment = True
+        # SECURITY (CRIT-1): Test environment detection has been removed.
+        # All encryptions now use real PQC KEM regardless of environment.
+        shared_secret = None
+        symmetric_key = None
 
-        # Use TESTDATA format for test environments, real encryption for production
-        if is_test_environment:
-            # TESTDATA format for backward compatibility with tests
-            try:
-                # Get ciphertext length from OQS for proper formatting
-                with oqs.KeyEncapsulation(self.algorithm_name) as kem:
-                    ciphertext_len = kem.length_ciphertext
+        try:
+            # Use PQC KEM to establish a shared secret
+            with oqs.KeyEncapsulation(self.algorithm_name) as kem:
+                # Encapsulate a shared secret with the public key
+                encapsulated_key, shared_secret = kem.encap_secret(public_key)
 
-                    # Create TESTDATA format: marker + encoded length + data
-                    marker = b"TESTDATA"
-                    data_len_bytes = len(data).to_bytes(4, byteorder="big")
+                # Derive symmetric key from shared secret
+                symmetric_key = hashlib.sha256(shared_secret).digest()
 
-                    # For proper formatting, create a ciphertext of the expected length
-                    if len(marker) + len(data_len_bytes) + len(data) <= ciphertext_len:
-                        # If data fits in the ciphertext, include it directly
-                        encapsulated_key = marker + data_len_bytes + data
-                        # Pad to the correct length if needed
-                        if len(encapsulated_key) < ciphertext_len:
-                            encapsulated_key += b"\0" * (ciphertext_len - len(encapsulated_key))
-                    else:
-                        # Data too large, use a reference system
-                        # Use secure memory for hash operations
-                        with SecureBytes(data) as secure_data:
-                            reference_id = hashlib.sha256(secure_data).digest()[:8]
-                        encapsulated_key = marker + b"\xFF\xFF\xFF\xFF" + reference_id
-                        # Pad to the correct length
-                        encapsulated_key = encapsulated_key.ljust(ciphertext_len, b"\0")
+                # Generate random nonce (12 bytes for most AEAD ciphers)
+                nonce = secrets.token_bytes(12)
 
-                    # Create a test nonce
-                    nonce = b"TESTNONCE123"  # 12 bytes for AES-GCM
+                # Select cipher based on encryption_data setting
+                if self.encryption_data == "aes-gcm":
+                    cipher = self.AESGCM(symmetric_key)
+                elif self.encryption_data == "chacha20-poly1305":
+                    cipher = self.ChaCha20Poly1305(symmetric_key)
+                elif self.encryption_data == "xchacha20-poly1305":
+                    try:
+                        from openssl_encrypt.modules.crypt_core import XChaCha20Poly1305
 
-                    # For the format to be recognized properly, we need:
-                    # encapsulated_key + nonce + encrypted_data
-                    if len(marker) + len(data_len_bytes) + len(data) <= ciphertext_len:
-                        # Data already in the encapsulated key, just need empty ciphertext
-                        result = encapsulated_key + nonce + b""
-                    else:
-                        # Need to include data after the standard format
-                        result = encapsulated_key + nonce + b"PQC_TEST_DATA:" + data
+                        cipher = XChaCha20Poly1305(symmetric_key)
+                    except ImportError:
+                        cipher = self.ChaCha20Poly1305(symmetric_key)
+                elif self.encryption_data == "aes-gcm-siv":
+                    cipher = self.AESGCMSIV(symmetric_key)
+                elif self.encryption_data == "aes-siv":
+                    cipher = self.AESSIV(symmetric_key)
+                elif self.encryption_data == "aes-ocb3":
+                    cipher = self.AESOCB3(symmetric_key)
+                else:
+                    cipher = self.AESGCM(symmetric_key)
 
-                    return result
+                # AES-SIV has a different API: encrypt(data, [associated_data])
+                if self.encryption_data == "aes-siv":
+                    aad_list = [nonce]
+                    if aad:
+                        aad_list.append(aad)
+                    ciphertext = cipher.encrypt(data, aad_list)
+                else:
+                    ciphertext = cipher.encrypt(nonce, data, aad)
 
-            except Exception as e:
-                if not self.quiet:
-                    print(f"Error in post-quantum test encryption: {e}")
-                # Fall back to a very simple format if all else fails
-                simple_result = b"PQC_TEST_DATA:" + data
-                return simple_result
-        else:
-            # Real PQC encryption using Key Encapsulation Mechanism for production
-            shared_secret = None
-            symmetric_key = None
+                # Format: encapsulated_key + nonce + ciphertext
+                result = encapsulated_key + nonce + ciphertext
 
-            try:
-                # Use PQC KEM to establish a shared secret
-                with oqs.KeyEncapsulation(self.algorithm_name) as kem:
-                    # Encapsulate a shared secret with the public key
-                    encapsulated_key, shared_secret = kem.encap_secret(public_key)
+                return result
 
-                    # Derive symmetric key from shared secret
-                    symmetric_key = hashlib.sha256(shared_secret).digest()
-
-                    # Generate random nonce for AES-GCM
-                    nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
-
-                    # Encrypt the actual data with AES-GCM
-                    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-                    aead = AESGCM(symmetric_key)
-                    ciphertext = aead.encrypt(nonce, data, aad)
-
-                    # Format: encapsulated_key + nonce + ciphertext
-                    result = encapsulated_key + nonce + ciphertext
-
-                    return result
-
-            except Exception as e:
-                if not self.quiet:
-                    print(f"Error in post-quantum encryption: {e}")
-                raise ValueError(f"PQC encryption failed: {e}")
-            finally:
-                # Clean up sensitive data
-                if shared_secret is not None:
-                    secure_memzero(shared_secret)
-                if symmetric_key is not None:
-                    secure_memzero(symmetric_key)
+        except Exception as e:
+            if not self.quiet:
+                print(f"Error in post-quantum encryption: {e}")
+            raise ValueError(f"PQC encryption failed: {e}")
+        finally:
+            # Clean up sensitive data
+            if shared_secret is not None:
+                secure_memzero(shared_secret)
+            if symmetric_key is not None:
+                secure_memzero(symmetric_key)
 
     def decrypt(
         self,
@@ -775,8 +742,14 @@ class PQCipher:
             # Import the KeyEncapsulation object
             with oqs.KeyEncapsulation(self.algorithm_name, private_key) as kem:
                 # Determine size of encapsulated key
+                # Some liboqs-python versions return 0 from struct properties;
+                # fall back to kem.details dict which always works.
                 kem_ciphertext_size = kem.length_ciphertext
                 shared_secret_len = kem.length_shared_secret
+                if kem_ciphertext_size == 0 and hasattr(kem, "details"):
+                    kem_ciphertext_size = kem.details.get("length_ciphertext", 0)
+                if shared_secret_len == 0 and hasattr(kem, "details"):
+                    shared_secret_len = kem.details.get("length_shared_secret", 32)
 
                 if self.debug:
                     logger.debug(f"DECRYPT:PQC_KEM encrypted_data length: {len(encrypted_data)}")
@@ -785,356 +758,140 @@ class PQCipher:
                         f"DECRYPT:PQC_KEM encrypted_data starts with: {encrypted_data[:50]}"
                     )
 
-                # CHECK FOR TEST DATA FORMAT FIRST
-                # This approach makes recovery extremely reliable
-                test_data_header = b"PQC_TEST_DATA:"
-                testdata_marker = b"TESTDATA"
+                # SECURITY (CRIT-1): Legacy TESTDATA format detection for
+                # backward-compatible decryption only. New encryptions never
+                # produce this format.
+                _legacy_testdata_header = b"PQC_TEST_DATA:"
+                _legacy_testdata_marker = b"TESTDATA"
 
-                if encrypted_data.startswith(test_data_header):
-                    # Handle PQC_TEST_DATA format
-                    # In test environment with negative test patterns, we should prevent recovery
-                    is_negative_test = False
-                    test_name = os.environ.get("PYTEST_CURRENT_TEST", "")
-                    if test_name:
-                        negative_patterns = [
-                            "wrong_password",
-                            "wrong_encryption_data",
-                            "wrong_algorithm",
-                        ]
-                        for pattern in negative_patterns:
-                            if pattern in test_name.lower():
-                                is_negative_test = True
-                                break
-
-                    # If this is a negative test, don't allow recovery of test data
-                    if is_negative_test:
-                        raise ValueError(
-                            "Security validation: Direct test data recovery blocked in negative test case"
-                        )
-
-                    # Only allow this path for positive tests
-                    # This is a fallback format with plaintext directly embedded
-                    plaintext = encrypted_data[len(test_data_header) :]
-                    # Quiet success
+                if encrypted_data.startswith(_legacy_testdata_header):
+                    logger.warning(
+                        "DEPRECATION WARNING: Decrypting legacy PQC_TEST_DATA format. "
+                        "This format bypasses real encryption and will be removed in a future version. "
+                        "Re-encrypt this file with real PQC keys."
+                    )
+                    plaintext = encrypted_data[len(_legacy_testdata_header) :]
                     return plaintext
 
-                elif encrypted_data.startswith(testdata_marker):
-                    # Handle TESTDATA format - this is the old test format
-                    if self.debug:
-                        logger.debug(
-                            "DECRYPT:PQC_KEM Detected TESTDATA format, processing test data"
-                        )
-
-                    # Extract the test data - format is TESTDATA + length + data
+                elif encrypted_data.startswith(_legacy_testdata_marker):
+                    logger.warning(
+                        "DEPRECATION WARNING: Decrypting legacy TESTDATA format. "
+                        "This format bypasses real encryption and will be removed in a future version. "
+                        "Re-encrypt this file with real PQC keys."
+                    )
                     data_len_bytes = encrypted_data[8:12]
                     data_len = int.from_bytes(data_len_bytes, byteorder="big")
-
-                    logger.debug(f"DECRYPT:PQC_KEM data_len validation - data_len: {data_len}")
-                    logger.debug(
-                        f"DECRYPT:PQC_KEM data_len validation - encrypted_data length: {len(encrypted_data)}"
-                    )
-                    logger.debug(
-                        f"DECRYPT:PQC_KEM data_len validation - condition: {0 <= data_len <= len(encrypted_data) - 12}"
-                    )
                     if 0 <= data_len <= len(encrypted_data) - 12:
-                        plaintext = encrypted_data[12 : 12 + data_len]
-                        logger.debug(
-                            f"DECRYPT:PQC_KEM data_len validation - extracted plaintext: {plaintext}"
-                        )
-                        return plaintext
+                        return encrypted_data[12 : 12 + data_len]
                     else:
-                        # Invalid format, need to parse test data properly instead of old approach
-                        logger.debug(
-                            f"DECRYPT:PQC_KEM data_len validation failed - parsing test data instead"
-                        )
-                        # Find the test nonce and extract proper data
-                        test_nonce_pos = encrypted_data.find(b"TESTNONCE123")
-                        if test_nonce_pos != -1:
-                            test_data_start = test_nonce_pos + 12  # After "TESTNONCE123"
-                            if test_data_start < len(encrypted_data):
-                                ciphertext = encrypted_data[test_data_start:]
-                                test_data_header = b"PQC_TEST_DATA:"
-                                if ciphertext.startswith(test_data_header):
-                                    plaintext = ciphertext[len(test_data_header) :]
-                                    logger.debug(
-                                        f"DECRYPT:PQC_KEM fallback extracted plaintext: {plaintext}"
-                                    )
-                                    return plaintext
-                        # If all else fails, return the old approach
-                        logger.debug(f"DECRYPT:PQC_KEM using old approach fallback")
                         return encrypted_data[12:]
 
-                # Check for TESTDATA format before attempting to split encrypted data
-                if encrypted_data.startswith(b"TESTDATA"):
-                    # In test environment with negative test patterns, we should prevent recovery
-                    is_negative_test = False
-                    test_name = os.environ.get("PYTEST_CURRENT_TEST", "")
-                    if test_name:
-                        negative_patterns = [
-                            "wrong_password",
-                            "wrong_encryption_data",
-                            "wrong_algorithm",
-                        ]
-                        for pattern in negative_patterns:
-                            if pattern in test_name.lower():
-                                is_negative_test = True
-                                break
-
-                    # If this is a negative test, don't allow recovery of test data
-                    if is_negative_test:
-                        raise ValueError(
-                            "Security validation: TESTDATA recovery blocked in negative test case"
-                        )
-
-                    # Handle TESTDATA format - extract the test data
-                    data_len_bytes = encrypted_data[8:12]
-                    data_len = int.from_bytes(data_len_bytes, byteorder="big")
-
-                    if 0 <= data_len <= len(encrypted_data) - 12:
-                        plaintext = encrypted_data[12 : 12 + data_len]
-                        return plaintext
-                    else:
-                        # Invalid format, try the old approach
-                        return encrypted_data[12:]
-
-                # Split the encrypted data
+                # Split the encrypted data into KEM ciphertext + symmetric payload
                 encapsulated_key = encrypted_data[:kem_ciphertext_size]
                 remaining_data = encrypted_data[kem_ciphertext_size:]
 
-                # Check for our special test marker in the encapsulated key
                 if self.debug:
                     logger.debug(
                         f"DECRYPT:PQC_KEM Encapsulated key starts with: {encapsulated_key[:20]}"
                     )
-                if encapsulated_key.startswith(b"TESTDATA"):
-                    # In test environment with negative test patterns, we should prevent recovery
-                    is_negative_test = False
-                    test_name = os.environ.get("PYTEST_CURRENT_TEST", "")
-                    if test_name:
-                        negative_patterns = [
-                            "wrong_password",
-                            "wrong_encryption_data",
-                            "wrong_algorithm",
-                        ]
-                        for pattern in negative_patterns:
-                            if pattern in test_name.lower():
-                                is_negative_test = True
-                                break
 
-                    # If this is a negative test, don't allow recovery of test data
-                    if is_negative_test:
-                        raise ValueError(
-                            "Security validation: Test data recovery blocked in negative test case"
-                        )
-
-                    # Only do normal recovery in non-negative tests
-                    # Found our test format marker - will be able to recover plaintext
+                # Legacy TESTDATA embedded in encapsulated_key slot
+                if encapsulated_key.startswith(_legacy_testdata_marker):
+                    logger.warning(
+                        "DEPRECATION WARNING: Decrypting legacy TESTDATA format "
+                        "(embedded in KEM ciphertext slot). "
+                        "Re-encrypt this file with real PQC keys."
+                    )
                     data_len_bytes = encapsulated_key[8:12]
-
-                    if data_len_bytes == b"\xFF\xFF\xFF\xFF":
-                        # Data is too large and stored in the "ciphertext" part
-                        reference_id = encapsulated_key[12:20]
-
-                        # Look for the plaintext header in the remaining data
-                        logger.debug(
-                            f"DECRYPT:PQC_KEM embedded data path - remaining_data: {remaining_data}"
-                        )
-                        logger.debug(
-                            f"DECRYPT:PQC_KEM embedded data path - looking for TESTNONCE123"
-                        )
-
-                        # Find the test nonce position instead of assuming it's at the start
+                    if data_len_bytes == b"\xff\xff\xff\xff":
+                        # Data stored after test nonce in remaining_data
                         test_nonce_pos = remaining_data.find(b"TESTNONCE123")
                         if test_nonce_pos != -1:
-                            # Data starts after the 12-byte test nonce
                             test_data_start = test_nonce_pos + 12
                             if test_data_start < len(remaining_data):
-                                ciphertext = remaining_data[test_data_start:]
-                                logger.debug(
-                                    f"DECRYPT:PQC_KEM embedded data - ciphertext: {ciphertext}"
-                                )
-                                if ciphertext.startswith(test_data_header):
-                                    plaintext = ciphertext[len(test_data_header) :]
-                                    logger.debug(
-                                        f"DECRYPT:PQC_KEM embedded data - extracted plaintext: {plaintext}"
-                                    )
-                                    # Success but no need to be verbose
-                                    return plaintext
+                                payload = remaining_data[test_data_start:]
+                                if payload.startswith(_legacy_testdata_header):
+                                    return payload[len(_legacy_testdata_header) :]
                     else:
-                        # Data is embedded in the encapsulated key
-                        try:
-                            data_len = int.from_bytes(data_len_bytes, byteorder="big")
-                            if 0 <= data_len <= len(encapsulated_key) - 12:  # Reasonable size
-                                plaintext = encapsulated_key[12 : 12 + data_len]
-                                # Success but no need to be verbose
-                                return plaintext
-                        except Exception as e:
-                            print(f"Error extracting embedded data: {e}")
+                        data_len = int.from_bytes(data_len_bytes, byteorder="big")
+                        if 0 <= data_len <= len(encapsulated_key) - 12:
+                            return encapsulated_key[12 : 12 + data_len]
 
-                # Special handling for extremely short files or testing
+                # Standard format: remaining_data = nonce + ciphertext
                 if len(remaining_data) < 12:
-                    # More concise warning for small data
-                    if not self.quiet:
-                        print("Using recovery mode for test data")
-
-                    # For test files, try to generate a synthetic nonce and empty ciphertext
-                    if len(remaining_data) == 0:
-                        # Create a deterministic nonce based on the encapsulated key
-                        # This is only for testing with empty files
-                        nonce = hashlib.sha256(encapsulated_key).digest()[:12]
-                        ciphertext = b""
-                    else:
-                        # Try to use whatever data we have
-                        nonce_size = min(8, len(remaining_data))  # At least 8 bytes for nonce
-                        nonce = remaining_data[:nonce_size]
-                        # Pad nonce to 12 bytes if needed
-                        if len(nonce) < 12:
-                            nonce = nonce + b"\x00" * (12 - len(nonce))
-                        ciphertext = remaining_data[nonce_size:]
-                else:
-                    # Check for our test nonce (may not be at the start due to binary prefix)
-                    test_nonce_pos = remaining_data.find(b"TESTNONCE123")
-                    logger.debug(f"DECRYPT:PQC_KEM remaining_data length: {len(remaining_data)}")
-                    logger.debug(
-                        f"DECRYPT:PQC_KEM remaining_data hex: {remaining_data.hex()[:100]}..."
+                    raise ValueError(
+                        "Encrypted data too short: missing nonce. " "The file may be corrupted."
                     )
-                    logger.debug(f"DECRYPT:PQC_KEM test_nonce_pos: {test_nonce_pos}")
-                    if test_nonce_pos != -1:
-                        # In test environment with negative test patterns, we should prevent recovery
-                        is_negative_test = False
-                        test_name = os.environ.get("PYTEST_CURRENT_TEST", "")
-                        if test_name:
-                            negative_patterns = [
-                                "wrong_password",
-                                "wrong_encryption_data",
-                                "wrong_algorithm",
-                            ]
-                            for pattern in negative_patterns:
-                                if pattern in test_name.lower():
-                                    is_negative_test = True
-                                    break
 
-                        # If this is a negative test, don't allow recovery of test data
-                        if is_negative_test:
-                            raise ValueError(
-                                "Security validation: Test nonce recovery blocked in negative test case"
-                            )
-
-                        # Normal path for positive tests - parse from the test nonce position
-                        test_data_start = test_nonce_pos + 12  # After "TESTNONCE123"
-                        logger.debug(f"DECRYPT:PQC_KEM test_data_start: {test_data_start}")
-                        if test_data_start < len(remaining_data):
-                            ciphertext = remaining_data[test_data_start:]
-                            logger.debug(f"DECRYPT:PQC_KEM ciphertext: {ciphertext}")
-                            logger.debug(f"DECRYPT:PQC_KEM test_data_header: {test_data_header}")
-                            logger.debug(
-                                f"DECRYPT:PQC_KEM ciphertext.startswith(test_data_header): {ciphertext.startswith(test_data_header)}"
-                            )
-                            if ciphertext.startswith(test_data_header):
-                                plaintext = ciphertext[len(test_data_header) :]
-                                logger.debug(f"DECRYPT:PQC_KEM extracted plaintext: {plaintext}")
-                                # Quiet success
-                                return plaintext
-                    else:
-                        # Standard case: Use 12 bytes for AES-GCM nonce
-                        nonce = remaining_data[:12]
-                        ciphertext = remaining_data[12:]
+                nonce = remaining_data[:12]
+                ciphertext = remaining_data[12:]
 
                 # No need for debug output on nonce
 
-                # Check if this is a simulated ciphertext (created during encryption)
+                # Check if this is a simulated ciphertext (legacy format)
                 sim_header = b"SIMULATED_PQC_v1"
-                simulation_mode = False
+                simulation_detected = False
 
                 if (
                     len(encapsulated_key) >= len(sim_header)
                     and encapsulated_key[: len(sim_header)] == sim_header
                 ):
-                    # Detected simulation header
-                    simulation_mode = True
-                    if not self.quiet:
-                        print(
-                            "Detected simulated ciphertext, using matching simulation for decryption"
-                        )
-                elif len(encapsulated_key) > 0 and encapsulated_key[0] == ord(b"S"):
-                    # Detected marker byte for short simulation
-                    simulation_mode = True
-                    if not self.quiet:
-                        print(
-                            "Detected simulation marker, using matching simulation for decryption"
-                        )
+                    simulation_detected = True
 
                 # Initialize the shared secret with None to detect success
                 shared_secret = None
-                simulation_detected = False
 
-                # Check if this is a simulated encryption from the encrypt method
-                if simulation_mode:
-                    # This was detected as a simulation mode ciphertext
-                    simulation_detected = True
-                else:
-                    # Check the first few bytes for a marker
-                    # Even if not detected via header, it could still be simulation mode
-                    sim_marker = b"S"
-                    if len(encapsulated_key) > 0 and encapsulated_key[0] == ord(sim_marker):
-                        simulation_detected = True
-                        if not self.quiet:
-                            print("Detected simulation marker byte")
-
-                # If simulation was detected, use the same deterministic approach
+                # SECURITY (CRIT-3): Simulation mode is only allowed for
+                # backward-compatible DECRYPTION of legacy files.
+                # New encryptions never use simulation mode.
                 if simulation_detected:
-                    # Use secure memory for hashing operations
+                    # Legacy simulation mode detected - warn prominently
+                    logger.warning(
+                        "SECURITY WARNING: This file was encrypted with weak "
+                        "simulation mode (deterministic shared secret). "
+                        "Re-encrypt this file with real PQC keys for proper security."
+                    )
+                    if not self.quiet:
+                        print(
+                            "SECURITY WARNING: Decrypting legacy simulation-mode file. "
+                            "This mode uses a weak deterministic secret. "
+                            "Re-encrypt with real PQC keys."
+                        )
+                    # Use the legacy deterministic approach for decryption only
                     with SecureBytes() as secure_input:
                         secure_input.extend(encapsulated_key)
                         secure_input.extend(public_key_part(private_key))
                         shared_secret = SecureBytes(
                             hashlib.sha256(secure_input).digest()[:shared_secret_len]
                         )
-                    if not self.quiet:
-                        print("Using SIMULATION MODE for decapsulation")
                 else:
-                    # Always try simulation mode first as a fallback
-                    # Store the simulation result in case real decryption fails
-                    with SecureBytes() as secure_input:
-                        secure_input.extend(encapsulated_key)
-                        secure_input.extend(public_key_part(private_key))
-                        simulation_secret = SecureBytes(
-                            hashlib.sha256(secure_input).digest()[:shared_secret_len]
-                        )
-
-                    # Now try standard decryption approaches
+                    # Standard KEM decapsulation (production path)
                     try:
-                        # Direct approach - just use decap_secret with ciphertext
-                        try:
-                            shared_secret = kem.decap_secret(encapsulated_key)
-                            # Suppress verbose success messages
-                        except Exception as e1:
-                            if not self.quiet:
-                                print(f"Direct decap_secret failed: {e1}")
+                        shared_secret = kem.decap_secret(encapsulated_key)
+                    except Exception as e1:
+                        if self.debug:
+                            logger.debug(f"decap_secret failed: {e1}")
 
-                            # Try decaps_cb if available
-                            if hasattr(kem, "decaps_cb") and callable(kem.decaps_cb):
-                                try:
-                                    shared_secret_buffer = bytearray(shared_secret_len)
-                                    result = kem.decaps_cb(
-                                        shared_secret_buffer, encapsulated_key, private_key
-                                    )
-                                    if result == 0:  # Success
-                                        shared_secret = bytes(shared_secret_buffer)
-                                        # Success but no need for verbose messages
-                                except Exception as e2:
-                                    if not self.quiet:
-                                        print(f"decaps_cb approach failed: {e2}")
+                        # Try decaps_cb if available as alternative API
+                        if hasattr(kem, "decaps_cb") and callable(kem.decaps_cb):
+                            try:
+                                shared_secret_buffer = bytearray(shared_secret_len)
+                                result = kem.decaps_cb(
+                                    shared_secret_buffer, encapsulated_key, private_key
+                                )
+                                if result == 0:  # Success
+                                    shared_secret = bytes(shared_secret_buffer)
+                            except Exception as e2:
+                                if self.debug:
+                                    logger.debug(f"decaps_cb failed: {e2}")
 
-                    except Exception as e:
-                        if not self.quiet:
-                            print(f"All standard decapsulation approaches failed: {e}")
-
-                    # If all approaches failed, use simulation mode
+                    # SECURITY (CRIT-3): Do NOT fall back to simulation mode
+                    # when real decapsulation fails. Raise an error instead.
                     if shared_secret is None:
-                        shared_secret = simulation_secret
-                        if not self.quiet:
-                            print("FALLING BACK TO SIMULATION MODE FOR DECRYPTION")
+                        raise ValueError(
+                            "KEM decapsulation failed. Unable to recover shared secret. "
+                            "The file may be corrupted or the wrong private key was provided."
+                        )
 
                 # No need to log shared secret details
 
@@ -1224,226 +981,39 @@ class PQCipher:
                             f"Unknown encryption algorithm {self.encryption_data}, falling back to aes-gcm"
                         )
                     cipher = self.AESGCM(symmetric_key)
+                # SECURITY (CRIT-1): Empty ciphertext recovery and negative
+                # test pattern detection have been removed from production code.
+                if len(ciphertext) == 0:
+                    raise ValueError(
+                        "Decryption failed: empty ciphertext. "
+                        "The file may be corrupted or was encrypted with legacy test mode."
+                    )
+
+                # Decrypt using the selected AEAD cipher
                 try:
-                    # Check if we have an empty or very small ciphertext
-                    if len(ciphertext) == 0:
-                        if not self.quiet:
-                            print("Empty ciphertext detected, attempting to recover actual content")
-
-                        # For existing files where the data wasn't properly encrypted
-                        # See if we can recover the original content from the encrypted file
-
-                        try:
-                            # Read the encrypted file to extract the actual content
-                            # This approach tries to recover the original file contents
-                            # from the original, still-accessible encrypted file
-
-                            # Since we're in decrypt_file, we should have access to:
-                            # 1. The full encrypted file data
-                            # 2. The metadata from the file
-
-                            # First, look at the original file_contents for clues
-                            if file_contents and len(file_contents) > kem_ciphertext_size + 100:
-                                # There's likely content in the original encrypted file
-                                # We can look for patterns in the file contents
-
-                                # Try parsing the original encrypted file
-                                # This could extract the original content if it's still in plaintext somewhere
-                                import re
-
-                                try:
-                                    # Simple approach: look for common strings
-                                    common_plaintext_markers = [
-                                        b"Hello World",
-                                        b"This is a test",
-                                        b"encrypted with",
-                                        b"Content:",
-                                        b"Test file",
-                                    ]
-
-                                    for marker in common_plaintext_markers:
-                                        idx = file_contents.find(marker)
-                                        if idx >= 0:
-                                            # Try to extract a reasonable chunk around the found marker
-                                            # Look for beginning of line up to 100 chars before marker
-                                            line_start = max(0, idx - 100)
-                                            for i in range(idx - 1, line_start, -1):
-                                                if file_contents[i : i + 1] in [b"\n", b"\r"]:
-                                                    line_start = i + 1
-                                                    break
-
-                                            # Look for end of line up to 200 chars after marker
-                                            line_end = min(
-                                                len(file_contents), idx + len(marker) + 200
-                                            )
-                                            for i in range(idx + len(marker), line_end):
-                                                if file_contents[i : i + 1] in [b"\n", b"\r"]:
-                                                    line_end = i
-                                                    break
-
-                                            # Extract the line containing the marker
-                                            content_line = file_contents[
-                                                line_start:line_end
-                                            ].strip()
-                                            if len(content_line) > 5:  # Reasonable minimum
-                                                if not self.quiet:
-                                                    print(f"Found plaintext: {content_line}")
-                                                return content_line
-                                except Exception as e:
-                                    if not self.quiet:
-                                        print(f"Metadata parsing attempt failed: {e}")
-
-                            # Add a more comprehensive list of test content
-                            plaintext_candidates = [
-                                b"Hello World",
-                                b"Test",
-                                b"This is a test",
-                                b"Content",
-                                b"Good Night World",
-                                b"post-quantum cryptography",
-                                b"Kyber",
-                                b"quantum-resistant",
-                                b"encryption",
-                            ]
-
-                            # Check if any common plaintext exists in the encrypted file
-                            if file_contents:
-                                for candidate in plaintext_candidates:
-                                    if candidate in file_contents:
-                                        if not self.quiet:
-                                            print(f"Found plaintext candidate: {candidate}")
-                                        return candidate
-
-                            # Last resort: Try to extract ASCII text from the encrypted data
-                            import string
-
-                            valid_chars = set(string.printable.encode())
-                            ascii_parts = []
-                            current_part = bytearray()
-
-                            # Scan for readable ASCII sections (3+ chars)
-                            if file_contents:
-                                for byte in file_contents:
-                                    byte_val = bytes([byte])
-                                    if byte_val in valid_chars:
-                                        current_part.append(byte)
-                                    elif (
-                                        len(current_part) >= 3
-                                    ):  # Only keep chunks of 3+ readable chars
-                                        ascii_parts.append(bytes(current_part))
-                                        current_part = bytearray()
-                                    else:
-                                        current_part = bytearray()
-
-                            # Return the longest ASCII section if found
-                            if ascii_parts:
-                                longest = max(ascii_parts, key=len)
-                                if len(longest) >= 3:
-                                    if not self.quiet:
-                                        print(f"Recovered ASCII content: {longest}")
-                                    return longest
-
-                        except Exception as recovery_error:
-                            if not self.quiet:
-                                print(f"Content recovery failed: {recovery_error}")
-
-                        # If all recovery attempts fail, use a placeholder
-                        if not self.quiet:
-                            print("Could not recover original content, using PQC test mode")
-                        return b"[PQC Test Mode - Original Content Not Recoverable]"
-
-                    # Debug info - avoiding printing key material for security
-                    # print(f"AES-GCM key first bytes: {symmetric_key[:4].hex()}") - REMOVED: security risk
-                    if not self.quiet:
-                        print(f"AES-GCM ciphertext length: {len(ciphertext)}")
-
-                    # Check if this is a test file and a negative test case
-                    is_negative_test = False
-                    if os.environ.get("PYTEST_CURRENT_TEST") is not None:
-                        # Check for test patterns in the test name that indicate negative tests
-                        test_name = os.environ.get("PYTEST_CURRENT_TEST", "")
-                        negative_patterns = [
-                            "wrong_password",
-                            "wrong_encryption_data",
-                            "wrong_algorithm",
-                        ]
-                        for pattern in negative_patterns:
-                            if pattern in test_name.lower():
-                                is_negative_test = True
-                                break
-
-                    # Normal decrypt path using secure memory
                     with SecureBytes() as secure_plaintext:
-                        # Decrypt directly into secure memory
-                        decrypted = cipher.decrypt(nonce, ciphertext, aad)
-
-                        # If this is a negative test case and we still successfully decrypted,
-                        # we need to perform additional validation
-                        if is_negative_test:
-                            # For test files, we know the expected content is usually "Hello World"
-                            # If we're in a negative test and get this result, it's a security issue
-                            if b"Hello World" in decrypted:
-                                raise ValueError(
-                                    "Security validation failed: Negative test decryption succeeded"
-                                )
-
+                        # AES-SIV has a different API: decrypt(data, [associated_data])
+                        if self.encryption_data == "aes-siv":
+                            aad_list = [nonce]
+                            if aad:
+                                aad_list.append(aad)
+                            decrypted = cipher.decrypt(ciphertext, aad_list)
+                        else:
+                            decrypted = cipher.decrypt(nonce, ciphertext, aad)
                         secure_plaintext.extend(decrypted)
-                        # Zero out the original decrypted data
+                        # Zero out the intermediate decrypted data
                         if isinstance(decrypted, bytearray):
                             secure_memzero(decrypted)
-
-                        if not self.quiet:
-                            print(f"Decryption successful, result length: {len(secure_plaintext)}")
-                        # Return a copy, secure memory will be auto-cleared
+                        if self.debug:
+                            logger.debug(f"Decryption successful, length: {len(secure_plaintext)}")
                         return bytes(secure_plaintext)
 
                 except Exception as e:
-                    # Use generic error message to prevent oracle attacks
-                    if not self.quiet:
-                        print(f"AES-GCM decryption failed: {e}")
-
-                    # Special handling for test files - if all else fails
-                    try:
-                        # For testing only - try with no associated data and no authenticated tag
-                        if len(ciphertext) > 16:  # Need at least the tag size
-                            from cryptography.hazmat.primitives.ciphers import (
-                                Cipher,
-                                algorithms,
-                                modes,
-                            )
-
-                            # Last resort - attempt unauthenticated AES decryption (for testing only)
-                            if not self.quiet:
-                                print(
-                                    "WARNING: Attempting fallback, simplified decryption (test only)"
-                                )
-                            # Use only the first 16 bytes of the symmetric key for AES-128
-                            # Use secure memory for fallback decryption
-                            with SecureBytes() as secure_key:
-                                # Copy just what we need into secure memory
-                                secure_key.extend(symmetric_key[:16])
-
-                                # Create decryptor with secure key
-                                aes = Cipher(
-                                    algorithms.AES(secure_key), modes.CTR(nonce[:16]), backend=None
-                                ).decryptor()
-
-                                # Decrypt into secure memory
-                                with SecureBytes() as secure_plaintext:
-                                    plaintext = aes.update(ciphertext) + aes.finalize()
-                                    secure_plaintext.extend(plaintext)
-
-                                    # Zero out the intermediate plaintext
-                                    if isinstance(plaintext, bytearray):
-                                        secure_memzero(plaintext)
-
-                                    # Return a copy, secure memory will be auto-cleared
-                                    return bytes(secure_plaintext)
-                    except Exception as fallback_error:
-                        if not self.quiet:
-                            print(f"Fallback decryption also failed: {fallback_error}")
-
-                    # If all approaches fail, raise a clear error
+                    # SECURITY (CRIT-2): No fallback to unauthenticated ciphers.
+                    logger.warning(
+                        "AEAD decryption failed. No fallback to unauthenticated "
+                        "ciphers is permitted."
+                    )
                     raise ValueError("Decryption failed: authentication error")
         except Exception as e:
             if not self.quiet:
