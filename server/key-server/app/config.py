@@ -10,6 +10,7 @@ SECURITY:
 - CORS settings for security
 """
 
+import logging
 import os
 from typing import List
 
@@ -29,10 +30,8 @@ class Settings(BaseSettings):
     version: str = "1.0.0"
     debug: bool = False
 
-    # Database
-    database_url: str = os.getenv(
-        "DATABASE_URL", "postgresql://keyserver:keyserver@localhost/keyserver"
-    )
+    # Database - MUST be set via environment variable
+    database_url: str = os.getenv("DATABASE_URL", "")
 
     # Security
     api_token_salt: str = os.getenv("API_TOKEN_SALT", "change-me-in-production")
@@ -52,5 +51,28 @@ class Settings(BaseSettings):
         case_sensitive = False
 
 
+def validate_settings(s: Settings) -> None:
+    """Validate critical settings at startup.
+
+    Raises:
+        ValueError: If required settings are missing or insecure.
+    """
+    if not s.database_url:
+        if s.debug:
+            logger.warning(
+                "SECURITY WARNING: DATABASE_URL not set. "
+                "Using in-memory SQLite for debug mode only."
+            )
+            s.database_url = "sqlite:///./debug_keyserver.db"
+        else:
+            raise ValueError(
+                "DATABASE_URL environment variable is required. "
+                "Example: DATABASE_URL=postgresql://user:pass@host/dbname"
+            )
+
+
+logger = logging.getLogger(__name__)
+
 # Global settings instance
 settings = Settings()
+validate_settings(settings)

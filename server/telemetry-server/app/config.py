@@ -11,8 +11,8 @@ Environment variables:
 - RAW_DATA_RETENTION_DAYS: Days to keep raw telemetry data (default: 90)
 """
 
+import logging
 import os
-from typing import Optional
 
 from pydantic_settings import BaseSettings
 
@@ -25,10 +25,8 @@ class Settings(BaseSettings):
     app_version: str = "1.0.0"
     debug: bool = False
 
-    # Database
-    database_url: str = os.getenv(
-        "DATABASE_URL", "postgresql://telemetry:telemetry@localhost:5432/telemetry"
-    )
+    # Database - MUST be set via environment variable
+    database_url: str = os.getenv("DATABASE_URL", "")
 
     # Security
     secret_key: str = os.getenv("SECRET_KEY", "CHANGE_THIS_IN_PRODUCTION")
@@ -51,5 +49,29 @@ class Settings(BaseSettings):
         case_sensitive = False
 
 
+logger = logging.getLogger(__name__)
+
+
+def validate_settings(s: Settings) -> None:
+    """Validate critical settings at startup.
+
+    Raises:
+        ValueError: If required settings are missing or insecure.
+    """
+    if not s.database_url:
+        if s.debug:
+            logger.warning(
+                "SECURITY WARNING: DATABASE_URL not set. "
+                "Using in-memory SQLite for debug mode only."
+            )
+            s.database_url = "sqlite:///./debug_telemetry.db"
+        else:
+            raise ValueError(
+                "DATABASE_URL environment variable is required. "
+                "Example: DATABASE_URL=postgresql://user:pass@host:5432/dbname"
+            )
+
+
 # Global settings instance
 settings = Settings()
+validate_settings(settings)
