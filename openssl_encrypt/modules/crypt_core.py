@@ -5492,9 +5492,7 @@ def encrypt_file_asymmetric(
                     )
 
                     if not quiet:
-                        print(
-                            f"Wrapped password for: {recipient.name} ({recipient.fingerprint}) ✅"
-                        )
+                        print(f"Wrapped password for: {recipient.name} ({recipient.fingerprint}) ✅")
 
                 finally:
                     secure_memzero(shared_secret_raw)

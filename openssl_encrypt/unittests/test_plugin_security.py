@@ -675,8 +675,9 @@ class TestConfigDirectoryPermissions(unittest.TestCase):
 
     def test_ensure_plugin_data_dir_creates_with_0o700(self):
         """Verify directories are created with 0o700 permissions."""
-        from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
         import stat
+
+        from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
 
         test_dir = ensure_plugin_data_dir("test_security_plugin", "")
         self.assertIsNotNone(test_dir, "Directory creation should succeed")
@@ -689,8 +690,9 @@ class TestConfigDirectoryPermissions(unittest.TestCase):
 
     def test_ensure_plugin_data_dir_with_subdir(self):
         """Verify subdirectories are created with 0o700 permissions."""
-        from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
         import stat
+
+        from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
 
         test_dir = ensure_plugin_data_dir("test_security_plugin", "subdir")
         self.assertIsNotNone(test_dir, "Subdirectory creation should succeed")
@@ -707,8 +709,9 @@ class TestConfigDirectoryPermissions(unittest.TestCase):
 
     def test_ensure_plugin_data_dir_fixes_existing_permissions(self):
         """Verify existing directories have permissions corrected."""
-        from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
         import stat
+
+        from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
 
         # First create with correct permissions
         test_dir = ensure_plugin_data_dir("test_security_plugin2", "")
@@ -732,6 +735,7 @@ class TestConfigDirectoryPermissions(unittest.TestCase):
     def test_plugin_load_fails_on_insecure_config_dir(self):
         """Verify plugins don't load if config dir permissions cannot be secured."""
         from unittest.mock import patch
+
         from openssl_encrypt.modules.plugin_system.plugin_config import PluginConfigManager
 
         # Create temporary directories for both plugin and config

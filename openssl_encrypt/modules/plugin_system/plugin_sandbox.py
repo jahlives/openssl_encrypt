@@ -540,8 +540,8 @@ class PluginSandbox:
         Args:
             saved_state: Dict to store original functions for restoration
         """
-        import subprocess
         import os
+        import subprocess
 
         # Store original subprocess.Popen function
         saved_state["subprocess"] = subprocess.Popen
