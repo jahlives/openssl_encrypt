@@ -49,6 +49,13 @@ def _normalize_bytes(data: bytes, target_length: int) -> bytes:
 
     This is a simplified version that doesn't use SecureBytes since we need
     it to be picklable for multiprocessing.
+
+    Note: salt=None is intentional here. This is a deterministic normalization
+    of XOR accumulator output to the target key length. Using a random salt
+    would break reproducibility since both encrypt and decrypt must derive
+    the same key from the same KDF outputs. Per RFC 5869, HKDF with salt=None
+    uses a zero-filled salt of hash length, which is acceptable for this
+    deterministic key-length normalization use case.
     """
     from cryptography.hazmat.backends import default_backend
     from cryptography.hazmat.primitives import hashes
