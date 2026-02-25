@@ -24,7 +24,6 @@ from openssl_encrypt.modules.registry import (
     HashRegistry,
     SecurityLevel,
     ValidationError,
-    Whirlpool,
     get_hash,
 )
 
@@ -54,7 +53,6 @@ class TestHashRegistry:
             "blake3",
             "shake128",
             "shake256",
-            "whirlpool",
         ]
 
         for hash_name in expected_hashes:
@@ -439,43 +437,6 @@ class TestSHAKE256:
         for length in [16, 32, 64, 128]:
             digest = hasher.hash(b"test", output_length=length)
             assert len(digest) == length
-
-
-# ============================================================================
-# Whirlpool Tests
-# ============================================================================
-
-
-class TestWhirlpool:
-    """Tests for Whirlpool."""
-
-    def test_metadata(self):
-        """Test algorithm metadata."""
-        info = Whirlpool.info()
-        assert info.name == "whirlpool"
-        assert info.output_size == 64
-        assert info.security_level == SecurityLevel.LEGACY
-        assert "LEGACY" in info.display_name
-
-    def test_availability_check(self):
-        """Test availability check (may not be available)."""
-        is_available = Whirlpool.is_available()
-        # Just check it doesn't crash
-        assert isinstance(is_available, bool)
-
-    @pytest.mark.skipif(not Whirlpool.is_available(), reason="Whirlpool not available")
-    def test_basic_hash(self):
-        """Test basic hashing if available."""
-        hasher = Whirlpool()
-        digest = hasher.hash(b"test")
-        assert len(digest) == 64
-
-    @pytest.mark.skipif(not Whirlpool.is_available(), reason="Whirlpool not available")
-    def test_fixed_output_length(self):
-        """Test that Whirlpool rejects custom output length."""
-        hasher = Whirlpool()
-        with pytest.raises(ValidationError, match="fixed output length"):
-            hasher.hash(b"data", output_length=32)
 
 
 # ============================================================================

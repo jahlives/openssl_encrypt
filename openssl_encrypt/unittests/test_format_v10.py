@@ -352,33 +352,6 @@ class TestFormatV10(unittest.TestCase):
         self.assertIn("hash_config", actual_metadata["derivation_config"])
         self.assertIn("encryption", actual_metadata)
 
-    def test_v10_with_pbkdf2(self):
-        """Test v10 with PBKDF2 iterations."""
-        encrypted_file = os.path.join(self.test_dir, "encrypted_pbkdf2.enc")
-        decrypted_file = os.path.join(self.test_dir, "decrypted_pbkdf2.txt")
-        self.test_files.extend([encrypted_file, decrypted_file])
-
-        config = {"sha512": 10, "pbkdf2_iterations": 1000}
-
-        with open(self.test_file, "rb") as f:
-            original_content = f.read()
-
-        encrypt_file(
-            self.test_file,
-            encrypted_file,
-            self.test_password,
-            hash_config=config,
-            quiet=True,
-            format_version=10,
-        )
-
-        decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
-
-        with open(decrypted_file, "rb") as f:
-            decrypted_content = f.read()
-
-        self.assertEqual(original_content, decrypted_content)
-
     def test_v10_empty_file(self):
         """Test v10 with empty file."""
         empty_file = os.path.join(self.test_dir, "empty.txt")

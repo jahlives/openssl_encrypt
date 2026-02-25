@@ -491,8 +491,6 @@ class BenchmarkTestSuite(BaseSecurityTest):
         try:
             # Test different KDF configurations
             kdf_configs = [
-                {"kdf": "pbkdf2", "pbkdf2_iterations": 100000},
-                {"kdf": "pbkdf2", "pbkdf2_iterations": 200000},
                 {"kdf": "argon2", "argon2_time_cost": 2, "argon2_memory_cost": 65536},
                 {"kdf": "balloon", "balloon_space_cost": 16, "balloon_time_cost": 20},
             ]
@@ -522,9 +520,7 @@ class BenchmarkTestSuite(BaseSecurityTest):
                     if timings:
                         avg_time = statistics.mean(timings)
                         kdf_name = f"{kdf_config['kdf']}"
-                        if "pbkdf2_iterations" in kdf_config:
-                            kdf_name += f"_iter{kdf_config['pbkdf2_iterations']}"
-                        elif "argon2_time_cost" in kdf_config:
+                        if "argon2_time_cost" in kdf_config:
                             kdf_name += f"_t{kdf_config['argon2_time_cost']}_m{kdf_config['argon2_memory_cost']}"
                         elif "balloon_time_cost" in kdf_config:
                             kdf_name += f"_s{kdf_config['balloon_space_cost']}_t{kdf_config['balloon_time_cost']}"

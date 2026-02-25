@@ -72,7 +72,6 @@ class TestKEMRegistry:
         # Test ML-KEM aliases
         assert registry.exists("mlkem768")
         assert registry.exists("ml_kem_768")
-        assert registry.exists("kyber768")  # Legacy alias
 
         # Test HQC aliases
         assert registry.exists("hqc128")

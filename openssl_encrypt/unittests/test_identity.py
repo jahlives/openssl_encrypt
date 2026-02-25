@@ -149,7 +149,6 @@ class TestAsymmetricEncryption(unittest.TestCase):
         custom_hash_config = {
             "sha512": 10,
             "blake2b": 5,
-            "pbkdf2_iterations": 200000,
         }
 
         result = encrypt_file_asymmetric(
@@ -174,9 +173,6 @@ class TestAsymmetricEncryption(unittest.TestCase):
             hash_cfg = metadata["derivation_config"]["hash_config"]
             self.assertEqual(hash_cfg["sha512"]["rounds"], 10)
             self.assertEqual(hash_cfg["blake2b"]["rounds"], 5)
-
-            kdf_cfg = metadata["derivation_config"]["kdf_config"]
-            self.assertEqual(kdf_cfg["pbkdf2"]["rounds"], 200000)
 
     def test_encrypt_no_recipients(self):
         """Test that encryption fails with no recipients"""
@@ -1226,7 +1222,6 @@ class TestMetadataV7Creation(unittest.TestCase):
         self.hash_config = {
             "sha512": 5,
             "blake2b": 3,
-            "pbkdf2_iterations": 100000,
         }
         self.original_hash = "abcd1234" * 8  # 64 char hex
         self.algorithm = "aes-gcm"
@@ -1416,7 +1411,6 @@ class TestMetadataV7Creation(unittest.TestCase):
             "sha256": 3,
             "blake2b": 4,
             "sha3_512": 2,
-            "pbkdf2_iterations": 50000,
         }
 
         recipients = [
@@ -1452,7 +1446,6 @@ class TestMetadataV7Creation(unittest.TestCase):
         """Test V7 metadata with KDF algorithms"""
         hash_config = {
             "sha512": 3,
-            "pbkdf2_iterations": 100000,
             "argon2": {"time_cost": 3, "memory_cost": 65536, "parallelism": 4},
             "scrypt": {"n": 16384, "r": 8, "p": 1},
         }
@@ -1479,8 +1472,6 @@ class TestMetadataV7Creation(unittest.TestCase):
 
         # Check KDF configurations
         kdf_cfg = metadata["derivation_config"]["kdf_config"]
-        self.assertIn("pbkdf2", kdf_cfg)
-        self.assertEqual(kdf_cfg["pbkdf2"]["rounds"], 100000)
         self.assertIn("argon2", kdf_cfg)
         self.assertIn("scrypt", kdf_cfg)
 

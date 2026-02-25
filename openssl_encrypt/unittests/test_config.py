@@ -1176,7 +1176,6 @@ class TestPluginIntegration(unittest.TestCase):
                 "sha3_512": {"rounds": 0},
                 "blake2b": {"rounds": 0},
                 "shake256": {"rounds": 0},
-                "whirlpool": {"rounds": 0},
             }
 
             encrypted_file = os.path.join(self.test_dir, "test_encrypted.enc")
@@ -2553,9 +2552,7 @@ class TestTemplateManager(unittest.TestCase):
 
         # Create test templates for different use cases
         personal_template = EnhancedTemplate(
-            config={
-                "hash_config": {"algorithm": "fernet", "sha256": 500, "pbkdf2_iterations": 5000}
-            },
+            config={"hash_config": {"algorithm": "fernet", "sha256": 500}},
             metadata=TemplateMetadata(
                 name="personal-template", use_cases=["personal"], security_level="MINIMAL"
             ),
@@ -2650,9 +2647,7 @@ class TestTemplateManager(unittest.TestCase):
 
         # Create templates for different use cases
         personal_template = EnhancedTemplate(
-            config={
-                "hash_config": {"algorithm": "fernet", "sha256": 500, "pbkdf2_iterations": 5000}
-            },
+            config={"hash_config": {"algorithm": "fernet", "sha256": 500}},
             metadata=TemplateMetadata(name="personal", use_cases=["personal"]),
         )
         business_template = EnhancedTemplate(

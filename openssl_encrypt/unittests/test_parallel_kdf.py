@@ -315,8 +315,6 @@ class TestParallelKDF(unittest.TestCase):
     def test_parallel_all_hash_algorithms(self):
         """Test parallel mode with all supported hash algorithms."""
         # Config with all hash algorithms
-        # Note: whirlpool excluded due to multiprocessing import issues in CI
-        # (whirlpool is deprecated and still works in non-parallel code paths)
         full_hash_config = {
             "sha256": 10,
             "sha512": 10,

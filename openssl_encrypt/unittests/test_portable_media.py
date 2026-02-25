@@ -367,7 +367,6 @@ class TestUSBDriveEncryption(unittest.TestCase):
                 "type": 2,
                 "rounds": 1,
             },
-            "pbkdf2_iterations": 0,
         }
 
         creator = self.USBDriveCreator()

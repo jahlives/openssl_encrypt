@@ -84,8 +84,6 @@ from openssl_encrypt.modules.config_wizard import (
 # Import the modules to test
 from openssl_encrypt.modules.crypt_core import (
     ARGON2_AVAILABLE,
-    WHIRLPOOL_AVAILABLE,
-    CamelliaCipher,
     EncryptionAlgorithm,
     XChaCha20Poly1305,
     create_metadata_v7,
@@ -271,8 +269,6 @@ REQUIRED_ARGUMENT_GROUPS = {
         "blake3-rounds",  # BLAKE3 hash rounds (1.1.0)
         "shake256-rounds",
         "shake128-rounds",  # SHAKE-128 hash rounds (1.1.0)
-        "whirlpool-rounds",
-        "pbkdf2-iterations",  # PBKDF2 options
         # Hash function flags (main CLI boolean enablers)
         "sha256",  # Enable SHA-256 hashing
         "sha512",  # Enable SHA-512 hashing
@@ -280,7 +276,6 @@ REQUIRED_ARGUMENT_GROUPS = {
         "sha3-512",  # Enable SHA3-512 hashing
         "shake256",  # Enable SHAKE-256 hashing
         "blake2b",  # Enable BLAKE2b hashing
-        "pbkdf2",  # Enable PBKDF2
     ],
     "Scrypt Options": [
         "enable-scrypt",  # Scrypt options
@@ -379,7 +374,6 @@ class TestCryptCore(unittest.TestCase):
                     "sha3_512": 0,
                     "blake2b": 0,  # Added for testing new hash function
                     "shake256": 0,  # Added for testing new hash function
-                    "whirlpool": 0,
                 },
                 "kdf_config": {
                     "scrypt": {
@@ -398,35 +392,9 @@ class TestCryptCore(unittest.TestCase):
                         "type": 2,  # Argon2id
                         "rounds": 1,
                     },
-                    "pbkdf2_iterations": 1000,  # Reduced for testing
                 },
             }
         }
-
-        # Define stronger hash config for specific tests
-        # self.strong_hash_config = {
-        #     'sha512': 1000,
-        #     'sha256': 0,
-        #     'sha3_256': 1000,
-        #     'sha3_512': 0,
-        #     'blake2b': 500,
-        #     'shake256': 500,
-        #     'whirlpool': 0,
-        #     'scrypt': {
-        #         'n': 4096,  # Lower value for faster tests
-        #         'r': 8,
-        #         'p': 1
-        #     },
-        #     'argon2': {
-        #         'enabled': True,
-        #         'time_cost': 1,  # Low time cost for tests
-        #         'memory_cost': 8192,  # Lower memory for tests
-        #         'parallelism': 1,
-        #         'hash_len': 32,
-        #         'type': 2  # Argon2id
-        #     },
-        #     'pbkdf2_iterations': 1000  # Use low value for faster tests
-        # }
 
         self.strong_hash_config = {
             "derivation_config": {
@@ -437,7 +405,6 @@ class TestCryptCore(unittest.TestCase):
                     "sha3_512": 0,
                     "blake2b": 500,
                     "shake256": 500,
-                    "whirlpool": 0,
                 },
                 "kdf_config": {
                     "scrypt": {
@@ -456,7 +423,6 @@ class TestCryptCore(unittest.TestCase):
                         "type": 2,  # Argon2id
                         "rounds": 1,
                     },
-                    "pbkdf2_iterations": 1000,  # Use low value for faster tests
                 },
             }
         }
@@ -737,12 +703,8 @@ class TestCryptCore(unittest.TestCase):
         """Test key generation with various configurations."""
         # Test with basic configuration
         salt = os.urandom(16)
-        key1, _, _ = generate_key(
-            self.test_password, salt, self.basic_hash_config, pbkdf2_iterations=1000, quiet=True
-        )
-        key2, _, _ = generate_key(
-            self.test_password, salt, self.basic_hash_config, pbkdf2_iterations=1000, quiet=True
-        )
+        key1, _, _ = generate_key(self.test_password, salt, self.basic_hash_config, quiet=True)
+        key2, _, _ = generate_key(self.test_password, salt, self.basic_hash_config, quiet=True)
         self.assertIsNotNone(key1)
         self.assertEqual(key1, key2)
 
@@ -752,14 +714,12 @@ class TestCryptCore(unittest.TestCase):
                 self.test_password,
                 salt,
                 self.strong_hash_config,
-                pbkdf2_iterations=1000,
                 quiet=True,
             )
             key4, _, _ = generate_key(
                 self.test_password,
                 salt,
                 self.strong_hash_config,
-                pbkdf2_iterations=1000,
                 quiet=True,
             )
             self.assertIsNotNone(key3)
@@ -1208,7 +1168,6 @@ class TestFileOperations(unittest.TestCase):
             "sha256": 0,
             "sha3_256": 0,
             "sha3_512": 0,
-            "whirlpool": 0,
             "scrypt": {"n": 0, "r": 8, "p": 1},
             "argon2": {
                 "enabled": False,
@@ -1218,7 +1177,6 @@ class TestFileOperations(unittest.TestCase):
                 "hash_len": 16,
                 "type": 2,
             },
-            "pbkdf2_iterations": 1000,  # Low value for tests
         }
 
     def tearDown(self):
@@ -1428,7 +1386,6 @@ class TestEncryptionEdgeCases(unittest.TestCase):
             "sha256": 0,
             "sha3_256": 0,
             "sha3_512": 0,
-            "whirlpool": 0,
             "scrypt": {"n": 0, "r": 8, "p": 1},
             "argon2": {
                 "enabled": False,
@@ -1438,7 +1395,6 @@ class TestEncryptionEdgeCases(unittest.TestCase):
                 "hash_len": 16,
                 "type": 2,
             },
-            "pbkdf2_iterations": 1000,  # Low value for tests
         }
 
     def tearDown(self):
@@ -1566,14 +1522,13 @@ class TestEncryptionEdgeCases(unittest.TestCase):
 
         # Generate keys directly with fixed salt for reproducibility
         salt = b"fixed_salt_16byte"
-        hash_config = {"pbkdf2_iterations": 1000}
+        hash_config = {"sha256": 1}
 
         # Generate a key for encryption
         key, _, _ = generate_key(
             unicode_password,
             salt,
             hash_config,
-            pbkdf2_iterations=1000,
             quiet=True,
             algorithm=EncryptionAlgorithm.FERNET.value,
         )
@@ -1594,7 +1549,6 @@ class TestEncryptionEdgeCases(unittest.TestCase):
             unicode_password,
             salt,
             hash_config,
-            pbkdf2_iterations=1000,
             quiet=True,
             algorithm=EncryptionAlgorithm.FERNET.value,
         )
@@ -2490,45 +2444,6 @@ class TestCryptErrorsFixes(unittest.TestCase):
         # The main thread's jitter count should be unaffected by the other threads
         main_thread_count = getattr(_jitter_state, "jitter_count", 0)
         self.assertIsNotNone(main_thread_count)
-
-    def test_whirlpool_python_3_13_compatibility(self):
-        """Test that setup_whirlpool properly handles Python 3.13+ compatibility."""
-        import sys
-        import unittest.mock
-
-        # Only run the test if WHIRLPOOL_AVAILABLE is True
-        if not WHIRLPOOL_AVAILABLE:
-            self.skipTest("Whirlpool not available")
-
-        # Test the setup_whirlpool function with mocked Python version
-        from openssl_encrypt.modules.setup_whirlpool import install_whirlpool
-
-        # Mock Python version info to simulate Python 3.13
-        original_version_info = sys.version_info
-
-        class MockVersionInfo:
-            def __init__(self, major, minor):
-                self.major = major
-                self.minor = minor
-
-        with unittest.mock.patch("sys.version_info", MockVersionInfo(3, 13)):
-            # Mock subprocess.check_call to prevent actual package installation
-            with unittest.mock.patch("subprocess.check_call") as mock_check_call:
-                # Call install_whirlpool and verify it tries to install the right package
-                result = install_whirlpool()
-
-                # Verify it attempted to check for whirlpool-py313 availability
-                mock_check_call.assert_called()
-
-                # Check that the function tried to install a compatible package
-                for call_args in mock_check_call.call_args_list:
-                    args = call_args[0][0]
-                    if "pip" in args and "install" in args:
-                        # The package should be one of these two, depending on availability
-                        self.assertTrue(
-                            "whirlpool-py313" in args or "whirlpool-py311" in args,
-                            f"Expected py313 or py311 package, but got: {args}",
-                        )
 
 
 class TestErrorMessageConsistency(unittest.TestCase):

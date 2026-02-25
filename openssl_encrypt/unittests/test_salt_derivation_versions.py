@@ -45,7 +45,6 @@ class TestSaltDerivationVersions(unittest.TestCase):
             "sha3_512": 0,
             "blake2b": 0,
             "shake256": 0,
-            "whirlpool": 0,
             "scrypt": {"n": 0, "r": 8, "p": 1},
             "argon2": {
                 "enabled": False,
@@ -55,7 +54,6 @@ class TestSaltDerivationVersions(unittest.TestCase):
                 "hash_len": 16,
                 "type": 2,
             },
-            "pbkdf2_iterations": 1000,
         }
 
     def tearDown(self):
@@ -149,13 +147,6 @@ class TestSaltDerivationVersions(unittest.TestCase):
         # The actual behavior is tested via integration tests (encrypt/decrypt)
         # and the KDF registry tests (test_kdf_registry.py::TestMultiRoundKDF)
         self.assertTrue(True, "Security improvement documented")
-
-    def test_multi_round_pbkdf2_v8_v9(self):
-        """Test multi-round PBKDF2 behavior (documented test)."""
-        # Note: Multi-round PBKDF2 now uses chained salt derivation in v9.
-        # Direct testing via multi_hash_password requires complex config.
-        # The behavior is tested in test_kdf_registry.py::TestMultiRoundKDF
-        self.assertTrue(True, "PBKDF2 multi-round behavior documented")
 
     def test_multi_round_scrypt_v8_v9(self):
         """Test multi-round Scrypt with v8 vs v9 salt derivation."""
@@ -253,42 +244,6 @@ class TestSaltDerivationVersions(unittest.TestCase):
             except Exception as e2:
                 self.skipTest(f"Hash functions not available: {e}, {e2}")
 
-    def test_single_round_kdf_unchanged(self):
-        """Test that v8 and v9 use different salt derivation even with single round."""
-        salt = b"single_round_tst"
-
-        # Hash config with single round
-        single_round_config = {"pbkdf2_iterations": 1000, "pbkdf2": {"rounds": 1}}
-
-        # v8 with single round (uses SHA256-hashed salt even for round 0)
-        key_v8, _, _ = generate_key(
-            password=self.test_password,
-            salt=salt,
-            hash_config=single_round_config,
-            algorithm=EncryptionAlgorithm.AES_GCM.value,
-            quiet=True,
-            format_version=8,
-        )
-
-        # v9 with single round (uses base_salt directly for round 0)
-        key_v9, _, _ = generate_key(
-            password=self.test_password,
-            salt=salt,
-            hash_config=single_round_config,
-            algorithm=EncryptionAlgorithm.AES_GCM.value,
-            quiet=True,
-            format_version=9,
-        )
-
-        # Even with 1 round, v8 and v9 should produce different results
-        # v8: Uses SHA256(salt + "0") for round 0
-        # v9: Uses salt directly for round 0
-        self.assertNotEqual(
-            bytes(key_v8),
-            bytes(key_v9),
-            "Single-round KDF should still differ between v8 (predictable) and v9 (secure)",
-        )
-
     def test_encryption_roundtrip_with_multi_round_kdf(self):
         """Test full encryption/decryption roundtrip (uses v9)."""
         encrypted_file = os.path.join(self.test_dir, "encrypted_roundtrip.enc")
@@ -371,8 +326,6 @@ class TestSaltDerivationVersions(unittest.TestCase):
 
         # Test with multiple KDF configurations
         configs = [
-            # PBKDF2 multi-round
-            {"pbkdf2_iterations": 1000, "pbkdf2": {"rounds": 2}},
             # Scrypt multi-round
             {"scrypt": {"enabled": True, "n": 1024, "r": 4, "p": 1, "rounds": 2}},
             # BLAKE2b multi-round
@@ -417,48 +370,12 @@ class TestSaltDerivationVersions(unittest.TestCase):
                         continue
                     raise
 
-    def test_v8_remains_backward_compatible(self):
-        """Test that v8 still uses predictable salt derivation (backward compatibility)."""
-        salt = b"v8_compat_salt__"
-
-        # Hash config with multi-round PBKDF2
-        pbkdf2_config = {"pbkdf2_iterations": 1000, "pbkdf2": {"rounds": 2}}
-
-        # v8: Predictable salt derivation (vulnerable but backward compatible)
-        key_v8, _, _ = generate_key(
-            password=self.test_password,
-            salt=salt,
-            hash_config=pbkdf2_config,
-            algorithm=EncryptionAlgorithm.AES_GCM.value,
-            quiet=True,
-            format_version=8,
-        )
-
-        # v9: Secure chained derivation
-        key_v9, _, _ = generate_key(
-            password=self.test_password,
-            salt=salt,
-            hash_config=pbkdf2_config,
-            algorithm=EncryptionAlgorithm.AES_GCM.value,
-            quiet=True,
-            format_version=9,
-        )
-
-        # v8 and v9 should produce different keys
-        # (v8 remains vulnerable for backward compatibility)
-        self.assertNotEqual(
-            bytes(key_v8),
-            bytes(key_v9),
-            "v8 should use predictable derivation (different from secure v9)",
-        )
-
     def test_multi_round_kdf_v7_v9_all_algorithms(self):
         """Test all KDF algorithms with v7 and v9 to ensure equivalence."""
         salt = b"kdf_test_salt___"
 
         # Test all supported KDF algorithms
         test_configs = [
-            ("PBKDF2", {"pbkdf2_iterations": 1000, "pbkdf2": {"rounds": 3}}),
             (
                 "Argon2",
                 {

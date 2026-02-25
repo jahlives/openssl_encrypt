@@ -3,7 +3,6 @@
 Test suite for specific encryption algorithms and bindings.
 
 This module contains comprehensive tests for:
-- Camellia cipher implementation
 - Algorithm deprecation warnings
 - RandomX KDF integration
 - AEAD (Authenticated Encryption with Associated Data) bindings
@@ -14,7 +13,6 @@ import json
 import logging
 import os
 import shutil
-import statistics
 import subprocess
 import sys
 import tempfile
@@ -29,7 +27,6 @@ import pytest
 
 # Import the modules to test
 from openssl_encrypt.modules.crypt_core import (
-    CamelliaCipher,
     EncryptionAlgorithm,
     decrypt_file,
     encrypt_file,
@@ -41,7 +38,6 @@ from openssl_encrypt.modules.crypt_errors import (
     DecryptionError,
     ValidationError,
 )
-from openssl_encrypt.modules.secure_ops import constant_time_pkcs7_unpad
 
 # Try to import PQC modules
 try:
@@ -76,123 +72,6 @@ class LogCapture(logging.Handler):
     def clear(self):
         self.records = []
         self.output = StringIO()
-
-
-class TestCamelliaImplementation(unittest.TestCase):
-    """Test cases for the Camellia cipher implementation with focus on timing side channels."""
-
-    def setUp(self):
-        """Set up test environment."""
-        # Generate a random key for testing
-        self.test_key = os.urandom(32)
-        self.cipher = CamelliaCipher(self.test_key)
-
-        # Test data and nonce
-        self.test_data = b"This is a test message for Camellia encryption."
-        self.test_nonce = os.urandom(16)  # 16 bytes for Camellia CBC
-        self.test_aad = b"Additional authenticated data"
-
-    def test_encrypt_decrypt_basic(self):
-        """Test basic encryption and decryption functionality with HMAC authentication."""
-        # Encrypt data
-        encrypted = self.cipher.encrypt(self.test_nonce, self.test_data, self.test_aad)
-
-        # Decrypt data
-        decrypted = self.cipher.decrypt(self.test_nonce, encrypted, self.test_aad)
-
-        # Verify decrypted data matches original
-        self.assertEqual(self.test_data, decrypted)
-
-    def test_decrypt_modified_ciphertext(self):
-        """Test decryption with modified ciphertext (should fail with HMAC)."""
-        # Encrypt data
-        encrypted = self.cipher.encrypt(self.test_nonce, self.test_data, self.test_aad)
-
-        # Modify the ciphertext (flip a byte)
-        modified = bytearray(encrypted)
-        position = len(modified) // 2
-        modified[position] = modified[position] ^ 0xFF
-
-        # Attempt to decrypt modified ciphertext (should fail)
-        with self.assertRaises(Exception):
-            self.cipher.decrypt(self.test_nonce, bytes(modified), self.test_aad)
-
-    def test_constant_time_pkcs7_unpad(self):
-        """Test the constant-time PKCS#7 unpadding function."""
-        # Test valid padding with different padding lengths
-        for pad_len in range(1, 17):
-            # Create padded data with pad_len padding bytes
-            data = b"Test data"
-            # Make sure the data is of proper block size (16 bytes)
-            block_size = 16
-            data_with_padding = data + bytes([0]) * (block_size - (len(data) % block_size))
-            # Replace the padding with valid PKCS#7 padding
-            padded = data_with_padding[:-pad_len] + bytes([pad_len] * pad_len)
-
-            # Ensure padded data is a multiple of block size
-            self.assertEqual(
-                len(padded) % block_size,
-                0,
-                f"Padded data length {len(padded)} is not a multiple of {block_size}",
-            )
-
-            # Unpad and verify
-            unpadded, is_valid = constant_time_pkcs7_unpad(padded, block_size)
-            self.assertTrue(is_valid, f"Padding of length {pad_len} not recognized as valid")
-            # Correct expected data based on our padding algorithm
-            expected_data = data_with_padding[:-pad_len]
-            self.assertEqual(expected_data, unpadded)
-
-        # Test invalid padding
-        invalid_padded = b"Test data" + bytes([0]) * 7  # Ensure 16 bytes total
-        modified = bytearray(invalid_padded)
-        modified[-1] = 5  # Set last byte to indicate 5 bytes of padding
-
-        # Unpad and verify it's detected as invalid (not all padding bytes are 5)
-        unpadded, is_valid = constant_time_pkcs7_unpad(bytes(modified), 16)
-        self.assertFalse(is_valid)
-
-    def test_timing_consistency_valid_vs_invalid(self):
-        """Test that valid and invalid paddings take similar time to process."""
-        # Create valid padded data
-        valid_padding = b"Valid data" + bytes([4] * 4)  # 4 bytes of padding
-
-        # Create invalid padded data
-        invalid_padding = b"Invalid" + bytes([0]) * 7  # Ensure 16 bytes total
-        modified = bytearray(invalid_padding)
-        modified[-1] = 5  # Set last byte to indicate 5 bytes of padding
-
-        # Measure time for valid unpadding (multiple runs)
-        valid_times = []
-        for _ in range(20):  # Reduced from 100 to 20 for faster test runs
-            start = time.perf_counter()
-            constant_time_pkcs7_unpad(valid_padding, 16)
-            valid_times.append(time.perf_counter() - start)
-
-        # Measure time for invalid unpadding (multiple runs)
-        invalid_times = []
-        for _ in range(20):  # Reduced from 100 to 20 for faster test runs
-            start = time.perf_counter()
-            constant_time_pkcs7_unpad(bytes(modified), 16)
-            invalid_times.append(time.perf_counter() - start)
-
-        # Calculate statistics
-        valid_mean = statistics.mean(valid_times)
-        invalid_mean = statistics.mean(invalid_times)
-
-        # Times should be similar - we don't make strict assertions because
-        # of system variations, but they should be within an order of magnitude
-        ratio = max(valid_mean, invalid_mean) / min(valid_mean, invalid_mean)
-        self.assertLess(ratio, 5.0)  # Increased from 3.0 to 5.0 for test stability
-
-    def test_different_data_sizes(self):
-        """Test with different data sizes to ensure consistent behavior."""
-        sizes = [10, 100, 500]  # Reduced from [10, 100, 1000] for faster test runs
-        for size in sizes:
-            data = os.urandom(size)
-            encrypted = self.cipher.encrypt(self.test_nonce, data)
-            decrypted = self.cipher.decrypt(self.test_nonce, encrypted)
-            self.assertEqual(data, decrypted)
 
 
 @unittest.skipIf(not LIBOQS_AVAILABLE, "liboqs-python not available, skipping keystore tests")
@@ -474,8 +353,6 @@ class TestAlgorithmWarnings(unittest.TestCase):
                 "sha3_512": 0,
                 "blake2b": 0,
                 "shake256": 0,
-                "whirlpool": 0,
-                "pbkdf2_iterations": 100000,
                 "scrypt": {"enabled": False, "n": 0, "r": 0, "p": 0, "rounds": 0},
                 "argon2": {
                     "enabled": False,
@@ -548,7 +425,6 @@ class TestRandomXIntegration(unittest.TestCase):
             "sha3_512": 0,
             "blake2b": 0,  # Added for testing new hash function
             "shake256": 0,  # Added for testing new hash function
-            "whirlpool": 0,
             "scrypt": {
                 "enabled": False,
                 "n": 1024,  # Reduced from potentially higher values
@@ -565,7 +441,6 @@ class TestRandomXIntegration(unittest.TestCase):
                 "type": 2,  # Argon2id
                 "rounds": 1,
             },
-            "pbkdf2_iterations": 1000,  # Reduced for testing
         }
 
         # RandomX test configuration (flattened structure)
@@ -576,7 +451,6 @@ class TestRandomXIntegration(unittest.TestCase):
             "sha3_512": 0,
             "blake2b": 0,
             "shake256": 0,
-            "whirlpool": 0,
             "scrypt": {
                 "enabled": False,
                 "n": 1024,
@@ -600,7 +474,6 @@ class TestRandomXIntegration(unittest.TestCase):
                 "height": 1,
                 "hash_len": 32,
             },
-            "pbkdf2_iterations": 0,  # Disable PBKDF2 when using RandomX
         }
 
         # Config with hashes before RandomX (no security warning expected)
@@ -612,7 +485,6 @@ class TestRandomXIntegration(unittest.TestCase):
             "sha3_512": 0,
             "blake2b": 0,
             "shake256": 0,
-            "whirlpool": 0,
             "scrypt": {
                 "enabled": False,
                 "n": 1024,
@@ -636,7 +508,6 @@ class TestRandomXIntegration(unittest.TestCase):
                 "height": 1,
                 "hash_len": 32,
             },
-            "pbkdf2_iterations": 0,  # Explicitly disable PBKDF2 fallback
         }
 
     def tearDown(self):
@@ -958,7 +829,6 @@ class TestAEADBinding(unittest.TestCase):
         """Test that non-AEAD algorithms are correctly identified."""
         non_aead_algorithms = [
             EncryptionAlgorithm.FERNET,
-            EncryptionAlgorithm.CAMELLIA,
         ]
         for algo in non_aead_algorithms:
             self.assertFalse(is_aead_algorithm(algo), f"{algo.value} should NOT be AEAD")

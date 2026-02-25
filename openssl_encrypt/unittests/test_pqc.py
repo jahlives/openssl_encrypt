@@ -74,7 +74,6 @@ class TestPostQuantumCrypto(unittest.TestCase):
             "sha3_512": 0,
             "blake2b": 0,
             "shake256": 0,
-            "whirlpool": 0,
             "scrypt": {"n": 0, "r": 8, "p": 1},
             "argon2": {
                 "enabled": False,
@@ -84,7 +83,6 @@ class TestPostQuantumCrypto(unittest.TestCase):
                 "hash_len": 16,
                 "type": 2,  # Argon2id
             },
-            "pbkdf2_iterations": 1000,  # Use low value for faster tests
         }
 
         # Get available PQC algorithms
@@ -211,7 +209,6 @@ class TestPostQuantumCrypto(unittest.TestCase):
         algorithms = [
             "aes-gcm",
             "aes-gcm-siv",
-            "aes-ocb3",
             "aes-siv",
             "chacha20-poly1305",
             "xchacha20-poly1305",
@@ -343,7 +340,6 @@ class TestPostQuantumCrypto(unittest.TestCase):
         encryption_data_options = [
             "aes-gcm",
             "aes-gcm-siv",
-            "aes-ocb3",
             "aes-siv",
             "chacha20-poly1305",
             "xchacha20-poly1305",
@@ -557,7 +553,6 @@ class TestPostQuantumCrypto(unittest.TestCase):
         encryption_data_options = [
             "aes-gcm",
             "aes-gcm-siv",
-            "aes-ocb3",
             "aes-siv",
             "chacha20-poly1305",
             "xchacha20-poly1305",
@@ -728,7 +723,6 @@ class TestPostQuantumCrypto(unittest.TestCase):
                 [
                     "aes-gcm",
                     "aes-gcm-siv",
-                    "aes-ocb3",
                     "aes-siv",
                     "chacha20-poly1305",
                     "xchacha20-poly1305",
@@ -784,7 +778,6 @@ class TestPostQuantumCrypto(unittest.TestCase):
                     choices=[
                         "aes-gcm",
                         "aes-gcm-siv",
-                        "aes-ocb3",
                         "aes-siv",
                         "chacha20-poly1305",
                         "xchacha20-poly1305",
@@ -892,10 +885,8 @@ class TestPostQuantumCrypto(unittest.TestCase):
                 "sha3_512": 0,
                 "blake2b": 0,
                 "shake256": 0,
-                "whirlpool": 0,
                 "scrypt": {"enabled": False, "n": 1024, "r": 8, "p": 1},
                 "argon2": {"enabled": False},
-                "pbkdf2_iterations": 1000,
             }
 
             # Encrypt the file with dual encryption
@@ -1099,7 +1090,6 @@ class TestPostQuantumCrypto(unittest.TestCase):
             "sha3_512": 0,
             "blake2b": 0,
             "shake256": 0,
-            "whirlpool": 0,
             "scrypt": {"n": 0, "r": 8, "p": 1},
             "argon2": {
                 "enabled": False,
@@ -1109,7 +1099,6 @@ class TestPostQuantumCrypto(unittest.TestCase):
                 "hash_len": 16,
                 "type": 2,
             },
-            "pbkdf2_iterations": 1000,
         }
 
         # Add key to keystore and save file password for later
@@ -1215,10 +1204,8 @@ class TestPostQuantumCrypto(unittest.TestCase):
             "sha3_512": 0,
             "blake2b": 0,
             "shake256": 0,
-            "whirlpool": 0,
             "scrypt": {"n": 0, "r": 8, "p": 1},
             "argon2": {"enabled": False},
-            "pbkdf2_iterations": 1000,
         }
 
         print(f"DEBUG: Using key_id: {key_id}")
@@ -1398,7 +1385,6 @@ def test_file_decryption_wrong_algorithm_v3(filename):
         "xchacha20-poly1305",
         "aes-siv",
         "aes-gcm-siv",
-        "aes-ocb3",
         "ml-kem-512-hybrid",
         "ml-kem-768-hybrid",
         "ml-kem-1024-hybrid",

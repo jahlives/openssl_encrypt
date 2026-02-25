@@ -192,17 +192,6 @@ class TestCrossVersionV8V10(unittest.TestCase):
         # v8 and v10 should produce SAME keys (both use secure derivation)
         self.assertEqual(key_v8, key_v10, "Keys should match with multiple algorithms")
 
-    def test_v8_v10_with_pbkdf2(self):
-        """Test v8/v10 key equivalence with PBKDF2."""
-        password = b"pbkdf2_test"
-        salt = b"pbkdf2_salt_1234"
-        hash_config = {"sha512": 10, "pbkdf2_iterations": 1000}
-
-        key_v8, _, _ = generate_key(password, salt, hash_config, format_version=8, quiet=True)
-        key_v10, _, _ = generate_key(password, salt, hash_config, format_version=10, quiet=True)
-
-        self.assertEqual(key_v8, key_v10, "Keys should match with PBKDF2")
-
     def test_v8_v10_with_single_hash(self):
         """Test v8/v10 key equivalence with single hash algorithm."""
         password = b"single_hash_test"

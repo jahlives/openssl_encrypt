@@ -87,8 +87,6 @@ REQUIRED_ARGUMENT_GROUPS = {
         "blake3-rounds",  # BLAKE3 hash rounds (1.1.0)
         "shake256-rounds",
         "shake128-rounds",  # SHAKE-128 hash rounds (1.1.0)
-        "whirlpool-rounds",
-        "pbkdf2-iterations",  # PBKDF2 options
         # Hash function flags (main CLI boolean enablers)
         "sha256",  # Enable SHA-256 hashing
         "sha512",  # Enable SHA-512 hashing

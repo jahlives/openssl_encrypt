@@ -145,7 +145,6 @@ class TestSecureErrorHandling(unittest.TestCase):
             "sha3_512": 0,
             "blake2b": 0,
             "shake256": 0,
-            "whirlpool": 0,
             "scrypt": {"n": 0, "r": 8, "p": 1},
             "argon2": {
                 "enabled": False,
@@ -155,7 +154,6 @@ class TestSecureErrorHandling(unittest.TestCase):
                 "hash_len": 16,
                 "type": 2,  # Argon2id
             },
-            "pbkdf2_iterations": 1000,  # Use low value for faster tests
         }
 
     def tearDown(self):
@@ -338,7 +336,6 @@ class TestBufferOverflowProtection(unittest.TestCase):
             "sha3_512": 0,
             "blake2b": 0,
             "shake256": 0,
-            "whirlpool": 0,
             "scrypt": {"n": 0, "r": 8, "p": 1},
             "argon2": {
                 "enabled": False,
@@ -348,7 +345,6 @@ class TestBufferOverflowProtection(unittest.TestCase):
                 "hash_len": 16,
                 "type": 2,  # Argon2id
             },
-            "pbkdf2_iterations": 1000,  # Use low value for faster tests
         }
 
     def tearDown(self):
@@ -544,8 +540,7 @@ class TestBufferOverflowProtection(unittest.TestCase):
                 key, _, _ = generate_key(
                     long_password,
                     salt,
-                    {"pbkdf2_iterations": 100},
-                    pbkdf2_iterations=100,
+                    {"sha256": 1},
                     quiet=True,
                 )
 
@@ -1290,7 +1285,6 @@ def test_kyber_v5_wrong_encryption_data():
         encryption_data_options = [
             "aes-gcm",
             "aes-gcm-siv",
-            "aes-ocb3",
             "aes-siv",
             "chacha20-poly1305",
             "xchacha20-poly1305",
