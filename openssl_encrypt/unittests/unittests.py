@@ -14877,8 +14877,6 @@ class TestAEADBinding(unittest.TestCase):
                 self.assertEqual(decrypted_data, test_data, f"{algorithm.value} decryption failed")
 
 
-
-
 class TestIndependentXORv9(unittest.TestCase):
     """Test suite for v9 Independent XOR composition (Massey)."""
 
@@ -14976,12 +14974,8 @@ class TestIndependentXORv9(unittest.TestCase):
 
         for algorithm in algorithms:
             with self.subTest(algorithm=algorithm.value):
-                encrypted_file = os.path.join(
-                    self.test_dir, f"encrypted_v9_{algorithm.value}.bin"
-                )
-                decrypted_file = os.path.join(
-                    self.test_dir, f"decrypted_v9_{algorithm.value}.txt"
-                )
+                encrypted_file = os.path.join(self.test_dir, f"encrypted_v9_{algorithm.value}.bin")
+                decrypted_file = os.path.join(self.test_dir, f"decrypted_v9_{algorithm.value}.txt")
                 self.test_files.extend([encrypted_file, decrypted_file])
 
                 # Encrypt

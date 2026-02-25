@@ -10,15 +10,15 @@ argon2-cffi-bindings==21.2.0
     # via argon2-cffi
 blake3==1.0.5
     # via -r requirements-prod.in
-cffi==1.17.1
+cffi==2.0.0
     # via
     #   argon2-cffi-bindings
     #   cryptography
-cryptography==44.0.3
+cryptography==46.0.5
     # via -r requirements-prod.in
 numpy==2.3.2
     # via -r requirements-prod.in
-pillow==12.1.0
+pillow==12.1.1
     # via
     #   -r requirements-prod.in
     #   qrcode
