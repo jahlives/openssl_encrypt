@@ -1,6 +1,6 @@
 # Production dependencies for openssl_encrypt
 # Core dependencies
-cryptography>=44.0.1,<45.0.0
+cryptography>=46.0.5,<47.0.0
 argon2-cffi>=23.1.0,<24.0.0
 whirlpool-py311>=1.0.0,<2.0.0; python_version >= '3.11'
 PyYAML>=6.0.2,<7.0.0
@@ -9,7 +9,7 @@ jsonschema>=4.0.0,<5.0.0
 requests>=2.31.0,<3.0.0
 
 # Steganography dependencies (v1.3.0)
-Pillow>=10.0.0,<13.0.0
+Pillow>=12.1.1,<13.0.0
 numpy>=2.1.0,<3.0.0
 
 # Video steganography removed due to reliability issues

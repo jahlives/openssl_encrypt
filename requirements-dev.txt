@@ -50,7 +50,7 @@ click==8.3.1
     #   typer
 coverage[toml]==7.13.1
     # via pytest-cov
-cryptography==44.0.3
+cryptography==46.0.5
     # via
     #   -r requirements-prod.in
     #   authlib
@@ -118,9 +118,10 @@ packaging==25.0
     #   pytest
     #   safety
     #   safety-schemas
+    #   wheel
 pathspec==1.0.3
     # via black
-pillow==12.1.0
+pillow==12.1.1
     # via
     #   -r requirements-prod.in
     #   qrcode
@@ -226,8 +227,10 @@ virtualenv==20.36.1
     # via
     #   -r requirements-dev.in
     #   pre-commit
-wheel==0.45.1
-    # via pip-tools
+wheel==0.46.3
+    # via
+    #   -r requirements-dev.in
+    #   pip-tools
 whirlpool-py311==1 ; python_version >= "3.11"
     # via -r requirements-prod.in
 

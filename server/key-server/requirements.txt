@@ -13,5 +13,5 @@ alembic==1.13.1  # Database migrations (optional)
 # liboqs-python built from source in Dockerfile
 
 # Utilities
-python-multipart==0.0.6  # For form data
+python-multipart>=0.0.22  # For form data (updated to fix arbitrary file write CVE)
 python-dotenv==1.0.0  # Environment variables
