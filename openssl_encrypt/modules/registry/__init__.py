@@ -72,7 +72,6 @@ __all__ = [
 from .cipher_registry import (
     AES256GCM,
     AESGCMSIV,
-    AESOCB3,
     AESSIV,
     ChaCha20Poly1305,
     CipherBase,
@@ -94,7 +93,6 @@ __all__.extend(
         "AES256GCM",
         "AESGCMSIV",
         "AESSIV",
-        "AESOCB3",
         "ChaCha20Poly1305",
         "XChaCha20Poly1305",
         "Threefish512",

@@ -225,7 +225,6 @@ class ExtendedPQCipher(PQCipher):
                 from cryptography.hazmat.primitives.ciphers.aead import (
                     AESGCM,
                     AESGCMSIV,
-                    AESOCB3,
                     AESSIV,
                     ChaCha20Poly1305,
                 )
@@ -234,7 +233,6 @@ class ExtendedPQCipher(PQCipher):
                 self.ChaCha20Poly1305 = ChaCha20Poly1305
                 self.AESSIV = AESSIV
                 self.AESGCMSIV = AESGCMSIV
-                self.AESOCB3 = AESOCB3
             except ImportError:
                 raise ImportError("The 'cryptography' library is required")
 
@@ -311,8 +309,6 @@ class ExtendedPQCipher(PQCipher):
                 cipher = self.AESGCMSIV(symmetric_key)
             elif self.encryption_data == "aes-siv":
                 cipher = self.AESSIV(symmetric_key)
-            elif self.encryption_data == "aes-ocb3":
-                cipher = self.AESOCB3(symmetric_key)
             else:
                 # Default to AES-GCM for unknown algorithms
                 if not self.quiet:
@@ -417,8 +413,6 @@ class ExtendedPQCipher(PQCipher):
                     cipher = self.AESGCMSIV(symmetric_key)
                 elif self.encryption_data == "aes-siv":
                     cipher = self.AESSIV(symmetric_key)
-                elif self.encryption_data == "aes-ocb3":
-                    cipher = self.AESOCB3(symmetric_key)
                 else:
                     # Default to AES-GCM for unknown algorithms
                     if not self.quiet:

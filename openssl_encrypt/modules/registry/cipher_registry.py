@@ -485,118 +485,6 @@ class AESSIV(CipherBase):
             _secure_cleanup(key, key_bytes)
 
 
-class AESOCB3(CipherBase):
-    """
-    AES-256-OCB3 - Offset Codebook Mode v3 (DEPRECATED).
-
-    ⚠️ DEPRECATED: Security concerns with short nonces.
-    Use AES-GCM or AES-GCM-SIV instead.
-    """
-
-    @classmethod
-    def info(cls) -> AlgorithmInfo:
-        return AlgorithmInfo(
-            name="aes-256-ocb3",
-            display_name="AES-256-OCB3 (DEPRECATED)",
-            category=AlgorithmCategory.CIPHER,
-            security_bits=256,
-            pq_security_bits=128,
-            security_level=SecurityLevel.LEGACY,  # Deprecated
-            description="AES-256-OCB3 - DEPRECATED due to security concerns with short nonces",
-            key_size=32,
-            nonce_size=12,
-            tag_size=16,
-            block_size=16,
-            aliases=("aes-ocb3", "aesocb3"),
-            references=("RFC 7253",),
-        )
-
-    @classmethod
-    def get_key_size(cls) -> int:
-        return 32
-
-    def generate_nonce(self) -> bytes:
-        return generate_random_bytes(12)
-
-    def encrypt(
-        self,
-        key: Union[bytes, SecureBytes],
-        plaintext: Union[bytes, SecureBytes],
-        nonce: Optional[bytes] = None,
-        associated_data: Optional[bytes] = None,
-    ) -> bytes:
-        self.check_available()
-
-        # Issue deprecation warning
-        import warnings
-
-        warnings.warn(
-            "AES-OCB3 is deprecated due to security concerns. Use AES-GCM instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
-        # Convert SecureBytes to bytes for library
-        key_bytes = _convert_to_bytes(key)
-        plaintext_bytes = _convert_to_bytes(plaintext)
-
-        try:
-            if len(key_bytes) != 32:
-                raise ValidationError(f"AES-256-OCB3 requires 32-byte key, got {len(key_bytes)}")
-
-            if nonce is None:
-                nonce = self.generate_nonce()
-
-            if len(nonce) != 12:
-                raise ValidationError(f"AES-OCB3 nonce must be 12 bytes, got {len(nonce)}")
-
-            from cryptography.hazmat.primitives.ciphers.aead import AESOCB3
-
-            cipher = AESOCB3(key_bytes)
-            encrypted = cipher.encrypt(nonce, plaintext_bytes, associated_data)
-
-            return nonce + encrypted
-        finally:
-            # Zero copies if originals were SecureBytes
-            _secure_cleanup(key, key_bytes)
-            _secure_cleanup(plaintext, plaintext_bytes)
-
-    def decrypt(
-        self,
-        key: Union[bytes, SecureBytes],
-        ciphertext: bytes,
-        nonce: Optional[bytes] = None,
-        associated_data: Optional[bytes] = None,
-    ) -> SecureBytes:
-        self.check_available()
-
-        # Convert SecureBytes to bytes for library
-        key_bytes = _convert_to_bytes(key)
-
-        try:
-            if len(key_bytes) != 32:
-                raise ValidationError(f"AES-256-OCB3 requires 32-byte key, got {len(key_bytes)}")
-
-            if nonce is None:
-                if len(ciphertext) < 12 + 16:
-                    raise ValidationError("Ciphertext too short")
-                nonce = ciphertext[:12]
-                ciphertext = ciphertext[12:]
-
-            import cryptography.exceptions
-            from cryptography.hazmat.primitives.ciphers.aead import AESOCB3
-
-            cipher = AESOCB3(key_bytes)
-            try:
-                plaintext = cipher.decrypt(nonce, ciphertext, associated_data)
-                return SecureBytes(plaintext)
-            except cryptography.exceptions.InvalidTag:
-                raise AuthenticationError("Authentication tag verification failed")
-        finally:
-            # Zero key copy if original was SecureBytes
-            _secure_cleanup(key, key_bytes)
-
-
 # ============================================================================
 # ChaCha20 Family
 # ============================================================================
@@ -1201,7 +1089,6 @@ class CipherRegistry(RegistryBase[CipherBase]):
         self.register(AES256GCM)
         self.register(AESGCMSIV)
         self.register(AESSIV)
-        self.register(AESOCB3)
         self.register(ChaCha20Poly1305)
         self.register(XChaCha20Poly1305)
         self.register(Threefish512)

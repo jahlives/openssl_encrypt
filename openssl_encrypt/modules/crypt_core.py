@@ -34,13 +34,7 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives.ciphers.aead import (
-    AESGCM,
-    AESGCMSIV,
-    AESOCB3,
-    AESSIV,
-    ChaCha20Poly1305,
-)
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM, AESGCMSIV, AESSIV, ChaCha20Poly1305
 
 # Import algorithm warning system
 from .algorithm_warnings import (
@@ -646,8 +640,6 @@ class EncryptionAlgorithm(Enum):
     XCHACHA20_POLY1305 = "xchacha20-poly1305"
     AES_SIV = "aes-siv"
     AES_GCM_SIV = "aes-gcm-siv"
-    AES_OCB3 = "aes-ocb3"
-    CAMELLIA = "camellia"
     # Cascade encryption (multi-layer encryption)
     CASCADE = "cascade"
     # NIST FIPS 203 standardized naming (ML-KEM)
@@ -797,7 +789,6 @@ def is_aead_algorithm(algorithm):
         EncryptionAlgorithm.AES_GCM,
         EncryptionAlgorithm.AES_GCM_SIV,
         EncryptionAlgorithm.AES_SIV,
-        EncryptionAlgorithm.AES_OCB3,
         EncryptionAlgorithm.CHACHA20_POLY1305,
         EncryptionAlgorithm.XCHACHA20_POLY1305,
         # Threefish with Poly1305 AEAD (CTR + Poly1305, similar to ChaCha20-Poly1305)
@@ -830,193 +821,6 @@ class KeyStretch:
     key_stretch = False
     hash_stretch = False
     kind_action = "encrypt"
-
-
-class CamelliaCipher:
-    def __init__(self, key):
-        # Issue deprecation warning for Camellia algorithm
-        warn_deprecated_algorithm("camellia", "CamelliaCipher.__init__")
-
-        try:
-            self.key = SecureBytes(key)
-            # Derive a separate HMAC key using HKDF-SHA256 for proper key separation
-            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-
-            hkdf = HKDF(
-                algorithm=hashes.SHA256(),
-                length=32,
-                salt=None,
-                info=b"camellia-hmac-key",
-            )
-            self.hmac_key = SecureBytes(hkdf.derive(bytes(self.key)))
-            # Keep legacy key derivation for backward-compatible decryption
-            self._legacy_hmac_key = SecureBytes(
-                hashlib.sha256(bytes(self.key) + b"hmac_key").digest()
-            )
-        except Exception as e:
-            raise ValidationError("Invalid key material for Camellia cipher", original_exception=e)
-
-    @secure_encrypt_error_handler
-    def encrypt(self, nonce, data, associated_data=None):
-        """
-        Encrypt data using Camellia cipher with authentication.
-
-        Args:
-            nonce (bytes): Initialization vector for CBC mode
-            data (bytes): Data to encrypt
-            associated_data (bytes, optional): Additional data to authenticate
-
-        Returns:
-            bytes: Encrypted data with authentication tag
-
-        Raises:
-            ValidationError: For invalid inputs
-            EncryptionError: If encryption operation fails
-        """
-        if nonce is None or len(nonce) != 16:
-            raise ValidationError(
-                f"Camellia requires a 16-byte IV/nonce, got {len(nonce) if nonce else 'None'}"
-            )
-
-        if data is None:
-            raise ValidationError("Data cannot be None")
-
-        padded_data = None
-        try:
-            # Use authenticated encryption with encrypt-then-MAC pattern
-            # First encrypt with CBC mode
-            cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
-            encryptor = cipher.encryptor()
-
-            # Pad data first - use standard cryptography library implementation
-            padder = padding.PKCS7(algorithms.Camellia.block_size).padder()
-            padded_data = padder.update(data) + padder.finalize()
-
-            # Encrypt the padded data
-            ciphertext = encryptor.update(padded_data) + encryptor.finalize()
-
-            # Add authentication with HMAC
-            # Include nonce and associated data in HMAC computation for context binding
-            hmac_data = nonce + ciphertext
-            if associated_data:
-                hmac_data += associated_data
-
-            # Compute HMAC on the ciphertext for integrity protection
-            hmac_obj = hmac.new(bytes(self.hmac_key), hmac_data, hashlib.sha256)
-            tag = hmac_obj.digest()
-
-            # Return ciphertext with authentication tag
-            return ciphertext + tag
-
-        except Exception as e:
-            raise EncryptionError("Camellia encryption failed", original_exception=e)
-        finally:
-            # Always clean up sensitive data
-            if padded_data is not None:
-                secure_memzero(padded_data)
-
-    @secure_decrypt_error_handler
-    def decrypt(self, nonce, data, associated_data=None):
-        """
-        Decrypt data using Camellia cipher with authentication verification.
-
-        Args:
-            nonce (bytes): Initialization vector used for encryption
-            data (bytes): Encrypted data with authentication tag
-            associated_data (bytes, optional): Additional authenticated data
-
-        Returns:
-            bytes: Decrypted data
-
-        Raises:
-            ValidationError: For invalid inputs
-            AuthenticationError: If integrity verification fails
-            DecryptionError: If decryption fails for other reasons
-        """
-        if nonce is None or len(nonce) != 16:
-            raise ValidationError(
-                f"Camellia requires a 16-byte IV/nonce, got {len(nonce) if nonce else 'None'}"
-            )
-
-        if data is None:
-            raise ValidationError("Encrypted data cannot be None")
-
-        padded_data = None
-        try:
-            # Import the constant-time functions from our secure operations module
-            from .secure_ops import constant_time_compare, constant_time_pkcs7_unpad, verify_mac
-
-            # Split ciphertext and authentication tag
-            tag_size = 32  # SHA-256 HMAC produces 32 bytes
-            if len(data) < tag_size:
-                # Try without HMAC, might be legacy data
-                cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
-                decryptor = cipher.decryptor()
-                padded_data = decryptor.update(data) + decryptor.finalize()
-
-                # Use constant-time unpadding
-                unpadded_data, padding_valid = constant_time_pkcs7_unpad(
-                    padded_data, algorithms.Camellia.block_size
-                )
-
-                if not padding_valid:
-                    raise DecryptionError("Invalid padding in decrypted data")
-
-                return unpadded_data
-
-            # Normal case with HMAC
-            ciphertext = data[:-tag_size]
-            received_tag = data[-tag_size:]
-
-            # Verify HMAC first (encrypt-then-MAC pattern)
-            hmac_data = nonce + ciphertext
-            if associated_data:
-                hmac_data += associated_data
-
-            # Compute expected HMAC with HKDF-derived key
-            hmac_obj = hmac.new(bytes(self.hmac_key), hmac_data, hashlib.sha256)
-            expected_tag = hmac_obj.digest()
-
-            # Also compute with legacy key for backward compatibility
-            legacy_hmac_obj = hmac.new(bytes(self._legacy_hmac_key), hmac_data, hashlib.sha256)
-            legacy_expected_tag = legacy_hmac_obj.digest()
-
-            # Always decrypt data regardless of tag verification outcome
-            # to ensure constant-time operation
-            cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
-            decryptor = cipher.decryptor()
-            padded_data = decryptor.update(ciphertext) + decryptor.finalize()
-
-            # Use constant-time unpadding
-            unpadded_data, padding_valid = constant_time_pkcs7_unpad(
-                padded_data, algorithms.Camellia.block_size
-            )
-
-            # After decryption, verify HMAC using constant-time MAC verification
-            # Try HKDF-derived key first, then fall back to legacy SHA-256 key
-            hmac_valid = verify_mac(expected_tag, received_tag, associated_data)
-            if not hmac_valid:
-                hmac_valid = verify_mac(legacy_expected_tag, received_tag, associated_data)
-
-            if not hmac_valid:
-                raise AuthenticationError("Message authentication failed")
-
-            # Only after HMAC verification do we check padding validity
-            if not padding_valid:
-                raise DecryptionError("Invalid padding in decrypted data")
-
-            return unpadded_data
-
-        except (ValidationError, AuthenticationError, DecryptionError):
-            # Re-raise known error types
-            raise
-        except Exception as e:
-            # Convert any other exceptions to a standardized decryption error
-            raise DecryptionError("Camellia decryption failed", original_exception=e)
-        finally:
-            # Always clean up sensitive data
-            if padded_data is not None:
-                secure_memzero(padded_data)
 
 
 def string_entropy(password: str) -> float:
@@ -2505,8 +2309,6 @@ def generate_key_independent_xor(
         "chacha20-poly1305",
         "xchacha20-poly1305",
         "aes-gcm-siv",
-        "aes-ocb3",
-        "camellia",
         "cascade",
     ]:
         key_length = 32
@@ -2761,14 +2563,9 @@ def generate_key_independent_xor(
             "aes-256-gcm",
             "aes-gcm",
             "aes-gcm-siv",
-            "aes-ocb3",
             "chacha20-poly1305",
             "xchacha20-poly1305",
-            "camellia",
             # PQC hybrid algorithms
-            "kyber512-hybrid",
-            "kyber768-hybrid",
-            "kyber1024-hybrid",
             "ml-kem-512-hybrid",
             "ml-kem-768-hybrid",
             "ml-kem-1024-hybrid",
@@ -2966,10 +2763,6 @@ def generate_key(
         key_length = 64  # AES-SIV requires 64 bytes (2 keys)
     elif algorithm == EncryptionAlgorithm.AES_GCM_SIV.value:
         key_length = 32  # AES-GCM-SIV requires 32 bytes
-    elif algorithm == EncryptionAlgorithm.AES_OCB3.value:
-        key_length = 32  # AES-OCB3 requires 32 bytes
-    elif algorithm == EncryptionAlgorithm.CAMELLIA.value:
-        key_length = 32  # Camellia requires 32 bytes
     elif algorithm == EncryptionAlgorithm.THREEFISH_512.value:
         key_length = 64  # Threefish-512 requires 64 bytes
     elif algorithm == EncryptionAlgorithm.THREEFISH_1024.value:
@@ -4063,7 +3856,6 @@ def generate_key(
     if not KeyStretch.key_stretch and not KeyStretch.hash_stretch:
         if algorithm in [
             EncryptionAlgorithm.AES_GCM.value,
-            EncryptionAlgorithm.CAMELLIA.value,
             EncryptionAlgorithm.CHACHA20_POLY1305.value,
         ]:
             password = hashlib.sha256(password).digest()
@@ -4074,7 +3866,6 @@ def generate_key(
     elif not KeyStretch.key_stretch:
         if algorithm in [
             EncryptionAlgorithm.AES_GCM.value,
-            EncryptionAlgorithm.CAMELLIA.value,
             EncryptionAlgorithm.CHACHA20_POLY1305.value,
         ]:
             password = hashlib.sha256(password).digest()
@@ -6200,9 +5991,6 @@ def encrypt_file(
         elif alg == EncryptionAlgorithm.AES_GCM_SIV:
             # AES-GCM-SIV uses 12 bytes nonce
             return secrets.token_bytes(12), 12
-        elif alg == EncryptionAlgorithm.AES_OCB3:
-            # AES-OCB3 uses 12 bytes nonce
-            return secrets.token_bytes(12), 12
         elif alg == EncryptionAlgorithm.AES_SIV:
             # AES-SIV uses a synthetic IV, using 16 bytes for consistency with AES block size
             # Note: For SIV, the nonce is not used for encryption, just stored with ciphertext
@@ -6227,9 +6015,6 @@ def encrypt_file(
                 # with the cryptography library which expects 12-byte nonces
                 nonce = secrets.token_bytes(24)
                 return nonce, 12
-        elif alg == EncryptionAlgorithm.CAMELLIA:
-            # Camellia in CBC mode requires a full block (16 bytes) for IV
-            return secrets.token_bytes(16), 16
         elif alg == EncryptionAlgorithm.THREEFISH_512:
             # Threefish-512 requires 32-byte nonce
             return secrets.token_bytes(32), 32
@@ -6541,40 +6326,6 @@ def encrypt_file(
                     logger.debug(
                         f"ENCRYPT:AES_GCM_SIV Encrypted payload: {encrypted_payload.hex()}"
                     )
-
-                return nonce + encrypted_payload
-
-            elif algorithm == EncryptionAlgorithm.AES_OCB3:
-                if debug:
-                    logger.debug(f"ENCRYPT:AES_OCB3 Key length: {len(key)} bytes")
-                    logger.debug(f"ENCRYPT:AES_OCB3 Using {nonce_size}-byte nonce for encryption")
-                    logger.debug(f"ENCRYPT:AES_OCB3 Nonce: {nonce[:nonce_size].hex()}")
-
-                cipher = AESOCB3(key)
-                encrypted_payload = cipher.encrypt(nonce[:nonce_size], data, aad)
-
-                if debug:
-                    logger.debug(
-                        f"ENCRYPT:AES_OCB3 Encrypted payload length: {len(encrypted_payload)} bytes"
-                    )
-                    logger.debug(f"ENCRYPT:AES_OCB3 Encrypted payload: {encrypted_payload.hex()}")
-
-                return nonce + encrypted_payload
-
-            elif algorithm == EncryptionAlgorithm.CAMELLIA:
-                if debug:
-                    logger.debug(f"ENCRYPT:CAMELLIA Key length: {len(key)} bytes")
-                    logger.debug(f"ENCRYPT:CAMELLIA Using {nonce_size}-byte nonce for encryption")
-                    logger.debug(f"ENCRYPT:CAMELLIA Nonce: {nonce[:nonce_size].hex()}")
-
-                cipher = CamelliaCipher(key)
-                encrypted_payload = cipher.encrypt(nonce[:nonce_size], data, None)
-
-                if debug:
-                    logger.debug(
-                        f"ENCRYPT:CAMELLIA Encrypted payload length: {len(encrypted_payload)} bytes"
-                    )
-                    logger.debug(f"ENCRYPT:CAMELLIA Encrypted payload: {encrypted_payload.hex()}")
 
                 return nonce + encrypted_payload
 
@@ -8164,8 +7915,6 @@ def decrypt_file(
                 return [(12, 12)]
         elif alg == EncryptionAlgorithm.AES_GCM_SIV.value:
             return [(12, 12)]
-        elif alg == EncryptionAlgorithm.AES_OCB3.value:
-            return [(12, 12)]
         elif alg == EncryptionAlgorithm.AES_SIV.value:
             # AES-SIV can use multiple formats, but nonce doesn't matter for decryption
             return [(0, 0), (12, 0), (16, 0)]
@@ -8183,8 +7932,6 @@ def decrypt_file(
             else:
                 # Even with 24-byte stored nonce, we use 12 bytes for actual encryption with the library
                 return [(24, 12)]
-        elif alg == EncryptionAlgorithm.CAMELLIA.value:
-            return [(16, 16)]
         elif alg == EncryptionAlgorithm.THREEFISH_512.value:
             # Threefish-512 requires 32-byte nonce
             return [(32, 32)]
@@ -8674,25 +8421,6 @@ def decrypt_file(
                                 )
 
                             return result
-                        elif algorithm == EncryptionAlgorithm.AES_OCB3.value:
-                            if debug:
-                                logger.debug(f"DECRYPT:AES_OCB3 Key length: {len(key)} bytes")
-                                logger.debug(f"DECRYPT:AES_OCB3 Ciphertext: {ciphertext.hex()}")
-
-                            cipher = AESOCB3(key)
-                            result = cipher.decrypt(
-                                nonce[:effective_size], ciphertext, aad_for_decrypt
-                            )
-
-                            if debug:
-                                logger.debug(
-                                    f"DECRYPT:AES_OCB3 Decrypted plaintext length: {len(result)} bytes"
-                                )
-                                logger.debug(
-                                    f"DECRYPT:AES_OCB3 Decrypted plaintext: {result.hex()}"
-                                )
-
-                            return result
                         elif algorithm == EncryptionAlgorithm.CHACHA20_POLY1305.value:
                             if debug:
                                 logger.debug(f"DECRYPT:CHACHA20 Key length: {len(key)} bytes")
@@ -8733,23 +8461,6 @@ def decrypt_file(
                                 )
                                 logger.debug(
                                     f"DECRYPT:XCHACHA20 Decrypted plaintext: {result.hex()}"
-                                )
-
-                            return result
-                        elif algorithm == EncryptionAlgorithm.CAMELLIA.value:
-                            if debug:
-                                logger.debug(f"DECRYPT:CAMELLIA Key length: {len(key)} bytes")
-                                logger.debug(f"DECRYPT:CAMELLIA Ciphertext: {ciphertext.hex()}")
-
-                            cipher = CamelliaCipher(key)
-                            result = cipher.decrypt(nonce[:effective_size], ciphertext, None)
-
-                            if debug:
-                                logger.debug(
-                                    f"DECRYPT:CAMELLIA Decrypted plaintext length: {len(result)} bytes"
-                                )
-                                logger.debug(
-                                    f"DECRYPT:CAMELLIA Decrypted plaintext: {result.hex()}"
                                 )
 
                             return result
