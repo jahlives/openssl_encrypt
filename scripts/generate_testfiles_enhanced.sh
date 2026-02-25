@@ -3,8 +3,8 @@
 # Enhanced script to generate test files with parameters derived from filenames
 # Filename format: test_[prefix]_[algo]_[hash1:rounds+hash2:rounds+...]_[kdf1:rounds+kdf2:rounds+...]_[encryption_data].txt
 # Examples:
-#   test_v5_aes-gcm_sha512:10000+sha256:5000_argon2:10+pbkdf2:100000_standard.txt
-#   test_v4_chacha20-poly1305_sha512_pbkdf2.txt  (uses default rounds)
+#   test_v5_aes-gcm_sha512:10000+sha256:5000_argon2:10+scrypt:1024_standard.txt
+#   test_v4_chacha20-poly1305_sha512_argon2.txt  (uses default rounds)
 #
 # - The prefix (v3, v4, v5) in the filename determines which metadata version and output directory to use
 # - You can specify rounds for each hash and KDF using the format hash:rounds or kdf:rounds
@@ -20,19 +20,19 @@ DRY_RUN=false
 BASE_OUTPUT_DIR="openssl_encrypt/unittests/testfiles"
 
 # Available encryption algorithms
-ALGORITHMS=("aes-gcm" "aes-gcm-siv" "aes-ocb3" "aes-siv" "chacha20-poly1305" "xchacha20-poly1305" "fernet")
+ALGORITHMS=("aes-gcm" "aes-gcm-siv" "aes-siv" "chacha20-poly1305" "xchacha20-poly1305" "fernet")
 
 # PQC Algorithms
 PQC_ALGORITHMS=("ml-kem-512-hybrid" "ml-kem-768-hybrid" "ml-kem-1024-hybrid")
 
 # Available encryption data options for PQC
-ENC_DATA=("aes-gcm" "aes-gcm-siv" "aes-ocb3" "aes-siv" "chacha20-poly1305" "xchacha20-poly1305")
+ENC_DATA=("aes-gcm" "aes-gcm-siv" "aes-siv" "chacha20-poly1305" "xchacha20-poly1305")
 
 # Available hash algorithms
-HASHES=("sha256" "sha512" "sha3-256" "sha3-512" "blake2b" "shake256" "whirlpool")
+HASHES=("sha256" "sha512" "sha3-256" "sha3-512" "blake2b" "shake256")
 
 # Available KDFs
-KDFS=("pbkdf2" "argon2" "balloon" "scrypt")
+KDFS=("argon2" "balloon" "scrypt")
 
 # Function to parse filename and extract parameters
 parse_filename() {
@@ -177,10 +177,7 @@ parse_filename() {
                                 # For scrypt, the rounds parameter is used for the 'n' parameter
                                 extra_args+=" --scrypt-rounds $kdf_rounds"
                                 ;;
-                            "pbkdf2")
-                                extra_args+=" --pbkdf2-iterations $kdf_rounds"
-                                ;;
-                        esac
+                            esac
                         break
                     fi
                 done
@@ -211,9 +208,6 @@ parse_filename() {
                         "scrypt")
                             extra_args+=" --scrypt-rounds $kdf_rounds"
                             ;;
-                        "pbkdf2")
-                            extra_args+=" --pbkdf2-iterations $kdf_rounds"
-                            ;;
                     esac
                     break
                 elif [[ "$part" == "$k" ]]; then
@@ -227,9 +221,6 @@ parse_filename() {
                             ;;
                         "scrypt")
                             extra_args+=" --scrypt-rounds 1"
-                            ;;
-                        "pbkdf2")
-                            extra_args+=" --pbkdf2-iterations 1"
                             ;;
                     esac
                     break
@@ -257,8 +248,8 @@ parse_filename() {
     fi
 
     # Add default KDF if none specified
-    if [[ ! "$extra_args" =~ (argon2-rounds|balloon-rounds|scrypt-rounds|pbkdf2-iterations) ]]; then
-        extra_args+=" --pbkdf2-iterations 10000"
+    if [[ ! "$extra_args" =~ (argon2-rounds|balloon-rounds|scrypt-rounds) ]]; then
+        extra_args+=" --argon2-rounds 1"
     fi
 
     echo "$prefix" "$algo" "$extra_args"
@@ -316,11 +307,12 @@ show_usage() {
     echo "Examples:"
     echo "  $0                             # Generate default test files"
     echo "  $0 --dryrun                    # Show commands without executing them"
-    echo "  $0 test_v4_aes-gcm_sha512_pbkdf2.txt # Generate file with v4 metadata"
-    echo "  $0 test_v3_ml-kem-768-hybrid_sha512+sha256_argon2+pbkdf2_aes-gcm.txt"
+    echo "  $0 test_v4_aes-gcm_sha512_argon2.txt # Generate file with v4 metadata"
+    echo "  $0 test_v3_ml-kem-768-hybrid_sha512+sha256_argon2+scrypt_aes-gcm.txt"
     echo ""
     echo "Filename format: test_[prefix]_[algo]_[hash1+hash2+...]_[kdf1+kdf2+...]_[encryption_data].txt"
     echo "  - [prefix]: v3, v4, v5, etc. - determines metadata version and output directory"
+    echo "  - Supported KDFs: argon2, balloon, scrypt"
     echo "  - Specify rounds for hashes and KDFs using hash:rounds or kdf:rounds syntax"
     echo "  - If no rounds specified, defaults to 1"
 }
@@ -372,17 +364,14 @@ else
 
         # Basic tests with different algorithms
         for algo in "aes-gcm" "aes-gcm-siv" "chacha20-poly1305" "xchacha20-poly1305" "fernet"; do
-            filename="test_${metadata_version}_${algo}_sha512:1000_pbkdf2:10000.txt"
+            filename="test_${metadata_version}_${algo}_sha512:1000_argon2:1.txt"
             read prefix algo extra_args < <(parse_filename "$filename")
             generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
         done
 
         # Tests with different KDFs and different rounds
-        for kdf in "pbkdf2" "argon2" "balloon" "scrypt"; do
+        for kdf in "argon2" "balloon" "scrypt"; do
             case "$kdf" in
-                "pbkdf2")
-                    rounds="100000"
-                    ;;
                 "argon2")
                     rounds="10"
                     ;;
@@ -401,7 +390,7 @@ else
         # Tests with multiple KDFs (only for v5 for simplicity)
         if [[ "$metadata_version" == "v5" ]]; then
             # Tests with multiple KDFs with specified rounds
-            filename="test_${metadata_version}_aes-gcm_sha512:1000_pbkdf2:100000+argon2:10.txt"
+            filename="test_${metadata_version}_aes-gcm_sha512:1000_argon2:10+scrypt:1024.txt"
             read prefix algo extra_args < <(parse_filename "$filename")
             generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
 
@@ -412,33 +401,33 @@ else
             # Tests with different hashes and rounds
             for hash in "sha256" "sha512" "sha3-256" "sha3-512" "blake2b"; do
                 rounds=$((RANDOM % 10000 + 1000))  # Random rounds between 1000-11000
-                filename="test_${metadata_version}_aes-gcm_${hash}:${rounds}_pbkdf2:50000.txt"
+                filename="test_${metadata_version}_aes-gcm_${hash}:${rounds}_argon2:1.txt"
                 read prefix algo extra_args < <(parse_filename "$filename")
                 generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
             done
 
             # Tests with multiple hashes and specified rounds
-            filename="test_${metadata_version}_aes-gcm_sha256:5000+sha512:10000_pbkdf2:100000.txt"
+            filename="test_${metadata_version}_aes-gcm_sha256:5000+sha512:10000_argon2:3.txt"
             read prefix algo extra_args < <(parse_filename "$filename")
             generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
 
-            filename="test_${metadata_version}_aes-gcm_sha512:8000+blake2b:6000+whirlpool:4000_pbkdf2:100000.txt"
+            filename="test_${metadata_version}_aes-gcm_sha512:8000+blake2b:6000_argon2:3.txt"
             read prefix algo extra_args < <(parse_filename "$filename")
             generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
 
             # Test with multiple hashes and multiple KDFs with specified rounds
-            filename="test_${metadata_version}_aes-gcm_sha256:5000+sha512:10000_pbkdf2:100000+argon2:10.txt"
+            filename="test_${metadata_version}_aes-gcm_sha256:5000+sha512:10000_argon2:10+scrypt:1024.txt"
             read prefix algo extra_args < <(parse_filename "$filename")
             generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
 
             # Tests with default rounds (should use 1)
-            filename="test_${metadata_version}_aes-gcm_sha512_pbkdf2.txt"
+            filename="test_${metadata_version}_aes-gcm_sha512_argon2.txt"
             read prefix algo extra_args < <(parse_filename "$filename")
             generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
 
             # Tests with PQC algorithms and multiple hashes/KDFs with rounds
             for pqc in "ml-kem-512-hybrid" "ml-kem-768-hybrid"; do
-                filename="test_${metadata_version}_${pqc}_sha512:10000+sha256:5000_argon2:10+pbkdf2:100000_aes-gcm.txt"
+                filename="test_${metadata_version}_${pqc}_sha512:10000+sha256:5000_argon2:10_aes-gcm.txt"
                 read prefix algo extra_args < <(parse_filename "$filename")
                 generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
             done
