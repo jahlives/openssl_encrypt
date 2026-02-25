@@ -180,15 +180,12 @@ The following ciphers implement true AEAD, where the Base64-encoded metadata hea
 * **XChaCha20-Poly1305**: Extended-nonce AEAD with AAD binding
 * **AES-256-SIV**: Deterministic AEAD with AAD binding (nonce-misuse resistant)
 * **AES-GCM-SIV**: Misuse-resistant AEAD with AAD binding
-* **AES-OCB3**: OCB mode AEAD with AAD binding
-
-**Post-Quantum Hybrid Algorithms (18 total):**
+**Post-Quantum Hybrid Algorithms:**
 All PQC hybrid algorithms use AEAD ciphers for their symmetric encryption layer:
 * **ML-KEM** variants (512, 768, 1024, with AES-GCM or ChaCha20-Poly1305)
 * **HQC** variants (128, 192, 256)
 * **MAYO** variants (1, 3, 5)
 * **CROSS** variants (128, 192, 256)
-* **Kyber** variants (512, 768, 1024) - deprecated
 
 For these algorithms:
 - Metadata is created BEFORE encryption
@@ -200,9 +197,8 @@ For these algorithms:
 The following algorithms use hash-based integrity verification:
 
 * **Fernet**: Uses internal HMAC (no AAD support per specification)
-* **Camellia**: Uses HMAC-SHA256 for authentication
 
-For these algorithms:
+For this algorithm:
 - Metadata is created AFTER encryption
 - `encrypted_hash` is included in metadata
 - Verification via hash comparison (not AAD)

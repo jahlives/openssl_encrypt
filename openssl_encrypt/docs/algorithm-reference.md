@@ -33,11 +33,9 @@ This document provides a comprehensive analysis of all cryptographic algorithms 
 | **AES-GCM** | ✅ Compliant | cryptography.hazmat.primitives.ciphers.aead.AESGCM | NIST SP 800-38D approved | Recommended with hardware acceleration (AES-NI) |
 | **AES-GCM-SIV** | ✅ Compliant | cryptography.hazmat.primitives.ciphers.aead.AESGCMSIV | RFC 8452 standardized | Nonce-misuse resistant, recommended for nonce-reuse scenarios |
 | **AES-SIV** | ✅ Compliant | cryptography.hazmat.primitives.ciphers.aead.AESSIV | RFC 5297 standardized | Deterministic encryption, good for key-wrapping |
-| **AES-OCB3** | ⚠️ Concerns | cryptography.hazmat.primitives.ciphers.aead.AESOCB3 | RFC 7253 standardized | Security concerns with short nonces (deprecated) |
 | **ChaCha20-Poly1305** | ✅ Compliant | cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305 | RFC 7539 standardized | Recommended for software-only implementations |
 | **XChaCha20-Poly1305** | ✅ Compliant | Custom implementation using ChaCha20Poly1305 + HKDF | Industry recommended | Extended nonce space, good for long-lived keys |
 | **Fernet** | ✅ Compliant | cryptography.fernet.Fernet | Uses NIST-approved primitives | AES-128-CBC + HMAC-SHA256, ease of use |
-| **Camellia** | 🔶 Legacy | Custom CBC + HMAC implementation | Limited industry adoption | Not recommended for new applications |
 
 ### Algorithm Selection Matrix
 
@@ -89,13 +87,11 @@ The library includes transparent ML-KEM naming support in the command-line inter
 
 #### Algorithm Name Mapping
 
-The CLI automatically converts ML-KEM names to their internal Kyber equivalents:
-
-| ML-KEM Name | Internal Name | NIST Standard |
-|-------------|---------------|---------------|
-| `ml-kem-512-hybrid` | `kyber512-hybrid` | FIPS 203 Level 1 |
-| `ml-kem-768-hybrid` | `kyber768-hybrid` | FIPS 203 Level 3 |
-| `ml-kem-1024-hybrid` | `kyber1024-hybrid` | FIPS 203 Level 5 |
+| ML-KEM Name | NIST Standard |
+|-------------|---------------|
+| `ml-kem-512-hybrid` | FIPS 203 Level 1 |
+| `ml-kem-768-hybrid` | FIPS 203 Level 3 |
+| `ml-kem-1024-hybrid` | FIPS 203 Level 5 |
 
 #### Usage Examples
 
@@ -111,12 +107,8 @@ python -m openssl_encrypt.crypt decrypt -i output.enc -o decrypted.txt \
 
 #### Implementation Details
 
-- **Transparent Conversion**: ML-KEM names are automatically converted before validation
-- **Non-Invasive**: No changes to core validation or encryption logic
-- **Compatibility**: Both ML-KEM and legacy Kyber names work in CLI
-- **Future-Proof**: Enables migration to standardized naming convention
-
-This implementation is provided by the `ml_kem_patch.py` module and applied automatically in the CLI interface.
+- **Native ML-KEM**: ML-KEM is the canonical algorithm naming (FIPS 203)
+- **Legacy Kyber names removed**: As of v1.5.0, legacy Kyber names are no longer accepted
 
 ### Security Analysis
 
@@ -178,7 +170,6 @@ The library supports extended post-quantum algorithms through integration with t
 
 | Algorithm | Status | Implementation | Standard | Security Assessment |
 |-----------|--------|----------------|----------|-------------------|
-| **PBKDF2** | ⚠️ Concerns | HMAC-SHA256/SHA512 based | NIST SP 800-132 | Memory-efficient but not memory-hard |
 | **Scrypt** | ✅ Compliant | Memory-hard implementation | RFC 7914 | Good memory-hardness properties |
 | **Argon2** | ✅ Compliant | id/i/d variants supported | RFC 9106 | Winner of Password Hashing Competition |
 | **Balloon** | ✅ Compliant | Custom memory-hard function | Academic research | Alternative to Argon2 |
@@ -188,20 +179,17 @@ The library supports extended post-quantum algorithms through integration with t
 #### Standard Security
 ```
 Argon2id: 1GB memory, 3 iterations, 4 threads
-+ PBKDF2: 100,000 iterations
 ```
 
 #### High Security
 ```
 Argon2id: 2GB memory, 4 iterations, 8 threads
-+ PBKDF2: 200,000 iterations
 + Scrypt: N=65536, r=8, p=1
 ```
 
 #### Paranoid Security
 ```
 Argon2id: 4GB memory, 5 iterations, 8 threads
-+ PBKDF2: 500,000 iterations
 + Scrypt: N=131072, r=16, p=2
 + Balloon: 2GB space, 4 rounds
 ```
@@ -218,7 +206,6 @@ Argon2id: 4GB memory, 5 iterations, 8 threads
 | **SHA3-512** | ✅ Compliant | Standard implementation | NIST FIPS 202 | Resistant to length-extension |
 | **BLAKE2b** | ✅ Compliant | Standard implementation | RFC 7693 | High-performance, secure |
 | **SHAKE-256** | ✅ Compliant | Standard implementation | NIST FIPS 202 | Extendable Output Function |
-| **Whirlpool** | 🔶 Legacy | Python version-specific | ISO/IEC 10118-3 | Limited adoption |
 
 ### Multi-Hash Approach
 
@@ -236,7 +223,7 @@ This provides protection against potential weaknesses in any single hash functio
 
 1. **Symmetric Encryption**: AES-GCM (with hardware acceleration) or ChaCha20-Poly1305 (software-only)
 2. **Post-Quantum Protection**: ML-KEM-768-hybrid (balanced security/performance)
-3. **Key Derivation**: Argon2id + PBKDF2
+3. **Key Derivation**: Argon2id
 4. **Hash Functions**: SHA-256/SHA-512 with SHA3 backup
 
 ### For High-Security Applications
@@ -244,7 +231,7 @@ This provides protection against potential weaknesses in any single hash functio
 1. **Symmetric Encryption**: AES-GCM-SIV (nonce-misuse resistant)
 2. **Post-Quantum Protection**: ML-KEM-1024-hybrid (maximum security)
 3. **Algorithmic Diversity**: Consider HQC-256-hybrid for mathematical diversity
-4. **Key Derivation**: Multi-layer approach with Argon2id + PBKDF2 + Scrypt
+4. **Key Derivation**: Multi-layer approach with Argon2id + Scrypt
 
 ### For Long-Term Data Protection
 
@@ -292,8 +279,6 @@ def select_algorithm(security_level, performance_priority, quantum_resistance):
 - **FIPS 140-2**: Algorithms comply with FIPS 140-2 requirements
 - **FIPS 203**: ML-KEM implementation follows NIST FIPS 203
 - **SP 800-38D**: AES-GCM implementation follows NIST guidelines
-- **SP 800-132**: PBKDF2 implementation follows recommendations
-
 ### Industry Standards
 
 - **RFC Compliance**: All implemented algorithms follow relevant RFCs
@@ -308,15 +293,17 @@ def select_algorithm(security_level, performance_priority, quantum_resistance):
 
 ## Migration and Deprecation
 
-### Deprecated Algorithms
+### Removed Algorithms (v1.5.0)
 
-| Algorithm | Deprecation Level | Replacement | Timeline |
-|-----------|------------------|-------------|----------|
-| **Kyber512** | Deprecated | ML-KEM-512 | Removed in v3.0 |
-| **Kyber768** | Deprecated | ML-KEM-768 | Removed in v3.0 |
-| **Kyber1024** | Deprecated | ML-KEM-1024 | Removed in v3.0 |
-| **AES-OCB3** | Warning | AES-GCM | Deprecated in v3.0 |
-| **Camellia** | Deprecated | AES-GCM | Removed in v3.0 |
+The following algorithms were removed in v1.5.0. Files encrypted with these algorithms must be decrypted using v1.4.x or earlier before upgrading.
+
+| Algorithm | Replacement | Removed In |
+|-----------|-------------|------------|
+| **AES-OCB3** | AES-GCM | v1.5.0 |
+| **Camellia** | AES-GCM | v1.5.0 |
+| **Whirlpool** | SHA-512 or BLAKE2b | v1.5.0 |
+| **PBKDF2** (KDF chain) | Argon2id or Scrypt | v1.5.0 |
+| **Kyber512/768/1024** | ML-KEM-512/768/1024 | v1.5.0 |
 
 ### Migration Strategy
 
@@ -338,4 +325,4 @@ Research → Evaluation → Implementation → Standardization → Deployment �
 
 This algorithm reference provides comprehensive information about all cryptographic algorithms in OpenSSL Encrypt. For implementation details, see the [Security Documentation](security.md).
 
-**Last updated**: June 16, 2025
+**Last updated**: February 25, 2026

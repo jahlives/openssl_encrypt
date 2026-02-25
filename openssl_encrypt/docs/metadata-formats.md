@@ -24,6 +24,8 @@ OpenSSL Encrypt uses structured metadata to store encryption parameters, algorit
 - **Version 7**: Secure chained salt derivation (v1.3.4 branch - identical to v9)
 - **Version 8**: Multi-round KDF support (deprecated - security vulnerability)
 - **Version 9**: Secure chained salt derivation for multi-round KDFs (v1.4.0+ default)
+- **Version 10-11**: Independent XOR key composition mode
+- **Version 12**: Reduced algorithm set — removed AES-OCB3, Camellia, Whirlpool, PBKDF2, Kyber (v1.5.0+ default)
 
 ### Metadata Purpose
 

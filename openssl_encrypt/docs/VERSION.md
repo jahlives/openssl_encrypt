@@ -4,7 +4,7 @@
 
 OpenSSL Encrypt follows [Semantic Versioning (SemVer)](https://semver.org/) for version numbering and maintains comprehensive version history to track the evolution of cryptographic security features, post-quantum implementations, and security enhancements.
 
-**Current Version:** `1.3.1` (Production Release)
+**Current Version:** `1.5.0` (Production Release)
 
 **Development Status:** Production/Stable
 
@@ -17,7 +17,34 @@ OpenSSL Encrypt follows [Semantic Versioning (SemVer)](https://semver.org/) for 
 
 ## Release History
 
-### 1.3.1 (Current) - Maintenance Release
+### 1.5.0 (Current) - Breaking: Deprecated Algorithm Removal
+**Release Date:** February 2026
+**Status:** Production Release
+
+**BREAKING CHANGES:**
+
+This release **removes** all deprecated algorithms entirely — both encryption and decryption support. Files encrypted with any of these algorithms must be decrypted using v1.4.x or earlier before upgrading to v1.5.0.
+
+**Removed Algorithms:**
+- **AES-OCB3** cipher (use AES-GCM instead)
+- **Camellia** cipher (use AES-GCM instead)
+- **Whirlpool** hash function (use SHA-512 or BLAKE2b instead)
+- **PBKDF2** key derivation chain (use Argon2id or Scrypt instead)
+- **Legacy Kyber naming** (use ML-KEM-512/768/1024 instead)
+- **TESTDATA PQC simulation format** (use real liboqs)
+
+**Enhancements:**
+- New metadata format version 12 with reduced algorithm set
+- Cleaned deprecation infrastructure for future use
+- Smaller, cleaner codebase with no dead code paths
+- Updated JSON schemas (config template, keystore) to reflect removed algorithms
+
+**Migration Guide:**
+1. Decrypt all files using deprecated algorithms with v1.4.x
+2. Re-encrypt with supported algorithms (e.g., AES-GCM, ML-KEM-768-hybrid)
+3. Upgrade to v1.5.0
+
+### 1.3.1 - Maintenance Release
 **Release Date:** December 2025
 **Status:** Production Release
 
@@ -416,18 +443,20 @@ print(f"Build Date: {info.get('build_date', 'Unknown')}")
 
 | Version | Python | Status | Support Level |
 |---------|--------|--------|---------------|
-| 1.3.x | 3.9+ | Current | Full Support |
-| 1.2.x | 3.9+ | Maintenance | Security Fixes |
-| 1.1.x | 3.9+ | Maintenance | Security Fixes |
-| 1.0.x | 3.9+ | Maintenance | Security Fixes |
-| 0.9.x | 3.9+ | EOL | No Support |
-| < 0.9.0 | 3.8+ | EOL | No Support |
+| 1.5.x | 3.9+ | Current | Full Support |
+| 1.4.x | 3.9+ | Maintenance | Security Fixes |
+| 1.3.x | 3.9+ | Maintenance | Security Fixes |
+| 1.2.x | 3.9+ | EOL | No Support |
+| 1.1.x | 3.9+ | EOL | No Support |
+| 1.0.x | 3.9+ | EOL | No Support |
+| < 1.0.0 | 3.8+ | EOL | No Support |
 
 ## Security & Updates
 
 ### Critical Security Releases
 - **1.3.0**: D-Bus symlink attack prevention (MED-2), debug mode security warnings
-- **1.2.0**: Removed PBKDF2 and Whirlpool deprecated algorithms
+- **1.5.0**: Complete removal of AES-OCB3, Camellia, Whirlpool, PBKDF2, and legacy Kyber
+- **1.2.0**: Deprecated PBKDF2 and Whirlpool (blocked for new encryption)
 - **1.0.1**: Multiple HIGH/MED severity fixes (timing attacks, path traversal, PBKDF2 iterations)
 - **1.0.0**: Production release with comprehensive security hardening
 - **0.9.0**: Major security hardening with constant-time operations
@@ -443,8 +472,7 @@ print(f"Build Date: {info.get('build_date', 'Unknown')}")
 ## Future Roadmap
 
 ### Planned Releases
-- **1.4.0** - Extended mobile platform support and performance optimizations
-- **1.5.0** - Hardware security module (HSM) integration
+- **1.6.0** - Hardware security module (HSM) integration
 - **2.0.0** - Next-generation post-quantum algorithms (NIST Round 4+)
 - **2.1.0** - Cloud key management and enterprise features
 
