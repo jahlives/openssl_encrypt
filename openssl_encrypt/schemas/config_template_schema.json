@@ -48,12 +48,6 @@
           "maximum": 1000000,
           "description": "SHAKE256 rounds (0 = disabled)"
         },
-        "whirlpool": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 1000000,
-          "description": "Whirlpool rounds (0 = disabled)"
-        },
         "scrypt": {
           "type": "object",
           "required": ["enabled"],
@@ -136,12 +130,6 @@
             }
           }
         },
-        "pbkdf2_iterations": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 10000000,
-          "description": "PBKDF2 iteration count (minimum 1000 for security)"
-        },
         "type": {
           "type": "string",
           "enum": ["id", "hash", "key"],
@@ -153,7 +141,6 @@
             "fernet",
             "aes-gcm",
             "aes-gcm-siv",
-            "aes-ocb3",
             "aes-siv",
             "chacha20-poly1305",
             "xchacha20-poly1305",

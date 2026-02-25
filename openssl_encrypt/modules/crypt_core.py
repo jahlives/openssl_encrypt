@@ -2040,7 +2040,7 @@ def generate_key_independent_xor(
     debug: bool = False,
     pqc_keypair: tuple = None,
     hsm_pepper: bytes = None,
-    format_version: int = 11,
+    format_version: int = 12,
 ) -> tuple:
     """
     Generate encryption key using Independent XOR composition.
@@ -3922,8 +3922,8 @@ def create_metadata_v6(
     if aad_mode:
         metadata["aead_binding"] = True
 
-    # Add XOR mode indicator for v8/v10/v11
-    if format_version == 11:
+    # Add XOR mode indicator for v8/v10/v11/v12
+    if format_version >= 11:
         metadata["xor_mode"] = "independent"  # Independent XOR (Massey)
     elif format_version in [8, 10]:
         metadata["xor_mode"] = "sequential"  # Sequential chained XOR
@@ -5403,8 +5403,8 @@ def encrypt_file(
         combined_pepper = remote_pepper
 
     # Generate key (now with combined pepper)
-    # v11: Independent XOR (Massey), v10: Sequential XOR, v9: Secure chained salt
-    if format_version == 11:
+    # v11+: Independent XOR (Massey), v10: Sequential XOR, v9: Secure chained salt
+    if format_version >= 11:
         # Independent XOR mode - each algorithm processes original input
         if parallel_kdf:
             # Parallel execution via multiprocessing
@@ -7316,8 +7316,8 @@ def decrypt_file(
     # Check XOR mode from metadata to determine which key generation function to use
     xor_mode = metadata.get("xor_mode", "sequential")  # Default to sequential for backward compat
 
-    # v11 uses independent XOR, v1-v10 use sequential (including v8/v10 sequential XOR)
-    if format_version == 11 or xor_mode == "independent":
+    # v11+ uses independent XOR, v1-v10 use sequential (including v8/v10 sequential XOR)
+    if format_version >= 11 or xor_mode == "independent":
         # Independent XOR mode (Massey)
         if parallel_kdf:
             # Parallel execution via multiprocessing
