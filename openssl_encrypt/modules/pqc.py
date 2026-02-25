@@ -29,29 +29,6 @@ from .secure_memory import SecureBytes, secure_memzero, secure_string
 logger = logging.getLogger(__name__)
 
 
-def public_key_part(private_key: bytes) -> bytes:
-    """
-    Extract a deterministic public-key-like value from a private key.
-
-    .. deprecated::
-        This function is only retained for backward-compatible decryption of
-        files encrypted with the legacy simulation mode. It MUST NOT be used
-        for new encryptions (CRIT-3).
-
-    Args:
-        private_key: The private key bytes
-
-    Returns:
-        bytes: A deterministic identifier derived from the private key
-    """
-    # Use secure memory for operations with private key data
-    with SecureBytes(private_key) as secure_private_key:
-        if len(secure_private_key) <= 16:
-            return bytes(secure_private_key)
-        else:
-            return bytes(secure_private_key[:16])
-
-
 # Environment variable to control PQC initialization messages
 
 # Try to import PQC libraries, provide fallbacks if not available
@@ -95,18 +72,6 @@ class PQCAlgorithm(Enum):
     ML_KEM_768 = "ML-KEM-768"
     ML_KEM_1024 = "ML-KEM-1024"
 
-    # Legacy Kyber naming scheme (deprecated, will be removed in future)
-    # For backward compatibility only
-    KYBER512 = "Kyber512"  # Deprecated: use ML_KEM_512 instead
-    KYBER768 = "Kyber768"  # Deprecated: use ML_KEM_768 instead
-    KYBER1024 = "Kyber1024"  # Deprecated: use ML_KEM_1024 instead
-
-    # Legacy format with hyphens (deprecated, will be removed in future)
-    KYBER512_LEGACY = "Kyber-512"  # Deprecated: use ML_KEM_512 instead
-    KYBER768_LEGACY = "Kyber-768"  # Deprecated: use ML_KEM_768 instead
-    KYBER1024_LEGACY = "Kyber-1024"  # Deprecated: use ML_KEM_1024 instead
-
-    # Signature algorithms (NIST FIPS 204/205/206 standardized naming)
     ML_DSA_44 = "ML-DSA-44"  # NIST FIPS 204 (formerly Dilithium2)
     ML_DSA_65 = "ML-DSA-65"  # NIST FIPS 204 (formerly Dilithium3)
     ML_DSA_87 = "ML-DSA-87"  # NIST FIPS 204 (formerly Dilithium5)
@@ -138,16 +103,6 @@ class PQCAlgorithm(Enum):
 
 # Create mappings for algorithm name translation
 LEGACY_TO_STANDARD_ALGORITHM_MAP = {
-    # Kyber/ML-KEM mappings
-    "Kyber512": "ML-KEM-512",
-    "Kyber768": "ML-KEM-768",
-    "Kyber1024": "ML-KEM-1024",
-    "Kyber-512": "ML-KEM-512",
-    "Kyber-768": "ML-KEM-768",
-    "Kyber-1024": "ML-KEM-1024",
-    "kyber512-hybrid": "ml-kem-512-hybrid",
-    "kyber768-hybrid": "ml-kem-768-hybrid",
-    "kyber1024-hybrid": "ml-kem-1024-hybrid",
     # Signature algorithm mappings
     "Dilithium2": "ML-DSA-44",
     "Dilithium3": "ML-DSA-65",
@@ -235,14 +190,10 @@ def check_pqc_support(quiet: bool = False) -> Tuple[bool, Optional[str], list]:
                 # Fallback to all known KEM algorithms if API methods not found
                 # Prioritize ML-KEM (standardized) names
                 supported_algorithms.extend(["ML-KEM-512", "ML-KEM-768", "ML-KEM-1024"])
-                # Add legacy names for backward compatibility
-                supported_algorithms.extend(["Kyber512", "Kyber768", "Kyber1024"])
         except Exception:
             # Force add all KEM algorithms as fallback
             # Prioritize ML-KEM (standardized) names
             supported_algorithms.extend(["ML-KEM-512", "ML-KEM-768", "ML-KEM-1024"])
-            # Add legacy names for backward compatibility
-            supported_algorithms.extend(["Kyber512", "Kyber768", "Kyber1024"])
 
         # Check signature algorithms (less important for us)
         try:
@@ -299,7 +250,7 @@ def check_pqc_support(quiet: bool = False) -> Tuple[bool, Optional[str], list]:
         return (
             False,
             None,
-            ["ML-KEM-512", "ML-KEM-768", "ML-KEM-1024", "Kyber512", "Kyber768", "Kyber1024"],
+            ["ML-KEM-512", "ML-KEM-768", "ML-KEM-1024"],
         )
 
 
@@ -351,9 +302,7 @@ class PQCipher:
         if isinstance(algorithm, str) and is_deprecated(algorithm):
             replacement = get_recommended_replacement(algorithm)
             warn_deprecated_algorithm(algorithm, "PQCipher initialization")
-            # Only show direct warning messages if verbose or not an INFO warning about Kyber vs ML-KEM
-            kyber_or_mlkem_warning = "kyber" in algorithm.lower() or "ml-kem" in algorithm.lower()
-            if not should_be_quiet and replacement and (verbose or not kyber_or_mlkem_warning):
+            if not should_be_quiet and replacement and verbose:
                 print(f"Warning: The algorithm '{algorithm}' is deprecated.")
                 print(f"Consider using '{replacement}' instead for better security.")
 
@@ -436,7 +385,6 @@ class PQCipher:
                         matched = True
                         break
 
-                    # Also match on name and number (e.g., Kyber512 matches ML-KEM-512)
                     if ("kyber" in requested_base or "mlkem" in requested_base) and (
                         "kyber" in supported_base or "mlkem" in supported_base
                     ):
@@ -483,7 +431,7 @@ class PQCipher:
             print(f"Using algorithm: {self.algorithm_name}")
 
         # All Kyber/ML-KEM/HQC algorithms are KEM algorithms
-        self.is_kem = any(x in self.algorithm_name.lower() for x in ["kyber", "ml-kem", "hqc"])
+        self.is_kem = any(x in self.algorithm_name.lower() for x in ["ml-kem", "hqc"])
 
         # Setting to allow bypassing integrity checks for test files
         # This is needed for existing encrypted files that might have integrity verification issues
@@ -754,65 +702,6 @@ class PQCipher:
                         f"DECRYPT:PQC_KEM encrypted_data starts with: {encrypted_data[:50]}"
                     )
 
-                # SECURITY (CRIT-1): Legacy TESTDATA format detection for
-                # backward-compatible decryption only. New encryptions never
-                # produce this format.
-                _legacy_testdata_header = b"PQC_TEST_DATA:"
-                _legacy_testdata_marker = b"TESTDATA"
-
-                if encrypted_data.startswith(_legacy_testdata_header):
-                    logger.warning(
-                        "DEPRECATION WARNING: Decrypting legacy PQC_TEST_DATA format. "
-                        "This format bypasses real encryption and will be removed in a future version. "
-                        "Re-encrypt this file with real PQC keys."
-                    )
-                    plaintext = encrypted_data[len(_legacy_testdata_header) :]
-                    return plaintext
-
-                elif encrypted_data.startswith(_legacy_testdata_marker):
-                    logger.warning(
-                        "DEPRECATION WARNING: Decrypting legacy TESTDATA format. "
-                        "This format bypasses real encryption and will be removed in a future version. "
-                        "Re-encrypt this file with real PQC keys."
-                    )
-                    data_len_bytes = encrypted_data[8:12]
-                    data_len = int.from_bytes(data_len_bytes, byteorder="big")
-                    if 0 <= data_len <= len(encrypted_data) - 12:
-                        return encrypted_data[12 : 12 + data_len]
-                    else:
-                        return encrypted_data[12:]
-
-                # Split the encrypted data into KEM ciphertext + symmetric payload
-                encapsulated_key = encrypted_data[:kem_ciphertext_size]
-                remaining_data = encrypted_data[kem_ciphertext_size:]
-
-                if self.debug:
-                    logger.debug(
-                        f"DECRYPT:PQC_KEM Encapsulated key starts with: {encapsulated_key[:20]}"
-                    )
-
-                # Legacy TESTDATA embedded in encapsulated_key slot
-                if encapsulated_key.startswith(_legacy_testdata_marker):
-                    logger.warning(
-                        "DEPRECATION WARNING: Decrypting legacy TESTDATA format "
-                        "(embedded in KEM ciphertext slot). "
-                        "Re-encrypt this file with real PQC keys."
-                    )
-                    data_len_bytes = encapsulated_key[8:12]
-                    if data_len_bytes == b"\xff\xff\xff\xff":
-                        # Data stored after test nonce in remaining_data
-                        test_nonce_pos = remaining_data.find(b"TESTNONCE123")
-                        if test_nonce_pos != -1:
-                            test_data_start = test_nonce_pos + 12
-                            if test_data_start < len(remaining_data):
-                                payload = remaining_data[test_data_start:]
-                                if payload.startswith(_legacy_testdata_header):
-                                    return payload[len(_legacy_testdata_header) :]
-                    else:
-                        data_len = int.from_bytes(data_len_bytes, byteorder="big")
-                        if 0 <= data_len <= len(encapsulated_key) - 12:
-                            return encapsulated_key[12 : 12 + data_len]
-
                 # Standard format: remaining_data = nonce + ciphertext
                 if len(remaining_data) < 12:
                     raise ValueError(
@@ -824,70 +713,33 @@ class PQCipher:
 
                 # No need for debug output on nonce
 
-                # Check if this is a simulated ciphertext (legacy format)
-                sim_header = b"SIMULATED_PQC_v1"
-                simulation_detected = False
+                # Standard KEM decapsulation (production path)
+                try:
+                    shared_secret = kem.decap_secret(encapsulated_key)
+                except Exception as e1:
+                    if self.debug:
+                        logger.debug(f"decap_secret failed: {e1}")
 
-                if (
-                    len(encapsulated_key) >= len(sim_header)
-                    and encapsulated_key[: len(sim_header)] == sim_header
-                ):
-                    simulation_detected = True
+                    # Try decaps_cb if available as alternative API
+                    if hasattr(kem, "decaps_cb") and callable(kem.decaps_cb):
+                        try:
+                            shared_secret_buffer = bytearray(shared_secret_len)
+                            result = kem.decaps_cb(
+                                shared_secret_buffer, encapsulated_key, private_key
+                            )
+                            if result == 0:  # Success
+                                shared_secret = bytes(shared_secret_buffer)
+                        except Exception as e2:
+                            if self.debug:
+                                logger.debug(f"decaps_cb failed: {e2}")
 
-                # Initialize the shared secret with None to detect success
-                shared_secret = None
-
-                # SECURITY (CRIT-3): Simulation mode is only allowed for
-                # backward-compatible DECRYPTION of legacy files.
-                # New encryptions never use simulation mode.
-                if simulation_detected:
-                    # Legacy simulation mode detected - warn prominently
-                    logger.warning(
-                        "SECURITY WARNING: This file was encrypted with weak "
-                        "simulation mode (deterministic shared secret). "
-                        "Re-encrypt this file with real PQC keys for proper security."
+                # SECURITY (CRIT-3): Do NOT fall back to simulation mode
+                # when real decapsulation fails. Raise an error instead.
+                if shared_secret is None:
+                    raise ValueError(
+                        "KEM decapsulation failed. Unable to recover shared secret. "
+                        "The file may be corrupted or the wrong private key was provided."
                     )
-                    if not self.quiet:
-                        print(
-                            "SECURITY WARNING: Decrypting legacy simulation-mode file. "
-                            "This mode uses a weak deterministic secret. "
-                            "Re-encrypt with real PQC keys."
-                        )
-                    # Use the legacy deterministic approach for decryption only
-                    with SecureBytes() as secure_input:
-                        secure_input.extend(encapsulated_key)
-                        secure_input.extend(public_key_part(private_key))
-                        shared_secret = SecureBytes(
-                            hashlib.sha256(secure_input).digest()[:shared_secret_len]
-                        )
-                else:
-                    # Standard KEM decapsulation (production path)
-                    try:
-                        shared_secret = kem.decap_secret(encapsulated_key)
-                    except Exception as e1:
-                        if self.debug:
-                            logger.debug(f"decap_secret failed: {e1}")
-
-                        # Try decaps_cb if available as alternative API
-                        if hasattr(kem, "decaps_cb") and callable(kem.decaps_cb):
-                            try:
-                                shared_secret_buffer = bytearray(shared_secret_len)
-                                result = kem.decaps_cb(
-                                    shared_secret_buffer, encapsulated_key, private_key
-                                )
-                                if result == 0:  # Success
-                                    shared_secret = bytes(shared_secret_buffer)
-                            except Exception as e2:
-                                if self.debug:
-                                    logger.debug(f"decaps_cb failed: {e2}")
-
-                    # SECURITY (CRIT-3): Do NOT fall back to simulation mode
-                    # when real decapsulation fails. Raise an error instead.
-                    if shared_secret is None:
-                        raise ValueError(
-                            "KEM decapsulation failed. Unable to recover shared secret. "
-                            "The file may be corrupted or the wrong private key was provided."
-                        )
 
                 # No need to log shared secret details
 

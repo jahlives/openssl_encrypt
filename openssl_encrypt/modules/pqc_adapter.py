@@ -40,9 +40,6 @@ ALGORITHM_TYPE_MAP = {
     "ML-KEM-512": "kem",
     "ML-KEM-768": "kem",
     "ML-KEM-1024": "kem",
-    "Kyber512": "kem",
-    "Kyber768": "kem",
-    "Kyber1024": "kem",
     "HQC-128": "kem",
     "HQC-192": "kem",
     "HQC-256": "kem",
@@ -66,13 +63,10 @@ ALGORITHM_TYPE_MAP = {
 
 # Hybrid algorithm mapping (standard name to PQ algorithm)
 HYBRID_ALGORITHM_MAP = {
-    # KEM-based hybrid algorithms (ML-KEM/Kyber)
+    # KEM-based hybrid algorithms (ML-KEM)
     "ml-kem-512-hybrid": "ML-KEM-512",
     "ml-kem-768-hybrid": "ML-KEM-768",
     "ml-kem-1024-hybrid": "ML-KEM-1024",
-    "kyber512-hybrid": "Kyber512",
-    "kyber768-hybrid": "Kyber768",
-    "kyber1024-hybrid": "Kyber1024",
     # HQC hybrid algorithms
     "hqc-128-hybrid": "HQC-128",
     "hqc-192-hybrid": "HQC-192",
@@ -117,20 +111,17 @@ NEW_PQ_ALGORITHMS = [
 SECURITY_LEVEL_MAP = {
     # Level 1 (roughly equivalent to AES-128)
     "ML-KEM-512": 1,
-    "Kyber512": 1,
     "HQC-128": 1,
     "ML-DSA-44": 1,
     "SLH-DSA-SHA2-128F": 1,
     "FN-DSA-512": 1,
     # Level 3 (roughly equivalent to AES-192)
     "ML-KEM-768": 3,
-    "Kyber768": 3,
     "HQC-192": 3,
     "ML-DSA-65": 3,
     "SLH-DSA-SHA2-192F": 3,
     # Level 5 (roughly equivalent to AES-256)
     "ML-KEM-1024": 5,
-    "Kyber1024": 5,
     "HQC-256": 5,
     "ML-DSA-87": 5,
     "SLH-DSA-SHA2-256F": 5,
@@ -148,7 +139,7 @@ SECURITY_LEVEL_MAP = {
 class ExtendedPQCipher(PQCipher):
     """
     Extended Post-Quantum Cipher implementation that supports both our native
-    ML-KEM (Kyber) implementation and additional algorithms via liboqs.
+    ML-KEM implementation and additional algorithms via liboqs.
 
     This class extends PQCipher to provide a unified interface for all post-quantum
     algorithms, whether they are implemented natively or via liboqs.
@@ -196,9 +187,6 @@ class ExtendedPQCipher(PQCipher):
             "ML-KEM-512",
             "ML-KEM-768",
             "ML-KEM-1024",
-            "Kyber512",
-            "Kyber768",
-            "Kyber1024",
         ]
 
         if self.is_kem and algorithm_str in native_kem_algorithms:
@@ -520,12 +508,8 @@ def get_available_pq_algorithms(include_legacy: bool = True, quiet: bool = False
     """
     available_algorithms = []
 
-    # Always include ML-KEM/Kyber from our native implementation
+    # Always include ML-KEM from our native implementation
     available_algorithms.extend(["ML-KEM-512", "ML-KEM-768", "ML-KEM-1024"])
-
-    # Include legacy Kyber names if requested
-    if include_legacy:
-        available_algorithms.extend(["Kyber512", "Kyber768", "Kyber1024"])
 
     # Add liboqs algorithms if available
     if LIBOQS_AVAILABLE:

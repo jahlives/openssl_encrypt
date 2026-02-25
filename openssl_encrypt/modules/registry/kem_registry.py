@@ -162,7 +162,7 @@ class MLKEM512(KEMBase):
             secret_key_size=1632,
             ciphertext_size=768,
             shared_secret_size=32,
-            aliases=("ml_kem_512", "mlkem512", "mlkem-512", "kyber512", "kyber-512"),
+            aliases=("ml_kem_512", "mlkem512", "mlkem-512"),
         )
 
     @classmethod
@@ -224,7 +224,7 @@ class MLKEM768(KEMBase):
             secret_key_size=2400,
             ciphertext_size=1088,
             shared_secret_size=32,
-            aliases=("ml_kem_768", "mlkem768", "mlkem-768", "kyber768", "kyber-768"),
+            aliases=("ml_kem_768", "mlkem768", "mlkem-768"),
         )
 
     @classmethod
@@ -285,7 +285,7 @@ class MLKEM1024(KEMBase):
             secret_key_size=3168,
             ciphertext_size=1568,
             shared_secret_size=32,
-            aliases=("ml_kem_1024", "mlkem1024", "mlkem-1024", "kyber1024", "kyber-1024"),
+            aliases=("ml_kem_1024", "mlkem1024", "mlkem-1024"),
         )
 
     @classmethod

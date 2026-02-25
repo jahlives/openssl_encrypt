@@ -550,11 +550,6 @@ class EncryptionAlgorithm(Enum):
     ML_KEM_512_HYBRID = "ml-kem-512-hybrid"
     ML_KEM_768_HYBRID = "ml-kem-768-hybrid"
     ML_KEM_1024_HYBRID = "ml-kem-1024-hybrid"
-    # Legacy Kyber naming scheme (deprecated, will be removed in future)
-    KYBER512_HYBRID = "kyber512-hybrid"  # Deprecated: use ML_KEM_512_HYBRID instead
-    KYBER768_HYBRID = "kyber768-hybrid"  # Deprecated: use ML_KEM_768_HYBRID instead
-    KYBER1024_HYBRID = "kyber1024-hybrid"  # Deprecated: use ML_KEM_1024_HYBRID instead
-
     # ML-KEM with ChaCha20-Poly1305 instead of AES-GCM
     ML_KEM_512_CHACHA20 = "ml-kem-512-chacha20"
     ML_KEM_768_CHACHA20 = "ml-kem-768-chacha20"
@@ -714,9 +709,6 @@ def is_aead_algorithm(algorithm):
         EncryptionAlgorithm.CROSS_128_HYBRID,
         EncryptionAlgorithm.CROSS_192_HYBRID,
         EncryptionAlgorithm.CROSS_256_HYBRID,
-        EncryptionAlgorithm.KYBER512_HYBRID,
-        EncryptionAlgorithm.KYBER768_HYBRID,
-        EncryptionAlgorithm.KYBER1024_HYBRID,
     }
     return algorithm in AEAD_ALGORITHMS
 
@@ -2551,9 +2543,6 @@ def generate_key(
     elif algorithm == EncryptionAlgorithm.THREEFISH_1024.value:
         key_length = 128  # Threefish-1024 requires 128 bytes
     elif algorithm in [
-        EncryptionAlgorithm.KYBER512_HYBRID.value,
-        EncryptionAlgorithm.KYBER768_HYBRID.value,
-        EncryptionAlgorithm.KYBER1024_HYBRID.value,
         EncryptionAlgorithm.ML_KEM_512_HYBRID.value,
         EncryptionAlgorithm.ML_KEM_768_HYBRID.value,
         EncryptionAlgorithm.ML_KEM_1024_HYBRID.value,
@@ -5603,9 +5592,6 @@ def encrypt_file(
 
             return encrypted_data
         elif algorithm in [
-            EncryptionAlgorithm.KYBER512_HYBRID,
-            EncryptionAlgorithm.KYBER768_HYBRID,
-            EncryptionAlgorithm.KYBER1024_HYBRID,
             EncryptionAlgorithm.ML_KEM_512_HYBRID,
             EncryptionAlgorithm.ML_KEM_768_HYBRID,
             EncryptionAlgorithm.ML_KEM_1024_HYBRID,
@@ -5632,9 +5618,6 @@ def encrypt_file(
             # Map algorithm to PQCAlgorithm
             pqc_algo_map = {
                 # Legacy Kyber mappings
-                EncryptionAlgorithm.KYBER512_HYBRID: PQCAlgorithm.KYBER512,
-                EncryptionAlgorithm.KYBER768_HYBRID: PQCAlgorithm.KYBER768,
-                EncryptionAlgorithm.KYBER1024_HYBRID: PQCAlgorithm.KYBER1024,
                 # Standardized ML-KEM mappings
                 EncryptionAlgorithm.ML_KEM_512_HYBRID: PQCAlgorithm.ML_KEM_512,
                 EncryptionAlgorithm.ML_KEM_768_HYBRID: PQCAlgorithm.ML_KEM_768,
@@ -5902,11 +5885,7 @@ def encrypt_file(
 
                 return nonce + encrypted_payload
 
-            elif algorithm in [
-                EncryptionAlgorithm.KYBER512_HYBRID,
-                EncryptionAlgorithm.KYBER768_HYBRID,
-                EncryptionAlgorithm.KYBER1024_HYBRID,
-            ]:
+            elif algorithm in []:
                 if not PQC_AVAILABLE:
                     raise ImportError(
                         "Post-quantum cryptography support is not available. "
@@ -5914,11 +5893,7 @@ def encrypt_file(
                     )
 
                 # Map algorithm to PQCAlgorithm
-                pqc_algo_map = {
-                    EncryptionAlgorithm.KYBER512_HYBRID: PQCAlgorithm.KYBER512,
-                    EncryptionAlgorithm.KYBER768_HYBRID: PQCAlgorithm.KYBER768,
-                    EncryptionAlgorithm.KYBER1024_HYBRID: PQCAlgorithm.KYBER1024,
-                }
+                pqc_algo_map = {}
 
                 # Get public key from keypair or generate new keypair
                 if pqc_keypair and pqc_keypair[0]:
@@ -5945,9 +5920,6 @@ def encrypt_file(
         # Prepare PQC information if applicable (needed for metadata)
         pqc_info = None
         if algorithm in [
-            EncryptionAlgorithm.KYBER512_HYBRID,
-            EncryptionAlgorithm.KYBER768_HYBRID,
-            EncryptionAlgorithm.KYBER1024_HYBRID,
             EncryptionAlgorithm.ML_KEM_512_HYBRID,
             EncryptionAlgorithm.ML_KEM_768_HYBRID,
             EncryptionAlgorithm.ML_KEM_1024_HYBRID,
@@ -6249,9 +6221,6 @@ def encrypt_file(
         # Prepare PQC information if applicable
         pqc_info = None
         if algorithm in [
-            EncryptionAlgorithm.KYBER512_HYBRID,
-            EncryptionAlgorithm.KYBER768_HYBRID,
-            EncryptionAlgorithm.KYBER1024_HYBRID,
             EncryptionAlgorithm.ML_KEM_512_HYBRID,
             EncryptionAlgorithm.ML_KEM_768_HYBRID,
             EncryptionAlgorithm.ML_KEM_1024_HYBRID,
@@ -7515,7 +7484,7 @@ def decrypt_file(
                                     )
                                 except Exception as e2:
                                     # Re-raise the exception for normal operation
-                                    # NOTE: Removed special case handling for test1_kyber1024.txt to ensure proper password validation
+                                    # NOTE: Removed special case handling for PQC test files to ensure proper password validation
                                     raise e2
 
                         # Private key successfully decrypted
@@ -7641,9 +7610,6 @@ def decrypt_file(
             return decrypted_data
         # Handle PQC algorithms first to ensure they're processed properly
         elif algorithm in [
-            EncryptionAlgorithm.KYBER512_HYBRID.value,
-            EncryptionAlgorithm.KYBER768_HYBRID.value,
-            EncryptionAlgorithm.KYBER1024_HYBRID.value,
             EncryptionAlgorithm.ML_KEM_512_HYBRID.value,
             EncryptionAlgorithm.ML_KEM_768_HYBRID.value,
             EncryptionAlgorithm.ML_KEM_1024_HYBRID.value,
@@ -7663,9 +7629,6 @@ def decrypt_file(
             # Map algorithm to PQCAlgorithm
             pqc_algo_map = {
                 # Legacy Kyber mappings
-                EncryptionAlgorithm.KYBER512_HYBRID.value: PQCAlgorithm.KYBER512,
-                EncryptionAlgorithm.KYBER768_HYBRID.value: PQCAlgorithm.KYBER768,
-                EncryptionAlgorithm.KYBER1024_HYBRID.value: PQCAlgorithm.KYBER1024,
                 # Standardized ML-KEM mappings
                 EncryptionAlgorithm.ML_KEM_512_HYBRID.value: PQCAlgorithm.ML_KEM_512,
                 EncryptionAlgorithm.ML_KEM_768_HYBRID.value: PQCAlgorithm.ML_KEM_768,
@@ -8081,11 +8044,11 @@ def decrypt_file(
                 if not quiet:
                     print("❌")  # Red X symbol
 
-                # Check if this is a PQC operation (algorithm contains 'kyber')
+                # Check if this is a PQC operation (ML-KEM or HQC)
                 # Allow bypass in test mode for PQC dual encryption tests specifically
                 test_name = os.environ.get("PYTEST_CURRENT_TEST", "")
                 is_pqc_dual_test = "pqc_dual_encryption" in test_name.lower()
-                is_pqc_algorithm = "kyber" in algorithm.lower() or "ml-kem" in algorithm.lower()
+                is_pqc_algorithm = "ml-kem" in algorithm.lower()
 
                 if is_pqc_algorithm and (
                     os.environ.get("PYTEST_CURRENT_TEST") is None or is_pqc_dual_test
