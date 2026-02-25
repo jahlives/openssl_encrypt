@@ -115,7 +115,6 @@ from .hash_registry import (
     BLAKE2s,
     HashBase,
     HashRegistry,
-    Whirlpool,
     get_hash,
 )
 
@@ -136,7 +135,6 @@ __all__.extend(
         "BLAKE3",
         "SHAKE128",
         "SHAKE256",
-        "Whirlpool",
     ]
 )
 
