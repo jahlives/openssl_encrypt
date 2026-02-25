@@ -405,9 +405,6 @@ def debug_hash_config(args, hash_config, message="Hash configuration"):
         f"SHAKE-256: args={args.shake256_rounds}, hash_config={hash_config.get('shake256', 'Not set')}"
     )
     logger.debug(
-        f"PBKDF2: args={args.pbkdf2_iterations}, hash_config={hash_config.get('pbkdf2_iterations', 'Not set')}"
-    )
-    logger.debug(
         f"Scrypt: args.n={args.scrypt_n}, hash_config.n={hash_config.get('scrypt', {}).get('n', 'Not set')}"
     )
     logger.debug(
@@ -597,7 +594,6 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                     "type": 2,
                     "rounds": 10,
                 },
-                "pbkdf2_iterations": 10000,
                 "type": "id",
                 "algorithm": "fernet",
             }
@@ -621,7 +617,6 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                     "type": 2,
                     "rounds": 5,
                 },
-                "pbkdf2_iterations": 0,
                 "type": "id",
                 "algorithm": "aes-gcm-siv",
             }
@@ -652,7 +647,6 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                     "hash_len": 64,
                     "rounds": 5,
                 },
-                "pbkdf2_iterations": 0,
                 "type": "id",
                 "algorithm": "xchacha20-poly1305",
             }
@@ -808,14 +802,6 @@ def analyze_current_security_configuration(args):
                 "n": scrypt_n,
                 "r": getattr(args, "scrypt_r", 8) or 8,
                 "p": getattr(args, "scrypt_p", 1) or 1,
-            }
-
-        # PBKDF2 configuration
-        pbkdf2_rounds = getattr(args, "pbkdf2_rounds", 0) or 0
-        if pbkdf2_rounds > 0:
-            kdf_config["pbkdf2"] = {
-                "enabled": True,
-                "rounds": pbkdf2_rounds,
             }
 
         # Balloon configuration
@@ -3652,14 +3638,6 @@ def main_with_args(args=None):
         help="Number of Whirlpool iterations (default: 0, not used)",
     )
 
-    # PBKDF2 option - renamed for consistency
-    hash_group.add_argument(
-        "--pbkdf2-iterations",
-        type=int,
-        default=0,
-        help="Number of PBKDF2 iterations (default: 100000)",
-    )
-
     # Scrypt parameters group - updated to match the template naming
     scrypt_group = parser.add_argument_group(
         "Scrypt Options", "Configure Scrypt memory-hard function parameters"
@@ -3933,8 +3911,6 @@ def main_with_args(args=None):
     hash_group.add_argument(
         "--shake256", type=int, nargs="?", const=1, default=0, help=argparse.SUPPRESS
     )
-    hash_group.add_argument("--pbkdf2", type=int, default=100000, help=argparse.SUPPRESS)
-
     # Password generation options
     password_group = parser.add_argument_group("Password Generation Options")
     password_group.add_argument(
@@ -4082,7 +4058,6 @@ def main_with_args(args=None):
         "sha3_512": None,
         "blake2b": None,
         "shake256": None,
-        "pbkdf2": 100000,
         "use_argon2": False,
         "enable_balloon": False,
         "use_balloon": False,
@@ -4114,7 +4089,6 @@ def main_with_args(args=None):
         "sha3_224_rounds": None,
         "blake3_rounds": None,
         "shake128_rounds": None,
-        "pbkdf2_iterations": 0,
         "enable_argon2": False,
         "argon2_type": "id",
         "argon2_memory": 65536,
@@ -4245,11 +4219,6 @@ def main_with_args(args=None):
     if not getattr(args, "shake256_rounds", None) and getattr(args, "shake256", None):
         args.shake256_rounds = args.shake256
 
-    # PBKDF2 mapping
-    pbkdf2_val = getattr(args, "pbkdf2", 100000)
-    if pbkdf2_val != 100000:  # Only override if not the default
-        args.pbkdf2_iterations = pbkdf2_val
-
     # Argon2 mapping
     if getattr(args, "use_argon2", False):
         args.enable_argon2 = True
@@ -4324,8 +4293,6 @@ def main_with_args(args=None):
                 hash_config["shake128"] = args.shake128_rounds
             if hasattr(args, "whirlpool_rounds") and args.whirlpool_rounds:
                 hash_config["whirlpool"] = args.whirlpool_rounds
-            if hasattr(args, "pbkdf2_iterations") and args.pbkdf2_iterations:
-                hash_config["pbkdf2_iterations"] = args.pbkdf2_iterations
 
             # Build manifest hash config if manifest security profile specified
             manifest_hash_config = None
@@ -4359,8 +4326,6 @@ def main_with_args(args=None):
                     manifest_hash_config["shake128"] = args.shake128_rounds
                 if hasattr(args, "whirlpool_rounds") and args.whirlpool_rounds:
                     manifest_hash_config["whirlpool"] = args.whirlpool_rounds
-                if hasattr(args, "pbkdf2_iterations") and args.pbkdf2_iterations:
-                    manifest_hash_config["pbkdf2_iterations"] = args.pbkdf2_iterations
 
             # Create USB
             security_profile = getattr(args, "security_profile", "standard")
@@ -4448,8 +4413,6 @@ def main_with_args(args=None):
                 hash_config["shake128"] = args.shake128_rounds
             if hasattr(args, "whirlpool_rounds") and args.whirlpool_rounds:
                 hash_config["whirlpool"] = args.whirlpool_rounds
-            if hasattr(args, "pbkdf2_iterations") and args.pbkdf2_iterations:
-                hash_config["pbkdf2_iterations"] = args.pbkdf2_iterations
 
             result = verify_usb_integrity(
                 usb_path=args.usb_path,
@@ -5712,7 +5675,6 @@ def main_with_args(args=None):
                     "height": getattr(args, "randomx_height", 1),
                     "hash_len": getattr(args, "randomx_hash_len", 32),
                 },
-                "pbkdf2_iterations": getattr(args, "pbkdf2_iterations", 0),
             }
 
     # Debug the hash configuration if debug mode is enabled
@@ -6078,10 +6040,6 @@ def main_with_args(args=None):
                     },
                 }
 
-                # Add pbkdf2_iterations separately
-                if hasattr(args, "pbkdf2_iterations") and args.pbkdf2_iterations > 0:
-                    hash_config["pbkdf2_iterations"] = args.pbkdf2_iterations
-
                 # Determine output file
                 if args.overwrite:
                     output_file = args.input
@@ -6143,13 +6101,6 @@ def main_with_args(args=None):
                 print("ERROR: Whirlpool is deprecated for new encryptions.")
                 print("Please use BLAKE2b, BLAKE3, or SHA-3 instead.")
                 print("Existing files encrypted with Whirlpool can still be decrypted.")
-                sys.exit(1)
-
-            # DEPRECATED: PBKDF2 is no longer supported for new encryptions
-            if hasattr(args, "pbkdf2_iterations") and getattr(args, "pbkdf2_iterations", 0) > 0:
-                print("ERROR: PBKDF2 is deprecated for new encryptions.")
-                print("Please use Argon2, Scrypt, or Balloon hashing instead.")
-                print("Existing files encrypted with PBKDF2 can still be decrypted.")
                 sys.exit(1)
 
             # DEPRECATED: Kyber algorithms are no longer supported for new encryptions
@@ -6619,7 +6570,6 @@ def main_with_args(args=None):
                             temp_output,
                             password,
                             hash_config=hash_config,
-                            pbkdf2_iterations=getattr(args, "pbkdf2_iterations", 0),
                             quiet=args.quiet,
                             algorithm=args.algorithm,
                             pqc_keypair=(pqc_keypair if "pqc_keypair" in locals() else None),
@@ -6803,7 +6753,6 @@ def main_with_args(args=None):
                             temp_output,
                             password,
                             hash_config,
-                            args.pbkdf2_iterations,
                             args.quiet,
                             algorithm="cascade" if cascade_mode else args.algorithm,
                             progress=args.progress,
@@ -7077,7 +7026,6 @@ def main_with_args(args=None):
                     temp_output_file,
                     password,
                     hash_config,
-                    args.pbkdf2_iterations,
                     quiet=True,  # Suppress normal output for stdout
                     algorithm="cascade" if cascade_mode else args.algorithm,
                     progress=False,  # No progress bar for stdout
@@ -7536,7 +7484,6 @@ def main_with_args(args=None):
                         output_file,
                         password,
                         hash_config=hash_config,
-                        pbkdf2_iterations=args.pbkdf2_iterations,
                         quiet=args.quiet,
                         algorithm=args.algorithm,
                         pqc_keypair=pqc_keypair if "pqc_keypair" in locals() else None,
@@ -7719,7 +7666,6 @@ def main_with_args(args=None):
                         output_file,
                         password,
                         hash_config,
-                        args.pbkdf2_iterations,
                         args.quiet,
                         algorithm="cascade" if cascade_mode else args.algorithm,
                         progress=args.progress,

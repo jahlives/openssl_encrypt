@@ -5,7 +5,7 @@ Algorithm Registry System.
 Unified management of cryptographic algorithms with support for:
 - Symmetric ciphers (AES, ChaCha20, etc.)
 - Hash functions (SHA, BLAKE, etc.)
-- Key derivation functions (Argon2, PBKDF2, etc.)
+- Key derivation functions (Argon2, Scrypt, etc.)
 - Post-quantum KEMs (ML-KEM, HQC)
 - Post-quantum signatures (ML-DSA, FN-DSA, etc.)
 - Hybrid encryption modes
@@ -143,7 +143,6 @@ __all__.extend(
 # KDF registry
 from .kdf_registry import (
     HKDF,
-    PBKDF2,
     Argon2d,
     Argon2i,
     Argon2id,
@@ -155,7 +154,6 @@ from .kdf_registry import (
     KDFBase,
     KDFParams,
     KDFRegistry,
-    PBKDF2Params,
     RandomX,
     RandomXParams,
     Scrypt,
@@ -169,7 +167,6 @@ __all__.extend(
         "KDFBase",
         "KDFParams",
         "Argon2Params",
-        "PBKDF2Params",
         "ScryptParams",
         "BalloonParams",
         "HKDFParams",
@@ -180,7 +177,6 @@ __all__.extend(
         "Argon2id",
         "Argon2i",
         "Argon2d",
-        "PBKDF2",
         "Scrypt",
         "Balloon",
         "HKDF",

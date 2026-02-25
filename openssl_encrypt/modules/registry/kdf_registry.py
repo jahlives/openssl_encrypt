@@ -3,7 +3,7 @@
 Key Derivation Function (KDF) Registry.
 
 Implements password-based key derivation functions with unified interface.
-Supports: Argon2 family, PBKDF2, Scrypt, Balloon, HKDF, and RandomX.
+Supports: Argon2 family, Scrypt, Balloon, HKDF, and RandomX.
 
 All code in English as per project requirements.
 """
@@ -73,22 +73,6 @@ class Argon2Params(KDFParams):
     memory_cost: int = 65536  # 64 MB in KiB
     parallelism: int = 4
     variant: str = "id"  # "id", "i", or "d"
-
-
-@dataclass
-class PBKDF2Params(KDFParams):
-    """
-    Parameters for PBKDF2 key derivation.
-
-    Attributes:
-        output_length: Desired key length in bytes (default: 32)
-        salt_length: Salt length in bytes (default: 16)
-        iterations: Number of iterations (default: 100000)
-        hash_function: Hash function name (default: "sha256")
-    """
-
-    iterations: int = 100000
-    hash_function: str = "sha256"  # "sha256", "sha512", etc.
 
 
 @dataclass
@@ -421,90 +405,6 @@ class Argon2d(KDFBase):
 
         # Delegate to Argon2id with forced variant (already returns SecureBytes)
         return Argon2id().derive(password, salt, params)
-
-
-# ============================================================================
-# PBKDF2
-# ============================================================================
-
-
-class PBKDF2(KDFBase):
-    """
-    PBKDF2 - Password-Based Key Derivation Function 2 (NIST SP 800-132).
-
-    Legacy KDF, not memory-hard. Use Argon2 for new applications.
-    """
-
-    @classmethod
-    def info(cls) -> AlgorithmInfo:
-        return AlgorithmInfo(
-            name="pbkdf2",
-            display_name="PBKDF2",
-            category=AlgorithmCategory.KDF,
-            security_bits=256,
-            pq_security_bits=128,
-            security_level=SecurityLevel.LEGACY,
-            description="PBKDF2 - Legacy KDF (not memory-hard, use Argon2 instead)",
-            aliases=("pbkdf2-hmac", "pbkdf2-sha256"),
-            references=("NIST SP 800-132", "RFC 2898"),
-            nist_standard="SP 800-132",
-        )
-
-    @classmethod
-    def default_params(cls) -> PBKDF2Params:
-        return PBKDF2Params(
-            output_length=32,
-            salt_length=16,
-            iterations=100000,
-            hash_function="sha256",
-        )
-
-    def derive(
-        self,
-        password: Union[bytes, SecureBytes],
-        salt: bytes,
-        params: Optional[PBKDF2Params] = None,
-    ) -> SecureBytes:
-        if params is None:
-            params = self.default_params()
-
-        self.validate_params(params)
-
-        if params.iterations < 1:
-            raise ValidationError("PBKDF2 iterations must be at least 1")
-
-        from cryptography.hazmat.backends import default_backend
-        from cryptography.hazmat.primitives import hashes
-        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-
-        # Convert password to bytes if needed
-        password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
-
-        # Map hash function name to cryptography hash algorithm
-        hash_map = {
-            "sha256": hashes.SHA256(),
-            "sha384": hashes.SHA384(),
-            "sha512": hashes.SHA512(),
-            "sha224": hashes.SHA224(),
-        }
-
-        if params.hash_function not in hash_map:
-            raise ValidationError(f"Unsupported hash function: {params.hash_function}")
-
-        kdf = PBKDF2HMAC(
-            algorithm=hash_map[params.hash_function],
-            length=params.output_length,
-            salt=salt,
-            iterations=params.iterations,
-            backend=default_backend(),
-        )
-
-        try:
-            derived_key = kdf.derive(password_bytes)
-            return SecureBytes(derived_key)
-        finally:
-            if isinstance(password, SecureBytes) and password_bytes != password:
-                secure_memzero(bytearray(password_bytes))
 
 
 # ============================================================================
@@ -901,7 +801,6 @@ class KDFRegistry(RegistryBase[KDFBase]):
         self.register(Argon2d)
 
         # Standard KDFs
-        self.register(PBKDF2)
         self.register(Scrypt)
         self.register(Balloon)
         self.register(HKDF)

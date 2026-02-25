@@ -444,8 +444,6 @@ class XChaCha20Poly1305:
             raise DecryptionError(original_exception=e)
 
 
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-
 try:
     from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
@@ -1031,7 +1029,7 @@ def with_progress_bar(func, message, *args, quiet=False, **kwargs):
     Execute a function with an animated progress bar to indicate activity.
 
     This is used for operations that don't report incremental progress like
-    PBKDF2 key derivation or Scrypt, which can take significant time to complete.
+    Key derivation via Scrypt, which can take significant time to complete.
 
     Args:
         func: Function to execute
@@ -1876,7 +1874,7 @@ def compute_kdf_independent(
     Args:
         password: Initial hash (SHA-256 of password+salt), not raw password
         salt: Original salt bytes
-        kdf_type: KDF type (argon2, scrypt, balloon, hkdf, pbkdf2)
+        kdf_type: KDF type (argon2, scrypt, balloon, hkdf)
         kdf_config: KDF-specific configuration dict
         key_length: Target output length in bytes
         quiet: Suppress output messages
@@ -2036,29 +2034,6 @@ def compute_kdf_independent(
         result = hkdf.derive(password_bytes)
         return SecureBytes(result)
 
-    elif kdf_type == "pbkdf2":
-        import hashlib
-
-        # Extract PBKDF2 parameters
-        iterations = kdf_config.get("iterations", 100000)
-        hash_name = kdf_config.get("hash_name", "sha256")
-
-        if debug:
-            logger.debug(
-                f"INDEPENDENT-XOR: PBKDF2 params - iterations={iterations}, hash={hash_name}"
-            )
-
-        # Run PBKDF2 on initial hash (note: PBKDF2 deprecated for v11, decryption-only)
-        result = hashlib.pbkdf2_hmac(
-            hash_name=hash_name,
-            password=password_bytes,
-            salt=salt,
-            iterations=iterations,
-            dklen=key_length,
-        )
-
-        return SecureBytes(result)
-
     else:
         raise ValueError(f"Unsupported KDF type: {kdf_type}")
 
@@ -2067,7 +2042,6 @@ def generate_key_independent_xor(
     password: bytes,
     salt: bytes,
     hash_config: dict,
-    pbkdf2_iterations: int = 100000,
     quiet: bool = False,
     algorithm: str = "aes-256-gcm",
     progress: bool = False,
@@ -2092,7 +2066,6 @@ def generate_key_independent_xor(
         password: User password (bytes)
         salt: Random salt (bytes)
         hash_config: Configuration dict for enabled algorithms
-        pbkdf2_iterations: PBKDF2 iterations (if PBKDF2 enabled)
         quiet: Suppress output messages
         algorithm: Encryption algorithm (determines key length)
         progress: Show progress indicators
@@ -2340,10 +2313,6 @@ def generate_key_independent_xor(
             if debug:
                 logger.debug(f"INDEPENDENT-XOR: Added HKDF component #{len(xor_components)}")
 
-        # NOTE: PBKDF2 is deprecated and NOT used for v11 encryption
-        # It's only supported for decryption of legacy files (v1-v9)
-        # For v11, only modern KDFs (Argon2, Scrypt, Balloon, HKDF) and hashes are used
-
         # Verify we have at least one component
         if len(xor_components) == 0:
             raise ValueError(
@@ -2477,7 +2446,6 @@ def generate_key(
     password,
     salt,
     hash_config,
-    pbkdf2_iterations=100000,
     quiet=False,
     algorithm=EncryptionAlgorithm.FERNET.value,
     progress=False,
@@ -2487,13 +2455,12 @@ def generate_key(
     format_version=9,
 ):
     """
-    Generate an encryption key from a password using PBKDF2 or Argon2.
+    Generate an encryption key from a password using configured KDFs.
 
     Args:
         password (bytes): The password to derive the key from
         salt (bytes): Random salt for key derivation
         hash_config (dict): Configuration for hash algorithms including Argon2
-        pbkdf2_iterations (int): Number of iterations for PBKDF2
         quiet (bool): Whether to suppress progress output
         progress (bool): Whether to use progress bar for progress output
         debug (bool): Whether to show detailed debug output for each operation
@@ -2539,9 +2506,6 @@ def generate_key(
 
     if not isinstance(hash_config, dict):
         raise ValidationError("Hash configuration must be a dictionary")
-
-    if not isinstance(pbkdf2_iterations, int) or pbkdf2_iterations < 0:
-        raise ValidationError("PBKDF2 iterations must be a non-negative integer")
 
     def show_progress(algorithm, current, total):
         if quiet:
@@ -2745,7 +2709,6 @@ def generate_key(
         kdf_config = hash_config["derivation_config"]["kdf_config"]
         use_argon2 = kdf_config.get("argon2", {}).get("enabled", False)
         use_scrypt = kdf_config.get("scrypt", {}).get("enabled", False)
-        use_pbkdf2 = kdf_config.get("pbkdf2_iterations", 0) > 0
         use_balloon = kdf_config.get("balloon", {}).get("enabled", False)
         use_hkdf = kdf_config.get("hkdf", {}).get("enabled", False)
         use_randomx = kdf_config.get("randomx", {}).get("enabled", False)
@@ -2753,7 +2716,6 @@ def generate_key(
         # Original version 3 format
         use_argon2 = hash_config.get("argon2", {}).get("enabled", False)
         use_scrypt = hash_config.get("scrypt", {}).get("enabled", False)
-        use_pbkdf2 = hash_config.get("pbkdf2_iterations", 0) > 0
         use_balloon = hash_config.get("balloon", {}).get("enabled", False)
         use_hkdf = hash_config.get("hkdf", {}).get("enabled", False)
         use_randomx = hash_config.get("randomx", {}).get("enabled", False)
@@ -2980,8 +2942,8 @@ def generate_key(
                 print("✅")
         except Exception as e:
             if not quiet:
-                print(f"Argon2 key derivation failed: {str(e)}. Falling back to PBKDF2.")
-            # Fall back to PBKDF2 if Argon2 fails
+                print(f"Argon2 key derivation failed: {str(e)}. KDF failed.")
+            # Mark Argon2 as failed
             use_argon2 = False
 
     if use_balloon and BALLOON_AVAILABLE:
@@ -3105,8 +3067,8 @@ def generate_key(
                 print("✅")
         except Exception as e:
             if not quiet:
-                print(f"Balloon key derivation failed: {str(e)}. Falling back to PBKDF2.")
-            use_balloon = False  # Consider falling back to PBKDF2
+                print(f"Balloon key derivation failed: {str(e)}. KDF failed.")
+            use_balloon = False  # KDF failed, continuing
 
     if use_scrypt and SCRYPT_AVAILABLE:
         # Create a copy of the salt to prevent modifications affecting the original
@@ -3200,32 +3162,8 @@ def generate_key(
                 print("✅")
         except Exception as e:
             if not quiet:
-                print(f"Scrypt key derivation failed: {str(e)}. Falling back to PBKDF2.")
-            use_scrypt = False  # Consider falling back to PBKDF2
-
-    # Check for pbkdf2 iterations from different potential sources
-    # 1. Check if pbkdf2 is defined with a nested structure (format version 4)
-    if (
-        "pbkdf2" in hash_config
-        and isinstance(hash_config["pbkdf2"], dict)
-        and "rounds" in hash_config["pbkdf2"]
-    ):
-        use_pbkdf2 = hash_config["pbkdf2"]["rounds"]
-    # 2. For backward compatibility, check if pbkdf2_iterations is in hash_config directly
-    else:
-        pbkdf2_from_hash_config = hash_config.get("pbkdf2_iterations")
-        # Only inject PBKDF2 in pytest during encryption for legacy versions, not v10/v8
-        # During decryption, we must strictly follow the metadata configuration
-        # IMPORTANT: For v10/v8, NEVER inject PBKDF2 - it causes XOR intermediate mismatch
-        if (
-            os.environ.get("PYTEST_CURRENT_TEST") is not None
-            and pbkdf2_from_hash_config is None
-            and not hash_config.get("_is_from_decryption_metadata", False)
-            and not use_xor_composition  # Don't inject for v10/v8
-        ):
-            use_pbkdf2 = 100000
-        elif pbkdf2_from_hash_config is not None and pbkdf2_from_hash_config > 0:
-            use_pbkdf2 = pbkdf2_from_hash_config
+                print(f"Scrypt key derivation failed: {str(e)}. KDF failed.")
+            use_scrypt = False  # KDF failed, continuing
 
     if use_hkdf and HKDF_AVAILABLE:
         # Create a copy of the salt to prevent modifications affecting the original
@@ -3311,9 +3249,9 @@ def generate_key(
 
         except Exception:
             if not quiet:
-                print("❌ HKDF failed, falling back to PBKDF2")
+                print("❌ HKDF failed")
             # Don't set use_hkdf to False here, as we want to record the attempt
-            use_hkdf = False  # Consider falling back to PBKDF2
+            use_hkdf = False  # KDF failed, continuing
 
     # RandomX KDF - Applied after HKDF as the final KDF in the chain
     if use_randomx and RANDOMX_AVAILABLE:
@@ -3423,72 +3361,6 @@ def generate_key(
             print("⚠️ RandomX requested but not available (install pyrx package)")
         logger.warning("RandomX requested but pyrx library not available")
 
-    if use_pbkdf2 and use_pbkdf2 > 0:
-        # Using a fixed salt initially but then generating unique salts for each iteration
-        # to prevent salt reuse attacks
-        base_salt = salt
-        if not quiet and not progress:
-            print(f"Applying {use_pbkdf2} rounds of PBKDF2", end=" ")
-        elif not quiet:
-            print(f"Applying {use_pbkdf2} rounds of PBKDF2")
-
-        for i in range(use_pbkdf2):
-            # Version-aware salt derivation
-            if format_version >= 7:
-                # Secure chained derivation (v7, v8, v9, v10+)
-                if debug and i == 0:
-                    logger.debug(
-                        f"PBKDF2: Using SECURE chained derivation (format_version={format_version})"
-                    )
-                if i == 0:
-                    # Use the original salt for the first iteration
-                    iteration_specific_salt = base_salt
-                else:
-                    # Chained: Use previous output as salt (secure method)
-                    # Prevents precomputation attacks by creating dependency chain
-                    iteration_specific_salt = password[:16]
-            else:
-                # Legacy: Predictable derivation for v1-6 (backward compatibility only)
-                #
-                # Original code derived salt for all rounds including round 0
-                if debug and i == 0:
-                    logger.debug(
-                        f"PBKDF2: Using PREDICTABLE derivation (format_version={format_version})"
-                    )
-                iteration_specific_salt = hashlib.sha256(
-                    base_salt + str(i).encode("utf-8")
-                ).digest()
-
-            password = PBKDF2HMAC(
-                algorithm=hashes.SHA256(),
-                length=key_length,
-                salt=iteration_specific_salt,
-                iterations=1,
-                backend=default_backend(),
-            ).derive(
-                password
-            )  # Use the potentially hashed password
-
-            # Update progress every 1000 iterations
-            if not quiet and i > 0 and i % 1000 == 0 and not progress:
-                print(".", end="", flush=True)
-
-        if not quiet and not progress:
-            print(" ✅")
-            derived_salt = password[:16]
-            KeyStretch.key_stretch = True
-            show_progress("PBKDF2", i + 1, use_pbkdf2)
-
-        # NEW: For v10/v8, save PBKDF2 final output to XOR accumulator
-        # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes
-        if use_xor_composition:
-            pbkdf2_normalized = normalize_to_key_length_secure(password, key_length)
-            xor_accumulator.append(pbkdf2_normalized)  # SecureBytes object
-            if debug:
-                logger.debug(f"V10-XOR: Added PBKDF2 final output: {pbkdf2_normalized.hex()}")
-
-    # Check if any KDF was requested but none were successful
-    # This handles cases where KDFs like RandomX fail due to unavailability
     any_kdf_requested = (
         (hash_config and hash_config.get("randomx", {}).get("enabled", False))
         or (hash_config and hash_config.get("argon2", {}).get("enabled", False))
@@ -3530,79 +3402,6 @@ def generate_key(
         logger.debug(
             f"KDF request details - hash_config keys: {list(hash_config.keys()) if hash_config else 'None'}"
         )
-
-    # If KDFs were requested but none succeeded, apply default PBKDF2 as fallback
-    # IMPORTANT: For v10/v8, DO NOT use PBKDF2 fallback - it's only for backward compat decryption
-    if any_kdf_requested and not KeyStretch.key_stretch and not use_xor_composition:
-        if not quiet:
-            logger.warning(
-                "Requested KDFs failed, applying PBKDF2 fallback — consider re-encrypting"
-            )
-            print("⚠️ Requested KDFs failed, applying PBKDF2 fallback")
-
-        is_decrypting = KeyStretch.kind_action == "decrypt"
-
-        if not is_decrypting and format_version >= 10:
-            # New encryptions: use standard PBKDF2HMAC with 600000 iterations
-            password = PBKDF2HMAC(
-                algorithm=hashes.SHA256(),
-                length=key_length,
-                salt=salt,
-                iterations=600000,
-                backend=default_backend(),
-            ).derive(password)
-            if not quiet and not progress:
-                print(" ✅")
-            KeyStretch.key_stretch = True
-            show_progress("PBKDF2 (fallback)", 600000, 600000)
-        else:
-            # Legacy fallback for decryption or older format versions:
-            # Non-standard loop of 100k single-iteration PBKDF2 calls
-            default_pbkdf2_iterations = 100000
-            base_salt = salt
-
-            for i in range(default_pbkdf2_iterations):
-                # Version-aware salt derivation
-                if format_version >= 7:
-                    # Secure chained derivation (v7, v8, v9, v10+)
-                    if i == 0:
-                        # Use the original salt for the first iteration
-                        iteration_specific_salt = base_salt
-                    else:
-                        # Chained: Use previous output as salt (secure method)
-                        iteration_specific_salt = password[:16]
-                else:
-                    # Legacy: Predictable derivation for v1-6 (backward compatibility only)
-                    iteration_specific_salt = hashlib.sha256(
-                        base_salt + str(i).encode("utf-8")
-                    ).digest()
-
-                password = PBKDF2HMAC(
-                    algorithm=hashes.SHA256(),
-                    length=key_length,
-                    salt=iteration_specific_salt,
-                    iterations=1,
-                    backend=default_backend(),
-                ).derive(password)
-
-                # Update progress every 10000 iterations for default PBKDF2
-                if not quiet and i > 0 and i % 10000 == 0 and not progress:
-                    print(".", end="", flush=True)
-
-            if not quiet and not progress:
-                print(" ✅")
-            KeyStretch.key_stretch = True
-            show_progress("PBKDF2 (fallback)", default_pbkdf2_iterations, default_pbkdf2_iterations)
-
-        # NEW: For v10/v8, save fallback PBKDF2 final output to XOR accumulator
-        # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes
-        if use_xor_composition:
-            pbkdf2_fallback_normalized = normalize_to_key_length_secure(password, key_length)
-            xor_accumulator.append(pbkdf2_fallback_normalized)  # SecureBytes object
-            if debug:
-                logger.debug(
-                    f"V10-XOR: Added PBKDF2 fallback final output: {pbkdf2_fallback_normalized.hex()}"
-                )
 
     # V10/v8: XOR all accumulated intermediate values
     # CRITICAL: This section handles multiple sensitive intermediates
@@ -3792,12 +3591,6 @@ def convert_metadata_v3_to_v4(metadata):
         if algo in hash_config:
             new_metadata["derivation_config"]["hash_config"][algo] = {"rounds": hash_config[algo]}
 
-    # Move pbkdf2 iterations to kdf_config with proper nesting
-    if "pbkdf2_iterations" in metadata:
-        new_metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {
-            "rounds": metadata["pbkdf2_iterations"]
-        }
-
     # Add scrypt config if present
     if "scrypt" in metadata:
         new_metadata["derivation_config"]["kdf_config"]["scrypt"] = metadata["scrypt"]
@@ -3912,11 +3705,6 @@ def convert_metadata_v4_to_v3(metadata):
             # Fallback for any non-nested values (shouldn't happen, but just in case)
             old_metadata["hash_config"][algo] = config
 
-    # Extract pbkdf2 iterations if present
-    kdf_config = metadata["derivation_config"].get("kdf_config", {})
-    if "pbkdf2" in kdf_config and isinstance(kdf_config["pbkdf2"], dict):
-        old_metadata["pbkdf2_iterations"] = kdf_config["pbkdf2"].get("rounds", 100000)
-
     # Extract scrypt config if present
     if "scrypt" in kdf_config:
         old_metadata["scrypt"] = kdf_config["scrypt"]
@@ -3960,7 +3748,6 @@ def create_metadata_v5(
     original_hash,
     encrypted_hash,
     algorithm,
-    pbkdf2_iterations=0,
     pqc_info=None,
     encryption_data="aes-gcm",
     hsm_plugin_name=None,
@@ -3979,7 +3766,6 @@ def create_metadata_v5(
         original_hash (str): Hash of original content
         encrypted_hash (str): Hash of encrypted content (can be None if aad_mode=True)
         algorithm (str): Encryption algorithm used
-        pbkdf2_iterations (int): PBKDF2 iterations if used
         pqc_info (dict): Post-quantum cryptography information
         encryption_data (str): The symmetric encryption algorithm to use for data encryption
         hsm_plugin_name (str): HSM plugin identifier (optional)
@@ -4034,21 +3820,6 @@ def create_metadata_v5(
         ]:
             metadata["derivation_config"]["hash_config"][algo] = {"rounds": rounds}
 
-    # Add PBKDF2 config if explicitly configured in hash_config
-    # IMPORTANT: Only add PBKDF2 to metadata if it's explicitly in hash_config
-    # For v10+, PBKDF2 should not be used for encryption (only backward compat decryption)
-    # Check for both pbkdf2 dict format and pbkdf2_iterations int format
-    if (
-        "pbkdf2" in hash_config
-        and isinstance(hash_config["pbkdf2"], dict)
-        and "rounds" in hash_config["pbkdf2"]
-    ):
-        metadata["derivation_config"]["kdf_config"]["pbkdf2"] = hash_config["pbkdf2"]
-    elif "pbkdf2_iterations" in hash_config and hash_config["pbkdf2_iterations"] > 0:
-        metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {
-            "rounds": hash_config["pbkdf2_iterations"]
-        }
-
     # Move KDF configurations from hash_config if present
     kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf", "randomx"]
     for kdf in kdf_algorithms:
@@ -4099,7 +3870,6 @@ def create_metadata_v6(
     original_hash,
     encrypted_hash,
     algorithm,
-    pbkdf2_iterations=0,
     pqc_info=None,
     encryption_data="aes-gcm",
     hsm_plugin_name=None,
@@ -4124,7 +3894,6 @@ def create_metadata_v6(
         original_hash (str): Hash of original content
         encrypted_hash (str): Hash of encrypted content (can be None if aad_mode=True)
         algorithm (str): Encryption algorithm used
-        pbkdf2_iterations (int): PBKDF2 iterations if used
         pqc_info (dict): Post-quantum cryptography information
         encryption_data (str): The symmetric encryption algorithm to use for data encryption
         hsm_plugin_name (str): HSM plugin identifier (optional)
@@ -4191,21 +3960,6 @@ def create_metadata_v6(
             "shake128",
         ]:
             metadata["derivation_config"]["hash_config"][algo] = {"rounds": rounds}
-
-    # Add PBKDF2 config if explicitly configured in hash_config
-    # IMPORTANT: Only add PBKDF2 to metadata if it's explicitly in hash_config
-    # For v10+, PBKDF2 should not be used for encryption (only backward compat decryption)
-    # Check for both pbkdf2 dict format and pbkdf2_iterations int format
-    if (
-        "pbkdf2" in hash_config
-        and isinstance(hash_config["pbkdf2"], dict)
-        and "rounds" in hash_config["pbkdf2"]
-    ):
-        metadata["derivation_config"]["kdf_config"]["pbkdf2"] = hash_config["pbkdf2"]
-    elif "pbkdf2_iterations" in hash_config and hash_config["pbkdf2_iterations"] > 0:
-        metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {
-            "rounds": hash_config["pbkdf2_iterations"]
-        }
 
     # Move KDF configurations from hash_config if present
     kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf", "randomx"]
@@ -4300,7 +4054,6 @@ def create_metadata_v8(
     hash_config: dict,
     original_hash: str,
     algorithm: str,
-    pbkdf2_iterations: int = 0,
     encryption_data: str = "aes-gcm",
     cascade: bool = False,
     cipher_chain: list = None,
@@ -4333,7 +4086,6 @@ def create_metadata_v8(
         hash_config: Hash configuration dictionary
         original_hash: Hash of original content
         algorithm: Encryption algorithm (single cipher or first in chain)
-        pbkdf2_iterations: PBKDF2 iterations if used
         encryption_data: Symmetric algorithm for data encryption
         cascade: Whether cascade encryption is enabled
         cipher_chain: List of cipher names in cascade order
@@ -4418,21 +4170,6 @@ def create_metadata_v8(
             "shake128",
         ]:
             metadata["derivation_config"]["hash_config"][algo] = {"rounds": rounds}
-
-    # Add PBKDF2 config if explicitly configured in hash_config
-    # IMPORTANT: Only add PBKDF2 to metadata if it's explicitly in hash_config
-    # For v10+, PBKDF2 should not be used for encryption (only backward compat decryption)
-    # Check for both pbkdf2 dict format and pbkdf2_iterations int format
-    if (
-        "pbkdf2" in hash_config
-        and isinstance(hash_config["pbkdf2"], dict)
-        and "rounds" in hash_config["pbkdf2"]
-    ):
-        metadata["derivation_config"]["kdf_config"]["pbkdf2"] = hash_config["pbkdf2"]
-    elif "pbkdf2_iterations" in hash_config and hash_config["pbkdf2_iterations"] > 0:
-        metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {
-            "rounds": hash_config["pbkdf2_iterations"]
-        }
 
     # Move KDF configurations from hash_config
     kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf", "randomx"]
@@ -4633,11 +4370,6 @@ def create_metadata_v7(
         ]:
             metadata["derivation_config"]["hash_config"][algo] = {"rounds": rounds}
 
-    # Add PBKDF2 config if used
-    pbkdf2_iterations = hash_config.get("pbkdf2_iterations", 0)
-    if pbkdf2_iterations > 0:
-        metadata["derivation_config"]["kdf_config"]["pbkdf2"] = {"rounds": pbkdf2_iterations}
-
     # Move KDF configurations from hash_config if present
     if not quiet and verbose:
         print(f"  DEBUG: hash_config keys before KDF copy: {list(hash_config.keys())}")
@@ -4671,7 +4403,6 @@ def create_metadata_v4(
     original_hash,
     encrypted_hash,
     algorithm,
-    pbkdf2_iterations=0,
     pqc_info=None,
 ):
     """
@@ -4683,7 +4414,6 @@ def create_metadata_v4(
         original_hash (str): Hash of original content
         encrypted_hash (str): Hash of encrypted content
         algorithm (str): Encryption algorithm used
-        pbkdf2_iterations (int): PBKDF2 iterations if used
         pqc_info (dict): Post-quantum cryptography information
 
     Returns:
@@ -4696,7 +4426,6 @@ def create_metadata_v4(
         original_hash,
         encrypted_hash,
         algorithm,
-        pbkdf2_iterations,
         pqc_info,
     )
     return convert_metadata_v5_to_v4(v5_metadata)
@@ -4907,8 +4636,6 @@ def decrypt_file_asymmetric(
             for kdf_name, kdf_params in kdf_config.items():
                 if kdf_name in ["scrypt", "argon2", "balloon", "hkdf", "randomx"]:
                     hash_config[kdf_name] = kdf_params
-                elif kdf_name == "pbkdf2":
-                    hash_config["pbkdf2_iterations"] = kdf_params.get("rounds", 0)
 
             if not quiet:
                 print("Running KDF chain (this may take a while)...")
@@ -5041,7 +4768,6 @@ def encrypt_file_asymmetric(
         hash_config = {
             "sha512": 5,
             "blake2b": 3,
-            "pbkdf2_iterations": 100000,
         }
 
     if not quiet:
@@ -5169,13 +4895,6 @@ def encrypt_file_asymmetric(
                         "rounds": hash_config[algo]
                     }
 
-            # Add PBKDF2 if used
-            pbkdf2_iterations = hash_config.get("pbkdf2_iterations", 0)
-            if pbkdf2_iterations > 0:
-                metadata_unsigned["derivation_config"]["kdf_config"]["pbkdf2"] = {
-                    "rounds": pbkdf2_iterations
-                }
-
             # Copy KDF configurations from hash_config if present
             kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf", "randomx"]
             for kdf in kdf_algorithms:
@@ -5244,7 +4963,6 @@ def encrypt_file(
     output_file,
     password,
     hash_config=None,
-    pbkdf2_iterations=100000,
     quiet=False,
     algorithm=EncryptionAlgorithm.FERNET,
     progress=False,
@@ -5276,7 +4994,6 @@ def encrypt_file(
         output_file (str): Path where to save the encrypted file
         password (bytes): The password to use for encryption
         hash_config (dict, optional): Hash configuration dictionary
-        pbkdf2_iterations (int): Number of PBKDF2 iterations
         quiet (bool): Whether to suppress progress output
         progress (bool): Whether to show progress bar
         verbose (bool): Whether to show verbose output
@@ -5472,8 +5189,6 @@ def encrypt_file(
                 hash_config["hkdf"] = template_config["hash_config"]["hkdf"]
             if "randomx" in template_config["hash_config"]:
                 hash_config["randomx"] = template_config["hash_config"]["randomx"]
-            # Set PBKDF2 iterations to 0 since we have other KDFs
-            hash_config["pbkdf2_iterations"] = 0
         except ImportError:
             # Fallback to basic configuration if template system not available
             hash_config = {
@@ -5493,7 +5208,6 @@ def encrypt_file(
                     "type": 2,
                     "rounds": 5,
                 },
-                "pbkdf2_iterations": 0,
             }
 
     # Generate a key from the password
@@ -5711,7 +5425,6 @@ def encrypt_file(
                 password,
                 salt,
                 hash_config,
-                pbkdf2_iterations=pbkdf2_iterations,
                 quiet=quiet,
                 algorithm=algorithm_value,
                 progress=progress,
@@ -5727,7 +5440,6 @@ def encrypt_file(
                 password,
                 salt,
                 hash_config,
-                pbkdf2_iterations=pbkdf2_iterations,
                 quiet=quiet,
                 algorithm=algorithm_value,
                 progress=progress,
@@ -5744,7 +5456,6 @@ def encrypt_file(
             password,
             salt,
             hash_config,
-            pbkdf2_iterations,
             quiet,
             algorithm_value,
             progress=progress,
@@ -6411,7 +6122,6 @@ def encrypt_file(
                 hash_config=hash_config,
                 original_hash=original_hash,
                 algorithm=algorithm.value,
-                pbkdf2_iterations=pbkdf2_iterations,
                 encryption_data=encryption_data,
                 cascade=cascade and bool(cipher_names),
                 cipher_chain=cipher_names if (cascade and cipher_names) else None,
@@ -6439,7 +6149,6 @@ def encrypt_file(
                 original_hash=original_hash,
                 encrypted_hash=None,  # Not available yet - will be protected by AAD
                 algorithm=algorithm.value,
-                pbkdf2_iterations=pbkdf2_iterations,
                 pqc_info=pqc_info,
                 encryption_data=encryption_data,
                 hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
@@ -6666,7 +6375,6 @@ def encrypt_file(
                 hash_config=hash_config,
                 original_hash=original_hash,
                 algorithm=algorithm.value,
-                pbkdf2_iterations=pbkdf2_iterations,
                 encryption_data=encryption_data,
                 cascade=False,  # Non-AEAD path doesn't support cascade
                 cipher_chain=None,
@@ -6694,7 +6402,6 @@ def encrypt_file(
                 original_hash=original_hash,
                 encrypted_hash=encrypted_hash,
                 algorithm=algorithm.value,
-                pbkdf2_iterations=pbkdf2_iterations,
                 pqc_info=pqc_info,
                 encryption_data=encryption_data,
                 hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
@@ -7182,19 +6889,12 @@ def decrypt_file(
 
         # Get KDF configurations
         kdf_config = derivation_config.get("kdf_config", {})
-        pbkdf2_config = kdf_config.get("pbkdf2", {})
-        pbkdf2_iterations = pbkdf2_config.get("rounds", 0)
 
         # Merge KDF configurations into hash_config for compatibility with generate_key
         for kdf_name, kdf_params in kdf_config.items():
             if kdf_name in ["scrypt", "argon2", "balloon", "hkdf", "randomx"]:
                 hash_config[kdf_name] = kdf_params
-            elif kdf_name == "pbkdf2" and isinstance(kdf_params, dict) and "rounds" in kdf_params:
-                # Store pbkdf2 config from metadata
-                hash_config["pbkdf2"] = kdf_params
 
-        # Add pbkdf2_iterations for consistency with generate_key expectations
-        hash_config["pbkdf2_iterations"] = pbkdf2_iterations
         # Mark this hash_config as coming from decryption metadata
         hash_config["_is_from_decryption_metadata"] = True
 
@@ -7285,11 +6985,6 @@ def decrypt_file(
         # Mark this hash_config as coming from decryption metadata
         if hash_config:
             hash_config["_is_from_decryption_metadata"] = True
-
-        if format_version == 1:
-            pbkdf2_iterations = metadata.get("pbkdf2_iterations", 100000)
-        elif format_version in [2, 3]:
-            pbkdf2_iterations = 0
 
         original_hash = metadata.get("original_hash")
         encrypted_hash = metadata.get("encrypted_hash")
@@ -7663,7 +7358,6 @@ def decrypt_file(
                 password,
                 salt,
                 hash_config,
-                pbkdf2_iterations=pbkdf2_iterations,
                 quiet=quiet,
                 algorithm=algorithm,
                 progress=progress,
@@ -7679,7 +7373,6 @@ def decrypt_file(
                 password,
                 salt,
                 hash_config,
-                pbkdf2_iterations=pbkdf2_iterations,
                 quiet=quiet,
                 algorithm=algorithm,
                 progress=progress,
@@ -7694,7 +7387,6 @@ def decrypt_file(
             password,
             salt,
             hash_config,
-            pbkdf2_iterations,
             quiet,
             algorithm,
             progress=progress,
@@ -8506,7 +8198,7 @@ def get_organized_hash_config(hash_config, encryption_algo=None, salt=None):
     }
 
     # Define which algorithms are KDFs and which are hashes
-    kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf", "pbkdf2_iterations", "pbkdf2"]
+    kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf"]
     hash_algorithms = [
         "sha3_512",
         "sha3_384",
@@ -8561,17 +8253,6 @@ def get_organized_hash_config(hash_config, encryption_algo=None, salt=None):
                     if kdf in kdf_config and kdf_config[kdf].get("enabled", False):
                         organized_config["kdfs"][kdf] = kdf_config[kdf]
 
-                # Handle pbkdf2 which has a nested structure with rounds
-                if "pbkdf2" in kdf_config:
-                    if isinstance(kdf_config["pbkdf2"], dict) and "rounds" in kdf_config["pbkdf2"]:
-                        pbkdf2_rounds = kdf_config["pbkdf2"]["rounds"]
-                        if pbkdf2_rounds > 0:
-                            organized_config["kdfs"]["pbkdf2_iterations"] = pbkdf2_rounds
-                    elif (
-                        isinstance(kdf_config["pbkdf2"], (int, float)) and kdf_config["pbkdf2"] > 0
-                    ):
-                        # For backward compatibility
-                        organized_config["kdfs"]["pbkdf2_iterations"] = kdf_config["pbkdf2"]
     else:
         # Legacy format (v1-3) handling
         if hash_config is None:
@@ -8582,10 +8263,6 @@ def get_organized_hash_config(hash_config, encryption_algo=None, salt=None):
                 if isinstance(params, dict):
                     if params.get("enabled", False):
                         organized_config["kdfs"][algo] = params
-                elif algo == "pbkdf2_iterations" and params > 0:
-                    organized_config["kdfs"][algo] = params
-                elif algo == "pbkdf2" and isinstance(params, dict) and params.get("rounds", 0) > 0:
-                    organized_config["kdfs"]["pbkdf2_iterations"] = params["rounds"]
             elif algo in hash_algorithms and params > 0:
                 organized_config["hashes"][algo] = params
 
@@ -8641,8 +8318,6 @@ def print_hash_config(
                         f"parallelism={params['parallelism']}, "
                         f"rounds={params['rounds']}"
                     )
-                elif algo == "pbkdf2_iterations":
-                    logger.info(f"    - PBKDF2: {params} iterations")
         logger.info("  Encryption:")
         logger.info(f"    - Algorithm: {encryption_algo or 'Not specified'}")
         salt_str = base64.b64encode(salt).decode("utf-8") if isinstance(salt, bytes) else salt
