@@ -58,5 +58,3 @@ rpds-py==0.30.0
     #   referencing
 urllib3==2.6.3
     # via requests
-whirlpool-py311==1 ; python_version >= "3.11"
-    # via -r requirements-prod.in

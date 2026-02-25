@@ -3,7 +3,7 @@
 Hash Function Registry.
 
 Implements cryptographic hash functions with unified interface.
-Supports: SHA-2, SHA-3, BLAKE2, BLAKE3, SHAKE (XOF), and Whirlpool (legacy).
+Supports: SHA-2, SHA-3, BLAKE2, BLAKE3, and SHAKE (XOF).
 
 All code in English as per project requirements.
 """
@@ -501,130 +501,6 @@ class SHAKE256(HashBase):
         return hashlib.shake_256(data).digest(output_len)
 
 
-# ============================================================================
-# Legacy Hash Functions
-# ============================================================================
-
-
-class Whirlpool(HashBase):
-    """
-    Whirlpool - 512-bit hash function (LEGACY).
-
-    Includes special handling for Python 3.13+ compatibility.
-    Limited adoption, provided for backward compatibility only.
-    """
-
-    _available: ClassVar[Optional[bool]] = None
-
-    @classmethod
-    def info(cls) -> AlgorithmInfo:
-        return AlgorithmInfo(
-            name="whirlpool",
-            display_name="Whirlpool (LEGACY)",
-            category=AlgorithmCategory.HASH,
-            security_bits=512,
-            pq_security_bits=256,
-            security_level=SecurityLevel.LEGACY,
-            description="Whirlpool - 512-bit hash (legacy, limited adoption)",
-            output_size=64,
-            block_size=64,
-            references=("ISO/IEC 10118-3",),
-        )
-
-    @classmethod
-    def is_available(cls) -> bool:
-        """
-        Checks Whirlpool availability with Python 3.13+ compatibility.
-
-        Tries multiple import strategies:
-        1. Modern 'whirlpool' package
-        2. Legacy 'pywhirlpool' package
-        3. Python 3.13+ special loading
-        """
-        if cls._available is None:
-            # Try modern whirlpool package
-            try:
-                import whirlpool
-
-                cls._available = True
-                return True
-            except ImportError:
-                pass
-
-            # Try legacy pywhirlpool package
-            try:
-                import pywhirlpool
-
-                cls._available = True
-                return True
-            except ImportError:
-                pass
-
-            # Python 3.13+ special handling
-            try:
-                import sys
-
-                python_version = sys.version_info
-
-                if python_version.major == 3 and python_version.minor >= 13:
-                    import glob
-                    import importlib.util
-                    import site
-                    from importlib.machinery import ExtensionFileLoader
-
-                    # Look for whirlpool in site-packages
-                    for site_pkg in site.getsitepackages():
-                        pattern = os.path.join(site_pkg, "whirlpool*py313*.so")
-                        py313_modules = glob.glob(pattern)
-
-                        if py313_modules:
-                            module_path = py313_modules[0]
-                            loader = ExtensionFileLoader("whirlpool", module_path)
-                            spec = importlib.util.spec_from_file_location(
-                                "whirlpool", module_path, loader=loader
-                            )
-                            whirlpool_module = importlib.util.module_from_spec(spec)
-                            spec.loader.exec_module(whirlpool_module)
-                            cls._available = True
-                            return True
-            except Exception:
-                pass
-
-            cls._available = False
-
-        return cls._available
-
-    def hash(self, data: bytes, output_length: Optional[int] = None) -> bytes:
-        self.check_available()
-
-        if output_length is not None:
-            raise ValidationError("Whirlpool has fixed output length")
-
-        # Try whirlpool package
-        try:
-            import whirlpool
-
-            return whirlpool.new(data).digest()
-        except ImportError:
-            pass
-
-        # Try pywhirlpool package
-        try:
-            import pywhirlpool
-
-            return pywhirlpool.whirlpool(data).digest()
-        except ImportError:
-            pass
-
-        # This shouldn't happen if is_available() returned True
-        raise ImportError("Whirlpool module not available")
-
-
-# ============================================================================
-# Registry and convenience functions
-# ============================================================================
-
-
 class HashRegistry(RegistryBase[HashBase]):
     """Registry for cryptographic hash functions."""
 
@@ -652,9 +528,6 @@ class HashRegistry(RegistryBase[HashBase]):
         self.register(SHAKE128)
         self.register(SHAKE256)
 
-        # Legacy
-        self.register(Whirlpool)
-
     @classmethod
     def default(cls) -> "HashRegistry":
         """Returns the default singleton registry instance."""
@@ -678,7 +551,3 @@ def get_hash(name: str) -> HashBase:
         >>> digest = hasher.hash(b"data")
     """
     return HashRegistry.default().get(name)
-
-
-# Import os for Whirlpool Python 3.13+ handling
-import os

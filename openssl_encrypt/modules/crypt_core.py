@@ -7,8 +7,7 @@ functions that power the encryption tool.
 
 Python 3.13+ Compatibility:
 This module has been tested and verified to work with Python 3.13 and above,
-with special handling for the Whirlpool hash library and other version-specific
-dependencies. See the setup_whirlpool.py module for details on compatibility.
+with version-specific dependency handling.
 """
 
 import base64
@@ -469,99 +468,6 @@ except ImportError:
     BLAKE3_AVAILABLE = False
 
 from .secure_memory import SecureBytes, secure_memzero
-
-# Try to import optional dependencies
-# Initialize WHIRLPOOL_AVAILABLE before trying to import
-WHIRLPOOL_AVAILABLE = False
-
-try:
-    import sys
-
-    python_version = sys.version_info
-
-    # First try to setup Whirlpool if needed (with special handling for Python 3.13+)
-    try:
-        from openssl_encrypt.modules.setup_whirlpool import setup_whirlpool
-
-        if python_version.major == 3 and python_version.minor >= 13:
-            logger.debug(
-                f"Setting up Whirlpool for Python {python_version.major}.{python_version.minor}"
-            )
-        setup_result = setup_whirlpool()
-    except ImportError:
-        setup_result = False
-
-    # Try importing whirlpool directly
-    try:
-        import whirlpool
-
-        WHIRLPOOL_AVAILABLE = True
-    except ImportError:
-        # Fall back to older pywhirlpool package
-        try:
-            import pywhirlpool
-
-            WHIRLPOOL_AVAILABLE = True
-        except ImportError:
-            # Try Python 3.13 specific module if applicable
-            if python_version.major == 3 and python_version.minor >= 13:
-                try:
-                    # Look for whirlpool-py313 module
-                    import glob
-                    import importlib.util
-                    import os
-                    import site
-                    from importlib.machinery import ExtensionFileLoader
-
-                    # Find potential modules in site packages
-                    site_packages = site.getsitepackages()
-                    user_site = site.getusersitepackages()
-                    site_packages.append(user_site if isinstance(user_site, str) else user_site[0])
-
-                    for site_pkg in site_packages:
-                        if not os.path.exists(site_pkg):
-                            continue
-
-                        # Look for py313 specific modules
-                        pattern = os.path.join(site_pkg, "whirlpool*py313*.so")
-                        py313_modules = glob.glob(pattern)
-
-                        if py313_modules:
-                            module_path = py313_modules[0]
-                            # Try loading the module directly
-                            loader = ExtensionFileLoader("whirlpool", module_path)
-                            spec = importlib.util.spec_from_file_location(
-                                "whirlpool", module_path, loader=loader
-                            )
-                            whirlpool = importlib.util.module_from_spec(spec)
-                            spec.loader.exec_module(whirlpool)
-                            WHIRLPOOL_AVAILABLE = True
-                            break
-                except ImportError:
-                    WHIRLPOOL_AVAILABLE = False
-            else:
-                WHIRLPOOL_AVAILABLE = False
-
-    if not WHIRLPOOL_AVAILABLE and setup_result:
-        # If setup succeeded but import failed, try one more time after clearing cache
-        if "whirlpool" in sys.modules:
-            del sys.modules["whirlpool"]
-        try:
-            import whirlpool
-
-            WHIRLPOOL_AVAILABLE = True
-        except ImportError:
-            WHIRLPOOL_AVAILABLE = False
-
-except Exception as e:
-    import logging
-    import sys
-
-    python_version = sys.version_info
-    logging.getLogger(__name__).warning(
-        f"Error importing Whirlpool module in Python {python_version.major}.{python_version.minor}: {e}"
-    )
-    WHIRLPOOL_AVAILABLE = False
 
 # Try to import argon2 library
 try:
@@ -1202,7 +1108,6 @@ def multi_hash_password(
         - SHA3-512
         - BLAKE2b
         - SHAKE-256 (extendable-output function from SHA-3 family)
-        - Whirlpool
         - Scrypt (memory-hard function)
         - Argon2 (memory-hard function, winner of PHC)
 
@@ -1684,85 +1589,6 @@ def multi_hash_password(
 
                         if not quiet and not progress:
                             print("✅")
-
-                elif algorithm == "whirlpool" and params > 0:
-                    if not quiet and WHIRLPOOL_AVAILABLE and not progress:
-                        print(f"Applying {params} rounds of Whirlpool", end=" ")
-                    elif not quiet and not WHIRLPOOL_AVAILABLE:
-                        print(f"Applying {params} rounds of Whirlpool")
-
-                    if WHIRLPOOL_AVAILABLE:
-                        # Whirlpool produces 64 bytes
-                        with secure_buffer(64, zero=False) as hash_buffer:
-                            for i in range(params):
-                                try:
-                                    # Check which module is available and use its interface
-                                    if "whirlpool" in globals():
-                                        # Modern whirlpool package or our wrapper
-                                        result = whirlpool.new(bytes(hashed)).digest()
-                                    elif "pywhirlpool" in globals():
-                                        # Original pywhirlpool package
-                                        result = pywhirlpool.whirlpool(bytes(hashed)).digest()
-                                    else:
-                                        # This shouldn't happen since WHIRLPOOL_AVAILABLE is True
-                                        raise ImportError("No whirlpool module available")
-
-                                    secure_memcpy(hash_buffer, result)
-                                    secure_memcpy(hashed, hash_buffer)
-                                    show_progress("Whirlpool", i + 1, params)
-                                    KeyStretch.hash_stretch = True
-                                except Exception as e:
-                                    # Log the error and fall back to SHA-512
-                                    if not quiet:
-                                        print(
-                                            f"Warning: Whirlpool error ({str(e)}), falling back to SHA-512"
-                                        )
-                                    result = hashlib.sha512(hashed).digest()
-                                    secure_memcpy(hash_buffer, result)
-                                    secure_memcpy(hashed, hash_buffer)
-                                    show_progress("SHA-512 (fallback)", i + 1, params)
-                                    KeyStretch.hash_stretch = True
-
-                            # NEW: Collect intermediate for v10/v8 XOR
-                            # CRITICAL: Store as SecureBytes, will be zeroed in generate_key() after XOR
-                            if collect_intermediates:
-                                normalized = normalize_to_key_length_secure(hashed, key_length)
-                                intermediate_outputs.append(normalized)  # SecureBytes object
-                                if debug:
-                                    logger.debug(f"Whirlpool:XOR-INTERMEDIATE: {normalized.hex()}")
-
-                            if not quiet and not progress:
-                                print("✅")
-                    else:
-                        # Fall back to SHA-512 if Whirlpool is not
-                        # available
-                        if not quiet and not progress:
-                            print(
-                                "Warning: Whirlpool not available, using SHA-512 instead",
-                                end=" ",
-                            )
-                        elif not quiet:
-                            print("Warning: Whirlpool not available, using SHA-512 instead")
-                        with secure_buffer(64, zero=False) as hash_buffer:
-                            for i in range(params):
-                                result = hashlib.sha512(hashed).digest()
-                                secure_memcpy(hash_buffer, result)
-                                secure_memcpy(hashed, hash_buffer)
-                                show_progress("SHA-512 (fallback)", i + 1, params)
-                                KeyStretch.hash_stretch = True
-
-                            # NEW: Collect intermediate for v10/v8 XOR (Whirlpool fallback path)
-                            # CRITICAL: Store as SecureBytes, will be zeroed in generate_key() after XOR
-                            if collect_intermediates:
-                                normalized = normalize_to_key_length_secure(hashed, key_length)
-                                intermediate_outputs.append(normalized)  # SecureBytes object
-                                if debug:
-                                    logger.debug(
-                                        f"Whirlpool-FALLBACK:XOR-INTERMEDIATE: {normalized.hex()}"
-                                    )
-
-                            if not quiet and not progress:
-                                print("✅")
             result = SecureBytes.copy_from(hashed)
 
         # NEW: Return both final hash and intermediates if collecting
@@ -1928,7 +1754,7 @@ def compute_hash_independent(
         password: Initial hash (SHA-256 of password+salt), not raw password
         salt: Original salt bytes (used for iteration context)
         algorithm: Hash algorithm name (sha256, sha512, sha3_256, sha3_512,
-                   blake2b, blake3, shake256, whirlpool)
+                   blake2b, blake3, shake256)
         rounds: Number of iterations to apply
         key_length: Target output length in bytes
         quiet: Suppress output messages
@@ -1954,7 +1780,6 @@ def compute_hash_independent(
         "blake2b": "BLAKE2b",
         "blake3": "BLAKE3",
         "shake256": "SHAKE-256",
-        "whirlpool": "Whirlpool",
     }
     algo_display = algo_display_names.get(algorithm, algorithm.upper())
 
@@ -1985,10 +1810,6 @@ def compute_hash_independent(
                 h = blake3.blake3(bytes(current)).digest()
             elif algorithm == "shake256":
                 h = hashlib.shake_256(bytes(current)).digest(64)
-            elif algorithm == "whirlpool":
-                import whirlpool
-
-                h = whirlpool.new(bytes(current)).digest()
             else:
                 raise ValueError(f"Unsupported hash algorithm: {algorithm}")
 
@@ -2363,7 +2184,6 @@ def generate_key_independent_xor(
             "blake2b",
             "blake3",
             "shake256",
-            "whirlpool",
         ]
 
         for algo in hash_algorithms:
@@ -2386,7 +2206,6 @@ def generate_key_independent_xor(
                         "blake2b": "BLAKE2b",
                         "blake3": "BLAKE3",
                         "shake256": "SHAKE-256",
-                        "whirlpool": "Whirlpool",
                     }
                     algo_name = algo_names.get(algo, algo.upper())
                     print(f"Applying {rounds} rounds of {algo_name}")
@@ -2829,7 +2648,6 @@ def generate_key(
                 "blake2b",
                 "blake3",
                 "shake256",
-                "whirlpool",
             ]
         )
     else:
@@ -2846,7 +2664,6 @@ def generate_key(
                     "blake2b",
                     "blake3",
                     "shake256",
-                    "whirlpool",
                 ]
             )
             or (
@@ -3968,7 +3785,6 @@ def convert_metadata_v3_to_v4(metadata):
         "blake3",
         "shake256",
         "shake128",
-        "whirlpool",
     ]
     hash_config = metadata.get("hash_config", {})
 
@@ -4215,7 +4031,6 @@ def create_metadata_v5(
             "blake3",
             "shake256",
             "shake128",
-            "whirlpool",
         ]:
             metadata["derivation_config"]["hash_config"][algo] = {"rounds": rounds}
 
@@ -4374,7 +4189,6 @@ def create_metadata_v6(
             "blake3",
             "shake256",
             "shake128",
-            "whirlpool",
         ]:
             metadata["derivation_config"]["hash_config"][algo] = {"rounds": rounds}
 
@@ -4602,7 +4416,6 @@ def create_metadata_v8(
             "blake3",
             "shake256",
             "shake128",
-            "whirlpool",
         ]:
             metadata["derivation_config"]["hash_config"][algo] = {"rounds": rounds}
 
@@ -4817,7 +4630,6 @@ def create_metadata_v7(
             "blake3",
             "shake256",
             "shake128",
-            "whirlpool",
         ]:
             metadata["derivation_config"]["hash_config"][algo] = {"rounds": rounds}
 
@@ -5350,7 +5162,6 @@ def encrypt_file_asymmetric(
                 "blake3",
                 "shake256",
                 "shake128",
-                "whirlpool",
             ]
             for algo in hash_algorithms:
                 if algo in hash_config:
@@ -5672,7 +5483,6 @@ def encrypt_file(
                 "sha3_512": 0,
                 "blake2b": 0,
                 "shake256": 0,
-                "whirlpool": 0,
                 "scrypt": {"enabled": True, "n": 128, "r": 8, "p": 1, "rounds": 5},
                 "argon2": {
                     "enabled": True,
@@ -8710,7 +8520,6 @@ def get_organized_hash_config(hash_config, encryption_algo=None, salt=None):
         "blake3",
         "shake256",
         "shake128",
-        "whirlpool",
     ]
 
     # Check for format_version 4 hierarchical structure

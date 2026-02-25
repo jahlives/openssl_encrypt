@@ -1,9 +1,6 @@
 # Core dependencies
 cryptography>=46.0.5,<47.0.0  # Updated to fix SECT curve subgroup attack
 argon2-cffi>=23.1.0,<24.0.0
-# does not build on python 3.13
-#whirlpool>=0.3 ; python_version < '3.12'
-whirlpool-py311>=1.0.0,<2.0.0 ; python_version >= '3.11'
 # Windows-specific dependencies
 pywin32>=306,<307; sys_platform == 'win32'
 PyYAML>=6.0.2,<7.0.0

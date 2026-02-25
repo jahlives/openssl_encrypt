@@ -214,7 +214,7 @@ def build_local_dependencies():
 
 
 class PostInstallCommand(Command):
-    """Custom install command that runs setup_whirlpool after installation."""
+    """Custom install command that runs post-installation setup tasks."""
 
     description = "Command to run post install tasks"
     user_options: List[str] = []
@@ -236,7 +236,6 @@ class PostInstallCommand(Command):
             )
         except Exception as e:
             print(f"Warning: Failed to run post-install setup: {e}")
-            print("You may need to manually install Whirlpool: pip install whirlpool-py311")
 
 
 setup(
@@ -254,7 +253,6 @@ setup(
     entry_points={
         "console_scripts": [
             "openssl-encrypt=openssl_encrypt.cli:main",
-            "whirlpool-setup=openssl_encrypt.modules.setup_whirlpool:setup_whirlpool",
             "openssl-encrypt-check-deps=openssl_encrypt.versions:main",
         ],
     },
