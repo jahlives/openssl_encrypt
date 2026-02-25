@@ -51,11 +51,29 @@ For deep-dives into the cryptographic design and security policies of this proje
 * **Metadata Integrity**: Cryptographic binding of headers to prevent tampering (on AEAD-supported ciphers).
 * **Hardware-Resistant KDF**: Sequential Argon2id and RandomX hashing to neutralize ASIC/GPU brute-force clusters.
 ---
-## 🚧 v1.4.0 Beta Series - Under Active Development
+## Breaking Changes in v1.5.0
 
-**Current Beta:** v1.4.0b10 | **Status:** Pre-release testing | **Target:** Stable v1.4.0 release
+The following algorithms have been **completely removed** in v1.5.0 — both encryption and decryption:
 
-> ⚠️ **BETA SOFTWARE**: This is pre-release software under active development. While extensively tested (1573+ tests passing), it should be used with caution in production environments. Backward compatibility with v1.3.x is maintained, but the v1.4.0 API and features may change before stable release.
+| Removed | Replacement |
+|---------|-------------|
+| AES-OCB3 | AES-GCM |
+| Camellia | AES-GCM |
+| Whirlpool | SHA-512 or BLAKE2b |
+| PBKDF2 (KDF chain) | Argon2id or Scrypt |
+| Kyber naming | ML-KEM-512/768/1024 |
+
+**If you have files encrypted with any of these algorithms**, you must act before upgrading:
+
+1. **Decrypt** all affected files using **v1.4.x or earlier**
+2. **Re-encrypt** with a supported algorithm (e.g. `aes-gcm`, `ml-kem-768-hybrid`)
+3. **Upgrade** to v1.5.0
+
+If you cannot re-encrypt, **stay on v1.4.x** — it still supports decryption of all legacy formats.
+
+---
+
+## v1.4.0 Development Series
 
 **What's New in v1.4.0b10:**
 - **Format Version 11: Independent XOR Key Derivation (Massey)**: New `--independent-xor` flag enables Massey's Independent XOR composition providing "strongest component" security guarantee - key remains secure even if all algorithms except the strongest are broken
@@ -221,7 +239,7 @@ Centralized cryptographic algorithm registration and validation framework.
 - Cipher Registry: 12+ symmetric encryption algorithms
 - Hash Registry: 15+ cryptographic hash functions
 - KDF Registry: 8 key derivation functions
-- KEM Registry: 9 Key Encapsulation Mechanisms (Kyber, ML-KEM, HQC)
+- KEM Registry: 9 Key Encapsulation Mechanisms (ML-KEM, HQC)
 - Signature Registry: 15 post-quantum signature algorithms
 - CLI command: `crypt list-algorithms`
 - Security level indicators and validation
@@ -350,7 +368,7 @@ Complete overhaul of the desktop GUI with advanced cryptographic features and im
 
 **Note:** HQC (Hamming Quasi-Cyclic) post-quantum cryptography is not functional in v1.2.x releases due to fork-safety issues in liboqs on certain AMD64 systems. Files encrypted with HQC algorithms (hqc-128, hqc-192, hqc-256) cannot be decrypted reliably in these versions.
 
-- ✅ **Other PQC algorithms work correctly**: Kyber/ML-KEM, Dilithium, Falcon, SPHINCS+, and all other supported post-quantum algorithms function as expected in v1.2.x
+- ✅ **Other PQC algorithms work correctly**: ML-KEM, Dilithium, Falcon, SPHINCS+, and all other supported post-quantum algorithms function as expected in v1.2.x
 - ✅ **HQC fully supported in v1.3.0+**: The issue has been resolved in version 1.3.0 and later through improved multiprocessing handling
 
 **Recommendation:** If you need to encrypt or decrypt files using HQC algorithms, please upgrade to version 1.3.0 or later.
@@ -358,10 +376,10 @@ Complete overhaul of the desktop GUI with advanced cryptographic features and im
 **For v1.2.x users:** If you have files encrypted with HQC, you can:
 1. Upgrade to v1.3.0+ to decrypt them
 2. Use a different system where the fork-safety issue doesn't occur
-3. Re-encrypt important files using Kyber/ML-KEM instead (recommended for long-term compatibility)
+3. Re-encrypt important files using ML-KEM instead (recommended for long-term compatibility)
 ### Incomplete AEAD Metadata Binding (Versions < 1.3.0)
 
-  **Issue**: In versions prior to 1.3.0, AEAD algorithms (AES-GCM, ChaCha20-Poly1305, AES-GCM-SIV, AES-SIV, AES-OCB3, XChaCha20-Poly1305, and all PQC hybrid variants) pass `None` for the Additional Authenticated Data (AAD) parameter, despite documentation indicating metadata is cryptographically bound to the ciphertext.
+  **Issue**: In versions prior to 1.3.0, AEAD algorithms (AES-GCM, ChaCha20-Poly1305, AES-GCM-SIV, AES-SIV, XChaCha20-Poly1305, and all PQC hybrid variants) pass `None` for the Additional Authenticated Data (AAD) parameter, despite documentation indicating metadata is cryptographically bound to the ciphertext.
 
   **Security Impact**: Low - The encryption itself remains secure. Metadata is already cryptographically bound through the key derivation chain, meaning any tampering causes decryption failure. However, without AAD, tampering detection is delayed until after both KDF operations and decryption attempts complete.
 
@@ -444,8 +462,6 @@ Modern AEAD (Authenticated Encryption with Associated Data) ciphers:
 |XChaCha20-Poly1305|✅ Recommended |Extended nonce (192-bit)           |
 |AES-SIV           |✅ Supported   |Deterministic encryption           |
 |Fernet            |✅ Default     |AES-128-CBC + HMAC, simple API     |
-|AES-OCB3          |⚠ Decrypt only|Deprecated in v1.2.0               |
-|Camellia          |⚠ Decrypt only|Deprecated in v1.2.0               |
 
 ### Post-Quantum Cryptography
 
@@ -454,7 +470,6 @@ Hybrid encryption combining classical symmetric ciphers with post-quantum KEMs:
 **NIST Standardized:**
 
 - **ML-KEM** (FIPS 203): ML-KEM-512, ML-KEM-768, ML-KEM-1024
-- **Kyber**: Kyber-512, Kyber-768, Kyber-1024 (original implementation)
 
 **NIST Selected (2025):**
 
@@ -474,7 +489,6 @@ Hybrid encryption combining classical symmetric ciphers with post-quantum KEMs:
 |Scrypt  |Memory-hard       |✅ Supported   |GPU-resistant               |
 |HKDF    |Extract-and-expand|✅ Supported   |Key expansion               |
 |RandomX |CPU-hard          |✅ Supported   |Anti-ASIC (from Monero)     |
-|PBKDF2  |Iterative         |⚠ Decrypt only|Deprecated in v1.2.0        |
 
 ### Hash Functions
 
@@ -484,7 +498,6 @@ For key derivation chaining:
 - **SHA-3 Family** (FIPS 202): SHA3-512, SHA3-384, SHA3-256, SHA3-224
 - **BLAKE Family**: BLAKE2b, BLAKE3
 - **SHAKE** (XOF): SHAKE-256, SHAKE-128
-- **Legacy**: Whirlpool (decrypt only in v1.2.0+)
 
 ### Additional Security Features
 
