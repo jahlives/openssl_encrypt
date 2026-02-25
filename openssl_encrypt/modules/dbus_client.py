@@ -336,7 +336,7 @@ class CryptoClient:
         Generate a post-quantum cryptographic key pair
 
         Args:
-            algorithm: PQC algorithm (e.g., "ml-kem-768", "kyber-1024")
+            algorithm: PQC algorithm (e.g., "ml-kem-768", "ml-kem-1024")
             keystore_path: Path to keystore file
             keystore_password: Keystore password
             key_name: Human-readable key name

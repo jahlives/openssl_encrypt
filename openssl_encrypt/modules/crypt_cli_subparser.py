@@ -71,28 +71,18 @@ def setup_encrypt_parser(subparser):
             description = "AES-256 in GCM mode, high security, widely trusted"
         elif algo == EncryptionAlgorithm.AES_GCM_SIV.value:
             description = "AES-256 in GCM-SIV mode, resistant to nonce reuse"
-        elif algo == EncryptionAlgorithm.AES_OCB3.value:
-            description = "AES-256 in OCB3 mode, faster than GCM (DEPRECATED)"
         elif algo == EncryptionAlgorithm.AES_SIV.value:
             description = "AES in SIV mode, synthetic IV"
         elif algo == EncryptionAlgorithm.CHACHA20_POLY1305.value:
             description = "modern AEAD cipher with 12-byte nonce"
         elif algo == EncryptionAlgorithm.XCHACHA20_POLY1305.value:
             description = "ChaCha20-Poly1305 with 24-byte nonce, safer for high-volume encryption"
-        elif algo == EncryptionAlgorithm.CAMELLIA.value:
-            description = "Camellia in CBC mode (DEPRECATED)"
         elif algo == EncryptionAlgorithm.ML_KEM_512_HYBRID.value:
             description = "post-quantum key exchange with AES-256-GCM, NIST level 1 (NIST FIPS 203)"
         elif algo == EncryptionAlgorithm.ML_KEM_768_HYBRID.value:
             description = "post-quantum key exchange with AES-256-GCM, NIST level 3 (NIST FIPS 203)"
         elif algo == EncryptionAlgorithm.ML_KEM_1024_HYBRID.value:
             description = "post-quantum key exchange with AES-256-GCM, NIST level 5 (NIST FIPS 203)"
-        elif algo == EncryptionAlgorithm.KYBER512_HYBRID.value:
-            description = "post-quantum key exchange with AES-256-GCM, NIST level 1 (DEPRECATED - use ml-kem-512-hybrid)"
-        elif algo == EncryptionAlgorithm.KYBER768_HYBRID.value:
-            description = "post-quantum key exchange with AES-256-GCM, NIST level 3 (DEPRECATED - use ml-kem-768-hybrid)"
-        elif algo == EncryptionAlgorithm.KYBER1024_HYBRID.value:
-            description = "post-quantum key exchange with AES-256-GCM, NIST level 5 (DEPRECATED - use ml-kem-1024-hybrid)"
         elif algo == "ml-kem-512-chacha20":
             description = "ML-KEM-512 with ChaCha20-Poly1305 (post-quantum)"
         elif algo == "ml-kem-768-chacha20":
@@ -382,7 +372,10 @@ def setup_encrypt_parser(subparser):
         "--scrypt-r", type=int, default=8, help="Scrypt r parameter (block size)"
     )
     scrypt_group.add_argument(
-        "--scrypt-p", type=int, default=1, help="Scrypt p parameter (parallelization factor)"
+        "--scrypt-p",
+        type=int,
+        default=1,
+        help="Scrypt p parameter (parallelization factor)",
     )
 
     # Argon2 options for encryption
@@ -471,15 +464,6 @@ def setup_encrypt_parser(subparser):
         type=int,
         default=32,
         help="RandomX output hash length in bytes (default: 32)",
-    )
-
-    # PBKDF2 options
-    pbkdf2_group = subparser.add_argument_group("PBKDF2 options")
-    pbkdf2_group.add_argument(
-        "--pbkdf2-iterations",
-        type=int,
-        default=0,
-        help="Number of PBKDF2 iterations (default: 100000)",
     )
 
     # Balloon Hashing options
@@ -653,7 +637,9 @@ def setup_encrypt_parser(subparser):
         help="Randomize pixel selection order (requires --stego-password)",
     )
     stego_group.add_argument(
-        "--stego-decoy-data", action="store_true", help="Fill unused capacity with decoy data"
+        "--stego-decoy-data",
+        action="store_true",
+        help="Fill unused capacity with decoy data",
     )
     stego_group.add_argument(
         "--jpeg-quality",
@@ -1144,14 +1130,6 @@ def setup_analyze_security_parser(subparser):
         help="Scrypt p parameter (default: 1)",
     )
 
-    # PBKDF2 options
-    kdf_group.add_argument(
-        "--pbkdf2-rounds",
-        type=int,
-        default=0,
-        help="PBKDF2 rounds (default: 100000)",
-    )
-
     # Balloon options
     kdf_group.add_argument(
         "--balloon-space-cost",
@@ -1190,7 +1168,6 @@ def setup_analyze_security_parser(subparser):
             "chacha20-poly1305",
             "xchacha20-poly1305",
             "aes-siv",
-            "aes-ocb3",
             "fernet",
         ],
         default="aes-gcm",
@@ -1206,9 +1183,6 @@ def setup_analyze_security_parser(subparser):
             "ml-kem-512",
             "ml-kem-768",
             "ml-kem-1024",
-            "kyber-512",
-            "kyber-768",
-            "kyber-1024",
             "hqc-128",
             "hqc-192",
             "hqc-256",
@@ -1256,7 +1230,9 @@ def setup_template_parser(subparser):
     """Set up arguments specific to the template command"""
     # Create subparsers for template operations
     template_subparsers = subparser.add_subparsers(
-        dest="template_action", help="Template management operations", metavar="operation"
+        dest="template_action",
+        help="Template management operations",
+        metavar="operation",
     )
 
     # List templates
@@ -1286,7 +1262,10 @@ def setup_template_parser(subparser):
         help="Use cases this template is suitable for",
     )
     create_parser.add_argument(
-        "--format", choices=["json", "yaml"], default="json", help="Template format (default: json)"
+        "--format",
+        choices=["json", "yaml"],
+        default="json",
+        help="Template format (default: json)",
     )
     create_parser.add_argument(
         "--overwrite", action="store_true", help="Overwrite existing template"
@@ -1330,7 +1309,10 @@ def setup_template_parser(subparser):
         help="Use case to recommend templates for",
     )
     recommend_parser.add_argument(
-        "--max-results", type=int, default=3, help="Maximum number of recommendations (default: 3)"
+        "--max-results",
+        type=int,
+        default=3,
+        help="Maximum number of recommendations (default: 3)",
     )
 
     # Delete template
@@ -1345,7 +1327,9 @@ def setup_smart_recommendations_parser(subparser):
     """Set up arguments specific to the smart-recommendations command."""
     # Create subparsers for smart recommendations operations
     recs_subparsers = subparser.add_subparsers(
-        dest="recommendations_action", help="Smart recommendations operations", metavar="operation"
+        dest="recommendations_action",
+        help="Smart recommendations operations",
+        metavar="operation",
     )
 
     # Get recommendations
@@ -1398,7 +1382,9 @@ def setup_smart_recommendations_parser(subparser):
         "profile", help="Manage user profiles for personalized recommendations"
     )
     profile_parser.add_argument(
-        "--user-id", default="default", help="User ID for profile operations (default: default)"
+        "--user-id",
+        default="default",
+        help="User ID for profile operations (default: default)",
     )
     profile_group = profile_parser.add_mutually_exclusive_group(required=True)
     profile_group.add_argument(
@@ -1414,7 +1400,9 @@ def setup_smart_recommendations_parser(subparser):
         "recommendation_id", help="ID of the recommendation to provide feedback on"
     )
     feedback_parser.add_argument(
-        "accepted", type=bool, help="Whether the recommendation was accepted (True/False)"
+        "accepted",
+        type=bool,
+        help="Whether the recommendation was accepted (True/False)",
     )
     feedback_parser.add_argument(
         "--user-id", default="default", help="User ID for feedback (default: default)"
@@ -1450,7 +1438,9 @@ def setup_identity_parser(subparser):
 
     # Create subparsers for identity subcommands
     identity_subparsers = subparser.add_subparsers(
-        dest="identity_action", help="Identity management operations", metavar="operation"
+        dest="identity_action",
+        help="Identity management operations",
+        metavar="operation",
     )
 
     # Create identity
@@ -1583,7 +1573,10 @@ def setup_test_parser(subparser):
     # Memory testing
     memory_parser = test_subparsers.add_parser("memory", help="Run memory safety tests")
     memory_parser.add_argument(
-        "--test-iterations", type=int, default=10, help="Number of memory test iterations"
+        "--test-iterations",
+        type=int,
+        default=10,
+        help="Number of memory test iterations",
     )
     memory_parser.add_argument(
         "--leak-threshold", type=float, default=1.0, help="Memory leak threshold in MB"
@@ -1642,7 +1635,8 @@ def setup_hsm_parser(subparser):
 
     # FIDO2 registration subcommand
     fido2_register_parser = hsm_subparsers.add_parser(
-        "fido2-register", help="Register new FIDO2 credential for hardware-bound encryption"
+        "fido2-register",
+        help="Register new FIDO2 credential for hardware-bound encryption",
     )
     fido2_register_parser.add_argument(
         "--description",
@@ -1661,7 +1655,8 @@ def setup_hsm_parser(subparser):
 
     # FIDO2 status subcommand
     fido2_status_parser = hsm_subparsers.add_parser(
-        "fido2-status", help="Show FIDO2 registration status and list registered credentials"
+        "fido2-status",
+        help="Show FIDO2 registration status and list registered credentials",
     )
     fido2_status_parser.add_argument(
         "--rp-id",
@@ -1748,7 +1743,9 @@ def setup_keyserver_parser(subparser):
     )
     import_parser.add_argument("identifier", help="Fingerprint, name, or email to import")
     import_parser.add_argument(
-        "--no-trust-prompt", action="store_true", help="Skip trust confirmation (dangerous)"
+        "--no-trust-prompt",
+        action="store_true",
+        help="Skip trust confirmation (dangerous)",
     )
 
     # Upload subcommand (requires API token)
@@ -1799,7 +1796,10 @@ def setup_telemetry_parser(subparser):
     )
     show_pending_parser.add_argument("--json", action="store_true", help="Output in JSON format")
     show_pending_parser.add_argument(
-        "--limit", type=int, default=100, help="Maximum number of events to show (default: 100)"
+        "--limit",
+        type=int,
+        default=100,
+        help="Maximum number of events to show (default: 100)",
     )
 
     # Flush subcommand

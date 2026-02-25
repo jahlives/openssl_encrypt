@@ -115,7 +115,6 @@ class TelemetryDataFilter:
             "blake2b",
             "blake2s",
             "blake3",
-            "whirlpool",
             "shake128",
             "shake256",
         ]
@@ -130,7 +129,6 @@ class TelemetryDataFilter:
             "argon2d",
             "balloon",
             "scrypt",
-            "pbkdf2",
             "hkdf",
             "randomx",
         ]
@@ -144,7 +142,6 @@ class TelemetryDataFilter:
             "aes-256-siv",
             "chacha20-poly1305",
             "xchacha20-poly1305",
-            "camellia-256-gcm",
             "fernet",
             "cascade",
         ]
@@ -156,9 +153,6 @@ class TelemetryDataFilter:
             "ML-KEM-512",
             "ML-KEM-768",
             "ML-KEM-1024",
-            "Kyber512",
-            "Kyber768",
-            "Kyber1024",
             "HQC-128",
             "HQC-192",
             "HQC-256",
@@ -276,7 +270,7 @@ class TelemetryDataFilter:
                         "n",
                         "r",
                         "p",  # Scrypt
-                        "iterations",  # PBKDF2
+                        "iterations",
                     }
 
                     for param_name, param_value in config.items():
@@ -296,7 +290,7 @@ class TelemetryDataFilter:
 
         if cascade_enabled:
             # Cascade encryption - do NOT expose exact cipher sequence
-            # Exposing ["aes-256-gcm", "chacha20-poly1305", "camellia"] is too identifying
+            # Exposing exact cipher sequence is too identifying
             cipher_chain = enc_config.get("cipher_chain", [])
             cascade_cipher_count = len(cipher_chain) if cipher_chain else 0
             enc_algo = "cascade"  # Generic, not identifying

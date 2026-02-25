@@ -165,22 +165,26 @@ class SmartRecommendationEngine:
                 "personal_files": {
                     "recommended": ["aes-gcm", "xchacha20-poly1305", "fernet"],
                     "acceptable": ["chacha20-poly1305", "aes-gcm-siv"],
-                    "discouraged": ["aes-ocb3", "camellia"],
+                    "discouraged": [],
                 },
                 "business_data": {
                     "recommended": ["aes-gcm", "aes-gcm-siv", "xchacha20-poly1305"],
                     "acceptable": ["chacha20-poly1305", "aes-siv"],
-                    "discouraged": ["fernet", "aes-ocb3"],
+                    "discouraged": ["fernet"],
                 },
                 "compliance_required": {
                     "recommended": ["aes-gcm", "aes-gcm-siv"],
                     "acceptable": ["aes-siv"],
-                    "discouraged": ["fernet", "chacha20-poly1305", "xchacha20-poly1305"],
+                    "discouraged": [
+                        "fernet",
+                        "chacha20-poly1305",
+                        "xchacha20-poly1305",
+                    ],
                 },
                 "archival_storage": {
                     "recommended": ["xchacha20-poly1305", "aes-gcm-siv"],
                     "acceptable": ["aes-gcm", "aes-siv"],
-                    "discouraged": ["fernet", "aes-ocb3"],
+                    "discouraged": ["fernet"],
                 },
             },
             "security_thresholds": {
@@ -673,7 +677,12 @@ class SmartRecommendationEngine:
         requirements = base_requirements.get(primary_use_case, base_requirements["personal"]).copy()
 
         # Adjust based on data sensitivity
-        sensitivity_multipliers = {"low": 0.8, "medium": 1.0, "high": 1.2, "top_secret": 1.5}
+        sensitivity_multipliers = {
+            "low": 0.8,
+            "medium": 1.0,
+            "high": 1.2,
+            "top_secret": 1.5,
+        }
 
         multiplier = sensitivity_multipliers.get(user_context.data_sensitivity, 1.0)
         requirements["minimum_score"] *= multiplier
@@ -792,7 +801,9 @@ class SmartRecommendationEngine:
     ) -> List[str]:
         """Get quick text recommendations for immediate use."""
         user_context = UserContext(
-            user_type="general", experience_level=experience_level, primary_use_cases=[use_case]
+            user_type="general",
+            experience_level=experience_level,
+            primary_use_cases=[use_case],
         )
 
         recommendations = self.generate_recommendations(user_context)
@@ -806,6 +817,8 @@ class SmartRecommendationEngine:
         return quick_recs
 
 
-def create_smart_recommendation_engine(data_dir: Optional[str] = None) -> SmartRecommendationEngine:
+def create_smart_recommendation_engine(
+    data_dir: Optional[str] = None,
+) -> SmartRecommendationEngine:
     """Factory function to create a smart recommendation engine."""
     return SmartRecommendationEngine(data_dir)

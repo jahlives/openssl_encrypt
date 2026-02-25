@@ -68,7 +68,6 @@ except ImportError:
         "sha256": 0,
         "sha3_256": 0,
         "sha3_512": 0,
-        "whirlpool": 0,
         "blake2b": 0,
         "shake256": 0,
         "scrypt": {"enabled": False, "n": 16384, "r": 8, "p": 1, "rounds": 100},
@@ -80,7 +79,6 @@ except ImportError:
             "hash_len": 32,
             "type": "id",
         },
-        "pbkdf2_iterations": 100000,
     }
 
     # Create a basic fallback settings tab class
@@ -228,7 +226,9 @@ class CryptGUI:
 
         # Clear button for output
         clear_button = ttk.Button(
-            button_frame, text="Clear Output", command=lambda: self.output_text.delete(1.0, tk.END)
+            button_frame,
+            text="Clear Output",
+            command=lambda: self.output_text.delete(1.0, tk.END),
         )
         clear_button.pack(side=tk.LEFT, padx=5)
 
@@ -242,7 +242,11 @@ class CryptGUI:
         self.status_var = tk.StringVar()
         self.status_var.set("Ready")
         self.status_bar = ttk.Label(
-            root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W, padding=(5, 3)
+            root,
+            textvariable=self.status_var,
+            relief=tk.SUNKEN,
+            anchor=tk.W,
+            padding=(5, 3),
         )
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X, pady=(5, 5))
         # Change the status bar padding to not have bottom padding
@@ -379,15 +383,13 @@ class CryptGUI:
             ("fernet", "AES-128-CBC"),
             ("aes-gcm", "AES-GCM"),
             ("aes-gcm-siv", "AES-GCM-SIV"),
-            ("aes-ocb3", "AES-OCB3"),
             ("aes-siv", "AES-SIV"),
             ("chacha20-poly1305", "ChaCha20Poly1305"),
             ("xchacha20-poly1305", "XChaCha20Poly1305"),
-            ("camellia", "Camellia-128-CBC"),
-            # Post-quantum hybrid algorithms - ML-KEM with Kyber aliases
-            ("ml-kem-512-hybrid", "ML-KEM-512 Hybrid (Kyber-512 alias)"),
-            ("ml-kem-768-hybrid", "ML-KEM-768 Hybrid (Kyber-768 alias)"),
-            ("ml-kem-1024-hybrid", "ML-KEM-1024 Hybrid (Kyber-1024 alias)"),
+            # Post-quantum hybrid algorithms
+            ("ml-kem-512-hybrid", "ML-KEM-512 Hybrid"),
+            ("ml-kem-768-hybrid", "ML-KEM-768 Hybrid"),
+            ("ml-kem-1024-hybrid", "ML-KEM-1024 Hybrid"),
             # Post-quantum hybrid algorithms - HQC
             ("hqc-128-hybrid", "HQC-128 Hybrid"),
             ("hqc-192-hybrid", "HQC-192 Hybrid"),
@@ -452,7 +454,6 @@ class CryptGUI:
         encryption_data_algorithms = [
             ("aes-gcm", "AES-GCM"),
             ("aes-gcm-siv", "AES-GCM-SIV"),
-            ("aes-ocb3", "AES-OCB3"),
             ("aes-siv", "AES-SIV"),
             ("chacha20-poly1305", "ChaCha20-Poly1305"),
             ("xchacha20-poly1305", "XChaCha20-Poly1305"),
@@ -481,7 +482,9 @@ class CryptGUI:
         # Overwrite existing file checkbox
         self.encrypt_overwrite_var = tk.BooleanVar(value=False)
         overwrite_check = ttk.Checkbutton(
-            options_group, text="Overwrite existing file", variable=self.encrypt_overwrite_var
+            options_group,
+            text="Overwrite existing file",
+            variable=self.encrypt_overwrite_var,
         )
         overwrite_check.pack(fill="x", padx=5, pady=2)
 
@@ -498,7 +501,9 @@ class CryptGUI:
 
         # Encrypt button
         encrypt_button = ttk.Button(
-            button_frame, text="Encrypt", command=lambda: self.root.after(100, self.run_encrypt)
+            button_frame,
+            text="Encrypt",
+            command=lambda: self.root.after(100, self.run_encrypt),
         )
         encrypt_button.pack(side="left", fill="x", expand=True, padx=5)
 
@@ -531,7 +536,9 @@ class CryptGUI:
             side=tk.LEFT, fill=tk.X, expand=True, padx=5, pady=5
         )
         ttk.Button(
-            input_frame, text="Browse...", command=lambda: self.browse_file(self.decrypt_input_var)
+            input_frame,
+            text="Browse...",
+            command=lambda: self.browse_file(self.decrypt_input_var),
         ).pack(side=tk.RIGHT, padx=5, pady=5)
 
         # Output file
@@ -602,7 +609,9 @@ class CryptGUI:
 
         # Encrypt button
         decrypt_button = ttk.Button(
-            button_frame, text="Decrypt", command=lambda: self.root.after(100, self.run_decrypt)
+            button_frame,
+            text="Decrypt",
+            command=lambda: self.root.after(100, self.run_decrypt),
         )
         decrypt_button.pack(side="left", fill="x", expand=True, padx=5)
 
@@ -649,13 +658,18 @@ class CryptGUI:
             row=0, column=0, padx=5, pady=5, sticky=tk.W
         )
         passes_combo = ttk.Combobox(
-            options_frame, textvariable=self.shred_passes_var, values=[1, 3, 7, 12, 20, 35], width=5
+            options_frame,
+            textvariable=self.shred_passes_var,
+            values=[1, 3, 7, 12, 20, 35],
+            width=5,
         )
         passes_combo.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
 
         self.shred_recursive_var = tk.BooleanVar()
         ttk.Checkbutton(
-            options_frame, text="Recursively shred directories", variable=self.shred_recursive_var
+            options_frame,
+            text="Recursively shred directories",
+            variable=self.shred_recursive_var,
         ).grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky=tk.W)
 
         # Warning
@@ -703,12 +717,16 @@ class CryptGUI:
 
         self.use_lowercase_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
-            charset_frame, text="Lowercase letters (a-z)", variable=self.use_lowercase_var
+            charset_frame,
+            text="Lowercase letters (a-z)",
+            variable=self.use_lowercase_var,
         ).pack(anchor=tk.W, padx=5, pady=2)
 
         self.use_uppercase_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
-            charset_frame, text="Uppercase letters (A-Z)", variable=self.use_uppercase_var
+            charset_frame,
+            text="Uppercase letters (A-Z)",
+            variable=self.use_uppercase_var,
         ).pack(anchor=tk.W, padx=5, pady=2)
 
         self.use_digits_var = tk.BooleanVar(value=True)
@@ -718,7 +736,9 @@ class CryptGUI:
 
         self.use_special_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
-            charset_frame, text="Special characters (!@#$%...)", variable=self.use_special_var
+            charset_frame,
+            text="Special characters (!@#$%...)",
+            variable=self.use_special_var,
         ).pack(anchor=tk.W, padx=5, pady=2)
 
         # Password display
@@ -748,7 +768,10 @@ class CryptGUI:
         )
 
         security_label = ttk.Label(
-            security_frame, textvariable=self.countdown_var, foreground="red", justify=tk.CENTER
+            security_frame,
+            textvariable=self.countdown_var,
+            foreground="red",
+            justify=tk.CENTER,
         )
         security_label.pack(fill=tk.X)
         self.countdown_label = security_label
@@ -762,7 +785,9 @@ class CryptGUI:
         )
 
         ttk.Button(
-            button_frame, text="Copy to Clipboard", command=self.copy_password_to_clipboard
+            button_frame,
+            text="Copy to Clipboard",
+            command=self.copy_password_to_clipboard,
         ).pack(side=tk.LEFT, padx=5, pady=5)
 
         ttk.Button(button_frame, text="Clear", command=self.clear_generated_password).pack(
@@ -784,7 +809,12 @@ class CryptGUI:
             string_var.set(filename)
 
     def generate_strong_password(
-        self, length, use_lowercase=True, use_uppercase=True, use_digits=True, use_special=True
+        self,
+        length,
+        use_lowercase=True,
+        use_uppercase=True,
+        use_digits=True,
+        use_special=True,
     ):
         """Generate a strong random password"""
         if length < 8:
@@ -1488,12 +1518,6 @@ class CryptGUI:
 
             if hash_config.get("sha3_512", 0) > 0:
                 cmd.extend(["--sha3-512-rounds", str(hash_config["sha3_512"])])
-
-            if hash_config.get("whirlpool", 0) > 0:
-                cmd.extend(["--whirlpool-rounds", str(hash_config["whirlpool"])])
-
-            # PBKDF2 iterations
-            cmd.extend(["--pbkdf2-iterations", str(hash_config["pbkdf2_iterations"])])
 
             # Scrypt parameters - check if enabled
             if hash_config["scrypt"].get("enabled", False) or hash_config["scrypt"]["n"] > 0:

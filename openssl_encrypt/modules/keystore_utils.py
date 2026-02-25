@@ -400,7 +400,11 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                                     # Return the key pair
                                     pqc_keypair = (public_key, private_key)
                                     pqc_private_key = private_key
-                                    return pqc_keypair, pqc_private_key, "EMBEDDED_PRIVATE_KEY"
+                                    return (
+                                        pqc_keypair,
+                                        pqc_private_key,
+                                        "EMBEDDED_PRIVATE_KEY",
+                                    )
                     else:
                         # Legacy format (v1-3)
                         if "hash_config" in header_config:
@@ -425,7 +429,11 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                                     # Return the key pair
                                     pqc_keypair = (public_key, private_key)
                                     pqc_private_key = private_key
-                                    return pqc_keypair, pqc_private_key, "EMBEDDED_PRIVATE_KEY"
+                                    return (
+                                        pqc_keypair,
+                                        pqc_private_key,
+                                        "EMBEDDED_PRIVATE_KEY",
+                                    )
             except Exception as e:
                 if getattr(args, "verbose", False):
                     logger.info(f"Failed to extract embedded private key: {e}")
@@ -643,7 +651,7 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
                 public_key = base64.b64decode(metadata["encryption"]["pqc_public_key"])
 
             # Get algorithm from encryption section
-            algorithm = metadata["encryption"].get("algorithm", "kyber768-hybrid")
+            algorithm = metadata["encryption"].get("algorithm", "ml-kem-768-hybrid")
     elif format_version == 4:
         # Format version 4 structure
         if "derivation_config" in metadata and "kdf_config" in metadata["derivation_config"]:
@@ -661,7 +669,7 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
                 public_key = base64.b64decode(metadata["encryption"]["pqc_public_key"])
 
             # Get algorithm from encryption section
-            algorithm = metadata["encryption"].get("algorithm", "kyber768-hybrid")
+            algorithm = metadata["encryption"].get("algorithm", "ml-kem-768-hybrid")
     else:
         # Legacy format (1-3)
         dual_encrypt_enabled = metadata.get("pqc_dual_encrypt_key", False) or metadata.get(
@@ -674,7 +682,7 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
         if "pqc_public_key" in metadata:
             public_key = base64.b64decode(metadata["pqc_public_key"])
 
-        algorithm = metadata.get("algorithm", "kyber768-hybrid")
+        algorithm = metadata.get("algorithm", "ml-kem-768-hybrid")
 
     # Check if we have the necessary data to proceed
     if encrypted_private_key is None or not dual_encrypt_enabled:
@@ -700,7 +708,7 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
 
         # If algorithm is not found in metadata, use a default
         if algorithm is None:
-            algorithm = "kyber768-hybrid"
+            algorithm = "ml-kem-768-hybrid"
 
         # Clean algorithm name if it has -hybrid suffix
         if algorithm.endswith("-hybrid"):
@@ -819,7 +827,7 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
     Returns:
         tuple: (pqc_keypair, pqc_private_key)
     """
-    if not hasattr(args, "algorithm") or not args.algorithm.startswith("kyber"):
+    if not hasattr(args, "algorithm") or not args.algorithm.startswith("ml-kem"):
         return None, None
 
     # Check for dual encryption flag

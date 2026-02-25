@@ -125,17 +125,12 @@ class CryptoService(dbus.service.Object):
         "aes-gcm": EncryptionAlgorithm.AES_GCM,
         "aes-gcm-siv": EncryptionAlgorithm.AES_GCM_SIV,
         "aes-siv": EncryptionAlgorithm.AES_SIV,
-        "aes-ocb3": EncryptionAlgorithm.AES_OCB3,
         "chacha20-poly1305": EncryptionAlgorithm.CHACHA20_POLY1305,
         "xchacha20-poly1305": EncryptionAlgorithm.XCHACHA20_POLY1305,
-        "camellia": EncryptionAlgorithm.CAMELLIA,
         # PQC hybrid algorithms
         "ml-kem-512-hybrid": EncryptionAlgorithm.ML_KEM_512_HYBRID,
         "ml-kem-768-hybrid": EncryptionAlgorithm.ML_KEM_768_HYBRID,
         "ml-kem-1024-hybrid": EncryptionAlgorithm.ML_KEM_1024_HYBRID,
-        "kyber512-hybrid": EncryptionAlgorithm.KYBER512_HYBRID,
-        "kyber768-hybrid": EncryptionAlgorithm.KYBER768_HYBRID,
-        "kyber1024-hybrid": EncryptionAlgorithm.KYBER1024_HYBRID,
         "hqc-128-hybrid": EncryptionAlgorithm.HQC_128_HYBRID,
         "hqc-192-hybrid": EncryptionAlgorithm.HQC_192_HYBRID,
         "hqc-256-hybrid": EncryptionAlgorithm.HQC_256_HYBRID,
@@ -438,7 +433,6 @@ class CryptoService(dbus.service.Object):
                         hash_config[config_key] = parsed_options[opt_key]
 
                 # Enable Argon2 by default if not specified
-                # (pbkdf2_iterations=0 disables PBKDF2 and uses Argon2)
                 if "argon2_mode" not in hash_config and "argon2_time_cost" not in hash_config:
                     # Set default Argon2 configuration
                     hash_config["argon2_mode"] = "argon2id"
@@ -453,9 +447,6 @@ class CryptoService(dbus.service.Object):
                     reply_handler((False, f"Unsupported algorithm: {algorithm}", operation_id))
                     return
 
-                # Set PBKDF2 iterations to 0 to disable it (use Argon2 instead)
-                pbkdf2_iterations = parsed_options.get("pbkdf2_iterations", 0)
-
                 # Perform encryption
                 operation.update_progress(10.0, "Encrypting file...")
                 self._emit_progress(operation_id, 10.0, "Encrypting file...")
@@ -465,7 +456,6 @@ class CryptoService(dbus.service.Object):
                     output_file=output_path,
                     password=password_bytes,
                     hash_config=hash_config if hash_config else None,
-                    pbkdf2_iterations=pbkdf2_iterations,
                     algorithm=algorithm_enum,
                     quiet=True,
                     progress=False,
@@ -934,16 +924,11 @@ class CryptoService(dbus.service.Object):
             "aes-gcm",
             "aes-gcm-siv",
             "aes-siv",
-            "aes-ocb3",
             "chacha20-poly1305",
             "xchacha20-poly1305",
-            "camellia",
             "ml-kem-512-hybrid",
             "ml-kem-768-hybrid",
             "ml-kem-1024-hybrid",
-            "kyber-512-hybrid",
-            "kyber-768-hybrid",
-            "kyber-1024-hybrid",
             "hqc-128-hybrid",
             "hqc-192-hybrid",
             "hqc-256-hybrid",

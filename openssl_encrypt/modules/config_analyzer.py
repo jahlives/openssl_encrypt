@@ -87,14 +87,16 @@ class ConfigurationAnalyzer:
         "aes-gcm": {"speed": "very_high", "memory": "low", "cpu_intensive": False},
         "aes-gcm-siv": {"speed": "high", "memory": "low", "cpu_intensive": False},
         "aes-siv": {"speed": "high", "memory": "low", "cpu_intensive": False},
-        "aes-ocb3": {"speed": "high", "memory": "low", "cpu_intensive": False},
         "chacha20-poly1305": {"speed": "high", "memory": "low", "cpu_intensive": False},
-        "xchacha20-poly1305": {"speed": "high", "memory": "low", "cpu_intensive": False},
+        "xchacha20-poly1305": {
+            "speed": "high",
+            "memory": "low",
+            "cpu_intensive": False,
+        },
     }
 
     # KDF performance characteristics
     KDF_PERFORMANCE = {
-        "pbkdf2": {"speed": "high", "memory": "low", "parallelizable": False},
         "scrypt": {"speed": "medium", "memory": "medium", "parallelizable": False},
         "argon2": {"speed": "medium", "memory": "high", "parallelizable": True},
         "balloon": {"speed": "medium", "memory": "medium", "parallelizable": True},
@@ -105,17 +107,21 @@ class ConfigurationAnalyzer:
     COMPLIANCE_FRAMEWORKS = {
         "fips_140_2": {
             "approved_algorithms": ["aes-gcm", "aes-gcm-siv"],
-            "approved_kdfs": ["pbkdf2"],
+            "approved_kdfs": [],
             "approved_hashes": ["sha256", "sha512", "sha384"],
         },
         "common_criteria": {
             "approved_algorithms": ["aes-gcm", "aes-gcm-siv", "aes-siv"],
-            "approved_kdfs": ["pbkdf2", "scrypt"],
+            "approved_kdfs": ["scrypt"],
             "approved_hashes": ["sha256", "sha512", "sha384", "sha3_256", "sha3_512"],
         },
         "nist_guidelines": {
-            "approved_algorithms": ["aes-gcm", "chacha20-poly1305", "xchacha20-poly1305"],
-            "approved_kdfs": ["pbkdf2", "argon2"],
+            "approved_algorithms": [
+                "aes-gcm",
+                "chacha20-poly1305",
+                "xchacha20-poly1305",
+            ],
+            "approved_kdfs": ["argon2"],
             "approved_hashes": ["sha256", "sha512", "sha3_256", "sha3_512", "blake3"],
         },
     }
@@ -217,7 +223,6 @@ class ConfigurationAnalyzer:
             "blake3",
             "shake256",
             "shake128",
-            "whirlpool",
         ]
 
         for algo in hash_algorithms:
@@ -230,11 +235,6 @@ class ConfigurationAnalyzer:
     def _extract_kdf_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Extract KDF configuration from full config."""
         kdf_config = {}
-
-        # PBKDF2
-        pbkdf2_iterations = config.get("pbkdf2_iterations", 0) or 0
-        if pbkdf2_iterations > 0:
-            kdf_config["pbkdf2"] = {"enabled": True, "rounds": pbkdf2_iterations}
 
         # Argon2
         if config.get("enable_argon2", False):
@@ -264,7 +264,10 @@ class ConfigurationAnalyzer:
 
         # HKDF
         if config.get("enable_hkdf", False):
-            kdf_config["hkdf"] = {"enabled": True, "rounds": config.get("hkdf_rounds", 1)}
+            kdf_config["hkdf"] = {
+                "enabled": True,
+                "rounds": config.get("hkdf_rounds", 1),
+            }
 
         return kdf_config
 
@@ -443,7 +446,6 @@ class ConfigurationAnalyzer:
             [
                 config.get("enable_argon2", False),
                 config.get("enable_scrypt", False),
-                config.get("pbkdf2_iterations", 0) > 0,
                 config.get("enable_balloon", False),
             ]
         )
@@ -577,8 +579,6 @@ class ConfigurationAnalyzer:
 
             # Check KDF compliance
             active_kdfs = []
-            if config.get("pbkdf2_iterations", 0) > 0:
-                active_kdfs.append("pbkdf2")
             if config.get("enable_scrypt", False):
                 active_kdfs.append("scrypt")
             if config.get("enable_argon2", False):
@@ -610,20 +610,6 @@ class ConfigurationAnalyzer:
 
         # Algorithm longevity assessment
         algorithm = config.get("algorithm", "aes-gcm")
-
-        if algorithm in ["aes-ocb3"]:
-            recommendations.append(
-                AnalysisRecommendation(
-                    category=AnalysisCategory.FUTURE_PROOFING,
-                    priority=RecommendationPriority.MEDIUM,
-                    title="Algorithm may face deprecation in future",
-                    description="AES-OCB3 has patent concerns and may be deprecated",
-                    action="Consider migrating to AES-GCM or ChaCha20-Poly1305",
-                    impact="Long-term algorithm support and compatibility",
-                    rationale="Patent-encumbered algorithms may face adoption issues",
-                    applies_to=["archival", "business"],
-                )
-            )
 
         # Key size considerations
         recommendations.append(
@@ -673,7 +659,6 @@ class ConfigurationAnalyzer:
                 config.get("sha512_rounds", 0),
                 config.get("blake2b_rounds", 0),
                 config.get("blake3_rounds", 0),
-                config.get("pbkdf2_iterations", 0),
             ]
         )
 
@@ -737,11 +722,9 @@ class ConfigurationAnalyzer:
 
         return {
             "estimated_peak_mb": base_memory,
-            "classification": "high"
-            if base_memory > 1024
-            else "medium"
-            if base_memory > 256
-            else "low",
+            "classification": (
+                "high" if base_memory > 1024 else "medium" if base_memory > 256 else "low"
+            ),
         }
 
     def _calculate_cpu_intensity(self, config: Dict[str, Any]) -> str:
@@ -755,7 +738,6 @@ class ConfigurationAnalyzer:
                 config.get("sha512_rounds", 0),
                 config.get("blake2b_rounds", 0),
                 config.get("blake3_rounds", 0),
-                config.get("pbkdf2_iterations", 0),
             ]
         )
 
@@ -820,7 +802,10 @@ class ConfigurationAnalyzer:
         }
 
     def _calculate_compatibility_score(
-        self, platform: Dict[str, bool], library: Dict[str, bool], format: Dict[str, bool]
+        self,
+        platform: Dict[str, bool],
+        library: Dict[str, bool],
+        format: Dict[str, bool],
     ) -> float:
         """Calculate overall compatibility score."""
         total_checks = len(platform) + len(library) + len(format)
@@ -848,8 +833,6 @@ class ConfigurationAnalyzer:
 
             # Check KDF compliance
             active_kdfs = []
-            if config.get("pbkdf2_iterations", 0) > 0:
-                active_kdfs.append("pbkdf2")
             if config.get("enable_scrypt", False):
                 active_kdfs.append("scrypt")
             if config.get("enable_argon2", False):
@@ -889,8 +872,6 @@ class ConfigurationAnalyzer:
 
         if algorithm in ["fernet"]:
             longevity_score = 7.0  # Good but not cutting edge
-        elif algorithm in ["aes-ocb3"]:
-            longevity_score = 6.0  # Patent concerns
         elif algorithm in ["xchacha20-poly1305"]:
             longevity_score = 9.0  # Very modern
 
@@ -927,10 +908,6 @@ class ConfigurationAnalyzer:
         if not config.get("pqc_algorithm"):
             tips.append("Consider enabling post-quantum encryption for long-term security")
 
-        algorithm = config.get("algorithm", "aes-gcm")
-        if algorithm == "aes-ocb3":
-            tips.append("Consider migrating to patent-free algorithms like AES-GCM")
-
         tips.append("Regularly review and update security configurations")
         tips.append("Monitor cryptographic standards for new recommendations")
 
@@ -950,8 +927,6 @@ class ConfigurationAnalyzer:
         ]
 
         active_kdfs = []
-        if config.get("pbkdf2_iterations", 0) > 0:
-            active_kdfs.append("PBKDF2")
         if config.get("enable_argon2", False):
             active_kdfs.append("Argon2")
         if config.get("enable_scrypt", False):
@@ -976,8 +951,6 @@ class ConfigurationAnalyzer:
         if config.get("enable_argon2", False):
             complexity_score += 2
         if config.get("enable_scrypt", False):
-            complexity_score += 1
-        if config.get("pbkdf2_iterations", 0) > 0:
             complexity_score += 1
 
         # Count hash functions

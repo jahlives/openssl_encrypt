@@ -60,14 +60,12 @@ class SecurityScorer:
         "blake3": 4.8,
         "shake256": 4.4,
         "shake128": 4.0,
-        "whirlpool": 3.0,  # Legacy
     }
 
     # KDF strength multipliers
     KDF_STRENGTH = {
         "argon2": 5.0,  # Modern, memory-hard
         "scrypt": 4.0,  # Memory-hard
-        "pbkdf2": 2.0,  # Legacy, CPU-only
         "balloon": 4.5,  # Memory-hard with proven security
         "hkdf": 3.5,  # Fast, suitable for key stretching
     }
@@ -77,7 +75,6 @@ class SecurityScorer:
         "aes-gcm": 4.5,
         "aes-gcm-siv": 4.7,
         "aes-siv": 4.4,
-        "aes-ocb3": 4.3,
         "chacha20-poly1305": 4.6,
         "xchacha20-poly1305": 4.8,
         "fernet": 3.5,  # Simplified, but solid
@@ -86,7 +83,6 @@ class SecurityScorer:
     # Post-quantum algorithm bonuses
     PQC_BONUS = {
         "ml-kem": 2.0,  # NIST standard
-        "kyber": 1.8,  # Pre-standard Kyber
         "hqc": 1.5,  # Alternative approach
     }
 
@@ -207,12 +203,6 @@ class SecurityScorer:
                     n_param = config.get("n", 16384)
                     n_score = min(math.log2(n_param) / 18.0, 1.2)
                     kdf_score *= n_score
-
-                elif kdf_name == "pbkdf2":
-                    # PBKDF2 rounds matter more due to simpler algorithm
-                    rounds = config.get("rounds", 100000)
-                    round_score = min(math.log10(rounds) / 6.0, 1.0)
-                    kdf_score *= 0.5 + 0.5 * round_score
 
                 score = max(score, kdf_score)
                 active_kdfs.append(kdf_name)
@@ -343,7 +333,10 @@ class SecurityScorer:
             return "Excellent encryption algorithm"
 
     def _calculate_security_estimates(
-        self, hash_score: Dict[str, Any], kdf_score: Dict[str, Any], cipher_score: Dict[str, Any]
+        self,
+        hash_score: Dict[str, Any],
+        kdf_score: Dict[str, Any],
+        cipher_score: Dict[str, Any],
     ) -> Dict[str, str]:
         """Calculate security time estimates (generic, educational only)."""
         # These are very rough educational estimates

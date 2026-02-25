@@ -21,7 +21,6 @@ def encrypt_file_with_keystore(
     output_file: str,
     password: Union[str, bytes],
     hash_config: Optional[Dict[str, Any]] = None,
-    pbkdf2_iterations: int = 100000,
     quiet: bool = False,
     algorithm: str = "aes-gcm",
     pqc_keypair: Optional[Tuple[bytes, bytes]] = None,
@@ -40,7 +39,6 @@ def encrypt_file_with_keystore(
         output_file: Path to output file
         password: Password for encryption
         hash_config: Hash configuration
-        pbkdf2_iterations: Number of PBKDF2 iterations
         quiet: Whether to suppress output
         algorithm: Encryption algorithm
         pqc_keypair: PQC key pair (public_key, private_key)
@@ -63,13 +61,9 @@ def encrypt_file_with_keystore(
             "sha3_512": 0,
             "blake2b": 0,
             "shake256": 0,
-            "whirlpool": 0,
             "scrypt": {"enabled": False},
             "argon2": {"enabled": False},
-            "pbkdf2_iterations": pbkdf2_iterations,
         }
-    elif "pbkdf2_iterations" not in hash_config:
-        hash_config["pbkdf2_iterations"] = pbkdf2_iterations
 
     hash_config_copy = hash_config.copy()
 
@@ -120,7 +114,6 @@ def encrypt_file_with_keystore(
         output_file,
         password,
         hash_config=hash_config_copy,
-        pbkdf2_iterations=pbkdf2_iterations,
         quiet=quiet,
         algorithm=algorithm,
         pqc_keypair=pqc_keypair,
@@ -172,7 +165,11 @@ def encrypt_file_with_keystore(
 
                         # Store the key in the keystore - passing the complete metadata
                         store_pqc_key_in_keystore(
-                            metadata, keystore_file, keystore_password, key_id=key_id, quiet=quiet
+                            metadata,
+                            keystore_file,
+                            keystore_password,
+                            key_id=key_id,
+                            quiet=quiet,
                         )
 
                         # Create a clean copy of the metadata to avoid any reference issues

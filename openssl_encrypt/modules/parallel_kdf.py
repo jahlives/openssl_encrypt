@@ -107,22 +107,6 @@ def _hash_worker(
     """
     start_time = time.time()
 
-    # Setup whirlpool module compatibility if needed
-    if algorithm == "whirlpool":
-        try:
-            # Try importing whirlpool directly first
-            import whirlpool  # noqa: F401
-        except ImportError:
-            try:
-                # Try whirlpool_py311 and alias it
-                import sys
-
-                import whirlpool_py311
-
-                sys.modules["whirlpool"] = whirlpool_py311
-            except ImportError:
-                pass  # Will fail later if whirlpool is truly unavailable
-
     try:
         # Start with password+salt
         current = password_bytes + salt
@@ -180,7 +164,9 @@ def _hash_worker(
         # Report error
         progress_queue.put(
             ProgressMessage(
-                worker_id=worker_id, progress_type=ProgressType.WORKER_ERROR, error=str(e)
+                worker_id=worker_id,
+                progress_type=ProgressType.WORKER_ERROR,
+                error=str(e),
             )
         )
         raise
@@ -335,7 +321,9 @@ def _kdf_worker(
         # Report error
         progress_queue.put(
             ProgressMessage(
-                worker_id=worker_id, progress_type=ProgressType.WORKER_ERROR, error=str(e)
+                worker_id=worker_id,
+                progress_type=ProgressType.WORKER_ERROR,
+                error=str(e),
             )
         )
         raise
@@ -465,7 +453,6 @@ def generate_key_independent_xor_parallel(
     password: bytes,
     salt: bytes,
     hash_config: dict,
-    pbkdf2_iterations: int = 100000,
     quiet: bool = False,
     algorithm: str = "aes-256-gcm",
     progress: bool = False,
@@ -487,7 +474,6 @@ def generate_key_independent_xor_parallel(
         password: User password (bytes)
         salt: Random salt (bytes)
         hash_config: Configuration dict for enabled algorithms
-        pbkdf2_iterations: PBKDF2 iterations (deprecated for v11)
         quiet: Suppress output messages
         algorithm: Encryption algorithm (determines key length)
         progress: Show progress indicators
@@ -518,8 +504,6 @@ def generate_key_independent_xor_parallel(
         "chacha20-poly1305",
         "xchacha20-poly1305",
         "aes-gcm-siv",
-        "aes-ocb3",
-        "camellia",
         "cascade",
     ]:
         key_length = 32
@@ -551,7 +535,6 @@ def generate_key_independent_xor_parallel(
     tasks = []
 
     # Hash algorithm tasks
-    # Note: whirlpool excluded - deprecated and has multiprocessing import issues
     hash_algorithms = [
         "sha256",
         "sha512",
@@ -708,13 +691,8 @@ def generate_key_independent_xor_parallel(
             "aes-256-gcm",
             "aes-gcm",
             "aes-gcm-siv",
-            "aes-ocb3",
             "chacha20-poly1305",
             "xchacha20-poly1305",
-            "camellia",
-            "kyber512-hybrid",
-            "kyber768-hybrid",
-            "kyber1024-hybrid",
             "ml-kem-512-hybrid",
             "ml-kem-768-hybrid",
             "ml-kem-1024-hybrid",

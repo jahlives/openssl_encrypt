@@ -101,7 +101,6 @@ class TemplateManager:
                 "hash_config": {
                     "sha256": 1000,
                     "sha3_512": 10000,
-                    "pbkdf2_iterations": 10000,
                     "scrypt": {"enabled": False},
                     "argon2": {"enabled": False},
                     "algorithm": "fernet",
@@ -132,7 +131,6 @@ class TemplateManager:
                         "memory_cost": 1048576,
                         "parallelism": 4,
                     },
-                    "pbkdf2_iterations": 200000,
                     "algorithm": "aes-gcm-siv",
                 }
             },
@@ -164,7 +162,6 @@ class TemplateManager:
                         "parallelism": 8,
                     },
                     "balloon": {"enabled": True, "time_cost": 3, "space_cost": 65536},
-                    "pbkdf2_iterations": 0,
                     "algorithm": "xchacha20-poly1305",
                 }
             },
@@ -590,17 +587,14 @@ class TemplateManager:
             for h in ["sha256", "sha512", "blake2b", "blake3"]
         )
         has_kdf = any(
-            hash_config.get(kdf, {}).get("enabled", False)
-            if isinstance(hash_config.get(kdf), dict)
-            else False
+            (
+                hash_config.get(kdf, {}).get("enabled", False)
+                if isinstance(hash_config.get(kdf), dict)
+                else False
+            )
             for kdf in ["argon2", "scrypt", "balloon"]
         )
-        has_pbkdf2 = (
-            isinstance(hash_config.get("pbkdf2_iterations"), int)
-            and hash_config.get("pbkdf2_iterations", 0) > 0
-        )
-
-        if not (has_hash or has_kdf or has_pbkdf2):
+        if not (has_hash or has_kdf):
             errors.append("Template must have at least one enabled hash function or KDF")
 
         # Check algorithm if specified
@@ -611,7 +605,6 @@ class TemplateManager:
                 "aes-gcm",
                 "aes-gcm-siv",
                 "aes-siv",
-                "aes-ocb3",
                 "chacha20-poly1305",
                 "xchacha20-poly1305",
             ]
@@ -623,7 +616,6 @@ class TemplateManager:
             "sha256": (0, 10000000),
             "sha512": (0, 10000000),
             "blake2b": (0, 10000000),
-            "pbkdf2_iterations": (0, 10000000),
         }
 
         for field, (min_val, max_val) in numeric_fields.items():

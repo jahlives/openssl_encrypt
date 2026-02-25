@@ -37,7 +37,6 @@ from .algorithm_warnings import (
 from .crypt_core import (
     ARGON2_AVAILABLE,
     ARGON2_TYPE_INT_MAP,
-    WHIRLPOOL_AVAILABLE,
     EncryptionAlgorithm,
     check_argon2_support,
     decrypt_file,
@@ -583,7 +582,6 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                 "sha3_512": 10000,
                 "blake2b": 0,
                 "shake256": 0,
-                "whirlpool": 0,
                 "scrypt": {"enabled": False, "n": 128, "r": 8, "p": 1, "rounds": 1000},
                 "argon2": {
                     "enabled": False,
@@ -606,7 +604,6 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                 "sha3_512": 0,
                 "blake2b": 0,
                 "shake256": 0,
-                "whirlpool": 0,
                 "scrypt": {"enabled": True, "n": 128, "r": 8, "p": 1, "rounds": 5},
                 "argon2": {
                     "enabled": True,
@@ -773,7 +770,6 @@ def analyze_current_security_configuration(args):
             "blake3",
             "shake256",
             "shake128",
-            "whirlpool",
         ]
 
         for hash_name in hash_algorithms:
@@ -918,8 +914,6 @@ def validate_algorithm_availability(args):
             hash_algorithms.append("blake3")
         if (getattr(args, "shake256_rounds", 0) or 0) > 0:
             hash_algorithms.append("shake256")
-        if (getattr(args, "whirlpool_rounds", 0) or 0) > 0:
-            hash_algorithms.append("whirlpool")
 
         for algo in hash_algorithms:
             is_valid, error_msg = validate_algorithm_name(algo, "hash")
@@ -1082,7 +1076,6 @@ def output_available_algorithms_json(args):
             "version": None,
             "required_for": [
                 "ml-kem-*",
-                "kyber*",
                 "hqc-*",
                 "mayo-*",
                 "cross-*",
@@ -1335,7 +1328,10 @@ def install_optional_dependencies(args):
     try:
         # Check if already installed
         result = subprocess.run(
-            ["pkg-config", "--modversion", "liboqs"], capture_output=True, text=True, timeout=5
+            ["pkg-config", "--modversion", "liboqs"],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode == 0 and result.stdout.strip() == "0.12.0":
             print("  ✓ liboqs 0.12.0 already installed")
@@ -1464,7 +1460,10 @@ def install_optional_dependencies(args):
                 env["PYO3_USE_ABI3_FORWARD_COMPATIBILITY"] = "1"
 
                 subprocess.run(
-                    ["maturin", "build", "--release"], cwd=threefish_dir, env=env, check=True
+                    ["maturin", "build", "--release"],
+                    cwd=threefish_dir,
+                    env=env,
+                    check=True,
                 )
 
                 # Install the built wheel
@@ -1683,7 +1682,13 @@ def _display_analysis_results(analysis):
             by_priority[priority].append(rec)
 
         # Display by priority
-        priority_icons = {"critical": "🚨", "high": "⚠️", "medium": "💡", "low": "ℹ️", "info": "📝"}
+        priority_icons = {
+            "critical": "🚨",
+            "high": "⚠️",
+            "medium": "💡",
+            "low": "ℹ️",
+            "info": "📝",
+        }
 
         for priority in ["critical", "high", "medium", "low", "info"]:
             if priority in by_priority:
@@ -1979,10 +1984,22 @@ def _handle_recommendations_quick(engine, args):
 def _display_recommendation(rec, number: int):
     """Display a single recommendation with formatting."""
     # Priority icon
-    priority_icons = {"info": "ℹ️", "low": "🔷", "medium": "🔶", "high": "🔺", "critical": "🚨"}
+    priority_icons = {
+        "info": "ℹ️",
+        "low": "🔷",
+        "medium": "🔶",
+        "high": "🔺",
+        "critical": "🚨",
+    }
 
     # Confidence indicator
-    confidence_indicators = {1: "⭐", 2: "⭐⭐", 3: "⭐⭐⭐", 4: "⭐⭐⭐⭐", 5: "⭐⭐⭐⭐⭐"}
+    confidence_indicators = {
+        1: "⭐",
+        2: "⭐⭐",
+        3: "⭐⭐⭐",
+        4: "⭐⭐⭐⭐",
+        5: "⭐⭐⭐⭐⭐",
+    }
 
     priority_icon = priority_icons.get(rec.priority.value, "🔷")
     confidence_stars = confidence_indicators.get(rec.confidence.value, "⭐⭐⭐")
@@ -3385,28 +3402,18 @@ def main_with_args(args=None):
             description = "AES-256 in GCM mode, high security, widely trusted"
         elif algo == EncryptionAlgorithm.AES_GCM_SIV.value:
             description = "AES-256 in GCM-SIV mode, resistant to nonce reuse"
-        elif algo == EncryptionAlgorithm.AES_OCB3.value:
-            description = "AES-256 in OCB3 mode, faster than GCM (DEPRECATED)"
         elif algo == EncryptionAlgorithm.AES_SIV.value:
             description = "AES in SIV mode, synthetic IV"
         elif algo == EncryptionAlgorithm.CHACHA20_POLY1305.value:
             description = "modern AEAD cipher with 12-byte nonce"
         elif algo == EncryptionAlgorithm.XCHACHA20_POLY1305.value:
             description = "ChaCha20-Poly1305 with 24-byte nonce, safer for high-volume encryption"
-        elif algo == EncryptionAlgorithm.CAMELLIA.value:
-            description = "Camellia in CBC mode (DEPRECATED)"
         elif algo == EncryptionAlgorithm.ML_KEM_512_HYBRID.value:
             description = "post-quantum key exchange with AES-256-GCM, NIST level 1 (NIST FIPS 203)"
         elif algo == EncryptionAlgorithm.ML_KEM_768_HYBRID.value:
             description = "post-quantum key exchange with AES-256-GCM, NIST level 3 (NIST FIPS 203)"
         elif algo == EncryptionAlgorithm.ML_KEM_1024_HYBRID.value:
             description = "post-quantum key exchange with AES-256-GCM, NIST level 5 (NIST FIPS 203)"
-        elif algo == EncryptionAlgorithm.KYBER512_HYBRID.value:
-            description = "post-quantum key exchange with AES-256-GCM, NIST level 1 (DEPRECATED - use ml-kem-512-hybrid)"
-        elif algo == EncryptionAlgorithm.KYBER768_HYBRID.value:
-            description = "post-quantum key exchange with AES-256-GCM, NIST level 3 (DEPRECATED - use ml-kem-768-hybrid)"
-        elif algo == EncryptionAlgorithm.KYBER1024_HYBRID.value:
-            description = "post-quantum key exchange with AES-256-GCM, NIST level 5 (DEPRECATED - use ml-kem-1024-hybrid)"
         elif algo == EncryptionAlgorithm.THREEFISH_512.value:
             description = "Threefish-512 with Poly1305 (256-bit PQ security, high security)"
         elif algo == EncryptionAlgorithm.THREEFISH_1024.value:
@@ -3427,18 +3434,17 @@ def main_with_args(args=None):
     # Add extended algorithm help
     add_extended_algorithm_help(parser)
 
-    # Data encryption algorithm to use with Kyber/ML-KEM
+    # Data encryption algorithm to use with ML-KEM
     # Build help text with deprecated warnings
     data_algorithms = [
         "aes-gcm",
         "aes-gcm-siv",
-        "aes-ocb3",
         "aes-siv",
         "chacha20-poly1305",
         "xchacha20-poly1305",
     ]
     data_algo_help = (
-        "Symmetric encryption algorithm to use for data encryption when using Kyber/ML-KEM:\n"
+        "Symmetric encryption algorithm to use for data encryption when using ML-KEM:\n"
     )
 
     for algo in data_algorithms:
@@ -3446,8 +3452,6 @@ def main_with_args(args=None):
             description = "default, AES-256 in GCM mode"
         elif algo == "aes-gcm-siv":
             description = "AES-256 in GCM-SIV mode, resistant to nonce reuse"
-        elif algo == "aes-ocb3":
-            description = "AES-256 in OCB3 mode, faster than GCM (DEPRECATED - security concerns with short nonces)"
         elif algo == "aes-siv":
             description = "AES in SIV mode, synthetic IV"
         elif algo == "chacha20-poly1305":
@@ -3631,12 +3635,6 @@ def main_with_args(args=None):
         default=0,
         help="Number of SHAKE-128 iterations (default: 1,000,000 if flag provided without value)",
     )
-    hash_group.add_argument(
-        "--whirlpool-rounds",
-        type=int,
-        default=0,
-        help="Number of Whirlpool iterations (default: 0, not used)",
-    )
 
     # Scrypt parameters group - updated to match the template naming
     scrypt_group = parser.add_argument_group(
@@ -3751,7 +3749,9 @@ def main_with_args(args=None):
     )
     keystore_group.add_argument("--keystore", help="Path to the keystore file")
     keystore_group.add_argument(
-        "--keystore-path", dest="keystore", help="Path to the keystore file (alias for --keystore)"
+        "--keystore-path",
+        dest="keystore",
+        help="Path to the keystore file (alias for --keystore)",
     )
     keystore_group.add_argument(
         "--keystore-password",
@@ -4065,7 +4065,6 @@ def main_with_args(args=None):
         "scrypt_n": 0,
         "scrypt_r": 8,
         "scrypt_p": 1,
-        "whirlpool_rounds": 0,
         "tiger_rounds": 0,
         "ripemd160_rounds": 0,
         "sha1_rounds": 0,
@@ -4291,8 +4290,6 @@ def main_with_args(args=None):
                 hash_config["shake256"] = args.shake256_rounds
             if hasattr(args, "shake128_rounds") and args.shake128_rounds:
                 hash_config["shake128"] = args.shake128_rounds
-            if hasattr(args, "whirlpool_rounds") and args.whirlpool_rounds:
-                hash_config["whirlpool"] = args.whirlpool_rounds
 
             # Build manifest hash config if manifest security profile specified
             manifest_hash_config = None
@@ -4324,8 +4321,6 @@ def main_with_args(args=None):
                     manifest_hash_config["shake256"] = args.shake256_rounds
                 if hasattr(args, "shake128_rounds") and args.shake128_rounds:
                     manifest_hash_config["shake128"] = args.shake128_rounds
-                if hasattr(args, "whirlpool_rounds") and args.whirlpool_rounds:
-                    manifest_hash_config["whirlpool"] = args.whirlpool_rounds
 
             # Create USB
             security_profile = getattr(args, "security_profile", "standard")
@@ -4411,8 +4406,6 @@ def main_with_args(args=None):
                 hash_config["shake256"] = args.shake256_rounds
             if hasattr(args, "shake128_rounds") and args.shake128_rounds:
                 hash_config["shake128"] = args.shake128_rounds
-            if hasattr(args, "whirlpool_rounds") and args.whirlpool_rounds:
-                hash_config["whirlpool"] = args.whirlpool_rounds
 
             result = verify_usb_integrity(
                 usb_path=args.usb_path,
@@ -4556,8 +4549,15 @@ def main_with_args(args=None):
                 print("✓ Supported algorithms:")
 
                 # Organize algorithms by type
-                kems = [algo for algo in supported_algorithms if "Kyber" in algo]
-                sigs = [algo for algo in supported_algorithms if "Kyber" not in algo]
+                kem_keywords = ("ML-KEM", "Kyber", "HQC")
+                kems = [
+                    algo for algo in supported_algorithms if any(k in algo for k in kem_keywords)
+                ]
+                sigs = [
+                    algo
+                    for algo in supported_algorithms
+                    if not any(k in algo for k in kem_keywords)
+                ]
 
                 if kems:
                     print("\n  Key Encapsulation Mechanisms (KEMs):")
@@ -4573,7 +4573,7 @@ def main_with_args(args=None):
             try:
                 from .pqc import PQCipher
 
-                test_cipher = PQCipher(PQCAlgorithm.KYBER768, quiet=args.quiet)
+                test_cipher = PQCipher(PQCAlgorithm.ML_KEM_768, quiet=args.quiet)
                 public_key, private_key = test_cipher.generate_keypair()
                 test_data = b"Test post-quantum encryption"
                 encrypted = test_cipher.encrypt(test_data, public_key)
@@ -4595,11 +4595,13 @@ def main_with_args(args=None):
             print("    pip install liboqs-python")
 
         print("\nUsage examples:")
-        print("  Encrypt with Kyber-768 (NIST Level 3):")
-        print("    python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm kyber768-hybrid")
+        print("  Encrypt with ML-KEM-768 (NIST Level 3):")
+        print(
+            "    python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm ml-kem-768-hybrid"
+        )
         print("\n  Generate and save a key pair:")
         print(
-            "    python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm kyber768-hybrid --pqc-gen-key --pqc-keyfile key.pqc"
+            "    python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm ml-kem-768-hybrid --pqc-gen-key --pqc-keyfile key.pqc"
         )
         print("\n  Decrypt using a saved key pair:")
         print(
@@ -4909,7 +4911,10 @@ def main_with_args(args=None):
         # Copy all data from stdin to temp file
         stdin_data = sys.stdin.buffer.read()
         if args.debug:
-            print(f"DEBUG: Read {len(stdin_data)} bytes from stdin (early)", file=sys.stderr)
+            print(
+                f"DEBUG: Read {len(stdin_data)} bytes from stdin (early)",
+                file=sys.stderr,
+            )
         stdin_temp_file_early.write(stdin_data)
         stdin_temp_file_early.close()
 
@@ -5318,10 +5323,6 @@ def main_with_args(args=None):
                 print("Warning: secure_memory module not available")
             sys.exit(1)
 
-    # Check for Whirlpool availability if needed and not in quiet mode
-    if args.whirlpool_rounds > 0 and not WHIRLPOOL_AVAILABLE and not args.quiet:
-        print("Warning: pywhirlpool module not found. SHA-512 will be used instead.")
-
     # Check for Argon2 availability if needed
     if (args.enable_argon2 or args.argon2_preset) and not ARGON2_AVAILABLE:
         if not args.quiet:
@@ -5331,7 +5332,11 @@ def main_with_args(args=None):
         args.argon2_preset = None
 
     # Check for post-quantum cryptography availability if needed
-    if args.algorithm in ["kyber512-hybrid", "kyber768-hybrid", "kyber1024-hybrid"]:
+    if args.algorithm in [
+        "ml-kem-512-hybrid",
+        "ml-kem-768-hybrid",
+        "ml-kem-1024-hybrid",
+    ]:
         try:
             # Attempt direct import to ensure module is truly available
             import oqs  # noqa: F401
@@ -5568,7 +5573,7 @@ def main_with_args(args=None):
             hash_config["hash_config"]["algorithm"] = "xchacha20-poly1305"
         elif args.quick:
             hash_config = get_template_config(SecurityTemplate.QUICK)
-            hash_config["hash_config"]["algorithm"] = "aes-ocb3"
+            hash_config["hash_config"]["algorithm"] = "aes-gcm-siv"
         elif args.standard:
             hash_config = get_template_config(SecurityTemplate.STANDARD)
             hash_config["hash_config"]["algorithm"] = "aes-gcm-siv"
@@ -5601,7 +5606,6 @@ def main_with_args(args=None):
             and args.blake3_rounds == 0
             and args.shake256_rounds == 0
             and args.shake128_rounds == 0
-            and getattr(args, "whirlpool_rounds", 0) == 0
         )
 
         all_kdfs_disabled = (
@@ -5635,10 +5639,9 @@ def main_with_args(args=None):
                 "blake3": args.blake3_rounds,
                 "shake256": args.shake256_rounds,
                 "shake128": args.shake128_rounds,
-                "whirlpool": getattr(args, "whirlpool_rounds", 0),
                 "scrypt": {
                     "enabled": args.enable_scrypt,
-                    "n": args.scrypt_n if args.scrypt_n and args.scrypt_n > 0 else 16384,
+                    "n": (args.scrypt_n if args.scrypt_n and args.scrypt_n > 0 else 16384),
                     "r": args.scrypt_r if args.scrypt_r is not None else 8,
                     "p": args.scrypt_p if args.scrypt_p is not None else 1,
                     "rounds": args.scrypt_rounds,
@@ -5899,7 +5902,10 @@ def main_with_args(args=None):
                         )
                         sys.exit(1)
                     except TrustDeclinedError:
-                        print(f"ERROR: Trust declined for '{recipient_name}' ❌", file=sys.stderr)
+                        print(
+                            f"ERROR: Trust declined for '{recipient_name}' ❌",
+                            file=sys.stderr,
+                        )
                         sys.exit(1)
                     except KeyError as e:
                         print(f"ERROR: {e} ❌", file=sys.stderr)
@@ -5914,13 +5920,19 @@ def main_with_args(args=None):
 
                 # Load sender
                 if not hasattr(args, "sign_with") or not args.sign_with:
-                    print("ERROR: --sign-with required for asymmetric encryption", file=sys.stderr)
+                    print(
+                        "ERROR: --sign-with required for asymmetric encryption",
+                        file=sys.stderr,
+                    )
                     sys.exit(1)
 
                 # First load identity metadata to check protection level
                 sender_metadata = store.get_by_name(args.sign_with, load_private_keys=False)
                 if sender_metadata is None:
-                    print(f"ERROR: Sender identity '{args.sign_with}' not found ❌", file=sys.stderr)
+                    print(
+                        f"ERROR: Sender identity '{args.sign_with}' not found ❌",
+                        file=sys.stderr,
+                    )
                     sys.exit(1)
 
                 # Determine if passphrase is needed
@@ -5937,7 +5949,9 @@ def main_with_args(args=None):
 
                 try:
                     sender = store.get_by_name(
-                        args.sign_with, passphrase=sender_passphrase, load_private_keys=True
+                        args.sign_with,
+                        passphrase=sender_passphrase,
+                        load_private_keys=True,
                     )
                     if sender is None:
                         print(
@@ -5974,69 +5988,92 @@ def main_with_args(args=None):
                     "blake3": getattr(args, "blake3_rounds", 0) or 0,
                     "shake256": getattr(args, "shake256_rounds", 0) or 0,
                     "shake128": getattr(args, "shake128_rounds", 0) or 0,
-                    "whirlpool": 0,
                     "scrypt": {
                         "enabled": getattr(args, "enable_scrypt", False),
                         "n": getattr(args, "scrypt_n", 0) or 0,
-                        "r": getattr(args, "scrypt_r", 8) if hasattr(args, "scrypt_r") else 8,
-                        "p": getattr(args, "scrypt_p", 1) if hasattr(args, "scrypt_p") else 1,
-                        "rounds": getattr(args, "scrypt_rounds", 1)
-                        if hasattr(args, "scrypt_rounds")
-                        else 1,
+                        "r": (getattr(args, "scrypt_r", 8) if hasattr(args, "scrypt_r") else 8),
+                        "p": (getattr(args, "scrypt_p", 1) if hasattr(args, "scrypt_p") else 1),
+                        "rounds": (
+                            getattr(args, "scrypt_rounds", 1)
+                            if hasattr(args, "scrypt_rounds")
+                            else 1
+                        ),
                     },
                     "argon2": {
                         "enabled": getattr(args, "enable_argon2", False),
-                        "time_cost": getattr(args, "argon2_time", 3)
-                        if hasattr(args, "argon2_time")
-                        else 3,
-                        "memory_cost": getattr(args, "argon2_memory", 65536)
-                        if hasattr(args, "argon2_memory")
-                        else 65536,
-                        "parallelism": getattr(args, "argon2_parallelism", 4)
-                        if hasattr(args, "argon2_parallelism")
-                        else 4,
-                        "hash_len": getattr(args, "argon2_hash_len", 32)
-                        if hasattr(args, "argon2_hash_len")
-                        else 32,
+                        "time_cost": (
+                            getattr(args, "argon2_time", 3) if hasattr(args, "argon2_time") else 3
+                        ),
+                        "memory_cost": (
+                            getattr(args, "argon2_memory", 65536)
+                            if hasattr(args, "argon2_memory")
+                            else 65536
+                        ),
+                        "parallelism": (
+                            getattr(args, "argon2_parallelism", 4)
+                            if hasattr(args, "argon2_parallelism")
+                            else 4
+                        ),
+                        "hash_len": (
+                            getattr(args, "argon2_hash_len", 32)
+                            if hasattr(args, "argon2_hash_len")
+                            else 32
+                        ),
                         "type": ARGON2_TYPE_INT_MAP.get(getattr(args, "argon2_type", "id"), 2),
                         "rounds": getattr(args, "argon2_rounds", 0) or 0,
                     },
                     "balloon": {
                         "enabled": getattr(args, "enable_balloon", False)
                         or getattr(args, "use_balloon", False),
-                        "space_cost": getattr(args, "balloon_space_cost", 1024)
-                        if hasattr(args, "balloon_space_cost")
-                        else 1024,
-                        "time_cost": getattr(args, "balloon_time_cost", 1)
-                        if hasattr(args, "balloon_time_cost")
-                        else 1,
-                        "parallelism": getattr(args, "balloon_parallelism", 1)
-                        if hasattr(args, "balloon_parallelism")
-                        else 1,
-                        "rounds": getattr(args, "balloon_rounds", 1)
-                        if hasattr(args, "balloon_rounds")
-                        else 1,
+                        "space_cost": (
+                            getattr(args, "balloon_space_cost", 1024)
+                            if hasattr(args, "balloon_space_cost")
+                            else 1024
+                        ),
+                        "time_cost": (
+                            getattr(args, "balloon_time_cost", 1)
+                            if hasattr(args, "balloon_time_cost")
+                            else 1
+                        ),
+                        "parallelism": (
+                            getattr(args, "balloon_parallelism", 1)
+                            if hasattr(args, "balloon_parallelism")
+                            else 1
+                        ),
+                        "rounds": (
+                            getattr(args, "balloon_rounds", 1)
+                            if hasattr(args, "balloon_rounds")
+                            else 1
+                        ),
                     },
                     "hkdf": {
                         "enabled": getattr(args, "enable_hkdf", False),
-                        "rounds": getattr(args, "hkdf_rounds", 1)
-                        if hasattr(args, "hkdf_rounds")
-                        else 1,
+                        "rounds": (
+                            getattr(args, "hkdf_rounds", 1) if hasattr(args, "hkdf_rounds") else 1
+                        ),
                     },
                     "randomx": {
                         "enabled": getattr(args, "enable_randomx", False),
-                        "mode": getattr(args, "randomx_mode", "light")
-                        if hasattr(args, "randomx_mode")
-                        else "light",
-                        "height": getattr(args, "randomx_height", 1)
-                        if hasattr(args, "randomx_height")
-                        else 1,
-                        "hash_len": getattr(args, "randomx_hash_len", 32)
-                        if hasattr(args, "randomx_hash_len")
-                        else 32,
-                        "rounds": getattr(args, "randomx_rounds", 1)
-                        if hasattr(args, "randomx_rounds")
-                        else 1,
+                        "mode": (
+                            getattr(args, "randomx_mode", "light")
+                            if hasattr(args, "randomx_mode")
+                            else "light"
+                        ),
+                        "height": (
+                            getattr(args, "randomx_height", 1)
+                            if hasattr(args, "randomx_height")
+                            else 1
+                        ),
+                        "hash_len": (
+                            getattr(args, "randomx_hash_len", 32)
+                            if hasattr(args, "randomx_hash_len")
+                            else 32
+                        ),
+                        "rounds": (
+                            getattr(args, "randomx_rounds", 1)
+                            if hasattr(args, "randomx_rounds")
+                            else 1
+                        ),
                     },
                 }
 
@@ -6096,50 +6133,6 @@ def main_with_args(args=None):
                         traceback.print_exc()
                     sys.exit(1)
 
-            # DEPRECATED: Whirlpool is no longer supported for new encryptions
-            if hasattr(args, "whirlpool_rounds") and getattr(args, "whirlpool_rounds", 0) > 0:
-                print("ERROR: Whirlpool is deprecated for new encryptions.")
-                print("Please use BLAKE2b, BLAKE3, or SHA-3 instead.")
-                print("Existing files encrypted with Whirlpool can still be decrypted.")
-                sys.exit(1)
-
-            # DEPRECATED: Kyber algorithms are no longer supported for new encryptions
-            # Only warn if user actually used the old Kyber names, not if they used ML-KEM names
-            kyber_algorithms = ["kyber512-hybrid", "kyber768-hybrid", "kyber1024-hybrid"]
-            ml_kem_algorithms = ["ml-kem-512-hybrid", "ml-kem-768-hybrid", "ml-kem-1024-hybrid"]
-
-            # Check if this algorithm was originally an ML-KEM name that got converted
-            original_ml_kem_algorithm = os.environ.get("OPENSSL_ENCRYPT_ORIGINAL_MLKEM_ALGORITHM")
-
-            # Check the original user input, not the mapped algorithm
-            user_provided_algorithm = original_algorithm or args.algorithm
-            if args.debug:
-                print(f"DEBUG: args.algorithm = {args.algorithm}")
-                print(f"DEBUG: original_algorithm = {original_algorithm}")
-                print(f"DEBUG: original_ml_kem_algorithm = {original_ml_kem_algorithm}")
-                print(f"DEBUG: user_provided_algorithm = {user_provided_algorithm}")
-                print(
-                    f"DEBUG: user_provided_algorithm in ml_kem_algorithms = {user_provided_algorithm in ml_kem_algorithms}"
-                )
-
-            # Don't warn if the user originally provided an ML-KEM name that got converted to kyber
-            if (
-                hasattr(args, "algorithm")
-                and args.algorithm in kyber_algorithms
-                and user_provided_algorithm not in ml_kem_algorithms
-                and not original_ml_kem_algorithm
-            ):
-                ml_kem_mapping = {
-                    "kyber512-hybrid": "ml-kem-512-hybrid",
-                    "kyber768-hybrid": "ml-kem-768-hybrid",
-                    "kyber1024-hybrid": "ml-kem-1024-hybrid",
-                }
-                recommended = ml_kem_mapping[args.algorithm]
-                print(f"ERROR: {args.algorithm} is deprecated for new encryptions.")
-                print(f"Please use {recommended} instead (NIST standardized equivalent).")
-                print(f"Existing files encrypted with {args.algorithm} can still be decrypted.")
-                sys.exit(1)
-
             # Enforce deprecation policy: Block encryption with deprecated algorithms in version 1.2.0
             if is_encryption_blocked_for_algorithm(args.algorithm):
                 error_message = get_encryption_block_message(args.algorithm)
@@ -6153,7 +6146,7 @@ def main_with_args(args=None):
                 if (
                     not args.quiet
                     and replacement
-                    and (args.verbose or not args.algorithm.startswith(("kyber", "ml-kem")))
+                    and (args.verbose or not args.algorithm.startswith("ml-kem"))
                 ):
                     print(f"Warning: The algorithm '{args.algorithm}' is deprecated.")
                     print(f"Consider using '{replacement}' instead for better security.")
@@ -6173,7 +6166,7 @@ def main_with_args(args=None):
                 if (
                     not args.quiet
                     and data_replacement
-                    and (args.verbose or not args.encryption_data.startswith(("kyber", "ml-kem")))
+                    and (args.verbose or not args.encryption_data.startswith("ml-kem"))
                 ):
                     print(
                         f"Warning: The data encryption algorithm '{args.encryption_data}' is deprecated."
@@ -6200,9 +6193,6 @@ def main_with_args(args=None):
                     # Handle PQC key operations
                     pqc_keypair = None
                     if args.algorithm in [
-                        "kyber512-hybrid",
-                        "kyber768-hybrid",
-                        "kyber1024-hybrid",
                         "hqc-128-hybrid",
                         "hqc-192-hybrid",
                         "hqc-256-hybrid",
@@ -6221,23 +6211,20 @@ def main_with_args(args=None):
                             pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
 
                             # Determine which variants are available
-                            kyber512_options = [
+                            mlkem512_options = [
                                 alg
                                 for alg in pqc_algorithms
-                                if alg.lower().replace("-", "").replace("_", "")
-                                in ["kyber512", "mlkem512"]
+                                if alg.lower().replace("-", "").replace("_", "") in ["mlkem512"]
                             ]
-                            kyber768_options = [
+                            mlkem768_options = [
                                 alg
                                 for alg in pqc_algorithms
-                                if alg.lower().replace("-", "").replace("_", "")
-                                in ["kyber768", "mlkem768"]
+                                if alg.lower().replace("-", "").replace("_", "") in ["mlkem768"]
                             ]
-                            kyber1024_options = [
+                            mlkem1024_options = [
                                 alg
                                 for alg in pqc_algorithms
-                                if alg.lower().replace("-", "").replace("_", "")
-                                in ["kyber1024", "mlkem1024"]
+                                if alg.lower().replace("-", "").replace("_", "") in ["mlkem1024"]
                             ]
                             hqc128_options = [
                                 alg
@@ -6256,10 +6243,14 @@ def main_with_args(args=None):
                             ]
 
                             # Choose first available or fall back to default name
-                            kyber512_algo = kyber512_options[0] if kyber512_options else "Kyber512"
-                            kyber768_algo = kyber768_options[0] if kyber768_options else "Kyber768"
-                            kyber1024_algo = (
-                                kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                            mlkem512_algo = (
+                                mlkem512_options[0] if mlkem512_options else "ML-KEM-512"
+                            )
+                            mlkem768_algo = (
+                                mlkem768_options[0] if mlkem768_options else "ML-KEM-768"
+                            )
+                            mlkem1024_algo = (
+                                mlkem1024_options[0] if mlkem1024_options else "ML-KEM-1024"
                             )
                             hqc128_algo = hqc128_options[0] if hqc128_options else "HQC-128"
                             hqc192_algo = hqc192_options[0] if hqc192_options else "HQC-192"
@@ -6267,23 +6258,20 @@ def main_with_args(args=None):
 
                             if not args.quiet:
                                 print(
-                                    f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}, hqc-128-hybrid → {hqc128_algo}, hqc-192-hybrid → {hqc192_algo}, hqc-256-hybrid → {hqc256_algo}"
+                                    f"Using algorithm mappings: ml-kem-512-hybrid → {mlkem512_algo}, ml-kem-768-hybrid → {mlkem768_algo}, ml-kem-1024-hybrid → {mlkem1024_algo}, hqc-128-hybrid → {hqc128_algo}, hqc-192-hybrid → {hqc192_algo}, hqc-256-hybrid → {hqc256_algo}"
                                 )
 
                             # Create direct string mapping instead of using enum
                             algo_map = {
-                                "kyber512-hybrid": kyber512_algo,
-                                "kyber768-hybrid": kyber768_algo,
-                                "kyber1024-hybrid": kyber1024_algo,
                                 "hqc-128-hybrid": hqc128_algo,
                                 "hqc-192-hybrid": hqc192_algo,
                                 "hqc-256-hybrid": hqc256_algo,
-                                "ml-kem-512-hybrid": kyber512_algo,
-                                "ml-kem-768-hybrid": kyber768_algo,
-                                "ml-kem-1024-hybrid": kyber1024_algo,
-                                "ml-kem-512-chacha20": kyber512_algo,
-                                "ml-kem-768-chacha20": kyber768_algo,
-                                "ml-kem-1024-chacha20": kyber1024_algo,
+                                "ml-kem-512-hybrid": mlkem512_algo,
+                                "ml-kem-768-hybrid": mlkem768_algo,
+                                "ml-kem-1024-hybrid": mlkem1024_algo,
+                                "ml-kem-512-chacha20": mlkem512_algo,
+                                "ml-kem-768-chacha20": mlkem768_algo,
+                                "ml-kem-1024-chacha20": mlkem1024_algo,
                             }
 
                             # Generate key pair
@@ -6347,9 +6335,6 @@ def main_with_args(args=None):
                     if (
                         args.algorithm
                         in [
-                            "kyber512-hybrid",
-                            "kyber768-hybrid",
-                            "kyber1024-hybrid",
                             "hqc-128-hybrid",
                             "hqc-192-hybrid",
                             "hqc-256-hybrid",
@@ -6367,23 +6352,20 @@ def main_with_args(args=None):
 
                         # Map algorithm name to available algorithms
                         pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
-                        kyber512_options = [
+                        mlkem512_options = [
                             alg
                             for alg in pqc_algorithms
-                            if alg.lower().replace("-", "").replace("_", "")
-                            in ["kyber512", "mlkem512"]
+                            if alg.lower().replace("-", "").replace("_", "") in ["mlkem512"]
                         ]
-                        kyber768_options = [
+                        mlkem768_options = [
                             alg
                             for alg in pqc_algorithms
-                            if alg.lower().replace("-", "").replace("_", "")
-                            in ["kyber768", "mlkem768"]
+                            if alg.lower().replace("-", "").replace("_", "") in ["mlkem768"]
                         ]
-                        kyber1024_options = [
+                        mlkem1024_options = [
                             alg
                             for alg in pqc_algorithms
-                            if alg.lower().replace("-", "").replace("_", "")
-                            in ["kyber1024", "mlkem1024"]
+                            if alg.lower().replace("-", "").replace("_", "") in ["mlkem1024"]
                         ]
                         hqc128_options = [
                             alg
@@ -6403,35 +6385,26 @@ def main_with_args(args=None):
 
                         # Choose first available algorithm
                         algo_map = {
-                            "kyber512-hybrid": (
-                                kyber512_options[0] if kyber512_options else "Kyber512"
-                            ),
-                            "kyber768-hybrid": (
-                                kyber768_options[0] if kyber768_options else "Kyber768"
-                            ),
-                            "kyber1024-hybrid": (
-                                kyber1024_options[0] if kyber1024_options else "Kyber1024"
-                            ),
                             "hqc-128-hybrid": (hqc128_options[0] if hqc128_options else "HQC-128"),
                             "hqc-192-hybrid": (hqc192_options[0] if hqc192_options else "HQC-192"),
                             "hqc-256-hybrid": (hqc256_options[0] if hqc256_options else "HQC-256"),
                             "ml-kem-512-hybrid": (
-                                kyber512_options[0] if kyber512_options else "Kyber512"
+                                mlkem512_options[0] if mlkem512_options else "ML-KEM-512"
                             ),
                             "ml-kem-768-hybrid": (
-                                kyber768_options[0] if kyber768_options else "Kyber768"
+                                mlkem768_options[0] if mlkem768_options else "ML-KEM-768"
                             ),
                             "ml-kem-1024-hybrid": (
-                                kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                                mlkem1024_options[0] if mlkem1024_options else "ML-KEM-1024"
                             ),
                             "ml-kem-512-chacha20": (
-                                kyber512_options[0] if kyber512_options else "Kyber512"
+                                mlkem512_options[0] if mlkem512_options else "ML-KEM-512"
                             ),
                             "ml-kem-768-chacha20": (
-                                kyber768_options[0] if kyber768_options else "Kyber768"
+                                mlkem768_options[0] if mlkem768_options else "ML-KEM-768"
                             ),
                             "ml-kem-1024-chacha20": (
-                                kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                                mlkem1024_options[0] if mlkem1024_options else "ML-KEM-1024"
                             ),
                         }
 
@@ -6552,7 +6525,7 @@ def main_with_args(args=None):
                         key_id = getattr(args, "key_id", None)
                         # Always auto-generate a key if we're using a keystore with PQC algorithm
                         # and no key_id is provided, or explicitly requested with --auto-generate-key
-                        if (key_id is None and args.algorithm.startswith("kyber")) or getattr(
+                        if (key_id is None and args.algorithm.startswith("ml-kem")) or getattr(
                             args, "auto_generate_key", False
                         ):
                             # Set the auto_generate_key flag for the auto_generate_pqc_key function
@@ -6707,7 +6680,10 @@ def main_with_args(args=None):
 
                                         # Display suggestion if available
                                         if warning.suggestion and not args.quiet:
-                                            print(f"  → {warning.suggestion}", file=sys.stderr)
+                                            print(
+                                                f"  → {warning.suggestion}",
+                                                file=sys.stderr,
+                                            )
 
                                     # Abort if errors or strict mode with warnings
                                     if has_error or (strict_mode and has_warning):
@@ -7070,9 +7046,6 @@ def main_with_args(args=None):
             # Handle PQC key operations (for non-overwriting case)
             pqc_keypair = None
             if args.algorithm in [
-                "kyber512-hybrid",
-                "kyber768-hybrid",
-                "kyber1024-hybrid",
                 "hqc-128-hybrid",
                 "hqc-192-hybrid",
                 "hqc-256-hybrid",
@@ -7091,21 +7064,20 @@ def main_with_args(args=None):
                     pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
 
                     # Determine which variants are available
-                    kyber512_options = [
+                    mlkem512_options = [
                         alg
                         for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["kyber512", "mlkem512"]
+                        if alg.lower().replace("-", "").replace("_", "") in ["mlkem512"]
                     ]
-                    kyber768_options = [
+                    mlkem768_options = [
                         alg
                         for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["kyber768", "mlkem768"]
+                        if alg.lower().replace("-", "").replace("_", "") in ["mlkem768"]
                     ]
-                    kyber1024_options = [
+                    mlkem1024_options = [
                         alg
                         for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "")
-                        in ["kyber1024", "mlkem1024"]
+                        if alg.lower().replace("-", "").replace("_", "") in ["mlkem1024"]
                     ]
                     hqc128_options = [
                         alg
@@ -7124,32 +7096,29 @@ def main_with_args(args=None):
                     ]
 
                     # Choose first available or fall back to default name
-                    kyber512_algo = kyber512_options[0] if kyber512_options else "Kyber512"
-                    kyber768_algo = kyber768_options[0] if kyber768_options else "Kyber768"
-                    kyber1024_algo = kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                    mlkem512_algo = mlkem512_options[0] if mlkem512_options else "ML-KEM-512"
+                    mlkem768_algo = mlkem768_options[0] if mlkem768_options else "ML-KEM-768"
+                    mlkem1024_algo = mlkem1024_options[0] if mlkem1024_options else "ML-KEM-1024"
                     hqc128_algo = hqc128_options[0] if hqc128_options else "HQC-128"
                     hqc192_algo = hqc192_options[0] if hqc192_options else "HQC-192"
                     hqc256_algo = hqc256_options[0] if hqc256_options else "HQC-256"
 
                     if not args.quiet:
                         print(
-                            f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}, hqc-128-hybrid → {hqc128_algo}, hqc-192-hybrid → {hqc192_algo}, hqc-256-hybrid → {hqc256_algo}"
+                            f"Using algorithm mappings: ml-kem-512-hybrid → {mlkem512_algo}, ml-kem-768-hybrid → {mlkem768_algo}, ml-kem-1024-hybrid → {mlkem1024_algo}, hqc-128-hybrid → {hqc128_algo}, hqc-192-hybrid → {hqc192_algo}, hqc-256-hybrid → {hqc256_algo}"
                         )
 
                     # Create direct string mapping
                     algo_map = {
-                        "kyber512-hybrid": kyber512_algo,
-                        "kyber768-hybrid": kyber768_algo,
-                        "kyber1024-hybrid": kyber1024_algo,
                         "hqc-128-hybrid": hqc128_algo,
                         "hqc-192-hybrid": hqc192_algo,
                         "hqc-256-hybrid": hqc256_algo,
-                        "ml-kem-512-hybrid": kyber512_algo,
-                        "ml-kem-768-hybrid": kyber768_algo,
-                        "ml-kem-1024-hybrid": kyber1024_algo,
-                        "ml-kem-512-chacha20": kyber512_algo,
-                        "ml-kem-768-chacha20": kyber768_algo,
-                        "ml-kem-1024-chacha20": kyber1024_algo,
+                        "ml-kem-512-hybrid": mlkem512_algo,
+                        "ml-kem-768-hybrid": mlkem768_algo,
+                        "ml-kem-1024-hybrid": mlkem1024_algo,
+                        "ml-kem-512-chacha20": mlkem512_algo,
+                        "ml-kem-768-chacha20": mlkem768_algo,
+                        "ml-kem-1024-chacha20": mlkem1024_algo,
                     }
 
                     # Generate key pair
@@ -7292,21 +7261,20 @@ def main_with_args(args=None):
 
                     # Map algorithm name to available algorithms
                     pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
-                    kyber512_options = [
+                    mlkem512_options = [
                         alg
                         for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["kyber512", "mlkem512"]
+                        if alg.lower().replace("-", "").replace("_", "") in ["mlkem512"]
                     ]
-                    kyber768_options = [
+                    mlkem768_options = [
                         alg
                         for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["kyber768", "mlkem768"]
+                        if alg.lower().replace("-", "").replace("_", "") in ["mlkem768"]
                     ]
-                    kyber1024_options = [
+                    mlkem1024_options = [
                         alg
                         for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "")
-                        in ["kyber1024", "mlkem1024"]
+                        if alg.lower().replace("-", "").replace("_", "") in ["mlkem1024"]
                     ]
                     hqc128_options = [
                         alg
@@ -7326,35 +7294,26 @@ def main_with_args(args=None):
 
                     # Choose first available algorithm
                     algo_map = {
-                        "kyber512-hybrid": (
-                            kyber512_options[0] if kyber512_options else "Kyber512"
-                        ),
-                        "kyber768-hybrid": (
-                            kyber768_options[0] if kyber768_options else "Kyber768"
-                        ),
-                        "kyber1024-hybrid": (
-                            kyber1024_options[0] if kyber1024_options else "Kyber1024"
-                        ),
                         "hqc-128-hybrid": (hqc128_options[0] if hqc128_options else "HQC-128"),
                         "hqc-192-hybrid": (hqc192_options[0] if hqc192_options else "HQC-192"),
                         "hqc-256-hybrid": (hqc256_options[0] if hqc256_options else "HQC-256"),
                         "ml-kem-512-hybrid": (
-                            kyber512_options[0] if kyber512_options else "Kyber512"
+                            mlkem512_options[0] if mlkem512_options else "ML-KEM-512"
                         ),
                         "ml-kem-768-hybrid": (
-                            kyber768_options[0] if kyber768_options else "Kyber768"
+                            mlkem768_options[0] if mlkem768_options else "ML-KEM-768"
                         ),
                         "ml-kem-1024-hybrid": (
-                            kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                            mlkem1024_options[0] if mlkem1024_options else "ML-KEM-1024"
                         ),
                         "ml-kem-512-chacha20": (
-                            kyber512_options[0] if kyber512_options else "Kyber512"
+                            mlkem512_options[0] if mlkem512_options else "ML-KEM-512"
                         ),
                         "ml-kem-768-chacha20": (
-                            kyber768_options[0] if kyber768_options else "Kyber768"
+                            mlkem768_options[0] if mlkem768_options else "ML-KEM-768"
                         ),
                         "ml-kem-1024-chacha20": (
-                            kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                            mlkem1024_options[0] if mlkem1024_options else "ML-KEM-1024"
                         ),
                     }
 
@@ -7466,7 +7425,7 @@ def main_with_args(args=None):
                     key_id = getattr(args, "key_id", None)
                     # Always auto-generate a key if we're using a keystore with PQC algorithm
                     # and no key_id is provided, or explicitly requested with --auto-generate-key
-                    if (key_id is None and args.algorithm.startswith("kyber")) or getattr(
+                    if (key_id is None and args.algorithm.startswith("ml-kem")) or getattr(
                         args, "auto_generate_key", False
                     ):
                         # Set the auto_generate_key flag for the auto_generate_pqc_key function
@@ -7738,9 +7697,11 @@ def main_with_args(args=None):
                         {
                             "input_file": str(args.input),
                             "output_file": str(output_file),
-                            "algorithm": args.algorithm.value
-                            if hasattr(args.algorithm, "value")
-                            else str(args.algorithm),
+                            "algorithm": (
+                                args.algorithm.value
+                                if hasattr(args.algorithm, "value")
+                                else str(args.algorithm)
+                            ),
                             "service": "cli",
                         },
                     )
@@ -7988,7 +7949,9 @@ def main_with_args(args=None):
                                         # Shred original if requested
                                         if args.shred:
                                             secure_shred_file(
-                                                args.input, args.shred_passes, args.quiet
+                                                args.input,
+                                                args.shred_passes,
+                                                args.quiet,
                                             )
                                     finally:
                                         # Clean up plaintext from memory
@@ -7999,7 +7962,8 @@ def main_with_args(args=None):
                                     sys.exit(0)
                                 except Exception as e:
                                     print(
-                                        f"ERROR: Asymmetric decryption failed: {e}", file=sys.stderr
+                                        f"ERROR: Asymmetric decryption failed: {e}",
+                                        file=sys.stderr,
                                     )
                                     sys.exit(1)
                         except Exception:
@@ -8089,7 +8053,9 @@ def main_with_args(args=None):
                             if not skip_verification:
                                 if hasattr(args, "verify_from") and args.verify_from:
                                     sender = store.get_by_name(
-                                        args.verify_from, passphrase=None, load_private_keys=False
+                                        args.verify_from,
+                                        passphrase=None,
+                                        load_private_keys=False,
                                     )
                                     if sender is None:
                                         print(
@@ -8107,7 +8073,9 @@ def main_with_args(args=None):
                                     )
                                     if sender_key_id:
                                         sender = store.get_by_fingerprint(
-                                            sender_key_id, passphrase=None, load_private_keys=False
+                                            sender_key_id,
+                                            passphrase=None,
+                                            load_private_keys=False,
                                         )
                                         if sender:
                                             sender_public_key = sender.signing_public_key
@@ -8184,7 +8152,10 @@ def main_with_args(args=None):
                                 sys.exit(0)
 
                             except Exception as e:
-                                print(f"ERROR: Asymmetric decryption failed: {e}", file=sys.stderr)
+                                print(
+                                    f"ERROR: Asymmetric decryption failed: {e}",
+                                    file=sys.stderr,
+                                )
                                 if args.debug:
                                     import traceback
 
@@ -8212,7 +8183,7 @@ def main_with_args(args=None):
                         if (
                             not args.quiet
                             and replacement
-                            and (args.verbose or not algorithm.startswith(("kyber", "ml-kem")))
+                            and (args.verbose or not algorithm.startswith("ml-kem"))
                         ):
                             print(
                                 f"Warning: The algorithm '{algorithm}' used in this file is deprecated."
@@ -8228,9 +8199,7 @@ def main_with_args(args=None):
                         if (
                             not args.quiet
                             and data_replacement
-                            and (
-                                args.verbose or not encryption_data.startswith(("kyber", "ml-kem"))
-                            )
+                            and (args.verbose or not encryption_data.startswith("ml-kem"))
                         ):
                             print(
                                 f"Warning: The data encryption algorithm '{encryption_data}' used in this file is deprecated."
@@ -8278,7 +8247,7 @@ def main_with_args(args=None):
                         if (
                             not args.quiet
                             and replacement
-                            and (args.verbose or not algorithm.startswith(("kyber", "ml-kem")))
+                            and (args.verbose or not algorithm.startswith("ml-kem"))
                         ):
                             print(
                                 f"Warning: The algorithm '{algorithm}' used in this file is deprecated."
@@ -8294,9 +8263,7 @@ def main_with_args(args=None):
                         if (
                             not args.quiet
                             and data_replacement
-                            and (
-                                args.verbose or not encryption_data.startswith(("kyber", "ml-kem"))
-                            )
+                            and (args.verbose or not encryption_data.startswith("ml-kem"))
                         ):
                             print(
                                 f"Warning: The data encryption algorithm '{encryption_data}' used in this file is deprecated."
