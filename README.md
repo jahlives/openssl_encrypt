@@ -51,25 +51,23 @@ For deep-dives into the cryptographic design and security policies of this proje
 * **Metadata Integrity**: Cryptographic binding of headers to prevent tampering (on AEAD-supported ciphers).
 * **Hardware-Resistant KDF**: Sequential Argon2id and RandomX hashing to neutralize ASIC/GPU brute-force clusters.
 ---
-## 🚧 v1.4.0 Beta Series - Under Active Development
+## 🚀 v1.4.0 Release Candidate
 
-**Current Beta:** v1.4.0b10 | **Status:** Pre-release testing | **Target:** Stable v1.4.0 release
+**Current Release:** v1.4.0rc1 | **Status:** Release candidate testing | **Target:** Stable v1.4.0 release
 
-> ⚠️ **BETA SOFTWARE**: This is pre-release software under active development. While extensively tested (1573+ tests passing), it should be used with caution in production environments. Backward compatibility with v1.3.x is maintained, but the v1.4.0 API and features may change before stable release.
+> ⚠️ **RELEASE CANDIDATE**: This is a release candidate. While feature-complete and security-audited (1573+ tests passing), it should undergo final validation before production deployment. Backward compatibility with v1.3.x is maintained. The API is frozen for the v1.4.0 stable release.
 
-**What's New in v1.4.0b10:**
-- **Format Version 11: Independent XOR Key Derivation (Massey)**: New `--independent-xor` flag enables Massey's Independent XOR composition providing "strongest component" security guarantee - key remains secure even if all algorithms except the strongest are broken
-- **Parallel KDF Processing**: Optional `--parallel-kdf` flag for ~2.7x performance improvement (8.5s → 3.1s with 8 algorithms on 8-core CPU) using multiprocessing for true CPU parallelism
-- **Worker Control**: `--kdf-workers N` flag to specify parallel worker count (default: auto-detect based on CPU cores)
-- **Enhanced Security Guarantee**: Independent XOR provides maximum cryptographic assurance against future algorithm breaks, distinct from v10 sequential XOR's anti-parallelization approach
-- **Cross-Branch Compatibility**: v11 format compatible with v9 format in the 1.3.x branch for seamless migration
-- **Test Coverage**: 1573 tests passing (up from 1535) including 18 new tests for v11 and parallel processing
+**What's New in v1.4.0rc1:**
+- **Comprehensive Security Hardening**: Addressed 14 Dependabot security advisories covering CSPRNG, path traversal, sandbox bypass, CORS hardening, credential handling, and more
+- **Dependency Updates**: Bumped dependencies to resolve 8 additional Dependabot alerts
+- **Feature-Complete**: All v1.4.0 features from the beta series are included and finalized
 
-**Recent Beta Releases:**
-- **v1.4.0b10** (Current) - Format Version 11: Independent XOR & Parallel Processing
+**Release History:**
+- **v1.4.0rc1** (Current) - First release candidate: security hardening and dependency updates
+- **v1.4.0b10** - Format Version 11: Independent XOR & Parallel Processing
 - **v1.4.0b9** - Test infrastructure improvements, Threefish cipher support, cross-version compatibility fixes
 - **v1.4.0b8** - Critical security fix: Format Version 9 with secure chained salt derivation
-- See [version.py.template](openssl_encrypt/version.py.template) for complete beta history
+- See [version.py.template](openssl_encrypt/version.py.template) for complete release history
 
 ### 🚨 CRITICAL SECURITY FIX - Format Version 9 (Beta)
 
