@@ -6,9 +6,6 @@ import sys
 from typing import List
 
 from setuptools import Command, find_packages, setup
-from setuptools.command.build_py import build_py
-from setuptools.command.develop import develop
-from setuptools.command.install import install
 
 # Dependencies are now specified in pyproject.toml
 
@@ -22,7 +19,7 @@ this_directory = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(this_directory, "README.md"), encoding="utf-8") as f:
     long_description = f.read()
 
-VERSION = "1.4.0b10"  # Define version in a variable for reuse
+VERSION = "1.4.0rc1"  # Define version in a variable for reuse
 
 # Get git commit hash
 git_hash = "unknown"
@@ -72,7 +69,7 @@ __git_commit__ = "{git_hash}"
 def check_liboqs_version():
     """Check if liboqs is already installed with correct version"""
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S607
             ["pkg-config", "--modversion", "liboqs"], capture_output=True, text=True, timeout=5
         )
         if result.returncode == 0:
@@ -137,7 +134,7 @@ def build_local_dependencies():
 
     if not os.path.exists(install_script):
         print("⚠ Warning: Build script not found at", install_script)
-        print(f"Please install manually:")
+        print("Please install manually:")
         print(
             f"  liboqs {REQUIRED_LIBOQS_VERSION}: https://github.com/open-quantum-safe/liboqs/releases/tag/{REQUIRED_LIBOQS_VERSION}"
         )
@@ -186,15 +183,15 @@ def build_local_dependencies():
 
     except subprocess.CalledProcessError as e:
         print(f"\n✗ Error: Failed to build dependencies: {e}")
-        print(f"\nPlease install manually:")
-        print(f"  1. Install build tools: cmake, ninja, git")
+        print("\nPlease install manually:")
+        print("  1. Install build tools: cmake, ninja, git")
         print(f"  2. Build liboqs {REQUIRED_LIBOQS_VERSION}:")
         print(
             f"     git clone --branch {REQUIRED_LIBOQS_VERSION} https://github.com/open-quantum-safe/liboqs.git"
         )
-        print(f"     cd liboqs && mkdir build && cd build")
-        print(f"     cmake -GNinja -DCMAKE_INSTALL_PREFIX=$HOME/.local ..")
-        print(f"     ninja && ninja install")
+        print("     cd liboqs && mkdir build && cd build")
+        print("     cmake -GNinja -DCMAKE_INSTALL_PREFIX=$HOME/.local ..")
+        print("     ninja && ninja install")
         print(f"  3. Install liboqs-python {REQUIRED_LIBOQS_PYTHON_VERSION}:")
         print(
             f"     pip install git+https://github.com/open-quantum-safe/liboqs-python.git@{REQUIRED_LIBOQS_PYTHON_VERSION}"

@@ -5,6 +5,31 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0rc1] - 2026-02-26
+
+### Security
+
+- **CSPRNG for Steganography**: Replaced non-cryptographic random with HMAC-SHA256 CSPRNG (GHSA-vfgx-5q85-58q3)
+- **HKDF Salt Parameter**: Added salt parameter to HKDF key derivation (GHSA-j9mh-57cc-665x)
+- **Standard PBKDF2 Fallback**: Use standard PBKDF2 for new encryptions in fallback path (GHSA-743f-89fg-x288)
+- **Sandbox Bypass Prevention**: Block pathlib/io sandbox bypass for file operations (GHSA-mcjj-qw7m-j3cp)
+- **Import Guard Sync**: Synchronized import guard and AST analyzer blocked module lists (GHSA-9pgj-v69p-q586)
+- **Path Traversal Sanitization**: Sanitize plugin_id to prevent path traversal (GHSA-8jpj-w975-rwv5)
+- **Thread-Safe Module Hiding**: Fixed restore_hidden_modules() logging and thread safety (GHSA-43r4-3hf9-m84q)
+- **CORS Default Hardening**: Changed CORS default from wildcard to empty list (GHSA-c65f-x25w-62jv)
+- **Trusted Proxy Restriction**: Restricted default trusted proxies to localhost (GHSA-2592-7m3g-7fq6)
+- **DB Error Masking**: Stopped leaking DB errors in readiness endpoint (GHSA-2vhw-q7vh-7xv2)
+- **Refresh Token Security**: Moved refresh token from query params to POST body (GHSA-4rh7-jwg9-m28m)
+- **Key Bundle Verification**: Verify key bundle signature on deserialization (GHSA-8h88-gxp3-j7pg)
+- **TOTP Rate Limiter**: Added pluggable backend for TOTP rate limiter (GHSA-h45m-mgcp-q388)
+- **SO Path Validation**: Validated .so file paths before loading (GHSA-j48q-4c78-rhf9)
+- **Password File Support**: Added --password-file/--password-fd, deprecated --password (GHSA-h3m5-p59h-x88p)
+- **Schema Validation**: Raise error when jsonschema unavailable instead of silently passing (GHSA-425g-fjhq-5h92)
+
+### Changed
+
+- Bumped dependencies to fix 8 Dependabot alerts
+
 ## [1.4.0b10] - 2026-01-11
 
 ### Added
