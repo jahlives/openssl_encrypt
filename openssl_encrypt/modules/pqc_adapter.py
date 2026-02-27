@@ -297,6 +297,28 @@ class ExtendedPQCipher(PQCipher):
                 cipher = self.AESGCMSIV(symmetric_key)
             elif self.encryption_data == "aes-siv":
                 cipher = self.AESSIV(symmetric_key)
+            elif self.encryption_data in ("threefish-512", "threefish-1024"):
+                from cryptography.hazmat.primitives import hashes as hkdf_hashes
+                from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+                import threefish_native
+
+                key_len = 64 if self.encryption_data == "threefish-512" else 128
+                expanded_key = HKDF(
+                    algorithm=hkdf_hashes.SHA256(),
+                    length=key_len,
+                    salt=None,
+                    info=self.encryption_data.encode() + b"-pqc-key-expansion",
+                ).derive(bytes(symmetric_key))
+                # Threefish-512 needs 32-byte nonce, Threefish-1024 needs 64-byte nonce
+                nonce_len = 32 if self.encryption_data == "threefish-512" else 64
+                nonce = secrets.token_bytes(nonce_len)
+                if self.encryption_data == "threefish-512":
+                    encrypted_data = threefish_native.encrypt_512(expanded_key, nonce, data, aad)
+                else:
+                    encrypted_data = threefish_native.encrypt_1024(expanded_key, nonce, data, aad)
+                result = ciphertext + nonce + encrypted_data
+                return result
             else:
                 # Default to AES-GCM for unknown algorithms
                 if not self.quiet:
@@ -370,8 +392,15 @@ class ExtendedPQCipher(PQCipher):
             remaining_data = encrypted_data[kem_ciphertext_size:]
 
             # Extract nonce and ciphertext
-            nonce = remaining_data[:12]
-            ciphertext = remaining_data[12:]
+            # Threefish uses larger nonces: 32 bytes (512) or 64 bytes (1024)
+            if self.encryption_data == "threefish-512":
+                nonce_len = 32
+            elif self.encryption_data == "threefish-1024":
+                nonce_len = 64
+            else:
+                nonce_len = 12
+            nonce = remaining_data[:nonce_len]
+            ciphertext = remaining_data[nonce_len:]
 
             # Decapsulate shared secret
             shared_secret = self.liboqs_kem.decapsulate(encapsulated_key, private_key)
@@ -401,6 +430,28 @@ class ExtendedPQCipher(PQCipher):
                     cipher = self.AESGCMSIV(symmetric_key)
                 elif self.encryption_data == "aes-siv":
                     cipher = self.AESSIV(symmetric_key)
+                elif self.encryption_data in ("threefish-512", "threefish-1024"):
+                    from cryptography.hazmat.primitives import hashes as hkdf_hashes
+                    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+                    import threefish_native
+
+                    key_len = 64 if self.encryption_data == "threefish-512" else 128
+                    expanded_key = HKDF(
+                        algorithm=hkdf_hashes.SHA256(),
+                        length=key_len,
+                        salt=None,
+                        info=self.encryption_data.encode() + b"-pqc-key-expansion",
+                    ).derive(bytes(symmetric_key))
+                    if self.encryption_data == "threefish-512":
+                        plaintext = threefish_native.decrypt_512(
+                            expanded_key, nonce, ciphertext, aad
+                        )
+                    else:
+                        plaintext = threefish_native.decrypt_1024(
+                            expanded_key, nonce, ciphertext, aad
+                        )
+                    return plaintext
                 else:
                     # Default to AES-GCM for unknown algorithms
                     if not self.quiet:

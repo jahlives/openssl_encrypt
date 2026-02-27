@@ -112,7 +112,7 @@ class TestWhirlpoolRemoval(unittest.TestCase):
 
         registry = HashRegistry()
         # Whirlpool should not be a registered hash
-        available = registry.list_algorithms()
+        available = registry.list_names()
         available_names = [a.lower() for a in available]
         self.assertNotIn("whirlpool", available_names)
 
@@ -134,7 +134,7 @@ class TestPBKDF2Removal(unittest.TestCase):
         from openssl_encrypt.modules.registry.kdf_registry import KDFRegistry
 
         registry = KDFRegistry()
-        available = registry.list_algorithms()
+        available = registry.list_names()
         available_names = [a.lower() for a in available]
         self.assertNotIn("pbkdf2", available_names)
 
@@ -200,12 +200,17 @@ class TestLegacyPQCRemoval(unittest.TestCase):
         self.assertEqual(PQCAlgorithm.ML_KEM_768.value, "ML-KEM-768")
         self.assertEqual(PQCAlgorithm.ML_KEM_1024.value, "ML-KEM-1024")
 
-    def test_legacy_algorithm_maps_removed(self):
-        """Verify legacy-to-standard algorithm mapping dicts are removed."""
+    def test_legacy_algorithm_maps_no_kyber(self):
+        """Verify legacy-to-standard algorithm maps no longer contain Kyber entries."""
         import openssl_encrypt.modules.pqc as pqc_mod
 
-        self.assertFalse(hasattr(pqc_mod, "LEGACY_TO_STANDARD_ALGORITHM_MAP"))
-        self.assertFalse(hasattr(pqc_mod, "STANDARD_TO_LEGACY_ALGORITHM_MAP"))
+        # The maps still exist for signature algorithm translation (Dilithium→ML-DSA, etc.)
+        # but should not contain any Kyber entries
+        legacy_map = getattr(pqc_mod, "LEGACY_TO_STANDARD_ALGORITHM_MAP", {})
+        for key in legacy_map:
+            self.assertNotIn(
+                "kyber", key.lower(), f"Kyber entry '{key}' should be removed from legacy map"
+            )
 
 
 class TestDeprecationInfrastructure(unittest.TestCase):

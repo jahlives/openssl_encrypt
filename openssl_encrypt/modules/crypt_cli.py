@@ -6204,7 +6204,9 @@ def main_with_args(args=None):
                         "ml-kem-1024-chacha20",
                     ]:
                         # Check if we should generate and save a new key pair
-                        if args.pqc_gen_key and args.pqc_keyfile:
+                        if getattr(args, "pqc_gen_key", False) and getattr(
+                            args, "pqc_keyfile", None
+                        ):
                             from .pqc import PQCAlgorithm, PQCipher, check_pqc_support
 
                             # Map algorithm name to PQCAlgorithm with fallbacks
@@ -6344,6 +6346,12 @@ def main_with_args(args=None):
                             "ml-kem-512-chacha20",
                             "ml-kem-768-chacha20",
                             "ml-kem-1024-chacha20",
+                            "mayo-1-hybrid",
+                            "mayo-3-hybrid",
+                            "mayo-5-hybrid",
+                            "cross-128-hybrid",
+                            "cross-192-hybrid",
+                            "cross-256-hybrid",
                         ]
                         and not pqc_keypair
                     ):
@@ -6382,6 +6390,36 @@ def main_with_args(args=None):
                             for alg in pqc_algorithms
                             if alg.lower().replace("-", "").replace("_", "") in ["hqc256"]
                         ]
+                        mayo1_options = [
+                            alg
+                            for alg in pqc_algorithms
+                            if alg.lower().replace("-", "").replace("_", "") in ["mayo1"]
+                        ]
+                        mayo3_options = [
+                            alg
+                            for alg in pqc_algorithms
+                            if alg.lower().replace("-", "").replace("_", "") in ["mayo3"]
+                        ]
+                        mayo5_options = [
+                            alg
+                            for alg in pqc_algorithms
+                            if alg.lower().replace("-", "").replace("_", "") in ["mayo5"]
+                        ]
+                        cross128_options = [
+                            alg
+                            for alg in pqc_algorithms
+                            if alg.lower().replace("-", "").replace("_", "") in ["cross128"]
+                        ]
+                        cross192_options = [
+                            alg
+                            for alg in pqc_algorithms
+                            if alg.lower().replace("-", "").replace("_", "") in ["cross192"]
+                        ]
+                        cross256_options = [
+                            alg
+                            for alg in pqc_algorithms
+                            if alg.lower().replace("-", "").replace("_", "") in ["cross256"]
+                        ]
 
                         # Choose first available algorithm
                         algo_map = {
@@ -6405,6 +6443,18 @@ def main_with_args(args=None):
                             ),
                             "ml-kem-1024-chacha20": (
                                 mlkem1024_options[0] if mlkem1024_options else "ML-KEM-1024"
+                            ),
+                            "mayo-1-hybrid": (mayo1_options[0] if mayo1_options else "MAYO-1"),
+                            "mayo-3-hybrid": (mayo3_options[0] if mayo3_options else "MAYO-3"),
+                            "mayo-5-hybrid": (mayo5_options[0] if mayo5_options else "MAYO-5"),
+                            "cross-128-hybrid": (
+                                cross128_options[0] if cross128_options else "CROSS-128"
+                            ),
+                            "cross-192-hybrid": (
+                                cross192_options[0] if cross192_options else "CROSS-192"
+                            ),
+                            "cross-256-hybrid": (
+                                cross256_options[0] if cross256_options else "CROSS-256"
                             ),
                         }
 
@@ -7057,7 +7107,7 @@ def main_with_args(args=None):
                 "ml-kem-1024-chacha20",
             ]:
                 # Check if we should generate and save a new key pair
-                if args.pqc_gen_key and args.pqc_keyfile:
+                if getattr(args, "pqc_gen_key", False) and getattr(args, "pqc_keyfile", None):
                     from .pqc import PQCAlgorithm, PQCipher, check_pqc_support
 
                     # Map algorithm name to PQCAlgorithm with fallbacks
@@ -7172,7 +7222,7 @@ def main_with_args(args=None):
                     pqc_keypair = (public_key, private_key)
 
                 # Check if we should load an existing key pair
-                elif args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
+                elif getattr(args, "pqc_keyfile", None) and os.path.exists(args.pqc_keyfile):
                     import base64
                     import json
 

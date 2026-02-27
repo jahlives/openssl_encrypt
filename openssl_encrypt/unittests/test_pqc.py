@@ -1262,421 +1262,167 @@ def get_testfiles_dir():
     return Path(__file__).parent / "testfiles"
 
 
-# Generate dynamic pytest tests for each test file
-def get_test_files_v3():
-    """Get list of all test files in the testfiles directory."""
-    test_dir = Path(__file__).parent / "testfiles" / "v3"
-    if not test_dir.exists():
-        return []
-    return [name for name in os.listdir(test_dir) if name.startswith("test1_")]
-
-
-def get_test_files_v4():
-    """Get list of all test files in the testfiles directory."""
-    test_dir = Path(__file__).parent / "testfiles" / "v4"
-    if not test_dir.exists():
-        return []
-    return [name for name in os.listdir(test_dir) if name.startswith("test1_")]
-
-
 def _is_pqc_algorithm(algorithm_name: str) -> bool:
     """Check if an algorithm name refers to a PQC algorithm requiring liboqs."""
     lower = algorithm_name.lower()
     return any(prefix in lower for prefix in ["kyber", "ml-kem", "hqc", "mayo", "cross"])
 
 
-# Create a test function for each file
-@pytest.mark.parametrize(
-    "filename",
-    get_test_files_v3(),
-    ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}",
-)
-# Add isolation marker for each test to prevent race conditions
-def test_file_decryption_v3(filename):
-    """Test decryption of a specific test file."""
-    algorithm_name = filename.replace("test1_", "").replace(".txt", "")
-
-    if _is_pqc_algorithm(algorithm_name) and not LIBOQS_AVAILABLE:
-        pytest.skip("liboqs not available - skipping PQC algorithm test")
-
-    pqc_private_key = None
-    if "kyber" in algorithm_name.lower() or "ml-kem" in algorithm_name.lower():
-        pqc_private_key = b"\x00" * 64
-
-    try:
-        decrypted_data = decrypt_file(
-            input_file=f"{get_testfiles_dir()}/v3/{filename}",
-            output_file=None,
-            password=b"1234",
-            pqc_private_key=pqc_private_key,
-        )
-
-        # Only assert if we actually got data back
-        if not decrypted_data:
-            raise ValueError("Decryption returned empty result")
-
-        assert (
-            decrypted_data == b"Hello World\n"
-        ), f"Decryption result for {algorithm_name} did not match expected output"
-        print(f"\nDecryption successful for {algorithm_name}")
-
-    except Exception as e:
-        print(f"\nDecryption failed for {algorithm_name}: {str(e)}")
-        raise AssertionError(f"Decryption failed for {algorithm_name}: {str(e)}")
+def _extract_algorithm_name(filename: str) -> str:
+    """Extract a human-readable algorithm name from a test filename."""
+    name = filename.replace(".txt", "")
+    # Remove version prefixes like test1_, test_v12_, etc.
+    for prefix in ["test1_", "test_v12_", "test_v5_", "test_v4_", "test_v3_"]:
+        if name.startswith(prefix):
+            name = name[len(prefix) :]
+            break
+    return name
 
 
-# Create a test function for each file
-@pytest.mark.parametrize(
-    "filename",
-    get_test_files_v3(),
-    ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}",
-)
-def test_file_decryption_wrong_pw_v3(filename):
-    """Test decryption of a specific test file with wrong password."""
-    algorithm_name = filename.replace("test1_", "").replace(".txt", "")
-
-    pqc_private_key = None
-
-    try:
-        decrypted_data = decrypt_file(
-            input_file=f"{get_testfiles_dir()}/v3/{filename}",
-            output_file=None,
-            password=b"12345",
-            pqc_private_key=pqc_private_key,
-        )
-
-        pytest.fail(f"Decryption should have failed with wrong password for {algorithm_name}")
-    except Exception as e:
-        print(f"\nDecryption correctly failed for {algorithm_name}: {str(e)}")
-        pass
+# Generate dynamic pytest tests for all test files across all version directories
+def get_all_test_files():
+    """Scan all version subdirectories under testfiles/ and return (version_dir, filename) tuples."""
+    base_dir = get_testfiles_dir()
+    if not base_dir.exists():
+        return []
+    results = []
+    for version_dir in sorted(base_dir.iterdir()):
+        if not version_dir.is_dir():
+            continue
+        version = version_dir.name
+        for f in sorted(os.listdir(version_dir)):
+            if f.endswith(".txt") and f.startswith("test"):
+                results.append((version, f))
+    return results
 
 
-@pytest.mark.parametrize(
-    "filename",
-    get_test_files_v3(),
-    ids=lambda name: f"wrong_algorithm_{name.replace('test1_', '').replace('.txt', '')}",
-)
-def test_file_decryption_wrong_algorithm_v3(filename):
-    """
-    Test decryption of v3 files with wrong password (simulating wrong algorithm).
-
-    This test verifies that trying to decrypt a file with a wrong password properly fails
-    and raises an exception rather than succeeding, which is similar to using a wrong algorithm.
-    """
-    algorithm_name = filename.replace("test1_", "").replace(".txt", "")
-
-    # Read the file content and extract metadata to find current algorithm
-    with open(f"{get_testfiles_dir()}/v3/{filename}", "r") as f:
-        content = f.read()
-
-    # Split file content by colon to get the metadata part
-    metadata_b64 = content.split(":", 1)[0]
-    metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
-    metadata = json.loads(metadata_json)
-
-    # Get current algorithm from metadata
-    current_algorithm = metadata.get("algorithm", "")
-
-    # Define available algorithms
-    available_algorithms = [
-        "fernet",
-        "aes-gcm",
-        "chacha20-poly1305",
-        "xchacha20-poly1305",
-        "aes-siv",
-        "aes-gcm-siv",
-        "ml-kem-512-hybrid",
-        "ml-kem-768-hybrid",
-        "ml-kem-1024-hybrid",
+def get_pqc_test_files():
+    """Get all PQC test files across all version directories."""
+    pqc_keywords = ["kyber", "hqc", "mayo-", "cross-", "ml-kem-"]
+    return [
+        (version, f)
+        for version, f in get_all_test_files()
+        if any(kw in f.lower() for kw in pqc_keywords)
     ]
 
-    # Choose a different algorithm
-    wrong_algorithm = None
-    for alg in available_algorithms:
-        if alg != current_algorithm:
-            wrong_algorithm = alg
-            break
 
-    # Fallback if we couldn't find a different algorithm (should never happen)
-    if not wrong_algorithm:
-        wrong_algorithm = "fernet" if current_algorithm != "fernet" else "aes-gcm"
-
-    try:
-        decrypted_data = decrypt_file(
-            input_file=f"{get_testfiles_dir()}/v3/{filename}",
-            output_file=None,
-            password=b"wrong_password",
-            pqc_private_key=None,
-        )
-
-        pytest.fail(
-            f"Security issue: Decryption succeeded with wrong algorithm for {algorithm_name} (v3)"
-        )
-    except Exception as e:
-        print(
-            f"\nDecryption correctly failed for {algorithm_name} (v3) with wrong password: {str(e)}"
-        )
+def _test_file_id(param):
+    """Generate a readable test ID from a (version, filename) tuple."""
+    version, filename = param
+    algo = _extract_algorithm_name(filename)
+    return f"{version}/{algo}"
 
 
-# Create a test function for each file
 @pytest.mark.parametrize(
-    "filename",
-    get_test_files_v4(),
-    ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}",
+    "version_and_file",
+    get_all_test_files(),
+    ids=_test_file_id,
 )
-def test_file_decryption_v4(filename):
-    """Test decryption of a specific test file."""
-    algorithm_name = filename.replace("test1_", "").replace(".txt", "")
+def test_file_decryption(version_and_file):
+    """Test decryption of an existing test file with the correct password."""
+    version, filename = version_and_file
+    algorithm_name = _extract_algorithm_name(filename)
 
     if _is_pqc_algorithm(algorithm_name) and not LIBOQS_AVAILABLE:
         pytest.skip("liboqs not available - skipping PQC algorithm test")
 
-    pqc_private_key = None
-    if "kyber" in algorithm_name.lower() or "ml-kem" in algorithm_name.lower():
-        pqc_private_key = b"\x00" * 64
-
     try:
         decrypted_data = decrypt_file(
-            input_file=f"{get_testfiles_dir()}/v4/{filename}",
+            input_file=str(get_testfiles_dir() / version / filename),
             output_file=None,
             password=b"1234",
-            pqc_private_key=pqc_private_key,
         )
 
-        # Only assert if we actually got data back
         if not decrypted_data:
             raise ValueError("Decryption returned empty result")
 
         assert (
             decrypted_data == b"Hello World\n"
-        ), f"Decryption result for {algorithm_name} did not match expected output"
-        print(f"\nDecryption successful for {algorithm_name}")
+        ), f"Decryption result for {algorithm_name} ({version}) did not match expected output"
+        print(f"\nDecryption successful for {algorithm_name} ({version})")
 
     except Exception as e:
-        print(f"\nDecryption failed for {algorithm_name}: {str(e)}")
-        raise AssertionError(f"Decryption failed for {algorithm_name}: {str(e)}")
+        print(f"\nDecryption failed for {algorithm_name} ({version}): {str(e)}")
+        raise AssertionError(f"Decryption failed for {algorithm_name} ({version}): {str(e)}")
 
 
-# Create a test function for each file
 @pytest.mark.parametrize(
-    "filename",
-    get_test_files_v4(),
-    ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}",
+    "version_and_file",
+    get_all_test_files(),
+    ids=_test_file_id,
 )
-def test_file_decryption_wrong_pw_v4(filename):
-    """Test decryption of a specific test file with wrong password.
-
-    This test verifies that trying to decrypt a file with an incorrect password
-    properly fails and raises an exception rather than succeeding with wrong credentials.
-    """
-    algorithm_name = filename.replace("test1_", "").replace(".txt", "")
+def test_file_decryption_wrong_pw(version_and_file):
+    """Test that decryption fails with wrong password for all test files."""
+    version, filename = version_and_file
+    algorithm_name = _extract_algorithm_name(filename)
 
     try:
-        # Try to decrypt with an incorrect password (correct is '1234' but we use '12345')
         decrypted_data = decrypt_file(
-            input_file=f"{get_testfiles_dir()}/v4/{filename}",
+            input_file=str(get_testfiles_dir() / version / filename),
             output_file=None,
-            password=b"12345",  # Wrong password
+            password=b"12345",
             pqc_private_key=None,
         )
 
-        # If we get here, decryption succeeded with wrong password, which is a failure
         pytest.fail(
-            f"Security issue: Decryption succeeded with wrong password for {algorithm_name}"
+            f"Security issue: Decryption succeeded with wrong password for {algorithm_name} ({version})"
         )
     except Exception as e:
-        # This is the expected path - decryption should fail with wrong password
-        print(f"\nDecryption correctly failed for {algorithm_name} with wrong password: {str(e)}")
-        # Test passes because the exception was raised as expected
-        pass
+        print(
+            f"\nDecryption correctly failed for {algorithm_name} ({version}) with wrong password: {str(e)}"
+        )
 
 
 @pytest.mark.parametrize(
-    "filename",
-    get_test_files_v4(),
-    ids=lambda name: f"wrong_algorithm_{name.replace('test1_', '').replace('.txt', '')}",
+    "version_and_file",
+    get_all_test_files(),
+    ids=_test_file_id,
 )
-def test_file_decryption_wrong_algorithm_v4(filename):
-    """
-    Test decryption of v4 files with wrong password (simulating wrong algorithm).
-
-    This test verifies that trying to decrypt a file with a wrong password properly fails
-    and raises an exception rather than succeeding, which is similar to using a wrong algorithm.
-    """
-    algorithm_name = filename.replace("test1_", "").replace(".txt", "")
+def test_file_decryption_wrong_algorithm(version_and_file):
+    """Test that decryption fails with a completely wrong password (simulating wrong algorithm)."""
+    version, filename = version_and_file
+    algorithm_name = _extract_algorithm_name(filename)
 
     try:
         decrypted_data = decrypt_file(
-            input_file=f"{get_testfiles_dir()}/v4/{filename}",
+            input_file=str(get_testfiles_dir() / version / filename),
             output_file=None,
             password=b"wrong_password",
             pqc_private_key=None,
         )
 
         pytest.fail(
-            f"Security issue: Decryption succeeded with wrong algorithm for {algorithm_name} (v4)"
+            f"Security issue: Decryption succeeded with wrong algorithm for {algorithm_name} ({version})"
         )
     except Exception as e:
-        print(
-            f"\nDecryption correctly failed for {algorithm_name} (v4) with wrong password: {str(e)}"
-        )
-
-
-# Test function for v5 files with incorrect password
-def get_test_files_v5():
-    """Get a list of test files for v5 format."""
-    try:
-        files = os.listdir(get_testfiles_dir() / "v5")
-        return [f for f in files if f.startswith("test1_")]
-    except:
-        return []
-
-
-# Create a test function for each file
-@pytest.mark.parametrize(
-    "filename",
-    get_test_files_v5(),
-    ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}",
-)
-# Add isolation marker for each test to prevent race conditions
-def test_file_decryption_v5(filename):
-    """Test decryption of a specific test file."""
-    algorithm_name = filename.replace("test1_", "").replace(".txt", "")
-
-    if _is_pqc_algorithm(algorithm_name) and not LIBOQS_AVAILABLE:
-        pytest.skip("liboqs not available - skipping PQC algorithm test")
-
-    pqc_private_key = None
-    if "kyber" in algorithm_name.lower() or "ml-kem" in algorithm_name.lower():
-        pqc_private_key = b"\x00" * 64
-
-    try:
-        decrypted_data = decrypt_file(
-            input_file=f"{get_testfiles_dir()}/v5/{filename}",
-            output_file=None,
-            password=b"1234",
-            pqc_private_key=pqc_private_key,
-        )
-
-        # Only assert if we actually got data back
-        if not decrypted_data:
-            raise ValueError("Decryption returned empty result")
-
-        assert (
-            decrypted_data == b"Hello World\n"
-        ), f"Decryption result for {algorithm_name} did not match expected output"
-        print(f"\nDecryption successful for {algorithm_name}")
-
-    except Exception as e:
-        print(f"\nDecryption failed for {algorithm_name}: {str(e)}")
-        raise AssertionError(f"Decryption failed for {algorithm_name}: {str(e)}")
+        print(f"\nDecryption correctly failed for {algorithm_name} ({version}): {str(e)}")
 
 
 @pytest.mark.parametrize(
-    "filename",
-    get_test_files_v5(),
-    ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}",
+    "version_and_file",
+    get_pqc_test_files(),
+    ids=_test_file_id,
 )
-def test_file_decryption_wrong_pw_v5(filename):
-    """Test decryption of v5 test files with wrong password.
-
-    This test verifies that trying to decrypt a v5 format file with an incorrect password
-    properly fails and raises an exception rather than succeeding with wrong credentials.
-    This is particularly important for PQC dual encryption which should validate both passwords.
-    """
-    algorithm_name = filename.replace("test1_", "").replace(".txt", "")
-
-    try:
-        # Try to decrypt with an incorrect password (correct is '1234' but we use '12345')
-        decrypted_data = decrypt_file(
-            input_file=f"{get_testfiles_dir()}/v5/{filename}",
-            output_file=None,
-            password=b"12345",  # Wrong password
-            pqc_private_key=None,
-        )
-
-        # If we get here, decryption succeeded with wrong password, which is a failure
-        pytest.fail(
-            f"Security issue: Decryption succeeded with wrong password for {algorithm_name} (v5)"
-        )
-    except Exception as e:
-        # This is the expected path - decryption should fail with wrong password
-        print(
-            f"\nDecryption correctly failed for {algorithm_name} (v5) with wrong password: {str(e)}"
-        )
-        # Test passes because the exception was raised as expected
-        pass
-
-
-def get_pqc_test_files_v5():
-    """Get a list of PQC test files for v5 format (Kyber, HQC, MAYO, CROSS, ML-KEM)."""
-    try:
-        files = os.listdir(get_testfiles_dir() / "v5")
-        pqc_prefixes = ["test1_kyber", "test1_hqc", "test1_mayo-", "test1_cross-", "test1_ml-kem-"]
-        return [f for f in files if any(f.startswith(prefix) for prefix in pqc_prefixes)]
-    except Exception as e:
-        print(f"Error getting PQC test files: {str(e)}")
-        return []
-
-
-@pytest.mark.parametrize(
-    "filename",
-    get_test_files_v5(),
-    ids=lambda name: f"wrong_algorithm_{name.replace('test1_', '').replace('.txt', '')}",
-)
-def test_file_decryption_wrong_algorithm_v5(filename):
-    """
-    Test decryption of v5 files with wrong password (simulating wrong algorithm).
-
-    This test verifies that trying to decrypt a file with a wrong password properly fails
-    and raises an exception rather than succeeding, which is similar to using a wrong algorithm.
-    """
-    algorithm_name = filename.replace("test1_", "").replace(".txt", "")
+def test_file_decryption_wrong_encryption_data(version_and_file):
+    """Test that PQC file decryption fails with wrong password (simulating wrong encryption_data)."""
+    version, filename = version_and_file
+    algorithm_name = _extract_algorithm_name(filename)
 
     try:
         decrypted_data = decrypt_file(
-            input_file=f"{get_testfiles_dir()}/v5/{filename}",
+            input_file=str(get_testfiles_dir() / version / filename),
             output_file=None,
             password=b"wrong_password",
             pqc_private_key=None,
         )
 
         pytest.fail(
-            f"Security issue: Decryption succeeded with wrong algorithm for {algorithm_name} (v5)"
+            f"Security issue: Decryption succeeded with wrong encryption_data for {algorithm_name} ({version})"
         )
     except Exception as e:
         print(
-            f"\nDecryption correctly failed for {algorithm_name} (v5) with wrong password: {str(e)}"
+            f"\nDecryption correctly failed for {algorithm_name} ({version}) with wrong input: {str(e)}"
         )
-
-
-@pytest.mark.parametrize(
-    "filename",
-    get_pqc_test_files_v5(),
-    ids=lambda name: f"wrong_encryption_data_{name.replace('test1_', '').replace('.txt', '')}",
-)
-def test_file_decryption_wrong_encryption_data_v5(filename):
-    """Test decryption of v5 PQC files with wrong encryption_data.
-
-    This test verifies that trying to decrypt a v5 format PQC file (Kyber, HQC, MAYO, CROSS, ML-KEM)
-    with the correct password but wrong encryption_data setting properly fails and raises an exception
-    rather than succeeding.
-    """
-    algorithm_name = filename.replace("test1_", "").replace(".txt", "")
-
-    try:
-        decrypted_data = decrypt_file(
-            input_file=f"{get_testfiles_dir()}/v5/{filename}",
-            output_file=None,
-            password=b"wrong_password",
-            pqc_private_key=None,
-        )
-
-        pytest.fail(
-            f"Security issue: Decryption succeeded with wrong encryption_data for {algorithm_name} (v5)"
-        )
-    except Exception as e:
-        print(f"\nDecryption correctly failed for {algorithm_name} (v5) with wrong input: {str(e)}")
 
 
 @pytest.mark.order(7)

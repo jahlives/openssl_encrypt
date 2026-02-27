@@ -11,7 +11,6 @@ import pytest
 from openssl_encrypt.modules.registry import (
     AES256GCM,
     AESGCMSIV,
-    AESOCB3,
     AESSIV,
     AlgorithmCategory,
     AuthenticationError,
@@ -43,7 +42,6 @@ class TestCipherRegistry:
             "aes-256-gcm",
             "aes-256-gcm-siv",
             "aes-256-siv",
-            "aes-256-ocb3",
             "chacha20-poly1305",
             "xchacha20-poly1305",
         ]
@@ -231,38 +229,6 @@ class TestAESSIV:
         assert nonce == b""
 
 
-class TestAESOCB3:
-    """Tests for AES-256-OCB3 cipher (deprecated)."""
-
-    def test_metadata(self):
-        """Test algorithm metadata."""
-        info = AESOCB3.info()
-        assert info.name == "aes-256-ocb3"
-        assert info.security_level == SecurityLevel.LEGACY
-        assert "DEPRECATED" in info.display_name
-
-    def test_deprecation_warning(self):
-        """Test that using OCB3 triggers deprecation warning."""
-        cipher = AESOCB3()
-        key = b"9" * 32
-        plaintext = b"test"
-
-        with pytest.warns(DeprecationWarning, match="deprecated"):
-            cipher.encrypt(key, plaintext)
-
-    def test_encrypt_decrypt_roundtrip(self):
-        """Test basic functionality still works."""
-        cipher = AESOCB3()
-        key = b"A" * 32
-        plaintext = b"OCB3 test message"
-
-        with pytest.warns(DeprecationWarning):
-            ciphertext = cipher.encrypt(key, plaintext)
-
-        decrypted = cipher.decrypt(key, ciphertext)
-        assert decrypted == plaintext
-
-
 class TestChaCha20Poly1305:
     """Tests for ChaCha20-Poly1305 cipher."""
 
@@ -414,16 +380,7 @@ class TestCipherComparison:
                 key = b"M" * 32
 
             cipher = registry.get(cipher_name)
-
-            # Skip deprecation warning for OCB3
-            if cipher_name == "aes-256-ocb3":
-                import warnings
-
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    ciphertext = cipher.encrypt(key, plaintext)
-            else:
-                ciphertext = cipher.encrypt(key, plaintext)
+            ciphertext = cipher.encrypt(key, plaintext)
 
             decrypted = cipher.decrypt(key, ciphertext)
             assert decrypted == plaintext, f"Failed for {cipher_name}"

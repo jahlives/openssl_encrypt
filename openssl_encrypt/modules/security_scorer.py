@@ -67,6 +67,7 @@ class SecurityScorer:
         "argon2": 5.0,  # Modern, memory-hard
         "scrypt": 4.0,  # Memory-hard
         "balloon": 4.5,  # Memory-hard with proven security
+        "randomx": 4.8,  # CPU-hard, PoW-derived
         "hkdf": 3.5,  # Fast, suitable for key stretching
     }
 
@@ -77,13 +78,17 @@ class SecurityScorer:
         "aes-siv": 4.4,
         "chacha20-poly1305": 4.6,
         "xchacha20-poly1305": 4.8,
+        "threefish-512": 4.9,  # 512-bit block, post-quantum margins
+        "threefish-1024": 5.0,  # 1024-bit block, maximum post-quantum security
         "fernet": 3.5,  # Simplified, but solid
     }
 
     # Post-quantum algorithm bonuses
     PQC_BONUS = {
-        "ml-kem": 2.0,  # NIST standard
-        "hqc": 1.5,  # Alternative approach
+        "ml-kem": 2.0,  # NIST standard KEM
+        "hqc": 1.5,  # Alternative KEM approach
+        "mayo": 1.5,  # PQC signature scheme
+        "cross": 1.5,  # PQC signature scheme
     }
 
     def __init__(self):

@@ -94,7 +94,6 @@ REQUIRED_ARGUMENT_GROUPS = {
         "sha3-512",  # Enable SHA3-512 hashing
         "shake256",  # Enable SHAKE-256 hashing
         "blake2b",  # Enable BLAKE2b hashing
-        "pbkdf2",  # Enable PBKDF2
     ],
     "Scrypt Options": [
         "enable-scrypt",  # Scrypt options

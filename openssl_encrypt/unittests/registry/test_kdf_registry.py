@@ -10,7 +10,6 @@ import pytest
 
 from openssl_encrypt.modules.registry import (
     HKDF,
-    PBKDF2,
     AlgorithmCategory,
     Argon2d,
     Argon2i,
@@ -20,7 +19,6 @@ from openssl_encrypt.modules.registry import (
     BalloonParams,
     HKDFParams,
     KDFRegistry,
-    PBKDF2Params,
     RandomX,
     RandomXParams,
     Scrypt,
@@ -48,7 +46,6 @@ class TestKDFRegistry:
             "argon2id",
             "argon2i",
             "argon2d",
-            "pbkdf2",
             "scrypt",
             "balloon",
             "hkdf",
@@ -196,83 +193,6 @@ class TestArgon2d:
         kdf = Argon2d()
         key = kdf.derive(b"password", b"8" * 16)
         assert len(key) == 32
-
-
-# ============================================================================
-# PBKDF2 Tests
-# ============================================================================
-
-
-class TestPBKDF2:
-    """Tests for PBKDF2."""
-
-    def test_metadata(self):
-        """Test algorithm metadata."""
-        info = PBKDF2.info()
-        assert info.name == "pbkdf2"
-        assert info.category == AlgorithmCategory.KDF
-        assert info.security_level == SecurityLevel.LEGACY
-        assert info.nist_standard == "SP 800-132"
-
-    def test_basic_derivation(self):
-        """Test basic key derivation."""
-        kdf = PBKDF2()
-        password = b"test password"
-        salt = b"9" * 16
-
-        key = kdf.derive(password, salt)
-        assert len(key) == 32
-
-    def test_deterministic(self):
-        """Test determinism."""
-        kdf = PBKDF2()
-        password = b"password"
-        salt = b"A" * 16
-
-        key1 = kdf.derive(password, salt)
-        key2 = kdf.derive(password, salt)
-        assert key1 == key2
-
-    def test_custom_iterations(self):
-        """Test custom iteration count."""
-        kdf = PBKDF2()
-        password = b"test"
-        salt = b"B" * 16
-
-        params = PBKDF2Params(iterations=50000)
-        key = kdf.derive(password, salt, params)
-        assert len(key) == 32
-
-    def test_different_hash_functions(self):
-        """Test different hash functions."""
-        kdf = PBKDF2()
-        password = b"test"
-        salt = b"C" * 16
-
-        # SHA-256
-        params_256 = PBKDF2Params(hash_function="sha256", iterations=1000)
-        key_256 = kdf.derive(password, salt, params_256)
-
-        # SHA-512
-        params_512 = PBKDF2Params(hash_function="sha512", iterations=1000)
-        key_512 = kdf.derive(password, salt, params_512)
-
-        # Should produce different keys
-        assert key_256 != key_512
-
-    def test_invalid_hash_function(self):
-        """Test that invalid hash function raises error."""
-        kdf = PBKDF2()
-        params = PBKDF2Params(hash_function="invalid")
-
-        with pytest.raises(ValidationError, match="Unsupported hash function"):
-            kdf.derive(b"test", b"D" * 16, params)
-
-    def test_default_params(self):
-        """Test default parameters."""
-        params = PBKDF2.default_params()
-        assert params.iterations == 100000
-        assert params.hash_function == "sha256"
 
 
 # ============================================================================
@@ -484,13 +404,6 @@ class TestKDFParams:
         assert params.parallelism == 4
         assert params.variant == "id"
 
-    def test_pbkdf2_params_defaults(self):
-        """Test PBKDF2Params defaults."""
-        params = PBKDF2Params()
-        assert params.output_length == 32
-        assert params.iterations == 100000
-        assert params.hash_function == "sha256"
-
     def test_scrypt_params_defaults(self):
         """Test ScryptParams defaults."""
         params = ScryptParams()
@@ -498,14 +411,15 @@ class TestKDFParams:
         assert params.r == 8
         assert params.p == 1
 
+    @pytest.mark.skipif(not Argon2id.is_available(), reason="Argon2 not available")
     def test_param_validation(self):
         """Test parameter validation."""
-        kdf = PBKDF2()
+        kdf = Argon2id()
 
         # Invalid output length
-        params = PBKDF2Params(output_length=0)
-        with pytest.raises(ValidationError, match="at least 1 byte"):
-            kdf.derive(b"test", b"salt", params)
+        params = Argon2Params(output_length=0)
+        with pytest.raises(ValidationError):
+            kdf.derive(b"test", b"0" * 16, params)
 
 
 # ============================================================================
@@ -516,48 +430,49 @@ class TestKDFParams:
 class TestKDFComparison:
     """Comparative tests across different KDFs."""
 
+    @pytest.mark.skipif(not Argon2id.is_available(), reason="Argon2 not available")
     def test_all_available_kdfs_work(self):
         """Test that all available KDFs can derive keys."""
         registry = KDFRegistry.default()
         password = b"test password"
         salt = b"N" * 16
 
-        for kdf_name in ["pbkdf2"]:  # PBKDF2 always available
+        for kdf_name in ["argon2id"]:  # Argon2id always available
             kdf = registry.get(kdf_name)
             key = kdf.derive(password, salt)
             assert len(key) == 32, f"Failed for {kdf_name}"
 
+    @pytest.mark.skipif(not Argon2id.is_available(), reason="Argon2 not available")
+    @pytest.mark.skipif(not Scrypt.is_available(), reason="Scrypt not available")
     def test_different_kdfs_different_output(self):
         """Test that different KDFs produce different output."""
         password = b"same password"
         salt = b"O" * 16
 
-        # PBKDF2 always available
-        pbkdf2_key = PBKDF2().derive(password, salt)
-
-        # If Argon2 available, compare
-        if Argon2id.is_available():
-            argon2_key = Argon2id().derive(password, salt)
-            assert pbkdf2_key != argon2_key
+        argon2_key = Argon2id().derive(password, salt)
+        scrypt_key = Scrypt().derive(password, salt)
+        assert argon2_key != scrypt_key
 
 
 class TestKDFErrorHandling:
     """Tests for KDF error handling."""
 
+    @pytest.mark.skipif(not Argon2id.is_available(), reason="Argon2 not available")
     def test_invalid_output_length(self):
         """Test that invalid output length is rejected."""
-        kdf = PBKDF2()
-        params = PBKDF2Params(output_length=-1)
+        kdf = Argon2id()
+        params = Argon2Params(output_length=-1)
 
         with pytest.raises(ValidationError):
             kdf.derive(b"test", b"P" * 16, params)
 
-    def test_invalid_iterations(self):
-        """Test that invalid iterations are rejected."""
-        kdf = PBKDF2()
-        params = PBKDF2Params(iterations=0)
+    @pytest.mark.skipif(not Argon2id.is_available(), reason="Argon2 not available")
+    def test_invalid_time_cost(self):
+        """Test that invalid time cost is rejected."""
+        kdf = Argon2id()
+        params = Argon2Params(time_cost=0)
 
-        with pytest.raises(ValidationError, match="at least 1"):
+        with pytest.raises(Exception):
             kdf.derive(b"test", b"Q" * 16, params)
 
 
@@ -568,47 +483,6 @@ class TestKDFErrorHandling:
 
 class TestMultiRoundKDF:
     """Tests for multi-round KDF behavior."""
-
-    def test_pbkdf2_multi_round_simulation(self):
-        """Test simulating multi-round PBKDF2 (chained derivation)."""
-        kdf = PBKDF2()
-        password = b"test_password"
-        base_salt = b"R" * 16
-
-        # Simulate v9 chained salt derivation (3 rounds)
-        rounds = 3
-        current_output = password
-
-        for round_num in range(rounds):
-            if round_num == 0:
-                round_salt = base_salt
-            else:
-                # Use previous output as salt (v9 chained method)
-                round_salt = bytes(current_output[:16])
-
-            current_output = kdf.derive(bytes(current_output), round_salt)
-
-        final_key_v9 = bytes(current_output)
-        assert len(final_key_v9) == 32
-
-        # Simulate v8 predictable salt derivation (3 rounds)
-        import hashlib
-
-        current_output = password
-        for round_num in range(rounds):
-            if round_num == 0:
-                round_salt = base_salt
-            else:
-                # Use predictable derivation (v8 method)
-                salt_material = hashlib.sha256(base_salt + str(round_num).encode()).digest()
-                round_salt = salt_material[:16]
-
-            current_output = kdf.derive(bytes(current_output), round_salt)
-
-        final_key_v8 = bytes(current_output)
-
-        # v8 and v9 should produce different results
-        assert final_key_v8 != final_key_v9
 
     @pytest.mark.skipif(not Argon2id.is_available(), reason="Argon2 not available")
     def test_argon2_multi_round_simulation(self):
@@ -695,9 +569,10 @@ class TestMultiRoundKDF:
         # v8 and v9 should produce different results
         assert final_key_v8 != final_key_v9
 
+    @pytest.mark.skipif(not Argon2id.is_available(), reason="Argon2 not available")
     def test_single_vs_multi_round_different(self):
         """Test that single round vs multi-round produce different output."""
-        kdf = PBKDF2()
+        kdf = Argon2id()
         password = b"test_password"
         salt = b"U" * 16
 
@@ -712,9 +587,10 @@ class TestMultiRoundKDF:
         # Should be different
         assert single_round_key != multi_round_key
 
+    @pytest.mark.skipif(not Argon2id.is_available(), reason="Argon2 not available")
     def test_chained_salt_creates_dependency(self):
         """Test that chained salt derivation creates cryptographic dependencies."""
-        kdf = PBKDF2()
+        kdf = Argon2id()
         password = b"password"
         base_salt = b"V" * 16
 

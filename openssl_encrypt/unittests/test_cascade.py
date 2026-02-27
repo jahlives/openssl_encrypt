@@ -153,7 +153,14 @@ class TestCascadeKeyDerivation(unittest.TestCase):
     def test_chain_prefix_is_used(self):
         """Test that chain prefix from previous layer affects next layer."""
         config = CascadeConfig(
-            cipher_names=["aes-256-gcm", "chacha20-poly1305", "aes-256-ocb3"], hkdf_hash="sha256"
+            cipher_names=[
+                "aes-256-gcm",
+                "chacha20-poly1305",
+                "aes-256-gcm-siv",
+                "threefish-512",
+                "threefish-1024",
+            ],
+            hkdf_hash="sha256",
         )
         kd = CascadeKeyDerivation(config)
         layers = kd.derive_layer_keys(self.master_key, self.salt)
@@ -162,7 +169,7 @@ class TestCascadeKeyDerivation(unittest.TestCase):
         self.assertEqual(CHAIN_PREFIX_LENGTH, 16)
 
         # All layers should produce valid keys
-        self.assertEqual(len(layers), 3)
+        self.assertEqual(len(layers), 5)
         for key, nonce in layers:
             self.assertGreater(len(key), 0)
             self.assertGreater(len(nonce), 0)
@@ -286,10 +293,17 @@ class TestCascadeEncryption(unittest.TestCase):
         with self.assertRaises((AuthenticationError, CascadeError)):
             cascade.decrypt(ciphertext, wrong_key, self.salt)
 
-    def test_three_layer_cascade(self):
-        """Test cascade with three layers."""
+    def test_five_layer_cascade(self):
+        """Test cascade with five layers."""
         config = CascadeConfig(
-            cipher_names=["aes-256-gcm", "chacha20-poly1305", "aes-256-ocb3"], hkdf_hash="sha256"
+            cipher_names=[
+                "aes-256-gcm",
+                "chacha20-poly1305",
+                "aes-256-gcm-siv",
+                "threefish-512",
+                "threefish-1024",
+            ],
+            hkdf_hash="sha256",
         )
         cascade = CascadeEncryption(config)
 

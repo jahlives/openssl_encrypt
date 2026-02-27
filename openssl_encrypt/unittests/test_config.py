@@ -1303,7 +1303,7 @@ class TestSecurityScorer(unittest.TestCase):
 
     def test_kdf_strength_ratings(self):
         """Test KDF algorithm strength ratings."""
-        expected_kdfs = ["argon2", "scrypt", "pbkdf2", "balloon", "hkdf"]
+        expected_kdfs = ["argon2", "scrypt", "balloon", "randomx", "hkdf"]
         for kdf in expected_kdfs:
             self.assertIn(kdf, SecurityScorer.KDF_STRENGTH)
             self.assertIsInstance(SecurityScorer.KDF_STRENGTH[kdf], (int, float))
@@ -1319,7 +1319,7 @@ class TestSecurityScorer(unittest.TestCase):
 
     def test_pqc_bonus_ratings(self):
         """Test post-quantum cryptography bonus ratings."""
-        expected_pqc = ["ml-kem", "kyber", "hqc"]
+        expected_pqc = ["ml-kem", "hqc", "mayo", "cross"]
         for pqc in expected_pqc:
             self.assertIn(pqc, SecurityScorer.PQC_BONUS)
             self.assertIsInstance(SecurityScorer.PQC_BONUS[pqc], (int, float))
