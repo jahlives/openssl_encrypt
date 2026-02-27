@@ -90,7 +90,9 @@ from openssl_encrypt.modules.secure_memory import (
     free_secure_buffer,
 )
 from openssl_encrypt.modules.secure_memory import secure_memzero as memory_secure_memzero
-from openssl_encrypt.modules.secure_memory import verify_memory_zeroed
+from openssl_encrypt.modules.secure_memory import (
+    verify_memory_zeroed,
+)
 from openssl_encrypt.modules.secure_ops import (
     SecureContainer,
     constant_time_compare,
