@@ -53,7 +53,9 @@ class PluginRegistration:
     def __init__(self, plugin: BasePlugin, file_path: str, enabled: bool = True):
         self.plugin = plugin
         self.file_path = file_path
-        self.file_directory = os.path.dirname(os.path.abspath(file_path))  # Directory where plugin code is located
+        self.file_directory = os.path.dirname(
+            os.path.abspath(file_path)
+        )  # Directory where plugin code is located
         self.enabled = enabled
         self.load_time = time.time()
         self.last_used = None
@@ -102,6 +104,7 @@ class PluginManager:
         # Plugin validation security settings
         self.strict_security_mode = strict_security_mode  # Default: block dangerous patterns
         self.allowed_unsafe_plugins: Set[str] = set()  # Whitelist for trusted plugins
+        self.builtin_plugin_root: Optional[str] = None  # Built-in plugins skip AST analysis
 
     def add_plugin_directory(self, directory: str) -> None:
         """Add directory to scan for plugins."""
@@ -191,13 +194,17 @@ class PluginManager:
                 #   - openssl_encrypt
                 #   - openssl_encrypt.plugins
                 #   - openssl_encrypt.plugins.hsm
-                if '.' in module_name:
-                    parts = module_name.split('.')
+                if "." in module_name:
+                    parts = module_name.split(".")
                     for i in range(1, len(parts)):
-                        parent_name = '.'.join(parts[:i])
+                        parent_name = ".".join(parts[:i])
                         # Skip empty parent names or names that start with dots
                         # (can occur with paths outside project root)
-                        if not parent_name or not parent_name.strip('.') or parent_name.startswith('.'):
+                        if (
+                            not parent_name
+                            or not parent_name.strip(".")
+                            or parent_name.startswith(".")
+                        ):
                             continue
                         if parent_name not in sys.modules:
                             try:
@@ -279,6 +286,7 @@ class PluginManager:
 
         except Exception as e:
             import traceback
+
             error_msg = f"Error loading plugin from {file_path}: {str(e)}"
             logger.error(error_msg)
             logger.debug(f"Traceback: {traceback.format_exc()}")
@@ -360,7 +368,9 @@ class PluginManager:
         # This allows the sandbox to determine which code directory the plugin can read from
         if not context.plugin_file_directory:
             context.plugin_file_directory = registration.file_directory
-            logger.debug(f"Set plugin_file_directory for {plugin_id}: {registration.file_directory}")
+            logger.debug(
+                f"Set plugin_file_directory for {plugin_id}: {registration.file_directory}"
+            )
 
         # Validate security context
         if not plugin.validate_security_context(context):
@@ -673,6 +683,14 @@ class PluginManager:
             True if plugin passes validation, False otherwise
         """
         try:
+            # Built-in plugins (shipped with the package) are trusted and skip AST analysis.
+            # If an attacker could modify these files, they could modify the scanner too.
+            if self.builtin_plugin_root:
+                abs_file = os.path.abspath(file_path)
+                if abs_file.startswith(self.builtin_plugin_root + os.sep):
+                    logger.debug(f"Built-in plugin trusted, skipping AST analysis: {file_path}")
+                    return True
+
             # Check file size (prevent huge files)
             file_size = os.path.getsize(file_path)
             if file_size > 1024 * 1024:  # 1MB limit
@@ -685,9 +703,7 @@ class PluginManager:
 
                 # Use AST-based analysis to detect dangerous patterns
                 is_safe, violations = analyze_plugin_code(
-                    content,
-                    file_path,
-                    strict_mode=self.strict_security_mode
+                    content, file_path, strict_mode=self.strict_security_mode
                 )
 
                 # Log and handle any violations found
@@ -723,9 +739,7 @@ class PluginManager:
                                 )
                         else:
                             # In permissive mode or for non-critical violations, only warn
-                            logger.warning(
-                                f"Plugin file contains security violation: {file_path}"
-                            )
+                            logger.warning(f"Plugin file contains security violation: {file_path}")
                             logger.warning(f"  {violation_msg}")
                             logger.warning(
                                 "Security violation allowed (strict_security_mode=False). "
@@ -774,11 +788,11 @@ class PluginManager:
         rel_path = os.path.relpath(file_path, project_root)
 
         # Remove .py extension
-        if rel_path.endswith('.py'):
+        if rel_path.endswith(".py"):
             rel_path = rel_path[:-3]
 
         # Convert path separators to dots
-        module_name = rel_path.replace(os.sep, '.')
+        module_name = rel_path.replace(os.sep, ".")
 
         return module_name
 
