@@ -323,6 +323,13 @@ class DecryptionError(SecureError):
         super().__init__(ErrorCategory.DECRYPTION, details, original_exception)
 
 
+class RekeyError(SecureError):
+    """Exception for rekey operation failures."""
+
+    def __init__(self, details=None, original_exception=None):
+        super().__init__(ErrorCategory.ENCRYPTION, details, original_exception)
+
+
 class AuthenticationError(SecureError):
     """Exception for authentication/integrity failures."""
 

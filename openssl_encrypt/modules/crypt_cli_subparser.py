@@ -989,6 +989,532 @@ def setup_decrypt_parser(subparser):
     )
 
 
+def setup_rekey_parser(subparser):
+    """Set up arguments specific to the rekey command."""
+    # Get only algorithms available in 1.0.0
+    all_algorithms = get_available_algorithms_1_0()
+
+    # Old password options (for decryption)
+    subparser.add_argument(
+        "--password",
+        "-p",
+        help="Old password for decryption (DEPRECATED: visible in process list. "
+        "Use --password-file or OPENSSL_ENCRYPT_PASSWORD env var instead)",
+    )
+    subparser.add_argument(
+        "--password-file",
+        metavar="FILE",
+        help="Read old password from FILE (use '-' for stdin). "
+        "Recommended over --password to avoid process list exposure",
+    )
+    subparser.add_argument(
+        "--password-fd",
+        type=int,
+        metavar="FD",
+        help="Read old password from file descriptor FD",
+    )
+
+    # New password options (for re-encryption)
+    rekey_group = subparser.add_argument_group("Rekey Password Options")
+    rekey_group.add_argument(
+        "--rekey-password",
+        help="New password for re-encryption (DEPRECATED: visible in process list. "
+        "Use --rekey-password-file or OPENSSL_ENCRYPT_REKEY_PASSWORD env var instead)",
+    )
+    rekey_group.add_argument(
+        "--rekey-password-file",
+        metavar="FILE",
+        help="Read new password from FILE (use '-' for stdin). "
+        "Recommended over --rekey-password to avoid process list exposure",
+    )
+    rekey_group.add_argument(
+        "--rekey-password-fd",
+        type=int,
+        metavar="FD",
+        help="Read new password from file descriptor FD",
+    )
+
+    subparser.add_argument(
+        "--force-password",
+        action="store_true",
+        help="Force acceptance of weak passwords (use with caution)",
+    )
+
+    # I/O options
+    subparser.add_argument(
+        "--input",
+        "-i",
+        required=True,
+        help="Input encrypted file to rekey",
+    )
+    subparser.add_argument(
+        "--output",
+        "-o",
+        help="Output file (optional, default: rekey in-place)",
+    )
+
+    # Template selection group
+    template_group = subparser.add_mutually_exclusive_group()
+    template_group.add_argument(
+        "--quick", action="store_true", help="Use quick but secure configuration"
+    )
+    template_group.add_argument(
+        "--standard",
+        action="store_true",
+        help="Use standard security configuration (default)",
+    )
+    template_group.add_argument(
+        "--paranoid", action="store_true", help="Use maximum security configuration"
+    )
+
+    # Add template argument
+    subparser.add_argument(
+        "-t",
+        "--template",
+        help="Specify a template name (built-in or from ./template directory)",
+    )
+
+    # Algorithm options (for re-encryption)
+    subparser.add_argument(
+        "--algorithm",
+        type=str,
+        default=None,
+        help="New encryption algorithm (default: inherit from file). "
+        "Choices: " + ", ".join(sorted(all_algorithms)),
+    )
+
+    # Add extended algorithm help
+    add_extended_algorithm_help(subparser)
+
+    # Cascade encryption options
+    cascade_group = subparser.add_argument_group("Cascade encryption (multi-layer)")
+    cascade_group.add_argument(
+        "--cascade",
+        nargs="?",
+        const=True,
+        default=None,
+        metavar="PRESET",
+        help=(
+            "Enable cascade encryption. Use with --algorithm for custom chain "
+            "(e.g., --cascade --algorithm aes-256-gcm,chacha20-poly1305), "
+            "or specify preset: 'standard' (AES+ChaCha), 'paranoia' (AES+ChaCha+Threefish)"
+        ),
+    )
+    cascade_group.add_argument(
+        "--cascade-hash",
+        type=str,
+        default="sha256",
+        choices=[
+            "sha256",
+            "sha384",
+            "sha512",
+            "sha3-256",
+            "sha3-384",
+            "sha3-512",
+            "blake2b",
+            "blake2s",
+        ],
+        help="Hash function for HKDF key derivation in cascade mode (default: sha256)",
+    )
+    cascade_group.add_argument(
+        "--no-diversity-check",
+        action="store_true",
+        help="Disable cipher diversity validation warnings",
+    )
+    cascade_group.add_argument(
+        "--strict-diversity",
+        action="store_true",
+        help="Treat cipher diversity warnings as errors (abort on weak combinations)",
+    )
+
+    # Hash options
+    hash_group = subparser.add_argument_group("Hash options")
+    if REGISTRY_AVAILABLE:
+        hash_group.description = "Hash algorithm configuration for re-encryption."
+
+    hash_group.add_argument(
+        "--kdf-rounds",
+        type=int,
+        default=0,
+        help="Default number of rounds for all KDFs when enabled without specific rounds",
+    )
+    hash_group.add_argument(
+        "--sha512-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA-512 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--sha384-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA-384 iterations",
+    )
+    hash_group.add_argument(
+        "--sha256-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA-256 iterations",
+    )
+    hash_group.add_argument(
+        "--sha224-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA-224 iterations",
+    )
+    hash_group.add_argument(
+        "--sha3-256-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA3-256 iterations",
+    )
+    hash_group.add_argument(
+        "--sha3-512-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA3-512 iterations",
+    )
+    hash_group.add_argument(
+        "--sha3-384-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA3-384 iterations",
+    )
+    hash_group.add_argument(
+        "--sha3-224-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA3-224 iterations",
+    )
+    hash_group.add_argument(
+        "--blake2b-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of BLAKE2b iterations",
+    )
+    hash_group.add_argument(
+        "--blake3-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of BLAKE3 iterations",
+    )
+    hash_group.add_argument(
+        "--shake256-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHAKE-256 iterations",
+    )
+    hash_group.add_argument(
+        "--shake128-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHAKE-128 iterations",
+    )
+
+    # Scrypt options
+    scrypt_group = subparser.add_argument_group("Scrypt options")
+    scrypt_group.add_argument(
+        "--enable-scrypt", action="store_true", help="Use Scrypt password hashing"
+    )
+    scrypt_group.add_argument(
+        "--scrypt-rounds",
+        type=int,
+        default=0,
+        help="Use scrypt rounds for iterating (default when enabled: 10)",
+    )
+    scrypt_group.add_argument("--scrypt-n", type=int, help="Scrypt N parameter (CPU/memory cost)")
+    scrypt_group.add_argument(
+        "--scrypt-r", type=int, default=8, help="Scrypt r parameter (block size)"
+    )
+    scrypt_group.add_argument(
+        "--scrypt-p", type=int, default=1, help="Scrypt p parameter (parallelization factor)"
+    )
+
+    # Argon2 options
+    argon2_group = subparser.add_argument_group("Argon2 Options")
+    argon2_group.add_argument(
+        "--enable-argon2",
+        action="store_true",
+        default=False,
+        help="Use Argon2 password hashing (requires argon2-cffi package)",
+    )
+    argon2_group.add_argument(
+        "--argon2-rounds",
+        type=int,
+        default=0,
+        help="Argon2 time cost parameter / rounds (default when enabled: 10)",
+    )
+    argon2_group.add_argument(
+        "--argon2-time",
+        type=int,
+        default=3,
+        help="Argon2 time cost parameter (default: 3)",
+    )
+    argon2_group.add_argument(
+        "--argon2-memory",
+        type=int,
+        default=65536,
+        help="Argon2 memory cost in KB (default: 65536 - 64MB)",
+    )
+    argon2_group.add_argument(
+        "--argon2-parallelism",
+        type=int,
+        default=4,
+        help="Argon2 parallelism factor (default: 4)",
+    )
+    argon2_group.add_argument(
+        "--argon2-hash-len",
+        type=int,
+        default=32,
+        help="Argon2 hash length in bytes (default: 32)",
+    )
+    argon2_group.add_argument(
+        "--argon2-type",
+        choices=["id", "i", "d"],
+        default="id",
+        help="Argon2 variant to use: id (recommended), i, or d",
+    )
+    argon2_group.add_argument(
+        "--argon2-preset",
+        choices=["low", "medium", "high", "paranoid"],
+        help="Use predefined Argon2 parameters (overrides other Argon2 settings)",
+    )
+
+    # RandomX options
+    randomx_group = subparser.add_argument_group("RandomX options")
+    randomx_group.add_argument(
+        "--enable-randomx",
+        action="store_true",
+        help="Enable RandomX key derivation (requires pyrx package)",
+        default=False,
+    )
+    randomx_group.add_argument(
+        "--randomx-rounds",
+        type=int,
+        default=0,
+        help="Number of RandomX rounds (default when enabled: 10)",
+    )
+    randomx_group.add_argument(
+        "--randomx-mode",
+        choices=["light", "fast"],
+        default="light",
+        help="RandomX mode: light (256MB RAM) or fast (2GB RAM, default: light)",
+    )
+    randomx_group.add_argument(
+        "--randomx-height",
+        type=int,
+        default=1,
+        help="RandomX block height parameter (default: 1)",
+    )
+    randomx_group.add_argument(
+        "--randomx-hash-len",
+        type=int,
+        default=32,
+        help="RandomX output hash length in bytes (default: 32)",
+    )
+
+    # PBKDF2 options
+    pbkdf2_group = subparser.add_argument_group("PBKDF2 options")
+    pbkdf2_group.add_argument(
+        "--pbkdf2-iterations",
+        type=int,
+        default=0,
+        help="Number of PBKDF2 iterations (default: 100000)",
+    )
+
+    # Balloon Hashing options
+    balloon_group = subparser.add_argument_group("Balloon Hashing options")
+    balloon_group.add_argument(
+        "--enable-balloon",
+        action="store_true",
+        help="Enable Balloon Hashing KDF",
+    )
+    balloon_group.add_argument(
+        "--balloon-time-cost",
+        type=int,
+        default=3,
+        help="Time cost parameter for Balloon hashing (default: 3)",
+    )
+    balloon_group.add_argument(
+        "--balloon-space-cost",
+        type=int,
+        default=65536,
+        help="Space cost parameter for Balloon hashing in bytes (default: 65536)",
+    )
+    balloon_group.add_argument(
+        "--balloon-parallelism",
+        type=int,
+        default=4,
+        help="Parallelism parameter for Balloon hashing (default: 4)",
+    )
+    balloon_group.add_argument(
+        "--balloon-rounds",
+        type=int,
+        default=0,
+        help="Number of rounds for Balloon hashing (default when enabled: 10)",
+    )
+    balloon_group.add_argument(
+        "--balloon-hash-len",
+        type=int,
+        default=32,
+        help="Length of the final hash output in bytes for Balloon hashing",
+    )
+    balloon_group.add_argument(
+        "--use-balloon",
+        action="store_true",
+        help=argparse.SUPPRESS,  # Hidden legacy option
+    )
+
+    # HKDF options
+    hkdf_group = subparser.add_argument_group(
+        "HKDF Options", "Configure HMAC-based Key Derivation Function"
+    )
+    hkdf_group.add_argument(
+        "--enable-hkdf",
+        action="store_true",
+        help="Enable HKDF key derivation",
+        default=False,
+    )
+    hkdf_group.add_argument(
+        "--hkdf-rounds",
+        type=int,
+        default=1,
+        help="Number of HKDF chained rounds (default: 1)",
+    )
+    hkdf_group.add_argument(
+        "--hkdf-algorithm",
+        choices=["sha224", "sha256", "sha384", "sha512"],
+        default="sha256",
+        help="Hash algorithm for HKDF (default: sha256)",
+    )
+    hkdf_group.add_argument(
+        "--hkdf-info",
+        type=str,
+        default="openssl_encrypt_hkdf",
+        help="HKDF info string for context (default: openssl_encrypt_hkdf)",
+    )
+
+    # Display options
+    subparser.add_argument(
+        "--no-estimate",
+        action="store_true",
+        help="Suppress decryption time/memory estimation display",
+    )
+
+    # HSM plugin arguments
+    hsm_group = subparser.add_argument_group("HSM Options", "Hardware Security Module integration")
+    hsm_group.add_argument(
+        "--hsm",
+        metavar="PLUGIN",
+        help="Enable HSM plugin for hardware-bound key derivation. "
+        "Required if the file was encrypted with an HSM plugin.",
+    )
+    hsm_group.add_argument(
+        "--hsm-slot",
+        type=int,
+        choices=[1, 2],
+        metavar="SLOT",
+        help="Manually specify Yubikey slot (1 or 2) for Challenge-Response.",
+    )
+
+    # Remote Pepper options
+    pepper_group = subparser.add_argument_group(
+        "Remote Pepper Options", "Remote pepper server integration"
+    )
+    pepper_group.add_argument(
+        "--pepper",
+        action="store_true",
+        help="Enable remote pepper storage for re-encrypted file.",
+    )
+    pepper_group.add_argument(
+        "--pepper-name",
+        metavar="NAME",
+        help="Use an existing named pepper from the remote server.",
+    )
+
+    # Format version options
+    format_group = subparser.add_argument_group("Format version options")
+    format_group.add_argument(
+        "--use-xor-composition",
+        action="store_true",
+        default=False,
+        help="Enable XOR composition key derivation (format v10).",
+    )
+    format_group.add_argument(
+        "--independent-xor",
+        action="store_true",
+        default=False,
+        help="Enable independent XOR key derivation (format v11). "
+        "Provides strongest-component security guarantee (Massey).",
+    )
+
+    # Integrity options
+    integrity_group = subparser.add_argument_group("Integrity options")
+    integrity_group.add_argument(
+        "--verify-integrity",
+        action="store_true",
+        help="Verify metadata integrity before decryption.",
+    )
+    integrity_group.add_argument(
+        "--integrity",
+        action="store_true",
+        help="Store metadata hash on remote integrity server for re-encrypted file.",
+    )
+
+    # Password policy options
+    policy_group = subparser.add_argument_group("Password Policy")
+    policy_group.add_argument(
+        "--password-policy",
+        default="standard",
+        choices=["none", "basic", "standard", "strict"],
+        help="Password policy level for new password (default: standard)",
+    )
+    policy_group.add_argument(
+        "--min-password-length",
+        type=int,
+        help="Minimum password length override",
+    )
+    policy_group.add_argument(
+        "--min-password-entropy",
+        type=float,
+        help="Minimum password entropy override",
+    )
+    policy_group.add_argument(
+        "--disable-common-password-check",
+        action="store_true",
+        help="Disable common password list check",
+    )
+    policy_group.add_argument(
+        "--custom-password-list",
+        metavar="FILE",
+        help="Path to custom common password list",
+    )
+
+
 def setup_shred_parser(subparser):
     """Set up arguments specific to the shred command."""
     subparser.add_argument(
@@ -1894,6 +2420,13 @@ def create_subparser_main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_decrypt_parser(decrypt_parser)
+
+    rekey_parser = subparsers.add_parser(
+        "rekey",
+        help="Re-encrypt a file with a new password",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_rekey_parser(rekey_parser)
 
     shred_parser = subparsers.add_parser(
         "shred",
