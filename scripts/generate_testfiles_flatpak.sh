@@ -113,7 +113,7 @@ generate "1.0.0-stable" "$V5" "test1_fp100_xchacha_sha256_sha3512_scrypt.txt" \
     --algorithm xchacha20-poly1305 --sha256-rounds 2 --sha3-512-rounds 2 --enable-scrypt
 
 generate "1.0.0-stable" "$V5" "test1_fp100_aessiv_blake2b_balloon.txt" \
-    --algorithm aes-siv --blake2b-rounds 2 --enable-balloon
+    --algorithm aes-siv --blake2b-rounds 2 --enable-balloon --balloon-rounds 1
 
 generate "1.0.0-stable" "$V5" "test1_fp100_aesgcmsiv_sha3256_sha512_argon2_scrypt.txt" \
     --algorithm aes-gcm-siv --sha3-256-rounds 2 --sha512-rounds 2 --enable-argon2 --enable-scrypt
@@ -147,10 +147,10 @@ generate "1.0.3-stable" "$V5" "test1_fp103_xchacha_sha512_blake2b_argon2_scrypt.
     --algorithm xchacha20-poly1305 --sha512-rounds 2 --blake2b-rounds 2 --enable-argon2 --enable-scrypt
 
 generate "1.0.3-stable" "$V5" "test1_fp103_aesgcmsiv_sha256_sha3512_balloon.txt" \
-    --algorithm aes-gcm-siv --sha256-rounds 2 --sha3-512-rounds 2 --enable-balloon
+    --algorithm aes-gcm-siv --sha256-rounds 2 --sha3-512-rounds 2 --enable-balloon --balloon-rounds 1
 
 generate "1.0.3-stable" "$V5" "test1_fp103_fernet_sha3256_blake3_argon2_balloon.txt" \
-    --algorithm fernet --sha3-256-rounds 2 --blake3-rounds 2 --enable-argon2 --enable-balloon
+    --algorithm fernet --sha3-256-rounds 2 --blake3-rounds 2 --enable-argon2 --enable-balloon --balloon-rounds 1
 
 # PQC (v1.0.3): hqc-128-hybrid OK, ml-kem-512-chacha20 OK
 generate "1.0.3-stable" "$V5" "test1_fp103_hqc128hybrid_sha384_argon2_hkdf.txt" \
@@ -175,13 +175,13 @@ generate "1.1.0-stable" "$V5" "test1_fp110_fernet_blake3_shake128_scrypt.txt" \
     --algorithm fernet --blake3-rounds 2 --shake128-rounds 2 --enable-scrypt
 
 generate "1.1.0-stable" "$V5" "test1_fp110_aesgcmsiv_sha384_sha3384_balloon.txt" \
-    --algorithm aes-gcm-siv --sha384-rounds 2 --sha3-384-rounds 2 --enable-balloon
+    --algorithm aes-gcm-siv --sha384-rounds 2 --sha3-384-rounds 2 --enable-balloon --balloon-rounds 1
 
 generate "1.1.0-stable" "$V5" "test1_fp110_xchacha_blake2b_sha256_argon2_scrypt.txt" \
     --algorithm xchacha20-poly1305 --blake2b-rounds 2 --sha256-rounds 2 --enable-argon2 --enable-scrypt
 
 generate "1.1.0-stable" "$V5" "test1_fp110_aessiv_sha3512_shake256_argon2_balloon.txt" \
-    --algorithm aes-siv --sha3-512-rounds 2 --shake256-rounds 2 --enable-argon2 --enable-balloon
+    --algorithm aes-siv --sha3-512-rounds 2 --shake256-rounds 2 --enable-argon2 --enable-balloon --balloon-rounds 1
 
 # PQC (v1.1.0): hqc-128-hybrid OK, ml-kem-512-chacha20 OK
 generate "1.1.0-stable" "$V5" "test1_fp110_hqc128hybrid_sha3384_argon2.txt" \
@@ -206,10 +206,10 @@ generate "1.2.1-stable" "$V5" "test1_fp121_chacha_sha256_shake128_scrypt.txt" \
     --algorithm chacha20-poly1305 --sha256-rounds 2 --shake128-rounds 2 --enable-scrypt
 
 generate "1.2.1-stable" "$V5" "test1_fp121_aessiv_sha512_blake2b_balloon.txt" \
-    --algorithm aes-siv --sha512-rounds 2 --blake2b-rounds 2 --enable-balloon
+    --algorithm aes-siv --sha512-rounds 2 --blake2b-rounds 2 --enable-balloon --balloon-rounds 1
 
 generate "1.2.1-stable" "$V5" "test1_fp121_aesgcmsiv_sha384_sha3256_argon2_balloon.txt" \
-    --algorithm aes-gcm-siv --sha384-rounds 2 --sha3-256-rounds 2 --enable-argon2 --enable-balloon
+    --algorithm aes-gcm-siv --sha384-rounds 2 --sha3-256-rounds 2 --enable-argon2 --enable-balloon --balloon-rounds 1
 
 generate "1.2.1-stable" "$V5" "test1_fp121_xchacha_sha3512_shake256_argon2_scrypt.txt" \
     --algorithm xchacha20-poly1305 --sha3-512-rounds 2 --shake256-rounds 2 --enable-argon2 --enable-scrypt
