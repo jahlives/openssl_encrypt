@@ -742,8 +742,7 @@ class TestConfigDirectoryPermissions(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             with tempfile.TemporaryDirectory() as config_dir:
                 plugin_file = Path(temp_dir) / "test_plugin.py"
-                plugin_file.write_text(
-                    """
+                plugin_file.write_text("""
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
 
 class TestPlugin(PreProcessorPlugin):
@@ -758,8 +757,7 @@ class TestPlugin(PreProcessorPlugin):
 
     def process_file(self, file_path, context):
         return PluginResult.success_result("OK")
-"""
-                )
+""")
 
                 # Use temp config directory to avoid loading existing configs
                 config_manager = PluginConfigManager(config_dir)
@@ -808,8 +806,7 @@ class TestPackagePluginDiscovery(unittest.TestCase):
         pkg_dir = self.test_dir / "test_package_plugin"
         pkg_dir.mkdir()
         init_file = pkg_dir / "__init__.py"
-        init_file.write_text(
-            """
+        init_file.write_text("""
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
 
 class PackagePlugin(PreProcessorPlugin):
@@ -824,8 +821,7 @@ class PackagePlugin(PreProcessorPlugin):
 
     def process_file(self, file_path, context):
         return PluginResult.success_result("OK")
-"""
-        )
+""")
 
         # Discover plugins
         discovered = self.plugin_manager.discover_plugins()
@@ -840,8 +836,7 @@ class PackagePlugin(PreProcessorPlugin):
         """Verify both flat files and packages are discovered."""
         # Create a flat file plugin
         flat_file = self.test_dir / "flat_plugin.py"
-        flat_file.write_text(
-            """
+        flat_file.write_text("""
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
 
 class FlatPlugin(PreProcessorPlugin):
@@ -856,15 +851,13 @@ class FlatPlugin(PreProcessorPlugin):
 
     def process_file(self, file_path, context):
         return PluginResult.success_result("OK")
-"""
-        )
+""")
 
         # Create a package plugin
         pkg_dir = self.test_dir / "package_plugin"
         pkg_dir.mkdir()
         init_file = pkg_dir / "__init__.py"
-        init_file.write_text(
-            """
+        init_file.write_text("""
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
 
 class PackagePlugin(PreProcessorPlugin):
@@ -879,8 +872,7 @@ class PackagePlugin(PreProcessorPlugin):
 
     def process_file(self, file_path, context):
         return PluginResult.success_result("OK")
-"""
-        )
+""")
 
         # Discover plugins
         discovered = self.plugin_manager.discover_plugins()
@@ -895,8 +887,7 @@ class PackagePlugin(PreProcessorPlugin):
         pkg_dir = self.test_dir / "dir_test_plugin"
         pkg_dir.mkdir()
         init_file = pkg_dir / "__init__.py"
-        init_file.write_text(
-            """
+        init_file.write_text("""
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
 
 class DirTestPlugin(PreProcessorPlugin):
@@ -911,8 +902,7 @@ class DirTestPlugin(PreProcessorPlugin):
 
     def process_file(self, file_path, context):
         return PluginResult.success_result("OK")
-"""
-        )
+""")
 
         # Load the plugin
         result = self.plugin_manager.load_plugin(str(init_file))
@@ -928,6 +918,71 @@ class DirTestPlugin(PreProcessorPlugin):
             str(pkg_dir),
             "file_directory should point to package directory",
         )
+
+
+class TestBuiltinPluginTrust(unittest.TestCase):
+    """Regression tests for built-in plugin trust (skip AST analysis).
+
+    Built-in plugins ship with the package and are code-reviewed. They must
+    not be blocked by the AST security scanner, even if they import modules
+    like pathlib or io that are on the blocked list for third-party plugins.
+    See: GHSA-9pgj-v69p-q586 follow-up fix.
+    """
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.test_dir = Path(tempfile.mkdtemp())
+        self.config_dir = Path(tempfile.mkdtemp())
+        self.config_manager = PluginConfigManager(str(self.config_dir))
+        self.plugin_manager = PluginManager(self.config_manager)
+
+    def tearDown(self):
+        """Clean up test directories."""
+        import shutil
+
+        for d in (self.test_dir, self.config_dir):
+            if d.exists():
+                shutil.rmtree(d)
+
+    def test_builtin_plugin_with_blocked_import_passes_validation(self):
+        """A plugin under builtin_plugin_root that imports pathlib must pass validation."""
+        plugin_file = self.test_dir / "test_builtin.py"
+        plugin_file.write_text("from pathlib import Path\nimport io\ndef execute(): pass\n")
+
+        # Without builtin trust, strict mode should block it
+        self.plugin_manager.strict_security_mode = True
+        self.assertFalse(self.plugin_manager._validate_plugin_file(str(plugin_file)))
+
+        # With builtin trust set to the plugin's directory, it should pass
+        self.plugin_manager.builtin_plugin_root = str(self.test_dir)
+        self.assertTrue(self.plugin_manager._validate_plugin_file(str(plugin_file)))
+
+    def test_third_party_plugin_with_blocked_import_still_blocked(self):
+        """A plugin outside builtin_plugin_root must still be blocked."""
+        other_dir = Path(tempfile.mkdtemp())
+        try:
+            plugin_file = other_dir / "malicious.py"
+            plugin_file.write_text("import io\ndef execute(): pass\n")
+
+            # Set builtin root to a different directory
+            self.plugin_manager.builtin_plugin_root = str(self.test_dir)
+            self.plugin_manager.strict_security_mode = True
+
+            self.assertFalse(self.plugin_manager._validate_plugin_file(str(plugin_file)))
+        finally:
+            import shutil
+
+            shutil.rmtree(other_dir)
+
+    def test_builtin_trust_not_set_blocks_normally(self):
+        """When builtin_plugin_root is None, all plugins get AST analysis."""
+        plugin_file = self.test_dir / "test_plugin.py"
+        plugin_file.write_text("from pathlib import Path\ndef execute(): pass\n")
+
+        self.plugin_manager.builtin_plugin_root = None
+        self.plugin_manager.strict_security_mode = True
+
+        self.assertFalse(self.plugin_manager._validate_plugin_file(str(plugin_file)))
 
 
 class TestUnifiedConfigPaths(unittest.TestCase):
