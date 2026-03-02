@@ -588,6 +588,13 @@ class KeystoreVersionError(KeystoreError):
         super().__init__(details, original_exception)
 
 
+class RekeyError(SecureError):
+    """Exception for rekey operation failures."""
+
+    def __init__(self, details=None, original_exception=None):
+        super().__init__(ErrorCategory.ENCRYPTION, details, original_exception)
+
+
 def secure_keystore_error_handler(f):
     """Specialized error handler for keystore operations."""
     return secure_error_handler(f, ErrorCategory.KEYSTORE)

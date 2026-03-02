@@ -691,6 +691,7 @@ def preprocess_global_args(argv):
     commands = {
         "encrypt",
         "decrypt",
+        "rekey",
         "shred",
         "generate-password",
         "security-info",
@@ -2302,9 +2303,7 @@ def _handle_template_analyze(template_mgr: TemplateManager, args):
                 priority_icon = (
                     "🚨"
                     if rec["priority"] == "critical"
-                    else "⚠️"
-                    if rec["priority"] == "high"
-                    else "💡"
+                    else "⚠️" if rec["priority"] == "high" else "💡"
                 )
                 print(f"   {i}. {priority_icon} {rec['title']}")
                 print(f"      {rec['description']}")
@@ -3127,6 +3126,7 @@ def main():
     subparser_commands = [
         "encrypt",
         "decrypt",
+        "rekey",
         "shred",
         "generate-password",
         "list-algorithms",
@@ -3365,6 +3365,7 @@ def main_with_args(args=None):
         choices=[
             "encrypt",
             "decrypt",
+            "rekey",
             "shred",
             "generate-password",
             "security-info",
@@ -4142,6 +4143,13 @@ def main_with_args(args=None):
         "use_case": None,
         "compliance_frameworks": None,
         "output_format": "text",
+        # Rekey-specific defaults
+        "rekey_password": None,
+        "rekey_password_file": None,
+        "rekey_password_fd": None,
+        "min_password_length": None,
+        "min_password_entropy": None,
+        "disable_common_password_check": False,
     }
 
     for attr, default_val in default_attrs.items():
@@ -4989,7 +4997,7 @@ def main_with_args(args=None):
             is_asymmetric_decrypt = True
 
     # Validate algorithm availability before encryption/decryption
-    if args.action in ["encrypt", "decrypt"]:
+    if args.action in ["encrypt", "decrypt", "rekey"]:
         validation_warnings = validate_algorithm_availability(args)
         if validation_warnings and not args.quiet:
             print("\nWARNING: Some requested algorithms are not available:")
@@ -4998,7 +5006,7 @@ def main_with_args(args=None):
             print("\nUse 'list-algorithms' command to see available algorithms.")
             print("Install required packages or choose different algorithms.\n")
 
-    if args.action in ["encrypt", "decrypt"] and not (
+    if args.action in ["encrypt", "decrypt", "rekey"] and not (
         is_asymmetric_encrypt or is_asymmetric_decrypt
     ):
         password = None
@@ -5259,9 +5267,9 @@ def main_with_args(args=None):
                                             policy_params["check_common_passwords"] = False
 
                                         if args.custom_password_list:
-                                            policy_params[
-                                                "common_passwords_path"
-                                            ] = args.custom_password_list
+                                            policy_params["common_passwords_path"] = (
+                                                args.custom_password_list
+                                            )
 
                                         # Create policy and validate password
                                         policy = PasswordPolicy(
@@ -5315,6 +5323,74 @@ def main_with_args(args=None):
 
                 # Convert to bytes for the rest of the code
                 password = bytes(password_secure)
+
+            # Handle rekey password (new password for re-encryption)
+            if args.action == "rekey":
+                rekey_password = None
+
+                # Resolve rekey password from --rekey-password-file, --rekey-password-fd,
+                # or OPENSSL_ENCRYPT_REKEY_PASSWORD env var
+                rekey_pw_arg = getattr(args, "rekey_password", None)
+                rekey_pw_file = getattr(args, "rekey_password_file", None)
+                rekey_pw_fd = getattr(args, "rekey_password_fd", None)
+
+                if not rekey_pw_arg:
+                    if rekey_pw_file:
+                        try:
+                            if rekey_pw_file == "-":
+                                rekey_pw_arg = sys.stdin.readline().rstrip("\n")
+                            else:
+                                with open(rekey_pw_file, "r") as f:
+                                    rekey_pw_arg = f.readline().rstrip("\n")
+                        except (IOError, OSError) as e:
+                            print(
+                                f"Error reading rekey password file: {e}",
+                                file=sys.stderr,
+                            )
+                            sys.exit(1)
+                    elif rekey_pw_fd is not None:
+                        try:
+                            with os.fdopen(rekey_pw_fd, "r", closefd=False) as f:
+                                rekey_pw_arg = f.readline().rstrip("\n")
+                        except (IOError, OSError) as e:
+                            print(
+                                f"Error reading from rekey fd {rekey_pw_fd}: {e}",
+                                file=sys.stderr,
+                            )
+                            sys.exit(1)
+                    else:
+                        env_rekey_pw = os.environ.get("OPENSSL_ENCRYPT_REKEY_PASSWORD")
+                        if env_rekey_pw:
+                            rekey_pw_arg = env_rekey_pw
+                            try:
+                                del os.environ["OPENSSL_ENCRYPT_REKEY_PASSWORD"]
+                            except KeyError:
+                                pass
+
+                if rekey_pw_arg:
+                    if not rekey_pw_file and rekey_pw_fd is None and not args.quiet:
+                        print(
+                            "WARNING: --rekey-password is visible in process list. "
+                            "Use --rekey-password-file or OPENSSL_ENCRYPT_REKEY_PASSWORD env var instead.",
+                            file=sys.stderr,
+                        )
+                    rekey_password = rekey_pw_arg.encode("utf-8")
+                else:
+                    # Interactive double-prompt for new password
+                    match = False
+                    while not match:
+                        pwd1 = getpass.getpass("Enter new password: ").encode()
+                        pwd2 = getpass.getpass("Confirm new password: ").encode()
+
+                        if pwd1 == pwd2:
+                            rekey_password = pwd1
+                            match = True
+                            pwd1 = b"\x00" * len(pwd1)
+                            pwd2 = b"\x00" * len(pwd2)
+                        else:
+                            pwd1 = b"\x00" * len(pwd1)
+                            pwd2 = b"\x00" * len(pwd2)
+                            print("Passwords do not match. Please try again.")
 
         except ImportError:
             # Fall back to standard method if secure_memory is not
@@ -8963,6 +9039,92 @@ def main_with_args(args=None):
                         print(
                             "\nDecrypted successfully, but content is binary and cannot be displayed."
                         )
+
+        elif args.action == "rekey":
+            # Re-encrypt file with a new password
+            from .crypt_core import rekey_file as _rekey_file
+
+            try:
+                # Determine new algorithm if specified
+                new_algorithm = None
+                if getattr(args, "algorithm", None):
+                    new_algorithm = args.algorithm
+
+                # Handle cascade encryption parameters for re-encryption
+                rekey_cascade_mode = False
+                rekey_cipher_names = None
+                rekey_cascade_hash = "sha256"
+
+                if hasattr(args, "cascade") and args.cascade is not None:
+                    from .crypt_cli_subparser import CASCADE_PRESETS
+
+                    rekey_cascade_mode = True
+
+                    if isinstance(args.cascade, str) and args.cascade in CASCADE_PRESETS:
+                        rekey_cipher_names = CASCADE_PRESETS[args.cascade]
+                    elif new_algorithm and "," in str(new_algorithm):
+                        rekey_cipher_names = [c.strip() for c in str(new_algorithm).split(",")]
+                        new_algorithm = "cascade"
+                    else:
+                        rekey_cipher_names = CASCADE_PRESETS.get("standard")
+
+                    if hasattr(args, "cascade_hash"):
+                        rekey_cascade_hash = args.cascade_hash
+
+                # Determine format version for re-encryption
+                use_xor = getattr(args, "use_xor_composition", False)
+                use_independent_xor = getattr(args, "independent_xor", False)
+
+                if use_independent_xor:
+                    rekey_format_version = 11
+                elif use_xor:
+                    rekey_format_version = 10
+                else:
+                    rekey_format_version = None  # Inherit from file
+
+                success = _rekey_file(
+                    input_file=args.input,
+                    output_file=getattr(args, "output", None),
+                    old_password=password,
+                    new_password=rekey_password,
+                    quiet=args.quiet,
+                    progress=args.progress,
+                    verbose=args.verbose,
+                    debug=args.debug,
+                    enable_plugins=enable_plugins,
+                    plugin_manager=plugin_manager,
+                    hsm_plugin=hsm_plugin_instance,
+                    no_estimate=getattr(args, "no_estimate", False),
+                    verify_integrity=getattr(args, "verify_integrity", False),
+                    parallel_kdf=getattr(args, "parallel_kdf", False),
+                    kdf_workers=getattr(args, "kdf_workers", None),
+                    new_algorithm="cascade" if rekey_cascade_mode else new_algorithm,
+                    new_format_version=rekey_format_version,
+                    cascade=rekey_cascade_mode,
+                    cipher_names=rekey_cipher_names,
+                    cascade_hash=rekey_cascade_hash,
+                    integrity=getattr(args, "integrity", False),
+                    pepper_plugin=pepper_plugin_instance,
+                    pepper_name=pepper_name_to_use,
+                    hash_config=hash_config,
+                )
+
+                if success:
+                    exit_code = 0
+                else:
+                    exit_code = 1
+                    if not args.quiet:
+                        print("Rekey operation failed.", file=sys.stderr)
+
+            except Exception as e:
+                exit_code = 1
+                if not args.quiet:
+                    if args.debug:
+                        import traceback
+
+                        traceback.print_exc()
+                    else:
+                        print(f"Rekey failed: {e}", file=sys.stderr)
 
         elif args.action == "shred":
             # Direct shredding of files or directories without

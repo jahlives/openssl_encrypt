@@ -21,6 +21,7 @@ import os
 import secrets
 import stat
 import sys
+import tempfile
 import threading
 import time
 import warnings
@@ -51,6 +52,7 @@ from .crypt_errors import (  # Error handling imports are at the top of file
     EncryptionError,
     InternalError,
     KeyDerivationError,
+    RekeyError,
     ValidationError,
     constant_time_compare,
     secure_decrypt_error_handler,
@@ -6598,6 +6600,244 @@ def extract_file_metadata(input_file):
         return result
     except Exception as e:
         raise ValueError(f"Invalid file format: {str(e)}")
+
+
+def rekey_file(
+    input_file: str,
+    output_file: Optional[str],
+    old_password: bytes,
+    new_password: bytes,
+    quiet: bool = False,
+    progress: bool = False,
+    verbose: bool = False,
+    debug: bool = False,
+    pqc_private_key: bytes = None,
+    encryption_data: str = "aes-gcm",
+    enable_plugins: bool = True,
+    plugin_manager=None,
+    secure_mode: bool = False,
+    hsm_plugin=None,
+    no_estimate: bool = False,
+    verify_integrity: bool = False,
+    parallel_kdf: bool = False,
+    kdf_workers: int = None,
+    new_algorithm=None,
+    new_format_version: int = None,
+    pepper_plugin=None,
+    pepper_name: str = None,
+    cascade: bool = False,
+    cipher_names: list = None,
+    cascade_hash: str = "sha256",
+    integrity: bool = False,
+    hash_config: dict = None,
+) -> bool:
+    """
+    Re-encrypt a file with a new password in a single operation.
+
+    Decrypts the file with old_password, then re-encrypts with new_password.
+    Plaintext is only held in memory and a secure temp file briefly.
+
+    Args:
+        input_file: Path to the encrypted file to rekey.
+        output_file: Path for re-encrypted output. None for in-place rekey.
+        old_password: Current password for decryption.
+        new_password: New password for re-encryption.
+        quiet: Suppress output messages.
+        progress: Show progress bar.
+        verbose: Show verbose output.
+        debug: Show debug output.
+        pqc_private_key: PQC private key for decryption if applicable.
+        encryption_data: Data encryption algorithm for hybrid modes.
+        enable_plugins: Whether to enable plugins.
+        plugin_manager: Plugin manager instance.
+        secure_mode: Enable secure memory mode.
+        hsm_plugin: HSM plugin instance.
+        no_estimate: Suppress time/memory estimation.
+        verify_integrity: Verify metadata integrity before decryption.
+        parallel_kdf: Use parallel KDF processing.
+        kdf_workers: Number of parallel KDF workers.
+        new_algorithm: New encryption algorithm (None = inherit from file).
+        new_format_version: New format version (None = use current default).
+        pepper_plugin: Pepper plugin instance for re-encryption.
+        pepper_name: Pepper name for re-encryption.
+        cascade: Enable cascade encryption for re-encryption.
+        cipher_names: Cipher names for cascade mode.
+        cascade_hash: Hash function for cascade HKDF.
+        integrity: Enable integrity verification for re-encryption.
+        hash_config: Hash/KDF configuration dict for re-encryption.
+
+    Returns:
+        True if rekey was successful.
+
+    Raises:
+        RekeyError: If the rekey operation fails.
+        DecryptionError: If decryption with old password fails.
+        EncryptionError: If re-encryption with new password fails.
+    """
+    temp_plaintext_path = None
+    temp_output_path = None
+    plaintext_data = None
+    in_place = output_file is None
+
+    try:
+        # Validate input file exists
+        if not os.path.isfile(input_file):
+            raise RekeyError(f"Input file not found: {input_file}")
+
+        # Read original file metadata to inherit settings
+        try:
+            file_metadata = extract_file_metadata(input_file)
+        except ValueError as e:
+            raise RekeyError(f"Cannot read file metadata: {e}", original_exception=e)
+
+        original_algorithm = file_metadata.get("algorithm", EncryptionAlgorithm.FERNET.value)
+        original_format_version = file_metadata.get("format_version", 10)
+
+        # Determine encryption settings for re-encryption
+        algorithm = new_algorithm if new_algorithm is not None else original_algorithm
+        if isinstance(algorithm, str):
+            algorithm = EncryptionAlgorithm.from_string(algorithm)
+        format_version = (
+            new_format_version if new_format_version is not None else original_format_version
+        )
+
+        # Save original file permissions for in-place rekey
+        if in_place:
+            original_stat = os.stat(input_file)
+            original_mode = stat.S_IMODE(original_stat.st_mode)
+
+        # Step 1: Decrypt to memory
+        if not quiet:
+            print("Decrypting with old password...")
+
+        plaintext_data = decrypt_file(
+            input_file=input_file,
+            output_file=None,  # Return bytes
+            password=old_password,
+            quiet=quiet,
+            progress=progress,
+            verbose=verbose,
+            debug=debug,
+            pqc_private_key=pqc_private_key,
+            encryption_data=encryption_data,
+            enable_plugins=enable_plugins,
+            plugin_manager=plugin_manager,
+            secure_mode=secure_mode,
+            hsm_plugin=hsm_plugin,
+            no_estimate=no_estimate,
+            verify_integrity=verify_integrity,
+            parallel_kdf=parallel_kdf,
+            kdf_workers=kdf_workers,
+        )
+
+        if plaintext_data is None or plaintext_data is False:
+            raise RekeyError("Decryption returned no data")
+
+        # Step 2: Write plaintext to a secure temp file in the same directory
+        input_dir = os.path.dirname(os.path.abspath(input_file))
+        fd, temp_plaintext_path = tempfile.mkstemp(prefix=".rekey_plain_", dir=input_dir)
+        try:
+            os.fchmod(fd, 0o600)
+            os.write(fd, plaintext_data)
+        finally:
+            os.close(fd)
+
+        # Step 3: Clear plaintext from memory as soon as possible
+        if isinstance(plaintext_data, (bytes, bytearray)):
+            secure_memzero(plaintext_data)
+        plaintext_data = None
+
+        # Step 4: Re-encrypt
+        if not quiet:
+            print("Re-encrypting with new password...")
+
+        if in_place:
+            # Write to a second temp file, then atomically replace
+            fd2, temp_output_path = tempfile.mkstemp(prefix=".rekey_enc_", dir=input_dir)
+            os.close(fd2)
+        else:
+            temp_output_path = None
+
+        encrypt_target = temp_output_path if in_place else output_file
+
+        success = encrypt_file(
+            input_file=temp_plaintext_path,
+            output_file=encrypt_target,
+            password=new_password,
+            hash_config=hash_config,
+            quiet=quiet,
+            algorithm=algorithm,
+            progress=progress,
+            verbose=verbose,
+            debug=debug,
+            encryption_data=encryption_data,
+            enable_plugins=enable_plugins,
+            plugin_manager=plugin_manager,
+            secure_mode=secure_mode,
+            hsm_plugin=hsm_plugin,
+            cascade=cascade,
+            cipher_names=cipher_names,
+            cascade_hash=cascade_hash,
+            integrity=integrity,
+            pepper_plugin=pepper_plugin,
+            pepper_name=pepper_name,
+            format_version=format_version,
+            parallel_kdf=parallel_kdf,
+            kdf_workers=kdf_workers,
+        )
+
+        if not success:
+            raise RekeyError("Re-encryption failed")
+
+        # Step 5: For in-place, atomically replace the original
+        if in_place:
+            os.replace(temp_output_path, input_file)
+            os.chmod(input_file, original_mode)
+            temp_output_path = None  # Prevent cleanup since it's been moved
+
+        if not quiet:
+            print("Rekey completed successfully.")
+
+        return True
+
+    except (DecryptionError, EncryptionError, AuthenticationError):
+        # Re-raise crypto errors directly
+        raise
+    except RekeyError:
+        raise
+    except Exception as e:
+        raise RekeyError(f"Rekey operation failed: {e}", original_exception=e)
+
+    finally:
+        # Securely clean up temp files
+        if temp_plaintext_path and os.path.exists(temp_plaintext_path):
+            try:
+                # Overwrite with zeros before deleting
+                file_size = os.path.getsize(temp_plaintext_path)
+                with open(temp_plaintext_path, "wb") as f:
+                    f.write(b"\x00" * file_size)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.remove(temp_plaintext_path)
+            except OSError:
+                # Best effort cleanup
+                try:
+                    os.remove(temp_plaintext_path)
+                except OSError:
+                    pass
+
+        if temp_output_path and os.path.exists(temp_output_path):
+            try:
+                os.remove(temp_output_path)
+            except OSError:
+                pass
+
+        # Clear any remaining plaintext from memory
+        if plaintext_data is not None and isinstance(plaintext_data, (bytes, bytearray)):
+            try:
+                secure_memzero(plaintext_data)
+            except Exception:
+                pass
 
 
 @secure_decrypt_error_handler
