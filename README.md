@@ -53,17 +53,20 @@ For deep-dives into the cryptographic design and security policies of this proje
 ---
 ## 🚀 v1.4.0 Release Candidate
 
-**Current Release:** v1.4.0rc1 | **Status:** Release candidate testing | **Target:** Stable v1.4.0 release
+**Current Release:** v1.4.0rc2 | **Status:** Release candidate testing | **Target:** Stable v1.4.0 release
 
 > ⚠️ **RELEASE CANDIDATE**: This is a release candidate. While feature-complete and security-audited (1573+ tests passing), it should undergo final validation before production deployment. Backward compatibility with v1.3.x is maintained. The API is frozen for the v1.4.0 stable release.
 
+**What's New in v1.4.0rc2:**
+- **Handle SAST errors**: for built-in plugins the SAST rules were too strict
 **What's New in v1.4.0rc1:**
 - **Comprehensive Security Hardening**: Addressed 14 Dependabot security advisories covering CSPRNG, path traversal, sandbox bypass, CORS hardening, credential handling, and more
 - **Dependency Updates**: Bumped dependencies to resolve 8 additional Dependabot alerts
 - **Feature-Complete**: All v1.4.0 features from the beta series are included and finalized
 
 **Release History:**
-- **v1.4.0rc1** (Current) - First release candidate: security hardening and dependency updates
+- **v1.4.0rc2** (Current) - relax SAST rules for builtin-plugins
+- **v1.4.0rc1** - First release candidate: security hardening and dependency updates
 - **v1.4.0b10** - Format Version 11: Independent XOR & Parallel Processing
 - **v1.4.0b9** - Test infrastructure improvements, Threefish cipher support, cross-version compatibility fixes
 - **v1.4.0b8** - Critical security fix: Format Version 9 with secure chained salt derivation
