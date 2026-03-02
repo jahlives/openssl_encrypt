@@ -1201,8 +1201,11 @@ def multi_hash_password(
             else:
                 uses_blake3 = blake3_config > 0
 
-        if uses_blake3:
-            # BLAKE3 requires larger buffer for keyed hashing
+        if uses_blake3 and format_version >= 7:
+            # BLAKE3 requires larger buffer for keyed hashing.
+            # Only for format_version >= 7: blake3 was broken in older releases
+            # (recorded in metadata but never applied), so older files were
+            # encrypted with the smaller exact-size buffer.
             buffer_size = max(64, initial_size)
             # Zero-initialize for deterministic hashing of padded bytes
             buffer_zero = True
@@ -1430,6 +1433,7 @@ def multi_hash_password(
                             print("✅")
 
                 elif algorithm == "blake3" and params > 0:
+
                     if not quiet and not progress:
                         print(f"Applying {params} rounds of BLAKE3", end=" ")
                     elif not quiet:
@@ -4828,7 +4832,9 @@ def encrypt_file_asymmetric(
                     )
 
                     if not quiet:
-                        print(f"Wrapped password for: {recipient.name} ({recipient.fingerprint}) ✅")
+                        print(
+                            f"Wrapped password for: {recipient.name} ({recipient.fingerprint}) ✅"
+                        )
 
                 finally:
                     secure_memzero(shared_secret_raw)
@@ -5038,6 +5044,10 @@ def encrypt_file(
     # Ensure password is in bytes format with correct encoding
     if isinstance(password, str):
         password = password.encode("utf-8")
+
+    # Reset KeyStretch state for this encryption operation
+    KeyStretch.key_stretch = False
+    KeyStretch.hash_stretch = False
 
     # Initialize plugin system if enabled
     plugin_context = None
@@ -6725,6 +6735,8 @@ def decrypt_file(
             pass  # Plugin system not available
 
     KeyStretch.kind_action = "decrypt"
+    KeyStretch.key_stretch = False
+    KeyStretch.hash_stretch = False
     # Read the encrypted file
     if not quiet:
         print(f"\nReading encrypted file: {input_file}")
