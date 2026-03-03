@@ -699,13 +699,14 @@ class TestRekeyWithHashConfig(unittest.TestCase):
         with open(decrypted_file, "rb") as f:
             self.assertEqual(f.read(), self.test_content)
 
-    def test_cli_rekey_with_template(self):
-        """CLI: rekey with a non-default template (--quick) works.
+    def test_cli_rekey_with_custom_hash_config(self):
+        """CLI: rekey with non-default hash config works.
 
-        Uses --quick instead of --paranoid to avoid CI timeouts.
-        The --paranoid template has 800k+ hash rounds and 2GB Argon2
-        which exceeds any reasonable subprocess timeout in CI.
-        --quick still exercises the rekey-with-hash-config code path.
+        Uses explicit lightweight hash flags instead of a template to
+        avoid CI issues: --paranoid times out (800k+ rounds, 2GB Argon2),
+        --quick uses fernet which needs Whirlpool (unavailable in CI).
+        Explicit flags exercise the rekey-with-hash-config code path
+        without triggering missing dependencies or timeouts.
         """
         encrypted_file = self.test_file + ".encrypted"
         rekeyed_file = os.path.join(self.temp_dir, "rekeyed.encrypted")
@@ -731,7 +732,7 @@ class TestRekeyWithHashConfig(unittest.TestCase):
             text=True,
         )
 
-        # Rekey with --quick template
+        # Rekey with explicit lightweight hash config
         result = subprocess.run(
             [
                 sys.executable,
@@ -747,7 +748,10 @@ class TestRekeyWithHashConfig(unittest.TestCase):
                 "--rekey-password",
                 "newpass",
                 "--force-password",
-                "--quick",
+                "--sha512-rounds",
+                "100",
+                "--sha3-512-rounds",
+                "100",
                 "--quiet",
             ],
             capture_output=True,
