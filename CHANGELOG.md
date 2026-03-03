@@ -5,6 +5,36 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-03-03
+
+### Security
+
+- **Plaintext never touches disk during rekey**: `rekey_file()` no longer writes decrypted plaintext to a temporary file. Plaintext is passed directly as bytes to `encrypt_file()`, eliminating the filesystem race window where plaintext was briefly visible (even with 0o600 permissions) and potentially recoverable on journaling filesystems or SSDs with wear leveling.
+
+### Added
+
+- **In-memory encryption API**: `encrypt_file()` now accepts `bytes`/`bytearray` as `input_file` and `None` as `output_file`, mirroring the pattern `decrypt_file()` already uses. When `output_file=None`, returns encrypted data as bytes instead of writing to disk.
+- **Input validation for bytes mode**: Clear `ValidationError` when auto-generated pepper is used with bytes input (requires `--pepper-name`). Integrity plugin gracefully skipped with warning when input is bytes.
+- **New test file**: `test_encrypt_bytes.py` with 15 tests covering bytes input, bytes output, full in-memory roundtrip, and input validation.
+- **Rekey no-temp-plaintext tests**: 4 new tests in `test_rekey.py` verifying no `.rekey_plain_*` files are created during rekey operations.
+
+### Changed
+
+- **`encrypt_file()` signature**: `input_file` now accepts `Union[str, bytes, bytearray]`, `output_file` accepts `Optional[str]`, returns `Union[bool, bytes]`.
+- **`rekey_file()` simplified**: Removed temp plaintext file creation (`mkstemp`/`fchmod`/`write`/`close` block), secure zero-fill cleanup, and `temp_plaintext_path` variable. Memory cleanup of plaintext data now happens after `encrypt_file()` returns.
+- **Post-processing plugins**: Skipped when `output_file is None` (no file to post-process).
+- **Test coverage**: 1636+ tests passing.
+
+## [1.4.0rc2] - 2026-02-27
+
+### Added
+
+- **Rekey action**: Added `--rekey` CLI action to re-encrypt files with a new password
+
+### Fixed
+
+- **SAST rules**: Relaxed AST security scan for built-in plugins (GHSA-9pgj-v69p-q586 follow-up)
+
 ## [1.4.0rc1] - 2026-02-26
 
 ### Security
