@@ -51,21 +51,19 @@ For deep-dives into the cryptographic design and security policies of this proje
 * **Metadata Integrity**: Cryptographic binding of headers to prevent tampering (on AEAD-supported ciphers).
 * **Hardware-Resistant KDF**: Sequential Argon2id and RandomX hashing to neutralize ASIC/GPU brute-force clusters.
 ---
-## 🚀 v1.4.0 Release Candidate
+## 🚀 v1.4.0 Stable Release
 
-**Current Release:** v1.4.0rc2 | **Status:** Release candidate testing | **Target:** Stable v1.4.0 release
+**Current Release:** v1.4.0 | **Status:** Stable | **Tests:** 1636+ passing
 
-> ⚠️ **RELEASE CANDIDATE**: This is a release candidate. While feature-complete and security-audited (1573+ tests passing), it should undergo final validation before production deployment. Backward compatibility with v1.3.x is maintained. The API is frozen for the v1.4.0 stable release.
-
-**What's New in v1.4.0rc2:**
-- **Handle SAST errors**: for built-in plugins the SAST rules were too strict
-**What's New in v1.4.0rc1:**
+**What's New in v1.4.0:**
+- **Security-hardened rekey**: `rekey_file()` no longer writes plaintext to temporary disk files — plaintext stays entirely in memory during re-encryption
+- **In-memory encryption API**: `encrypt_file()` now accepts `bytes`/`bytearray` input and `output_file=None` for fully in-memory encryption, mirroring `decrypt_file()`
 - **Comprehensive Security Hardening**: Addressed 14 Dependabot security advisories covering CSPRNG, path traversal, sandbox bypass, CORS hardening, credential handling, and more
 - **Dependency Updates**: Bumped dependencies to resolve 8 additional Dependabot alerts
-- **Feature-Complete**: All v1.4.0 features from the beta series are included and finalized
 
 **Release History:**
-- **v1.4.0rc2** (Current) - relax SAST rules for builtin-plugins
+- **v1.4.0** (Current) - Stable release with in-memory encryption and security-hardened rekey
+- **v1.4.0rc2** - Relax SAST rules for built-in plugins
 - **v1.4.0rc1** - First release candidate: security hardening and dependency updates
 - **v1.4.0b10** - Format Version 11: Independent XOR & Parallel Processing
 - **v1.4.0b9** - Test infrastructure improvements, Threefish cipher support, cross-version compatibility fixes
