@@ -732,7 +732,9 @@ class TestRekeyWithHashConfig(unittest.TestCase):
             text=True,
         )
 
-        # Rekey with explicit lightweight hash config
+        # Rekey with explicit lightweight hash config + scrypt KDF
+        # A KDF (scrypt/argon2) is required to derive a properly-sized
+        # encryption key; hash rounds alone produce wrong key length.
         result = subprocess.run(
             [
                 sys.executable,
@@ -752,6 +754,13 @@ class TestRekeyWithHashConfig(unittest.TestCase):
                 "100",
                 "--sha3-512-rounds",
                 "100",
+                "--enable-scrypt",
+                "--scrypt-n",
+                "64",
+                "--scrypt-r",
+                "1",
+                "--scrypt-p",
+                "1",
                 "--quiet",
             ],
             capture_output=True,
