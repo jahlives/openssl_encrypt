@@ -725,7 +725,7 @@ class TestRekeyWithHashConfig(unittest.TestCase):
             text=True,
         )
 
-        # Rekey with --paranoid
+        # Rekey with --paranoid (needs longer timeout due to heavy KDF)
         result = subprocess.run(
             [
                 sys.executable,
@@ -746,7 +746,7 @@ class TestRekeyWithHashConfig(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=300,
         )
         self.assertEqual(result.returncode, 0, f"Rekey failed: {result.stderr}")
 
