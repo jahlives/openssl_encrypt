@@ -1216,5 +1216,126 @@ class TestRekeyCLI(unittest.TestCase):
             self.assertEqual(f.read(), self.test_content)
 
 
+class TestRekeyNoTempPlaintext(unittest.TestCase):
+    """Test that rekey never writes plaintext to disk.
+
+    After the bytes-input refactor, rekey_file() passes decrypted data
+    directly to encrypt_file() as bytes, so no .rekey_plain_* temp files
+    should ever appear in the filesystem.
+    """
+
+    def setUp(self):
+        """Set up test environment."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.test_file = os.path.join(self.temp_dir, "test.txt")
+        self.old_password = b"old_password_123"
+        self.new_password = b"new_password_456"
+
+        self.test_content = b"No temp plaintext test content."
+        with open(self.test_file, "wb") as f:
+            f.write(self.test_content)
+
+    def tearDown(self):
+        """Clean up test files."""
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def _get_rekey_plain_files(self, directory):
+        """Return list of .rekey_plain_* files in directory."""
+        return [f for f in os.listdir(directory) if f.startswith(".rekey_plain_")]
+
+    def test_no_temp_plaintext_with_output_file(self):
+        """Rekey to output file creates no .rekey_plain_* temp files."""
+        encrypted_file = self.test_file + ".encrypted"
+        rekeyed_file = os.path.join(self.temp_dir, "rekeyed.encrypted")
+
+        encrypt_file(self.test_file, encrypted_file, self.old_password, quiet=True)
+
+        rekey_file(
+            input_file=encrypted_file,
+            output_file=rekeyed_file,
+            old_password=self.old_password,
+            new_password=self.new_password,
+            quiet=True,
+        )
+
+        # No .rekey_plain_* files should exist
+        plain_files = self._get_rekey_plain_files(self.temp_dir)
+        self.assertEqual(plain_files, [], f"Temp plaintext files found: {plain_files}")
+
+    def test_no_temp_plaintext_in_place(self):
+        """In-place rekey creates no .rekey_plain_* temp files."""
+        encrypted_file = self.test_file + ".encrypted"
+        decrypted_file = os.path.join(self.temp_dir, "decrypted.txt")
+
+        encrypt_file(self.test_file, encrypted_file, self.old_password, quiet=True)
+
+        input_dir = os.path.dirname(os.path.abspath(encrypted_file))
+
+        rekey_file(
+            input_file=encrypted_file,
+            output_file=None,
+            old_password=self.old_password,
+            new_password=self.new_password,
+            quiet=True,
+        )
+
+        # No .rekey_plain_* files should exist
+        plain_files = self._get_rekey_plain_files(input_dir)
+        self.assertEqual(plain_files, [], f"Temp plaintext files found: {plain_files}")
+
+        # Roundtrip still works
+        decrypted = decrypt_file(encrypted_file, decrypted_file, self.new_password, quiet=True)
+        self.assertTrue(decrypted)
+        with open(decrypted_file, "rb") as f:
+            self.assertEqual(f.read(), self.test_content)
+
+    def test_no_temp_plaintext_on_error(self):
+        """Even on rekey failure, no .rekey_plain_* temp files remain."""
+        encrypted_file = self.test_file + ".encrypted"
+        rekeyed_file = os.path.join(self.temp_dir, "rekeyed.encrypted")
+
+        encrypt_file(self.test_file, encrypted_file, self.old_password, quiet=True)
+
+        input_dir = os.path.dirname(os.path.abspath(encrypted_file))
+
+        try:
+            rekey_file(
+                input_file=encrypted_file,
+                output_file=rekeyed_file,
+                old_password=b"wrong_password",
+                new_password=self.new_password,
+                quiet=True,
+            )
+        except Exception:
+            pass
+
+        # No .rekey_plain_* files should exist
+        plain_files = self._get_rekey_plain_files(input_dir)
+        self.assertEqual(plain_files, [], f"Temp plaintext files found: {plain_files}")
+
+    def test_in_place_rekey_still_uses_temp_output(self):
+        """In-place rekey still uses a temp output file (.rekey_enc_*) for atomicity."""
+        encrypted_file = self.test_file + ".encrypted"
+        decrypted_file = os.path.join(self.temp_dir, "decrypted.txt")
+
+        encrypt_file(self.test_file, encrypted_file, self.old_password, quiet=True)
+
+        # In-place rekey should succeed (temp output file is used then cleaned up)
+        result = rekey_file(
+            input_file=encrypted_file,
+            output_file=None,
+            old_password=self.old_password,
+            new_password=self.new_password,
+            quiet=True,
+        )
+        self.assertTrue(result)
+
+        # Verify content is correct
+        decrypted = decrypt_file(encrypted_file, decrypted_file, self.new_password, quiet=True)
+        self.assertTrue(decrypted)
+        with open(decrypted_file, "rb") as f:
+            self.assertEqual(f.read(), self.test_content)
+
+
 if __name__ == "__main__":
     unittest.main()

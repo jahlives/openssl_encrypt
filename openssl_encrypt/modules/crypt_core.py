@@ -4984,11 +4984,13 @@ def encrypt_file(
     kdf_workers=None,
 ):
     """
-    Encrypt a file with a password using the specified algorithm.
+    Encrypt a file (or in-memory bytes) with a password using the specified algorithm.
 
     Args:
-        input_file (str): Path to the file to encrypt
-        output_file (str): Path where to save the encrypted file
+        input_file (Union[str, bytes, bytearray]): Path to the file to encrypt,
+            or raw plaintext bytes/bytearray for in-memory encryption.
+        output_file (Optional[str]): Path where to save the encrypted file.
+            If None, returns encrypted data as bytes instead of writing to disk.
         password (bytes): The password to use for encryption
         hash_config (dict, optional): Hash configuration dictionary
         quiet (bool): Whether to suppress progress output
@@ -5008,7 +5010,8 @@ def encrypt_file(
         integrity (bool): If True, store metadata hash on remote integrity server (default: False)
 
     Returns:
-        bool: True if encryption was successful
+        Union[bool, bytes]: True if encryption was successful and output_file is specified,
+            or the encrypted data as bytes if output_file is None.
 
     Raises:
         ValidationError: If input parameters are invalid or symlink detected in secure_mode
@@ -5017,28 +5020,33 @@ def encrypt_file(
         AuthenticationError: If integrity verification fails
     """
     # Input validation with standardized errors
-    if not input_file or not isinstance(input_file, str):
-        raise ValidationError("Input file path must be a non-empty string")
+    input_is_bytes = isinstance(input_file, (bytes, bytearray))
+    if not input_is_bytes:
+        if not input_file or not isinstance(input_file, str):
+            raise ValidationError("Input file path must be a non-empty string, bytes, or bytearray")
 
-    if not output_file or not isinstance(output_file, str):
-        raise ValidationError("Output file path must be a non-empty string")
+    if output_file is not None and not isinstance(output_file, str):
+        raise ValidationError("Output file path must be a string or None")
+    if output_file is not None and not output_file:
+        raise ValidationError("Output file path must be a non-empty string or None")
 
-    # Special case for stdin and other special files
-    if (
-        input_file == "/dev/stdin"
-        or input_file.startswith("/proc/")
-        or input_file.startswith("/dev/")
-    ):
-        # Skip file existence check for special files
-        pass
-    elif not os.path.isfile(input_file):
-        # In test mode, raise FileNotFoundError for compatibility with tests
-        # This ensures TestEncryptionEdgeCases.test_nonexistent_input_file works
-        if os.environ.get("PYTEST_CURRENT_TEST") is not None:
-            raise FileNotFoundError(f"Input file does not exist: {input_file}")
-        else:
-            # In production, use our standardized validation error
-            raise ValidationError(f"Input file does not exist: {input_file}")
+    # Special case for stdin and other special files (skip for bytes input)
+    if not input_is_bytes:
+        if (
+            input_file == "/dev/stdin"
+            or input_file.startswith("/proc/")
+            or input_file.startswith("/dev/")
+        ):
+            # Skip file existence check for special files
+            pass
+        elif not os.path.isfile(input_file):
+            # In test mode, raise FileNotFoundError for compatibility with tests
+            # This ensures TestEncryptionEdgeCases.test_nonexistent_input_file works
+            if os.environ.get("PYTEST_CURRENT_TEST") is not None:
+                raise FileNotFoundError(f"Input file does not exist: {input_file}")
+            else:
+                # In production, use our standardized validation error
+                raise ValidationError(f"Input file does not exist: {input_file}")
 
     if password is None:
         raise ValidationError("Password cannot be None")
@@ -5066,12 +5074,13 @@ def encrypt_file(
                     PluginCapability.WRITE_LOGS,
                 },
             )
-            plugin_context.file_paths = [input_file]  # Only input file path
+            plugin_context.file_paths = [] if input_is_bytes else [input_file]
             plugin_context.add_metadata("operation", "encrypt")
             plugin_context.add_metadata(
                 "algorithm", str(algorithm.value if hasattr(algorithm, "value") else algorithm)
             )
-            plugin_context.add_metadata("output_path", output_file)
+            if output_file is not None:
+                plugin_context.add_metadata("output_path", output_file)
 
             if not quiet and verbose:
                 print("🔌 Plugin system initialized")
@@ -5332,6 +5341,12 @@ def encrypt_file(
 
             else:
                 # Auto-generate mode: create new pepper
+                # Auto-generate requires a file path for generating file_id
+                if input_is_bytes:
+                    raise ValidationError(
+                        "Auto-generated pepper requires a file path. "
+                        "Use --pepper-name with bytes input."
+                    )
                 if not quiet:
                     print("Generating new remote pepper...")
 
@@ -5465,12 +5480,16 @@ def encrypt_file(
             hsm_pepper=combined_pepper,
             format_version=format_version,  # v10: Sequential XOR, v9: Secure chained salt
         )
-    # Read the input file
-    if not quiet:
-        print(f"Reading file: {input_file}")
-
-    with safe_open_file(input_file, "rb", secure_mode=secure_mode) as file:
-        data = file.read()
+    # Read the input data
+    if input_is_bytes:
+        data = bytes(input_file)  # copy bytearray to bytes; no-op for bytes
+        if not quiet:
+            print(f"Reading {len(data)} bytes from memory")
+    else:
+        if not quiet:
+            print(f"Reading file: {input_file}")
+        with safe_open_file(input_file, "rb", secure_mode=secure_mode) as file:
+            data = file.read()
 
     # Calculate hash of original data for integrity verification
     if not quiet:
@@ -6148,7 +6167,8 @@ def encrypt_file(
         metadata_b64 = base64.b64encode(metadata_json)
 
         # Store metadata hash on integrity server if enabled (AEAD mode)
-        if integrity and _INTEGRITY_PLUGIN_AVAILABLE:
+        # Skip integrity when input is bytes (needs file path for file_id)
+        if integrity and _INTEGRITY_PLUGIN_AVAILABLE and not input_is_bytes:
             try:
                 config = IntegrityConfig.from_file()
                 if not config.enabled:
@@ -6199,6 +6219,8 @@ def encrypt_file(
             except Exception as e:
                 if not quiet:
                     print(f"Warning: Failed to store integrity hash: {e}")
+        elif integrity and input_is_bytes and not quiet:
+            print("Warning: --integrity skipped (requires file path input)")
 
     # Only show progress for larger files (> 1MB)
     if len(data) > 1024 * 1024 and not quiet:
@@ -6398,7 +6420,8 @@ def encrypt_file(
         metadata_base64 = base64.b64encode(metadata_json)
 
         # Store metadata hash on integrity server if enabled (non-AEAD mode)
-        if integrity and _INTEGRITY_PLUGIN_AVAILABLE:
+        # Skip integrity when input is bytes (needs file path for file_id)
+        if integrity and _INTEGRITY_PLUGIN_AVAILABLE and not input_is_bytes:
             try:
                 config = IntegrityConfig.from_file()
                 if not config.enabled:
@@ -6456,12 +6479,21 @@ def encrypt_file(
     # Base64 encode the encrypted data
     encrypted_data = base64.b64encode(encrypted_data)
 
+    # Build the output bytes
+    output_bytes = metadata_base64 + b":" + encrypted_data
+
+    # Return bytes if no output file specified (in-memory mode)
+    if output_file is None:
+        if not quiet:
+            print(f"Encrypted {len(output_bytes)} bytes in memory ✅")
+        return output_bytes
+
     # Write the metadata and encrypted data to the output file
     if not quiet:
         print(f"Writing encrypted file: {output_file}", end=" ")
 
     with safe_open_file(output_file, "wb", secure_mode=secure_mode) as file:
-        file.write(metadata_base64 + b":" + encrypted_data)
+        file.write(output_bytes)
         # Add two newlines after encrypted data when writing to stdout/stderr
         if output_file in ("/dev/stdout", "/dev/stderr"):
             file.write(b"\n\n")
@@ -6477,8 +6509,8 @@ def encrypt_file(
     except Exception as e:
         logger.debug(f"Telemetry emission failed: {e}")
 
-    # Execute post-processing plugins
-    if plugin_context and plugin_manager:
+    # Execute post-processing plugins (only when writing to file)
+    if plugin_context and plugin_manager and output_file:
         try:
             from .plugin_system import PluginType
 
@@ -6635,7 +6667,7 @@ def rekey_file(
     Re-encrypt a file with a new password in a single operation.
 
     Decrypts the file with old_password, then re-encrypts with new_password.
-    Plaintext is only held in memory and a secure temp file briefly.
+    Plaintext is only held in memory; it never touches disk.
 
     Args:
         input_file: Path to the encrypted file to rekey.
@@ -6674,7 +6706,6 @@ def rekey_file(
         DecryptionError: If decryption with old password fails.
         EncryptionError: If re-encryption with new password fails.
     """
-    temp_plaintext_path = None
     temp_output_path = None
     plaintext_data = None
     in_place = output_file is None
@@ -6733,23 +6764,11 @@ def rekey_file(
         if plaintext_data is None or plaintext_data is False:
             raise RekeyError("Decryption returned no data")
 
-        # Step 2: Write plaintext to a secure temp file in the same directory
-        input_dir = os.path.dirname(os.path.abspath(input_file))
-        fd, temp_plaintext_path = tempfile.mkstemp(prefix=".rekey_plain_", dir=input_dir)
-        try:
-            os.fchmod(fd, 0o600)
-            os.write(fd, plaintext_data)
-        finally:
-            os.close(fd)
-
-        # Step 3: Clear plaintext from memory as soon as possible
-        if isinstance(plaintext_data, (bytes, bytearray)):
-            secure_memzero(plaintext_data)
-        plaintext_data = None
-
-        # Step 4: Re-encrypt
+        # Step 2: Re-encrypt directly from memory (plaintext never touches disk)
         if not quiet:
             print("Re-encrypting with new password...")
+
+        input_dir = os.path.dirname(os.path.abspath(input_file))
 
         if in_place:
             # Write to a second temp file, then atomically replace
@@ -6761,7 +6780,7 @@ def rekey_file(
         encrypt_target = temp_output_path if in_place else output_file
 
         success = encrypt_file(
-            input_file=temp_plaintext_path,
+            input_file=plaintext_data,  # Pass bytes directly — no temp file!
             output_file=encrypt_target,
             password=new_password,
             hash_config=hash_config,
@@ -6786,6 +6805,11 @@ def rekey_file(
             kdf_workers=kdf_workers,
         )
 
+        # Step 3: Clear plaintext from memory after encryption
+        if isinstance(plaintext_data, (bytes, bytearray)):
+            secure_memzero(plaintext_data)
+        plaintext_data = None
+
         if not success:
             raise RekeyError("Re-encryption failed")
 
@@ -6809,23 +6833,7 @@ def rekey_file(
         raise RekeyError(f"Rekey operation failed: {e}", original_exception=e)
 
     finally:
-        # Securely clean up temp files
-        if temp_plaintext_path and os.path.exists(temp_plaintext_path):
-            try:
-                # Overwrite with zeros before deleting
-                file_size = os.path.getsize(temp_plaintext_path)
-                with open(temp_plaintext_path, "wb") as f:
-                    f.write(b"\x00" * file_size)
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.remove(temp_plaintext_path)
-            except OSError:
-                # Best effort cleanup
-                try:
-                    os.remove(temp_plaintext_path)
-                except OSError:
-                    pass
-
+        # Clean up temp output file (used for in-place rekey atomicity)
         if temp_output_path and os.path.exists(temp_output_path):
             try:
                 os.remove(temp_output_path)
