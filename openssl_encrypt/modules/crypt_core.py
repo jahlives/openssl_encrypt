@@ -5680,6 +5680,9 @@ def encrypt_file(
     format_version=10,
     parallel_kdf=False,
     kdf_workers=None,
+    chunk_size=None,
+    no_streaming=False,
+    streaming_threshold=None,
 ):
     """
     Encrypt a file (or in-memory bytes) with a password using the specified algorithm.
@@ -5702,6 +5705,9 @@ def encrypt_file(
         algorithm (EncryptionAlgorithm): Encryption algorithm to use (default: Fernet)
         enable_plugins (bool): Whether to enable plugin execution (default: True)
         plugin_manager (PluginManager, optional): Plugin manager instance for plugin execution
+        chunk_size (int, optional): Chunk size for streaming encryption (default: 1MB)
+        no_streaming (bool): If True, disable streaming mode even for large files
+        streaming_threshold (int, optional): File size threshold for streaming (default: 10MB)
         secure_mode (bool): If True, use O_NOFOLLOW to reject symlinks (default: False)
         cascade (bool): Enable cascade encryption with multiple cipher layers (default: False)
         cipher_names (list, optional): List of cipher names for cascade mode (e.g., ["aes-256-gcm", "chacha20-poly1305"])
@@ -6182,6 +6188,162 @@ def encrypt_file(
             hsm_pepper=combined_pepper,
             format_version=format_version,  # v10: Sequential XOR, v9: Secure chained salt
         )
+    # --- Streaming encryption path ---
+    # Check if streaming should be used (large files with AEAD algorithms)
+    _use_streaming = False
+    if not input_is_bytes and not no_streaming and output_file is not None:
+        from .streaming import (
+            DEFAULT_CHUNK_SIZE,
+            DEFAULT_STREAMING_THRESHOLD,
+            StreamingEncryptor,
+            calculate_hash_streaming,
+            should_use_streaming,
+        )
+
+        _streaming_chunk_size = chunk_size if chunk_size else DEFAULT_CHUNK_SIZE
+        _streaming_threshold = (
+            streaming_threshold if streaming_threshold else DEFAULT_STREAMING_THRESHOLD
+        )
+
+        try:
+            file_size = os.path.getsize(input_file)
+        except OSError:
+            file_size = 0
+
+        _use_streaming = should_use_streaming(
+            file_size=file_size,
+            algorithm=algorithm_value,
+            threshold=_streaming_threshold,
+            no_streaming=no_streaming,
+            input_is_bytes=input_is_bytes,
+        )
+
+    if _use_streaming:
+        # Streaming path: two-pass encryption for large files
+        if not quiet:
+            print(f"Using streaming encryption (chunk size: {_streaming_chunk_size} bytes)")
+
+        # Pass 1: Calculate hash without loading entire file
+        if not quiet:
+            print("Calculating content hash (streaming)", end=" ")
+        original_hash = calculate_hash_streaming(input_file, _streaming_chunk_size)
+        if not quiet:
+            print("✅")
+
+        # Prepare cascade encryptor if needed
+        _cascade_enc_streaming = None
+        _cascade_salt_streaming = None
+        if cascade and cipher_names:
+            from .cascade import CascadeConfig, CascadeEncryption
+
+            cascade_config = CascadeConfig(cipher_names=cipher_names, hkdf_hash=cascade_hash)
+            _cascade_enc_streaming = CascadeEncryption(cascade_config)
+            _cascade_salt_streaming = secrets.token_bytes(32)
+
+        # Create streaming encryptor
+        streaming_enc = StreamingEncryptor(
+            key=key,
+            algorithm=algorithm_value,
+            chunk_size=_streaming_chunk_size,
+            cascade_encryptor=_cascade_enc_streaming,
+            cascade_salt=_cascade_salt_streaming,
+        )
+
+        chunk_count = streaming_enc.get_chunk_count(file_size)
+
+        # Create v12 metadata
+        metadata = create_metadata_v8(
+            salt=salt,
+            hash_config=hash_config,
+            original_hash=original_hash,
+            algorithm=algorithm_value if not (cascade and cipher_names) else algorithm.value,
+            pbkdf2_iterations=pbkdf2_iterations,
+            encryption_data=encryption_data,
+            cascade=cascade and bool(cipher_names),
+            cipher_chain=cipher_names if (cascade and cipher_names) else None,
+            hkdf_hash=cascade_hash if (cascade and cipher_names) else None,
+            cascade_salt=_cascade_salt_streaming,
+            layer_info=[
+                {
+                    "cipher": c.info().name,
+                    "key_size": c.info().key_size,
+                    "tag_size": c.info().tag_size,
+                }
+                for c in _cascade_enc_streaming.ciphers
+            ]
+            if _cascade_enc_streaming
+            else None,
+            total_overhead=_cascade_enc_streaming.get_total_overhead()
+            if _cascade_enc_streaming
+            else None,
+            include_encrypted_hash=False,
+            encrypted_hash=None,
+            aad_mode=True,
+            format_version=12,
+        )
+
+        # Add streaming section to metadata
+        import base64 as _b64_streaming
+
+        metadata["streaming"] = {
+            "enabled": True,
+            "chunk_size": _streaming_chunk_size,
+            "chunk_count": chunk_count,
+            "nonce_prefix": _b64_streaming.b64encode(streaming_enc.nonce_prefix).decode("ascii"),
+        }
+
+        metadata_json = json.dumps(metadata).encode("utf-8")
+        metadata_b64 = base64.b64encode(metadata_json)
+
+        # Pass 2: Encrypt file chunk by chunk
+        if not quiet:
+            cipher_desc = (
+                f"cascade ({' → '.join(cipher_names)})"
+                if cascade and cipher_names
+                else algorithm_value
+            )
+            print(f"Encrypting content with {cipher_desc} (streaming)", end=" ")
+
+        progress_cb = None
+        if progress and not quiet:
+
+            def progress_cb(idx, total):
+                pct = ((idx + 1) / total) * 100 if total > 0 else 100
+                print(f"\rEncrypting: {pct:.1f}% ({idx + 1}/{total} chunks)", end="", flush=True)
+
+        streaming_enc.encrypt_file(
+            input_file=input_file,
+            output_file=output_file,
+            metadata_b64=metadata_b64,
+            chunk_count=chunk_count,
+            quiet=quiet,
+            progress_callback=progress_cb,
+        )
+
+        if progress and not quiet:
+            print()  # newline after progress
+
+        if not quiet:
+            print("✅")
+
+        # Set secure permissions
+        set_secure_permissions(output_file)
+
+        # Emit telemetry
+        try:
+            _emit_telemetry_event(metadata, "encrypt", success=True)
+        except Exception:
+            pass
+
+        # Clean up sensitive data
+        try:
+            return True
+        finally:
+            if "key" in locals() and key is not None:
+                secure_memzero(key)
+                key = None
+
+    # --- One-shot encryption path (original) ---
     # Read the input data
     if input_is_bytes:
         data = bytes(input_file)  # copy bytearray to bytes; no-op for bytes
@@ -7375,7 +7537,7 @@ def extract_file_metadata(input_file):
         format_version = metadata.get("format_version", 1)
 
         # Extract algorithm based on format version
-        if format_version in [4, 5, 6, 7, 8, 9, 10, 11]:
+        if format_version in [4, 5, 6, 7, 8, 9, 10, 11, 12]:
             encryption = metadata.get("encryption", {})
             algorithm = encryption.get("algorithm", EncryptionAlgorithm.FERNET.value)
             encryption_data = encryption.get("encryption_data", "aes-gcm")
@@ -7972,7 +8134,13 @@ def decrypt_file(
                 metadata = json.loads(metadata_json)
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON in metadata: {e}")
-        encrypted_data = base64.b64decode(encrypted_data_b64)
+        # For streaming format v12, the payload is binary (not base64)
+        # The streaming decryptor reads the file directly, so we skip base64 decode
+        _temp_format_version = metadata.get("format_version", 1)
+        if _temp_format_version == 12 and metadata.get("streaming", {}).get("enabled", False):
+            encrypted_data = b""  # Placeholder; streaming decryptor reads file directly
+        else:
+            encrypted_data = base64.b64decode(encrypted_data_b64)
     except Exception as e:
         # Keep the original ValueError to maintain compatibility
         # Check if we're in a test environment and pass the exact error type needed for tests
@@ -8048,7 +8216,7 @@ def decrypt_file(
 
     # For format_version 4, 5, 6, 7, 8, 9, 10, or 11, set correct hash_config for printing purposes
     # This doesn't change the actual metadata, just passes the right info to print_hash_config
-    if format_version in [4, 5, 6, 7, 8, 9, 10, 11]:
+    if format_version in [4, 5, 6, 7, 8, 9, 10, 11, 12]:
         # If verbose, pass the full metadata to print_hash_config for proper display
         if verbose:
             print_hash_config_metadata = metadata
@@ -8057,8 +8225,8 @@ def decrypt_file(
     else:
         print_hash_config_metadata = metadata.get("hash_config", {})
 
-    # Handle format version 4, 5, 6, 7, 8, 9, 10, or 11
-    if format_version in [4, 5, 6, 7, 8, 9, 10, 11]:
+    # Handle format version 4, 5, 6, 7, 8, 9, 10, 11, or 12
+    if format_version in [4, 5, 6, 7, 8, 9, 10, 11, 12]:
         # Extract information from new hierarchical structure
         derivation_config = metadata["derivation_config"]
         salt = base64.b64decode(derivation_config["salt"])
@@ -8114,7 +8282,7 @@ def decrypt_file(
         # Check if this is V8+ cascade format
         is_cascade = encryption.get("cascade", False)
 
-        if format_version in [8, 9, 10, 11] and is_cascade:
+        if format_version in [8, 9, 10, 11, 12] and is_cascade:
             # Extract cascade information
             cascade_cipher_chain = encryption.get("cipher_chain", [])
             cascade_hkdf_hash = encryption.get("hkdf_hash", "sha256")
@@ -8566,8 +8734,8 @@ def decrypt_file(
     # Check XOR mode from metadata to determine which key generation function to use
     xor_mode = metadata.get("xor_mode", "sequential")  # Default to sequential for backward compat
 
-    # v11 uses independent XOR, v1-v10 use sequential (including v8/v10 sequential XOR)
-    if format_version == 11 or xor_mode == "independent":
+    # v11/v12 use independent XOR, v1-v10 use sequential (including v8/v10 sequential XOR)
+    if format_version in [11, 12] or xor_mode == "independent":
         # Independent XOR mode (Massey)
         if parallel_kdf:
             # Parallel execution via multiprocessing
@@ -8674,8 +8842,8 @@ def decrypt_file(
     if pqc_has_private_key:
         try:
             # Handle different format versions
-            if format_version in [4, 5, 6, 7, 8, 9, 10]:
-                # Get encrypted private key from v4/v5/v6/v9 structure
+            if format_version in [4, 5, 6, 7, 8, 9, 10, 11, 12]:
+                # Get encrypted private key from v4+ structure
                 encrypted_private_key = base64.b64decode(metadata["encryption"]["pqc_private_key"])
             else:  # format_version 3
                 encrypted_private_key = base64.b64decode(metadata["pqc_private_key"])
@@ -8784,6 +8952,80 @@ def decrypt_file(
             if not quiet:
                 print(f"Error processing PQC private key: {str(e)}")
             # If there's an error, we'll continue without a private key    # Decrypt the data
+    # --- Streaming decryption path for format_version 12 ---
+    if format_version == 12 and metadata.get("streaming", {}).get("enabled", False):
+        from .streaming import StreamingDecryptor
+
+        streaming_meta = metadata["streaming"]
+        nonce_prefix = base64.b64decode(streaming_meta["nonce_prefix"])
+        streaming_chunk_size = streaming_meta["chunk_size"]
+        expected_chunk_count = streaming_meta["chunk_count"]
+
+        # Prepare cascade decryptor if needed
+        _cascade_dec_streaming = None
+        _cascade_salt_streaming = None
+        if is_cascade and cascade_cipher_chain:
+            from .cascade import CascadeConfig, CascadeEncryption
+
+            cascade_config = CascadeConfig(
+                cipher_names=cascade_cipher_chain, hkdf_hash=cascade_hkdf_hash
+            )
+            _cascade_dec_streaming = CascadeEncryption(cascade_config)
+            _cascade_salt_streaming = cascade_salt_decrypt
+
+        streaming_dec = StreamingDecryptor(
+            key=key,
+            algorithm=algorithm,
+            nonce_prefix=nonce_prefix,
+            chunk_size=streaming_chunk_size,
+            cascade_decryptor=_cascade_dec_streaming,
+            cascade_salt=_cascade_salt_streaming,
+        )
+
+        if not quiet:
+            cipher_desc = (
+                f"cascade ({' → '.join(reversed(cascade_cipher_chain))})"
+                if is_cascade and cascade_cipher_chain
+                else algorithm
+            )
+            print(f"Decrypting content with {cipher_desc} (streaming)", end=" ")
+
+        progress_cb = None
+        if progress and not quiet:
+
+            def progress_cb(idx, total):
+                pct = ((idx + 1) / total) * 100 if total > 0 else 100
+                print(f"\rDecrypting: {pct:.1f}% ({idx + 1}/{total} chunks)", end="", flush=True)
+
+        result = streaming_dec.decrypt_file(
+            input_file=input_file,
+            output_file=output_file,
+            metadata_b64=metadata_b64,
+            expected_chunk_count=expected_chunk_count,
+            original_hash=original_hash,
+            quiet=quiet,
+            progress_callback=progress_cb,
+        )
+
+        if progress and not quiet:
+            print()  # newline after progress
+
+        if not quiet:
+            print("✅")
+
+        # Set secure permissions on output
+        if output_file:
+            set_secure_permissions(output_file)
+
+        # Clean up
+        try:
+            return result
+        finally:
+            if "key" in locals() and key is not None:
+                secure_memzero(key)
+                key = None
+
+    # --- One-shot decryption path (original) ---
     if not quiet:
         if is_cascade and cascade_cipher_chain:
             # Show all algorithms in the cascade chain (in reverse order for decryption)
