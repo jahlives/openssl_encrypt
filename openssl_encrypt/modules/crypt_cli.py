@@ -4041,6 +4041,32 @@ def main_with_args(args=None):
         "If not specified, the plugin will auto-detect the configured slot.",
     )
 
+    # Streaming encryption options
+    streaming_group = parser.add_argument_group(
+        "Streaming Options", "Configure streaming encryption for large files"
+    )
+    streaming_group.add_argument(
+        "--chunk-size",
+        type=str,
+        default=None,
+        metavar="SIZE",
+        help="Chunk size for streaming encryption (e.g., '512K', '1M', '4M'). "
+        "Default: 1M. Only used for files above the streaming threshold.",
+    )
+    streaming_group.add_argument(
+        "--no-streaming",
+        action="store_true",
+        help="Disable streaming mode and load entire file into memory.",
+    )
+    streaming_group.add_argument(
+        "--streaming-threshold",
+        type=str,
+        default=None,
+        metavar="SIZE",
+        help="File size threshold for automatic streaming mode (e.g., '10M', '100M'). "
+        "Default: 10M. Files below this size use one-shot encryption.",
+    )
+
     # Add CLI aliases for simplified user experience
     alias_processor = add_cli_aliases(parser)
 
@@ -4157,6 +4183,10 @@ def main_with_args(args=None):
         "min_password_length": None,
         "min_password_entropy": None,
         "disable_common_password_check": False,
+        # Streaming defaults
+        "chunk_size": None,
+        "no_streaming": False,
+        "streaming_threshold": None,
     }
 
     for attr, default_val in default_attrs.items():
@@ -5921,6 +5951,26 @@ def main_with_args(args=None):
                 sys.exit(1)
 
         if args.action == "encrypt":
+            # Parse streaming size arguments
+            _streaming_chunk_size = None
+            _streaming_threshold = None
+            if getattr(args, "chunk_size", None):
+                from .streaming import parse_size_string
+
+                try:
+                    _streaming_chunk_size = parse_size_string(args.chunk_size)
+                except ValueError as e:
+                    print(f"ERROR: Invalid --chunk-size: {e}", file=sys.stderr)
+                    sys.exit(1)
+            if getattr(args, "streaming_threshold", None):
+                from .streaming import parse_size_string
+
+                try:
+                    _streaming_threshold = parse_size_string(args.streaming_threshold)
+                except ValueError as e:
+                    print(f"ERROR: Invalid --streaming-threshold: {e}", file=sys.stderr)
+                    sys.exit(1)
+
             # Check if asymmetric mode (--for flag present)
             if hasattr(args, "for_identity") and args.for_identity:
                 # Asymmetric encryption mode
@@ -6882,6 +6932,9 @@ def main_with_args(args=None):
                             format_version=format_version,
                             parallel_kdf=getattr(args, "parallel_kdf", False),
                             kdf_workers=getattr(args, "kdf_workers", None),
+                            chunk_size=_streaming_chunk_size,
+                            no_streaming=getattr(args, "no_streaming", False),
+                            streaming_threshold=_streaming_threshold,
                         )
 
                     if success:
@@ -7151,6 +7204,9 @@ def main_with_args(args=None):
                     pepper_plugin=pepper_plugin_instance,
                     pepper_name=pepper_name_to_use,
                     format_version=format_version,
+                    chunk_size=_streaming_chunk_size,
+                    no_streaming=getattr(args, "no_streaming", False),
+                    streaming_threshold=_streaming_threshold,
                 )
 
                 if success:
@@ -7776,6 +7832,9 @@ def main_with_args(args=None):
                         pepper_plugin=pepper_plugin_instance,
                         pepper_name=pepper_name_to_use,
                         format_version=format_version,
+                        chunk_size=_streaming_chunk_size,
+                        no_streaming=getattr(args, "no_streaming", False),
+                        streaming_threshold=_streaming_threshold,
                     )
 
                 # Handle steganography if requested

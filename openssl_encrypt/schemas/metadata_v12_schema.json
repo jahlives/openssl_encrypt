@@ -2,9 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://opensslencrypt.com/schemas/metadata-v12.json",
   "title": "OpenSSL Encrypt Metadata Schema Version 12",
-  "description": "Schema for validating encrypted file metadata format version 12 (Independent XOR composition, deprecated algorithms removed)",
+  "description": "Schema for validating encrypted file metadata format version 12 (Streaming chunked encryption with per-chunk AEAD)",
   "type": "object",
-  "required": ["format_version", "mode", "derivation_config", "encryption"],
+  "required": ["format_version", "mode", "derivation_config", "encryption", "streaming"],
   "additionalProperties": true,
   "properties": {
     "format_version": {
@@ -21,6 +21,35 @@
       "type": "string",
       "enum": ["symmetric", "asymmetric"],
       "description": "Encryption mode"
+    },
+    "streaming": {
+      "type": "object",
+      "required": ["enabled", "chunk_size", "chunk_count", "nonce_prefix"],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "const": true,
+          "description": "Indicates streaming chunked encryption is used"
+        },
+        "chunk_size": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 67108864,
+          "description": "Size of each plaintext chunk in bytes"
+        },
+        "chunk_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "Total number of chunks"
+        },
+        "nonce_prefix": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]+=*$",
+          "description": "Base64-encoded 8-byte random nonce prefix for HKDF-based per-chunk nonce derivation"
+        }
+      }
     },
     "derivation_config": {
       "type": "object",
@@ -173,26 +202,15 @@
             "algorithm": {
               "type": "string",
               "enum": [
-                "fernet",
                 "aes-gcm",
                 "aes-gcm-siv",
                 "aes-siv",
                 "chacha20-poly1305",
                 "xchacha20-poly1305",
-                "cascade",
-                "ml-kem-512-hybrid",
-                "ml-kem-768-hybrid",
-                "ml-kem-1024-hybrid",
-                "ml-kem-512-chacha20",
-                "ml-kem-768-chacha20",
-                "ml-kem-1024-chacha20",
-                "hqc-128-hybrid",
-                "hqc-192-hybrid",
-                "hqc-256-hybrid",
                 "threefish-512",
                 "threefish-1024"
               ],
-              "description": "Encryption algorithm used"
+              "description": "Encryption algorithm used (streaming-capable algorithms only)"
             },
             "nonce": {
               "type": "string",
@@ -214,6 +232,11 @@
           }
         }
       ]
+    },
+    "encrypted_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+      "description": "ISO 8601 UTC timestamp when file was encrypted"
     }
   }
 }
