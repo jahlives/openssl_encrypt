@@ -24,7 +24,7 @@ pyjwt>=2.8.0,<3.0.0
 pyotp>=2.9.0,<3.0.0  # TOTP generation/verification
 qrcode[pil]>=7.4,<8.0  # QR code generation for TOTP
 argon2-cffi>=23.1.0,<24.0.0  # Backup code hashing
-cryptography>=42.0.0,<43.0.0  # Fernet encryption, certificate parsing
+cryptography>=46.0.5,<47.0.0  # Fernet encryption, certificate parsing
 
 # Date parsing
 python-dateutil>=2.8.2,<3.0.0
