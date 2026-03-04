@@ -3339,6 +3339,12 @@ def main_with_args(args=None):
         help="Suppress all output except decrypted content and exit code",
     )
     global_group.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output in JSON format (for info action)",
+    )
+    global_group.add_argument(
         "-t",
         "--template",
         help="Specify a template name (built-in or from ./template directory)",
@@ -3364,6 +3370,7 @@ def main_with_args(args=None):
         choices=[
             "encrypt",
             "decrypt",
+            "info",
             "rekey",
             "shred",
             "generate-password",
@@ -3382,7 +3389,7 @@ def main_with_args(args=None):
             "disable-plugin",
             "reload-plugin",
         ],
-        help="Action to perform: encrypt/decrypt files, shred data, generate passwords, "
+        help="Action to perform: encrypt/decrypt/info files, shred data, generate passwords, "
         "show security recommendations, analyze security configuration, configuration wizard, analyze configuration details, check Argon2 support, check post-quantum cryptography support, "
         "create/verify portable USB drives, manage plugins",
     )
@@ -4945,7 +4952,7 @@ def main_with_args(args=None):
 
     # Handle stdin input FIRST - convert to temp file to avoid multiple reads
     # This must happen BEFORE detect_encryption_type() which would consume stdin
-    if args.action == "decrypt" and getattr(args, "input", None) == "/dev/stdin":
+    if args.action in ("decrypt", "info") and getattr(args, "input", None) == "/dev/stdin":
         import tempfile
 
         # Read stdin once into a temp file
@@ -7957,6 +7964,18 @@ def main_with_args(args=None):
                     if not args.quiet:
                         print("Shredding the original file as requested...")
                     secure_shred_file(args.input, args.shred_passes, args.quiet)
+
+        elif args.action == "info":
+            # Display encrypted file metadata without decrypting
+            try:
+                from .crypt_core import print_file_info
+
+                json_output = getattr(args, "json", False)
+                print_file_info(args.input, json_output=json_output)
+                sys.exit(0)
+            except ValueError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                sys.exit(1)
 
         elif args.action == "decrypt":
             # Check if asymmetric mode by reading metadata

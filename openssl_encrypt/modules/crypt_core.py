@@ -12,6 +12,7 @@ dependencies. See the setup_whirlpool.py module for details on compatibility.
 """
 
 import base64
+import datetime
 import functools
 import hashlib
 import hmac
@@ -4486,6 +4487,9 @@ def create_metadata_v5(
         if pepper_name:
             metadata["encryption"]["pepper_name"] = pepper_name
 
+    # Add encryption timestamp
+    metadata["encrypted_at"] = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
     return metadata
 
 
@@ -4688,6 +4692,9 @@ def create_metadata_v6(
     # Add keystore ID if present (v6 enhancement)
     if keystore_id:
         metadata["derivation_config"]["keystore_id"] = keystore_id
+
+    # Add encryption timestamp
+    metadata["encrypted_at"] = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
     return metadata
 
@@ -4917,6 +4924,9 @@ def create_metadata_v8(
     if keystore_id:
         metadata["derivation_config"]["keystore_id"] = keystore_id
 
+    # Add encryption timestamp
+    metadata["encrypted_at"] = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
     return metadata
 
 
@@ -5060,6 +5070,9 @@ def create_metadata_v7(
         "algorithm": sender_sig_algo,
         "value": base64.b64encode(signature).decode("utf-8"),
     }
+
+    # Add encryption timestamp
+    metadata["encrypted_at"] = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
     return metadata
 
@@ -7387,6 +7400,197 @@ def extract_file_metadata(input_file):
         raise ValueError(f"Invalid file format: {str(e)}")
 
 
+def print_file_info(input_file: str, json_output: bool = False) -> dict:
+    """
+    Display encrypted file metadata without decrypting.
+
+    Args:
+        input_file: Path to the encrypted file
+        json_output: If True, print raw JSON instead of pretty-print
+
+    Returns:
+        dict: The full metadata dictionary
+
+    Raises:
+        ValueError: If the file is not a valid encrypted file
+    """
+    info = extract_file_metadata(input_file)
+    metadata = info["metadata"]
+
+    if json_output:
+        print(json.dumps(metadata, indent=2, ensure_ascii=False))
+        return metadata
+
+    # Pretty-print metadata
+    format_version = metadata.get("format_version", "unknown")
+    mode = metadata.get("mode", "symmetric")
+    xor_mode = metadata.get("xor_mode")
+    aead_binding = metadata.get("aead_binding", False)
+    encrypted_at = metadata.get("encrypted_at")
+
+    print("File Information:")
+    print(f"  Format Version:    {format_version}")
+    print(f"  Mode:              {mode}")
+    if xor_mode:
+        print(f"  XOR Mode:          {xor_mode}")
+    print(f"  AEAD Binding:      {'yes' if aead_binding else 'no'}")
+    if encrypted_at:
+        print(f"  Encrypted At:      {encrypted_at}")
+
+    # Encryption section
+    encryption = metadata.get("encryption", {})
+    is_cascade = encryption.get("cascade", False)
+
+    print()
+    print("  Encryption:")
+    if is_cascade:
+        cipher_chain = encryption.get("cipher_chain", [])
+        print(f"    Cipher Chain:    {' -> '.join(cipher_chain)}")
+        hkdf_hash = encryption.get("hkdf_hash")
+        if hkdf_hash:
+            print(f"    HKDF Hash:       {hkdf_hash}")
+        layer_info = encryption.get("layer_info", [])
+        if layer_info:
+            print(f"    Layers:          {len(layer_info)}")
+            for i, layer in enumerate(layer_info):
+                cipher = layer.get("cipher", "unknown")
+                key_size = layer.get("key_size", 0)
+                print(f"      Layer {i+1}:       {cipher} ({key_size * 8} bits)")
+        total_overhead = encryption.get("total_overhead")
+        if total_overhead:
+            print(f"    Total Overhead:  {total_overhead} bytes")
+    else:
+        algorithm = encryption.get("algorithm", "unknown")
+        print(f"    Algorithm:       {algorithm}")
+        encryption_data = encryption.get("encryption_data")
+        if encryption_data:
+            print(f"    Encryption Data: {encryption_data}")
+        key_size = encryption.get("key_size")
+        if key_size:
+            print(f"    Key Size:        {key_size * 8} bits")
+
+    pq_bits = encryption.get("pq_security_bits")
+    if pq_bits:
+        print(f"    PQ Security:     {pq_bits} bits")
+
+    # Key derivation section
+    derivation = metadata.get("derivation_config", {})
+    salt = derivation.get("salt")
+    hash_config = derivation.get("hash_config", {})
+    kdf_config = derivation.get("kdf_config", {})
+
+    print()
+    print("  Key Derivation:")
+    if salt:
+        print(f"    Salt:            {salt}")
+
+    if hash_config:
+        print("    Hash Functions:")
+        for algo, config in hash_config.items():
+            if isinstance(config, dict):
+                rounds = config.get("rounds", 0)
+            else:
+                rounds = config
+            if rounds > 0:
+                display_name = algo.upper().replace("_", "-")
+                print(f"      {display_name}:{' ' * max(1, 13 - len(display_name))}{rounds} rounds")
+
+    if kdf_config:
+        print("    KDFs:")
+        for kdf_name, kdf_params in kdf_config.items():
+            if isinstance(kdf_params, dict) and kdf_params.get("enabled", True):
+                display_name = kdf_name.capitalize()
+                params_str = _format_kdf_params(kdf_name, kdf_params)
+                print(f"      {display_name}:{' ' * max(1, 13 - len(display_name))}{params_str}")
+
+    # Integrity section
+    hashes = metadata.get("hashes", {})
+    original_hash = hashes.get("original_hash")
+    if original_hash:
+        print()
+        print("  Integrity:")
+        print(f"    Original Hash:   {original_hash}")
+        encrypted_hash = hashes.get("encrypted_hash")
+        if encrypted_hash:
+            print(f"    Encrypted Hash:  {encrypted_hash}")
+
+    # PQC info
+    pqc = metadata.get("pqc")
+    if pqc:
+        print()
+        print("  Post-Quantum:")
+        pub_key = pqc.get("public_key")
+        if pub_key:
+            print(f"    Public Key:      {pub_key[:40]}...")
+
+    # HSM info
+    hsm_config = encryption.get("hsm_config")
+    hsm_plugin = encryption.get("hsm_plugin")
+    if hsm_config or hsm_plugin:
+        print()
+        print("  HSM:")
+        if hsm_plugin:
+            print(f"    Plugin:          {hsm_plugin}")
+        if hsm_config:
+            slot = hsm_config.get("slot")
+            if slot is not None:
+                print(f"    Slot:            {slot}")
+
+    # Pepper info
+    pepper_plugin = encryption.get("pepper_plugin")
+    if pepper_plugin:
+        print()
+        print("  Pepper:")
+        print(f"    Plugin:          {pepper_plugin}")
+        pepper_name = encryption.get("pepper_name")
+        if pepper_name:
+            print(f"    Name:            {pepper_name}")
+
+    return metadata
+
+
+def _format_kdf_params(kdf_name: str, params: dict) -> str:
+    """Format KDF parameters for display."""
+    if kdf_name == "argon2":
+        parts = []
+        if "time_cost" in params:
+            parts.append(f"time_cost={params['time_cost']}")
+        if "memory_cost" in params:
+            parts.append(f"memory_cost={params['memory_cost']}KB")
+        if "parallelism" in params:
+            parts.append(f"parallelism={params['parallelism']}")
+        if "rounds" in params:
+            parts.append(f"rounds={params['rounds']}")
+        return ", ".join(parts)
+    elif kdf_name == "scrypt":
+        parts = []
+        if "n" in params:
+            parts.append(f"n={params['n']}")
+        if "r" in params:
+            parts.append(f"r={params['r']}")
+        if "p" in params:
+            parts.append(f"p={params['p']}")
+        if "rounds" in params:
+            parts.append(f"rounds={params['rounds']}")
+        return ", ".join(parts)
+    elif kdf_name == "balloon":
+        parts = []
+        if "rounds" in params:
+            parts.append(f"rounds={params['rounds']}")
+        if "space_cost" in params:
+            parts.append(f"space_cost={params['space_cost']}")
+        return ", ".join(parts)
+    elif kdf_name == "pbkdf2":
+        iterations = params.get("iterations", params.get("rounds", 0))
+        return f"iterations={iterations}"
+    elif kdf_name == "hkdf":
+        return f"hash={params.get('hash', 'sha256')}"
+    else:
+        # Generic fallback
+        parts = [f"{k}={v}" for k, v in params.items() if k != "enabled"]
+        return ", ".join(parts)
+
+
 def rekey_file(
     input_file: str,
     output_file: Optional[str],
@@ -8039,6 +8243,26 @@ def decrypt_file(
         verbose=verbose,
         debug=debug,
     )
+
+    # Display age warning for old encrypted files
+    if not quiet:
+        encrypted_at = metadata.get("encrypted_at")
+        if encrypted_at:
+            try:
+                enc_time = datetime.datetime.strptime(encrypted_at, "%Y-%m-%dT%H:%M:%SZ")
+                age = datetime.datetime.utcnow() - enc_time
+                if age.days > 730:  # > 2 years
+                    years = age.days / 365.25
+                    print(
+                        f"\n\u26a0\ufe0f  This file was encrypted {years:.1f} years ago ({encrypted_at}).",
+                        file=sys.stderr,
+                    )
+                    print(
+                        "    Consider re-encrypting with current parameters for stronger protection.",
+                        file=sys.stderr,
+                    )
+            except (ValueError, TypeError):
+                pass  # Malformed timestamp — skip warning silently
 
     # Display time/memory estimates for decryption
     if not quiet and not no_estimate:
