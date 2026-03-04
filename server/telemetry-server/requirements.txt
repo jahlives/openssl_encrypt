@@ -11,7 +11,7 @@ psycopg2-binary==2.9.9  # PostgreSQL driver
 
 # Security
 passlib==1.7.4
-python-jose[cryptography]==3.3.0
+python-jose[cryptography]==3.4.0
 
 # Utilities
 python-dateutil==2.8.2
