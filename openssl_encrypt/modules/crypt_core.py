@@ -5049,6 +5049,39 @@ def encrypt_file(
     if output_file is not None and not output_file:
         raise ValidationError("Output file path must be a non-empty string or None")
 
+    # Directory archiving support — convert directory to tar before encryption
+    _is_directory_archive = False
+    _archive_temp_tar = None
+    _archive_manifest = None
+    _archive_original_path = None
+
+    if not input_is_bytes and isinstance(input_file, str) and os.path.isdir(input_file):
+        from .archive import DirectoryArchiver, validate_directory_input
+
+        validate_directory_input(input_file)
+        archiver = DirectoryArchiver(
+            preserve_permissions=True,
+            follow_symlinks=False,
+        )
+        _archive_manifest = archiver.get_manifest(input_file)
+        _archive_original_path = os.path.basename(os.path.normpath(input_file))
+
+        if not quiet:
+            m = _archive_manifest
+            print(
+                f"Archiving directory: {input_file} "
+                f"({m['total_files']} files, {m['total_dirs']} dirs, "
+                f"{m['total_size_bytes']} bytes)"
+            )
+
+        _archive_temp_tar = archiver.create_tar_to_file(input_file)
+        input_file = _archive_temp_tar
+        _is_directory_archive = True
+
+        # Auto-generate output_file if not set
+        if output_file is None or output_file == "":
+            output_file = os.path.normpath(_archive_original_path) + ".enc"
+
     # Special case for stdin and other special files (skip for bytes input)
     if not input_is_bytes:
         if (
@@ -5604,6 +5637,14 @@ def encrypt_file(
             "nonce_prefix": _b64_streaming.b64encode(streaming_enc.nonce_prefix).decode("ascii"),
         }
 
+        # Add archive metadata if encrypting a directory
+        if _is_directory_archive and _archive_manifest:
+            metadata["archive"] = {
+                "type": "tar",
+                "manifest": _archive_manifest,
+                "original_path": _archive_original_path,
+            }
+
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_b64 = base64.b64encode(metadata_json)
 
@@ -5646,6 +5687,12 @@ def encrypt_file(
             _emit_telemetry_event(metadata, "encrypt", success=True)
         except Exception:
             pass
+
+        # Clean up archive temp file
+        if _archive_temp_tar and os.path.exists(_archive_temp_tar):
+            from .archive import secure_cleanup_temp_file
+
+            secure_cleanup_temp_file(_archive_temp_tar)
 
         # Clean up sensitive data
         try:
@@ -6339,6 +6386,15 @@ def encrypt_file(
                 pepper_name=remote_pepper_name,
                 format_version=format_version,
             )
+
+        # Add archive metadata if encrypting a directory
+        if _is_directory_archive and _archive_manifest:
+            metadata["archive"] = {
+                "type": "tar",
+                "manifest": _archive_manifest,
+                "original_path": _archive_original_path,
+            }
+
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_b64 = base64.b64encode(metadata_json)
 
@@ -6590,6 +6646,15 @@ def encrypt_file(
                 pepper_name=remote_pepper_name,
                 format_version=format_version,
             )
+
+        # Add archive metadata if encrypting a directory
+        if _is_directory_archive and _archive_manifest:
+            metadata["archive"] = {
+                "type": "tar",
+                "manifest": _archive_manifest,
+                "original_path": _archive_original_path,
+            }
+
         # If scrypt is used, add rounds to hash_config
         # Serialize and encode the metadata
         metadata_json = json.dumps(metadata).encode("utf-8")
@@ -6716,6 +6781,13 @@ def encrypt_file(
                         # Continue even if plugin fails
         except ImportError:
             pass  # Plugin system not available
+
+    # Clean up archive temp file
+    if _archive_temp_tar and os.path.exists(_archive_temp_tar):
+        try:
+            os.unlink(_archive_temp_tar)
+        except OSError:
+            pass
 
     # Clean up sensitive data properly
     try:
@@ -8812,18 +8884,43 @@ def decrypt_file(
     if output_file is None:
         return decrypted_data
 
-    # Write the decrypted data to file
-    if not quiet:
-        print(f"Writing decrypted file: {output_file}")
+    # Check if the decrypted data is a directory archive
+    archive_info = metadata.get("archive") if isinstance(metadata, dict) else None
+    if archive_info and archive_info.get("type") == "tar":
+        from .archive import secure_tar_extract
 
-    with safe_open_file(output_file, "wb", secure_mode=secure_mode) as file:
-        file.write(decrypted_data)
-        # Add two newlines after decrypted data when writing to stdout/stderr
-        if output_file in ("/dev/stdout", "/dev/stderr"):
-            file.write(b"\n\n")
+        if not quiet:
+            manifest = archive_info.get("manifest", {})
+            original_path = archive_info.get("original_path", "archive")
+            print(
+                f"Extracting directory archive: {original_path} "
+                f"({manifest.get('total_files', '?')} files)"
+            )
 
-    # Set secure permissions on the output file
-    set_secure_permissions(output_file)
+        # Extract tar to output directory
+        # If output_file has an extension, use its parent dir; otherwise use output_file as dir
+        output_dir = output_file
+        if os.path.splitext(output_file)[1]:
+            output_dir = os.path.dirname(output_file) or "."
+
+        secure_tar_extract(decrypted_data, output_dir)
+
+        if not quiet:
+            print(f"Directory extracted to: {output_dir}")
+    else:
+        # Write the decrypted data to file
+        if not quiet:
+            print(f"Writing decrypted file: {output_file}")
+
+        with safe_open_file(output_file, "wb", secure_mode=secure_mode) as file:
+            file.write(decrypted_data)
+            # Add two newlines after decrypted data when writing to stdout/stderr
+            if output_file in ("/dev/stdout", "/dev/stderr"):
+                file.write(b"\n\n")
+
+    # Set secure permissions on the output file (skip for directory archives)
+    if not (archive_info and archive_info.get("type") == "tar"):
+        set_secure_permissions(output_file)
 
     # Execute post-processing plugins (work with decrypted file)
     if plugin_context and plugin_manager and output_file:
