@@ -18,14 +18,13 @@ import uuid
 from dataclasses import asdict, dataclass
 from typing import List, Optional, Tuple
 
-from .secure_memory import SecureBytes, secure_memzero
-
 from .crypt_errors import SecretSharingError
-
+from .secure_memory import SecureBytes, secure_memzero
 
 # ──────────────────────────────────────────────────
 # GF(256) Arithmetic
 # ──────────────────────────────────────────────────
+
 
 class GF256:
     """Galois Field GF(2^8) arithmetic with pre-computed lookup tables.
@@ -204,9 +203,7 @@ class Share:
             raise SecretSharingError(f"Invalid share JSON: {e}")
 
         if obj.get("header") != SHARE_FILE_HEADER:
-            raise SecretSharingError(
-                f"Invalid share header: expected '{SHARE_FILE_HEADER}'"
-            )
+            raise SecretSharingError(f"Invalid share header: expected '{SHARE_FILE_HEADER}'")
 
         meta_dict = obj.get("metadata", {})
         metadata = ShareMetadata(
@@ -252,6 +249,7 @@ class Share:
 # ──────────────────────────────────────────────────
 # Split / Combine
 # ──────────────────────────────────────────────────
+
 
 def split_secret(
     secret: bytes,
@@ -338,9 +336,7 @@ def combine_shares(shares: List[Share]) -> bytes:
     # Check threshold
     threshold = shares[0].metadata.threshold
     if len(shares) < threshold:
-        raise SecretSharingError(
-            f"Insufficient shares: need {threshold}, have {len(shares)}"
-        )
+        raise SecretSharingError(f"Insufficient shares: need {threshold}, have {len(shares)}")
 
     # Check for duplicate indices
     indices = [s.metadata.share_index for s in shares]
@@ -370,6 +366,7 @@ def combine_shares(shares: List[Share]) -> bytes:
 # ──────────────────────────────────────────────────
 # CLI helpers
 # ──────────────────────────────────────────────────
+
 
 def split_secret_cli(args) -> None:
     """CLI handler for split-secret action.
@@ -419,13 +416,9 @@ def split_secret_cli(args) -> None:
                 print(f"  Written: {filepath}")
 
         if not quiet:
-            print(
-                f"\nSplit into {num_shares} shares (threshold: {threshold})"
-            )
+            print(f"\nSplit into {num_shares} shares (threshold: {threshold})")
             print(f"Key ID: {shares[0].metadata.key_id}")
-            print(
-                f"Any {threshold} of {num_shares} shares can reconstruct the secret."
-            )
+            print(f"Any {threshold} of {num_shares} shares can reconstruct the secret.")
     finally:
         # Securely wipe password from memory
         if password_secure is not None:
