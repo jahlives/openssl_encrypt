@@ -602,6 +602,13 @@ class VerificationError(SecureError):
         super().__init__(ErrorCategory.VALIDATION, details, original_exception)
 
 
+class SecretSharingError(SecureError):
+    """Exception for secret sharing operation failures."""
+
+    def __init__(self, details=None, original_exception=None):
+        super().__init__(ErrorCategory.ENCRYPTION, details, original_exception)
+
+
 def secure_keystore_error_handler(f):
     """Specialized error handler for keystore operations."""
     return secure_error_handler(f, ErrorCategory.KEYSTORE)

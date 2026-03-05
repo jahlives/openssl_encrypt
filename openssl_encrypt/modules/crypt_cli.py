@@ -3390,6 +3390,8 @@ def main_with_args(args=None):
             "disable-plugin",
             "reload-plugin",
             "verify",
+            "split-secret",
+            "combine-secrets",
         ],
         help="Action to perform: encrypt/decrypt/info files, shred data, generate passwords, "
         "show security recommendations, analyze security configuration, configuration wizard, analyze configuration details, check Argon2 support, check post-quantum cryptography support, "
@@ -8005,6 +8007,28 @@ def main_with_args(args=None):
                     verbose=verbose,
                 )
                 sys.exit(0 if all_passed else 1)
+            except Exception as e:
+                print(f"Error: {e}", file=sys.stderr)
+                sys.exit(1)
+
+        elif args.action == "split-secret":
+            # Split encryption key into Shamir's Secret Sharing shares
+            try:
+                from .secret_sharing import split_secret_cli
+
+                split_secret_cli(args)
+                sys.exit(0)
+            except Exception as e:
+                print(f"Error: {e}", file=sys.stderr)
+                sys.exit(1)
+
+        elif args.action == "combine-secrets":
+            # Combine shares and decrypt file
+            try:
+                from .secret_sharing import combine_secrets_cli
+
+                combine_secrets_cli(args)
+                sys.exit(0)
             except Exception as e:
                 print(f"Error: {e}", file=sys.stderr)
                 sys.exit(1)

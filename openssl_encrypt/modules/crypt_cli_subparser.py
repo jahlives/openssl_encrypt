@@ -1560,6 +1560,80 @@ def setup_verify_parser(subparser):
     )
 
 
+def setup_split_secret_parser(subparser):
+    """Set up arguments for the split-secret command."""
+    subparser.add_argument(
+        "--input",
+        "-i",
+        required=True,
+        help="Input encrypted file whose key to split",
+    )
+    subparser.add_argument(
+        "--shares",
+        "-n",
+        type=int,
+        required=True,
+        help="Total number of shares to create",
+    )
+    subparser.add_argument(
+        "--threshold",
+        "-k",
+        type=int,
+        required=True,
+        help="Minimum shares needed to reconstruct the key",
+    )
+    subparser.add_argument(
+        "--output-dir",
+        "-d",
+        default=".",
+        help="Directory for share files (default: current directory)",
+    )
+    subparser.add_argument(
+        "-p",
+        "--password",
+        help="Password for the encrypted file",
+    )
+    subparser.add_argument(
+        "--force-password",
+        action="store_true",
+        help="Accept the password without strength check",
+    )
+    subparser.add_argument(
+        "--quiet",
+        "-q",
+        action="store_true",
+        help="Suppress output",
+    )
+
+
+def setup_combine_secrets_parser(subparser):
+    """Set up arguments for the combine-secrets command."""
+    subparser.add_argument(
+        "--input",
+        "-i",
+        required=True,
+        help="Input encrypted file to decrypt",
+    )
+    subparser.add_argument(
+        "--shares",
+        nargs="+",
+        required=True,
+        help="Paths to share files",
+    )
+    subparser.add_argument(
+        "--output",
+        "-o",
+        required=True,
+        help="Output file for decrypted data",
+    )
+    subparser.add_argument(
+        "--quiet",
+        "-q",
+        action="store_true",
+        help="Suppress output",
+    )
+
+
 def setup_simple_parser(subparser):
     """Set up arguments for simple commands (security-info, check-argon2, check-pqc, version)."""
     # These commands don't need any special arguments
@@ -2590,6 +2664,22 @@ def create_subparser_main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_verify_parser(verify_parser)
+
+    # Split-secret command — Shamir's Secret Sharing
+    split_secret_parser = subparsers.add_parser(
+        "split-secret",
+        help="Split encryption key into Shamir's Secret Sharing shares",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_split_secret_parser(split_secret_parser)
+
+    # Combine-secrets command — reconstruct key and decrypt
+    combine_secrets_parser = subparsers.add_parser(
+        "combine-secrets",
+        help="Combine shares to reconstruct key and decrypt file",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_combine_secrets_parser(combine_secrets_parser)
 
     # Parse arguments
     args = parser.parse_args()
