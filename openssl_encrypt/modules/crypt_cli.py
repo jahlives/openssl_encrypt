@@ -3389,6 +3389,7 @@ def main_with_args(args=None):
             "enable-plugin",
             "disable-plugin",
             "reload-plugin",
+            "verify",
         ],
         help="Action to perform: encrypt/decrypt/info files, shred data, generate passwords, "
         "show security recommendations, analyze security configuration, configuration wizard, analyze configuration details, check Argon2 support, check post-quantum cryptography support, "
@@ -7988,6 +7989,23 @@ def main_with_args(args=None):
                 print_file_info(args.input, json_output=json_output)
                 sys.exit(0)
             except ValueError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                sys.exit(1)
+
+        elif args.action == "verify":
+            # Verify encrypted file integrity without password
+            try:
+                from .verify import verify_file_integrity
+
+                json_output = getattr(args, "json", False)
+                verbose = getattr(args, "verbose", False)
+                all_passed, _ = verify_file_integrity(
+                    args.input,
+                    json_output=json_output,
+                    verbose=verbose,
+                )
+                sys.exit(0 if all_passed else 1)
+            except Exception as e:
                 print(f"Error: {e}", file=sys.stderr)
                 sys.exit(1)
 

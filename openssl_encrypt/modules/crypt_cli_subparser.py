@@ -1540,6 +1540,26 @@ def setup_generate_password_parser(subparser):
     )
 
 
+def setup_verify_parser(subparser):
+    """Set up arguments for the verify command."""
+    subparser.add_argument(
+        "--input",
+        "-i",
+        required=True,
+        help="Input encrypted file to verify",
+    )
+    subparser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output results as JSON",
+    )
+    subparser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show detailed check information",
+    )
+
+
 def setup_simple_parser(subparser):
     """Set up arguments for simple commands (security-info, check-argon2, check-pqc, version)."""
     # These commands don't need any special arguments
@@ -2562,6 +2582,14 @@ def create_subparser_main():
 
     # Note: Steganography is now integrated into encrypt/decrypt commands
     # rather than separate commands
+
+    # Verify command — structural integrity check without password
+    verify_parser = subparsers.add_parser(
+        "verify",
+        help="Verify encrypted file integrity without decryption",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_verify_parser(verify_parser)
 
     # Parse arguments
     args = parser.parse_args()
