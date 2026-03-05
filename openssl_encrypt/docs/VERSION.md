@@ -34,6 +34,11 @@ This release **removes** all deprecated algorithms entirely — both encryption 
 - **TESTDATA PQC simulation format** (use real liboqs)
 
 **Enhancements:**
+- **Streaming chunked encryption** for large files (format v12):
+  - Per-chunk AEAD with HKDF-SHA256 derived nonces for constant-memory encryption
+  - Trailer HMAC-SHA256 commitment for global integrity verification
+  - Auto-activates for files >10 MB with AEAD algorithms (configurable via `--streaming-threshold`)
+  - CLI controls: `--chunk-size`, `--no-streaming`, `--streaming-threshold`
 - New metadata format version 12 with reduced algorithm set
 - Cleaned deprecation infrastructure for future use
 - Smaller, cleaner codebase with no dead code paths

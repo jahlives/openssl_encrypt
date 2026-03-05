@@ -25,7 +25,7 @@ OpenSSL Encrypt uses structured metadata to store encryption parameters, algorit
 - **Version 8**: Multi-round KDF support (deprecated - security vulnerability)
 - **Version 9**: Secure chained salt derivation for multi-round KDFs (v1.4.0+ default)
 - **Version 10-11**: Independent XOR key composition mode
-- **Version 12**: Reduced algorithm set — removed AES-OCB3, Camellia, Whirlpool, PBKDF2, Kyber (v1.5.0+ default)
+- **Version 12**: Reduced algorithm set with streaming chunked encryption for large files (v1.5.0+ default)
 
 ### Metadata Purpose
 
@@ -44,24 +44,30 @@ The metadata serves several critical functions:
 ```
 v3 (Legacy) → v4 (Restructured) → v5 (PQC Enhanced) → v7/v9 (Secure Chained Salt)
     ↓              ↓                    ↓                      ↓
-Deprecated    Supported          Supported              Current Default
+Deprecated    Supported          Supported              Supported
                                                          (v7: v1.3.4, v9: v1.4.0+)
+
+v10-11 (Independent XOR) → v12 (Streaming Chunked + Reduced Algorithms)
+                                    ↓
+                              Current Default (v1.5.0+)
 
 v8 (Multi-round KDF) - Deprecated immediately due to security vulnerability
 ```
 
 ### Key Improvements by Version
 
-| Feature | v3 | v4 | v5 | v7 | v8 | v9 | Notes |
-|---------|----|----|----|----|----|----|-------|
-| **Structured Metadata** | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | Logical section organization |
-| **Hash Configuration** | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | Per-algorithm round settings |
-| **KDF Configuration** | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | Detailed KDF parameters |
-| **PQC Algorithm Support** | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | Post-quantum encryption |
-| **Configurable Data Encryption** | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | Multiple symmetric algorithms with PQC |
-| **Enhanced Security Metadata** | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | Extended security parameters |
-| **Multi-round KDF Support** | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | Multiple KDF rounds for increased security |
-| **Secure Chained Salt Derivation** | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | **CRITICAL SECURITY FIX** - v7 and v9 are cryptographically identical |
+| Feature | v3 | v4 | v5 | v7 | v8 | v9 | v10-11 | v12 | Notes |
+|---------|----|----|----|----|----|----|--------|-----|-------|
+| **Structured Metadata** | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Logical section organization |
+| **Hash Configuration** | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Per-algorithm round settings |
+| **KDF Configuration** | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Detailed KDF parameters |
+| **PQC Algorithm Support** | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Post-quantum encryption |
+| **Configurable Data Encryption** | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Multiple symmetric algorithms with PQC |
+| **Enhanced Security Metadata** | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Extended security parameters |
+| **Multi-round KDF Support** | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | Multiple KDF rounds for increased security |
+| **Secure Chained Salt Derivation** | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | **CRITICAL SECURITY FIX** - v7 and v9 are cryptographically identical |
+| **Independent XOR Key Composition** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | XOR-based key composition mode |
+| **Streaming Chunked Encryption** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | Per-chunk AEAD for large files with constant memory |
 
 ## Version 4 Specification
 
@@ -517,6 +523,195 @@ Version 8 remains vulnerable to maintain backward compatibility for existing v8 
 
 **Important**: The check `format_version != 8` ensures v8 continues to use predictable salt derivation for decryption, while v7 and v9 both use secure chained derivation.
 
+## Version 12 Specification
+
+### Overview
+
+Format version 12 introduces **streaming chunked encryption** for large files, enabling encryption and decryption with constant memory usage regardless of file size. Files above a configurable threshold (default: 10 MB) are automatically split into independently authenticated chunks, each encrypted with its own AEAD nonce derived via HKDF.
+
+Version 12 also removes deprecated algorithms (AES-OCB3, Camellia, Whirlpool, PBKDF2, legacy Kyber naming) that were present in earlier format versions.
+
+### Key Enhancements
+
+1. **Per-chunk AEAD**: Each chunk is independently encrypted with a unique nonce, preventing nonce reuse
+2. **HKDF nonce derivation**: Deterministic per-chunk nonces derived via HKDF-SHA256 from a random prefix
+3. **Trailer HMAC**: HMAC-SHA256 commitment over all chunk authentication tags for global integrity
+4. **Auto-threshold**: Files above 10 MB automatically use streaming mode (configurable)
+5. **Constant memory**: ~2-3 MB memory usage regardless of file size
+
+### Metadata Structure
+
+Version 12 extends the metadata with a `streaming` section:
+
+```json
+{
+  "format_version": 12,
+  "derivation_config": {
+    "salt": "base64_encoded_salt",
+    "hash_config": {
+      "blake3": { "rounds": 2 },
+      "blake2b": { "rounds": 2 },
+      "shake256": { "rounds": 2 }
+    },
+    "kdf_config": {
+      "argon2": {
+        "enabled": true,
+        "rounds": 3,
+        "time_cost": 3,
+        "memory_cost": 65536,
+        "parallelism": 4,
+        "hash_len": 32,
+        "type": "id"
+      },
+      "scrypt": {
+        "enabled": true,
+        "rounds": 2,
+        "n": 16384,
+        "r": 8,
+        "p": 1
+      }
+    }
+  },
+  "hashes": {
+    "original_hash": "sha256_hex_hash_of_plaintext"
+  },
+  "encryption": {
+    "algorithm": "aes-gcm",
+    "cascade": false
+  },
+  "streaming": {
+    "enabled": true,
+    "chunk_size": 1048576,
+    "chunk_count": 10,
+    "nonce_prefix": "base64_encoded_8_bytes"
+  }
+}
+```
+
+#### Streaming Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `enabled` | boolean | Always `true` for streaming files |
+| `chunk_size` | integer | Plaintext chunk size in bytes (default: 1,048,576 = 1 MB) |
+| `chunk_count` | integer | Total number of chunks in the file |
+| `nonce_prefix` | string | Base64-encoded 8-byte random prefix for HKDF nonce derivation |
+
+### File Format
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ Base64(JSON metadata)                                                    │
+├──────────────────────────────────────────────────────────────────────────┤
+│ : (colon separator, 1 byte)                                              │
+├──────────────────────────────────────────────────────────────────────────┤
+│ OESC (magic bytes, 4 bytes)                                              │
+├──────────────────────────────────────────────────────────────────────────┤
+│ Payload Version (u32le = 1)                                              │
+├──────────────────────────────────────────────────────────────────────────┤
+│ Chunk 0: [chunk_index:u32le] [ciphertext_len:u32le] [ciphertext + tag]   │
+├──────────────────────────────────────────────────────────────────────────┤
+│ Chunk 1: [chunk_index:u32le] [ciphertext_len:u32le] [ciphertext + tag]   │
+├──────────────────────────────────────────────────────────────────────────┤
+│ ...                                                                      │
+├──────────────────────────────────────────────────────────────────────────┤
+│ Chunk N-1: [chunk_index:u32le] [ciphertext_len:u32le] [ciphertext + tag] │
+├──────────────────────────────────────────────────────────────────────────┤
+│ Chunk Count (u32le, 4 bytes)                                             │
+├──────────────────────────────────────────────────────────────────────────┤
+│ Trailer HMAC (HMAC-SHA256, 32 bytes)                                     │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+### Per-Chunk Structure
+
+Each chunk is serialized as:
+
+| Field | Size | Encoding | Description |
+|-------|------|----------|-------------|
+| `chunk_index` | 4 bytes | u32le | Zero-based chunk index |
+| `ciphertext_len` | 4 bytes | u32le | Length of ciphertext + AEAD tag |
+| `ciphertext + tag` | Variable | Raw bytes | AEAD-encrypted plaintext with appended authentication tag |
+
+### Nonce Derivation
+
+Per-chunk nonces are derived deterministically using HKDF-SHA256:
+
+```python
+info = b"oesc-chunk-nonce:" + struct.pack(">I", chunk_index)
+ikm  = nonce_prefix + struct.pack(">I", chunk_index)
+
+nonce = HKDF(
+    algorithm=SHA256(),
+    length=nonce_size,    # 12 bytes for AES-GCM/ChaCha20
+    salt=nonce_prefix,    # 8 random bytes from metadata
+    info=info
+).derive(ikm)
+```
+
+**Security properties:**
+- Unique nonce per chunk (different `chunk_index`)
+- Unique nonces across files (different random `nonce_prefix`)
+- Deterministic (enables decryption without storing nonces)
+
+### AAD Construction
+
+Each chunk's Additional Authenticated Data binds it to its position and the file metadata:
+
+```
+AAD = metadata_b64 + b":" + pack(">I", chunk_index) + b":" + pack(">I", chunk_count)
+```
+
+This prevents:
+- **Metadata tampering**: Full metadata is authenticated per-chunk
+- **Chunk reordering**: `chunk_index` is bound in AAD
+- **Chunk truncation**: `chunk_count` is bound in AAD
+
+### Trailer HMAC
+
+A global HMAC-SHA256 commitment is computed over all chunk authentication tags:
+
+```python
+hmac_key = SHA256(encryption_key + b"oesc-trailer-hmac")
+tag_material = concatenation of last 16 bytes of each chunk's ciphertext
+trailer_hmac = HMAC-SHA256(hmac_key, tag_material)
+```
+
+The trailer HMAC provides a second layer of integrity beyond per-chunk AEAD, ensuring that no chunks have been modified, reordered, or removed.
+
+### Supported Algorithms
+
+Streaming chunked encryption requires AEAD algorithms. Supported ciphers:
+
+| Algorithm | Nonce Size | Notes |
+|-----------|-----------|-------|
+| `aes-gcm` | 12 bytes | Industry standard, hardware-accelerated |
+| `chacha20-poly1305` | 12 bytes | Software-optimized |
+| `xchacha20-poly1305` | 12 bytes | Extended nonce variant |
+| `aes-gcm-siv` | 12 bytes | Nonce-misuse resistant |
+| `aes-siv` | 16 bytes | Deterministic AEAD |
+| `threefish-512` | 32 bytes | Wide-block cipher |
+| `threefish-1024` | 64 bytes | Wide-block cipher |
+| `cascade` | Varies | Multi-algorithm cascade |
+
+**Not supported**: `fernet` (no AEAD), PQC hybrid algorithms (use one-shot encryption).
+
+### Constants
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `STREAMING_MAGIC` | `b"OESC"` | 4-byte magic identifier |
+| `PAYLOAD_VERSION` | `1` | Payload format version (u32le) |
+| `DEFAULT_CHUNK_SIZE` | 1,048,576 (1 MB) | Default plaintext chunk size |
+| `DEFAULT_STREAMING_THRESHOLD` | 10,485,760 (10 MB) | File size threshold for auto-activation |
+| Trailer size | 36 bytes | 4 bytes (chunk count) + 32 bytes (HMAC) |
+
+### Backward Compatibility
+
+- **v12 files without streaming**: When the file is below the streaming threshold or uses a non-AEAD algorithm, v12 uses one-shot encryption identical to v9 (no `streaming` section in metadata)
+- **Older versions**: Cannot decrypt v12 streaming files; must upgrade to v1.4.0+ or v1.5.0+
+- **Non-streaming v12**: Older versions that support the algorithm set can decrypt non-streaming v12 files if format version checking allows it
+
 ## Migration Guide
 
 ### Automatic Migration
@@ -590,7 +785,9 @@ done
 | **v6** | ✅ Yes | ✅ Yes | Full support |
 | **v7** | ✅ Yes | ✅ Yes | **Secure chained salt** - v1.3.4 branch (cryptographically identical to v9) |
 | **v8** | ✅ Yes | ❌ No | **Deprecated - Security vulnerability** |
-| **v9** | ✅ Yes | ✅ Yes | **Current default** - Secure chained salt derivation (v1.4.0+) |
+| **v9** | ✅ Yes | ✅ Yes | **v1.4.0 default** - Secure chained salt derivation |
+| **v10-11** | ✅ Yes | ✅ Yes | Independent XOR key composition mode |
+| **v12** | ✅ Yes | ✅ Yes | **Current default (v1.5.0+)** - Streaming chunked encryption, reduced algorithm set |
 
 ### Compatibility Guarantees
 
@@ -750,4 +947,4 @@ def generate_metadata_v5(encryption_params):
 
 This metadata formats documentation provides comprehensive information about the file format evolution and implementation details. For algorithm-specific information, see the [Algorithm Reference](algorithm-reference.md).
 
-**Last updated**: January 8, 2026 (v1.4.0 - Format Version 7 and 9 Unification)
+**Last updated**: March 5, 2026 (v1.5.0 - Format Version 12 Streaming Chunked Encryption)

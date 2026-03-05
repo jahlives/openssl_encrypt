@@ -45,6 +45,31 @@ For broad compatibility and legacy support, the tool includes the **Fernet** pro
 
 
 
+### 3.3 Streaming Chunked Encryption (Format v12)
+
+For files exceeding a configurable threshold (default: 10 MB), `openssl_encrypt` uses **streaming chunked encryption** to maintain constant memory usage regardless of file size.
+
+#### Why Streaming?
+One-shot encryption loads the entire file into memory, which is impractical for multi-gigabyte files. Streaming mode processes the file in fixed-size chunks (default: 1 MB), keeping memory usage at ~2-3 MB.
+
+#### Two-Pass Design
+1. **Hash pass**: Stream-read the entire file to compute a SHA-256 hash of the plaintext (stored in metadata for verification during decryption).
+2. **Encrypt pass**: Stream-read the file again, encrypting each chunk independently with AEAD.
+
+#### Per-Chunk AEAD with Derived Nonces
+Each chunk receives a unique nonce derived via **HKDF-SHA256** from a random 8-byte prefix (stored in metadata) and the chunk index. This prevents nonce reuse across both chunks and files. The metadata and chunk position are bound as **AAD** (Additional Authenticated Data), ensuring that chunks cannot be reordered, truncated, or separated from their metadata.
+
+#### Trailer HMAC for Global Integrity
+After all chunks are written, a **HMAC-SHA256** commitment is computed over the concatenated AEAD authentication tags from every chunk. This provides a second integrity layer: even if an attacker could forge a single chunk's AEAD tag, the trailer HMAC would detect the modification.
+
+#### Auto-Detection
+Streaming mode activates automatically when:
+- The input file size exceeds the threshold (default: 10 MB, configurable via `--streaming-threshold`)
+- The selected algorithm supports AEAD (e.g., AES-GCM, ChaCha20-Poly1305)
+- The input is a file (not in-memory bytes)
+
+It can be disabled with `--no-streaming` to force one-shot encryption.
+
 ---
 
 ## 4. Security Comparison Matrix
