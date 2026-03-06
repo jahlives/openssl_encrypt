@@ -2361,3 +2361,56 @@ class TestPQCSignatureHKDFSalt(unittest.TestCase):
         key2 = _derive_pqc_sig_key(private_key, "cross-128-hybrid", salt=salt)
 
         self.assertNotEqual(key1, key2)
+
+
+class TestPepperKeyDerivation(unittest.TestCase):
+    """Test HKDF-based pepper key derivation (M18).
+
+    For format_version >= 12, the pepper encryption key should be derived
+    via HKDF instead of bare SHA-256(password).
+    """
+
+    def test_v12_differs_from_legacy(self):
+        """Test that v12+ HKDF pepper key differs from legacy SHA-256."""
+        import hashlib
+
+        from openssl_encrypt.modules.crypt_core import _derive_pepper_key
+
+        password = b"test-password"
+        legacy_key = _derive_pepper_key(password)
+        v12_key = _derive_pepper_key(password, format_version=12)
+
+        self.assertNotEqual(legacy_key, v12_key)
+        self.assertEqual(len(v12_key), 32)
+
+    def test_legacy_matches_sha256(self):
+        """Test that legacy pepper key matches raw SHA-256."""
+        import hashlib
+
+        from openssl_encrypt.modules.crypt_core import _derive_pepper_key
+
+        password = b"test-password"
+        expected = hashlib.sha256(password).digest()
+
+        self.assertEqual(_derive_pepper_key(password), expected)
+        self.assertEqual(_derive_pepper_key(password, format_version=None), expected)
+        self.assertEqual(_derive_pepper_key(password, format_version=11), expected)
+
+    def test_v12_deterministic(self):
+        """Test that v12+ pepper key is deterministic."""
+        from openssl_encrypt.modules.crypt_core import _derive_pepper_key
+
+        password = b"test-password"
+        key1 = _derive_pepper_key(password, format_version=12)
+        key2 = _derive_pepper_key(password, format_version=12)
+
+        self.assertEqual(key1, key2)
+
+    def test_different_passwords_different_keys(self):
+        """Test that different passwords produce different pepper keys."""
+        from openssl_encrypt.modules.crypt_core import _derive_pepper_key
+
+        key1 = _derive_pepper_key(b"password1", format_version=12)
+        key2 = _derive_pepper_key(b"password2", format_version=12)
+
+        self.assertNotEqual(key1, key2)

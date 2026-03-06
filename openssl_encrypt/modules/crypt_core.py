@@ -4982,6 +4982,33 @@ def encrypt_file_asymmetric(
         secure_memzero(random_password)
 
 
+def _derive_pepper_key(password: bytes, format_version: int = None) -> bytes:
+    """Derive the AES-GCM key for encrypting/decrypting the remote pepper.
+
+    For format_version >= 12, uses HKDF with domain separation.
+    For legacy formats, uses bare SHA-256(password).
+
+    Args:
+        password: Raw password bytes
+        format_version: File format version. None or < 12 uses legacy SHA-256.
+
+    Returns:
+        32-byte derived key for AES-GCM
+    """
+    if format_version is not None and format_version >= 12:
+        from cryptography.hazmat.primitives import hashes as _hashes
+        from cryptography.hazmat.primitives.kdf.hkdf import HKDF as _HKDF
+
+        return _HKDF(
+            algorithm=_hashes.SHA256(),
+            length=32,
+            salt=None,
+            info=b"openssl_encrypt-pepper-key",
+        ).derive(password)
+    else:
+        return hashlib.sha256(password).digest()
+
+
 def _derive_pqc_sig_key(
     private_key: bytes,
     algorithm: str,
@@ -5425,8 +5452,8 @@ def encrypt_file(
                 nonce = encrypted_pepper_data[:12]
                 ciphertext_with_tag = encrypted_pepper_data[12:]
 
-                # Derive decryption key from password using SHA-256
-                pepper_key = hashlib.sha256(password).digest()
+                # Derive decryption key from password
+                pepper_key = _derive_pepper_key(password, format_version=format_version)
 
                 try:
                     aesgcm = AESGCM(pepper_key)
@@ -5452,8 +5479,8 @@ def encrypt_file(
                 # Generate 32-byte random pepper
                 remote_pepper = secrets.token_bytes(32)
 
-                # Derive encryption key from password using SHA-256
-                pepper_key = hashlib.sha256(password).digest()
+                # Derive encryption key from password
+                pepper_key = _derive_pepper_key(password, format_version=format_version)
 
                 # Encrypt pepper with AES-GCM
                 nonce = secrets.token_bytes(12)
@@ -8066,7 +8093,7 @@ def decrypt_file(
             ciphertext_with_tag = encrypted_pepper_data[12:]
 
             # Derive decryption key from password
-            pepper_key = hashlib.sha256(password).digest()
+            pepper_key = _derive_pepper_key(password, format_version=format_version)
 
             try:
                 aesgcm = AESGCM(pepper_key)
