@@ -393,6 +393,7 @@ class StreamingEncryptor:
         chunk_size: int = DEFAULT_CHUNK_SIZE,
         cascade_encryptor=None,
         cascade_salt: Optional[bytes] = None,
+        format_version: Optional[int] = None,
     ):
         """Initialize the streaming encryptor.
 
@@ -402,14 +403,35 @@ class StreamingEncryptor:
             chunk_size: Size of each plaintext chunk in bytes.
             cascade_encryptor: CascadeEncryption instance for cascade mode.
             cascade_salt: Salt for cascade key derivation.
+            format_version: File format version. For v12+, HMAC key uses HKDF.
         """
         self.key = key
         self.algorithm = algorithm
         self.chunk_size = chunk_size
         self.cascade_encryptor = cascade_encryptor
         self.cascade_salt = cascade_salt
+        self.format_version = format_version
         self.nonce_prefix = secrets.token_bytes(8)
         self.nonce_size = _get_nonce_size(algorithm)
+
+    def _derive_hmac_key(self) -> bytes:
+        """Derive the HMAC key for trailer authentication.
+
+        For format_version >= 12, uses HKDF with domain separation.
+        For legacy formats, uses SHA-256(key || constant).
+
+        Returns:
+            32-byte HMAC key
+        """
+        if self.format_version is not None and self.format_version >= 12:
+            return HKDF(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=None,
+                info=b"openssl_encrypt-streaming-hmac-key",
+            ).derive(self.key)
+        else:
+            return hashlib.sha256(self.key + b"oesc-trailer-hmac").digest()
 
     def hash_file(self, file_path: str) -> str:
         """Pass 1: Compute streaming SHA-256 hash.
@@ -505,7 +527,7 @@ class StreamingEncryptor:
             fout.write(struct.pack("<I", chunk_count))
 
             # HMAC-SHA256 over concatenation of all chunk tags
-            hmac_key = hashlib.sha256(self.key + b"oesc-trailer-hmac").digest()
+            hmac_key = self._derive_hmac_key()
             tag_concatenation = b"".join(chunk_tags)
             trailer_hmac = hmac_module.new(hmac_key, tag_concatenation, hashlib.sha256).digest()
             fout.write(trailer_hmac)
@@ -541,6 +563,7 @@ class StreamingDecryptor:
         chunk_size: int = DEFAULT_CHUNK_SIZE,
         cascade_decryptor=None,
         cascade_salt: Optional[bytes] = None,
+        format_version: Optional[int] = None,
     ):
         """Initialize the streaming decryptor.
 
@@ -551,6 +574,7 @@ class StreamingDecryptor:
             chunk_size: Expected chunk size (from metadata).
             cascade_decryptor: CascadeEncryption instance for cascade mode.
             cascade_salt: Salt for cascade key derivation.
+            format_version: File format version. For v12+, HMAC key uses HKDF.
         """
         self.key = key
         self.algorithm = algorithm
@@ -559,6 +583,26 @@ class StreamingDecryptor:
         self.nonce_size = _get_nonce_size(algorithm)
         self.cascade_decryptor = cascade_decryptor
         self.cascade_salt = cascade_salt
+        self.format_version = format_version
+
+    def _derive_hmac_key(self) -> bytes:
+        """Derive the HMAC key for trailer authentication.
+
+        For format_version >= 12, uses HKDF with domain separation.
+        For legacy formats, uses SHA-256(key || constant).
+
+        Returns:
+            32-byte HMAC key
+        """
+        if self.format_version is not None and self.format_version >= 12:
+            return HKDF(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=None,
+                info=b"openssl_encrypt-streaming-hmac-key",
+            ).derive(self.key)
+        else:
+            return hashlib.sha256(self.key + b"oesc-trailer-hmac").digest()
 
     def decrypt_file(
         self,
@@ -672,7 +716,7 @@ class StreamingDecryptor:
             )
 
         # Verify trailer HMAC
-        hmac_key = hashlib.sha256(self.key + b"oesc-trailer-hmac").digest()
+        hmac_key = self._derive_hmac_key()
         tag_concatenation = b"".join(chunk_tags)
         computed_hmac = hmac_module.new(hmac_key, tag_concatenation, hashlib.sha256).digest()
 
