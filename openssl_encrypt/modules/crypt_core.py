@@ -2090,17 +2090,20 @@ def normalize_to_key_length_secure(data, target_length: int) -> "SecureBytes":
                 backend=default_backend(),
             )
 
-            derived = hkdf.derive(data_bytes)
-            result = SecureBytes(derived)
+            derived = bytearray(hkdf.derive(data_bytes))
+            result = SecureBytes(bytes(derived))
 
-            # Zero the HKDF output if we created it
-            secure_memzero(bytearray(derived))
+            # Zero the HKDF output
+            secure_memzero(derived)
 
         return result
     finally:
         # Zero the temporary bytes copy if we created one
         if isinstance(data, SecureBytes) and data_bytes is not data:
-            secure_memzero(bytearray(data_bytes))
+            if isinstance(data_bytes, bytearray):
+                secure_memzero(data_bytes)
+            else:
+                secure_memzero(bytearray(data_bytes))
 
 
 def compute_hash_independent(
