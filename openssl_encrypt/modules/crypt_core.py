@@ -5798,6 +5798,11 @@ def encrypt_file(
         KeyDerivationError: If key derivation fails
         AuthenticationError: If integrity verification fails
     """
+    # Reset mutable class-level state to prevent leakage between operations
+    KeyStretch.key_stretch = False
+    KeyStretch.hash_stretch = False
+    KeyStretch.kind_action = "encrypt"
+
     # Input validation with standardized errors
     input_is_bytes = isinstance(input_file, (bytes, bytearray))
     if not input_is_bytes:
@@ -8199,7 +8204,11 @@ def decrypt_file(
         except ImportError:
             pass  # Plugin system not available
 
+    # Reset mutable class-level state to prevent leakage between operations
+    KeyStretch.key_stretch = False
+    KeyStretch.hash_stretch = False
     KeyStretch.kind_action = "decrypt"
+
     # Read the encrypted file
     if not quiet:
         print(f"\nReading encrypted file: {input_file}")
