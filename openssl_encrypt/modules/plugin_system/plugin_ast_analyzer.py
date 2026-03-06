@@ -54,6 +54,12 @@ class DangerousPatternVisitor(ast.NodeVisitor):
         "exec",
         "compile",
         "__import__",
+        "globals",
+        "locals",
+        "vars",
+        "dir",
+        "type",
+        "breakpoint",
     }
 
     # Dunder attributes that enable type hierarchy traversal / sandbox escape.
@@ -71,6 +77,10 @@ class DangerousPatternVisitor(ast.NodeVisitor):
         "__code__",
         "__reduce__",
         "__reduce_ex__",
+        "__class__",
+        "__import__",
+        "__loader__",
+        "__spec__",
     }
 
     # Use the shared blocked modules set to keep AST and runtime in sync
@@ -84,7 +94,16 @@ class DangerousPatternVisitor(ast.NodeVisitor):
         "popen",
         "spawn",
         "exec",
+        "execl",
+        "execle",
+        "execlp",
+        "execlpe",
+        "execv",
+        "execve",
+        "execvp",
+        "execvpe",
         "fork",
+        "forkpty",
         "kill",
         "killpg",
         "spawnl",
@@ -95,6 +114,26 @@ class DangerousPatternVisitor(ast.NodeVisitor):
         "spawnve",
         "spawnvp",
         "spawnvpe",
+        "popen2",
+        "popen3",
+        "popen4",
+        "remove",
+        "unlink",
+        "rmdir",
+        "removedirs",
+        "rename",
+        "renames",
+        "symlink",
+        "link",
+        "chmod",
+        "chown",
+        "chroot",
+        "lchmod",
+        "lchown",
+        "setuid",
+        "setgid",
+        "seteuid",
+        "setegid",
     }
 
     def __init__(self, strict_mode: bool = True):
@@ -249,6 +288,16 @@ class DangerousPatternVisitor(ast.NodeVisitor):
                                     f"This is a known sandbox bypass technique.",
                                     "critical",
                                 )
+                else:
+                    # Dynamic getattr with non-constant attribute name — potential bypass
+                    self.add_violation(
+                        node,
+                        "dynamic_getattr",
+                        "getattr() called with a dynamic (non-constant) attribute name. "
+                        "This can be used to bypass sandbox restrictions by computing "
+                        "dangerous attribute names at runtime.",
+                        "high",
+                    )
 
         self.generic_visit(node)
 
@@ -365,10 +414,12 @@ def analyze_plugin_code(
         visitor = DangerousPatternVisitor(strict_mode=strict_mode)
         visitor.visit(tree)
 
-        # In strict mode, any critical violation fails validation
+        # In strict mode, any critical or high severity violation fails validation
         if strict_mode:
-            critical_violations = [v for v in visitor.violations if v.severity == "critical"]
-            is_safe = len(critical_violations) == 0
+            blocking_violations = [
+                v for v in visitor.violations if v.severity in ("critical", "high")
+            ]
+            is_safe = len(blocking_violations) == 0
         else:
             # In permissive mode, we just warn but allow
             is_safe = True
