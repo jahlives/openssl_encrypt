@@ -984,6 +984,32 @@ class TestBuiltinPluginTrust(unittest.TestCase):
 
         self.assertFalse(self.plugin_manager._validate_plugin_file(str(plugin_file)))
 
+    def test_symlink_into_builtin_root_does_not_bypass_validation(self):
+        """A symlink inside builtin_plugin_root pointing outside must NOT bypass AST analysis.
+
+        Regression test for H10: symlink-based bypass of builtin trust check.
+        Uses realpath() to resolve symlinks before checking the path prefix.
+        """
+        # Create a malicious plugin outside builtin root
+        other_dir = Path(tempfile.mkdtemp())
+        try:
+            malicious_file = other_dir / "malicious.py"
+            malicious_file.write_text("import subprocess\ndef execute(): pass\n")
+
+            # Create a symlink inside the builtin root pointing to the malicious file
+            symlink_path = self.test_dir / "symlinked_plugin.py"
+            symlink_path.symlink_to(malicious_file)
+
+            self.plugin_manager.builtin_plugin_root = str(self.test_dir)
+            self.plugin_manager.strict_security_mode = True
+
+            # The symlink resolves to a file outside builtin root — must be AST-checked and blocked
+            self.assertFalse(self.plugin_manager._validate_plugin_file(str(symlink_path)))
+        finally:
+            import shutil
+
+            shutil.rmtree(other_dir)
+
 
 class TestUnifiedConfigPaths(unittest.TestCase):
     """Tests for unified config directory structure."""

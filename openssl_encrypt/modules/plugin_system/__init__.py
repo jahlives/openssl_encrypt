@@ -208,7 +208,7 @@ def create_default_plugin_manager(config_dir: str = None) -> PluginManager:
     # They ship with the package and are code-reviewed as part of the codebase.
     builtin_plugins_dir = os.path.join(base_dir, "plugins")
     if os.path.isdir(builtin_plugins_dir):
-        plugin_manager.builtin_plugin_root = os.path.abspath(builtin_plugins_dir)
+        plugin_manager.builtin_plugin_root = os.path.realpath(builtin_plugins_dir)
 
     for plugin_dir in DEFAULT_PLUGIN_DIRECTORIES:
         full_path = os.path.join(base_dir, plugin_dir)
