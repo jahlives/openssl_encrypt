@@ -647,29 +647,70 @@ class SimpleTestPlugin(PreProcessorPlugin):
                 PluginSecurityContext,
             )
 
-            # Use the module-level SlowPluginForTimeout class (defined outside for picklability)
-            if SlowPluginForTimeout is None:
-                self.skipTest("Plugin system not available")
+            import importlib.util
+            import tempfile
+            import textwrap
 
-            plugin = SlowPluginForTimeout()
-            context = PluginSecurityContext("slow_test", {PluginCapability.READ_FILES})
-            # No need to add file paths since we're overriding execute()
-            sandbox = PluginSandbox()
+            # Create a standalone slow plugin module in a temp file so the AST
+            # analyzer only sees clean code (no blocked imports from test_config.py).
+            slow_plugin_source = textwrap.dedent("""\
+                import time
+                from openssl_encrypt.modules.plugin_system.plugin_base import (
+                    PreProcessorPlugin,
+                    PluginCapability,
+                    PluginResult,
+                )
 
-            # Execute with short timeout and process isolation
-            result = sandbox.execute_plugin(
-                plugin, context, max_execution_time=0.5, use_process_isolation=True
-            )
+                class SlowPluginForTimeout(PreProcessorPlugin):
+                    def __init__(self):
+                        super().__init__("slow_test", "Slow Test Plugin", "1.0.0")
 
-            # Should fail due to timeout or process crash (both indicate plugin didn't complete)
-            # After many tests, the subprocess may crash (exit -11) due to resource exhaustion
-            # instead of timing out gracefully, but both outcomes are acceptable
-            self.assertFalse(result.success)
-            # Accept either timeout message or process failure message
-            self.assertTrue(
-                "timed out" in result.message.lower() or "process" in result.message.lower(),
-                f"Expected timeout or process failure, got: {result.message}",
-            )
+                    def get_required_capabilities(self):
+                        return {PluginCapability.READ_FILES}
+
+                    def get_description(self):
+                        return "A slow plugin for timeout testing"
+
+                    def process_file(self, file_path, context):
+                        time.sleep(2)
+                        return PluginResult.success_result("Should not reach here")
+
+                    def execute(self, context):
+                        time.sleep(2)
+                        return PluginResult.success_result("Should not reach here")
+            """)
+
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".py", prefix="slow_plugin_", delete=False
+            ) as f:
+                f.write(slow_plugin_source)
+                slow_module_path = f.name
+
+            try:
+                spec = importlib.util.spec_from_file_location("_slow_plugin_mod", slow_module_path)
+                slow_mod = importlib.util.module_from_spec(spec)
+                sys.modules["_slow_plugin_mod"] = slow_mod
+                spec.loader.exec_module(slow_mod)
+
+                plugin = slow_mod.SlowPluginForTimeout()
+                context = PluginSecurityContext("slow_test", {PluginCapability.READ_FILES})
+                sandbox = PluginSandbox()
+
+                # Execute with short timeout and process isolation
+                result = sandbox.execute_plugin(
+                    plugin, context, max_execution_time=0.5, use_process_isolation=True
+                )
+
+                # Should fail due to timeout or process crash
+                self.assertFalse(result.success)
+                self.assertTrue(
+                    "timed out" in result.message.lower()
+                    or "process" in result.message.lower(),
+                    f"Expected timeout or process failure, got: {result.message}",
+                )
+            finally:
+                sys.modules.pop("_slow_plugin_mod", None)
+                os.unlink(slow_module_path)
 
         except ImportError:
             self.skipTest("Plugin system not available")
