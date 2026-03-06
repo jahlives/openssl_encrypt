@@ -218,13 +218,14 @@ class Share:
         return cls(metadata, data)
 
     def to_file(self, filepath: str) -> None:
-        """Write share to a file.
+        """Write share to a file with restrictive permissions (0o600).
 
         Args:
             filepath: Path to write the share file.
         """
         with open(filepath, "w") as f:
             f.write(self.to_json())
+        os.chmod(filepath, 0o600)
 
     @classmethod
     def from_file(cls, filepath: str) -> "Share":

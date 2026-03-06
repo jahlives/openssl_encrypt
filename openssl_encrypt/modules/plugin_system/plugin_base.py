@@ -118,7 +118,8 @@ class PluginSecurityContext:
         self.metadata[key] = value
 
     def get_safe_temp_path(self, suffix: str = "") -> str:
-        """Generate safe temporary file path for plugin use."""
+        """Generate safe temporary file path for plugin use (0o600 permissions)."""
+        import os
         import tempfile
 
         temp_file = tempfile.NamedTemporaryFile(
@@ -126,6 +127,7 @@ class PluginSecurityContext:
         )
         temp_path = temp_file.name
         temp_file.close()
+        os.chmod(temp_path, 0o600)
         return temp_path
 
     @staticmethod

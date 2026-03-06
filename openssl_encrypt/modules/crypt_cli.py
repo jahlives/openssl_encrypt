@@ -7034,6 +7034,7 @@ def main_with_args(args=None):
                     mode="w+b", delete=False, suffix=".encrypted"
                 ) as temp_file:
                     temp_output_file = temp_file.name
+                os.chmod(temp_output_file, 0o600)
 
                 # Handle cascade encryption parameters for stdout path
                 cascade_mode = False
@@ -8580,6 +8581,7 @@ def main_with_args(args=None):
                                     ) as temp_file:
                                         temp_extracted_file = temp_file.name
                                         temp_file.write(encrypted_data)
+                                    os.chmod(temp_extracted_file, 0o600)
 
                                     # Use extracted file as input for decryption
                                     actual_input_file = temp_extracted_file
