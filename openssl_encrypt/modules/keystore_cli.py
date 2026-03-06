@@ -1185,9 +1185,13 @@ class PQCKeystore:
             )
             return key
         except ImportError:
-            # Fall back to PBKDF2
+            # Fall back to PBKDF2 with warning
             import hashlib
 
+            logger.warning(
+                "argon2-cffi not available — falling back to PBKDF2-HMAC-SHA256 "
+                "for keystore key derivation. Install argon2-cffi for stronger protection."
+            )
             key = hashlib.pbkdf2_hmac(
                 "sha256", password.encode("utf-8"), salt, params["pbkdf2_iterations"], dklen=32
             )
