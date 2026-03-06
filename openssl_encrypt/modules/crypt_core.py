@@ -8255,8 +8255,10 @@ def decrypt_file(
             # In production, use our standard error handling
             raise ValueError(f"Invalid file format: {str(e)}")
 
-    # Extract necessary information from metadata
+    # Extract and validate format_version
     format_version = metadata.get("format_version", 1)
+    if not isinstance(format_version, int):
+        raise ValueError(f"Invalid format_version type: expected int, got {type(format_version).__name__}")
 
     # Verify metadata integrity with remote server if enabled (BEFORE key derivation)
     if verify_integrity and _INTEGRITY_PLUGIN_AVAILABLE:
