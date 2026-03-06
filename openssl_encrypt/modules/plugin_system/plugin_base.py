@@ -199,8 +199,19 @@ class PluginResult:
     ):
         self.success = success
         self.message = message
-        self.data = data or {}
+        self.data = self._filter_sensitive_keys(data or {})
         self.timestamp = time.time()
+
+    @staticmethod
+    def _filter_sensitive_keys(data: Dict[str, Any]) -> Dict[str, Any]:
+        """Filter out sensitive keys from data dict."""
+        filtered = {}
+        for key, value in data.items():
+            if PluginSecurityContext._is_sensitive_key(key):
+                logger.warning(f"Plugin result: Filtered sensitive data key: {key}")
+            else:
+                filtered[key] = value
+        return filtered
 
     def add_data(self, key: str, value: Any) -> None:
         """Add data to result, with security validation."""
