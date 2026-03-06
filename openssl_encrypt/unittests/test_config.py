@@ -661,14 +661,16 @@ class SimpleTestPlugin(PreProcessorPlugin):
                 plugin, context, max_execution_time=0.5, use_process_isolation=True
             )
 
-            # Should fail due to timeout or process crash (both indicate plugin didn't complete)
-            # After many tests, the subprocess may crash (exit -11) due to resource exhaustion
-            # instead of timing out gracefully, but both outcomes are acceptable
+            # Should fail due to timeout, process crash, or security analysis rejection
+            # After AST hardening (H8/H9), plugins importing blocked modules are
+            # rejected before execution, which is a valid (and better) outcome
             self.assertFalse(result.success)
-            # Accept either timeout message or process failure message
+            # Accept timeout, process failure, or security analysis failure
             self.assertTrue(
-                "timed out" in result.message.lower() or "process" in result.message.lower(),
-                f"Expected timeout or process failure, got: {result.message}",
+                "timed out" in result.message.lower()
+                or "process" in result.message.lower()
+                or "security analysis" in result.message.lower(),
+                f"Expected timeout, process failure, or security rejection, got: {result.message}",
             )
 
         except ImportError:
