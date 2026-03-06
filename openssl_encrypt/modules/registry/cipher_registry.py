@@ -1093,6 +1093,7 @@ class CipherRegistry(RegistryBase[CipherBase]):
         self.register(XChaCha20Poly1305)
         self.register(Threefish512)
         self.register(Threefish1024)
+        self.freeze()
 
     @classmethod
     def default(cls) -> "CipherRegistry":

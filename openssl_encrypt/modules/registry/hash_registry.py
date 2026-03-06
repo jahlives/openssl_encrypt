@@ -527,6 +527,7 @@ class HashRegistry(RegistryBase[HashBase]):
         # SHAKE (XOF)
         self.register(SHAKE128)
         self.register(SHAKE256)
+        self.freeze()
 
     @classmethod
     def default(cls) -> "HashRegistry":

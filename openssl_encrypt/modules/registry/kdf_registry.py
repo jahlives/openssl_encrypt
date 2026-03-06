@@ -807,6 +807,7 @@ class KDFRegistry(RegistryBase[KDFBase]):
 
         # Extreme security
         self.register(RandomX)
+        self.freeze()
 
     @classmethod
     def default(cls) -> "KDFRegistry":

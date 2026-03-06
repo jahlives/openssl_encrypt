@@ -1013,6 +1013,7 @@ class SignatureRegistry(RegistryBase[SignatureBase]):
         self.register(CROSS128)
         self.register(CROSS192)
         self.register(CROSS256)
+        self.freeze()
 
     @classmethod
     def default(cls) -> "SignatureRegistry":
