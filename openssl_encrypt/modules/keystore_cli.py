@@ -254,14 +254,17 @@ class PQCKeystore:
             encrypted = self._encrypt_data(test_data)
             self.keystore_data["test_key"] = base64.b64encode(encrypted).decode("utf-8")
 
-        # Create a temporary file first
+        # Create a temporary file with restrictive permissions
         temp_path = self.keystore_path + ".tmp"
-        with open(temp_path, "w") as f:
-            json.dump(self.keystore_data, f, indent=2)
+        fd = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(self.keystore_data, f, indent=2)
+        except Exception:
+            os.close(fd)
+            raise
 
-        # Replace the original file
-        if os.path.exists(self.keystore_path):
-            os.remove(self.keystore_path)
+        # Atomically replace the original file (POSIX rename is atomic)
         os.rename(temp_path, self.keystore_path)
 
     def list_keys(self) -> List[Dict[str, Any]]:
@@ -371,8 +374,9 @@ class PQCKeystore:
                 # Create the cipher with the file key
                 cipher = AESGCM(file_encryption_key)
 
-                # Encrypt the private key
-                ciphertext = cipher.encrypt(nonce, private_key, None)
+                # Encrypt the private key with AAD binding to key ID
+                aad = f"keystore:{key_id}:dual".encode("utf-8")
+                ciphertext = cipher.encrypt(nonce, private_key, aad)
 
                 # Combine the nonce and ciphertext
                 private_key_to_encrypt = nonce + ciphertext
@@ -557,8 +561,13 @@ class PQCKeystore:
                 cipher = AESGCM(file_encryption_key)
 
                 try:
-                    # Decrypt the private key
-                    private_key = cipher.decrypt(nonce, ciphertext, None)
+                    # Decrypt with AAD binding to key ID, fall back to no-AAD for legacy
+                    aad = f"keystore:{key_id}:dual".encode("utf-8")
+                    try:
+                        private_key = cipher.decrypt(nonce, ciphertext, aad)
+                    except Exception:
+                        # Legacy key encrypted without AAD
+                        private_key = cipher.decrypt(nonce, ciphertext, None)
                 except Exception:
                     # Clean up and raise error - this is a file password error
                     secure_memzero(file_encryption_key)
@@ -871,8 +880,9 @@ class PQCKeystore:
                     # Create the cipher with the file key
                     cipher = AESGCM(file_encryption_key)
 
-                    # Encrypt the private key
-                    ciphertext = cipher.encrypt(nonce, private_key, None)
+                    # Encrypt the private key with AAD binding to key ID
+                    aad = f"keystore:{key_id}:dual".encode("utf-8")
+                    ciphertext = cipher.encrypt(nonce, private_key, aad)
 
                     # Combine the nonce and ciphertext
                     private_key_to_encrypt = nonce + ciphertext
