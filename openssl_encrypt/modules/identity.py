@@ -77,6 +77,39 @@ class IdentityExistsError(IdentityError):
     pass
 
 
+import re
+
+# Strict pattern for identity names: alphanumeric, hyphens, underscores, dots.
+# No path separators, no ".." sequences, no leading dots.
+_IDENTITY_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+
+
+def validate_identity_name(name: str) -> None:
+    """Validate that an identity name is safe for use as a directory name.
+
+    Rejects path traversal attempts (e.g., "../../etc"), absolute paths,
+    names with path separators, and names starting with dots.
+
+    Args:
+        name: Identity name to validate.
+
+    Raises:
+        IdentityError: If the name is invalid or potentially malicious.
+    """
+    if not name:
+        raise IdentityError("Identity name cannot be empty")
+    if len(name) > 255:
+        raise IdentityError("Identity name too long (max 255 characters)")
+    if not _IDENTITY_NAME_RE.match(name):
+        raise IdentityError(
+            f"Invalid identity name '{name}': must contain only "
+            f"alphanumeric characters, hyphens, underscores, and dots, "
+            f"and must not start with a dot"
+        )
+    if ".." in name:
+        raise IdentityError(f"Invalid identity name '{name}': must not contain '..'")
+
+
 @dataclass
 class Identity:
     """
@@ -156,6 +189,7 @@ class Identity:
             RuntimeError: If key generation fails
             HSMNotAvailableError: If HSM required but not available
         """
+        validate_identity_name(name)
         logger.info(f"Generating identity '{name}' with {kem_algorithm} + {sig_algorithm}")
 
         try:
@@ -431,7 +465,11 @@ class Identity:
 
         Returns:
             Identity instance (without private keys)
+
+        Raises:
+            IdentityError: If the imported name fails validation.
         """
+        validate_identity_name(data["name"])
         return cls(
             name=data["name"],
             email=data.get("email"),
@@ -574,6 +612,8 @@ class IdentityStore:
         Returns:
             Identity or None if not found
         """
+        validate_identity_name(name)
+
         # Check own identities first
         path = self.base_path / name
         if path.exists():
@@ -632,6 +672,8 @@ class IdentityStore:
         Raises:
             IdentityExistsError: If identity exists and overwrite=False
         """
+        validate_identity_name(identity.name)
+
         if identity.is_own_identity:
             path = self.base_path / identity.name
         else:
@@ -650,6 +692,8 @@ class IdentityStore:
             True if deleted, False if not found
         """
         import shutil
+
+        validate_identity_name(name)
 
         # Check own identities
         path = self.base_path / name
@@ -677,6 +721,7 @@ class IdentityStore:
         Returns:
             True if identity exists
         """
+        validate_identity_name(name)
         path = self.base_path / name
         contact_path = self.contacts_path / name
         return path.exists() or contact_path.exists()
