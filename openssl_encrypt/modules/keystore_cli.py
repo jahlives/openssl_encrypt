@@ -115,6 +115,31 @@ class PQCKeystore:
         self.master_key = None
         self._key_cache = {}
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
+    def close(self):
+        """Securely clear master key and cached private keys from memory."""
+        if self.master_key is not None:
+            if isinstance(self.master_key, bytearray):
+                secure_memzero(self.master_key)
+            else:
+                secure_memzero(bytearray(self.master_key))
+            self.master_key = None
+        for key_id, (pub, priv) in self._key_cache.items():
+            if isinstance(priv, bytearray):
+                secure_memzero(priv)
+            elif isinstance(priv, bytes):
+                secure_memzero(bytearray(priv))
+        self._key_cache.clear()
+
+    def __del__(self):
+        self.close()
+
     def create_keystore(
         self, password: str, security_level: KeystoreSecurityLevel = KeystoreSecurityLevel.STANDARD
     ) -> None:
