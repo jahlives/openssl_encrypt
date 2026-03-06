@@ -405,6 +405,7 @@ class IdentityKeyProtectionService:
         password: Optional[str],
         protection: IdentityProtection,
         identity_name: str,
+        key_purpose: str = "",
     ) -> bytes:
         """
         Encrypt a private key with password and/or HSM.
@@ -444,10 +445,13 @@ class IdentityKeyProtectionService:
         )
 
         try:
+            # Build AAD to bind ciphertext to identity and key purpose
+            aad = f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8") if identity_name and key_purpose else None
+
             # Encrypt with AES-256-GCM
             nonce = secrets.token_bytes(self.NONCE_SIZE)
             aesgcm = AESGCM(encryption_key)
-            ciphertext = aesgcm.encrypt(nonce, private_key_data, None)
+            ciphertext = aesgcm.encrypt(nonce, private_key_data, aad)
 
             return nonce + ciphertext
 
@@ -463,6 +467,7 @@ class IdentityKeyProtectionService:
         password: Optional[str],
         protection: IdentityProtection,
         identity_name: str,
+        key_purpose: str = "",
     ) -> bytes:
         """
         Decrypt a private key with password and/or HSM.
@@ -510,10 +515,20 @@ class IdentityKeyProtectionService:
             nonce = encrypted_data[: self.NONCE_SIZE]
             ciphertext = encrypted_data[self.NONCE_SIZE :]
 
+            # Build AAD to bind ciphertext to identity and key purpose
+            aad = f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8") if identity_name and key_purpose else None
+
             # Decrypt with AES-256-GCM
             aesgcm = AESGCM(encryption_key)
             try:
-                plaintext = aesgcm.decrypt(nonce, ciphertext, None)
+                if aad:
+                    try:
+                        plaintext = aesgcm.decrypt(nonce, ciphertext, aad)
+                    except Exception:
+                        # Legacy key encrypted without AAD — fall back
+                        plaintext = aesgcm.decrypt(nonce, ciphertext, None)
+                else:
+                    plaintext = aesgcm.decrypt(nonce, ciphertext, None)
                 return plaintext
             except Exception:
                 raise InvalidCredentialsError(

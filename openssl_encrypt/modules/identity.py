@@ -321,8 +321,12 @@ class Identity:
                 sig_priv_encrypted = f.read()
 
             # Decrypt private keys (pass protection and identity name)
-            enc_private_key = _decrypt_private_key(enc_priv_encrypted, passphrase, protection, name)
-            sig_private_key = _decrypt_private_key(sig_priv_encrypted, passphrase, protection, name)
+            enc_private_key = _decrypt_private_key(
+                enc_priv_encrypted, passphrase, protection, name, key_purpose="encryption",
+            )
+            sig_private_key = _decrypt_private_key(
+                sig_priv_encrypted, passphrase, protection, name, key_purpose="signing",
+            )
 
         identity = cls(
             name=name,
@@ -415,7 +419,8 @@ class Identity:
 
             if self.encryption_private_key:
                 enc_priv_encrypted = _encrypt_private_key(
-                    self.encryption_private_key.get_bytes(), passphrase, self.protection, self.name
+                    self.encryption_private_key.get_bytes(), passphrase, self.protection, self.name,
+                    key_purpose="encryption",
                 )
                 enc_priv_path = path / "encryption_private.pem"
                 with open(enc_priv_path, "wb") as f:
@@ -424,7 +429,8 @@ class Identity:
 
             if self.signing_private_key:
                 sig_priv_encrypted = _encrypt_private_key(
-                    self.signing_private_key.get_bytes(), passphrase, self.protection, self.name
+                    self.signing_private_key.get_bytes(), passphrase, self.protection, self.name,
+                    key_purpose="signing",
                 )
                 sig_priv_path = path / "signing_private.pem"
                 with open(sig_priv_path, "wb") as f:
@@ -756,6 +762,7 @@ def _encrypt_private_key(
     passphrase: Optional[str],
     protection: Optional[IdentityProtection] = None,
     identity_name: str = "",
+    key_purpose: str = "",
 ) -> bytes:
     """
     Encrypt private key for at-rest storage.
@@ -785,6 +792,7 @@ def _encrypt_private_key(
             password=passphrase,
             protection=protection,
             identity_name=identity_name,
+            key_purpose=key_purpose,
         )
 
     # Legacy password-only encryption (backward compatible)
@@ -805,10 +813,13 @@ def _encrypt_private_key(
         type=argon2.low_level.Type.ID,
     )
 
+    # Build AAD to bind ciphertext to identity and key purpose
+    aad = f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8") if identity_name and key_purpose else None
+
     # Encrypt with AES-256-GCM
     nonce = secrets.token_bytes(12)
     cipher = AESGCM(key)
-    ciphertext = cipher.encrypt(nonce, private_key, None)
+    ciphertext = cipher.encrypt(nonce, private_key, aad)
 
     # Clean sensitive data
     secure_memzero(key)
@@ -822,6 +833,7 @@ def _decrypt_private_key(
     passphrase: Optional[str],
     protection: Optional[IdentityProtection] = None,
     identity_name: str = "",
+    key_purpose: str = "",
 ) -> CryptoKey:
     """
     Decrypt private key from at-rest storage.
@@ -853,6 +865,7 @@ def _decrypt_private_key(
                 password=passphrase,
                 protection=protection,
                 identity_name=identity_name,
+                key_purpose=key_purpose,
             )
             # Wrap in CryptoKey for secure memory
             crypto_key = CryptoKey(key_data=private_key_bytes)
@@ -888,7 +901,22 @@ def _decrypt_private_key(
     try:
         # Decrypt with AES-256-GCM
         cipher = AESGCM(key)
-        private_key_bytes = cipher.decrypt(nonce, ciphertext, None)
+
+        # Build AAD to bind ciphertext to identity and key purpose
+        aad = f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8") if identity_name and key_purpose else None
+
+        # Try with AAD first (new format), fall back to no-AAD (legacy)
+        try:
+            if aad:
+                private_key_bytes = cipher.decrypt(nonce, ciphertext, aad)
+            else:
+                private_key_bytes = cipher.decrypt(nonce, ciphertext, None)
+        except Exception:
+            if aad:
+                # Legacy key encrypted without AAD — fall back
+                private_key_bytes = cipher.decrypt(nonce, ciphertext, None)
+            else:
+                raise
 
         # Wrap in CryptoKey for secure memory
         crypto_key = CryptoKey(key_data=private_key_bytes)
