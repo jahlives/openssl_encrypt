@@ -38,21 +38,41 @@ from .plugin_security_constants import BLOCKED_MODULES
 def _validate_plugin_source(plugin: BasePlugin) -> None:
     """Run AST security analysis on a plugin's source code before execution.
 
+    Validates the FULL module source (not just the class), so module-level
+    malicious code is also caught.  Fails closed: if the source cannot be
+    retrieved the plugin is rejected.
+
     Args:
         plugin: Plugin instance to validate
 
     Raises:
-        SandboxViolationError: If plugin code fails security analysis
+        SandboxViolationError: If plugin code fails security analysis or
+            the source cannot be retrieved for validation.
     """
     import inspect
     import textwrap
 
-    try:
-        source = inspect.getsource(type(plugin))
-    except (OSError, TypeError):
-        # Can't get source (e.g., built-in or C extension) - skip validation
-        logger.debug(f"Could not get source for plugin {plugin.plugin_id}, skipping AST validation")
-        return
+    # Try to get the full module source first (catches module-level code).
+    # Fall back to the class source only if the module source is unavailable.
+    source = None
+    plugin_class = type(plugin)
+    module = inspect.getmodule(plugin_class)
+
+    if module is not None:
+        try:
+            source = inspect.getsource(module)
+        except (OSError, TypeError):
+            pass
+
+    if source is None:
+        try:
+            source = inspect.getsource(plugin_class)
+        except (OSError, TypeError):
+            # Fail closed: reject plugins whose source cannot be analyzed
+            raise SandboxViolationError(
+                f"Plugin '{plugin.plugin_id}' rejected: source code unavailable for "
+                f"security analysis (dynamically-created or compiled plugins are not allowed)"
+            )
 
     # Dedent the source code so ast.parse() works even when the class is
     # defined inside an indented block (e.g., inside a try/except).
@@ -1028,10 +1048,42 @@ class IsolatedPluginExecutor:
         def target_function(plugin_code, context_data, result_queue):
             """Target function for isolated execution."""
             try:
-                # This is a simplified example
-                # In production, you'd need proper serialization/deserialization
+                # Validate plugin code via AST analysis before execution
+                is_safe, violations = analyze_plugin_code(
+                    plugin_code, "<isolated-exec>", strict_mode=True
+                )
+                if not is_safe:
+                    critical = [v for v in violations if v.severity == "critical"]
+                    msgs = "; ".join(f"L{v.line}: {v.description}" for v in critical[:5])
+                    result_queue.put(
+                        (
+                            "error",
+                            PluginResult.error_result(f"Code failed security analysis: {msgs}"),
+                        )
+                    )
+                    return
 
-                # Create minimal execution environment
+                # Apply resource limits (Linux only)
+                try:
+                    import resource as _resource
+
+                    if hasattr(_resource, "RLIMIT_CPU"):
+                        _resource.setrlimit(_resource.RLIMIT_CPU, (60, 60))
+                    if hasattr(_resource, "RLIMIT_FSIZE"):
+                        _resource.setrlimit(
+                            _resource.RLIMIT_FSIZE, (50 * 1024 * 1024, 50 * 1024 * 1024)
+                        )
+                    if hasattr(_resource, "RLIMIT_NOFILE"):
+                        _resource.setrlimit(_resource.RLIMIT_NOFILE, (64, 64))
+                except (ImportError, OSError, ValueError):
+                    pass
+
+                # Install import guard to block dangerous modules
+                guard = PluginImportGuard(None)
+                guard.hide_dangerous_modules()
+                sys.meta_path.insert(0, guard)
+
+                # Create minimal execution environment with restricted builtins
                 exec_globals = {
                     "__builtins__": {
                         "print": print,
@@ -1043,6 +1095,26 @@ class IsolatedPluginExecutor:
                         "list": list,
                         "tuple": tuple,
                         "set": set,
+                        "bool": bool,
+                        "bytes": bytes,
+                        "bytearray": bytearray,
+                        "range": range,
+                        "enumerate": enumerate,
+                        "zip": zip,
+                        "map": map,
+                        "filter": filter,
+                        "sorted": sorted,
+                        "reversed": reversed,
+                        "isinstance": isinstance,
+                        "issubclass": issubclass,
+                        "hasattr": hasattr,
+                        "None": None,
+                        "True": True,
+                        "False": False,
+                        "Exception": Exception,
+                        "ValueError": ValueError,
+                        "TypeError": TypeError,
+                        "KeyError": KeyError,
                     }
                 }
 
