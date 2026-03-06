@@ -398,17 +398,10 @@ class PQCipher:
                             break
 
                 if not matched:
-                    # Default to a standard KEM algorithm if available
-                    kyber_algs = [
-                        alg
-                        for alg in supported
-                        if "kyber" in alg.lower() or "ml-kem" in alg.lower()
-                    ]
-                    if kyber_algs:
-                        self.algorithm_name = kyber_algs[0]
-                    else:
-                        # Last resort - use the first KEM algorithm
-                        self.algorithm_name = supported[0]
+                    raise ValueError(
+                        f"Unsupported PQC algorithm: '{algorithm}'. "
+                        f"Available algorithms: {', '.join(sorted(supported))}"
+                    )
 
         elif isinstance(algorithm, PQCAlgorithm):
             # Enum value
@@ -423,8 +416,10 @@ class PQCipher:
                         self.algorithm_name = supported_algo
                         break
                 else:
-                    # Use the enum value and hope for the best
-                    self.algorithm_name = algorithm.value
+                    raise ValueError(
+                        f"Unsupported PQC algorithm: '{algorithm.value}'. "
+                        f"Available algorithms: {', '.join(sorted(supported))}"
+                    )
 
         # Report the actual algorithm being used
         if not self.quiet and verbose:
