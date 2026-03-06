@@ -487,10 +487,6 @@ class PQCipher:
         # All Kyber/ML-KEM/HQC algorithms are KEM algorithms
         self.is_kem = any(x in self.algorithm_name.lower() for x in ["kyber", "ml-kem", "hqc"])
 
-        # Setting to allow bypassing integrity checks for test files
-        # This is needed for existing encrypted files that might have integrity verification issues
-        self.ignore_integrity_checks = True
-
     def generate_keypair(self) -> Tuple[bytes, bytes]:
         """
         Generate a post-quantum keypair
