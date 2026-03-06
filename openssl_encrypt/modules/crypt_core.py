@@ -8843,34 +8843,9 @@ def decrypt_file(
                 if not quiet:
                     print("❌")  # Red X symbol
 
-                # Check if this is a PQC operation (ML-KEM or HQC)
-                # Allow bypass in test mode for PQC dual encryption tests specifically
-                test_name = os.environ.get("PYTEST_CURRENT_TEST", "")
-                is_pqc_dual_test = "pqc_dual_encryption" in test_name.lower()
-                is_pqc_algorithm = "ml-kem" in algorithm.lower()
-
-                if is_pqc_algorithm and (
-                    os.environ.get("PYTEST_CURRENT_TEST") is None or is_pqc_dual_test
-                ):
-                    # For PQC in development, show warning but continue
-                    if not quiet:
-                        print("⚠️ Warning: Bypassing integrity check for PQC development")
-                    # For PQC dual encryption tests, bypass integrity check and proceed with decrypted data
-                    if is_pqc_dual_test:
-                        if not quiet:
-                            print(
-                                "✅ (PQC test mode - integrity check bypassed)"
-                            )  # Show success despite bypass
-                    else:
-                        # Return empty content as fallback for non-test PQC operations
-                        return b""
-                else:
-                    # Regular integrity check behavior - fail for non-PQC or PQC tests that aren't dual encryption
-                    if os.environ.get("PYTEST_CURRENT_TEST") is not None:
-                        raise AuthenticationError("Decrypted data integrity check failed")
-                    else:
-                        # In production mode, use a generic message to avoid leaking specifics
-                        raise AuthenticationError("Content integrity verification failed")
+                # Always fail hard on integrity check failure regardless of algorithm.
+                # Never silently return empty data or bypass the check.
+                raise AuthenticationError("Content integrity verification failed")
             elif not quiet:
                 print("✅")  # Green check symbol
 
