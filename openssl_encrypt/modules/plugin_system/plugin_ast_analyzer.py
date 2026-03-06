@@ -63,11 +63,10 @@ class DangerousPatternVisitor(ast.NodeVisitor):
     }
 
     # Dunder attributes that enable type hierarchy traversal / sandbox escape.
-    # Note: __init__, __new__, __del__, __dict__, __func__, __self__, __class__
-    # are NOT included here because they are standard Python and commonly used
-    # in legitimate plugin code.  Only attributes that enable sandbox escapes
-    # (type hierarchy traversal, scope access, code manipulation, pickle exploits)
-    # are blocked.
+    # Note: __init__, __new__, __del__ are NOT included here because they are
+    # standard Python and commonly used in legitimate plugin code.
+    # __dict__, __func__, __self__ are blocked because they enable chained
+    # sandbox escapes (e.g. method.__func__.__globals__).
     DANGEROUS_DUNDER_ATTRIBUTES = {
         "__mro__",
         "__subclasses__",
@@ -81,6 +80,9 @@ class DangerousPatternVisitor(ast.NodeVisitor):
         "__import__",
         "__loader__",
         "__spec__",
+        "__dict__",
+        "__func__",
+        "__self__",
     }
 
     # Use the shared blocked modules set to keep AST and runtime in sync
