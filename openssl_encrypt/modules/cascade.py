@@ -275,6 +275,7 @@ class CascadeEncryption:
             CascadeConfigError: If any cipher is not available
         """
         self.config = config
+        self.format_version = format_version
         self.key_derivation = CascadeKeyDerivation(config, format_version=format_version)
 
         # Validate all ciphers are available
@@ -311,11 +312,14 @@ class CascadeEncryption:
         layer_keys = self.key_derivation.derive_layer_keys(master_key, salt)
 
         # Encrypt through each layer sequentially
+        use_aad_all_layers = (
+            self.format_version is not None and self.format_version >= 12
+        )
         data = plaintext
         for i, (cipher, (key, nonce)) in enumerate(zip(self.ciphers, layer_keys)):
             try:
-                # Only the first layer uses AAD
-                aad = associated_data if i == 0 else None
+                # v12+: AAD on all layers; legacy: only first layer (M12)
+                aad = associated_data if (use_aad_all_layers or i == 0) else None
                 data = cipher.encrypt(key, data, nonce=nonce, associated_data=aad)
             except Exception as e:
                 raise CascadeError(
@@ -350,14 +354,17 @@ class CascadeEncryption:
         layer_keys = self.key_derivation.derive_layer_keys(master_key, salt)
 
         # Decrypt through layers in reverse order
+        use_aad_all_layers = (
+            self.format_version is not None and self.format_version >= 12
+        )
         data = ciphertext
         for i in range(len(self.ciphers) - 1, -1, -1):
             cipher = self.ciphers[i]
             key, nonce = layer_keys[i]
 
             try:
-                # Only the first layer (last in decryption) uses AAD
-                aad = associated_data if i == 0 else None
+                # v12+: AAD on all layers; legacy: only first layer (M12)
+                aad = associated_data if (use_aad_all_layers or i == 0) else None
                 # Don't pass nonce - let cipher extract it from ciphertext
                 # (The nonce was prepended during encryption)
                 data = cipher.decrypt(key, data, nonce=None, associated_data=aad)

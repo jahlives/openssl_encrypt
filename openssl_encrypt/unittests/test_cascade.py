@@ -993,5 +993,162 @@ class TestCascadePerLayerSalt(unittest.TestCase):
         self.assertEqual(decrypted, self.plaintext)
 
 
+@pytest.mark.skipif(not REGISTRY_AVAILABLE, reason="Cipher registry not available")
+class TestCascadeAllLayerAAD(unittest.TestCase):
+    """Test AAD applied to all cascade layers for v12+ (M12).
+
+    For format_version >= 12, AAD should be applied to ALL layers,
+    not just the first one. This ensures every layer independently
+    authenticates the associated data.
+    """
+
+    def setUp(self):
+        """Set up test environment."""
+        self.master_key = secrets.token_bytes(32)
+        self.salt = secrets.token_bytes(32)
+        self.plaintext = b"Test AAD on all layers."
+        self.aad = b"metadata to authenticate"
+        self.config = CascadeConfig(
+            cipher_names=["aes-256-gcm", "chacha20-poly1305"], hkdf_hash="sha256"
+        )
+
+    def test_v12_aad_roundtrip(self):
+        """Test v12+ encrypt/decrypt roundtrip with AAD on all layers."""
+        cascade = CascadeEncryption(self.config, format_version=12)
+
+        ciphertext = cascade.encrypt(
+            self.plaintext, self.master_key, self.salt, associated_data=self.aad
+        )
+        decrypted = cascade.decrypt(
+            ciphertext, self.master_key, self.salt, associated_data=self.aad
+        )
+
+        self.assertEqual(decrypted, self.plaintext)
+
+    def test_v12_wrong_aad_fails_at_outer_layer(self):
+        """Test that wrong AAD fails at outer (last) layer in v12+."""
+        cascade = CascadeEncryption(self.config, format_version=12)
+
+        ciphertext = cascade.encrypt(
+            self.plaintext, self.master_key, self.salt, associated_data=self.aad
+        )
+
+        # With AAD on all layers, wrong AAD should fail at the outermost layer
+        with self.assertRaises((AuthenticationError, CascadeError)):
+            cascade.decrypt(
+                ciphertext, self.master_key, self.salt, associated_data=b"wrong"
+            )
+
+    def test_v12_ciphertext_differs_from_legacy_with_aad(self):
+        """Test that v12+ AAD on all layers produces different ciphertext than legacy."""
+        cascade_legacy = CascadeEncryption(self.config)
+        cascade_v12 = CascadeEncryption(self.config, format_version=12)
+
+        ct_legacy = cascade_legacy.encrypt(
+            self.plaintext, self.master_key, self.salt, associated_data=self.aad
+        )
+        ct_v12 = cascade_v12.encrypt(
+            self.plaintext, self.master_key, self.salt, associated_data=self.aad
+        )
+
+        # Different because v12 has per-layer salt AND AAD on all layers
+        self.assertNotEqual(ct_legacy, ct_v12)
+
+    def test_legacy_aad_only_first_layer(self):
+        """Test that legacy still applies AAD only to first layer."""
+        cascade = CascadeEncryption(self.config)
+
+        ciphertext = cascade.encrypt(
+            self.plaintext, self.master_key, self.salt, associated_data=self.aad
+        )
+        decrypted = cascade.decrypt(
+            ciphertext, self.master_key, self.salt, associated_data=self.aad
+        )
+
+        self.assertEqual(decrypted, self.plaintext)
+
+    def test_v12_aad_applied_to_all_layers(self):
+        """Test that v12+ actually applies AAD to every layer (not just first)."""
+        from unittest.mock import patch, call
+
+        cascade = CascadeEncryption(self.config, format_version=12)
+        aad_calls = []
+
+        # Wrap each cipher's encrypt to capture AAD argument
+        original_encrypts = [c.encrypt for c in cascade.ciphers]
+
+        def make_wrapper(orig, idx):
+            def wrapper(key, data, nonce=None, associated_data=None):
+                aad_calls.append((idx, associated_data))
+                return orig(key, data, nonce=nonce, associated_data=associated_data)
+            return wrapper
+
+        for i, cipher in enumerate(cascade.ciphers):
+            cipher.encrypt = make_wrapper(original_encrypts[i], i)
+
+        cascade.encrypt(
+            self.plaintext, self.master_key, self.salt, associated_data=self.aad
+        )
+
+        # Restore originals
+        for i, cipher in enumerate(cascade.ciphers):
+            cipher.encrypt = original_encrypts[i]
+
+        # For v12+, ALL layers should receive the AAD
+        for idx, aad in aad_calls:
+            self.assertEqual(aad, self.aad, f"Layer {idx} should have AAD but got {aad}")
+
+    def test_legacy_aad_only_on_first_layer(self):
+        """Test that legacy applies AAD only to first layer."""
+        cascade = CascadeEncryption(self.config)
+        aad_calls = []
+
+        original_encrypts = [c.encrypt for c in cascade.ciphers]
+
+        def make_wrapper(orig, idx):
+            def wrapper(key, data, nonce=None, associated_data=None):
+                aad_calls.append((idx, associated_data))
+                return orig(key, data, nonce=nonce, associated_data=associated_data)
+            return wrapper
+
+        for i, cipher in enumerate(cascade.ciphers):
+            cipher.encrypt = make_wrapper(original_encrypts[i], i)
+
+        cascade.encrypt(
+            self.plaintext, self.master_key, self.salt, associated_data=self.aad
+        )
+
+        for i, cipher in enumerate(cascade.ciphers):
+            cipher.encrypt = original_encrypts[i]
+
+        # Legacy: only first layer (idx=0) has AAD
+        self.assertEqual(aad_calls[0][1], self.aad)
+        for idx, aad in aad_calls[1:]:
+            self.assertIsNone(aad, f"Layer {idx} should NOT have AAD in legacy mode")
+
+    def test_v12_five_layer_aad(self):
+        """Test v12+ AAD on all layers with five cipher layers."""
+        config = CascadeConfig(
+            cipher_names=[
+                "aes-256-gcm",
+                "chacha20-poly1305",
+                "aes-256-gcm-siv",
+                "threefish-512",
+                "threefish-1024",
+            ],
+            hkdf_hash="sha256",
+        )
+        cascade = CascadeEncryption(config, format_version=12)
+
+        ciphertext = cascade.encrypt(
+            self.plaintext, self.master_key, self.salt, associated_data=self.aad
+        )
+        decrypted = cascade.decrypt(
+            ciphertext, self.master_key, self.salt, associated_data=self.aad
+        )
+
+        self.assertEqual(decrypted, self.plaintext)
+
+
 if __name__ == "__main__":
     unittest.main()
