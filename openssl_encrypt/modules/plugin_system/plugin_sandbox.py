@@ -783,18 +783,19 @@ class PluginSandbox:
         Returns:
             True if access is allowed, False otherwise
         """
-        # Block symlink access explicitly
-        if os.path.islink(path):
-            logger.warning(f"Symlink access blocked: {path}")
-            return False
-
-        # Use realpath() instead of abspath() to resolve symlinks
-        # This prevents symlink attacks where a plugin creates a symlink
-        # in an allowed directory pointing to a sensitive file
+        # Use realpath() to atomically resolve symlinks — this avoids
+        # a TOCTOU race between a separate islink() check and realpath().
+        # If the resolved path differs from the normalized input, a
+        # symlink (or ..) was traversed, so we block it.
         try:
             abs_path = os.path.realpath(path)
         except (OSError, ValueError) as e:
             logger.warning(f"Failed to resolve path {path}: {e}")
+            return False
+
+        normalized_input = os.path.normpath(os.path.abspath(path))
+        if abs_path != normalized_input:
+            logger.warning(f"Symlink or traversal detected: {path} -> {abs_path}")
             return False
 
         # Verify the resolved path exists (for additional safety)

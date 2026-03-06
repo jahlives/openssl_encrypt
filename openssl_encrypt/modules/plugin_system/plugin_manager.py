@@ -685,9 +685,11 @@ class PluginManager:
         try:
             # Built-in plugins (shipped with the package) are trusted and skip AST analysis.
             # If an attacker could modify these files, they could modify the scanner too.
+            # Use realpath to resolve symlinks and prevent symlink-based bypass.
             if self.builtin_plugin_root:
-                abs_file = os.path.abspath(file_path)
-                if abs_file.startswith(self.builtin_plugin_root + os.sep):
+                real_file = os.path.realpath(file_path)
+                real_root = os.path.realpath(self.builtin_plugin_root)
+                if real_file.startswith(real_root + os.sep):
                     logger.debug(f"Built-in plugin trusted, skipping AST analysis: {file_path}")
                     return True
 
