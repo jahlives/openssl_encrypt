@@ -1542,3 +1542,173 @@ class TestSecurityLogger(unittest.TestCase):
             log_content = f.read()
             self.assertIn("[truncated]", log_content)
             self.assertNotIn("x" * 500, log_content)
+
+
+class TestPepperKeyDerivation(unittest.TestCase):
+    """Tests for _derive_pepper_key() security fix (M18)."""
+
+    def test_legacy_uses_sha256(self):
+        """Legacy format (< 12) uses raw SHA-256."""
+        import hashlib
+        from openssl_encrypt.modules.crypt_core import _derive_pepper_key
+
+        password = b"test-password"
+        expected = hashlib.sha256(password).digest()
+
+        # None format_version
+        self.assertEqual(_derive_pepper_key(password, format_version=None), expected)
+        # Explicit old versions
+        self.assertEqual(_derive_pepper_key(password, format_version=10), expected)
+        self.assertEqual(_derive_pepper_key(password, format_version=11), expected)
+
+    def test_v12_uses_hkdf(self):
+        """v12+ uses HKDF with domain separation, producing different output."""
+        import hashlib
+        from openssl_encrypt.modules.crypt_core import _derive_pepper_key
+
+        password = b"test-password"
+        legacy = hashlib.sha256(password).digest()
+        v12 = _derive_pepper_key(password, format_version=12)
+
+        self.assertEqual(len(v12), 32)
+        self.assertNotEqual(v12, legacy)
+
+    def test_v12_deterministic(self):
+        """v12 HKDF derivation is deterministic for the same input."""
+        from openssl_encrypt.modules.crypt_core import _derive_pepper_key
+
+        password = b"test-password"
+        result1 = _derive_pepper_key(password, format_version=12)
+        result2 = _derive_pepper_key(password, format_version=12)
+        self.assertEqual(result1, result2)
+
+    def test_different_passwords_different_keys(self):
+        """Different passwords produce different keys in both modes."""
+        from openssl_encrypt.modules.crypt_core import _derive_pepper_key
+
+        key1 = _derive_pepper_key(b"password1", format_version=12)
+        key2 = _derive_pepper_key(b"password2", format_version=12)
+        self.assertNotEqual(key1, key2)
+
+
+class TestPQCSigKeyDerivation(unittest.TestCase):
+    """Tests for _derive_pqc_sig_key() security fix (M15)."""
+
+    def test_static_salt_legacy(self):
+        """Legacy mode uses static salt constant."""
+        from openssl_encrypt.modules.crypt_core import _derive_pqc_sig_key
+
+        private_key = secrets.token_bytes(64)
+        algo = "mayo-1-hybrid"
+
+        # salt=None uses static constant
+        result1 = _derive_pqc_sig_key(private_key, algo, salt=None)
+        result2 = _derive_pqc_sig_key(private_key, algo, salt=None)
+        self.assertEqual(len(result1), 32)
+        self.assertEqual(result1, result2)
+
+    def test_random_salt_produces_different_key(self):
+        """Random salt (v12+) produces a different key than static salt."""
+        from openssl_encrypt.modules.crypt_core import _derive_pqc_sig_key
+
+        private_key = secrets.token_bytes(64)
+        algo = "mayo-1-hybrid"
+        random_salt = secrets.token_bytes(32)
+
+        legacy = _derive_pqc_sig_key(private_key, algo, salt=None)
+        v12 = _derive_pqc_sig_key(private_key, algo, salt=random_salt)
+        self.assertNotEqual(legacy, v12)
+
+    def test_same_salt_same_key(self):
+        """Same random salt produces the same key (deterministic)."""
+        from openssl_encrypt.modules.crypt_core import _derive_pqc_sig_key
+
+        private_key = secrets.token_bytes(64)
+        algo = "cross-128-hybrid"
+        salt = secrets.token_bytes(32)
+
+        result1 = _derive_pqc_sig_key(private_key, algo, salt=salt)
+        result2 = _derive_pqc_sig_key(private_key, algo, salt=salt)
+        self.assertEqual(result1, result2)
+
+    def test_different_algorithms_different_keys(self):
+        """Different algorithm names produce different keys."""
+        from openssl_encrypt.modules.crypt_core import _derive_pqc_sig_key
+
+        private_key = secrets.token_bytes(64)
+        key1 = _derive_pqc_sig_key(private_key, "mayo-1-hybrid", salt=None)
+        key2 = _derive_pqc_sig_key(private_key, "mayo-3-hybrid", salt=None)
+        self.assertNotEqual(key1, key2)
+
+    def test_different_salts_different_keys(self):
+        """Different random salts produce different keys (v12+)."""
+        from openssl_encrypt.modules.crypt_core import _derive_pqc_sig_key
+
+        private_key = secrets.token_bytes(64)
+        algo = "mayo-1-hybrid"
+        salt1 = secrets.token_bytes(32)
+        salt2 = secrets.token_bytes(32)
+
+        key1 = _derive_pqc_sig_key(private_key, algo, salt=salt1)
+        key2 = _derive_pqc_sig_key(private_key, algo, salt=salt2)
+        self.assertNotEqual(key1, key2)
+
+
+class TestCascadeFormatVersionWiring(unittest.TestCase):
+    """Tests for CascadeEncryption format_version wiring in crypt_core (C2)."""
+
+    def test_cascade_v12_uses_per_layer_salt(self):
+        """Cascade with format_version=12 derives per-layer salts."""
+        from openssl_encrypt.modules.cascade import CascadeConfig, CascadeEncryption
+
+        config = CascadeConfig(
+            cipher_names=["aes-256-gcm", "chacha20-poly1305"],
+            hkdf_hash="sha256",
+        )
+        master_key = secrets.token_bytes(32)
+        salt = secrets.token_bytes(32)
+        plaintext = b"test data for cascade v12"
+
+        # v12 encrypt/decrypt roundtrip
+        cascade_v12 = CascadeEncryption(config, format_version=12)
+        ct = cascade_v12.encrypt(plaintext, master_key, salt)
+        pt = cascade_v12.decrypt(ct, master_key, salt)
+        self.assertEqual(pt, plaintext)
+
+    def test_cascade_legacy_roundtrip(self):
+        """Cascade without format_version still works (legacy path)."""
+        from openssl_encrypt.modules.cascade import CascadeConfig, CascadeEncryption
+
+        config = CascadeConfig(
+            cipher_names=["aes-256-gcm", "chacha20-poly1305"],
+            hkdf_hash="sha256",
+        )
+        master_key = secrets.token_bytes(32)
+        salt = secrets.token_bytes(32)
+        plaintext = b"test data for cascade legacy"
+
+        cascade_legacy = CascadeEncryption(config)
+        ct = cascade_legacy.encrypt(plaintext, master_key, salt)
+        pt = cascade_legacy.decrypt(ct, master_key, salt)
+        self.assertEqual(pt, plaintext)
+
+    def test_cascade_v12_incompatible_with_legacy(self):
+        """v12 ciphertext cannot be decrypted by legacy (different key derivation)."""
+        from openssl_encrypt.modules.cascade import CascadeConfig, CascadeEncryption
+
+        config = CascadeConfig(
+            cipher_names=["aes-256-gcm", "chacha20-poly1305"],
+            hkdf_hash="sha256",
+        )
+        master_key = secrets.token_bytes(32)
+        salt = secrets.token_bytes(32)
+        plaintext = b"incompatibility test"
+
+        cascade_v12 = CascadeEncryption(config, format_version=12)
+        cascade_legacy = CascadeEncryption(config)
+
+        ct_v12 = cascade_v12.encrypt(plaintext, master_key, salt)
+
+        # Legacy should fail to decrypt v12 ciphertext
+        with self.assertRaises(Exception):
+            cascade_legacy.decrypt(ct_v12, master_key, salt)

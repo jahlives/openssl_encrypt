@@ -5651,6 +5651,65 @@ def encrypt_file_asymmetric(
         secure_memzero(random_password)
 
 
+def _derive_pepper_key(password: bytes, format_version: int = None) -> bytes:
+    """Derive the AES-GCM key for encrypting/decrypting the remote pepper.
+
+    For format_version >= 12, uses HKDF with domain separation.
+    For legacy formats, uses bare SHA-256(password).
+
+    Args:
+        password: Raw password bytes
+        format_version: File format version. None or < 12 uses legacy SHA-256.
+
+    Returns:
+        32-byte derived key for AES-GCM
+    """
+    if format_version is not None and format_version >= 12:
+        from cryptography.hazmat.primitives import hashes as _hashes
+        from cryptography.hazmat.primitives.kdf.hkdf import HKDF as _HKDF
+
+        return _HKDF(
+            algorithm=_hashes.SHA256(),
+            length=32,
+            salt=None,
+            info=b"openssl_encrypt-pepper-key",
+        ).derive(password)
+    else:
+        return hashlib.sha256(password).digest()
+
+
+def _derive_pqc_sig_key(
+    private_key: bytes,
+    algorithm: str,
+    salt: bytes = None,
+) -> bytes:
+    """Derive symmetric key from PQC signature private key using HKDF.
+
+    For format_version >= 12, a random salt should be passed. For legacy
+    formats, pass None to use the static salt constant.
+
+    Args:
+        private_key: PQC signature private key bytes
+        algorithm: Algorithm name string (e.g. "mayo-1-hybrid")
+        salt: HKDF salt. None uses the legacy static constant.
+
+    Returns:
+        32-byte derived symmetric key for AES-GCM encryption
+    """
+    from cryptography.hazmat.primitives import hashes as _hashes
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF as _HKDF
+
+    if salt is None:
+        salt = b"OpenSSL-Encrypt-PQ-Signature-Hybrid"
+
+    return _HKDF(
+        algorithm=_hashes.SHA256(),
+        length=32,
+        salt=salt,
+        info=f"encryption-key-{algorithm}".encode(),
+    ).derive(private_key)
+
+
 @secure_encrypt_error_handler
 def encrypt_file(
     input_file,
@@ -6031,8 +6090,8 @@ def encrypt_file(
                 nonce = encrypted_pepper_data[:12]
                 ciphertext_with_tag = encrypted_pepper_data[12:]
 
-                # Derive decryption key from password using SHA-256
-                pepper_key = hashlib.sha256(password).digest()
+                # Derive decryption key from password
+                pepper_key = _derive_pepper_key(password, format_version=format_version)
 
                 try:
                     aesgcm = AESGCM(pepper_key)
@@ -6058,8 +6117,8 @@ def encrypt_file(
                 # Generate 32-byte random pepper
                 remote_pepper = secrets.token_bytes(32)
 
-                # Derive encryption key from password using SHA-256
-                pepper_key = hashlib.sha256(password).digest()
+                # Derive encryption key from password
+                pepper_key = _derive_pepper_key(password, format_version=format_version)
 
                 # Encrypt pepper with AES-GCM
                 nonce = secrets.token_bytes(12)
@@ -6237,16 +6296,18 @@ def encrypt_file(
             from .cascade import CascadeConfig, CascadeEncryption
 
             cascade_config = CascadeConfig(cipher_names=cipher_names, hkdf_hash=cascade_hash)
-            _cascade_enc_streaming = CascadeEncryption(cascade_config)
+            _cascade_enc_streaming = CascadeEncryption(cascade_config, format_version=12)
             _cascade_salt_streaming = secrets.token_bytes(32)
 
         # Create streaming encryptor
+        # Streaming always uses format_version=12 (metadata is written as v12)
         streaming_enc = StreamingEncryptor(
             key=key,
             algorithm=algorithm_value,
             chunk_size=_streaming_chunk_size,
             cascade_encryptor=_cascade_enc_streaming,
             cascade_salt=_cascade_salt_streaming,
+            format_version=12,
         )
 
         chunk_count = streaming_enc.get_chunk_count(file_size)
@@ -6570,23 +6631,18 @@ def encrypt_file(
                     logger.debug(f"ENCRYPT:PQC_SIG Input data length: {len(data)} bytes")
 
                 # Derive symmetric encryption key from signature private key
-                from cryptography.hazmat.primitives import hashes
-                from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-
-                # Derive 32-byte key for AES-GCM from signature private key
-                salt = b"OpenSSL-Encrypt-PQ-Signature-Hybrid"
-                info = f"encryption-key-{algorithm.value}".encode()
+                # v12+: use random salt for HKDF; legacy: static salt
+                if format_version is not None and format_version >= 12:
+                    pqc_sig_salt = secrets.token_bytes(32)
+                else:
+                    pqc_sig_salt = None  # _derive_pqc_sig_key uses static constant
 
                 if debug:
-                    logger.debug(f"ENCRYPT:PQC_SIG HKDF salt: {salt.hex()}")
-                    logger.debug(f"ENCRYPT:PQC_SIG HKDF info: {info.hex()}")
+                    _salt_for_log = pqc_sig_salt if pqc_sig_salt else b"OpenSSL-Encrypt-PQ-Signature-Hybrid"
+                    logger.debug(f"ENCRYPT:PQC_SIG HKDF salt: {_salt_for_log.hex()}")
+                    logger.debug(f"ENCRYPT:PQC_SIG HKDF info: encryption-key-{algorithm.value}")
 
-                derived_key = HKDF(
-                    algorithm=hashes.SHA256(),
-                    length=32,  # AES-256 key size
-                    salt=salt,
-                    info=info,
-                ).derive(private_key)
+                derived_key = _derive_pqc_sig_key(private_key, algorithm.value, salt=pqc_sig_salt)
 
                 if debug:
                     logger.debug(
@@ -6602,7 +6658,11 @@ def encrypt_file(
 
                 aes_cipher = AESGCM(derived_key)
                 encrypted_payload = aes_cipher.encrypt(nonce, data, aad)
-                encrypted_data = nonce + encrypted_payload
+                # v12+: prepend random HKDF salt so decryptor can derive the same key
+                if pqc_sig_salt is not None:
+                    encrypted_data = pqc_sig_salt + nonce + encrypted_payload
+                else:
+                    encrypted_data = nonce + encrypted_payload
 
                 if debug:
                     logger.debug(
@@ -7005,7 +7065,7 @@ def encrypt_file(
             cascade_config = CascadeConfig(cipher_names=cipher_names, hkdf_hash=cascade_hash)
 
             # Create cascade encryption instance
-            cascade_enc = CascadeEncryption(cascade_config)
+            cascade_enc = CascadeEncryption(cascade_config, format_version=format_version)
 
             # Generate cascade salt
             cascade_salt_bytes = secrets.token_bytes(32)
@@ -8689,7 +8749,7 @@ def decrypt_file(
             ciphertext_with_tag = encrypted_pepper_data[12:]
 
             # Derive decryption key from password
-            pepper_key = hashlib.sha256(password).digest()
+            pepper_key = _derive_pepper_key(password, format_version=format_version)
 
             try:
                 aesgcm = AESGCM(pepper_key)
@@ -8970,7 +9030,7 @@ def decrypt_file(
             cascade_config = CascadeConfig(
                 cipher_names=cascade_cipher_chain, hkdf_hash=cascade_hkdf_hash
             )
-            _cascade_dec_streaming = CascadeEncryption(cascade_config)
+            _cascade_dec_streaming = CascadeEncryption(cascade_config, format_version=format_version)
             _cascade_salt_streaming = cascade_salt_decrypt
 
         streaming_dec = StreamingDecryptor(
@@ -8980,6 +9040,7 @@ def decrypt_file(
             chunk_size=streaming_chunk_size,
             cascade_decryptor=_cascade_dec_streaming,
             cascade_salt=_cascade_salt_streaming,
+            format_version=format_version,
         )
 
         if not quiet:
@@ -9069,7 +9130,7 @@ def decrypt_file(
             cascade_config = CascadeConfig(
                 cipher_names=cascade_cipher_chain, hkdf_hash=cascade_hkdf_hash
             )
-            cascade_dec = CascadeEncryption(cascade_config)
+            cascade_dec = CascadeEncryption(cascade_config, format_version=format_version)
 
             # Decrypt using cascade
             decrypted_data = cascade_dec.decrypt(
@@ -9181,23 +9242,20 @@ def decrypt_file(
                         f"DECRYPT:PQC_SIG Encrypted data length: {len(encrypted_data)} bytes"
                     )
 
-                from cryptography.hazmat.primitives import hashes
-                from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-
-                # Derive 32-byte key for AES-GCM from signature private key
-                salt = b"OpenSSL-Encrypt-PQ-Signature-Hybrid"
-                info = f"encryption-key-{algorithm}".encode()
+                # v12+: first 32 bytes are the random HKDF salt; legacy: static salt
+                if format_version is not None and format_version >= 12:
+                    pqc_sig_salt = encrypted_data[:32]
+                    pqc_sig_payload = encrypted_data[32:]
+                else:
+                    pqc_sig_salt = None  # _derive_pqc_sig_key uses static constant
+                    pqc_sig_payload = encrypted_data
 
                 if debug:
-                    logger.debug(f"DECRYPT:PQC_SIG HKDF salt: {salt.hex()}")
-                    logger.debug(f"DECRYPT:PQC_SIG HKDF info: {info.hex()}")
+                    _salt_for_log = pqc_sig_salt if pqc_sig_salt else b"OpenSSL-Encrypt-PQ-Signature-Hybrid"
+                    logger.debug(f"DECRYPT:PQC_SIG HKDF salt: {_salt_for_log.hex()}")
+                    logger.debug(f"DECRYPT:PQC_SIG HKDF info: encryption-key-{algorithm}")
 
-                derived_key = HKDF(
-                    algorithm=hashes.SHA256(),
-                    length=32,  # AES-256 key size
-                    salt=salt,
-                    info=info,
-                ).derive(pqc_private_key)
+                derived_key = _derive_pqc_sig_key(pqc_private_key, algorithm, salt=pqc_sig_salt)
 
                 if debug:
                     logger.debug(
@@ -9206,8 +9264,8 @@ def decrypt_file(
                     logger.debug(f"DECRYPT:PQC_SIG Derived AES key: {derived_key.hex()}")
 
                 # Decrypt using AES-GCM with derived key
-                nonce = encrypted_data[:12]  # First 12 bytes are nonce
-                ciphertext = encrypted_data[12:]  # Rest is ciphertext
+                nonce = pqc_sig_payload[:12]  # First 12 bytes are nonce
+                ciphertext = pqc_sig_payload[12:]  # Rest is ciphertext
 
                 if debug:
                     logger.debug(f"DECRYPT:PQC_SIG AES-GCM nonce: {nonce.hex()}")
