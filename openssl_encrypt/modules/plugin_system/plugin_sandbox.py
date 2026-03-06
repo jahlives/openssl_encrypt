@@ -335,6 +335,10 @@ class PluginSandbox:
     - System calls that could compromise security
     """
 
+    # Lock to serialize in-process (threading mode) plugin execution,
+    # preventing concurrent global monkey-patching of builtins/os/socket.
+    _threading_mode_lock = threading.Lock()
+
     def __init__(self):
         self.temp_dir = None
         self.monitor = ResourceMonitor()
@@ -409,8 +413,9 @@ class PluginSandbox:
                 return self._execute_in_process(plugin, context, max_execution_time, max_memory_mb)
             else:
                 # Use threading (legacy, less reliable for blocking operations)
-                # Setup sandbox environment without strict memory limits (threading needs more memory)
-                with self._create_sandbox_environment(
+                # Acquire lock to serialize threading-mode execution — monkey-patching
+                # of builtins/os/socket is global and not thread-safe.
+                with self._threading_mode_lock, self._create_sandbox_environment(
                     context, max_memory_mb, use_process_isolation=False
                 ):
                     # Start monitoring
