@@ -2279,3 +2279,85 @@ class TestPQCCryptCoreHKDFWiring(unittest.TestCase):
                 pass
 
         self.assertEqual(captured_kwargs.get("format_version"), 12)
+
+
+class TestPQCSignatureHKDFSalt(unittest.TestCase):
+    """Test per-encryption random HKDF salt for PQC signature-hybrid algorithms (M15).
+
+    For format_version >= 12, the PQC signature-hybrid HKDF key derivation
+    should use a random salt instead of the static string
+    b"OpenSSL-Encrypt-PQ-Signature-Hybrid".
+    """
+
+    def test_derive_sig_key_v12_uses_random_salt(self):
+        """Test that v12+ signature key derivation accepts a random salt."""
+        from openssl_encrypt.modules.crypt_core import _derive_pqc_sig_key
+
+        private_key = secrets.token_bytes(64)
+        random_salt = secrets.token_bytes(32)
+        algorithm = "mayo-1-hybrid"
+
+        key = _derive_pqc_sig_key(private_key, algorithm, salt=random_salt)
+        self.assertEqual(len(key), 32)
+
+    def test_derive_sig_key_legacy_uses_static_salt(self):
+        """Test that legacy path uses the static salt constant."""
+        from openssl_encrypt.modules.crypt_core import _derive_pqc_sig_key
+
+        private_key = secrets.token_bytes(64)
+        algorithm = "mayo-1-hybrid"
+
+        # Legacy: no salt provided → static salt
+        key_legacy = _derive_pqc_sig_key(private_key, algorithm)
+
+        # Verify it matches the old behavior
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+        expected = HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=b"OpenSSL-Encrypt-PQ-Signature-Hybrid",
+            info=f"encryption-key-{algorithm}".encode(),
+        ).derive(private_key)
+
+        self.assertEqual(key_legacy, expected)
+
+    def test_derive_sig_key_random_salt_differs_from_static(self):
+        """Test that random salt produces different key than static salt."""
+        from openssl_encrypt.modules.crypt_core import _derive_pqc_sig_key
+
+        private_key = secrets.token_bytes(64)
+        algorithm = "mayo-1-hybrid"
+
+        key_static = _derive_pqc_sig_key(private_key, algorithm)
+        key_random = _derive_pqc_sig_key(
+            private_key, algorithm, salt=secrets.token_bytes(32)
+        )
+
+        self.assertNotEqual(key_static, key_random)
+
+    def test_derive_sig_key_deterministic_with_same_salt(self):
+        """Test that same random salt produces same key."""
+        from openssl_encrypt.modules.crypt_core import _derive_pqc_sig_key
+
+        private_key = secrets.token_bytes(64)
+        algorithm = "mayo-1-hybrid"
+        salt = secrets.token_bytes(32)
+
+        key1 = _derive_pqc_sig_key(private_key, algorithm, salt=salt)
+        key2 = _derive_pqc_sig_key(private_key, algorithm, salt=salt)
+
+        self.assertEqual(key1, key2)
+
+    def test_derive_sig_key_different_algorithms_differ(self):
+        """Test that different algorithm names produce different keys."""
+        from openssl_encrypt.modules.crypt_core import _derive_pqc_sig_key
+
+        private_key = secrets.token_bytes(64)
+        salt = secrets.token_bytes(32)
+
+        key1 = _derive_pqc_sig_key(private_key, "mayo-1-hybrid", salt=salt)
+        key2 = _derive_pqc_sig_key(private_key, "cross-128-hybrid", salt=salt)
+
+        self.assertNotEqual(key1, key2)
