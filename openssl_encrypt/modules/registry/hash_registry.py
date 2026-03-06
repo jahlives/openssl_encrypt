@@ -654,6 +654,7 @@ class HashRegistry(RegistryBase[HashBase]):
 
         # Legacy
         self.register(Whirlpool)
+        self.freeze()
 
     @classmethod
     def default(cls) -> "HashRegistry":

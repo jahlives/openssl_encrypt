@@ -546,6 +546,7 @@ class KEMRegistry(RegistryBase[KEMBase]):
         self.register(HQC128)
         self.register(HQC192)
         self.register(HQC256)
+        self.freeze()
 
     @classmethod
     def default(cls) -> "KEMRegistry":
