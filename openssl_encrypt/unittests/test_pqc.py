@@ -2159,3 +2159,74 @@ class TestPQCKeyDerivationHKDF(unittest.TestCase):
         # Legacy cipher should fail to decrypt v12 data (wrong key derivation)
         with self.assertRaises((ValueError, Exception)):
             cipher_legacy.decrypt(encrypted, private_key)
+
+
+@unittest.skipUnless(PQC_AVAILABLE, "PQC libraries not available")
+class TestExtendedPQCipherHKDF(unittest.TestCase):
+    """Tests for C1/C2: HKDF key derivation in ExtendedPQCipher (pqc_adapter.py).
+
+    ExtendedPQCipher has its own encrypt/decrypt paths for liboqs-backed
+    algorithms (HQC, etc.) that also need HKDF for format_version >= 12.
+    """
+
+    def test_extended_cipher_accepts_format_version(self):
+        """ExtendedPQCipher must accept format_version parameter."""
+        from openssl_encrypt.modules.pqc_adapter import ExtendedPQCipher
+
+        cipher = ExtendedPQCipher("ML-KEM-768", quiet=True, format_version=12)
+        self.assertEqual(cipher.format_version, 12)
+
+    def test_extended_cipher_v12_roundtrip(self):
+        """ExtendedPQCipher encrypt/decrypt roundtrip must work with v12."""
+        from openssl_encrypt.modules.pqc_adapter import ExtendedPQCipher
+
+        cipher = ExtendedPQCipher("ML-KEM-768", quiet=True, format_version=12)
+        public_key, private_key = cipher.generate_keypair()
+
+        plaintext = b"Extended PQC cipher test"
+        encrypted = cipher.encrypt(plaintext, public_key)
+        decrypted = cipher.decrypt(encrypted, private_key)
+
+        self.assertEqual(decrypted, plaintext)
+
+    def test_extended_cipher_liboqs_v12_uses_hkdf(self):
+        """ExtendedPQCipher liboqs path must use HKDF for v12+."""
+        from openssl_encrypt.modules.pqc_adapter import ExtendedPQCipher
+
+        # HQC algorithms use the liboqs code path in ExtendedPQCipher
+        try:
+            cipher = ExtendedPQCipher("HQC-128", quiet=True, format_version=12)
+        except (ImportError, ValueError):
+            self.skipTest("HQC-128 not available")
+
+        self.assertTrue(cipher.use_liboqs)
+
+        public_key, private_key = cipher.generate_keypair()
+        plaintext = b"HQC HKDF test data"
+        encrypted = cipher.encrypt(plaintext, public_key)
+        decrypted = cipher.decrypt(encrypted, private_key)
+
+        self.assertEqual(decrypted, plaintext)
+
+    def test_extended_cipher_liboqs_legacy_roundtrip(self):
+        """ExtendedPQCipher liboqs path must work with legacy format."""
+        from openssl_encrypt.modules.pqc_adapter import ExtendedPQCipher
+
+        try:
+            cipher = ExtendedPQCipher("HQC-128", quiet=True, format_version=11)
+        except (ImportError, ValueError):
+            self.skipTest("HQC-128 not available")
+
+        public_key, private_key = cipher.generate_keypair()
+        plaintext = b"HQC legacy test"
+        encrypted = cipher.encrypt(plaintext, public_key)
+        decrypted = cipher.decrypt(encrypted, private_key)
+
+        self.assertEqual(decrypted, plaintext)
+
+    def test_extended_cipher_default_format_version_is_none(self):
+        """ExtendedPQCipher defaults to format_version=None (legacy behavior)."""
+        from openssl_encrypt.modules.pqc_adapter import ExtendedPQCipher
+
+        cipher = ExtendedPQCipher("ML-KEM-768", quiet=True)
+        self.assertIsNone(cipher.format_version)

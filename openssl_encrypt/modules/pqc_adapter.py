@@ -152,6 +152,7 @@ class ExtendedPQCipher(PQCipher):
         encryption_data: str = "aes-gcm",
         verbose: bool = False,
         debug: bool = False,
+        format_version: Optional[int] = None,
     ):
         """
         Initialize an extended post-quantum cipher instance
@@ -161,6 +162,7 @@ class ExtendedPQCipher(PQCipher):
             quiet: Whether to suppress output messages
             encryption_data: Symmetric encryption algorithm to use
             verbose: Whether to show detailed information
+            format_version: File format version. >= 12 uses HKDF for KEM key derivation.
 
         Raises:
             ValueError: If algorithm not supported
@@ -191,7 +193,10 @@ class ExtendedPQCipher(PQCipher):
 
         if self.is_kem and algorithm_str in native_kem_algorithms:
             # Use the parent class for native KEM algorithms
-            super().__init__(algorithm_str, quiet, encryption_data, verbose, debug)
+            super().__init__(
+                algorithm_str, quiet, encryption_data, verbose, debug,
+                format_version=format_version,
+            )
             self.use_liboqs = False
             self.encryption_data = encryption_data
         else:
@@ -207,6 +212,7 @@ class ExtendedPQCipher(PQCipher):
             self.quiet = quiet
             self.encryption_data = encryption_data
             self.algorithm_name = algorithm_str
+            self.format_version = format_version
 
             # Import required symmetric encryption algorithms for hybrid mode
             try:
@@ -275,7 +281,9 @@ class ExtendedPQCipher(PQCipher):
         secure_shared_secret = SecureBytes(shared_secret)
         try:
             # Derive symmetric key using secure memory
-            symmetric_key = SecureBytes(hashlib.sha256(secure_shared_secret).digest())
+            symmetric_key = SecureBytes(
+                self._derive_symmetric_key(bytes(secure_shared_secret))
+            )
 
             # Select the appropriate cipher based on encryption_data
             if self.encryption_data == "aes-gcm":
@@ -408,7 +416,9 @@ class ExtendedPQCipher(PQCipher):
             # Use secure memory for sensitive operations
             with SecureBytes(shared_secret) as secure_shared_secret:
                 # Derive symmetric key using secure memory
-                symmetric_key = SecureBytes(hashlib.sha256(secure_shared_secret).digest())
+                symmetric_key = SecureBytes(
+                    self._derive_symmetric_key(bytes(secure_shared_secret))
+                )
 
                 # Select the appropriate cipher based on encryption_data
                 if self.encryption_data == "aes-gcm":
