@@ -649,6 +649,39 @@ class TestIdentity(unittest.TestCase):
         self.assertIsNone(identity2.signing_private_key)
         self.assertFalse(identity2.is_own_identity)
 
+    def test_import_public_with_tampered_fingerprint_rejected(self):
+        """Importing an identity with a tampered fingerprint must fail (M5).
+
+        The fingerprint is recomputed from the actual public keys during
+        import. If it doesn't match, the import is rejected.
+        """
+        identity = Identity.generate(name="Mallory", email=None, passphrase="test")
+        public_data = identity.export_public()
+
+        # Tamper with the fingerprint
+        public_data["fingerprint"] = "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99"
+
+        with self.assertRaises(IdentityError) as ctx:
+            Identity.import_public(public_data)
+        self.assertIn("Fingerprint verification failed", str(ctx.exception))
+
+    def test_import_public_with_tampered_key_rejected(self):
+        """Importing an identity with a tampered public key must fail (M5).
+
+        If a public key is swapped out, the fingerprint won't match.
+        """
+        identity = Identity.generate(name="Eve", email=None, passphrase="test")
+        public_data = identity.export_public()
+
+        # Tamper with the encryption public key (replace with random bytes of same length)
+        original_key = base64.b64decode(public_data["encryption_public_key"])
+        tampered_key = secrets.token_bytes(len(original_key))
+        public_data["encryption_public_key"] = base64.b64encode(tampered_key).decode()
+
+        with self.assertRaises(IdentityError) as ctx:
+            Identity.import_public(public_data)
+        self.assertIn("Fingerprint verification failed", str(ctx.exception))
+
     def test_fingerprint_calculation(self):
         """Test that fingerprint is calculated correctly"""
         identity1 = Identity.generate("User1", None, "pass")

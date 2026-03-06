@@ -470,7 +470,7 @@ class Identity:
             IdentityError: If the imported name fails validation.
         """
         validate_identity_name(data["name"])
-        return cls(
+        identity = cls(
             name=data["name"],
             email=data.get("email"),
             fingerprint=data["fingerprint"],
@@ -483,6 +483,13 @@ class Identity:
             signing_private_key=None,
             is_own_identity=False,
         )
+        # Verify fingerprint matches the actual public keys to detect tampering
+        if not identity.verify_fingerprint():
+            raise IdentityError(
+                f"Fingerprint verification failed for imported identity '{data['name']}': "
+                f"the fingerprint does not match the public keys"
+            )
+        return identity
 
     def calculate_fingerprint(self) -> str:
         """
