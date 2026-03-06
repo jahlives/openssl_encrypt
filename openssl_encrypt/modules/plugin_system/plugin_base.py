@@ -97,7 +97,7 @@ class PluginSecurityContext:
         self, plugin_id: str, capabilities: Set[PluginCapability], plugin_file_directory: str = None
     ):
         self.plugin_id = plugin_id
-        self.capabilities = capabilities
+        self.capabilities = frozenset(capabilities)
         self.metadata = {}  # Only non-sensitive metadata
         self.file_paths = []  # Only paths to encrypted files or safe temp files
         self.config = {}  # Plugin-specific configuration only
