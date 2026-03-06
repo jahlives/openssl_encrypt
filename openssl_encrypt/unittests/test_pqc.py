@@ -2282,3 +2282,208 @@ class TestConcurrentPQCExecutionSafety(unittest.TestCase):
                 pass
 
         print("✅ PQC concurrent execution best practices validated")
+
+
+class TestPQCSigHKDFSaltInMetadata(unittest.TestCase):
+    """Test that PQC signature HKDF salt is correctly stored in AEAD metadata.
+
+    Bug: For AEAD-bound PQC signature algorithms (MAYO/CROSS hybrids), when
+    format_version >= 12, the random HKDF salt was generated inside do_encrypt()
+    but metadata was built BEFORE do_encrypt() ran. The salt never made it into
+    metadata, causing decryption failure (different derived key).
+    """
+
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp()
+        self.test_files = []
+        self.test_password = b"test_password_pqc_salt"
+        self.test_data = "Test data for PQC sig HKDF salt in metadata"
+        self.hash_config = {"version": "v1", "algorithm": "sha256", "iterations": 1000}
+
+    def tearDown(self):
+        for f in self.test_files:
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+        try:
+            shutil.rmtree(self.test_dir, ignore_errors=True)
+        except OSError:
+            pass
+
+    @pytest.mark.skipif(not LIBOQS_AVAILABLE, reason="liboqs not available")
+    def test_mayo_v12_salt_pregenerated_before_metadata(self):
+        """Verify the salt is generated before metadata building (core fix).
+
+        The bug was: do_encrypt() generated the salt AFTER metadata was already
+        built, so the AEAD AAD didn't include the salt. This test verifies that
+        encrypt_file with format_version=12 and MAYO produces metadata that
+        contains the pqc_sig_hkdf_salt, proving it was pre-generated.
+        """
+        test_in = os.path.join(self.test_dir, "mayo_v12_pregen.txt")
+        test_out = os.path.join(self.test_dir, "mayo_v12_pregen.enc")
+        self.test_files.extend([test_in, test_out])
+
+        with open(test_in, "w") as f:
+            f.write(self.test_data)
+
+        encrypt_file(
+            test_in,
+            test_out,
+            self.test_password,
+            self.hash_config,
+            algorithm=EncryptionAlgorithm.MAYO_1_HYBRID,
+            format_version=12,
+            quiet=True,
+        )
+
+        # Parse metadata and verify salt is present
+        with open(test_out, "rb") as f:
+            content = f.read()
+        metadata_b64 = content.split(b":")[0]
+        metadata = json.loads(base64.b64decode(metadata_b64))
+
+        pqc_info = metadata.get("encryption", {})
+        self.assertIn(
+            "pqc_sig_hkdf_salt",
+            pqc_info,
+            "v12 MAYO metadata must contain pqc_sig_hkdf_salt (pre-generated before AEAD)",
+        )
+
+        # Verify salt is 32 bytes (stored as base64)
+        salt_b64 = pqc_info["pqc_sig_hkdf_salt"]
+        salt_bytes = base64.b64decode(salt_b64) if isinstance(salt_b64, str) else salt_b64
+        self.assertEqual(len(salt_bytes), 32, "HKDF salt must be 32 bytes")
+
+    @pytest.mark.skipif(not LIBOQS_AVAILABLE, reason="liboqs not available")
+    def test_mayo_v12_salt_in_metadata(self):
+        """Parse metadata and verify pqc_sig_hkdf_salt key is present for v12."""
+        test_in = os.path.join(self.test_dir, "mayo_v12_meta.txt")
+        test_out = os.path.join(self.test_dir, "mayo_v12_meta.enc")
+        self.test_files.extend([test_in, test_out])
+
+        with open(test_in, "w") as f:
+            f.write(self.test_data)
+
+        encrypt_file(
+            test_in,
+            test_out,
+            self.test_password,
+            self.hash_config,
+            algorithm=EncryptionAlgorithm.MAYO_1_HYBRID,
+            format_version=12,
+            quiet=True,
+        )
+
+        # Read and parse metadata
+        with open(test_out, "rb") as f:
+            content = f.read()
+        metadata_b64 = content.split(b":")[0]
+        metadata = json.loads(base64.b64decode(metadata_b64))
+
+        # The PQC info should contain pqc_sig_hkdf_salt
+        pqc_info = metadata.get("encryption", {})
+        self.assertIn(
+            "pqc_sig_hkdf_salt",
+            pqc_info,
+            "v12 MAYO metadata must contain pqc_sig_hkdf_salt",
+        )
+        # Salt should not be empty
+        salt_value = pqc_info["pqc_sig_hkdf_salt"]
+        self.assertTrue(len(salt_value) > 0, "pqc_sig_hkdf_salt must not be empty")
+
+    @pytest.mark.skipif(not LIBOQS_AVAILABLE, reason="liboqs not available")
+    def test_mayo_legacy_no_salt_in_metadata(self):
+        """Verify salt is absent for format_version < 12."""
+        test_in = os.path.join(self.test_dir, "mayo_legacy_meta.txt")
+        test_out = os.path.join(self.test_dir, "mayo_legacy_meta.enc")
+        self.test_files.extend([test_in, test_out])
+
+        with open(test_in, "w") as f:
+            f.write(self.test_data)
+
+        encrypt_file(
+            test_in,
+            test_out,
+            self.test_password,
+            self.hash_config,
+            algorithm=EncryptionAlgorithm.MAYO_1_HYBRID,
+            format_version=10,
+            quiet=True,
+        )
+
+        # Read and parse metadata
+        with open(test_out, "rb") as f:
+            content = f.read()
+        metadata_b64 = content.split(b":")[0]
+        metadata = json.loads(base64.b64decode(metadata_b64))
+
+        # Legacy: no pqc_sig_hkdf_salt in metadata
+        pqc_info = metadata.get("encryption", {})
+        self.assertNotIn(
+            "pqc_sig_hkdf_salt",
+            pqc_info,
+            "Legacy (v10) MAYO metadata must NOT contain pqc_sig_hkdf_salt",
+        )
+
+    @pytest.mark.skipif(not LIBOQS_AVAILABLE, reason="liboqs not available")
+    def test_cross_v12_salt_pregenerated_before_metadata(self):
+        """Verify CROSS-128 also gets pre-generated salt in v12 metadata."""
+        test_in = os.path.join(self.test_dir, "cross_v12_pregen.txt")
+        test_out = os.path.join(self.test_dir, "cross_v12_pregen.enc")
+        self.test_files.extend([test_in, test_out])
+
+        with open(test_in, "w") as f:
+            f.write(self.test_data)
+
+        encrypt_file(
+            test_in,
+            test_out,
+            self.test_password,
+            self.hash_config,
+            algorithm=EncryptionAlgorithm.CROSS_128_HYBRID,
+            format_version=12,
+            quiet=True,
+        )
+
+        with open(test_out, "rb") as f:
+            content = f.read()
+        metadata_b64 = content.split(b":")[0]
+        metadata = json.loads(base64.b64decode(metadata_b64))
+
+        pqc_info = metadata.get("encryption", {})
+        self.assertIn(
+            "pqc_sig_hkdf_salt",
+            pqc_info,
+            "v12 CROSS metadata must contain pqc_sig_hkdf_salt",
+        )
+
+    @pytest.mark.skipif(not LIBOQS_AVAILABLE, reason="liboqs not available")
+    def test_mayo_v12_two_encryptions_have_different_salts(self):
+        """Each encryption must produce a unique random salt."""
+        salts = []
+        for i in range(2):
+            test_in = os.path.join(self.test_dir, f"mayo_v12_unique_{i}.txt")
+            test_out = os.path.join(self.test_dir, f"mayo_v12_unique_{i}.enc")
+            self.test_files.extend([test_in, test_out])
+
+            with open(test_in, "w") as f:
+                f.write(self.test_data)
+
+            encrypt_file(
+                test_in,
+                test_out,
+                self.test_password,
+                self.hash_config,
+                algorithm=EncryptionAlgorithm.MAYO_1_HYBRID,
+                format_version=12,
+                quiet=True,
+            )
+
+            with open(test_out, "rb") as f:
+                content = f.read()
+            metadata_b64 = content.split(b":")[0]
+            metadata = json.loads(base64.b64decode(metadata_b64))
+            salts.append(metadata["encryption"]["pqc_sig_hkdf_salt"])
+
+        self.assertNotEqual(salts[0], salts[1], "Each encryption must use a unique random salt")
