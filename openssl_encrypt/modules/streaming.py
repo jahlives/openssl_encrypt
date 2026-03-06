@@ -659,6 +659,17 @@ class StreamingDecryptor:
                 f"trailer says {trailer_chunk_count}"
             )
 
+        # Validate chunk_count against payload size to prevent DoS via absurd values.
+        # Each chunk needs at least 8 bytes header (4 index + 4 length) + 16 bytes tag.
+        payload_data_size = len(payload) - 8 - 36  # minus header and trailer
+        min_bytes_per_chunk = 8 + 16  # chunk header + minimum AEAD tag
+        max_possible_chunks = payload_data_size // min_bytes_per_chunk if min_bytes_per_chunk > 0 else 0
+        if expected_chunk_count > max_possible_chunks:
+            raise ValidationError(
+                f"Chunk count {expected_chunk_count} exceeds maximum possible "
+                f"for payload size ({max_possible_chunks})"
+            )
+
         # Parse and decrypt chunks
         chunk_tags: List[bytes] = []
         decrypted_chunks: List[bytes] = []
