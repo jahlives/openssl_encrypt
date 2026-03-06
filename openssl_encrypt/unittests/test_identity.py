@@ -691,6 +691,40 @@ class TestIdentity(unittest.TestCase):
         self.assertIn("test@example.com", str_repr)
         self.assertIn(identity.fingerprint[:16], str_repr)
 
+    def test_import_public_with_tampered_fingerprint_rejected(self):
+        """Fingerprint verification rejects tampering on import (M5)."""
+        identity = Identity.generate("TestTamper", "t@t.com", "pass")
+        exported = identity.export_public()
+        # Tamper with the fingerprint
+        exported["fingerprint"] = "00:00:00:00:00:00:00:00"
+        with self.assertRaises(IdentityError) as ctx:
+            Identity.import_public(exported)
+        self.assertIn("Fingerprint verification failed", str(ctx.exception))
+
+    def test_import_public_with_tampered_key_rejected(self):
+        """Tampered public keys must be rejected on import (M5)."""
+        identity = Identity.generate("TestTamper2", "t@t.com", "pass")
+        exported = identity.export_public()
+        # Tamper with the encryption public key
+        import base64
+        exported["encryption_public_key"] = base64.b64encode(b"tampered" * 100).decode()
+        with self.assertRaises(IdentityError) as ctx:
+            Identity.import_public(exported)
+        self.assertIn("Fingerprint verification failed", str(ctx.exception))
+
+    def test_path_traversal_identity_name_rejected(self):
+        """Path traversal in identity names must be rejected (H1/H2)."""
+        from openssl_encrypt.modules.identity import validate_identity_name
+        for bad_name in ["../../etc/passwd", "../secret", "a/b/c", ".hidden", "", "a" * 256]:
+            with self.assertRaises(IdentityError):
+                validate_identity_name(bad_name)
+
+    def test_valid_identity_names_accepted(self):
+        """Valid identity names must be accepted."""
+        from openssl_encrypt.modules.identity import validate_identity_name
+        for good_name in ["alice", "bob-key", "my_identity", "test.key", "A1"]:
+            validate_identity_name(good_name)  # Should not raise
+
 
 @unittest.skipIf(not LIBOQS_AVAILABLE, "liboqs not available")
 class TestIdentityStore(unittest.TestCase):
