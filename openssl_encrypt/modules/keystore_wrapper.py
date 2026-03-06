@@ -210,7 +210,7 @@ def encrypt_file_with_keystore(
     if key_id is not None:
         # Open the encrypted file and check metadata
         with open(output_file, "rb") as f:
-            content = f.read(8192)  # Read enough for the header - increased for large keys
+            content = f.read(32768)  # Read enough for the header - sized for large PQC keys (HQC-256)
 
         # Find the colon separator
         colon_pos = content.find(b":")
@@ -397,7 +397,7 @@ def decrypt_file_with_keystore(
     metadata = None
     try:
         with open(input_file, "rb") as f:
-            content = f.read(8192)  # Read enough for the header
+            content = f.read(32768)  # Read enough for the header - sized for large PQC keys
 
         # Find the colon separator
         colon_pos = content.find(b":")
@@ -444,7 +444,7 @@ def decrypt_file_with_keystore(
             # Try reading the metadata manually
             try:
                 with open(input_file, "rb") as f:
-                    content = f.read(8192)  # Read enough for the header
+                    content = f.read(32768)  # Read enough for the header - sized for large PQC keys
 
                 # Find the colon separator
                 colon_pos = content.find(b":")
@@ -495,7 +495,7 @@ def decrypt_file_with_keystore(
             # Read the metadata again (or use what we already read)
             if not "metadata" in locals() or metadata is None:
                 with open(input_file, "rb") as f:
-                    content = f.read(8192)  # Read enough for the header
+                    content = f.read(32768)  # Read enough for the header - sized for large PQC keys
 
                 # Find the colon separator
                 colon_pos = content.find(b":")
