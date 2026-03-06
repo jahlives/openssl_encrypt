@@ -202,11 +202,17 @@ class PasswordWrapper:
         nonce = None
 
         try:
-            # Derive 32-byte key from shared secret
-            h = hashlib.sha256()
-            h.update(b"openssl_encrypt.password_wrap.v1")
-            h.update(shared_secret)
-            wrap_key_bytes = h.digest()
+            # Derive 32-byte key from shared secret using HKDF
+            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+            from cryptography.hazmat.primitives import hashes as crypto_hashes
+
+            hkdf = HKDF(
+                algorithm=crypto_hashes.SHA256(),
+                length=32,
+                salt=None,
+                info=b"openssl_encrypt.password_wrap.v2",
+            )
+            wrap_key_bytes = hkdf.derive(shared_secret)
 
             # Generate random nonce (96 bits for GCM)
             nonce = secrets.token_bytes(12)
@@ -273,15 +279,33 @@ class PasswordWrapper:
         wrap_key_bytes = None
 
         try:
-            # Derive same AES-256 key from shared secret
-            h = hashlib.sha256()
-            h.update(b"openssl_encrypt.password_wrap.v1")
-            h.update(shared_secret)
-            wrap_key_bytes = h.digest()
-
             # Extract components
             nonce = encrypted_password[:12]
             ciphertext_with_tag = encrypted_password[12:]
+
+            # Try HKDF-based derivation first (v2), fall back to SHA-256 (v1 legacy)
+            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+            from cryptography.hazmat.primitives import hashes as crypto_hashes
+
+            hkdf = HKDF(
+                algorithm=crypto_hashes.SHA256(),
+                length=32,
+                salt=None,
+                info=b"openssl_encrypt.password_wrap.v2",
+            )
+            wrap_key_bytes = hkdf.derive(shared_secret)
+
+            try:
+                aesgcm = AESGCM(wrap_key_bytes)
+                password = aesgcm.decrypt(nonce, ciphertext_with_tag, None)
+                return password
+            except Exception:
+                # Legacy SHA-256 derivation fallback
+                secure_memzero(bytearray(wrap_key_bytes))
+                h = hashlib.sha256()
+                h.update(b"openssl_encrypt.password_wrap.v1")
+                h.update(shared_secret)
+                wrap_key_bytes = h.digest()
 
             # Decrypt with AES-256-GCM
             aesgcm = AESGCM(wrap_key_bytes)
