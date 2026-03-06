@@ -334,13 +334,28 @@ def combine_shares(shares: List[Share]) -> bytes:
     if len(key_ids) > 1:
         raise SecretSharingError("Shares have mismatched key_ids")
 
+    # Cross-validate threshold and total_shares across all shares (M3)
+    thresholds = {s.metadata.threshold for s in shares}
+    if len(thresholds) > 1:
+        raise SecretSharingError("Shares have mismatched threshold values")
+    total_shares_set = {s.metadata.total_shares for s in shares}
+    if len(total_shares_set) > 1:
+        raise SecretSharingError("Shares have mismatched total_shares values")
+
     # Check threshold
     threshold = shares[0].metadata.threshold
     if len(shares) < threshold:
         raise SecretSharingError(f"Insufficient shares: need {threshold}, have {len(shares)}")
 
-    # Check for duplicate indices
+    # Validate share_index values are in valid GF(256) range [1, 255] (M2)
     indices = [s.metadata.share_index for s in shares]
+    for idx in indices:
+        if not isinstance(idx, int) or idx < 1 or idx > 255:
+            raise SecretSharingError(
+                f"Invalid share_index {idx}: must be an integer in [1, 255]"
+            )
+
+    # Check for duplicate indices
     if len(set(indices)) != len(indices):
         raise SecretSharingError("Duplicate share indices detected")
 

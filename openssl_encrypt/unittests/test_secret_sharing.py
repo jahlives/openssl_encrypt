@@ -289,6 +289,41 @@ class TestValidation(unittest.TestCase):
         recovered = combine_shares(shares)
         self.assertEqual(recovered, secret)
 
+    def test_share_index_zero_rejected(self):
+        """share_index=0 is invalid in GF(256) and must be rejected (M2)."""
+        shares = split_secret(b"test", threshold=2, num_shares=3)
+        shares[0].metadata.share_index = 0
+        with self.assertRaises(SecretSharingError):
+            combine_shares(shares[:2])
+
+    def test_share_index_256_rejected(self):
+        """share_index=256 exceeds GF(256) range and must be rejected (M2)."""
+        shares = split_secret(b"test", threshold=2, num_shares=3)
+        shares[0].metadata.share_index = 256
+        with self.assertRaises(SecretSharingError):
+            combine_shares(shares[:2])
+
+    def test_share_index_negative_rejected(self):
+        """Negative share_index must be rejected (M2)."""
+        shares = split_secret(b"test", threshold=2, num_shares=3)
+        shares[0].metadata.share_index = -1
+        with self.assertRaises(SecretSharingError):
+            combine_shares(shares[:2])
+
+    def test_mismatched_thresholds_rejected(self):
+        """Shares with different threshold values must be rejected (M3)."""
+        shares = split_secret(b"test", threshold=2, num_shares=3)
+        shares[1].metadata.threshold = 3  # Tamper with threshold
+        with self.assertRaises(SecretSharingError):
+            combine_shares(shares[:2])
+
+    def test_mismatched_total_shares_rejected(self):
+        """Shares with different total_shares values must be rejected (M3)."""
+        shares = split_secret(b"test", threshold=2, num_shares=3)
+        shares[1].metadata.total_shares = 5  # Tamper with total_shares
+        with self.assertRaises(SecretSharingError):
+            combine_shares(shares[:2])
+
 
 if __name__ == "__main__":
     unittest.main()
