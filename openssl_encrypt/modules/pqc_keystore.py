@@ -461,6 +461,9 @@ class PQCKeystore:
                 f.write(header_json)
                 f.write(ciphertext)
 
+            # Restrict keystore file to owner read/write only
+            os.chmod(self.keystore_path, 0o600)
+
             return True
 
         except Exception as e:
