@@ -105,6 +105,7 @@ class PluginManager:
         self.strict_security_mode = strict_security_mode  # Default: block dangerous patterns
         self.allowed_unsafe_plugins: Set[str] = set()  # Whitelist for trusted plugins
         self.builtin_plugin_root: Optional[str] = None  # Built-in plugins skip AST analysis
+        self._validated_source_hashes: Dict[str, str] = {}  # TOCTOU: hash at validation time
 
     def add_plugin_directory(self, directory: str) -> None:
         """Add directory to scan for plugins."""
@@ -212,6 +213,20 @@ class PluginManager:
                             except ImportError:
                                 # Parent package might not exist as importable module, that's OK
                                 logger.debug(f"Could not import parent package: {parent_name}")
+
+                # TOCTOU mitigation: re-read source and verify hash matches
+                # what was validated by _validate_plugin_file
+                real_path = os.path.realpath(file_path)
+                expected_hash = self._validated_source_hashes.get(real_path)
+                if expected_hash:
+                    import hashlib as _hashlib
+
+                    with open(real_path, "r", encoding="utf-8") as _f:
+                        current_hash = _hashlib.sha256(_f.read().encode("utf-8")).hexdigest()
+                    if current_hash != expected_hash:
+                        return PluginResult.error_result(
+                            f"Plugin file modified after validation (TOCTOU): {file_path}"
+                        )
 
                 sys.modules[module_name] = module
                 spec.loader.exec_module(module)
@@ -683,6 +698,8 @@ class PluginManager:
             True if plugin passes validation, False otherwise
         """
         try:
+            import hashlib as _hashlib
+
             # Built-in plugins (shipped with the package) are trusted and skip AST analysis.
             # If an attacker could modify these files, they could modify the scanner too.
             # Use realpath to resolve symlinks and prevent symlink-based bypass.
@@ -703,72 +720,77 @@ class PluginManager:
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
-                # Use AST-based analysis to detect dangerous patterns
-                is_safe, violations = analyze_plugin_code(
-                    content, file_path, strict_mode=self.strict_security_mode
-                )
+            # Store source hash for TOCTOU verification before exec_module
+            self._validated_source_hashes[os.path.realpath(file_path)] = (
+                _hashlib.sha256(content.encode("utf-8")).hexdigest()
+            )
 
-                # Log and handle any violations found
-                if violations:
-                    for violation in violations:
-                        violation_msg = (
-                            f"Line {violation.line}:{violation.col} - "
-                            f"{violation.violation_type}: {violation.description}"
+            # Use AST-based analysis to detect dangerous patterns
+            is_safe, violations = analyze_plugin_code(
+                content, file_path, strict_mode=self.strict_security_mode
+            )
+
+            # Log and handle any violations found
+            if violations:
+                for violation in violations:
+                    violation_msg = (
+                        f"Line {violation.line}:{violation.col} - "
+                        f"{violation.violation_type}: {violation.description}"
+                    )
+
+                    if self.strict_security_mode and violation.severity == "critical":
+                        # In strict mode, block plugins with critical violations
+                        logger.error(
+                            f"SECURITY BLOCKED: Plugin contains security violation: {file_path}"
+                        )
+                        logger.error(f"  {violation_msg}")
+                        logger.error(
+                            "Plugin rejected in strict security mode. Security violations not allowed."
                         )
 
-                        if self.strict_security_mode and violation.severity == "critical":
-                            # In strict mode, block plugins with critical violations
-                            logger.error(
-                                f"SECURITY BLOCKED: Plugin contains security violation: {file_path}"
+                        # Security audit log for blocked plugin
+                        if security_logger:
+                            security_logger.log_event(
+                                "plugin_blocked",
+                                "critical",
+                                {
+                                    "file_path": file_path,
+                                    "violation_type": violation.violation_type,
+                                    "line": violation.line,
+                                    "description": violation.description,
+                                    "reason": "strict_security_mode",
+                                },
                             )
-                            logger.error(f"  {violation_msg}")
-                            logger.error(
-                                "Plugin rejected in strict security mode. Security violations not allowed."
+                    else:
+                        # In permissive mode or for non-critical violations, only warn
+                        logger.warning(f"Plugin file contains security violation: {file_path}")
+                        logger.warning(f"  {violation_msg}")
+                        logger.warning(
+                            "Security violation allowed (strict_security_mode=False). "
+                            "Use with caution!"
+                        )
+
+                        # Security audit log for violation warning
+                        if security_logger:
+                            security_logger.log_event(
+                                "security_violation_detected",
+                                "warning",
+                                {
+                                    "file_path": file_path,
+                                    "violation_type": violation.violation_type,
+                                    "line": violation.line,
+                                    "description": violation.description,
+                                    "action": "allowed_permissive_mode",
+                                },
                             )
 
-                            # Security audit log for blocked plugin
-                            if security_logger:
-                                security_logger.log_event(
-                                    "plugin_blocked",
-                                    "critical",
-                                    {
-                                        "file_path": file_path,
-                                        "violation_type": violation.violation_type,
-                                        "line": violation.line,
-                                        "description": violation.description,
-                                        "reason": "strict_security_mode",
-                                    },
-                                )
-                        else:
-                            # In permissive mode or for non-critical violations, only warn
-                            logger.warning(f"Plugin file contains security violation: {file_path}")
-                            logger.warning(f"  {violation_msg}")
-                            logger.warning(
-                                "Security violation allowed (strict_security_mode=False). "
-                                "Use with caution!"
-                            )
-
-                            # Security audit log for violation warning
-                            if security_logger:
-                                security_logger.log_event(
-                                    "security_violation_detected",
-                                    "warning",
-                                    {
-                                        "file_path": file_path,
-                                        "violation_type": violation.violation_type,
-                                        "line": violation.line,
-                                        "description": violation.description,
-                                        "action": "allowed_permissive_mode",
-                                    },
-                                )
-
-                # In strict mode, block if not safe
-                if self.strict_security_mode and not is_safe:
-                    self._audit_log(f"Plugin with security violations blocked: {file_path}")
-                    return False
-                elif violations:
-                    # In permissive mode, warn but allow
-                    self._audit_log(f"Plugin with security violations allowed: {file_path}")
+            # In strict mode, block if not safe
+            if self.strict_security_mode and not is_safe:
+                self._audit_log(f"Plugin with security violations blocked: {file_path}")
+                return False
+            elif violations:
+                # In permissive mode, warn but allow
+                self._audit_log(f"Plugin with security violations allowed: {file_path}")
 
             return True
 
