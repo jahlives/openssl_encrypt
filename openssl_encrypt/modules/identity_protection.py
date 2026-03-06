@@ -331,9 +331,9 @@ class IdentityKeyProtectionService:
             if pepper is None or len(pepper) != 20:
                 raise HSMNotAvailableError("Invalid HSM pepper returned")
 
-            # Cache for this operation
-            self._cached_pepper = pepper
-            return pepper
+            # Cache as bytearray so secure_memzero can operate on actual data
+            self._cached_pepper = bytearray(pepper)
+            return bytes(self._cached_pepper)
 
         except TimeoutError:
             raise HSMTouchTimeoutError(
@@ -347,7 +347,7 @@ class IdentityKeyProtectionService:
     def clear_pepper_cache(self):
         """Clear cached HSM pepper."""
         if self._cached_pepper is not None:
-            secure_memzero(bytearray(self._cached_pepper))
+            secure_memzero(self._cached_pepper)
             self._cached_pepper = None
 
     def _derive_key(
