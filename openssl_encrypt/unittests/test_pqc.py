@@ -2037,3 +2037,125 @@ class TestConcurrentPQCExecutionSafety(unittest.TestCase):
                 pass
 
         print("✅ PQC concurrent execution best practices validated")
+
+
+@unittest.skipUnless(PQC_AVAILABLE, "PQC libraries not available")
+class TestPQCKeyDerivationHKDF(unittest.TestCase):
+    """Tests for C1/C2: HKDF-based KEM shared secret to symmetric key derivation.
+
+    For format_version >= 12, PQCipher must use HKDF (not bare SHA-256) to
+    derive symmetric keys from KEM shared secrets. Legacy formats continue
+    using SHA-256 for backward compatibility.
+    """
+
+    def test_derive_symmetric_key_v12_uses_hkdf(self):
+        """format_version >= 12 must use HKDF, producing a different key than bare SHA-256."""
+        import hashlib
+
+        from openssl_encrypt.modules.pqc import PQCipher
+
+        cipher = PQCipher("ML-KEM-768", quiet=True, format_version=12)
+        shared_secret = b"\x01" * 32
+
+        # The HKDF-derived key must differ from bare SHA-256
+        bare_sha256_key = hashlib.sha256(shared_secret).digest()
+        hkdf_key = cipher._derive_symmetric_key(shared_secret)
+
+        self.assertEqual(len(hkdf_key), 32)
+        self.assertNotEqual(bytes(hkdf_key), bare_sha256_key)
+
+    def test_derive_symmetric_key_legacy_uses_sha256(self):
+        """format_version < 12 must use bare SHA-256 for backward compatibility."""
+        import hashlib
+
+        from openssl_encrypt.modules.pqc import PQCipher
+
+        cipher = PQCipher("ML-KEM-768", quiet=True, format_version=11)
+        shared_secret = b"\x01" * 32
+
+        bare_sha256_key = hashlib.sha256(shared_secret).digest()
+        derived_key = cipher._derive_symmetric_key(shared_secret)
+
+        self.assertEqual(bytes(derived_key), bare_sha256_key)
+
+    def test_derive_symmetric_key_default_is_legacy(self):
+        """Without format_version, defaults to legacy SHA-256 derivation."""
+        import hashlib
+
+        from openssl_encrypt.modules.pqc import PQCipher
+
+        cipher = PQCipher("ML-KEM-768", quiet=True)
+        shared_secret = b"\x01" * 32
+
+        bare_sha256_key = hashlib.sha256(shared_secret).digest()
+        derived_key = cipher._derive_symmetric_key(shared_secret)
+
+        self.assertEqual(bytes(derived_key), bare_sha256_key)
+
+    def test_derive_symmetric_key_v12_is_deterministic(self):
+        """HKDF derivation must be deterministic for the same inputs."""
+        from openssl_encrypt.modules.pqc import PQCipher
+
+        cipher = PQCipher("ML-KEM-768", quiet=True, format_version=12)
+        shared_secret = b"\xab" * 32
+
+        key1 = cipher._derive_symmetric_key(shared_secret)
+        key2 = cipher._derive_symmetric_key(shared_secret)
+
+        self.assertEqual(bytes(key1), bytes(key2))
+
+    def test_derive_symmetric_key_v12_different_algorithms_different_keys(self):
+        """Different KEM algorithms should produce different HKDF keys (via info param)."""
+        from openssl_encrypt.modules.pqc import PQCipher
+
+        cipher_768 = PQCipher("ML-KEM-768", quiet=True, format_version=12)
+        cipher_1024 = PQCipher("ML-KEM-1024", quiet=True, format_version=12)
+        shared_secret = b"\xab" * 32
+
+        key_768 = cipher_768._derive_symmetric_key(shared_secret)
+        key_1024 = cipher_1024._derive_symmetric_key(shared_secret)
+
+        self.assertNotEqual(bytes(key_768), bytes(key_1024))
+
+    def test_encrypt_decrypt_roundtrip_v12(self):
+        """Encrypt/decrypt roundtrip must work with format_version=12 HKDF derivation."""
+        from openssl_encrypt.modules.pqc import PQCipher
+
+        cipher = PQCipher("ML-KEM-768", quiet=True, format_version=12)
+        public_key, private_key = cipher.generate_keypair()
+
+        plaintext = b"Hello, post-quantum world!"
+        encrypted = cipher.encrypt(plaintext, public_key)
+        decrypted = cipher.decrypt(encrypted, private_key)
+
+        self.assertEqual(decrypted, plaintext)
+
+    def test_encrypt_decrypt_roundtrip_v12_with_aad(self):
+        """Encrypt/decrypt with AAD must work with format_version=12."""
+        from openssl_encrypt.modules.pqc import PQCipher
+
+        cipher = PQCipher("ML-KEM-768", quiet=True, format_version=12)
+        public_key, private_key = cipher.generate_keypair()
+
+        plaintext = b"Authenticated data test"
+        aad = b"metadata-context"
+        encrypted = cipher.encrypt(plaintext, public_key, aad=aad)
+        decrypted = cipher.decrypt(encrypted, private_key, aad=aad)
+
+        self.assertEqual(decrypted, plaintext)
+
+    def test_v12_encrypted_data_incompatible_with_legacy_decrypt(self):
+        """Data encrypted with v12 HKDF must NOT decrypt with legacy SHA-256 derivation."""
+        from openssl_encrypt.modules.pqc import PQCipher
+
+        cipher_v12 = PQCipher("ML-KEM-768", quiet=True, format_version=12)
+        cipher_legacy = PQCipher("ML-KEM-768", quiet=True, format_version=11)
+
+        public_key, private_key = cipher_v12.generate_keypair()
+        plaintext = b"v12 only data"
+
+        encrypted = cipher_v12.encrypt(plaintext, public_key)
+
+        # Legacy cipher should fail to decrypt v12 data (wrong key derivation)
+        with self.assertRaises((ValueError, Exception)):
+            cipher_legacy.decrypt(encrypted, private_key)

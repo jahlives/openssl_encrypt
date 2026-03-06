@@ -269,6 +269,7 @@ class PQCipher:
         encryption_data: str = "aes-gcm",
         verbose: bool = False,
         debug: bool = False,
+        format_version: Optional[int] = None,
     ):
         """
         Initialize a post-quantum cipher instance
@@ -279,11 +280,14 @@ class PQCipher:
             encryption_data (str): Symmetric encryption algorithm to use ('aes-gcm', 'chacha20-poly1305', etc.)
             verbose (bool): Whether to show detailed information
             debug (bool): Whether to show debug level information
+            format_version (int, optional): File format version. >= 12 uses HKDF
+                for KEM key derivation; older versions use legacy SHA-256.
 
         Raises:
             ValueError: If liboqs is not available or algorithm not supported
             ImportError: If required dependencies are missing
         """
+        self.format_version = format_version
         # Respect both parameter and environment variable
         should_be_quiet = quiet or PQC_QUIET
 
@@ -427,6 +431,35 @@ class PQCipher:
 
         # All Kyber/ML-KEM/HQC algorithms are KEM algorithms
         self.is_kem = any(x in self.algorithm_name.lower() for x in ["ml-kem", "kyber", "hqc"])
+
+    def _derive_symmetric_key(self, shared_secret: bytes, key_length: int = 32) -> bytes:
+        """Derive a symmetric key from a KEM shared secret.
+
+        For format_version >= 12: uses HKDF-SHA256 with algorithm name as info,
+        providing proper domain separation and extract-then-expand semantics.
+
+        For legacy formats (< 12 or None): uses bare SHA-256 for backward
+        compatibility with existing encrypted files.
+
+        Args:
+            shared_secret: Raw shared secret from KEM encapsulation/decapsulation.
+            key_length: Desired key length in bytes (default 32 for AES-256).
+
+        Returns:
+            Derived symmetric key bytes.
+        """
+        if self.format_version is not None and self.format_version >= 12:
+            from cryptography.hazmat.primitives import hashes
+            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+            return HKDF(
+                algorithm=hashes.SHA256(),
+                length=key_length,
+                salt=None,
+                info=b"openssl_encrypt-kem-key-" + self.algorithm_name.encode(),
+            ).derive(shared_secret)
+        else:
+            return hashlib.sha256(shared_secret).digest()
 
     def generate_keypair(self) -> Tuple[bytes, bytes]:
         """
@@ -583,7 +616,7 @@ class PQCipher:
                 encapsulated_key, shared_secret = kem.encap_secret(public_key)
 
                 # Derive symmetric key from shared secret
-                symmetric_key = hashlib.sha256(shared_secret).digest()
+                symmetric_key = self._derive_symmetric_key(shared_secret)
 
                 # Generate random nonce (12 bytes for most AEAD ciphers)
                 nonce = secrets.token_bytes(12)
@@ -768,7 +801,9 @@ class PQCipher:
 
                 # Derive the symmetric key using secure memory operations
                 with SecureBytes(shared_secret) as secure_shared_secret:
-                    symmetric_key = SecureBytes(hashlib.sha256(secure_shared_secret).digest())
+                    symmetric_key = SecureBytes(
+                        self._derive_symmetric_key(bytes(secure_shared_secret))
+                    )
 
                 # Get the encryption_data from the metadata if available
                 metadata_encryption_data = None
