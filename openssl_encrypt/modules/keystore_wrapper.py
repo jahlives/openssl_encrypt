@@ -106,6 +106,15 @@ def encrypt_file_with_keystore(
     # it and then removing it post-encryption breaks AEAD binding because the
     # metadata used as AAD during encryption would differ from the metadata stored
     # in the file after modification.
+    #
+    # SECURITY FIX (C6): When a keypair is NOT provided (pqc_keypair is None),
+    # encrypt_file generates one internally and may embed the private key.
+    # We MUST NOT strip it from metadata post-encryption because the metadata
+    # (including the private key) was already bound as AAD.  Modifying metadata
+    # after encryption invalidates the AEAD authentication tag, making the file
+    # undecryptable or silently removing integrity protection.
+    # The private key is stored encrypted in the metadata, so keeping it there
+    # alongside a keystore copy is redundant but cryptographically safe.
     embed_private_key_in_metadata = use_dual_encryption and not (pqc_keypair and key_id)
 
     # Call the original encrypt_file
@@ -124,8 +133,14 @@ def encrypt_file_with_keystore(
     if not result:
         return False
 
-    # If dual encryption is enabled for PQC keys, store the key in keystore and remove from metadata
-    # Skip this when the keypair was provided (key is already in keystore, not in metadata)
+    # If dual encryption is enabled for PQC keys, store the key in keystore.
+    # Skip this when the keypair was provided (key is already in keystore, not in metadata).
+    #
+    # SECURITY FIX (C6): We store the private key in the keystore but do NOT
+    # strip it from the encrypted file's metadata.  The metadata was used as AAD
+    # during AEAD encryption; modifying it afterward invalidates the authentication
+    # tag.  The encrypted private key remains in the file (harmless — it is
+    # encrypted) and the keystore copy provides the convenience lookup.
     if use_dual_encryption and key_id is not None and keystore_file is not None and not pqc_keypair:
         if not quiet:
             print("Storing PQC key in keystore and removing from metadata")
@@ -172,147 +187,17 @@ def encrypt_file_with_keystore(
                             quiet=quiet,
                         )
 
-                        # Create a clean copy of the metadata to avoid any reference issues
-                        import copy
-
-                        clean_metadata = copy.deepcopy(metadata)
-
-                        if format_version in [4, 5, 6, 7, 8, 9, 10]:
-                            # Format version 4/5/6/7/8/9/10 structure
-                            # Remove private key fields from encryption section
-                            if "encryption" in clean_metadata:
-                                keys_to_remove = [
-                                    "pqc_private_key",
-                                    "pqc_key_salt",
-                                    "pqc_key_encrypted",
-                                    "pqc_private_key_embedded",
-                                ]
-
-                                for key in keys_to_remove:
-                                    if key in clean_metadata["encryption"]:
-                                        del clean_metadata["encryption"][key]
-
-                                # Ensure the public key is preserved
-                                if "pqc_public_key" in metadata["encryption"]:
-                                    clean_metadata["encryption"]["pqc_public_key"] = metadata[
-                                        "encryption"
-                                    ]["pqc_public_key"]
-
-                            # Ensure dual encryption flag is set in kdf_config
-                            if (
-                                "derivation_config" in clean_metadata
-                                and "kdf_config" in clean_metadata["derivation_config"]
-                            ):
-                                clean_metadata["derivation_config"]["kdf_config"][
-                                    "dual_encryption"
-                                ] = True
-
-                                # Ensure key ID is in kdf_config
-                                clean_metadata["derivation_config"]["kdf_config"][
-                                    "pqc_keystore_key_id"
-                                ] = key_id
-
-                                # Copy verification fields if they exist
-                                if "pqc_dual_encrypt_verify" in metadata.get(
-                                    "hash_config", {}
-                                ) and "pqc_dual_encrypt_verify_salt" in metadata.get(
-                                    "hash_config", {}
-                                ):
-                                    clean_metadata["derivation_config"]["kdf_config"][
-                                        "pqc_dual_encrypt_verify"
-                                    ] = metadata["hash_config"]["pqc_dual_encrypt_verify"]
-                                    clean_metadata["derivation_config"]["kdf_config"][
-                                        "pqc_dual_encrypt_verify_salt"
-                                    ] = metadata["hash_config"]["pqc_dual_encrypt_verify_salt"]
-                        else:
-                            # Format version 1-3 structure
-                            # Remove the private key from the metadata using a completely new metadata object
-                            # This approach avoids potential reference issues with nested structures
-                            keys_to_remove = [
-                                "pqc_private_key",
-                                "pqc_key_salt",
-                                "pqc_key_encrypted",
-                                "pqc_private_key_embedded",  # Also remove this flag
-                            ]
-
-                            # Create a completely new metadata object with only the fields we want to keep
-                            clean_metadata = {
-                                "format_version": metadata.get("format_version", 3),
-                                "salt": metadata.get("salt", ""),
-                                "hash_config": {},
-                                "pbkdf2_iterations": metadata.get("pbkdf2_iterations", 100000),
-                                "original_hash": metadata.get("original_hash", ""),
-                                "encrypted_hash": metadata.get("encrypted_hash", ""),
-                                "algorithm": metadata.get("algorithm", ""),
-                            }
-
-                            # Copy only the hash_config fields we want to keep
-                            for k, v in metadata.get("hash_config", {}).items():
-                                if k not in keys_to_remove:
-                                    clean_metadata["hash_config"][k] = v
-
-                            # Ensure the important flags are preserved
-                            if "hash_config" in metadata:
-                                # Ensure dual encryption flags are consistent
-                                if (
-                                    "pqc_dual_encrypt_key" in metadata["hash_config"]
-                                    or dual_encryption
-                                ):
-                                    clean_metadata["hash_config"]["dual_encryption"] = True
-
-                                # Ensure key ID is preserved
-                                if "pqc_keystore_key_id" in metadata["hash_config"]:
-                                    clean_metadata["hash_config"]["pqc_keystore_key_id"] = metadata[
-                                        "hash_config"
-                                    ]["pqc_keystore_key_id"]
-
-                                # Copy the public key
-                                if "pqc_public_key" in metadata["hash_config"]:
-                                    clean_metadata["hash_config"]["pqc_public_key"] = metadata[
-                                        "hash_config"
-                                    ]["pqc_public_key"]
-
-                        # Write the updated metadata back to the file
-                        new_metadata_json = json.dumps(clean_metadata)
-                        new_metadata_b64 = base64.b64encode(new_metadata_json.encode("utf-8"))
-
-                        with open(output_file, "wb") as f:
-                            f.write(new_metadata_b64)
-                            f.write(encrypted_data)
-
-                        # Verify removal was successful
-                        with open(output_file, "rb") as f:
-                            verify_content = f.read(8192)
-
-                        verify_metadata_b64 = verify_content[: verify_content.find(b":")]
-                        verify_metadata_json = base64.b64decode(verify_metadata_b64).decode("utf-8")
-                        verify_metadata = json.loads(verify_metadata_json)
-
-                        private_key_still_present = False
-                        if format_version == 4:
-                            # Check encryption section for format version 4
-                            if (
-                                "encryption" in verify_metadata
-                                and "pqc_private_key" in verify_metadata["encryption"]
-                            ):
-                                private_key_still_present = True
-                        else:
-                            # Check hash_config for older versions
-                            if "hash_config" in verify_metadata and any(
-                                key in verify_metadata["hash_config"] for key in keys_to_remove
-                            ):
-                                private_key_still_present = True
-
-                        if private_key_still_present:
-                            if not quiet:
-                                print(
-                                    "WARNING: Unable to completely remove private key from metadata!"
-                                )
-                        else:
-                            if not quiet:
-                                print(
-                                    "Successfully stored PQC key in keystore and removed from metadata"
-                                )
+                        # SECURITY FIX (C6): Do NOT strip the private key from the
+                        # file's metadata.  The metadata was used as AAD during AEAD
+                        # encryption; modifying it afterward would invalidate the
+                        # authentication tag.  The encrypted private key stays in the
+                        # file (it is already encrypted with the user's derived key)
+                        # and the keystore provides a convenience copy.
+                        if not quiet:
+                            print(
+                                "Successfully stored PQC key in keystore "
+                                "(encrypted copy retained in file metadata for AEAD integrity)"
+                            )
                 except Exception as e:
                     if not quiet:
                         print(f"Warning: Error processing metadata: {e}")
@@ -424,25 +309,41 @@ def encrypt_file_with_keystore(
                             metadata["hash_config"]["dual_encryption"] = True
                             need_update = True
 
-                    # If we need to update the metadata, rewrite the file
+                    # If we need to update the metadata, rewrite the file —
+                    # BUT only when AEAD binding is NOT active.  Rewriting
+                    # metadata after AEAD encryption invalidates the
+                    # authentication tag.
                     if need_update:
-                        # Convert back to JSON and base64
-                        new_metadata_json = json.dumps(metadata)
-                        new_metadata_b64 = base64.b64encode(new_metadata_json.encode("utf-8"))
+                        # Check whether the file uses AEAD binding
+                        aead_bound = metadata.get("aead_binding", False)
+                        if aead_bound:
+                            if not quiet:
+                                print(
+                                    "Warning: metadata flags missing but file uses AEAD binding; "
+                                    "skipping metadata rewrite to preserve authentication tag"
+                                )
+                        else:
+                            # Safe to rewrite — no AEAD binding on this file
+                            new_metadata_json = json.dumps(metadata)
+                            new_metadata_b64 = base64.b64encode(
+                                new_metadata_json.encode("utf-8")
+                            )
 
-                        # Rewrite the file with updated metadata
-                        with open(output_file, "rb") as f:
-                            full_content = f.read()
+                            # Rewrite the file with updated metadata
+                            with open(output_file, "rb") as f:
+                                full_content = f.read()
 
-                        with open(output_file, "wb") as f:
-                            f.write(new_metadata_b64)
-                            f.write(full_content[colon_pos:])
+                            with open(output_file, "wb") as f:
+                                f.write(new_metadata_b64)
+                                f.write(full_content[colon_pos:])
 
-                        if not quiet:
-                            if dual_encryption:
-                                print("Updated metadata with key ID and dual encryption flag")
-                            else:
-                                print("Updated metadata with key ID")
+                            if not quiet:
+                                if dual_encryption:
+                                    print(
+                                        "Updated metadata with key ID and dual encryption flag"
+                                    )
+                                else:
+                                    print("Updated metadata with key ID")
                 except json.JSONDecodeError:
                     if not quiet:
                         print("Warning: Could not parse metadata as JSON")
