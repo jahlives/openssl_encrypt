@@ -5872,6 +5872,22 @@ def encrypt_file(
     cascade_salt_bytes = None
     _pqc_sig_hkdf_salt = [None]  # Mutable container for nonlocal access from do_encrypt
 
+    # Pre-generate PQC sig HKDF salt for signature algorithms with format_version >= 12.
+    # Must happen BEFORE metadata building so the salt is included in AEAD AAD.
+    if (
+        algorithm
+        in [
+            EncryptionAlgorithm.MAYO_1_HYBRID,
+            EncryptionAlgorithm.MAYO_3_HYBRID,
+            EncryptionAlgorithm.MAYO_5_HYBRID,
+            EncryptionAlgorithm.CROSS_128_HYBRID,
+            EncryptionAlgorithm.CROSS_192_HYBRID,
+            EncryptionAlgorithm.CROSS_256_HYBRID,
+        ]
+        and format_version >= 12
+    ):
+        _pqc_sig_hkdf_salt[0] = secrets.token_bytes(32)
+
     # For large files, use progress bar for encryption
     def do_encrypt(aad=None):
         if debug:
@@ -5996,23 +6012,16 @@ def encrypt_file(
                     logger.debug(f"ENCRYPT:PQC_SIG Input data length: {len(data)} bytes")
 
                 # Derive symmetric encryption key from signature private key
-                # For v12+, use a random salt; for legacy, use the static constant
-                if format_version >= 12:
-                    sig_hkdf_salt = secrets.token_bytes(32)
-                    _pqc_sig_hkdf_salt[0] = sig_hkdf_salt
-                else:
-                    sig_hkdf_salt = None  # _derive_pqc_sig_key uses static salt
+                # Use pre-generated salt from _pqc_sig_hkdf_salt[0] (set before metadata building)
+                # None for legacy (format_version < 12), 32-byte random for v12+
+                sig_hkdf_salt = _pqc_sig_hkdf_salt[0]
 
                 if debug:
                     _salt_desc = sig_hkdf_salt.hex() if sig_hkdf_salt else "(static)"
                     logger.debug(f"ENCRYPT:PQC_SIG HKDF salt: {_salt_desc}")
-                    logger.debug(
-                        f"ENCRYPT:PQC_SIG HKDF info: encryption-key-{algorithm.value}"
-                    )
+                    logger.debug(f"ENCRYPT:PQC_SIG HKDF info: encryption-key-{algorithm.value}")
 
-                derived_key = _derive_pqc_sig_key(
-                    private_key, algorithm.value, salt=sig_hkdf_salt
-                )
+                derived_key = _derive_pqc_sig_key(private_key, algorithm.value, salt=sig_hkdf_salt)
 
                 if debug:
                     logger.debug(
@@ -8583,13 +8592,9 @@ def decrypt_file(
                 if debug:
                     _salt_desc = sig_hkdf_salt.hex() if sig_hkdf_salt else "(static)"
                     logger.debug(f"DECRYPT:PQC_SIG HKDF salt: {_salt_desc}")
-                    logger.debug(
-                        f"DECRYPT:PQC_SIG HKDF info: encryption-key-{algorithm}"
-                    )
+                    logger.debug(f"DECRYPT:PQC_SIG HKDF info: encryption-key-{algorithm}")
 
-                derived_key = _derive_pqc_sig_key(
-                    pqc_private_key, algorithm, salt=sig_hkdf_salt
-                )
+                derived_key = _derive_pqc_sig_key(pqc_private_key, algorithm, salt=sig_hkdf_salt)
 
                 if debug:
                     logger.debug(
