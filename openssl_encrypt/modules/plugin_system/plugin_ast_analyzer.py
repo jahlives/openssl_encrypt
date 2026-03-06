@@ -376,6 +376,47 @@ class DangerousPatternVisitor(ast.NodeVisitor):
 
         self.generic_visit(node)
 
+    def _extract_concat_string(self, node: ast.AST) -> Optional[str]:
+        """Try to statically resolve a string concatenation chain."""
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            left = self._extract_concat_string(node.left)
+            right = self._extract_concat_string(node.right)
+            if left is not None and right is not None:
+                return left + right
+        return None
+
+    def visit_BinOp(self, node: ast.BinOp) -> None:
+        """
+        Detect string concatenation used to build dangerous names.
+
+        Catches patterns like '__' + 'globals' + '__' which bypass
+        simple attribute name checks.
+        """
+        if isinstance(node.op, ast.Add):
+            resolved = self._extract_concat_string(node)
+            if resolved is not None:
+                # Check if the concatenated result is a dangerous dunder or function
+                if resolved in self.DANGEROUS_DUNDER_ATTRIBUTES:
+                    self.add_violation(
+                        node,
+                        "string_concat_bypass",
+                        f"String concatenation builds dangerous attribute name "
+                        f"'{resolved}'. This is a known sandbox bypass technique.",
+                        "critical",
+                    )
+                elif resolved in self.DANGEROUS_FUNCTIONS:
+                    self.add_violation(
+                        node,
+                        "string_concat_bypass",
+                        f"String concatenation builds dangerous function name "
+                        f"'{resolved}'. This is a known sandbox bypass technique.",
+                        "critical",
+                    )
+
+        self.generic_visit(node)
+
     def visit_Str(self, node: ast.Str) -> None:
         """Check for suspicious strings (base64 encoded code, etc.)"""
         # This is for older Python versions; in 3.8+ ast.Str is deprecated
