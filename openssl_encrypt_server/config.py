@@ -169,14 +169,14 @@ class Settings(BaseSettings):
 
     # Modules
     keyserver_enabled: bool = Field(default=True, validation_alias="KEYSERVER_ENABLED")
-    keyserver_token_secret: str = Field(
-        default="keyserver-secret-change-me-min-32-chars",
+    keyserver_token_secret: Optional[str] = Field(
+        default=None,
         validation_alias="KEYSERVER_TOKEN_SECRET",
     )
 
     telemetry_enabled: bool = Field(default=True, validation_alias="TELEMETRY_ENABLED")
-    telemetry_token_secret: str = Field(
-        default="telemetry-secret-change-me-min-32-chars",
+    telemetry_token_secret: Optional[str] = Field(
+        default=None,
         validation_alias="TELEMETRY_TOKEN_SECRET",
     )
 
@@ -347,15 +347,20 @@ def validate_config(settings: Settings):
 
     if settings.keyserver_enabled:
         ks_secret = settings.keyserver_token_secret
-        if len(ks_secret) < 32:
-            raise ValueError("KEYSERVER_TOKEN_SECRET must be at least 32 characters long")
-        if not settings.debug and _is_insecure_default(ks_secret):
+        if not ks_secret:
             raise ValueError(
-                "SECURITY ERROR: KEYSERVER_TOKEN_SECRET contains a default/insecure value. "
-                "Set a proper secret via environment variable. "
+                "KEYSERVER_TOKEN_SECRET is required when keyserver is enabled. "
                 'Generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"'
             )
-        if settings.debug and _is_insecure_default(ks_secret):
+        if len(ks_secret) < 32:
+            raise ValueError("KEYSERVER_TOKEN_SECRET must be at least 32 characters long")
+        if _is_insecure_default(ks_secret):
+            if not settings.debug:
+                raise ValueError(
+                    "SECURITY ERROR: KEYSERVER_TOKEN_SECRET contains a default/insecure value. "
+                    "Set a proper secret via environment variable. "
+                    'Generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"'
+                )
             logger.warning(
                 "SECURITY WARNING: KEYSERVER_TOKEN_SECRET uses a default value. "
                 "This is only acceptable in debug mode."
@@ -364,15 +369,20 @@ def validate_config(settings: Settings):
 
     if settings.telemetry_enabled:
         tm_secret = settings.telemetry_token_secret
-        if len(tm_secret) < 32:
-            raise ValueError("TELEMETRY_TOKEN_SECRET must be at least 32 characters long")
-        if not settings.debug and _is_insecure_default(tm_secret):
+        if not tm_secret:
             raise ValueError(
-                "SECURITY ERROR: TELEMETRY_TOKEN_SECRET contains a default/insecure value. "
-                "Set a proper secret via environment variable. "
+                "TELEMETRY_TOKEN_SECRET is required when telemetry is enabled. "
                 'Generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"'
             )
-        if settings.debug and _is_insecure_default(tm_secret):
+        if len(tm_secret) < 32:
+            raise ValueError("TELEMETRY_TOKEN_SECRET must be at least 32 characters long")
+        if _is_insecure_default(tm_secret):
+            if not settings.debug:
+                raise ValueError(
+                    "SECURITY ERROR: TELEMETRY_TOKEN_SECRET contains a default/insecure value. "
+                    "Set a proper secret via environment variable. "
+                    'Generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"'
+                )
             logger.warning(
                 "SECURITY WARNING: TELEMETRY_TOKEN_SECRET uses a default value. "
                 "This is only acceptable in debug mode."
