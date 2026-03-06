@@ -1134,5 +1134,92 @@ class TestChunkCount(unittest.TestCase):
         self.assertEqual(enc.get_chunk_count(100 * 1024 * 1024), 100)
 
 
+class TestStreamingHMACKeyDerivation(unittest.TestCase):
+    """Test HKDF-based HMAC key derivation for streaming trailer (H13).
+
+    For format_version >= 12, the streaming HMAC key should be derived
+    using HKDF instead of bare SHA-256(key || constant).
+    """
+
+    def test_v12_hmac_key_differs_from_legacy(self):
+        """Test that v12+ HKDF-derived HMAC key differs from legacy SHA-256."""
+        key = secrets.token_bytes(32)
+        legacy_hmac_key = hashlib.sha256(key + b"oesc-trailer-hmac").digest()
+
+        enc = StreamingEncryptor(
+            key=key, algorithm="aes-gcm", chunk_size=1024, format_version=12
+        )
+        v12_hmac_key = enc._derive_hmac_key()
+
+        self.assertNotEqual(legacy_hmac_key, v12_hmac_key)
+        self.assertEqual(len(v12_hmac_key), 32)
+
+    def test_legacy_hmac_key_unchanged(self):
+        """Test that legacy (no format_version) HMAC key uses SHA-256."""
+        key = secrets.token_bytes(32)
+        expected = hashlib.sha256(key + b"oesc-trailer-hmac").digest()
+
+        enc = StreamingEncryptor(key=key, algorithm="aes-gcm", chunk_size=1024)
+        legacy_hmac_key = enc._derive_hmac_key()
+
+        self.assertEqual(legacy_hmac_key, expected)
+
+    def test_v11_hmac_key_unchanged(self):
+        """Test that format_version=11 uses legacy SHA-256 HMAC key."""
+        key = secrets.token_bytes(32)
+        expected = hashlib.sha256(key + b"oesc-trailer-hmac").digest()
+
+        enc = StreamingEncryptor(
+            key=key, algorithm="aes-gcm", chunk_size=1024, format_version=11
+        )
+        legacy_hmac_key = enc._derive_hmac_key()
+
+        self.assertEqual(legacy_hmac_key, expected)
+
+    def test_v12_hmac_key_deterministic(self):
+        """Test that v12+ HKDF HMAC key is deterministic."""
+        key = secrets.token_bytes(32)
+
+        enc1 = StreamingEncryptor(
+            key=key, algorithm="aes-gcm", chunk_size=1024, format_version=12
+        )
+        enc2 = StreamingEncryptor(
+            key=key, algorithm="aes-gcm", chunk_size=1024, format_version=12
+        )
+
+        self.assertEqual(enc1._derive_hmac_key(), enc2._derive_hmac_key())
+
+    def test_v12_decryptor_hmac_key_matches_encryptor(self):
+        """Test that encryptor and decryptor derive the same HMAC key for v12."""
+        key = secrets.token_bytes(32)
+
+        enc = StreamingEncryptor(
+            key=key, algorithm="aes-gcm", chunk_size=1024, format_version=12
+        )
+        dec = StreamingDecryptor(
+            key=key,
+            algorithm="aes-gcm",
+            nonce_prefix=b"\x00" * 8,
+            chunk_size=1024,
+            format_version=12,
+        )
+
+        self.assertEqual(enc._derive_hmac_key(), dec._derive_hmac_key())
+
+    def test_v12_different_keys_produce_different_hmac_keys(self):
+        """Test that different encryption keys produce different HMAC keys."""
+        key1 = secrets.token_bytes(32)
+        key2 = secrets.token_bytes(32)
+
+        enc1 = StreamingEncryptor(
+            key=key1, algorithm="aes-gcm", chunk_size=1024, format_version=12
+        )
+        enc2 = StreamingEncryptor(
+            key=key2, algorithm="aes-gcm", chunk_size=1024, format_version=12
+        )
+
+        self.assertNotEqual(enc1._derive_hmac_key(), enc2._derive_hmac_key())
+
+
 if __name__ == "__main__":
     unittest.main()

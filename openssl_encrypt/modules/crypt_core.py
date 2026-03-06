@@ -5587,12 +5587,14 @@ def encrypt_file(
             _cascade_salt_streaming = secrets.token_bytes(32)
 
         # Create streaming encryptor
+        # Streaming files always use format_version=12 in metadata
         streaming_enc = StreamingEncryptor(
             key=key,
             algorithm=algorithm_value,
             chunk_size=_streaming_chunk_size,
             cascade_encryptor=_cascade_enc_streaming,
             cascade_salt=_cascade_salt_streaming,
+            format_version=12,
         )
 
         chunk_count = streaming_enc.get_chunk_count(file_size)
@@ -8294,6 +8296,7 @@ def decrypt_file(
             chunk_size=streaming_chunk_size,
             cascade_decryptor=_cascade_dec_streaming,
             cascade_salt=_cascade_salt_streaming,
+            format_version=format_version,
         )
 
         if not quiet:
