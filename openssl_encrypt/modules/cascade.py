@@ -293,6 +293,7 @@ class CascadeEncryption:
         master_key: bytes,
         salt: bytes,
         associated_data: Optional[bytes] = None,
+        chunk_nonce: Optional[bytes] = None,
     ) -> bytes:
         """Encrypt plaintext through all cascade layers.
 
@@ -301,6 +302,8 @@ class CascadeEncryption:
             master_key: Master key material
             salt: Salt for key derivation
             associated_data: Optional additional authenticated data (AAD)
+            chunk_nonce: Optional per-chunk nonce to mix into salt for streaming,
+                preventing nonce reuse across chunks.
 
         Returns:
             Ciphertext from the final layer
@@ -308,8 +311,11 @@ class CascadeEncryption:
         Raises:
             CascadeError: If encryption fails
         """
+        # Mix chunk_nonce into salt for per-chunk key/nonce uniqueness in streaming
+        effective_salt = salt + chunk_nonce if chunk_nonce else salt
+
         # Derive keys for all layers
-        layer_keys = self.key_derivation.derive_layer_keys(master_key, salt)
+        layer_keys = self.key_derivation.derive_layer_keys(master_key, effective_salt)
 
         # Encrypt through each layer sequentially
         use_aad_all_layers = (
@@ -334,6 +340,7 @@ class CascadeEncryption:
         master_key: bytes,
         salt: bytes,
         associated_data: Optional[bytes] = None,
+        chunk_nonce: Optional[bytes] = None,
     ) -> bytes:
         """Decrypt ciphertext through all cascade layers in reverse.
 
@@ -342,6 +349,7 @@ class CascadeEncryption:
             master_key: Master key material
             salt: Salt for key derivation
             associated_data: Optional additional authenticated data (AAD)
+            chunk_nonce: Optional per-chunk nonce (must match encrypt's chunk_nonce)
 
         Returns:
             Decrypted plaintext
@@ -350,8 +358,11 @@ class CascadeEncryption:
             AuthenticationError: If authentication fails at any layer
             CascadeError: If decryption fails
         """
+        # Mix chunk_nonce into salt for per-chunk key/nonce uniqueness in streaming
+        effective_salt = salt + chunk_nonce if chunk_nonce else salt
+
         # Derive keys for all layers
-        layer_keys = self.key_derivation.derive_layer_keys(master_key, salt)
+        layer_keys = self.key_derivation.derive_layer_keys(master_key, effective_salt)
 
         # Decrypt through layers in reverse order
         use_aad_all_layers = (

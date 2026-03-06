@@ -499,7 +499,8 @@ class StreamingEncryptor:
                 # Encrypt the chunk
                 if self.algorithm == "cascade" and self.cascade_encryptor:
                     ciphertext = self.cascade_encryptor.encrypt(
-                        plaintext, self.key, self.cascade_salt, associated_data=aad
+                        plaintext, self.key, self.cascade_salt, associated_data=aad,
+                        chunk_nonce=nonce,
                     )
                 else:
                     ciphertext = encrypt_chunk(self.key, nonce, plaintext, aad, self.algorithm)
@@ -698,7 +699,8 @@ class StreamingDecryptor:
             # Decrypt the chunk
             if self.algorithm == "cascade" and self.cascade_decryptor:
                 plaintext = self.cascade_decryptor.decrypt(
-                    ciphertext, self.key, self.cascade_salt, associated_data=aad
+                    ciphertext, self.key, self.cascade_salt, associated_data=aad,
+                    chunk_nonce=nonce,
                 )
             else:
                 plaintext = decrypt_chunk(self.key, nonce, ciphertext, aad, self.algorithm)
