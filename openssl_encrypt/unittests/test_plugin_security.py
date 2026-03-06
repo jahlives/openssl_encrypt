@@ -588,6 +588,37 @@ class TestResultValidation(unittest.TestCase):
         self.assertEqual(result.data["total_size"], 1024)
         self.assertEqual(result.data["operation_time"], 1.5)
 
+    def test_sensitive_data_filtered_in_constructor(self):
+        """Sensitive data passed via constructor must also be filtered (M10).
+
+        Previously only add_data() filtered keys, so a plugin could bypass
+        filtering by passing data directly to PluginResult().
+        """
+        result = PluginResult(
+            success=True,
+            message="test",
+            data={"password": "stolen", "file_count": 5, "secret": "leaked"},
+        )
+        self.assertNotIn("password", result.data)
+        self.assertNotIn("secret", result.data)
+        self.assertEqual(result.data["file_count"], 5)
+
+    def test_sensitive_data_filtered_in_success_result(self):
+        """success_result class method must also filter sensitive keys (M10)."""
+        result = PluginResult.success_result(
+            "test", data={"api_key": "abc123", "status": "ok"}
+        )
+        self.assertNotIn("api_key", result.data)
+        self.assertEqual(result.data["status"], "ok")
+
+    def test_sensitive_data_filtered_in_error_result(self):
+        """error_result class method must also filter sensitive keys (M10)."""
+        result = PluginResult.error_result(
+            "failed", data={"auth_token": "tok_xyz", "error_code": 42}
+        )
+        self.assertNotIn("auth_token", result.data)
+        self.assertEqual(result.data["error_code"], 42)
+
 
 class TestSecurityModes(unittest.TestCase):
     """Test strict vs permissive security modes"""

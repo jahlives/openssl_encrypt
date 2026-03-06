@@ -118,7 +118,8 @@ class PluginSecurityContext:
         self.metadata[key] = value
 
     def get_safe_temp_path(self, suffix: str = "") -> str:
-        """Generate safe temporary file path for plugin use."""
+        """Generate safe temporary file path for plugin use (0o600 permissions)."""
+        import os
         import tempfile
 
         temp_file = tempfile.NamedTemporaryFile(
@@ -126,6 +127,7 @@ class PluginSecurityContext:
         )
         temp_path = temp_file.name
         temp_file.close()
+        os.chmod(temp_path, 0o600)
         return temp_path
 
     @staticmethod
@@ -197,8 +199,19 @@ class PluginResult:
     ):
         self.success = success
         self.message = message
-        self.data = data or {}
+        self.data = self._filter_sensitive_keys(data or {})
         self.timestamp = time.time()
+
+    @staticmethod
+    def _filter_sensitive_keys(data: Dict[str, Any]) -> Dict[str, Any]:
+        """Filter out sensitive keys from data dict."""
+        filtered = {}
+        for key, value in data.items():
+            if PluginSecurityContext._is_sensitive_key(key):
+                logger.warning(f"Plugin result: Filtered sensitive data key: {key}")
+            else:
+                filtered[key] = value
+        return filtered
 
     def add_data(self, key: str, value: Any) -> None:
         """Add data to result, with security validation."""
