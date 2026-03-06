@@ -369,6 +369,12 @@ class KeyserverPlugin(BasePlugin):
                 raise ValueError("No keyservers configured")
             server_url = self.config.servers[0]
 
+        # Enforce HTTPS for all server URLs
+        if not server_url.startswith("https://"):
+            raise ValueError(
+                f"Invalid server URL: {server_url}. Only HTTPS URLs are allowed for security."
+            )
+
         register_url = f"{server_url}/api/v1/keys/register"
 
         try:
