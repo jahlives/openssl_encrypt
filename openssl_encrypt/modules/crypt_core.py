@@ -5581,7 +5581,9 @@ def encrypt_file(
             from .cascade import CascadeConfig, CascadeEncryption
 
             cascade_config = CascadeConfig(cipher_names=cipher_names, hkdf_hash=cascade_hash)
-            _cascade_enc_streaming = CascadeEncryption(cascade_config)
+            _cascade_enc_streaming = CascadeEncryption(
+                cascade_config, format_version=format_version
+            )
             _cascade_salt_streaming = secrets.token_bytes(32)
 
         # Create streaming encryptor
@@ -5971,7 +5973,10 @@ def encrypt_file(
                 else:
                     # If no keypair provided, we need to create a new one and store it in metadata
                     cipher = PQCipher(
-                        pqc_algo_map[algorithm], quiet=quiet, verbose=verbose, debug=debug,
+                        pqc_algo_map[algorithm],
+                        quiet=quiet,
+                        verbose=verbose,
+                        debug=debug,
                         format_version=format_version,
                     )
                     public_key, private_key = cipher.generate_keypair()
@@ -6157,7 +6162,8 @@ def encrypt_file(
                 else:
                     # If no keypair provided, we need to create a new one and store it in metadata
                     cipher = PQCipher(
-                        pqc_algo_map[algorithm], quiet=quiet,
+                        pqc_algo_map[algorithm],
+                        quiet=quiet,
                         format_version=format_version,
                     )
                     public_key, private_key = cipher.generate_keypair()
@@ -6313,7 +6319,7 @@ def encrypt_file(
             cascade_config = CascadeConfig(cipher_names=cipher_names, hkdf_hash=cascade_hash)
 
             # Create cascade encryption instance
-            cascade_enc = CascadeEncryption(cascade_config)
+            cascade_enc = CascadeEncryption(cascade_config, format_version=format_version)
 
             # Generate cascade salt
             cascade_salt_bytes = secrets.token_bytes(32)
@@ -8276,7 +8282,9 @@ def decrypt_file(
             cascade_config = CascadeConfig(
                 cipher_names=cascade_cipher_chain, hkdf_hash=cascade_hkdf_hash
             )
-            _cascade_dec_streaming = CascadeEncryption(cascade_config)
+            _cascade_dec_streaming = CascadeEncryption(
+                cascade_config, format_version=format_version
+            )
             _cascade_salt_streaming = cascade_salt_decrypt
 
         streaming_dec = StreamingDecryptor(
@@ -8375,7 +8383,7 @@ def decrypt_file(
             cascade_config = CascadeConfig(
                 cipher_names=cascade_cipher_chain, hkdf_hash=cascade_hkdf_hash
             )
-            cascade_dec = CascadeEncryption(cascade_config)
+            cascade_dec = CascadeEncryption(cascade_config, format_version=format_version)
 
             # Decrypt using cascade
             decrypted_data = cascade_dec.decrypt(

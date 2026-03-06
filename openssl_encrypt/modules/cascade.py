@@ -45,6 +45,7 @@ from .registry import get_cipher
 # Domain separation prefixes for HKDF
 KEY_INFO_PREFIX = b"cascade:key:"
 NONCE_INFO_PREFIX = b"cascade:nonce:"
+SALT_INFO_PREFIX = b"cascade:salt:"
 CHAIN_PREFIX_LENGTH = 16  # 128 bits from previous layer
 
 
@@ -108,13 +109,16 @@ class CascadeKeyDerivation:
         key_3 = HKDF(master_key, salt, info=b"cascade:key:threefish:" || key_2[:16])
     """
 
-    def __init__(self, config: CascadeConfig):
+    def __init__(self, config: CascadeConfig, format_version: Optional[int] = None):
         """Initialize key derivation with the cascade configuration.
 
         Args:
             config: Cascade configuration with cipher names and hash function
+            format_version: File format version. For v12+, per-layer salts are
+                derived to prevent all layers sharing the same HKDF salt.
         """
         self.config = config
+        self.format_version = format_version
         self.hash_algorithm = self._get_hash_algorithm(config.hkdf_hash)
 
     def _get_hash_algorithm(self, hash_name: str):
@@ -148,6 +152,25 @@ class CascadeKeyDerivation:
 
         return hash_map[hash_name.lower()]()
 
+    def _derive_layer_salt(self, master_salt: bytes, layer_index: int) -> bytes:
+        """Derive a unique per-layer salt from the master salt (v12+).
+
+        Args:
+            master_salt: The original salt from encryption metadata
+            layer_index: Zero-based layer index
+
+        Returns:
+            32-byte per-layer salt
+        """
+        kdf = HKDF(
+            algorithm=self._get_hash_algorithm(self.config.hkdf_hash),
+            length=32,
+            salt=None,
+            info=SALT_INFO_PREFIX + str(layer_index).encode("ascii"),
+            backend=default_backend(),
+        )
+        return kdf.derive(master_salt)
+
     def derive_layer_keys(
         self,
         master_key: bytes,
@@ -158,6 +181,10 @@ class CascadeKeyDerivation:
         Each layer's key derivation includes 128 bits from the previous layer's
         key in the info parameter, creating a chain of dependencies.
 
+        For format_version >= 12, each layer also derives its own unique salt
+        from the master salt, preventing all layers from sharing the same
+        (master_key, salt) pair in HKDF (H6/H7).
+
         Args:
             master_key: Master key material (e.g., from password derivation)
             salt: Salt for HKDF (should be random and unique per encryption)
@@ -165,13 +192,18 @@ class CascadeKeyDerivation:
         Returns:
             List of (key, nonce) tuples for each layer in order
         """
+        use_per_layer_salt = self.format_version is not None and self.format_version >= 12
+
         layers = []
         previous_key_prefix = b""  # Empty for first layer
 
-        for cipher_name in self.config.cipher_names:
+        for i, cipher_name in enumerate(self.config.cipher_names):
             # Get cipher info to determine key and nonce sizes
             cipher = get_cipher(cipher_name)
             cipher_info = cipher.info()
+
+            # Derive per-layer salt for v12+, or use master salt for legacy
+            layer_salt = self._derive_layer_salt(salt, i) if use_per_layer_salt else salt
 
             # Construct info parameter with chain prefix
             key_info = KEY_INFO_PREFIX + cipher_name.encode("utf-8") + previous_key_prefix
@@ -181,7 +213,7 @@ class CascadeKeyDerivation:
             kdf_key = HKDF(
                 algorithm=self.hash_algorithm,
                 length=cipher_info.key_size,
-                salt=salt,
+                salt=layer_salt,
                 info=key_info,
                 backend=default_backend(),
             )
@@ -191,7 +223,7 @@ class CascadeKeyDerivation:
             kdf_nonce = HKDF(
                 algorithm=self.hash_algorithm,
                 length=cipher_info.nonce_size,
-                salt=salt,
+                salt=layer_salt,
                 info=nonce_info,
                 backend=default_backend(),
             )
@@ -232,17 +264,18 @@ class CascadeEncryption:
         decrypted = cascade.decrypt(ciphertext, master_key, salt)
     """
 
-    def __init__(self, config: CascadeConfig):
+    def __init__(self, config: CascadeConfig, format_version: Optional[int] = None):
         """Initialize cascade encryption with the given configuration.
 
         Args:
             config: Cascade configuration
+            format_version: File format version for key derivation behavior
 
         Raises:
             CascadeConfigError: If any cipher is not available
         """
         self.config = config
-        self.key_derivation = CascadeKeyDerivation(config)
+        self.key_derivation = CascadeKeyDerivation(config, format_version=format_version)
 
         # Validate all ciphers are available
         self.ciphers = []
