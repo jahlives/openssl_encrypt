@@ -4475,6 +4475,11 @@ def create_metadata_v5(
         if "dual_encrypt_key" in pqc_info:
             metadata["encryption"]["pqc_dual_encrypt_key"] = pqc_info["dual_encrypt_key"]
 
+        if "sig_hkdf_salt" in pqc_info:
+            metadata["encryption"]["pqc_sig_hkdf_salt"] = base64.b64encode(
+                pqc_info["sig_hkdf_salt"]
+            ).decode("utf-8")
+
     # Add HSM configuration if used
     if hsm_plugin_name:
         metadata["encryption"]["hsm_plugin"] = hsm_plugin_name
@@ -4564,8 +4569,8 @@ def create_metadata_v6(
     if aad_mode:
         metadata["aead_binding"] = True
 
-    # Add XOR mode indicator for v8/v10/v11
-    if format_version == 11:
+    # Add XOR mode indicator for v8/v10/v11/v12
+    if format_version >= 11:
         metadata["xor_mode"] = "independent"  # Independent XOR (Massey)
     elif format_version in [8, 10]:
         metadata["xor_mode"] = "sequential"  # Sequential chained XOR
@@ -4652,6 +4657,11 @@ def create_metadata_v6(
 
         if "dual_encrypt_key" in pqc_info:
             metadata["encryption"]["pqc_dual_encrypt_key"] = pqc_info["dual_encrypt_key"]
+
+        if "sig_hkdf_salt" in pqc_info:
+            metadata["encryption"]["pqc_sig_hkdf_salt"] = base64.b64encode(
+                pqc_info["sig_hkdf_salt"]
+            ).decode("utf-8")
 
     # Add HSM configuration with validation (v6 enhancement)
     if hsm_plugin_name:
@@ -4883,6 +4893,11 @@ def create_metadata_v8(
 
         if "dual_encrypt_key" in pqc_info:
             metadata["encryption"]["pqc_dual_encrypt_key"] = pqc_info["dual_encrypt_key"]
+
+        if "sig_hkdf_salt" in pqc_info:
+            metadata["encryption"]["pqc_sig_hkdf_salt"] = base64.b64encode(
+                pqc_info["sig_hkdf_salt"]
+            ).decode("utf-8")
 
     # Add HSM configuration with validation
     if hsm_plugin_name:
@@ -6500,6 +6515,7 @@ def encrypt_file(
     # Initialize cascade variables (will be set later if cascade mode is enabled)
     cascade_enc = None
     cascade_salt_bytes = None
+    _pqc_sig_hkdf_salt = [None]  # Mutable container for nonlocal access from do_encrypt
 
     # For large files, use progress bar for encryption
     def do_encrypt(aad=None):
@@ -6631,18 +6647,19 @@ def encrypt_file(
                     logger.debug(f"ENCRYPT:PQC_SIG Input data length: {len(data)} bytes")
 
                 # Derive symmetric encryption key from signature private key
-                # v12+: use random salt for HKDF; legacy: static salt
-                if format_version is not None and format_version >= 12:
-                    pqc_sig_salt = secrets.token_bytes(32)
+                # For v12+, use a random salt; for legacy, use the static constant
+                if format_version >= 12:
+                    sig_hkdf_salt = secrets.token_bytes(32)
+                    _pqc_sig_hkdf_salt[0] = sig_hkdf_salt
                 else:
-                    pqc_sig_salt = None  # _derive_pqc_sig_key uses static constant
+                    sig_hkdf_salt = None  # _derive_pqc_sig_key uses static salt
 
                 if debug:
-                    _salt_for_log = pqc_sig_salt if pqc_sig_salt else b"OpenSSL-Encrypt-PQ-Signature-Hybrid"
-                    logger.debug(f"ENCRYPT:PQC_SIG HKDF salt: {_salt_for_log.hex()}")
+                    _salt_desc = sig_hkdf_salt.hex() if sig_hkdf_salt else "(static)"
+                    logger.debug(f"ENCRYPT:PQC_SIG HKDF salt: {_salt_desc}")
                     logger.debug(f"ENCRYPT:PQC_SIG HKDF info: encryption-key-{algorithm.value}")
 
-                derived_key = _derive_pqc_sig_key(private_key, algorithm.value, salt=pqc_sig_salt)
+                derived_key = _derive_pqc_sig_key(private_key, algorithm.value, salt=sig_hkdf_salt)
 
                 if debug:
                     logger.debug(
@@ -6658,11 +6675,7 @@ def encrypt_file(
 
                 aes_cipher = AESGCM(derived_key)
                 encrypted_payload = aes_cipher.encrypt(nonce, data, aad)
-                # v12+: prepend random HKDF salt so decryptor can derive the same key
-                if pqc_sig_salt is not None:
-                    encrypted_data = pqc_sig_salt + nonce + encrypted_payload
-                else:
-                    encrypted_data = nonce + encrypted_payload
+                encrypted_data = nonce + encrypted_payload
 
                 if debug:
                     logger.debug(
@@ -7231,6 +7244,7 @@ def encrypt_file(
             print("Calculating encrypted content hash", end=" ")
 
         encrypted_hash = calculate_hash(encrypted_data)
+        # Note: _pqc_sig_hkdf_salt[0] was set during do_encrypt above
         if not quiet:
             print("✅")
 
@@ -7258,6 +7272,10 @@ def encrypt_file(
             EncryptionAlgorithm.CROSS_256_HYBRID,
         ]:
             pqc_info = {}
+
+            # Store random HKDF salt for signature algorithms (v12+, M15)
+            if _pqc_sig_hkdf_salt[0] is not None:
+                pqc_info["sig_hkdf_salt"] = _pqc_sig_hkdf_salt[0]
 
             if pqc_keypair:
                 # Always store the public key
@@ -8794,8 +8812,8 @@ def decrypt_file(
     # Check XOR mode from metadata to determine which key generation function to use
     xor_mode = metadata.get("xor_mode", "sequential")  # Default to sequential for backward compat
 
-    # v11/v12 use independent XOR, v1-v10 use sequential (including v8/v10 sequential XOR)
-    if format_version in [11, 12] or xor_mode == "independent":
+    # v11+ uses independent XOR, v1-v10 use sequential (including v8/v10 sequential XOR)
+    if format_version >= 11 or xor_mode == "independent":
         # Independent XOR mode (Massey)
         if parallel_kdf:
             # Parallel execution via multiprocessing
@@ -9242,20 +9260,17 @@ def decrypt_file(
                         f"DECRYPT:PQC_SIG Encrypted data length: {len(encrypted_data)} bytes"
                     )
 
-                # v12+: first 32 bytes are the random HKDF salt; legacy: static salt
-                if format_version is not None and format_version >= 12:
-                    pqc_sig_salt = encrypted_data[:32]
-                    pqc_sig_payload = encrypted_data[32:]
-                else:
-                    pqc_sig_salt = None  # _derive_pqc_sig_key uses static constant
-                    pqc_sig_payload = encrypted_data
+                # Read per-encryption random salt if present (v12+, M15)
+                sig_hkdf_salt = None
+                if "pqc_sig_hkdf_salt" in encryption:
+                    sig_hkdf_salt = base64.b64decode(encryption["pqc_sig_hkdf_salt"])
 
                 if debug:
-                    _salt_for_log = pqc_sig_salt if pqc_sig_salt else b"OpenSSL-Encrypt-PQ-Signature-Hybrid"
-                    logger.debug(f"DECRYPT:PQC_SIG HKDF salt: {_salt_for_log.hex()}")
+                    _salt_desc = sig_hkdf_salt.hex() if sig_hkdf_salt else "(static)"
+                    logger.debug(f"DECRYPT:PQC_SIG HKDF salt: {_salt_desc}")
                     logger.debug(f"DECRYPT:PQC_SIG HKDF info: encryption-key-{algorithm}")
 
-                derived_key = _derive_pqc_sig_key(pqc_private_key, algorithm, salt=pqc_sig_salt)
+                derived_key = _derive_pqc_sig_key(pqc_private_key, algorithm, salt=sig_hkdf_salt)
 
                 if debug:
                     logger.debug(
@@ -9264,8 +9279,8 @@ def decrypt_file(
                     logger.debug(f"DECRYPT:PQC_SIG Derived AES key: {derived_key.hex()}")
 
                 # Decrypt using AES-GCM with derived key
-                nonce = pqc_sig_payload[:12]  # First 12 bytes are nonce
-                ciphertext = pqc_sig_payload[12:]  # Rest is ciphertext
+                nonce = encrypted_data[:12]  # First 12 bytes are nonce
+                ciphertext = encrypted_data[12:]  # Rest is ciphertext
 
                 if debug:
                     logger.debug(f"DECRYPT:PQC_SIG AES-GCM nonce: {nonce.hex()}")
