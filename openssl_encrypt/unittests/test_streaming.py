@@ -1201,5 +1201,191 @@ class TestStreamingHMACKeyDerivation(unittest.TestCase):
         self.assertNotEqual(enc1._derive_hmac_key(), enc2._derive_hmac_key())
 
 
+class TestStreamingDecryptMemory(unittest.TestCase):
+    """Tests that streaming decrypt/metadata reads are memory-bounded."""
+
+    def setUp(self):
+        self._tmpfiles = []
+
+    def tearDown(self):
+        for p in self._tmpfiles:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+
+    def _tmp(self, data: bytes) -> str:
+        fd, path = tempfile.mkstemp()
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        self._tmpfiles.append(path)
+        return path
+
+    # ------------------------------------------------------------------
+    # 1a. _read_metadata_only returns correct metadata
+    # ------------------------------------------------------------------
+    def test_read_metadata_only_returns_correct_metadata(self):
+        """_read_metadata_only() reads only the b64 metadata before ':'."""
+        from openssl_encrypt.modules.crypt_core import _read_metadata_only
+
+        meta = b"SGVsbG8gV29ybGQ="  # base64 for "Hello World"
+        payload = os.urandom(1 * 1024 * 1024)  # 1 MB payload
+        path = self._tmp(meta + b":" + payload)
+
+        metadata_b64, fallback = _read_metadata_only(path)
+
+        self.assertEqual(metadata_b64, meta)
+        self.assertIsNone(fallback, "seekable file should return fallback=None")
+
+    # ------------------------------------------------------------------
+    # 1b. _read_metadata_only raises ValueError when no separator
+    # ------------------------------------------------------------------
+    def test_read_metadata_only_no_separator_raises(self):
+        """_read_metadata_only() raises ValueError if no ':' separator found."""
+        from openssl_encrypt.modules.crypt_core import _read_metadata_only
+
+        path = self._tmp(b"nodatahere" * 100)
+
+        with self.assertRaises(ValueError):
+            _read_metadata_only(path)
+
+    # ------------------------------------------------------------------
+    # 1c. streaming decrypt is memory-bounded
+    # ------------------------------------------------------------------
+    def test_streaming_decrypt_bounded_memory(self):
+        """decrypt_file() should not load the full file into memory for v12 streaming."""
+        import tracemalloc
+
+        password = "test-password-bounded"
+        plaintext = os.urandom(5 * 1024 * 1024)  # 5 MB
+        in_path = self._tmp(plaintext)
+
+        fd, enc_path = tempfile.mkstemp()
+        os.close(fd)
+        self._tmpfiles.append(enc_path)
+        fd, dec_path = tempfile.mkstemp()
+        os.close(fd)
+        self._tmpfiles.append(dec_path)
+
+        # Encrypt with streaming (format_version=11 auto-promotes to 12 with streaming)
+        encrypt_file(
+            input_file=in_path,
+            output_file=enc_path,
+            password=password,
+            algorithm=EncryptionAlgorithm.AES_GCM,
+            format_version=11,
+            chunk_size=1024 * 1024,  # 1 MB chunks
+            streaming_threshold=1024,  # always stream
+            quiet=True,
+        )
+
+        enc_size = os.path.getsize(enc_path)
+
+        tracemalloc.start()
+        decrypt_file(
+            input_file=enc_path,
+            output_file=dec_path,
+            password=password,
+            quiet=True,
+        )
+        _, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+
+        # Peak memory should be well below full file size (5 MB + encryption overhead)
+        self.assertLess(
+            peak,
+            enc_size,
+            f"Peak memory {peak / 1024 / 1024:.1f} MB >= enc file size "
+            f"{enc_size / 1024 / 1024:.1f} MB — full file was loaded",
+        )
+
+        # Verify correct decryption
+        with open(dec_path, "rb") as f:
+            result = f.read()
+        self.assertEqual(result, plaintext)
+
+    # ------------------------------------------------------------------
+    # 1d. extract_file_metadata is memory-bounded for streaming files
+    # ------------------------------------------------------------------
+    def test_extract_metadata_bounded_for_streaming(self):
+        """extract_file_metadata() should not load the full file for v12 streaming."""
+        import tracemalloc
+
+        password = "test-meta-bounded"
+        plaintext = os.urandom(8 * 1024 * 1024)  # 8 MB — large enough that fixed Python
+        # overhead (~2-3 MB) is clearly less than enc_size
+        in_path = self._tmp(plaintext)
+
+        fd, enc_path = tempfile.mkstemp()
+        os.close(fd)
+        self._tmpfiles.append(enc_path)
+
+        encrypt_file(
+            input_file=in_path,
+            output_file=enc_path,
+            password=password,
+            algorithm=EncryptionAlgorithm.AES_GCM,
+            format_version=11,
+            chunk_size=512 * 1024,
+            streaming_threshold=1024,
+            quiet=True,
+        )
+
+        enc_size = os.path.getsize(enc_path)
+
+        tracemalloc.start()
+        meta = extract_file_metadata(enc_path)
+        _, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+
+        self.assertEqual(meta["format_version"], 12)
+        self.assertLess(
+            peak,
+            enc_size,
+            f"Peak memory {peak / 1024 / 1024:.1f} MB >= enc file size "
+            f"{enc_size / 1024 / 1024:.1f} MB — full file was loaded",
+        )
+
+    # ------------------------------------------------------------------
+    # 1e. Non-streaming files still work correctly (backward compat)
+    # ------------------------------------------------------------------
+    def test_nonstreaming_decrypt_still_works(self):
+        """Non-streaming encrypted files should decrypt correctly after refactor."""
+        password = "test-nonstreaming"
+        plaintext = os.urandom(1024)  # small — fits in one shot
+        in_path = self._tmp(plaintext)
+
+        fd, enc_path = tempfile.mkstemp()
+        os.close(fd)
+        self._tmpfiles.append(enc_path)
+        fd, dec_path = tempfile.mkstemp()
+        os.close(fd)
+        self._tmpfiles.append(dec_path)
+
+        encrypt_file(
+            input_file=in_path,
+            output_file=enc_path,
+            password=password,
+            algorithm=EncryptionAlgorithm.AES_GCM,
+            format_version=11,
+            no_streaming=True,
+            quiet=True,
+        )
+
+        meta = extract_file_metadata(enc_path)
+        self.assertEqual(meta["format_version"], 11)
+
+        decrypt_file(
+            input_file=enc_path,
+            output_file=dec_path,
+            password=password,
+            quiet=True,
+        )
+
+        with open(dec_path, "rb") as f:
+            result = f.read()
+        self.assertEqual(result, plaintext)
+
+
 if __name__ == "__main__":
     unittest.main()

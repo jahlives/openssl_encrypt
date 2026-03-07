@@ -7599,6 +7599,54 @@ def encrypt_file(
             hsm_pepper = None
 
 
+def _read_metadata_only(file_path, secure_mode=False):
+    """Read only the base64 metadata portion of an encrypted file.
+
+    Reads incrementally in 8KB blocks to find the ':' separator,
+    avoiding loading the full payload into memory.
+
+    For non-seekable inputs (stdin/pipes), falls back to reading
+    everything and returns the full content as fallback.
+
+    Returns:
+        (metadata_b64: bytes, fallback_content: bytes | None)
+        fallback_content is None for seekable files, full bytes for non-seekable.
+    """
+    import io
+
+    _BLOCK_SIZE = 8192
+    _MAX_METADATA_SIZE = 2 * 1024 * 1024  # 2MB safety limit
+
+    with safe_open_file(file_path, "rb", secure_mode=secure_mode) as f:
+        seekable = True
+        try:
+            f.seek(0)
+        except (OSError, io.UnsupportedOperation):
+            seekable = False
+
+        if not seekable:
+            file_content = f.read()
+            if b":" not in file_content:
+                raise ValueError("Invalid file format: no metadata separator found")
+            metadata_b64 = file_content.split(b":", 1)[0]
+            return metadata_b64, file_content
+
+        # Seekable: incremental read
+        search_buf = b""
+        bytes_read = 0
+        while bytes_read < _MAX_METADATA_SIZE:
+            block = f.read(_BLOCK_SIZE)
+            if not block:
+                break
+            search_buf += block
+            bytes_read += len(block)
+            idx = search_buf.find(b":")
+            if idx != -1:
+                return search_buf[:idx], None
+
+        raise ValueError("Invalid file format: no metadata separator found")
+
+
 def extract_file_metadata(input_file):
     """
     Extract basic metadata from encrypted file without decryption.
@@ -7613,11 +7661,7 @@ def extract_file_metadata(input_file):
         ValueError: If file format is invalid
     """
     try:
-        with open(input_file, "rb") as file:
-            file_content = file.read()
-
-        # Split metadata and encrypted data
-        metadata_b64, _ = file_content.split(b":", 1)
+        metadata_b64, _ = _read_metadata_only(input_file, secure_mode=False)
         # MED-8 Security fix: Use secure JSON validation for metadata parsing
         metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
         try:
@@ -8216,13 +8260,12 @@ def decrypt_file(
     if not quiet:
         print(f"\nReading encrypted file: {input_file}")
 
-    with safe_open_file(input_file, "rb", secure_mode=secure_mode) as file:
-        file_content = file.read()
-
-    # Split metadata and encrypted data
+    # Read metadata incrementally (avoids loading full file for streaming v12)
+    file_content = None  # Only populated for non-streaming path (needed for secure cleanup)
     try:
-        # Revert to the original simpler parsing
-        metadata_b64, encrypted_data_b64 = file_content.split(b":", 1)
+        metadata_b64, _fallback_content = _read_metadata_only(
+            input_file, secure_mode=secure_mode
+        )
         # MED-8 Security fix: Use secure JSON validation for metadata parsing
         metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
         try:
@@ -8247,6 +8290,16 @@ def decrypt_file(
         if _temp_format_version == 12 and metadata.get("streaming", {}).get("enabled", False):
             encrypted_data = b""  # Placeholder; streaming decryptor reads file directly
         else:
+            # Non-streaming: load the full encrypted payload
+            if _fallback_content is not None:
+                # Non-seekable input (stdin): already have full content
+                file_content = _fallback_content
+                _fallback_content = None
+            else:
+                # Seekable file: read full content now
+                with safe_open_file(input_file, "rb", secure_mode=secure_mode) as f:
+                    file_content = f.read()
+            _, encrypted_data_b64 = file_content.split(b":", 1)
             encrypted_data = base64.b64decode(encrypted_data_b64)
     except Exception as e:
         # Keep the original ValueError to maintain compatibility
