@@ -37,6 +37,7 @@ from cryptography.hazmat.primitives.ciphers.aead import (
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from .crypt_errors import AuthenticationError, DecryptionError, EncryptionError, ValidationError
+from .secure_memory import secure_memzero
 
 logger = logging.getLogger(__name__)
 
@@ -414,24 +415,24 @@ class StreamingEncryptor:
         self.nonce_prefix = secrets.token_bytes(8)
         self.nonce_size = _get_nonce_size(algorithm)
 
-    def _derive_hmac_key(self) -> bytes:
+    def _derive_hmac_key(self) -> bytearray:
         """Derive the HMAC key for trailer authentication.
 
         For format_version >= 12, uses HKDF with domain separation.
         For legacy formats, uses SHA-256(key || constant).
 
         Returns:
-            32-byte HMAC key
+            32-byte HMAC key as bytearray (mutable so caller can secure_memzero it)
         """
         if self.format_version is not None and self.format_version >= 12:
-            return HKDF(
+            return bytearray(HKDF(
                 algorithm=hashes.SHA256(),
                 length=32,
                 salt=None,
                 info=b"openssl_encrypt-streaming-hmac-key",
-            ).derive(self.key)
+            ).derive(self.key))
         else:
-            return hashlib.sha256(self.key + b"oesc-trailer-hmac").digest()
+            return bytearray(hashlib.sha256(self.key + b"oesc-trailer-hmac").digest())
 
     def hash_file(self, file_path: str) -> str:
         """Pass 1: Compute streaming SHA-256 hash.
@@ -528,9 +529,12 @@ class StreamingEncryptor:
 
             # HMAC-SHA256 over concatenation of all chunk tags
             hmac_key = self._derive_hmac_key()
-            tag_concatenation = b"".join(chunk_tags)
-            trailer_hmac = hmac_module.new(hmac_key, tag_concatenation, hashlib.sha256).digest()
-            fout.write(trailer_hmac)
+            try:
+                tag_concatenation = b"".join(chunk_tags)
+                trailer_hmac = hmac_module.new(hmac_key, tag_concatenation, hashlib.sha256).digest()
+                fout.write(trailer_hmac)
+            finally:
+                secure_memzero(hmac_key)
 
         return True
 
@@ -585,24 +589,24 @@ class StreamingDecryptor:
         self.cascade_salt = cascade_salt
         self.format_version = format_version
 
-    def _derive_hmac_key(self) -> bytes:
+    def _derive_hmac_key(self) -> bytearray:
         """Derive the HMAC key for trailer authentication.
 
         For format_version >= 12, uses HKDF with domain separation.
         For legacy formats, uses SHA-256(key || constant).
 
         Returns:
-            32-byte HMAC key
+            32-byte HMAC key as bytearray (mutable so caller can secure_memzero it)
         """
         if self.format_version is not None and self.format_version >= 12:
-            return HKDF(
+            return bytearray(HKDF(
                 algorithm=hashes.SHA256(),
                 length=32,
                 salt=None,
                 info=b"openssl_encrypt-streaming-hmac-key",
-            ).derive(self.key)
+            ).derive(self.key))
         else:
-            return hashlib.sha256(self.key + b"oesc-trailer-hmac").digest()
+            return bytearray(hashlib.sha256(self.key + b"oesc-trailer-hmac").digest())
 
     # Maximum allowed ciphertext per chunk: chunk_size + generous AEAD overhead.
     # Prevents memory exhaustion from a crafted ciphertext_len field.
@@ -783,8 +787,11 @@ class StreamingDecryptor:
 
         # Verify trailer HMAC
         hmac_key = self._derive_hmac_key()
-        tag_concatenation = b"".join(chunk_tags)
-        computed_hmac = hmac_module.new(hmac_key, tag_concatenation, hashlib.sha256).digest()
+        try:
+            tag_concatenation = b"".join(chunk_tags)
+            computed_hmac = hmac_module.new(hmac_key, tag_concatenation, hashlib.sha256).digest()
+        finally:
+            secure_memzero(hmac_key)
 
         if not hmac_module.compare_digest(computed_hmac, trailer_hmac):
             # If we wrote to a file, remove the unverified output

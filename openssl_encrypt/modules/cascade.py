@@ -41,6 +41,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from .registry import get_cipher
+from .secure_memory import secure_memzero
 
 # Domain separation prefixes for HKDF
 KEY_INFO_PREFIX = b"cascade:key:"
@@ -217,9 +218,9 @@ class CascadeKeyDerivation:
                 info=key_info,
                 backend=default_backend(),
             )
-            key = kdf_key.derive(master_key)
+            key = bytearray(kdf_key.derive(master_key))
 
-            # Derive nonce
+            # Derive nonce (not secret; public in AEAD ciphertext)
             kdf_nonce = HKDF(
                 algorithm=self.hash_algorithm,
                 length=cipher_info.nonce_size,
@@ -232,7 +233,7 @@ class CascadeKeyDerivation:
             layers.append((key, nonce))
 
             # Update chain prefix for next layer (first 128 bits of current key)
-            previous_key_prefix = key[:CHAIN_PREFIX_LENGTH]
+            previous_key_prefix = bytes(key[:CHAIN_PREFIX_LENGTH])
 
         return layers
 
@@ -315,16 +316,20 @@ class CascadeEncryption:
         use_aad_all_layers = (
             self.format_version is not None and self.format_version >= 12
         )
-        data = plaintext
-        for i, (cipher, (key, nonce)) in enumerate(zip(self.ciphers, layer_keys)):
-            try:
-                # v12+: AAD on all layers; legacy: only first layer (M12)
-                aad = associated_data if (use_aad_all_layers or i == 0) else None
-                data = cipher.encrypt(key, data, nonce=nonce, associated_data=aad)
-            except Exception as e:
-                raise CascadeError(
-                    f"Encryption failed at layer {i + 1} ({self.config.cipher_names[i]}): {e}"
-                )
+        try:
+            data = plaintext
+            for i, (cipher, (key, nonce)) in enumerate(zip(self.ciphers, layer_keys)):
+                try:
+                    # v12+: AAD on all layers; legacy: only first layer (M12)
+                    aad = associated_data if (use_aad_all_layers or i == 0) else None
+                    data = cipher.encrypt(bytes(key), data, nonce=nonce, associated_data=aad)
+                except Exception as e:
+                    raise CascadeError(
+                        f"Encryption failed at layer {i + 1} ({self.config.cipher_names[i]}): {e}"
+                    )
+        finally:
+            for key, _ in layer_keys:
+                secure_memzero(key)
 
         return data
 
@@ -357,26 +362,30 @@ class CascadeEncryption:
         use_aad_all_layers = (
             self.format_version is not None and self.format_version >= 12
         )
-        data = ciphertext
-        for i in range(len(self.ciphers) - 1, -1, -1):
-            cipher = self.ciphers[i]
-            key, nonce = layer_keys[i]
+        try:
+            data = ciphertext
+            for i in range(len(self.ciphers) - 1, -1, -1):
+                cipher = self.ciphers[i]
+                key, nonce = layer_keys[i]
 
-            try:
-                # v12+: AAD on all layers; legacy: only first layer (M12)
-                aad = associated_data if (use_aad_all_layers or i == 0) else None
-                # Don't pass nonce - let cipher extract it from ciphertext
-                # (The nonce was prepended during encryption)
-                data = cipher.decrypt(key, data, nonce=None, associated_data=aad)
-            except Exception as e:
-                # Check if it's an authentication error
-                if "authentication" in str(e).lower() or "tag" in str(e).lower():
-                    raise AuthenticationError(
-                        f"Authentication failed at layer {i + 1} ({self.config.cipher_names[i]})"
+                try:
+                    # v12+: AAD on all layers; legacy: only first layer (M12)
+                    aad = associated_data if (use_aad_all_layers or i == 0) else None
+                    # Don't pass nonce - let cipher extract it from ciphertext
+                    # (The nonce was prepended during encryption)
+                    data = cipher.decrypt(bytes(key), data, nonce=None, associated_data=aad)
+                except Exception as e:
+                    # Check if it's an authentication error
+                    if "authentication" in str(e).lower() or "tag" in str(e).lower():
+                        raise AuthenticationError(
+                            f"Authentication failed at layer {i + 1} ({self.config.cipher_names[i]})"
+                        )
+                    raise CascadeError(
+                        f"Decryption failed at layer {i + 1} ({self.config.cipher_names[i]}): {e}"
                     )
-                raise CascadeError(
-                    f"Decryption failed at layer {i + 1} ({self.config.cipher_names[i]}): {e}"
-                )
+        finally:
+            for key, _ in layer_keys:
+                secure_memzero(key)
 
         return data
 

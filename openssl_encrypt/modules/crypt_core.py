@@ -4982,7 +4982,7 @@ def encrypt_file_asymmetric(
         secure_memzero(random_password)
 
 
-def _derive_pepper_key(password: bytes, format_version: int = None) -> bytes:
+def _derive_pepper_key(password: bytes, format_version: int = None) -> bytearray:
     """Derive the AES-GCM key for encrypting/decrypting the remote pepper.
 
     For format_version >= 12, uses HKDF with domain separation.
@@ -4999,21 +4999,21 @@ def _derive_pepper_key(password: bytes, format_version: int = None) -> bytes:
         from cryptography.hazmat.primitives import hashes as _hashes
         from cryptography.hazmat.primitives.kdf.hkdf import HKDF as _HKDF
 
-        return _HKDF(
+        return bytearray(_HKDF(
             algorithm=_hashes.SHA256(),
             length=32,
             salt=None,
             info=b"openssl_encrypt-pepper-key",
-        ).derive(password)
+        ).derive(password))
     else:
-        return hashlib.sha256(password).digest()
+        return bytearray(hashlib.sha256(password).digest())
 
 
 def _derive_pqc_sig_key(
     private_key: bytes,
     algorithm: str,
     salt: bytes = None,
-) -> bytes:
+) -> bytearray:
     """Derive symmetric key from PQC signature private key using HKDF.
 
     For format_version >= 12, a random salt should be passed. For legacy
@@ -5033,12 +5033,12 @@ def _derive_pqc_sig_key(
     if salt is None:
         salt = b"OpenSSL-Encrypt-PQ-Signature-Hybrid"
 
-    return _HKDF(
+    return bytearray(_HKDF(
         algorithm=_hashes.SHA256(),
         length=32,
         salt=salt,
         info=f"encryption-key-{algorithm}".encode(),
-    ).derive(private_key)
+    ).derive(private_key))
 
 
 @secure_encrypt_error_handler
@@ -5462,6 +5462,8 @@ def encrypt_file(
                     raise KeyDerivationError(
                         "Failed to decrypt pepper - wrong password or corrupted data"
                     )
+                finally:
+                    secure_memzero(pepper_key)
 
                 remote_pepper_name = pepper_name
 
@@ -5483,9 +5485,12 @@ def encrypt_file(
                 pepper_key = _derive_pepper_key(password, format_version=format_version)
 
                 # Encrypt pepper with AES-GCM
-                nonce = secrets.token_bytes(12)
-                aesgcm = AESGCM(pepper_key)
-                ciphertext_with_tag = aesgcm.encrypt(nonce, remote_pepper, None)
+                try:
+                    nonce = secrets.token_bytes(12)
+                    aesgcm = AESGCM(pepper_key)
+                    ciphertext_with_tag = aesgcm.encrypt(nonce, remote_pepper, None)
+                finally:
+                    secure_memzero(pepper_key)
 
                 # Store encrypted pepper
                 encrypted_pepper_data = nonce + ciphertext_with_tag
@@ -6023,32 +6028,35 @@ def encrypt_file(
 
                 derived_key = _derive_pqc_sig_key(private_key, algorithm.value, salt=sig_hkdf_salt)
 
-                if debug:
-                    logger.debug(
-                        f"ENCRYPT:PQC_SIG Derived AES key length: {len(derived_key)} bytes"
-                    )
-                    logger.debug(f"ENCRYPT:PQC_SIG Derived AES key: {derived_key.hex()}")
+                try:
+                    if debug:
+                        logger.debug(
+                            f"ENCRYPT:PQC_SIG Derived AES key length: {len(derived_key)} bytes"
+                        )
+                        logger.debug(f"ENCRYPT:PQC_SIG Derived AES key: {derived_key.hex()}")
 
-                # Encrypt using AES-GCM with derived key
-                nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
+                    # Encrypt using AES-GCM with derived key
+                    nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
 
-                if debug:
-                    logger.debug(f"ENCRYPT:PQC_SIG AES-GCM nonce: {nonce.hex()}")
+                    if debug:
+                        logger.debug(f"ENCRYPT:PQC_SIG AES-GCM nonce: {nonce.hex()}")
 
-                aes_cipher = AESGCM(derived_key)
-                encrypted_payload = aes_cipher.encrypt(nonce, data, aad)
-                encrypted_data = nonce + encrypted_payload
+                    aes_cipher = AESGCM(derived_key)
+                    encrypted_payload = aes_cipher.encrypt(nonce, data, aad)
+                    encrypted_data = nonce + encrypted_payload
 
-                if debug:
-                    logger.debug(
-                        f"ENCRYPT:PQC_SIG AES-GCM encrypted payload length: {len(encrypted_payload)} bytes"
-                    )
-                    logger.debug(
-                        f"ENCRYPT:PQC_SIG AES-GCM encrypted payload: {encrypted_payload.hex()}"
-                    )
-                    logger.debug(
-                        f"ENCRYPT:PQC_SIG Final encrypted data length: {len(encrypted_data)} bytes"
-                    )
+                    if debug:
+                        logger.debug(
+                            f"ENCRYPT:PQC_SIG AES-GCM encrypted payload length: {len(encrypted_payload)} bytes"
+                        )
+                        logger.debug(
+                            f"ENCRYPT:PQC_SIG AES-GCM encrypted payload: {encrypted_payload.hex()}"
+                        )
+                        logger.debug(
+                            f"ENCRYPT:PQC_SIG Final encrypted data length: {len(encrypted_data)} bytes"
+                        )
+                finally:
+                    secure_memzero(derived_key)
 
                 return encrypted_data
             else:
@@ -8165,6 +8173,8 @@ def decrypt_file(
                 raise AuthenticationError(
                     "Failed to decrypt remote pepper - wrong password or corrupted pepper data"
                 )
+            finally:
+                secure_memzero(pepper_key)
 
             # Validate pepper
             if not remote_pepper or len(remote_pepper) < 16:
@@ -8649,31 +8659,34 @@ def decrypt_file(
 
                 derived_key = _derive_pqc_sig_key(pqc_private_key, algorithm, salt=sig_hkdf_salt)
 
-                if debug:
-                    logger.debug(
-                        f"DECRYPT:PQC_SIG Derived AES key length: {len(derived_key)} bytes"
-                    )
-                    logger.debug(f"DECRYPT:PQC_SIG Derived AES key: {derived_key.hex()}")
+                try:
+                    if debug:
+                        logger.debug(
+                            f"DECRYPT:PQC_SIG Derived AES key length: {len(derived_key)} bytes"
+                        )
+                        logger.debug(f"DECRYPT:PQC_SIG Derived AES key: {derived_key.hex()}")
 
-                # Decrypt using AES-GCM with derived key
-                nonce = encrypted_data[:12]  # First 12 bytes are nonce
-                ciphertext = encrypted_data[12:]  # Rest is ciphertext
+                    # Decrypt using AES-GCM with derived key
+                    nonce = encrypted_data[:12]  # First 12 bytes are nonce
+                    ciphertext = encrypted_data[12:]  # Rest is ciphertext
 
-                if debug:
-                    logger.debug(f"DECRYPT:PQC_SIG AES-GCM nonce: {nonce.hex()}")
-                    logger.debug(
-                        f"DECRYPT:PQC_SIG AES-GCM ciphertext length: {len(ciphertext)} bytes"
-                    )
-                    logger.debug(f"DECRYPT:PQC_SIG AES-GCM ciphertext: {ciphertext.hex()}")
+                    if debug:
+                        logger.debug(f"DECRYPT:PQC_SIG AES-GCM nonce: {nonce.hex()}")
+                        logger.debug(
+                            f"DECRYPT:PQC_SIG AES-GCM ciphertext length: {len(ciphertext)} bytes"
+                        )
+                        logger.debug(f"DECRYPT:PQC_SIG AES-GCM ciphertext: {ciphertext.hex()}")
 
-                aes_cipher = AESGCM(derived_key)
-                decrypted_data = aes_cipher.decrypt(nonce, ciphertext, aad_for_decrypt)
+                    aes_cipher = AESGCM(derived_key)
+                    decrypted_data = aes_cipher.decrypt(nonce, ciphertext, aad_for_decrypt)
 
-                if debug:
-                    logger.debug(
-                        f"DECRYPT:PQC_SIG Decrypted data length: {len(decrypted_data)} bytes"
-                    )
-                    logger.debug(f"DECRYPT:PQC_SIG Decrypted data: {decrypted_data.hex()}")
+                    if debug:
+                        logger.debug(
+                            f"DECRYPT:PQC_SIG Decrypted data length: {len(decrypted_data)} bytes"
+                        )
+                        logger.debug(f"DECRYPT:PQC_SIG Decrypted data: {decrypted_data.hex()}")
+                finally:
+                    secure_memzero(derived_key)
 
                 return decrypted_data
             else:

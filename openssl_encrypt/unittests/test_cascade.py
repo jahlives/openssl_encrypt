@@ -105,8 +105,8 @@ class TestCascadeKeyDerivation(unittest.TestCase):
 
         self.assertEqual(len(layers), 2)
         for key, nonce in layers:
-            self.assertIsInstance(key, bytes)
-            self.assertIsInstance(nonce, bytes)
+            self.assertIsInstance(key, (bytes, bytearray))
+            self.assertIsInstance(nonce, (bytes, bytearray))
 
     def test_derived_keys_are_different(self):
         """Test that each layer gets different keys."""
