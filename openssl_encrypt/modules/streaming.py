@@ -605,6 +605,10 @@ class StreamingDecryptor:
         else:
             return hashlib.sha256(self.key + b"oesc-trailer-hmac").digest()
 
+    # Maximum allowed ciphertext per chunk: chunk_size + generous AEAD overhead.
+    # Prevents memory exhaustion from a crafted ciphertext_len field.
+    _MAX_CHUNK_OVERHEAD = 1024  # AEAD tag + padding headroom
+
     def decrypt_file(
         self,
         input_file: str,
@@ -616,6 +620,9 @@ class StreamingDecryptor:
         progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> Union[bool, bytes]:
         """Decrypt a streaming-format file chunk by chunk.
+
+        Reads the file incrementally so memory usage stays bounded
+        regardless of file size.
 
         Args:
             input_file: Path to the encrypted file.
@@ -633,95 +640,143 @@ class StreamingDecryptor:
             AuthenticationError: If chunk authentication or trailer HMAC fails.
             DecryptionError: If decryption fails.
         """
-        with open(input_file, "rb") as fin:
-            file_content = fin.read()
-
-        # Split on first colon to separate metadata from payload
-        colon_pos = file_content.index(b":")
-        payload = file_content[colon_pos + 1 :]
-
-        # Verify magic bytes
-        if payload[:4] != STREAMING_MAGIC:
-            raise DecryptionError("Invalid streaming payload: missing OESC magic")
-
-        # Read payload version
-        payload_version = struct.unpack("<I", payload[4:8])[0]
-        if payload_version != PAYLOAD_VERSION:
-            raise DecryptionError(f"Unsupported streaming payload version: {payload_version}")
-
-        # Read trailer (last 36 bytes: 4 bytes chunk_count + 32 bytes HMAC)
-        trailer_hmac = payload[-32:]
-        trailer_chunk_count = struct.unpack("<I", payload[-36:-32])[0]
-
-        if trailer_chunk_count != expected_chunk_count:
-            raise AuthenticationError(
-                f"Chunk count mismatch: metadata says {expected_chunk_count}, "
-                f"trailer says {trailer_chunk_count}"
-            )
-
-        # Validate chunk_count against payload size to prevent DoS via absurd values.
-        # Each chunk needs at least 8 bytes header (4 index + 4 length) + 16 bytes tag.
-        payload_data_size = len(payload) - 8 - 36  # minus header and trailer
-        min_bytes_per_chunk = 8 + 16  # chunk header + minimum AEAD tag
-        max_possible_chunks = payload_data_size // min_bytes_per_chunk if min_bytes_per_chunk > 0 else 0
-        if expected_chunk_count > max_possible_chunks:
-            raise ValidationError(
-                f"Chunk count {expected_chunk_count} exceeds maximum possible "
-                f"for payload size ({max_possible_chunks})"
-            )
-
-        # Parse and decrypt chunks
-        chunk_tags: List[bytes] = []
-        decrypted_chunks: List[bytes] = []
-        pos = 8  # After magic + version
-        end = len(payload) - 36  # Before trailer
-
+        max_ciphertext_len = self.chunk_size + self._MAX_CHUNK_OVERHEAD
         chunk_index = 0
-        while pos < end:
-            # Read chunk header
-            if pos + 8 > end:
-                raise DecryptionError("Truncated chunk header")
 
-            stored_index = struct.unpack("<I", payload[pos : pos + 4])[0]
-            ciphertext_len = struct.unpack("<I", payload[pos + 4 : pos + 8])[0]
-            pos += 8
+        with open(input_file, "rb") as fin:
+            # --- Locate the colon separator (metadata : payload) ---
+            # Read in small blocks to avoid loading the whole file.
+            colon_pos = -1
+            search_buf = b""
+            while True:
+                block = fin.read(8192)
+                if not block:
+                    break
+                search_buf += block
+                idx = search_buf.find(b":")
+                if idx != -1:
+                    colon_pos = idx
+                    break
+            if colon_pos == -1:
+                raise DecryptionError("Invalid streaming file: no metadata separator found")
 
-            if stored_index != chunk_index:
+            payload_start = colon_pos + 1
+
+            # --- Read and verify header (magic + version = 8 bytes) ---
+            fin.seek(payload_start)
+            header = fin.read(8)
+            if len(header) < 8:
+                raise DecryptionError("Invalid streaming payload: file too short")
+
+            if header[:4] != STREAMING_MAGIC:
+                raise DecryptionError("Invalid streaming payload: missing OESC magic")
+
+            payload_version = struct.unpack("<I", header[4:8])[0]
+            if payload_version != PAYLOAD_VERSION:
+                raise DecryptionError(
+                    f"Unsupported streaming payload version: {payload_version}"
+                )
+
+            # --- Read trailer (last 36 bytes of file) ---
+            file_size = fin.seek(0, 2)  # seek to end
+            payload_len = file_size - payload_start
+            if payload_len < 8 + 36:
+                raise DecryptionError("Streaming payload too short for header + trailer")
+
+            trailer_offset = file_size - 36
+            fin.seek(trailer_offset)
+            trailer_data = fin.read(36)
+            trailer_chunk_count = struct.unpack("<I", trailer_data[:4])[0]
+            trailer_hmac = trailer_data[4:]
+
+            if trailer_chunk_count != expected_chunk_count:
                 raise AuthenticationError(
-                    f"Chunk index mismatch: expected {chunk_index}, got {stored_index}"
+                    f"Chunk count mismatch: metadata says {expected_chunk_count}, "
+                    f"trailer says {trailer_chunk_count}"
                 )
 
-            if pos + ciphertext_len > end:
-                raise DecryptionError(f"Chunk {chunk_index} ciphertext extends beyond payload")
+            # --- Stream through chunks ---
+            chunks_end = trailer_offset  # byte offset where chunks end
+            fin.seek(payload_start + 8)  # position after header
 
-            ciphertext = payload[pos : pos + ciphertext_len]
-            pos += ciphertext_len
+            chunk_tags: List[bytes] = []
+            hash_ctx = hashlib.sha256() if original_hash else None
 
-            # Collect tag material for HMAC verification
-            tag_material = ciphertext[-16:] if len(ciphertext) >= 16 else ciphertext
-            chunk_tags.append(tag_material)
+            # For in-memory return when output_file is None
+            decrypted_chunks: Optional[List[bytes]] = [] if output_file is None else None
+            fout = None
+            try:
+                if output_file is not None:
+                    fout = open(output_file, "wb")
 
-            # Derive per-chunk nonce
-            nonce = derive_chunk_nonce(self.nonce_prefix, chunk_index, self.nonce_size)
+                while fin.tell() < chunks_end:
+                    # Read chunk header (8 bytes)
+                    chunk_hdr = fin.read(8)
+                    if len(chunk_hdr) < 8:
+                        raise DecryptionError("Truncated chunk header")
 
-            # Build per-chunk AAD
-            aad = build_chunk_aad(metadata_b64, chunk_index, expected_chunk_count)
+                    stored_index = struct.unpack("<I", chunk_hdr[:4])[0]
+                    ciphertext_len = struct.unpack("<I", chunk_hdr[4:8])[0]
 
-            # Decrypt the chunk
-            if self.algorithm == "cascade" and self.cascade_decryptor:
-                plaintext = self.cascade_decryptor.decrypt(
-                    ciphertext, self.key, self.cascade_salt, associated_data=aad,
-                    chunk_nonce=nonce,
-                )
-            else:
-                plaintext = decrypt_chunk(self.key, nonce, ciphertext, aad, self.algorithm)
+                    if stored_index != chunk_index:
+                        raise AuthenticationError(
+                            f"Chunk index mismatch: expected {chunk_index}, got {stored_index}"
+                        )
 
-            decrypted_chunks.append(plaintext)
+                    # Validate chunk size to prevent memory exhaustion
+                    if ciphertext_len > max_ciphertext_len:
+                        raise DecryptionError(
+                            f"Chunk {chunk_index} ciphertext length {ciphertext_len} exceeds "
+                            f"maximum allowed {max_ciphertext_len}"
+                        )
 
-            if progress_callback:
-                progress_callback(chunk_index, expected_chunk_count)
+                    if fin.tell() + ciphertext_len > chunks_end:
+                        raise DecryptionError(
+                            f"Chunk {chunk_index} ciphertext extends beyond payload"
+                        )
 
-            chunk_index += 1
+                    ciphertext = fin.read(ciphertext_len)
+                    if len(ciphertext) != ciphertext_len:
+                        raise DecryptionError(f"Chunk {chunk_index} read truncated")
+
+                    # Collect tag material for HMAC verification
+                    tag_material = ciphertext[-16:] if len(ciphertext) >= 16 else ciphertext
+                    chunk_tags.append(tag_material)
+
+                    # Derive per-chunk nonce
+                    nonce = derive_chunk_nonce(self.nonce_prefix, chunk_index, self.nonce_size)
+
+                    # Build per-chunk AAD
+                    aad = build_chunk_aad(metadata_b64, chunk_index, expected_chunk_count)
+
+                    # Decrypt the chunk
+                    if self.algorithm == "cascade" and self.cascade_decryptor:
+                        plaintext = self.cascade_decryptor.decrypt(
+                            ciphertext, self.key, self.cascade_salt, associated_data=aad,
+                            chunk_nonce=nonce,
+                        )
+                    else:
+                        plaintext = decrypt_chunk(
+                            self.key, nonce, ciphertext, aad, self.algorithm
+                        )
+
+                    # Write / collect plaintext
+                    if fout is not None:
+                        fout.write(plaintext)
+                    else:
+                        decrypted_chunks.append(plaintext)
+
+                    if hash_ctx is not None:
+                        hash_ctx.update(plaintext)
+
+                    if progress_callback:
+                        progress_callback(chunk_index, expected_chunk_count)
+
+                    chunk_index += 1
+
+            finally:
+                if fout is not None:
+                    fout.close()
 
         if chunk_index != expected_chunk_count:
             raise AuthenticationError(
@@ -734,25 +789,28 @@ class StreamingDecryptor:
         computed_hmac = hmac_module.new(hmac_key, tag_concatenation, hashlib.sha256).digest()
 
         if not hmac_module.compare_digest(computed_hmac, trailer_hmac):
+            # If we wrote to a file, remove the unverified output
+            if output_file is not None and os.path.exists(output_file):
+                os.remove(output_file)
             raise AuthenticationError(
                 "Trailer HMAC verification failed: file integrity compromised"
             )
 
-        # Reassemble plaintext
-        full_plaintext = b"".join(decrypted_chunks)
-
         # Verify original hash if provided
         if original_hash:
-            computed_hash = hashlib.sha256(full_plaintext).hexdigest()
+            if hash_ctx is not None:
+                computed_hash = hash_ctx.hexdigest()
+            else:
+                full_plaintext = b"".join(decrypted_chunks) if decrypted_chunks else b""
+                computed_hash = hashlib.sha256(full_plaintext).hexdigest()
             if computed_hash != original_hash:
+                if output_file is not None and os.path.exists(output_file):
+                    os.remove(output_file)
                 raise AuthenticationError("Original content hash mismatch after decryption")
 
-        # Write or return
+        # Return result
         if output_file is None:
-            return full_plaintext
-
-        with open(output_file, "wb") as fout:
-            fout.write(full_plaintext)
+            return b"".join(decrypted_chunks) if decrypted_chunks else b""
 
         return True
 
