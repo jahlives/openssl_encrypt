@@ -73,6 +73,117 @@ function Test-Command {
     $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
+function Test-IsAdmin {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = [Security.Principal.WindowsPrincipal]$identity
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Install-Dependency {
+    <#
+    .SYNOPSIS
+        Prompts the user to install a missing dependency.
+        Attempts winget first, falls back to manual instructions.
+        Returns $true if installation succeeded, $false if user declined or install failed.
+    #>
+    param(
+        [string]$Name,
+        [string]$WingetId,
+        [string]$ManualUrl,
+        [string]$ExtraInfo = ""
+    )
+
+    Write-Fail "$Name is required but not found"
+    Write-Host ""
+
+    if ($ExtraInfo) {
+        Write-Host $ExtraInfo
+        Write-Host ""
+    }
+
+    $hasWinget = Test-Command "winget"
+
+    if ($hasWinget -and $WingetId) {
+        $response = Read-Host "Install $Name now using winget? (y/N)"
+        if ($response -match "^[Yy]$") {
+            Write-Step "Installing $Name via winget..."
+            winget install --id $WingetId --accept-source-agreements --accept-package-agreements 2>&1 | Write-Host
+
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success "$Name installed successfully"
+                Write-Warn "You may need to restart your terminal for $Name to appear in PATH"
+                Write-Host ""
+
+                # Refresh PATH from registry for the current session
+                $machinePath = [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
+                $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+                $env:PATH = "$machinePath;$userPath"
+
+                return $true
+            }
+            else {
+                Write-Fail "winget installation failed"
+                Write-Host ""
+            }
+        }
+    }
+
+    # Manual fallback
+    Write-Host "Please install $Name manually:"
+    Write-Host "  $ManualUrl" -ForegroundColor White
+    if ($hasWinget -and $WingetId) {
+        Write-Host "  Or run: winget install --id $WingetId" -ForegroundColor White
+    }
+    Write-Host ""
+    Write-Host "After installing, restart your terminal and re-run this script."
+    return $false
+}
+
+function Install-VsBuildTools {
+    <#
+    .SYNOPSIS
+        Prompts the user to install Visual Studio Build Tools with C++ workload.
+        Returns $true if user should re-run the script, $false if declined.
+    #>
+
+    Write-Fail "Visual Studio Build Tools with C++ workload not found"
+    Write-Host ""
+
+    $hasWinget = Test-Command "winget"
+
+    if ($hasWinget) {
+        Write-Host "Visual Studio Build Tools can be installed via winget, but the"
+        Write-Host "C++ workload must be selected during installation."
+        Write-Host ""
+        $response = Read-Host "Install Visual Studio Build Tools now using winget? (y/N)"
+        if ($response -match "^[Yy]$") {
+            Write-Step "Installing Visual Studio Build Tools via winget..."
+            Write-Warn "The installer UI will open. Select 'Desktop development with C++' workload."
+            Write-Host ""
+            winget install --id Microsoft.VisualStudio.2022.BuildTools `
+                --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended" `
+                --accept-source-agreements --accept-package-agreements 2>&1 | Write-Host
+
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success "Visual Studio Build Tools installed"
+                Write-Warn "Restart your terminal and re-run this script."
+                return $true
+            }
+            else {
+                Write-Fail "Installation failed or was cancelled"
+                Write-Host ""
+            }
+        }
+    }
+
+    Write-Host "Please install Visual Studio Build Tools manually:"
+    Write-Host "  https://visualstudio.microsoft.com/visual-cpp-build-tools/" -ForegroundColor White
+    Write-Host "  Select 'Desktop development with C++' workload" -ForegroundColor White
+    Write-Host ""
+    Write-Host "Alternatively, run this script from a 'Developer PowerShell for VS' prompt."
+    return $false
+}
+
 function Find-VsDevShell {
     <#
     .SYNOPSIS
@@ -146,11 +257,23 @@ Write-Host "liboqs-python version: $LiboqsPythonVersion"
 Write-Host "Install prefix:        $InstallPrefix"
 Write-Host ""
 
+# Track if any dependency was just installed (may need terminal restart)
+$needsRestart = $false
+
 # Check Python
 if (-not (Test-Command "python")) {
-    Write-Fail "Python is required but not found in PATH"
-    Write-Host "Install from: https://www.python.org/downloads/"
-    exit 1
+    if (-not (Install-Dependency -Name "Python" `
+            -WingetId "Python.Python.3.12" `
+            -ManualUrl "https://www.python.org/downloads/" `
+            -ExtraInfo "Make sure to check 'Add Python to PATH' during installation.")) {
+        exit 1
+    }
+    # Verify it's now available
+    if (-not (Test-Command "python")) {
+        Write-Warn "Python was installed but is not yet in PATH."
+        Write-Host "Restart your terminal and re-run this script."
+        exit 1
+    }
 }
 
 $pythonVersion = python --version 2>&1
@@ -162,37 +285,53 @@ try {
     Write-Success "pip is available"
 }
 catch {
-    Write-Fail "pip is required. Run: python -m ensurepip"
-    exit 1
+    Write-Step "pip not found, attempting to bootstrap..."
+    python -m ensurepip 2>&1 | Write-Host
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "Could not bootstrap pip. Run: python -m ensurepip"
+        exit 1
+    }
+    Write-Success "pip bootstrapped successfully"
 }
 
 # Check git
 if (-not (Test-Command "git")) {
-    Write-Fail "git is required but not found in PATH"
-    Write-Host "Install from: https://git-scm.com/download/win"
-    exit 1
+    if (-not (Install-Dependency -Name "Git" `
+            -WingetId "Git.Git" `
+            -ManualUrl "https://git-scm.com/download/win")) {
+        exit 1
+    }
+    if (-not (Test-Command "git")) {
+        Write-Warn "Git was installed but is not yet in PATH."
+        Write-Host "Restart your terminal and re-run this script."
+        exit 1
+    }
 }
 Write-Success "git is available"
 
 # Check cmake
 if (-not (Test-Command "cmake")) {
-    Write-Fail "cmake is required but not found in PATH"
-    Write-Host "Install from: https://cmake.org/download/"
-    Write-Host "Or via: winget install Kitware.CMake"
-    exit 1
+    if (-not (Install-Dependency -Name "CMake" `
+            -WingetId "Kitware.CMake" `
+            -ManualUrl "https://cmake.org/download/" `
+            -ExtraInfo "Make sure to select 'Add CMake to PATH' during installation.")) {
+        exit 1
+    }
+    if (-not (Test-Command "cmake")) {
+        Write-Warn "CMake was installed but is not yet in PATH."
+        Write-Host "Restart your terminal and re-run this script."
+        exit 1
+    }
 }
 Write-Success "cmake is available"
 
 # Check/load MSVC
 Write-Step "Checking for MSVC compiler..."
 if (-not (Find-VsDevShell)) {
-    Write-Fail "Visual Studio Build Tools with C++ workload not found"
-    Write-Host ""
-    Write-Host "Please install Visual Studio Build Tools:"
-    Write-Host "  https://visualstudio.microsoft.com/visual-cpp-build-tools/"
-    Write-Host "  Select 'Desktop development with C++' workload"
-    Write-Host ""
-    Write-Host "Or run this script from a 'Developer PowerShell for VS' prompt."
+    if (Install-VsBuildTools) {
+        # Installer ran — user needs to restart terminal
+        exit 0
+    }
     exit 1
 }
 
