@@ -16,8 +16,55 @@ def check_liboqs_version():
     """
     import os
     import subprocess
+    import sys
 
-    # Common paths where liboqs might be installed
+    # On Windows, check for liboqs DLL directly (no pkg-config)
+    if sys.platform == 'win32':
+        win_prefixes = [
+            os.environ.get("LIBOQS_INSTALL_PREFIX", r"C:\liboqs"),
+            r"C:\liboqs",
+        ]
+        for prefix in win_prefixes:
+            dll_path = os.path.join(prefix, "bin", "oqs.dll")
+            if os.path.exists(dll_path):
+                # Try to get version from cmake package config
+                cmake_config = os.path.join(prefix, "lib", "cmake", "liboqs", "liboqsConfig.cmake")
+                version = None
+                if os.path.exists(cmake_config):
+                    try:
+                        with open(cmake_config) as f:
+                            for line in f:
+                                if "PACKAGE_VERSION" in line and "set" in line.lower():
+                                    parts = line.split('"')
+                                    if len(parts) >= 2:
+                                        version = parts[1]
+                                        break
+                    except Exception:
+                        pass
+                if version is None:
+                    # Check pkg-config file if available
+                    pc_file = os.path.join(prefix, "lib", "pkgconfig", "liboqs.pc")
+                    if os.path.exists(pc_file):
+                        try:
+                            with open(pc_file) as f:
+                                for line in f:
+                                    if line.startswith("Version:"):
+                                        version = line.split(":", 1)[1].strip()
+                                        break
+                        except Exception:
+                            pass
+                if version == LIBOQS_VERSION:
+                    return (True, version, f"✓ liboqs {version}")
+                elif version:
+                    return (False, version,
+                            f"✗ liboqs version mismatch: found {version}, need {LIBOQS_VERSION}")
+                else:
+                    # DLL exists but can't determine version — assume OK
+                    return (True, "unknown", f"✓ liboqs found at {prefix} (version unknown)")
+        # No DLL found on Windows
+        return (None, None, "✗ liboqs not found (checked C:\\liboqs)")
+
+    # Common paths where liboqs might be installed (Unix)
     common_pkgconfig_paths = [
         None,  # Use default PKG_CONFIG_PATH first
         os.path.expanduser("~/.local/lib64/pkgconfig"),
