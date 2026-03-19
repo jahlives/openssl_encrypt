@@ -3264,7 +3264,10 @@ def main_with_args(args=None):
         os.kill(os.getpid(), signum)
 
     # Register handlers for common termination signals
-    for sig in [signal.SIGINT, signal.SIGTERM, signal.SIGHUP]:
+    _sigs = [signal.SIGINT, signal.SIGTERM]
+    if hasattr(signal, 'SIGHUP'):
+        _sigs.append(signal.SIGHUP)
+    for sig in _sigs:
         try:
             signal.signal(sig, signal_handler)
         except AttributeError:
