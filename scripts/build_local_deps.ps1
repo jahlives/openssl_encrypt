@@ -390,7 +390,7 @@ if ($liboqsOk -and $liboqsPythonOk) {
 # ──────────────────────────────────────────────────────────
 
 if (-not $liboqsOk) {
-    Write-Banner "Step 1/3: Building liboqs $LiboqsVersion"
+    Write-Banner "Step 1/4: Building liboqs $LiboqsVersion"
 
     # Create temp directory
     $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "liboqs-build-$(Get-Random)"
@@ -480,14 +480,14 @@ if (-not $liboqsOk) {
     }
 }
 else {
-    Write-Step "Step 1/3: liboqs already installed, skipping build"
+    Write-Step "Step 1/4: liboqs already installed, skipping build"
 }
 
 # ──────────────────────────────────────────────────────────
 # Step 2: Install liboqs-python
 # ──────────────────────────────────────────────────────────
 
-Write-Banner "Step 2/3: Installing liboqs-python $LiboqsPythonVersion"
+Write-Banner "Step 2/4: Installing liboqs-python $LiboqsPythonVersion"
 
 # Set environment for liboqs-python build
 $env:LIBOQS_INSTALL_PATH = $InstallPrefix
@@ -559,10 +559,10 @@ try {
 } catch { }
 
 if ($randomxOk) {
-    Write-Banner "Step 3/3: RandomX already installed and working"
+    Write-Banner "Step 3/4: RandomX already installed and working"
 }
 else {
-    Write-Banner "Step 3/3: Building RandomX $RandomXVersion for Windows"
+    Write-Banner "Step 3/4: Building RandomX $RandomXVersion for Windows"
 
     # RandomX from PyPI doesn't build on Windows/MSVC due to:
     # 1. AMD64 not recognized as x86_64 (JIT files skipped)
@@ -775,6 +775,111 @@ setup(
         # Cleanup
         Write-Step "Cleaning up RandomX build directory..."
         Remove-Item -Recurse -Force $randomxTemp -ErrorAction SilentlyContinue
+    }
+}
+
+# ──────────────────────────────────────────────────────────
+# Step 4: Build Whirlpool for Windows (MSVC patch)
+# ──────────────────────────────────────────────────────────
+
+$WhirlpoolVersion = "1.0.0"
+
+# Check if whirlpool is already installed and working
+$whirlpoolOk = $false
+try {
+    $wpResult = python -c "import whirlpool; print(whirlpool.new(b'test').hexdigest()[:8])" 2>&1
+    if ($LASTEXITCODE -eq 0 -and $wpResult.Trim().Length -eq 8) {
+        $whirlpoolOk = $true
+    }
+} catch { }
+
+if ($whirlpoolOk) {
+    Write-Banner "Step 4/4: Whirlpool already installed and working"
+}
+else {
+    Write-Banner "Step 4/4: Building Whirlpool $WhirlpoolVersion for Windows"
+
+    # The whirlpool PyPI package uses Py_TYPE() as an lvalue which MSVC rejects
+    # since Python 3.12+. This patches the source to use Py_SET_TYPE() instead.
+
+    $whirlpoolTemp = Join-Path ([System.IO.Path]::GetTempPath()) "whirlpool-build-$(Get-Random)"
+    New-Item -ItemType Directory -Path $whirlpoolTemp -Force | Out-Null
+
+    try {
+        # Download source
+        Write-Step "Downloading Whirlpool source..."
+        & { $ErrorActionPreference = 'Continue'
+            python -m pip download "whirlpool==$WhirlpoolVersion" --no-binary :all: --no-deps --no-build-isolation -d $whirlpoolTemp 2>&1 | Write-Host
+        }
+        $tarball = Get-ChildItem -Path $whirlpoolTemp -Filter "*.tar.gz" | Select-Object -First 1
+        if (-not $tarball) {
+            Write-Fail "Failed to download Whirlpool source"
+            exit 1
+        }
+
+        # Extract
+        Write-Step "Extracting source..."
+        python -c "
+import tarfile
+with tarfile.open(r'$($tarball.FullName)') as t:
+    t.extractall(r'$whirlpoolTemp', filter='data')
+"
+        $sourceDir = Get-ChildItem -Path $whirlpoolTemp -Directory -Filter "Whirlpool-*" | Select-Object -First 1
+        if (-not $sourceDir) {
+            Write-Fail "Failed to extract Whirlpool source"
+            exit 1
+        }
+        $srcRoot = $sourceDir.FullName
+
+        # Patch pywhirlpool.c for MSVC compatibility
+        Write-Step "Patching pywhirlpool.c for MSVC (Py_TYPE lvalue fix)..."
+        $cFile = Join-Path $srcRoot "whirlpool\pywhirlpool.c"
+        if (Test-Path $cFile) {
+            $content = Get-Content $cFile -Raw
+            $content = $content.Replace(
+                'Py_TYPE(&Whirlpooltype) = &PyType_Type;',
+                'Py_SET_TYPE(&Whirlpooltype, &PyType_Type);'
+            )
+            Set-Content -Path $cFile -Value $content -NoNewline
+            Write-Success "Patched pywhirlpool.c"
+        }
+        else {
+            Write-Fail "pywhirlpool.c not found at $cFile"
+            exit 1
+        }
+
+        # Build and install
+        Write-Step "Building Whirlpool..."
+        Push-Location $srcRoot
+        try {
+            & { $ErrorActionPreference = 'Continue'
+                python -m pip install --no-build-isolation --no-deps . 2>&1 | Write-Host
+            }
+
+            if ($LASTEXITCODE -ne 0) {
+                Write-Fail "Whirlpool build failed"
+                exit 1
+            }
+        }
+        finally {
+            Pop-Location
+        }
+
+        # Verify
+        Write-Step "Verifying Whirlpool..."
+        $wpVerify = python -c "import whirlpool; print(whirlpool.new(b'test').hexdigest()[:8])" 2>&1
+        if ($LASTEXITCODE -eq 0 -and $wpVerify.Trim().Length -eq 8) {
+            Write-Success "Whirlpool $WhirlpoolVersion built and verified successfully"
+        }
+        else {
+            Write-Fail "Whirlpool verification failed: $wpVerify"
+            exit 1
+        }
+    }
+    finally {
+        # Cleanup
+        Write-Step "Cleaning up Whirlpool build directory..."
+        Remove-Item -Recurse -Force $whirlpoolTemp -ErrorAction SilentlyContinue
     }
 }
 
