@@ -27,6 +27,7 @@ Usage:
 """
 
 import logging
+import sys
 from typing import Any, Dict, Set
 
 from ....modules.plugin_system.plugin_base import (
@@ -252,7 +253,7 @@ class YubikeyHSMPlugin(HSMPlugin):
 
             # Perform Challenge-Response
             self.logger.info(f"Performing Challenge-Response with Yubikey slot {slot}...")
-            print(f"👆 Touch your Yubikey now (slot {slot})...")
+            print(f"👆 Touch your Yubikey now (slot {slot})...", file=sys.stderr)
             response = self._calculate_challenge_response(salt, slot)
 
             # Response is the hsm_pepper (20 bytes HMAC-SHA1)
