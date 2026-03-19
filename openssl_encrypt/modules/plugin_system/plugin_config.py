@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import stat
+import sys
 import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Union
@@ -168,6 +169,12 @@ def ensure_plugin_data_dir(plugin_id: str, subdir: str = "") -> Optional[Path]:
         data_dir = base_dir
 
     try:
+        # On Windows, POSIX permission checks are not meaningful.
+        # The user's home directory is already protected by Windows ACLs.
+        if sys.platform == "win32":
+            data_dir.mkdir(parents=True, exist_ok=True)
+            return data_dir
+
         # Save old umask and set restrictive umask
         old_umask = os.umask(0o077)  # Temporarily set umask to create with 0o700
 
