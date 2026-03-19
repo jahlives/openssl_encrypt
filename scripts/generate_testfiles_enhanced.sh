@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 
 # Enhanced script to generate test files with parameters derived from filenames
-# Filename format: test_[prefix]_[algo]_[hash1:rounds+hash2:rounds+...]_[kdf1:rounds+kdf2:rounds+...]_[encryption_data].txt
+# Filename format: test_[prefix]_[algo]_[hash1=rounds+hash2=rounds+...]_[kdf1=rounds+kdf2=rounds+...]_[encryption_data].txt
 # Examples:
-#   test_v12_aes-gcm_sha512:2+sha256:2_argon2:2+scrypt:2.txt
+#   test_v12_aes-gcm_sha512=2+sha256=2_argon2=2+scrypt=2.txt
 #   test_v12_chacha20-poly1305_sha512_argon2.txt  (uses default rounds)
 #
 # - The prefix (v12, etc.) in the filename determines which metadata version and output directory to use
-# - You can specify rounds for each hash and KDF using the format hash:rounds or kdf:rounds
+# - You can specify rounds for each hash and KDF using the format hash=rounds or kdf=rounds
 # - If no rounds are specified, a default of 2 will be used (balloon defaults to 1)
 
 # Default settings
@@ -119,11 +119,11 @@ parse_filename() {
             IFS='+' read -ra hash_parts <<< "$part"
 
             for hash_spec in "${hash_parts[@]}"; do
-                # Check if hash has rounds specified (hash:rounds format)
-                if [[ "$hash_spec" == *":"* ]]; then
+                # Check if hash has rounds specified (hash=rounds format)
+                if [[ "$hash_spec" == *"="* ]]; then
                     # Split hash and rounds
-                    hash_name="${hash_spec%%:*}"
-                    hash_rounds="${hash_spec#*:}"
+                    hash_name="${hash_spec%%=*}"
+                    hash_rounds="${hash_spec#*=}"
 
                     # Validate that rounds is a number
                     if ! [[ "$hash_rounds" =~ ^[0-9]+$ ]]; then
@@ -148,11 +148,11 @@ parse_filename() {
         else
             # Check if this part is a single hash algorithm
             for h in "${HASHES[@]}"; do
-                # Check if hash has rounds specified (hash:rounds format)
-                if [[ "$part" == "$h:"* ]]; then
+                # Check if hash has rounds specified (hash=rounds format)
+                if [[ "$part" == "$h="* ]]; then
                     # Split hash and rounds
                     hash_name="$h"
-                    hash_rounds="${part#*:}"
+                    hash_rounds="${part#*=}"
 
                     # Validate that rounds is a number
                     if ! [[ "$hash_rounds" =~ ^[0-9]+$ ]]; then
@@ -177,11 +177,11 @@ parse_filename() {
             IFS='+' read -ra kdf_parts <<< "$part"
 
             for kdf_spec in "${kdf_parts[@]}"; do
-                # Check if KDF has rounds specified (kdf:rounds format)
-                if [[ "$kdf_spec" == *":"* ]]; then
+                # Check if KDF has rounds specified (kdf=rounds format)
+                if [[ "$kdf_spec" == *"="* ]]; then
                     # Split KDF and rounds
-                    kdf_name="${kdf_spec%%:*}"
-                    kdf_rounds="${kdf_spec#*:}"
+                    kdf_name="${kdf_spec%%=*}"
+                    kdf_rounds="${kdf_spec#*=}"
 
                     # Validate that rounds is a number
                     if ! [[ "$kdf_rounds" =~ ^[0-9]+$ ]]; then
@@ -225,11 +225,11 @@ parse_filename() {
         else
             # Check if this part is a single KDF
             for k in "${KDFS[@]}"; do
-                # Check if KDF has rounds specified (kdf:rounds format)
-                if [[ "$part" == "$k:"* ]]; then
+                # Check if KDF has rounds specified (kdf=rounds format)
+                if [[ "$part" == "$k="* ]]; then
                     # Split KDF and rounds
                     kdf_name="$k"
-                    kdf_rounds="${part#*:}"
+                    kdf_rounds="${part#*=}"
 
                     # Validate that rounds is a number
                     if ! [[ "$kdf_rounds" =~ ^[0-9]+$ ]]; then
@@ -357,16 +357,16 @@ show_usage() {
     echo "  $0 --dryrun                    # Show commands without executing them"
     echo "  $0 test_v4_aes-gcm_sha512_argon2.txt # Generate file with v4 metadata"
     echo "  $0 test_v3_ml-kem-768-hybrid_sha512+sha256_argon2+scrypt_aes-gcm.txt"
-    echo "  $0 test_v5_threefish-512_blake3:1000_randomx:2.txt"
-    echo "  $0 test_v5_cascade-standard_sha512:1000_argon2:2.txt"
-    echo "  $0 test_v5_cascade~aes-gcm~chacha20-poly1305~threefish-512_sha512:1000_argon2:2.txt"
+    echo "  $0 test_v5_threefish-512_blake3=1000_randomx=2.txt"
+    echo "  $0 test_v5_cascade-standard_sha512=1000_argon2=2.txt"
+    echo "  $0 test_v5_cascade~aes-gcm~chacha20-poly1305~threefish-512_sha512=1000_argon2=2.txt"
     echo ""
     echo "Filename format: test_[prefix]_[algo]_[hash1+hash2+...]_[kdf1+kdf2+...]_[encryption_data].txt"
     echo "  - [prefix]: v3, v4, v5, etc. - determines metadata version and output directory"
     echo "  - Supported KDFs: argon2, balloon, scrypt, randomx"
     echo "  - Cascade: use 'cascade-standard', 'cascade-paranoia' (presets)"
     echo "    or 'cascade~algo1~algo2[~algo3]' (custom chain, max 3 algos)"
-    echo "  - Specify rounds for hashes and KDFs using hash:rounds or kdf:rounds syntax"
+    echo "  - Specify rounds for hashes and KDFs using hash=rounds or kdf=rounds syntax"
     echo "  - If no rounds specified, defaults to 2 (balloon defaults to 1)"
 }
 
@@ -433,7 +433,7 @@ else
         for hash in "${HASHES[@]}"; do
             for kdf in "${KDFS[@]}"; do
                 kr=$(kdf_rounds "$kdf")
-                filename="test_${metadata_version}_${enc}_${hash}:2_${kdf}:${kr}.txt"
+                filename="test_${metadata_version}_${enc}_${hash}=2_${kdf}=${kr}.txt"
                 read prefix algo extra_args < <(parse_filename "$filename")
                 generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
             done
@@ -449,64 +449,64 @@ else
     # Multi-hash chains (9 combos)
     MULTI_HASHES=(
         # 2-hash chains (5)
-        "sha256:2+sha512:2"
-        "sha3-256:2+blake2b:2"
-        "blake3:2+shake256:2"
-        "sha384:2+sha3-384:2"
-        "shake128:2+sha3-512:2"
+        "sha256=2+sha512=2"
+        "sha3-256=2+blake2b=2"
+        "blake3=2+shake256=2"
+        "sha384=2+sha3-384=2"
+        "shake128=2+sha3-512=2"
         # 3-hash chains (3)
-        "sha512:2+blake2b:2+sha3-256:2"
-        "sha256:2+sha384:2+blake3:2"
-        "shake128:2+sha3-512:2+sha3-384:2"
+        "sha512=2+blake2b=2+sha3-256=2"
+        "sha256=2+sha384=2+blake3=2"
+        "shake128=2+sha3-512=2+sha3-384=2"
         # All 10 hashes chained (1)
-        "sha256:2+sha384:2+sha512:2+sha3-256:2+sha3-384:2+sha3-512:2+blake2b:2+blake3:2+shake128:2+shake256:2"
+        "sha256=2+sha384=2+sha512=2+sha3-256=2+sha3-384=2+sha3-512=2+blake2b=2+blake3=2+shake128=2+shake256=2"
     )
 
     # Multi-KDF chains (11 combos)
     MULTI_KDFS=(
         # 2-KDF chains - all C(4,2)=6
-        "argon2:2+scrypt:2"
-        "argon2:2+balloon:1"
-        "argon2:2+randomx:2"
-        "scrypt:2+balloon:1"
-        "scrypt:2+randomx:2"
-        "balloon:1+randomx:2"
+        "argon2=2+scrypt=2"
+        "argon2=2+balloon=1"
+        "argon2=2+randomx=2"
+        "scrypt=2+balloon=1"
+        "scrypt=2+randomx=2"
+        "balloon=1+randomx=2"
         # 3-KDF chains - all C(4,3)=4
-        "argon2:2+scrypt:2+balloon:1"
-        "argon2:2+scrypt:2+randomx:2"
-        "argon2:2+balloon:1+randomx:2"
-        "scrypt:2+balloon:1+randomx:2"
+        "argon2=2+scrypt=2+balloon=1"
+        "argon2=2+scrypt=2+randomx=2"
+        "argon2=2+balloon=1+randomx=2"
+        "scrypt=2+balloon=1+randomx=2"
         # All 4 KDFs chained (1)
-        "argon2:2+scrypt:2+balloon:1+randomx:2"
+        "argon2=2+scrypt=2+balloon=1+randomx=2"
     )
 
     # Cross combos: multi-hash + multi-KDF (5 combos)
     CROSS_HASH=(
-        "sha256:2+sha512:2"
-        "sha3-256:2+blake2b:2"
-        "blake3:2+shake256:2"
-        "sha512:2+blake2b:2+sha3-256:2"
-        "sha256:2+sha384:2+sha512:2+sha3-256:2+sha3-384:2+sha3-512:2+blake2b:2+blake3:2+shake128:2+shake256:2"
+        "sha256=2+sha512=2"
+        "sha3-256=2+blake2b=2"
+        "blake3=2+shake256=2"
+        "sha512=2+blake2b=2+sha3-256=2"
+        "sha256=2+sha384=2+sha512=2+sha3-256=2+sha3-384=2+sha3-512=2+blake2b=2+blake3=2+shake128=2+shake256=2"
     )
     CROSS_KDF=(
-        "argon2:2+scrypt:2"
-        "argon2:2+balloon:1"
-        "scrypt:2+randomx:2"
-        "argon2:2+scrypt:2+balloon:1"
-        "argon2:2+scrypt:2+balloon:1+randomx:2"
+        "argon2=2+scrypt=2"
+        "argon2=2+balloon=1"
+        "scrypt=2+randomx=2"
+        "argon2=2+scrypt=2+balloon=1"
+        "argon2=2+scrypt=2+balloon=1+randomx=2"
     )
 
     for enc in "${ALGORITHMS[@]}"; do
         # Multi-hash with single default KDF (argon2)
         for mh in "${MULTI_HASHES[@]}"; do
-            filename="test_${metadata_version}_${enc}_${mh}_argon2:2.txt"
+            filename="test_${metadata_version}_${enc}_${mh}_argon2=2.txt"
             read prefix algo extra_args < <(parse_filename "$filename")
             generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
         done
 
         # Multi-KDF with single default hash (sha512)
         for mk in "${MULTI_KDFS[@]}"; do
-            filename="test_${metadata_version}_${enc}_sha512:2_${mk}.txt"
+            filename="test_${metadata_version}_${enc}_sha512=2_${mk}.txt"
             read prefix algo extra_args < <(parse_filename "$filename")
             generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
         done
@@ -543,7 +543,7 @@ else
         for hash in "${HASHES[@]}"; do
             for kdf in "${KDFS[@]}"; do
                 kr=$(kdf_rounds "$kdf")
-                filename="test_${metadata_version}_${cascade}_${hash}:2_${kdf}:${kr}.txt"
+                filename="test_${metadata_version}_${cascade}_${hash}=2_${kdf}=${kr}.txt"
                 read prefix algo extra_args < <(parse_filename "$filename")
                 generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
             done
@@ -557,39 +557,39 @@ else
 
     # ML-KEM hybrid variants
     for pqc in "ml-kem-512-hybrid" "ml-kem-768-hybrid"; do
-        filename="test_${metadata_version}_${pqc}_sha512:2+sha256:2_argon2:2_aes-gcm.txt"
+        filename="test_${metadata_version}_${pqc}_sha512=2+sha256=2_argon2=2_aes-gcm.txt"
         read prefix algo extra_args < <(parse_filename "$filename")
         generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
     done
 
     # ML-KEM-ChaCha20 variants
-    filename="test_${metadata_version}_ml-kem-768-chacha20_sha512:2_argon2:2_chacha20-poly1305.txt"
+    filename="test_${metadata_version}_ml-kem-768-chacha20_sha512=2_argon2=2_chacha20-poly1305.txt"
     read prefix algo extra_args < <(parse_filename "$filename")
     generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
 
     # HQC variants
     for pqc in "hqc-128-hybrid" "hqc-192-hybrid"; do
-        filename="test_${metadata_version}_${pqc}_sha512:2+blake2b:2_argon2:2+balloon:1_chacha20-poly1305.txt"
+        filename="test_${metadata_version}_${pqc}_sha512=2+blake2b=2_argon2=2+balloon=1_chacha20-poly1305.txt"
         read prefix algo extra_args < <(parse_filename "$filename")
         generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
     done
 
     # MAYO variants
     for pqc in "mayo-1-hybrid" "mayo-3-hybrid"; do
-        filename="test_${metadata_version}_${pqc}_sha3-256:2_argon2:2_aes-gcm.txt"
+        filename="test_${metadata_version}_${pqc}_sha3-256=2_argon2=2_aes-gcm.txt"
         read prefix algo extra_args < <(parse_filename "$filename")
         generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
     done
 
     # CROSS variants
     for pqc in "cross-128-hybrid" "cross-192-hybrid"; do
-        filename="test_${metadata_version}_${pqc}_blake3:2_argon2:2_aes-gcm-siv.txt"
+        filename="test_${metadata_version}_${pqc}_blake3=2_argon2=2_aes-gcm-siv.txt"
         read prefix algo extra_args < <(parse_filename "$filename")
         generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
     done
 
     # PQC with Threefish as encryption data
-    filename="test_${metadata_version}_ml-kem-1024-hybrid_sha512:2_argon2:2_threefish-512.txt"
+    filename="test_${metadata_version}_ml-kem-1024-hybrid_sha512=2_argon2=2_threefish-512.txt"
     read prefix algo extra_args < <(parse_filename "$filename")
     generate_test_file "$filename" "$prefix" "$algo" "$extra_args"
 fi
