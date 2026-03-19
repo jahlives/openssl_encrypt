@@ -58,5 +58,7 @@ rpds-py==0.30.0
     #   referencing
 urllib3==2.6.3
     # via requests
-whirlpool-py311==1 ; python_version >= "3.11"
+whirlpool-py311==1 ; python_version >= "3.11" and sys_platform != "win32"
     # via -r requirements-prod.in
+whirlpool==1.0.0 ; sys_platform == "win32"
+    # via -r requirements-prod.in (Windows: patched by build_local_deps.ps1)
