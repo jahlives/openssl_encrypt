@@ -19,6 +19,12 @@ import sys
 import time
 
 
+def eprint(*args, **kwargs):
+    """Print to stderr. Drop-in replacement for print() for non-data output."""
+    kwargs.setdefault('file', sys.stderr)
+    print(*args, **kwargs)
+
+
 def expand_glob_patterns(pattern):
     """
     Expand glob patterns into a list of matching files and directories.
