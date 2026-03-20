@@ -19,6 +19,7 @@ from dataclasses import asdict, dataclass
 from typing import List, Optional, Tuple
 
 from .crypt_errors import SecretSharingError
+from .crypt_utils import eprint
 from .secure_memory import SecureBytes, secure_memzero
 
 # ──────────────────────────────────────────────────
@@ -429,12 +430,12 @@ def split_secret_cli(args) -> None:
             filepath = os.path.join(output_dir, filename)
             share.to_file(filepath)
             if not quiet:
-                print(f"  Written: {filepath}")
+                eprint(f"  Written: {filepath}")
 
         if not quiet:
-            print(f"\nSplit into {num_shares} shares (threshold: {threshold})")
-            print(f"Key ID: {shares[0].metadata.key_id}")
-            print(f"Any {threshold} of {num_shares} shares can reconstruct the secret.")
+            eprint(f"\nSplit into {num_shares} shares (threshold: {threshold})")
+            eprint(f"Key ID: {shares[0].metadata.key_id}")
+            eprint(f"Any {threshold} of {num_shares} shares can reconstruct the secret.")
     finally:
         # Securely wipe password from memory
         if password_secure is not None:
@@ -465,9 +466,9 @@ def combine_secrets_cli(args) -> None:
             shares.append(share)
 
         if not quiet:
-            print(f"Loaded {len(shares)} shares")
-            print(f"Key ID: {shares[0].metadata.key_id}")
-            print(f"Threshold: {shares[0].metadata.threshold}")
+            eprint(f"Loaded {len(shares)} shares")
+            eprint(f"Key ID: {shares[0].metadata.key_id}")
+            eprint(f"Threshold: {shares[0].metadata.threshold}")
 
         # Reconstruct password into SecureBytes
         password_raw = combine_shares(shares)
@@ -478,8 +479,8 @@ def combine_secrets_cli(args) -> None:
         password_raw = None
 
         if not quiet:
-            print("Secret reconstructed successfully")
-            print(f"Decrypting {input_file}...")
+            eprint("Secret reconstructed successfully")
+            eprint(f"Decrypting {input_file}...")
 
         # Decrypt file
         decrypt_file(
@@ -490,7 +491,7 @@ def combine_secrets_cli(args) -> None:
         )
 
         if not quiet:
-            print(f"Decrypted to: {output_file}")
+            eprint(f"Decrypted to: {output_file}")
     finally:
         # Securely wipe reconstructed password from memory
         if password_secure is not None:

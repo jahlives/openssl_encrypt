@@ -1123,7 +1123,7 @@ def output_available_algorithms_json(args):
             [
                 sys.executable,
                 "-c",
-                "import randomx; eprint(getattr(randomx, '__version__', 'installed'))",
+                "import randomx; print(getattr(randomx, '__version__', 'installed'))",
             ],
             capture_output=True,
             timeout=2,
@@ -1405,7 +1405,7 @@ def install_optional_dependencies(args):
     try:
         # Check if already installed
         result = subprocess.run(
-            [sys.executable, "-c", "import oqs; eprint(oqs.oqs_python_version())"],
+            [sys.executable, "-c", "import oqs; print(oqs.oqs_python_version())"],
             capture_output=True,
             text=True,
             timeout=5,

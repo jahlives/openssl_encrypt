@@ -41,10 +41,12 @@ except ImportError:
 # Import secure memory functions
 try:
     from ..crypt_errors import KeystoreError
+    from ..crypt_utils import eprint
     from ..secure_memory import SecureBytes, secure_memzero
 except ImportError:
     # Fallback for standalone testing
     from openssl_encrypt.modules.crypt_errors import KeystoreError
+    from openssl_encrypt.modules.crypt_utils import eprint
     from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
 
 # Set up module logger
@@ -775,28 +777,28 @@ import tempfile
 from pathlib import Path
 
 def show_help():
-    print("Usage: python crypt.py <encrypt|decrypt> [options...]")
-    print("")
-    print("Unified crypto wrapper with automatic USB workspace handling")
-    print("Supports all OpenSSL Encrypt CLI arguments")
-    print("")
-    print("ENCRYPT:")
-    print("  python crypt.py encrypt -i <file> --password <pass> [options...]")
-    print("  → Automatically saves to USB workspace as <file>.enc")
-    print("")
-    print("DECRYPT:")
-    print("  python crypt.py decrypt -i <file> --password <pass> [options...]")
-    print("  → Smart workspace file resolution, outputs to stdout by default")
-    print("  → Use -o <file> to save to data/decrypted/ (relative paths)")
-    print("  → Use -o /absolute/path to save anywhere")
-    print("")
-    print("Examples:")
-    print("  python crypt.py encrypt -i document.pdf --password mypass")
-    print("  python crypt.py encrypt -i document.pdf --password mypass --algorithm aes-gcm-siv")
-    print("  python crypt.py decrypt -i document.pdf.enc --password mypass")
-    print("  python crypt.py decrypt -i document.pdf.enc --password mypass -o recovered.pdf")
-    print("    → Saves to: data/decrypted/recovered.pdf")
-    print("  python crypt.py decrypt -i document.pdf.enc --password mypass --verbose")
+    eprint("Usage: python crypt.py <encrypt|decrypt> [options...]")
+    eprint("")
+    eprint("Unified crypto wrapper with automatic USB workspace handling")
+    eprint("Supports all OpenSSL Encrypt CLI arguments")
+    eprint("")
+    eprint("ENCRYPT:")
+    eprint("  python crypt.py encrypt -i <file> --password <pass> [options...]")
+    eprint("  → Automatically saves to USB workspace as <file>.enc")
+    eprint("")
+    eprint("DECRYPT:")
+    eprint("  python crypt.py decrypt -i <file> --password <pass> [options...]")
+    eprint("  → Smart workspace file resolution, outputs to stdout by default")
+    eprint("  → Use -o <file> to save to data/decrypted/ (relative paths)")
+    eprint("  → Use -o /absolute/path to save anywhere")
+    eprint("")
+    eprint("Examples:")
+    eprint("  python crypt.py encrypt -i document.pdf --password mypass")
+    eprint("  python crypt.py encrypt -i document.pdf --password mypass --algorithm aes-gcm-siv")
+    eprint("  python crypt.py decrypt -i document.pdf.enc --password mypass")
+    eprint("  python crypt.py decrypt -i document.pdf.enc --password mypass -o recovered.pdf")
+    eprint("    → Saves to: data/decrypted/recovered.pdf")
+    eprint("  python crypt.py decrypt -i document.pdf.enc --password mypass --verbose")
 
 def main():
     if len(sys.argv) < 2 or sys.argv[1] not in ['encrypt', 'decrypt']:
@@ -843,7 +845,7 @@ def main():
             if not output_specified and input_file:
                 output_file = workspace_dir / (Path(input_file).name + ".enc")
                 modified_args.extend(["-o", str(output_file)])
-                print(f"🔒 Encrypting {{Path(input_file).name}} to USB workspace...")
+                eprint(f"🔒 Encrypting {{Path(input_file).name}} to USB workspace...")
 
             cmd.extend(modified_args)
 
@@ -864,7 +866,7 @@ def main():
                         workspace_file = workspace_dir / input_file
                         if workspace_file.exists():
                             input_file = str(workspace_file)
-                            print(f"📁 Using file from USB workspace: {{input_file}}")
+                            eprint(f"📁 Using file from USB workspace: {{input_file}}")
 
                     modified_args.extend([args[i], input_file])
                     i += 2
@@ -878,7 +880,7 @@ def main():
                             decrypted_dir = workspace_dir / "decrypted"
                             decrypted_dir.mkdir(exist_ok=True)
                             output_file = str(decrypted_dir / output_file)
-                            print(f"💾 Saving decrypted file to: {{Path(output_file).relative_to(script_dir)}}")
+                            eprint(f"💾 Saving decrypted file to: {{Path(output_file).relative_to(script_dir)}}")
 
                         modified_args.extend([args[i], output_file])
                         i += 2
@@ -896,7 +898,7 @@ def main():
                 temp_f.close()
                 modified_args.extend(["-o", temp_output])
 
-                print(f"🔓 Decrypting {{Path(input_file).name if input_file else 'file'}}...")
+                eprint(f"🔓 Decrypting {{Path(input_file).name if input_file else 'file'}}...")
 
                 cmd.extend(modified_args)
                 result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(lib_dir))
@@ -910,16 +912,16 @@ def main():
                         try:
                             # Try to decode as text first
                             text_content = content.decode('utf-8')
-                            print(text_content, end='')
+                            eprint(text_content, end='')
                         except UnicodeDecodeError:
                             # Binary content, output raw bytes
                             sys.stdout.buffer.write(content)
 
-                        print("\\n✓ File decrypted successfully")
+                        eprint("\\n✓ File decrypted successfully")
                     else:
-                        print("✗ Decryption failed")
+                        eprint("✗ Decryption failed")
                         if result.stderr.strip():
-                            print(result.stderr)
+                            eprint(result.stderr)
                         sys.exit(1)
                 finally:
                     # Clean up temporary file
@@ -930,7 +932,7 @@ def main():
                 return
             else:
                 if input_file:
-                    print(f"🔓 Decrypting {{Path(input_file).name}}...")
+                    eprint(f"🔓 Decrypting {{Path(input_file).name}}...")
                 cmd.extend(modified_args)
 
         # Run the CLI command
@@ -945,20 +947,20 @@ def main():
                         output_name = Path(result.stdout.split("Writing encrypted file: ")[1].split("\\n")[0]).name
                     except:
                         pass
-                print(f"✓ File encrypted to: {{output_name}}")
+                eprint(f"✓ File encrypted to: {{output_name}}")
             elif operation == "decrypt":
-                print("✓ File decrypted successfully")
+                eprint("✓ File decrypted successfully")
 
             if result.stdout.strip():
-                print(result.stdout)
+                eprint(result.stdout)
         else:
-            print(f"✗ {{operation.title()}} failed")
+            eprint(f"✗ {{operation.title()}} failed")
             if result.stderr.strip():
-                print(result.stderr)
+                eprint(result.stderr)
             sys.exit(1)
 
     except Exception as e:
-        print(f"✗ {{operation.title()}} failed: {{e}}")
+        eprint(f"✗ {{operation.title()}} failed: {{e}}")
         sys.exit(1)
 
 if __name__ == "__main__":

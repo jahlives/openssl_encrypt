@@ -366,9 +366,9 @@ class TestVerifyOutput(unittest.TestCase):
         self.assertFalse(all_passed)
 
     def test_verbose_output_includes_details(self):
-        """Verbose mode includes detail lines."""
+        """Verbose mode includes detail lines (on stderr)."""
         captured = StringIO()
-        with mock.patch("sys.stdout", captured):
+        with mock.patch("sys.stderr", captured):
             verify_file_integrity(self.enc_file, json_output=False, verbose=True)
         output = captured.getvalue()
         # Verbose should show size details, keys, etc.
@@ -385,16 +385,16 @@ class TestVerifyOutput(unittest.TestCase):
         self.assertTrue(has_details)
 
     def test_text_output_shows_pass(self):
-        """Text output shows PASS for valid file."""
+        """Text output shows PASS for valid file (on stderr)."""
         captured = StringIO()
-        with mock.patch("sys.stdout", captured):
+        with mock.patch("sys.stderr", captured):
             verify_file_integrity(self.enc_file, json_output=False)
         self.assertIn("PASS", captured.getvalue())
 
     def test_text_output_shows_fail(self):
-        """Text output shows FAIL for invalid file."""
+        """Text output shows FAIL for invalid file (on stderr)."""
         captured = StringIO()
-        with mock.patch("sys.stdout", captured):
+        with mock.patch("sys.stderr", captured):
             verify_file_integrity(
                 os.path.join(self.temp_dir, "nonexistent"),
                 json_output=False,

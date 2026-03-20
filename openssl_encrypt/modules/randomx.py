@@ -16,6 +16,8 @@ import logging
 import secrets
 from typing import Optional
 
+from .crypt_utils import eprint
+
 # Set up module-level logger
 logger = logging.getLogger(__name__)
 
@@ -409,14 +411,14 @@ if __name__ == "__main__":
     # Module self-test when run directly
     logging.basicConfig(level=logging.INFO)
 
-    print("RandomX Module Information:")
+    eprint("RandomX Module Information:")
     info = get_randomx_info()
     for key, value in info.items():
-        print(f"  {key}: {value}")
+        eprint(f"  {key}: {value}")
 
     if RANDOMX_AVAILABLE:
-        print("\nRunning RandomX functionality test...")
+        eprint("\nRunning RandomX functionality test...")
         success = test_randomx_functionality()
-        print(f"Test result: {'PASS' if success else 'FAIL'}")
+        eprint(f"Test result: {'PASS' if success else 'FAIL'}")
     else:
-        print("\nRandomX not available - install with: pip install pyrx")
+        eprint("\nRandomX not available - install with: pip install pyrx")
