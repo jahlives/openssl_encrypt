@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 
 from .config import IntegrityConfig
+from ...modules.crypt_utils import eprint
 
 logger = logging.getLogger(__name__)
 
@@ -465,22 +466,22 @@ if __name__ == "__main__":
     with IntegrityPlugin(config) as plugin:
         # Get profile (auto-registers on first connection)
         profile = plugin.get_profile()
-        print(f"Connected as: {profile['cert_fingerprint']}")
+        eprint(f"Connected as: {profile['cert_fingerprint']}")
 
         # Store metadata hash
         file_id = IntegrityPlugin.compute_file_id(Path("important_file.txt.enc"))
         metadata_hash = IntegrityPlugin.compute_metadata_hash(b"encrypted metadata here")
 
         result = plugin.store_hash(file_id, metadata_hash, algorithm="aes-256-gcm", description="Important file")
-        print(f"Stored hash: {result['file_id']}")
+        eprint(f"Stored hash: {result['file_id']}")
 
         # Verify integrity
         match, details = plugin.verify(file_id, metadata_hash)
         if match:
-            print("✓ Integrity verified!")
+            eprint("✓ Integrity verified!")
         else:
-            print(f"✗ INTEGRITY VIOLATION: {details.get('warning')}")
+            eprint(f"✗ INTEGRITY VIOLATION: {details.get('warning')}")
 
         # Get statistics
         stats = plugin.get_stats()
-        print(f"Verification success rate: {stats['success_rate'] * 100:.1f}%")
+        eprint(f"Verification success rate: {stats['success_rate'] * 100:.1f}%")

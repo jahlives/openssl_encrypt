@@ -41,7 +41,7 @@ USAGE:
         # Verify integrity later
         match, details = plugin.verify(file_id, metadata_hash)
         if not match:
-            print(f"INTEGRITY VIOLATION: {details['warning']}")
+            eprint(f"INTEGRITY VIOLATION: {details['warning']}")
 
 CONFIGURATION:
     Config file: ~/.openssl_encrypt/plugins/integrity.json
@@ -59,6 +59,7 @@ CONFIGURATION:
 
 from .config import IntegrityConfig
 from .integrity_plugin import IntegrityPlugin, IntegrityPluginError, IntegrityVerificationError
+from ...modules.crypt_utils import eprint
 
 __all__ = ["IntegrityPlugin", "IntegrityConfig", "IntegrityPluginError", "IntegrityVerificationError"]
 

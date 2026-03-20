@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from ...modules.key_bundle import PublicKeyBundle
+from ...modules.crypt_utils import eprint
 
 logger = logging.getLogger(__name__)
 
@@ -428,4 +429,4 @@ class KeyserverCache:
 
 if __name__ == "__main__":
     # Simple test
-    print("KeyserverCache module loaded successfully")
+    eprint("KeyserverCache module loaded successfully")

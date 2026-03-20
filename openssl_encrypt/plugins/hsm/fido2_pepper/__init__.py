@@ -54,11 +54,11 @@ try:
 
         def prompt_up(self):
             """Prompt user to touch their security key."""
-            print("\n🔐 Touch your security key now...")
+            eprint("\n🔐 Touch your security key now...")
 
         def request_pin(self, permissions, rd_id):
             """Request PIN from user."""
-            print("🔑 Your security key requires a PIN.")
+            eprint("🔑 Your security key requires a PIN.")
             return getpass.getpass("Enter PIN: ")
 
         def request_uv(self, permissions, rd_id):
@@ -76,6 +76,7 @@ from ....modules.plugin_system.plugin_base import (
     PluginSecurityContext,
 )
 from ....modules.plugin_system.plugin_config import ensure_plugin_data_dir
+from ....modules.crypt_utils import eprint
 
 logger = logging.getLogger(__name__)
 

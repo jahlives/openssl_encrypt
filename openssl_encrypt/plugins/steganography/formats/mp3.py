@@ -34,6 +34,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 
 # Import core steganography components
+from ....modules.crypt_utils import eprint
 from ..core import (
     CapacityError,
     CoverMediaError,
@@ -955,27 +956,27 @@ def is_mp3_steganography_available() -> bool:
 if __name__ == "__main__":
     # Simple test
     if is_mp3_steganography_available():
-        print("MP3 steganography is available")
+        eprint("MP3 steganography is available")
 
         # Create test MP3
         test_mp3 = create_mp3_test_audio(duration_seconds=2.0, bitrate=128)
-        print(f"Created test MP3: {len(test_mp3)} bytes")
+        eprint(f"Created test MP3: {len(test_mp3)} bytes")
 
         # Test steganography
         mp3_stego = MP3Steganography(password="test123")
 
         capacity = mp3_stego.calculate_capacity(test_mp3)
-        print(f"MP3 capacity: {capacity} bytes")
+        eprint(f"MP3 capacity: {capacity} bytes")
 
         if capacity > 20:
             test_data = b"MP3 steganography test!"
-            print(f"Hiding {len(test_data)} bytes...")
+            eprint(f"Hiding {len(test_data)} bytes...")
 
             stego_mp3 = mp3_stego.hide_data(test_mp3, test_data)
-            print(f"Created steganographic MP3: {len(stego_mp3)} bytes")
+            eprint(f"Created steganographic MP3: {len(stego_mp3)} bytes")
 
             extracted = mp3_stego.extract_data(stego_mp3)
-            print(f"Extracted: {extracted}")
-            print(f"Match: {extracted == test_data}")
+            eprint(f"Extracted: {extracted}")
+            eprint(f"Match: {extracted == test_data}")
     else:
-        print("MP3 steganography is not available")
+        eprint("MP3 steganography is not available")

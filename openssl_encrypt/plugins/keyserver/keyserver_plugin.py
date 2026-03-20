@@ -33,6 +33,7 @@ from ...modules.key_bundle import PublicKeyBundle
 from ...modules.plugin_system.plugin_base import BasePlugin, PluginCapability, PluginType
 from .cache import KeyserverCache
 from .config import KeyserverConfig
+from ...modules.crypt_utils import eprint
 
 logger = logging.getLogger(__name__)
 
@@ -604,4 +605,4 @@ class KeyserverPlugin(BasePlugin):
 
 if __name__ == "__main__":
     # Simple test
-    print("KeyserverPlugin module loaded successfully")
+    eprint("KeyserverPlugin module loaded successfully")

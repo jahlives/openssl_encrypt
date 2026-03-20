@@ -16,15 +16,16 @@ import sys
 from pathlib import Path
 
 from openssl_encrypt.plugins.pepper import PepperPlugin, PepperConfig, PepperError
+from ...modules.crypt_utils import eprint
 
 
 def main():
     """Example pepper plugin usage."""
 
     # Example 1: Configuration
-    print("=" * 60)
-    print("Example 1: Configure Pepper Plugin")
-    print("=" * 60)
+    eprint("=" * 60)
+    eprint("Example 1: Configure Pepper Plugin")
+    eprint("=" * 60)
 
     config = PepperConfig(
         enabled=True,
@@ -34,71 +35,71 @@ def main():
         ca_cert=None,  # Use system CA bundle
     )
 
-    print(f"Enabled: {config.enabled}")
-    print(f"Server: {config.server_url}")
-    print(f"Client Cert: {config.client_cert}")
-    print()
+    eprint(f"Enabled: {config.enabled}")
+    eprint(f"Server: {config.server_url}")
+    eprint(f"Client Cert: {config.client_cert}")
+    eprint()
 
     # Example 2: Initialize Plugin
-    print("=" * 60)
-    print("Example 2: Initialize Plugin")
-    print("=" * 60)
+    eprint("=" * 60)
+    eprint("Example 2: Initialize Plugin")
+    eprint("=" * 60)
 
     try:
         plugin = PepperPlugin(config)
-        print("✓ Plugin initialized successfully")
+        eprint("✓ Plugin initialized successfully")
     except PepperError as e:
-        print(f"✗ Plugin initialization failed: {e}")
+        eprint(f"✗ Plugin initialization failed: {e}")
         return
-    print()
+    eprint()
 
     # Example 3: Get Profile (auto-register)
-    print("=" * 60)
-    print("Example 3: Get/Create Profile")
-    print("=" * 60)
+    eprint("=" * 60)
+    eprint("Example 3: Get/Create Profile")
+    eprint("=" * 60)
 
     try:
         profile = plugin.get_profile()
-        print(f"Certificate Fingerprint: {profile['cert_fingerprint']}")
-        print(f"Name: {profile.get('name', 'Not set')}")
-        print(f"TOTP Enabled: {profile['totp_enabled']}")
-        print(f"Pepper Count: {profile['pepper_count']}")
-        print(f"Created: {profile['created_at']}")
+        eprint(f"Certificate Fingerprint: {profile['cert_fingerprint']}")
+        eprint(f"Name: {profile.get('name', 'Not set')}")
+        eprint(f"TOTP Enabled: {profile['totp_enabled']}")
+        eprint(f"Pepper Count: {profile['pepper_count']}")
+        eprint(f"Created: {profile['created_at']}")
     except PepperError as e:
-        print(f"✗ Failed to get profile: {e}")
+        eprint(f"✗ Failed to get profile: {e}")
         return
-    print()
+    eprint()
 
     # Example 4: Update Profile
-    print("=" * 60)
-    print("Example 4: Update Profile Name")
-    print("=" * 60)
+    eprint("=" * 60)
+    eprint("Example 4: Update Profile Name")
+    eprint("=" * 60)
 
     try:
         profile = plugin.update_profile("My Laptop")
-        print(f"✓ Profile updated: {profile['name']}")
+        eprint(f"✓ Profile updated: {profile['name']}")
     except PepperError as e:
-        print(f"✗ Failed to update profile: {e}")
-    print()
+        eprint(f"✗ Failed to update profile: {e}")
+    eprint()
 
     # Example 5: Setup TOTP
-    print("=" * 60)
-    print("Example 5: Setup TOTP 2FA")
-    print("=" * 60)
+    eprint("=" * 60)
+    eprint("Example 5: Setup TOTP 2FA")
+    eprint("=" * 60)
 
     try:
         totp_setup = plugin.setup_totp()
-        print("✓ TOTP setup initiated")
-        print(f"Secret: {totp_setup['secret']}")
-        print(f"URI: {totp_setup['uri']}")
-        print("\nScan this QR code with your authenticator app:")
-        print("(QR code SVG saved to totp_qr.svg)")
+        eprint("✓ TOTP setup initiated")
+        eprint(f"Secret: {totp_setup['secret']}")
+        eprint(f"URI: {totp_setup['uri']}")
+        eprint("\nScan this QR code with your authenticator app:")
+        eprint("(QR code SVG saved to totp_qr.svg)")
 
         # Save QR code to file
         with open("totp_qr.svg", "w") as f:
             f.write(totp_setup['qr_svg'])
 
-        print("\nAfter scanning, verify with: plugin.verify_totp('123456')")
+        eprint("\nAfter scanning, verify with: plugin.verify_totp('123456')")
 
         # In a real scenario, you would:
         # 1. Display QR code to user
@@ -108,13 +109,13 @@ def main():
         # 5. Save backup codes securely
 
     except PepperError as e:
-        print(f"✗ TOTP setup failed: {e}")
-    print()
+        eprint(f"✗ TOTP setup failed: {e}")
+    eprint()
 
     # Example 6: Store Encrypted Pepper
-    print("=" * 60)
-    print("Example 6: Store Encrypted Pepper")
-    print("=" * 60)
+    eprint("=" * 60)
+    eprint("Example 6: Store Encrypted Pepper")
+    eprint("=" * 60)
 
     try:
         # IMPORTANT: In production, encrypt this data client-side!
@@ -125,47 +126,47 @@ def main():
             pepper_encrypted=pepper_data,
             description="Example pepper for demonstration"
         )
-        print(f"✓ Pepper stored: {result['name']}")
-        print(f"  Created: {result['created_at']}")
-        print(f"  Description: {result['description']}")
+        eprint(f"✓ Pepper stored: {result['name']}")
+        eprint(f"  Created: {result['created_at']}")
+        eprint(f"  Description: {result['description']}")
     except PepperError as e:
-        print(f"✗ Failed to store pepper: {e}")
-    print()
+        eprint(f"✗ Failed to store pepper: {e}")
+    eprint()
 
     # Example 7: List Peppers
-    print("=" * 60)
-    print("Example 7: List All Peppers")
-    print("=" * 60)
+    eprint("=" * 60)
+    eprint("Example 7: List All Peppers")
+    eprint("=" * 60)
 
     try:
         peppers = plugin.list_peppers()
-        print(f"✓ Found {len(peppers)} pepper(s):")
+        eprint(f"✓ Found {len(peppers)} pepper(s):")
         for pepper in peppers:
-            print(f"  - {pepper['name']}")
-            print(f"    Description: {pepper['description']}")
-            print(f"    Access Count: {pepper['access_count']}")
+            eprint(f"  - {pepper['name']}")
+            eprint(f"    Description: {pepper['description']}")
+            eprint(f"    Access Count: {pepper['access_count']}")
     except PepperError as e:
-        print(f"✗ Failed to list peppers: {e}")
-    print()
+        eprint(f"✗ Failed to list peppers: {e}")
+    eprint()
 
     # Example 8: Retrieve Pepper
-    print("=" * 60)
-    print("Example 8: Retrieve Pepper")
-    print("=" * 60)
+    eprint("=" * 60)
+    eprint("Example 8: Retrieve Pepper")
+    eprint("=" * 60)
 
     try:
         pepper_data = plugin.get_pepper("example-pepper")
-        print(f"✓ Retrieved pepper: {len(pepper_data)} bytes")
+        eprint(f"✓ Retrieved pepper: {len(pepper_data)} bytes")
         # IMPORTANT: Decrypt pepper_data client-side!
-        print(f"  Data (should be decrypted): {pepper_data[:50]}...")
+        eprint(f"  Data (should be decrypted): {pepper_data[:50]}...")
     except PepperError as e:
-        print(f"✗ Failed to retrieve pepper: {e}")
-    print()
+        eprint(f"✗ Failed to retrieve pepper: {e}")
+    eprint()
 
     # Example 9: Configure Dead Man's Switch
-    print("=" * 60)
-    print("Example 9: Configure Dead Man's Switch")
-    print("=" * 60)
+    eprint("=" * 60)
+    eprint("Example 9: Configure Dead Man's Switch")
+    eprint("=" * 60)
 
     try:
         deadman = plugin.configure_deadman(
@@ -173,53 +174,53 @@ def main():
             grace_period="24h",  # 24 hour grace period
             enabled=True
         )
-        print("✓ Dead man's switch configured")
-        print(f"  Enabled: {deadman['enabled']}")
-        print(f"  Interval: {deadman['interval_seconds']} seconds (7 days)")
-        print(f"  Grace Period: {deadman['grace_period_seconds']} seconds (24 hours)")
-        print(f"  Next Deadline: {deadman['next_deadline']}")
-        print(f"  Time Remaining: {deadman['time_remaining_seconds']} seconds")
+        eprint("✓ Dead man's switch configured")
+        eprint(f"  Enabled: {deadman['enabled']}")
+        eprint(f"  Interval: {deadman['interval_seconds']} seconds (7 days)")
+        eprint(f"  Grace Period: {deadman['grace_period_seconds']} seconds (24 hours)")
+        eprint(f"  Next Deadline: {deadman['next_deadline']}")
+        eprint(f"  Time Remaining: {deadman['time_remaining_seconds']} seconds")
     except PepperError as e:
-        print(f"✗ Failed to configure deadman: {e}")
-    print()
+        eprint(f"✗ Failed to configure deadman: {e}")
+    eprint()
 
     # Example 10: Check In
-    print("=" * 60)
-    print("Example 10: Dead Man's Switch Check-In")
-    print("=" * 60)
+    eprint("=" * 60)
+    eprint("Example 10: Dead Man's Switch Check-In")
+    eprint("=" * 60)
 
     try:
         deadman = plugin.checkin()
-        print("✓ Checked in successfully")
-        print(f"  Next Deadline: {deadman['next_deadline']}")
+        eprint("✓ Checked in successfully")
+        eprint(f"  Next Deadline: {deadman['next_deadline']}")
     except PepperError as e:
-        print(f"✗ Failed to check in: {e}")
-    print()
+        eprint(f"✗ Failed to check in: {e}")
+    eprint()
 
     # Example 11: Panic Operations (DESTRUCTIVE - commented out)
-    print("=" * 60)
-    print("Example 11: Panic Operations (COMMENTED OUT)")
-    print("=" * 60)
-    print("WARNING: Panic operations are DESTRUCTIVE and cannot be undone!")
-    print("They require TOTP verification.")
-    print()
-    print("To panic delete a single pepper:")
-    print("  result = plugin.panic_single('example-pepper', totp_code='123456')")
-    print()
-    print("To panic delete ALL peppers:")
-    print("  result = plugin.panic_all(totp_code='123456')")
-    print()
+    eprint("=" * 60)
+    eprint("Example 11: Panic Operations (COMMENTED OUT)")
+    eprint("=" * 60)
+    eprint("WARNING: Panic operations are DESTRUCTIVE and cannot be undone!")
+    eprint("They require TOTP verification.")
+    eprint()
+    eprint("To panic delete a single pepper:")
+    eprint("  result = plugin.panic_single('example-pepper', totp_code='123456')")
+    eprint()
+    eprint("To panic delete ALL peppers:")
+    eprint("  result = plugin.panic_all(totp_code='123456')")
+    eprint()
 
     # Example cleanup
-    print("=" * 60)
-    print("Example Complete!")
-    print("=" * 60)
-    print("\nNOTE: In production:")
-    print("  1. Always encrypt peppers client-side before storing")
-    print("  2. Always decrypt peppers client-side after retrieving")
-    print("  3. Securely store TOTP backup codes")
-    print("  4. Use proper client certificates for mTLS")
-    print("  5. Configure dead man's switch appropriately")
+    eprint("=" * 60)
+    eprint("Example Complete!")
+    eprint("=" * 60)
+    eprint("\nNOTE: In production:")
+    eprint("  1. Always encrypt peppers client-side before storing")
+    eprint("  2. Always decrypt peppers client-side after retrieving")
+    eprint("  3. Securely store TOTP backup codes")
+    eprint("  4. Use proper client certificates for mTLS")
+    eprint("  5. Configure dead man's switch appropriately")
 
 
 if __name__ == "__main__":
