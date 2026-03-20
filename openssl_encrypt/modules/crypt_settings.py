@@ -14,6 +14,7 @@ import threading
 import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
+from .crypt_utils import eprint
 
 CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".crypt_settings.json")
 
@@ -1186,7 +1187,7 @@ class SettingsTab:
 
         except Exception as e:
             # Print detailed error information
-            print(f"[SETTINGS] Error saving settings: {e}")
+            eprint(f"[SETTINGS] Error saving settings: {e}")
             import traceback
 
             traceback.print_exc()
@@ -1197,7 +1198,7 @@ class SettingsTab:
 
                 tkinter.messagebox.showerror("Error", f"Failed to save settings: {str(e)}")
             except Exception as show_err:
-                print(f"[SETTINGS] Could not show error message: {show_err}")
+                eprint(f"[SETTINGS] Could not show error message: {show_err}")
 
             return False
 
@@ -1217,16 +1218,16 @@ class SettingsTab:
 
                         loaded_config = secure_json_loads(json_content)
                     except (JSONSecurityError, JSONValidationError) as e:
-                        print(f"Warning: Settings file validation failed: {e}")
-                        print("Using default configuration")
+                        eprint(f"Warning: Settings file validation failed: {e}")
+                        eprint("Using default configuration")
                         return  # Use default config on validation failure
                     except ImportError:
                         # Fallback to basic JSON loading if validator not available
                         try:
                             loaded_config = json.loads(json_content)
                         except json.JSONDecodeError as e:
-                            print(f"Warning: Invalid JSON in settings file: {e}")
-                            print("Using default configuration")
+                            eprint(f"Warning: Invalid JSON in settings file: {e}")
+                            eprint("Using default configuration")
                             return
 
                 # Merge with default config to ensure all keys exist
@@ -1235,7 +1236,7 @@ class SettingsTab:
                 # For debugging in tests
                 # print(f"Loaded config: {self.config}")
         except Exception as e:
-            print(f"Failed to load settings: {str(e)}")
+            eprint(f"Failed to load settings: {str(e)}")
             # Reset to defaults on error
             self.config = DEFAULT_CONFIG.copy()
 
