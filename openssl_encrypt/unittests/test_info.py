@@ -57,25 +57,25 @@ class TestPrintFileInfo(unittest.TestCase):
         self.assertIn("format_version", result)
 
     def test_print_file_info_shows_format_version(self):
-        """Pretty-print output includes format version."""
+        """Pretty-print output includes format version (on stderr)."""
         captured = StringIO()
-        with mock.patch("sys.stdout", captured):
+        with mock.patch("sys.stderr", captured):
             print_file_info(self.encrypted_file, json_output=False)
         output = captured.getvalue()
         self.assertIn("Format Version", output)
 
     def test_print_file_info_shows_algorithm(self):
-        """Pretty-print output includes algorithm name."""
+        """Pretty-print output includes algorithm name (on stderr)."""
         captured = StringIO()
-        with mock.patch("sys.stdout", captured):
+        with mock.patch("sys.stderr", captured):
             print_file_info(self.encrypted_file, json_output=False)
         output = captured.getvalue()
         self.assertIn("Algorithm", output)
 
     def test_print_file_info_shows_encrypted_at(self):
-        """Pretty-print output includes encrypted_at timestamp."""
+        """Pretty-print output includes encrypted_at timestamp (on stderr)."""
         captured = StringIO()
-        with mock.patch("sys.stdout", captured):
+        with mock.patch("sys.stderr", captured):
             print_file_info(self.encrypted_file, json_output=False)
         output = captured.getvalue()
         self.assertIn("Encrypted At", output)
@@ -104,17 +104,17 @@ class TestPrintFileInfo(unittest.TestCase):
             print_file_info("/nonexistent/file.bin")
 
     def test_print_file_info_shows_salt(self):
-        """Pretty-print output includes salt."""
+        """Pretty-print output includes salt (on stderr)."""
         captured = StringIO()
-        with mock.patch("sys.stdout", captured):
+        with mock.patch("sys.stderr", captured):
             print_file_info(self.encrypted_file, json_output=False)
         output = captured.getvalue()
         self.assertIn("Salt", output)
 
     def test_print_file_info_shows_hash_config(self):
-        """Pretty-print output includes hash configuration."""
+        """Pretty-print output includes hash configuration (on stderr)."""
         captured = StringIO()
-        with mock.patch("sys.stdout", captured):
+        with mock.patch("sys.stderr", captured):
             print_file_info(self.encrypted_file, json_output=False)
         output = captured.getvalue()
         # Should show at least one hash algorithm
@@ -201,7 +201,7 @@ class TestInfoCLI(unittest.TestCase):
         ]
 
         captured = StringIO()
-        with mock.patch("sys.stdout", captured):
+        with mock.patch("sys.stderr", captured):
             with mock.patch("sys.exit") as mock_exit:
                 cli_main()
                 # First call should be exit(0) from info handler
@@ -250,7 +250,7 @@ class TestInfoCLI(unittest.TestCase):
         mock_stdin = mock.MagicMock()
         mock_stdin.buffer.read.return_value = encrypted_data
 
-        with mock.patch("sys.stdout", captured):
+        with mock.patch("sys.stderr", captured):
             with mock.patch("sys.stdin", mock_stdin):
                 with mock.patch("sys.exit") as mock_exit:
                     cli_main()
