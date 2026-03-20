@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Optional
 
+from .crypt_utils import eprint
+
 from argon2.low_level import Type, hash_secret_raw
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -307,7 +309,7 @@ class IdentityKeyProtectionService:
 
         # Show touch prompt if required
         if hsm_config.require_touch:
-            print("Touch your Yubikey to continue...", flush=True)
+            eprint("Touch your Yubikey to continue...", flush=True)
 
         # Perform Challenge-Response
         try:

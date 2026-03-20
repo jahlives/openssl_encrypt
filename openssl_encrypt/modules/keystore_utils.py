@@ -10,6 +10,8 @@ import logging
 import os
 from typing import Any, Dict, Optional, Tuple
 
+from .crypt_utils import eprint
+
 # Set up module-level logger
 logger = logging.getLogger(__name__)
 
@@ -192,7 +194,7 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
                     if "hash_config" in header_config:
                         key_id = header_config["hash_config"].get("pqc_keystore_key_id")
                         if key_id and verbose:
-                            print(f"Found key ID in metadata: {key_id}")
+                            eprint(f"Found key ID in metadata: {key_id}")
                         return key_id
                 except Exception as e:
                     if verbose:
@@ -295,7 +297,7 @@ def get_keystore_password(args) -> str:
                 return f.read().strip()
         except Exception as e:
             if not getattr(args, "quiet", False):
-                print(f"Warning: Failed to read keystore password from file: {e}")
+                eprint(f"Warning: Failed to read keystore password from file: {e}")
 
     # For decryption operations, we should always prompt for a separate keystore password
     # rather than reusing the file password, as they could be different
@@ -332,7 +334,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
         if "derivation_config" in metadata and "keystore_id" in metadata["derivation_config"]:
             key_id = metadata["derivation_config"]["keystore_id"]
             if not getattr(args, "quiet", False):
-                print(f"Found key ID in metadata derivation_config (v6): {key_id}")
+                eprint(f"Found key ID in metadata derivation_config (v6): {key_id}")
     elif format_version in [4, 5, 7, 9] and metadata:
         # Check for key ID in format version 4/5/7/9 structure (all use same kdf_config structure)
         if (
@@ -343,12 +345,12 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
             key_id = metadata["derivation_config"]["kdf_config"]["pqc_keystore_key_id"]
             if not getattr(args, "quiet", False):
                 version_label = f"v{format_version}"
-                print(f"Found key ID in metadata derivation_config ({version_label}): {key_id}")
+                eprint(f"Found key ID in metadata derivation_config ({version_label}): {key_id}")
     elif hash_config and "pqc_keystore_key_id" in hash_config:
         # Legacy format (1-3)
         key_id = hash_config["pqc_keystore_key_id"]
         if not getattr(args, "quiet", False):
-            print(f"Found key ID in hash_config: {key_id}")
+            eprint(f"Found key ID in hash_config: {key_id}")
 
     # If no key ID found yet, try extracting from file
     if not key_id and hasattr(args, "input") and args.input:
@@ -356,7 +358,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
         # which now includes regex-based extraction for robustness
         key_id = extract_key_id_from_metadata(args.input, getattr(args, "verbose", False))
         if key_id and not getattr(args, "quiet", False):
-            print(f"Found key ID in file metadata: {key_id}")
+            eprint(f"Found key ID in file metadata: {key_id}")
 
     # Check for embedded private key
     if key_id == "EMBEDDED_PRIVATE_KEY":
@@ -384,7 +386,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                             embedded_private_key = header_config["encryption"]["pqc_private_key"]
                             if embedded_private_key:
                                 if not getattr(args, "quiet", False):
-                                    print(
+                                    eprint(
                                         f"Successfully retrieved embedded private key from format v{format_version} metadata"
                                     )
 
@@ -413,7 +415,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                             )
                             if embedded_private_key:
                                 if not getattr(args, "quiet", False):
-                                    print(
+                                    eprint(
                                         "Successfully retrieved embedded private key from metadata"
                                     )
 
@@ -450,7 +452,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
         ):
             dual_encryption = metadata["derivation_config"]["kdf_config"]["dual_encryption"]
             if not getattr(args, "quiet", False) and dual_encryption:
-                print("Dual encryption is enabled for this file (format v6)")
+                eprint("Dual encryption is enabled for this file (format v6)")
     elif format_version == 5 and metadata:
         # Check for dual encryption flag in format version 5 structure (same as v4)
         if (
@@ -460,7 +462,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
         ):
             dual_encryption = metadata["derivation_config"]["kdf_config"]["dual_encryption"]
             if not getattr(args, "quiet", False) and dual_encryption:
-                print("Dual encryption is enabled for this file (format v5)")
+                eprint("Dual encryption is enabled for this file (format v5)")
     elif format_version == 4 and metadata:
         # Check for dual encryption flag in format version 4 structure
         if (
@@ -470,12 +472,12 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
         ):
             dual_encryption = metadata["derivation_config"]["kdf_config"]["dual_encryption"]
             if not getattr(args, "quiet", False) and dual_encryption:
-                print("Dual encryption is enabled for this file (format v4)")
+                eprint("Dual encryption is enabled for this file (format v4)")
     elif hash_config and "dual_encryption" in hash_config:
         # Legacy format (v1-3)
         dual_encryption = hash_config["dual_encryption"]
         if not getattr(args, "quiet", False) and dual_encryption:
-            print("Dual encryption is enabled for this file")
+            eprint("Dual encryption is enabled for this file")
 
     # If we have a keystore and key ID, try to retrieve the key
     if key_id and key_id != "EMBEDDED_PRIVATE_KEY" and hasattr(args, "keystore") and args.keystore:
@@ -492,7 +494,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                 # For dual encryption, we need both the keystore password and the file password
                 file_password = args.password
                 if not getattr(args, "quiet", False):
-                    print(f"Using file password for dual-encrypted key")
+                    eprint(f"Using file password for dual-encrypted key")
 
             # Get key from keystore
             public_key, private_key = get_key_from_keystore(
@@ -508,9 +510,9 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
             pqc_private_key = private_key
 
             if not getattr(args, "quiet", False):
-                print(f"Successfully retrieved key from keystore using ID from metadata")
+                eprint(f"Successfully retrieved key from keystore using ID from metadata")
                 if dual_encryption:
-                    print("Key was dual-encrypted with both keystore and file passwords")
+                    eprint("Key was dual-encrypted with both keystore and file passwords")
 
             return pqc_keypair, pqc_private_key, key_id
         except Exception as e:
@@ -536,14 +538,14 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
 
                     key_data = secure_json_loads(json_content)
                 except (JSONSecurityError, JSONValidationError) as e:
-                    print(f"Error: PQC key file validation failed: {e}")
+                    eprint(f"Error: PQC key file validation failed: {e}")
                     return False
                 except ImportError:
                     # Fallback to basic JSON loading if validator not available
                     try:
                         key_data = json.loads(json_content)
                     except json.JSONDecodeError as e:
-                        print(f"Error: Invalid JSON in PQC key file: {e}")
+                        eprint(f"Error: Invalid JSON in PQC key file: {e}")
                         return False
 
             if "public_key" in key_data and "private_key" in key_data:
@@ -584,7 +586,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                         pqc_private_key = private_key
 
                         if not getattr(args, "quiet", False):
-                            print(
+                            eprint(
                                 f"Successfully decrypted and loaded key from PQC keyfile: {args.pqc_keyfile}"
                             )
 
@@ -601,7 +603,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                     pqc_private_key = private_key
 
                     if not getattr(args, "quiet", False):
-                        print(f"Using key from PQC keyfile: {args.pqc_keyfile}")
+                        eprint(f"Using key from PQC keyfile: {args.pqc_keyfile}")
 
                     return pqc_keypair, pqc_private_key, None
         except Exception as e:
@@ -687,7 +689,7 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
     # Check if we have the necessary data to proceed
     if encrypted_private_key is None or not dual_encrypt_enabled:
         if not quiet:
-            print(
+            eprint(
                 f"No PQC private key in metadata or dual encryption not enabled (format v{format_version})"
             )
         return None
@@ -701,7 +703,7 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
         keystore = PQCKeystore(keystore_path)
         if not os.path.exists(keystore_path):
             if not quiet:
-                print(f"Creating new keystore: {keystore_path}")
+                eprint(f"Creating new keystore: {keystore_path}")
             keystore.create_keystore(keystore_password)
         else:
             keystore.load_keystore(keystore_password)
@@ -724,7 +726,7 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
             # Check if update_key method exists in PQCKeystore
             if hasattr(keystore, "update_key"):
                 if not quiet:
-                    print(f"Updating existing key in keystore: {key_id}")
+                    eprint(f"Updating existing key in keystore: {key_id}")
                 # Update the key using the update_key method
                 keystore.update_key(
                     key_id=key_id,
@@ -735,7 +737,7 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
             else:
                 # If update_key doesn't exist, try to remove and recreate the key
                 if not quiet:
-                    print(f"Replacing existing key in keystore: {key_id}")
+                    eprint(f"Replacing existing key in keystore: {key_id}")
                 keystore.remove_key(key_id)
                 keystore.add_key(
                     algorithm=algorithm,
@@ -753,7 +755,7 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
         else:
             # Add as a new key
             if not quiet:
-                print("Adding new key to keystore")
+                eprint("Adding new key to keystore")
             key_id = keystore.add_key(
                 algorithm=algorithm,
                 public_key=public_key,
@@ -790,13 +792,13 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
                 metadata["pqc_keystore_key_id"] = key_id
 
         if not quiet:
-            print(f"Successfully stored PQC key in keystore with ID: {key_id}")
+            eprint(f"Successfully stored PQC key in keystore with ID: {key_id}")
 
         return key_id
 
     except Exception as e:
         if not quiet:
-            print(f"Error storing PQC key in keystore: {e}")
+            eprint(f"Error storing PQC key in keystore: {e}")
         return None
     finally:
         # Clean up sensitive data
@@ -837,7 +839,7 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
         # Make sure the file password is available for dual encryption
         if not hasattr(args, "password") or not args.password:
             if not getattr(args, "quiet", False):
-                print(
+                eprint(
                     "Warning: Dual encryption requested but no file password provided. Disabling dual encryption."
                 )
             dual_encryption = False
@@ -863,7 +865,7 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
                 hash_config["dual_encryption"] = True
 
             if not getattr(args, "quiet", False):
-                print(
+                eprint(
                     "Enabling dual encryption for key - file will require both keystore and file passwords"
                 )
 
@@ -887,7 +889,7 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
             keystore = PQCKeystore(args.keystore)
             if not os.path.exists(args.keystore):
                 if not getattr(args, "quiet", False):
-                    print(f"Creating new keystore: {args.keystore}")
+                    eprint(f"Creating new keystore: {args.keystore}")
                 keystore.create_keystore(keystore_password, KeystoreSecurityLevel.STANDARD)
             else:
                 keystore.load_keystore(keystore_password)
@@ -910,15 +912,15 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
                     public_key, private_key = keystore.get_key(key_id)
 
                 if not getattr(args, "quiet", False):
-                    print(f"Using existing {matching_keys[0]['algorithm']} key from keystore")
+                    eprint(f"Using existing {matching_keys[0]['algorithm']} key from keystore")
                     if dual_encryption:
-                        print("This key uses dual encryption (keystore password + file password)")
+                        eprint("This key uses dual encryption (keystore password + file password)")
             else:
                 # Generate new key
                 if not getattr(args, "quiet", False):
-                    print(f"Generating new {pqc_algorithm} key for keystore")
+                    eprint(f"Generating new {pqc_algorithm} key for keystore")
                     if dual_encryption:
-                        print("Using dual encryption for this key")
+                        eprint("Using dual encryption for this key")
 
                 # Get base algorithm name (without -hybrid)
                 base_algo = args.algorithm.replace("-hybrid", "")
@@ -947,7 +949,7 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
                 keystore.save_keystore()
 
                 if not getattr(args, "quiet", False):
-                    print(f"Added new key to keystore with ID: {key_id}")
+                    eprint(f"Added new key to keystore with ID: {key_id}")
 
             # Store key ID in metadata based on format version
             if format_version == 6:
@@ -1056,7 +1058,7 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
                     hash_config["pqc_private_key_embedded"] = True
 
                 if not getattr(args, "quiet", False):
-                    print("Storing private key in metadata for self-decryption")
+                    eprint("Storing private key in metadata for self-decryption")
 
             # Important: clear the keystore cache for security
             keystore.clear_cache()
@@ -1068,7 +1070,7 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
 
     # Fall back to ephemeral key
     if not getattr(args, "quiet", False):
-        print(f"Using ephemeral key for {args.algorithm}")
+        eprint(f"Using ephemeral key for {args.algorithm}")
 
     from .pqc import PQCipher
 
@@ -1099,7 +1101,7 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
             hash_config["pqc_public_key"] = encoded_public_key
 
         if not getattr(args, "quiet", False):
-            print("Storing private key in metadata for self-decryption")
+            eprint("Storing private key in metadata for self-decryption")
     else:
         # Store just the public key for verification
         encoded_public_key = base64.b64encode(public_key).decode("utf-8")

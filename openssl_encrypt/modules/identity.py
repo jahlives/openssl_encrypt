@@ -31,6 +31,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from .crypt_utils import eprint
+
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .crypto_secure_memory import CryptoKey
@@ -906,19 +908,19 @@ def _decrypt_private_key(
 
 if __name__ == "__main__":
     # Simple test
-    print("Testing Identity Management...")
+    eprint("Testing Identity Management...")
 
     # Generate identity
     identity = Identity.generate("test_user", "test@example.com", "test_passphrase")
-    print(f"Generated: {identity}")
-    print(f"Fingerprint: {identity.fingerprint}")
+    eprint(f"Generated: {identity}")
+    eprint(f"Fingerprint: {identity.fingerprint}")
 
     # Test fingerprint verification
     assert identity.verify_fingerprint(), "Fingerprint verification failed"
-    print("✓ Fingerprint verified")
+    eprint("✓ Fingerprint verified")
 
     # Test context manager
     with identity:
-        print("✓ Context manager works")
+        eprint("✓ Context manager works")
 
-    print("\nAll tests passed!")
+    eprint("\nAll tests passed!")
