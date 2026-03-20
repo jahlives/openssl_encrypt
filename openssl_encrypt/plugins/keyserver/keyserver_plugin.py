@@ -29,6 +29,8 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.poolmanager import PoolManager
 
+from openssl_encrypt.modules.crypt_utils import eprint
+
 from ...modules.key_bundle import PublicKeyBundle
 from ...modules.plugin_system.plugin_base import BasePlugin, PluginCapability, PluginType
 from .cache import KeyserverCache
@@ -598,4 +600,4 @@ class KeyserverPlugin(BasePlugin):
 
 if __name__ == "__main__":
     # Simple test
-    print("KeyserverPlugin module loaded successfully")
+    eprint("KeyserverPlugin module loaded successfully")

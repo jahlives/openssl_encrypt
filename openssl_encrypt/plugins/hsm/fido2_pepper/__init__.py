@@ -32,6 +32,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from openssl_encrypt.modules.crypt_utils import eprint
+
 try:
     from fido2.client import DefaultClientDataCollector, Fido2Client, UserInteraction
     from fido2.ctap2 import Ctap2
@@ -54,11 +56,11 @@ try:
 
         def prompt_up(self):
             """Prompt user to touch their security key."""
-            print("\n🔐 Touch your security key now...")
+            eprint("\n🔐 Touch your security key now...")
 
         def request_pin(self, permissions, rd_id):
             """Request PIN from user."""
-            print("🔑 Your security key requires a PIN.")
+            eprint("🔑 Your security key requires a PIN.")
             return getpass.getpass("Enter PIN: ")
 
         def request_uv(self, permissions, rd_id):
