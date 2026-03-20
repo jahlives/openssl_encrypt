@@ -20,10 +20,12 @@ from typing import Dict, List, Optional, Tuple
 try:
     from .crypt_core import string_entropy
     from .crypt_errors import ValidationError
+    from .crypt_utils import eprint
 except ImportError:
     # For standalone testing
     from openssl_encrypt.modules.crypt_core import string_entropy
     from openssl_encrypt.modules.crypt_errors import ValidationError
+    from openssl_encrypt.modules.crypt_utils import eprint
 
 
 class PasswordPolicy:
@@ -230,7 +232,7 @@ class PasswordPolicy:
             for msg in msgs:
                 # Only print informational messages like entropy strength
                 if "Password strength:" in msg:
-                    print(msg)
+                    eprint(msg)
 
         # Raise exception if validation failed
         if not valid:
@@ -382,7 +384,7 @@ class CommonPasswordChecker:
                         self.password_hashes.add(hashlib.sha256(password.encode("utf-8")).digest())
         except Exception as e:
             # Don't raise exception if loading fails - just continue with what we have
-            print(f"Warning: Could not load common password list from {path}: {e}")
+            eprint(f"Warning: Could not load common password list from {path}: {e}")
 
     def _load_embedded_passwords(self) -> None:
         """Load the embedded password list."""
@@ -394,7 +396,7 @@ class CommonPasswordChecker:
                     self.password_hashes.add(hashlib.sha256(password.encode("utf-8")).digest())
         except Exception as e:
             # If loading fails, just continue with an empty set
-            print(f"Warning: Could not load embedded common password list: {e}")
+            eprint(f"Warning: Could not load embedded common password list: {e}")
 
     def is_common_password(self, password: str) -> bool:
         """
@@ -499,14 +501,14 @@ if __name__ == "__main__":
     policy = PasswordPolicy(policy_level=args.level)
     valid, msgs = policy.validate_password(args.password)
 
-    print(f"\nTesting against '{args.level}' policy level:")
+    eprint(f"\nTesting against '{args.level}' policy level:")
     for msg in msgs:
-        print(f"- {msg}")
+        eprint(f"- {msg}")
 
     if valid:
-        print("\nResult: Password MEETS requirements ✓")
+        eprint("\nResult: Password MEETS requirements ✓")
     else:
-        print("\nResult: Password DOES NOT MEET requirements ✗")
+        eprint("\nResult: Password DOES NOT MEET requirements ✗")
 
-    print("\nDetailed feedback:")
-    print(policy.generate_feedback(args.password))
+    eprint("\nDetailed feedback:")
+    eprint(policy.generate_feedback(args.password))

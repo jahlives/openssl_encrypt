@@ -18,6 +18,8 @@ import secrets
 import sys
 import time
 
+from .crypt_utils import eprint
+
 
 def get_memory_page_size():
     """
@@ -460,7 +462,7 @@ class SecureMemoryAllocator:
                         if "TracerPid:\t0" not in status:
                             # Tracer detected - could be a debugger
                             if self.debug_mode:
-                                print("Warning: Possible debugger detected")
+                                eprint("Warning: Possible debugger detected")
                             return False
                 except:
                     pass
@@ -472,7 +474,7 @@ class SecureMemoryAllocator:
                     if hasattr(kernel32, "IsDebuggerPresent"):
                         if kernel32.IsDebuggerPresent():
                             if self.debug_mode:
-                                print("Warning: Debugger detected")
+                                eprint("Warning: Debugger detected")
                             return False
                 except:
                     pass
@@ -537,7 +539,7 @@ class SecureMemoryAllocator:
             lock_success = self._try_lock_memory(secure_container)
 
             if not lock_success and self.debug_mode:
-                print("Warning: Memory locking failed")
+                eprint("Warning: Memory locking failed")
 
             # Apply additional cold boot attack countermeasures
             self._apply_cold_boot_protections(secure_container)
@@ -720,16 +722,16 @@ class SecureMemoryAllocator:
                                 if hasattr(ctypes, "get_errno"):
                                     errno = ctypes.get_errno()
                                     if not self.quiet:
-                                        print(f"Memory locking failed with error code: {errno}")
+                                        eprint(f"Memory locking failed with error code: {errno}")
 
                         except (TypeError, ValueError, BufferError) as e:
                             if not self.quiet:
-                                print(f"Buffer conversion error: {str(e)}")
+                                eprint(f"Buffer conversion error: {str(e)}")
                             return False
 
                 except (ImportError, AttributeError, OSError) as e:
                     if not self.quiet:
-                        print(f"Memory locking error: {str(e)}")
+                        eprint(f"Memory locking error: {str(e)}")
                     return False
 
             # On Windows
@@ -763,22 +765,22 @@ class SecureMemoryAllocator:
                             if not lock_success:
                                 error_code = ctypes.get_last_error()
                                 if not self.quiet:
-                                    print(f"Memory locking failed with error code: {error_code}")
+                                    eprint(f"Memory locking failed with error code: {error_code}")
 
                         except (TypeError, ValueError, BufferError) as e:
                             if not self.quiet:
-                                print(f"Buffer conversion error: {str(e)}")
+                                eprint(f"Buffer conversion error: {str(e)}")
                             return False
 
                 except (AttributeError, OSError) as e:
                     if not self.quiet:
-                        print(f"Memory locking error: {str(e)}")
+                        eprint(f"Memory locking error: {str(e)}")
                     return False
 
         except Exception as e:
             # Log the error but continue execution
             if not self.quiet:
-                print(f"Memory locking unexpected error: {str(e)}")
+                eprint(f"Memory locking unexpected error: {str(e)}")
             return False
 
         return lock_success
@@ -877,12 +879,12 @@ class SecureMemoryAllocator:
 
                         except (TypeError, ValueError, BufferError) as e:
                             if not self.quiet:
-                                print(f"Buffer conversion error during unlock: {str(e)}")
+                                eprint(f"Buffer conversion error during unlock: {str(e)}")
                             return False
 
                 except (ImportError, AttributeError, OSError) as e:
                     if not self.quiet:
-                        print(f"Memory unlocking error: {str(e)}")
+                        eprint(f"Memory unlocking error: {str(e)}")
                     return False
 
             # On Windows
@@ -917,22 +919,22 @@ class SecureMemoryAllocator:
                             if not unlock_success:
                                 error_code = ctypes.get_last_error()
                                 if not self.quiet:
-                                    print(f"Memory unlocking failed with error code: {error_code}")
+                                    eprint(f"Memory unlocking failed with error code: {error_code}")
 
                         except (TypeError, ValueError, BufferError) as e:
                             if not self.quiet:
-                                print(f"Buffer conversion error during unlock: {str(e)}")
+                                eprint(f"Buffer conversion error during unlock: {str(e)}")
                             return False
 
                 except (AttributeError, OSError) as e:
                     if not self.quiet:
-                        print(f"Memory unlocking error: {str(e)}")
+                        eprint(f"Memory unlocking error: {str(e)}")
                     return False
 
         except Exception as e:
             # Log the error but continue execution
             if not self.quiet:
-                print(f"Memory unlocking unexpected error: {str(e)}")
+                eprint(f"Memory unlocking unexpected error: {str(e)}")
             return False
 
         return unlock_success
@@ -1355,5 +1357,5 @@ def secure_erase_system_memory(trigger_gc=True, full_sweep=False):
     except Exception as e:
         # Fail silently in production, log in debug mode
         if os.environ.get("DEBUG") == "1":
-            print(f"Error in secure memory erasure: {str(e)}")
+            eprint(f"Error in secure memory erasure: {str(e)}")
         return False

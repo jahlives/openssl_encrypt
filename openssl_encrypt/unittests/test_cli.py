@@ -555,18 +555,18 @@ class TestCLISecurityInfo(CLITestBase):
         # Configure CLI args
         sys.argv = ["crypt.py", "security-info"]
 
-        # Redirect stdout to capture output
-        original_stdout = sys.stdout
+        # Redirect stderr to capture output (security info goes to stderr)
+        original_stderr = sys.stderr
         output_file = os.path.join(self.test_dir, "security_info_output.txt")
 
         try:
             with open(output_file, "w") as f:
-                sys.stdout = f
+                sys.stderr = f
 
                 with mock.patch("sys.exit"):
                     cli_main()
         finally:
-            sys.stdout = original_stdout
+            sys.stderr = original_stderr
 
         # Verify output contains expected security information
         with open(output_file, "r") as f:

@@ -2,6 +2,8 @@
 Version requirements and verification for external dependencies
 """
 
+from .modules.crypt_utils import eprint
+
 LIBOQS_VERSION = "0.12.0"
 LIBOQS_PYTHON_VERSION = "0.12.0"
 
@@ -159,12 +161,12 @@ def check_all_dependencies(verbose=True):
     # Check liboqs
     liboqs_ok, liboqs_ver, liboqs_msg = check_liboqs_version()
     if verbose:
-        print(liboqs_msg)
+        eprint(liboqs_msg)
 
     # Check liboqs-python
     liboqs_python_ok, liboqs_python_ver, liboqs_python_msg = check_liboqs_python_version()
     if verbose:
-        print(liboqs_python_msg)
+        eprint(liboqs_python_msg)
 
     # If liboqs check returned None (pkg-config not available),
     # but liboqs-python works, consider that sufficient
@@ -216,19 +218,19 @@ Manual Installation Instructions:
 
 def main():
     """Main entry point for command-line usage"""
-    print("Checking openssl_encrypt dependencies...")
-    print("=" * 50)
+    eprint("Checking openssl_encrypt dependencies...")
+    eprint("=" * 50)
 
     all_ok = check_all_dependencies(verbose=True)
 
-    print("=" * 50)
+    eprint("=" * 50)
 
     if all_ok:
-        print("\n✓ All dependencies satisfied")
+        eprint("\n✓ All dependencies satisfied")
         return 0
     else:
-        print("\n✗ Some dependencies are missing or have incorrect versions")
-        print(get_installation_instructions())
+        eprint("\n✗ Some dependencies are missing or have incorrect versions")
+        eprint(get_installation_instructions())
         return 1
 
 
