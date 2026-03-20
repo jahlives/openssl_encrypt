@@ -27,6 +27,7 @@ from .pqc_liboqs import (
     check_liboqs_support,
 )
 from .secure_memory import SecureBytes, secure_memzero
+from .crypt_utils import eprint
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -550,15 +551,15 @@ def test_extended_pqcipher():
     """Test the ExtendedPQCipher class"""
     # Check if liboqs is available
     if not LIBOQS_AVAILABLE:
-        print("liboqs is not available. Install with: pip install liboqs")
+        eprint("liboqs is not available. Install with: pip install liboqs")
         return
 
     # Get available algorithms
     algorithms = get_available_pq_algorithms()
-    print(f"Available algorithms: {algorithms}")
+    eprint(f"Available algorithms: {algorithms}")
 
     # Test with ML-KEM-512 (native implementation)
-    print("\nTesting with ML-KEM-512 (native implementation):")
+    eprint("\nTesting with ML-KEM-512 (native implementation):")
     try:
         cipher = ExtendedPQCipher("ML-KEM-512")
         public_key, private_key = cipher.generate_keypair()
@@ -567,15 +568,15 @@ def test_extended_pqcipher():
         encrypted = cipher.encrypt(message, public_key)
         decrypted = cipher.decrypt(encrypted, private_key)
 
-        print(f"  Original message: {message}")
-        print(f"  Decrypted message: {decrypted}")
-        print(f"  Success: {message == decrypted}")
+        eprint(f"  Original message: {message}")
+        eprint(f"  Decrypted message: {decrypted}")
+        eprint(f"  Success: {message == decrypted}")
     except Exception as e:
-        print(f"  Error: {e}")
+        eprint(f"  Error: {e}")
 
     # Test with HQC-128 (liboqs implementation) if available
     if "HQC-128" in algorithms:
-        print("\nTesting with HQC-128 (liboqs implementation):")
+        eprint("\nTesting with HQC-128 (liboqs implementation):")
         try:
             cipher = ExtendedPQCipher("HQC-128")
             public_key, private_key = cipher.generate_keypair()
@@ -584,15 +585,15 @@ def test_extended_pqcipher():
             encrypted = cipher.encrypt(message, public_key)
             decrypted = cipher.decrypt(encrypted, private_key)
 
-            print(f"  Original message: {message}")
-            print(f"  Decrypted message: {decrypted}")
-            print(f"  Success: {message == decrypted}")
+            eprint(f"  Original message: {message}")
+            eprint(f"  Decrypted message: {decrypted}")
+            eprint(f"  Success: {message == decrypted}")
         except Exception as e:
-            print(f"  Error: {e}")
+            eprint(f"  Error: {e}")
 
     # Test with ML-DSA-44 (signature algorithm) if available
     if "ML-DSA-44" in algorithms:
-        print("\nTesting with ML-DSA-44 (signature algorithm):")
+        eprint("\nTesting with ML-DSA-44 (signature algorithm):")
         try:
             signer = ExtendedPQCipher("ML-DSA-44")
             public_key, private_key = signer.generate_keypair()
@@ -601,16 +602,16 @@ def test_extended_pqcipher():
             signature = signer.sign(message, private_key)
             is_valid = signer.verify(message, signature, public_key)
 
-            print(f"  Original message: {message}")
-            print(f"  Signature size: {len(signature)} bytes")
-            print(f"  Valid signature: {is_valid}")
+            eprint(f"  Original message: {message}")
+            eprint(f"  Signature size: {len(signature)} bytes")
+            eprint(f"  Valid signature: {is_valid}")
 
             # Try with modified message
             modified = b"Hello, modified world!"
             is_valid = signer.verify(modified, signature, public_key)
-            print(f"  Valid signature for modified message: {is_valid} (should be False)")
+            eprint(f"  Valid signature for modified message: {is_valid} (should be False)")
         except Exception as e:
-            print(f"  Error: {e}")
+            eprint(f"  Error: {e}")
 
 
 if __name__ == "__main__":

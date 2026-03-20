@@ -17,6 +17,7 @@ import secrets
 import sys
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
+from .crypt_utils import eprint
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -394,57 +395,57 @@ def example_usage():
     # Check if liboqs is available
     available, version, algorithms = check_liboqs_support()
     if not available:
-        print("liboqs is not available. Install with: pip install liboqs")
+        eprint("liboqs is not available. Install with: pip install liboqs")
         return
 
-    print(f"liboqs version {version} available")
-    print(f"Supported algorithms: {', '.join(algorithms[:5])}... (and {len(algorithms)-5} more)")
+    eprint(f"liboqs version {version} available")
+    eprint(f"Supported algorithms: {', '.join(algorithms[:5])}... (and {len(algorithms)-5} more)")
 
     # Example with KEM
     try:
         # Try with ML-KEM-512 first
         algorithm = "ML-KEM-512" if "ML_KEM_512" in algorithms else "Kyber512"
-        print(f"\nTesting KEM with {algorithm}:")
+        eprint(f"\nTesting KEM with {algorithm}:")
 
         kem = PQEncapsulator(algorithm)
 
         # Generate a key pair
         public_key, secret_key = kem.generate_keypair()
-        print(
+        eprint(
             f"  Generated key pair: public key size={len(public_key)} bytes, "
             f"secret key size={len(secret_key)} bytes"
         )
 
         # Encapsulate a shared secret
         ciphertext, shared_secret = kem.encapsulate(public_key)
-        print(
+        eprint(
             f"  Encapsulated shared secret: ciphertext size={len(ciphertext)} bytes, "
             f"shared secret size={len(shared_secret)} bytes"
         )
 
         # Decapsulate the shared secret
         decapsulated_secret = kem.decapsulate(ciphertext, secret_key)
-        print(f"  Decapsulated shared secret: size={len(decapsulated_secret)} bytes")
+        eprint(f"  Decapsulated shared secret: size={len(decapsulated_secret)} bytes")
 
         # Verify that the shared secrets match
         if shared_secret == decapsulated_secret:
-            print("  Success: Shared secrets match!")
+            eprint("  Success: Shared secrets match!")
         else:
-            print("  Error: Shared secrets do not match!")
+            eprint("  Error: Shared secrets do not match!")
     except Exception as e:
-        print(f"  Error testing KEM: {e}")
+        eprint(f"  Error testing KEM: {e}")
 
     # Example with DSA
     try:
         # Try with ML-DSA-44 first
         algorithm = "ML-DSA-44" if "ML_DSA_44" in algorithms else "Dilithium2"
-        print(f"\nTesting DSA with {algorithm}:")
+        eprint(f"\nTesting DSA with {algorithm}:")
 
         dsa = PQSigner(algorithm)
 
         # Generate a key pair
         public_key, secret_key = dsa.generate_keypair()
-        print(
+        eprint(
             f"  Generated key pair: public key size={len(public_key)} bytes, "
             f"secret key size={len(secret_key)} bytes"
         )
@@ -452,20 +453,20 @@ def example_usage():
         # Sign a message
         message = b"Hello, post-quantum world!"
         signature = dsa.sign(message, secret_key)
-        print(f"  Signed message: signature size={len(signature)} bytes")
+        eprint(f"  Signed message: signature size={len(signature)} bytes")
 
         # Verify the signature
         is_valid = dsa.verify(message, signature, public_key)
-        print(f"  Signature verification: {'Valid' if is_valid else 'Invalid'}")
+        eprint(f"  Signature verification: {'Valid' if is_valid else 'Invalid'}")
 
         # Try verifying with a modified message
         modified_message = b"Hello, post-quantum world!!"
         is_valid = dsa.verify(modified_message, signature, public_key)
-        print(
+        eprint(
             f"  Modified message verification: {'Valid' if is_valid else 'Invalid'} (should be Invalid)"
         )
     except Exception as e:
-        print(f"  Error testing DSA: {e}")
+        eprint(f"  Error testing DSA: {e}")
 
 
 if __name__ == "__main__":

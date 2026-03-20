@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, Optional
 
 from .pqc_signing import PQCSigner, calculate_fingerprint
+from .crypt_utils import eprint
 
 if TYPE_CHECKING:
     from .identity import Identity
@@ -408,6 +409,6 @@ class PublicKeyBundle:
 
 if __name__ == "__main__":
     # Simple test
-    print("PublicKeyBundle module loaded successfully")
-    print(f"Allowed KEM algorithms: {PublicKeyBundle.ALLOWED_KEM_ALGORITHMS}")
-    print(f"Allowed signing algorithms: {PublicKeyBundle.ALLOWED_SIGNING_ALGORITHMS}")
+    eprint("PublicKeyBundle module loaded successfully")
+    eprint(f"Allowed KEM algorithms: {PublicKeyBundle.ALLOWED_KEM_ALGORITHMS}")
+    eprint(f"Allowed signing algorithms: {PublicKeyBundle.ALLOWED_SIGNING_ALGORITHMS}")

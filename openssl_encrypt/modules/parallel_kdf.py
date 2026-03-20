@@ -19,6 +19,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, Optional, Tuple
+from .crypt_utils import eprint
 
 
 class ProgressType(Enum):
@@ -404,7 +405,7 @@ class ParallelProgressAggregator:
         else:
             active_display = ""
 
-        print(
+        eprint(
             f"\rParallel KDF: [{bar}] {percent:.1f}% "
             f"({completed}/{self.total_workers} complete){active_display}",
             end="",
@@ -458,7 +459,7 @@ class ParallelProgressAggregator:
 
         # Final display update before exiting
         if not self.quiet and self.progress_enabled:
-            print(f"\r{' ' * 100}\r", end="", flush=True)
+            eprint(f"\r{' ' * 100}\r", end="", flush=True)
 
 
 def generate_key_independent_xor_parallel(
@@ -508,7 +509,7 @@ def generate_key_independent_xor_parallel(
     from .secure_memory import SecureBytes, secure_memzero
 
     if debug:
-        print(f"DEBUG: Parallel KDF starting with format_version={format_version}")
+        eprint(f"DEBUG: Parallel KDF starting with format_version={format_version}")
 
     # Determine required key length based on algorithm
     if algorithm == "fernet":
@@ -541,7 +542,7 @@ def generate_key_independent_xor_parallel(
     # Apply HSM pepper if provided
     if hsm_pepper:
         if debug:
-            print("DEBUG: Mixing HSM pepper into password")
+            eprint("DEBUG: Mixing HSM pepper into password")
         password = SecureBytes(password + hsm_pepper)
 
     # Compute initial hash (must be done in main process)
@@ -588,7 +589,7 @@ def generate_key_independent_xor_parallel(
         raise ValueError("No algorithms enabled for key derivation")
 
     if debug:
-        print(f"DEBUG: {len(tasks)} tasks to execute in parallel")
+        eprint(f"DEBUG: {len(tasks)} tasks to execute in parallel")
 
     # Create progress queue (using Manager for cross-process sharing)
     ctx = mp.get_context("spawn")
@@ -644,7 +645,7 @@ def generate_key_independent_xor_parallel(
                     results[name] = result_bytes
                 except Exception as e:
                     if debug:
-                        print(f"DEBUG: Worker {worker_id} failed: {e}")
+                        eprint(f"DEBUG: Worker {worker_id} failed: {e}")
                     raise
 
     finally:
@@ -654,7 +655,7 @@ def generate_key_independent_xor_parallel(
 
         # Clear progress line
         if progress and not quiet:
-            print(f"\r{' ' * 100}\r", end="", flush=True)
+            eprint(f"\r{' ' * 100}\r", end="", flush=True)
 
     # Convert results to SecureBytes and XOR
     xor_components = []
@@ -665,7 +666,7 @@ def generate_key_independent_xor_parallel(
         xor_components.append(initial_normalized)
 
         if debug:
-            print(f"DEBUG: Initial component: {bytes(initial_normalized).hex()[:32]}")
+            eprint(f"DEBUG: Initial component: {bytes(initial_normalized).hex()[:32]}")
 
         # Add parallel results in deterministic order (task submission order)
         for task in tasks:
@@ -674,10 +675,10 @@ def generate_key_independent_xor_parallel(
                 result_bytes = results[worker_id]
                 xor_components.append(SecureBytes(result_bytes))
                 if debug:
-                    print(f"DEBUG: {worker_id} component: {result_bytes.hex()[:32]}")
+                    eprint(f"DEBUG: {worker_id} component: {result_bytes.hex()[:32]}")
 
         if debug:
-            print(f"DEBUG: Collected {len(xor_components)} components, performing XOR")
+            eprint(f"DEBUG: Collected {len(xor_components)} components, performing XOR")
 
         # XOR all components together
         final_key = crypt_core.xor_bytes_secure(xor_components)
@@ -691,7 +692,7 @@ def generate_key_independent_xor_parallel(
                 sum(aggregator.completed_times.values()) if aggregator.completed_times else 0
             )
 
-            print(
+            eprint(
                 f"✅ Combined {len(xor_components)} independent components using XOR (Massey) "
                 f"[{parallel_time:.1f}s parallel, ~{sequential_estimate:.1f}s sequential estimate]"
             )

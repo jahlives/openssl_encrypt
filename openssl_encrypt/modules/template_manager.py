@@ -27,6 +27,7 @@ import yaml
 
 from .config_analyzer import ConfigurationAnalyzer, analyze_configuration_from_args
 from .security_scorer import SecurityLevel
+from .crypt_utils import eprint
 
 
 class TemplateCategory(Enum):
@@ -355,7 +356,7 @@ class TemplateManager:
                 try:
                     return self._load_template_file(filepath)
                 except Exception as e:
-                    print(f"Error loading template from {filepath}: {e}")
+                    eprint(f"Error loading template from {filepath}: {e}")
                     continue
 
         return None
