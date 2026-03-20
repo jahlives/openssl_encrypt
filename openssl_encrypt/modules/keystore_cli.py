@@ -26,7 +26,7 @@ from .crypt_errors import (
 
 # Import secure_delete_file only if it's available
 try:
-    from .crypt_utils import secure_delete_file
+    from .crypt_utils import eprint, secure_delete_file
 except ImportError:
     # Define a simple fallback if not available
     def secure_delete_file(file_path, passes=3, quiet=False):
@@ -37,7 +37,7 @@ except ImportError:
             return True
         except Exception as e:
             if not quiet:
-                print(f"Error deleting file {file_path}: {e}")
+                eprint(f"Error deleting file {file_path}: {e}")
             return False
 
 
@@ -1334,7 +1334,7 @@ def get_key_from_keystore(
         keystore.load_keystore(keystore_password)
     except Exception as e:
         if not quiet:
-            print(f"Error loading keystore: {e}")
+            eprint(f"Error loading keystore: {e}")
         raise
 
     # Get the key
@@ -1342,7 +1342,7 @@ def get_key_from_keystore(
         public_key, private_key = keystore.get_key(key_id, key_password, file_password)
     except Exception as e:
         if not quiet:
-            print(f"Error getting key: {e}")
+            eprint(f"Error getting key: {e}")
         raise
     finally:
         # Clear the cache for security
@@ -1397,7 +1397,7 @@ def add_key_to_keystore(
             keystore.load_keystore(keystore_password)
         except Exception as e:
             if not quiet:
-                print(f"Error loading keystore: {e}")
+                eprint(f"Error loading keystore: {e}")
             raise
     elif create_if_missing:
         try:
@@ -1405,7 +1405,7 @@ def add_key_to_keystore(
             keystore.create_keystore(keystore_password, security)
         except Exception as e:
             if not quiet:
-                print(f"Error creating keystore: {e}")
+                eprint(f"Error creating keystore: {e}")
             raise
     else:
         raise FileNotFoundError(f"Keystore not found at {keystore_path}")
@@ -1428,7 +1428,7 @@ def add_key_to_keystore(
         keystore.save_keystore()
     except Exception as e:
         if not quiet:
-            print(f"Error adding key: {e}")
+            eprint(f"Error adding key: {e}")
         raise
     finally:
         # Clear the cache for security
@@ -1602,7 +1602,7 @@ def main():
             with open(args.keystore_password_file, "r") as f:
                 keystore_password = f.read().strip()
         except Exception as e:
-            print(f"Error reading keystore password file: {e}")
+            eprint(f"Error reading keystore password file: {e}")
             return 1
 
     # Execute command
@@ -1617,7 +1617,7 @@ def main():
 
             # Check if keystore exists
             if os.path.exists(args.keystore) and not args.force:
-                print(f"Keystore already exists at {args.keystore}. Use --force to overwrite.")
+                eprint(f"Keystore already exists at {args.keystore}. Use --force to overwrite.")
                 return 1
 
             # Prompt for password if not provided
@@ -1625,7 +1625,7 @@ def main():
                 keystore_password = getpass.getpass("Enter keystore password: ")
                 confirm = getpass.getpass("Confirm password: ")
                 if keystore_password != confirm:
-                    print("Passwords do not match")
+                    eprint("Passwords do not match")
                     return 1
 
             # Create keystore
@@ -1633,13 +1633,13 @@ def main():
             keystore.create_keystore(keystore_password, security_level)
 
             if not args.quiet:
-                print(f"Keystore created successfully at {args.keystore}")
-                print(f"Security level: {security_level.value}")
+                eprint(f"Keystore created successfully at {args.keystore}")
+                eprint(f"Security level: {security_level.value}")
 
         elif args.command == "add-key":
             # Not implemented in CLI, requires keypair
-            print("This command is not implemented in the CLI.")
-            print("Use the programmatic API to add keys.")
+            eprint("This command is not implemented in the CLI.")
+            eprint("Use the programmatic API to add keys.")
             return 1
 
         elif args.command == "list-keys":
@@ -1657,21 +1657,21 @@ def main():
             if args.json:
                 import json
 
-                print(json.dumps(keys, indent=2))
+                eprint(json.dumps(keys, indent=2))
             else:
                 if not keys:
-                    print("No keys in keystore")
+                    eprint("No keys in keystore")
                 else:
-                    print(f"Keys in {args.keystore}:")
+                    eprint(f"Keys in {args.keystore}:")
                     for key in keys:
                         tags = ", ".join(key.get("tags", []))
-                        print(f"ID: {key['key_id']}")
-                        print(f"  Algorithm: {key.get('algorithm', 'unknown')}")
-                        print(f"  Created: {key.get('created', 'unknown')}")
-                        print(f"  Description: {key.get('description', '')}")
-                        print(f"  Tags: {tags}")
-                        print(f"  Uses master password: {key.get('use_master_password', True)}")
-                        print()
+                        eprint(f"ID: {key['key_id']}")
+                        eprint(f"  Algorithm: {key.get('algorithm', 'unknown')}")
+                        eprint(f"  Created: {key.get('created', 'unknown')}")
+                        eprint(f"  Description: {key.get('description', '')}")
+                        eprint(f"  Tags: {tags}")
+                        eprint(f"  Uses master password: {key.get('use_master_password', True)}")
+                        eprint()
 
         elif args.command == "remove-key":
             # Prompt for password if not provided
@@ -1686,9 +1686,9 @@ def main():
             if keystore.remove_key(args.key_id):
                 keystore.save_keystore()
                 if not args.quiet:
-                    print(f"Key {args.key_id} removed from keystore")
+                    eprint(f"Key {args.key_id} removed from keystore")
             else:
-                print(f"Key {args.key_id} not found in keystore")
+                eprint(f"Key {args.key_id} not found in keystore")
                 return 1
 
         elif args.command == "set-default":
@@ -1709,9 +1709,9 @@ def main():
                 key_info = next((k for k in keys if k["key_id"] == args.key_id), None)
                 if key_info:
                     algorithm = key_info.get("algorithm", "unknown")
-                    print(f"Key {args.key_id} set as default for algorithm {algorithm}")
+                    eprint(f"Key {args.key_id} set as default for algorithm {algorithm}")
                 else:
-                    print(f"Key {args.key_id} set as default")
+                    eprint(f"Key {args.key_id} set as default")
 
         elif args.command == "change-master-password":
             # Prompt for passwords
@@ -1722,7 +1722,7 @@ def main():
             confirm = getpass.getpass("Confirm new password: ")
 
             if new_password != confirm:
-                print("New passwords do not match")
+                eprint("New passwords do not match")
                 return 1
 
             # Load keystore
@@ -1732,12 +1732,12 @@ def main():
             keystore.change_master_password(keystore_password, new_password)
 
             if not args.quiet:
-                print("Keystore password changed successfully")
+                eprint("Keystore password changed successfully")
 
         elif args.command == "change-key-password":
             # Determine how to handle the key
             if args.convert_key_to_master and args.convert_key_to_separate:
-                print("Cannot specify both --convert-key-to-master and --convert-key-to-separate")
+                eprint("Cannot specify both --convert-key-to-master and --convert-key-to-separate")
                 return 1
 
             use_master_password = None
@@ -1759,7 +1759,7 @@ def main():
             key_info = next((k for k in keys if k["key_id"] == args.key_id), None)
 
             if not key_info:
-                print(f"Key {args.key_id} not found in keystore")
+                eprint(f"Key {args.key_id} not found in keystore")
                 return 1
 
             current_uses_master = key_info.get("use_master_password", True)
@@ -1772,7 +1772,7 @@ def main():
                         with open(args.key_password_file, "r") as f:
                             old_password = f.read().strip()
                     except Exception as e:
-                        print(f"Error reading key password file: {e}")
+                        eprint(f"Error reading key password file: {e}")
                         return 1
                 else:
                     old_password = getpass.getpass("Enter current key password: ")
@@ -1788,7 +1788,7 @@ def main():
                 confirm = getpass.getpass("Confirm new key password: ")
 
                 if new_password != confirm:
-                    print("New passwords do not match")
+                    eprint("New passwords do not match")
                     return 1
 
             # Change key password
@@ -1798,9 +1798,9 @@ def main():
 
             if not args.quiet:
                 if new_uses_master:
-                    print(f"Key {args.key_id} now uses the master password")
+                    eprint(f"Key {args.key_id} now uses the master password")
                 else:
-                    print(f"Key {args.key_id} password changed successfully")
+                    eprint(f"Key {args.key_id} password changed successfully")
 
         elif args.command == "info":
             # Prompt for password if not provided
@@ -1815,11 +1815,11 @@ def main():
             data = keystore.keystore_data
 
             # Print info
-            print(f"Keystore: {args.keystore}")
-            print(f"Version: {data.get('version', 'unknown')}")
-            print(f"Created: {data.get('created', 'unknown')}")
-            print(f"Last modified: {data.get('last_modified', 'unknown')}")
-            print(f"Security level: {data.get('security_level', 'standard')}")
+            eprint(f"Keystore: {args.keystore}")
+            eprint(f"Version: {data.get('version', 'unknown')}")
+            eprint(f"Created: {data.get('created', 'unknown')}")
+            eprint(f"Last modified: {data.get('last_modified', 'unknown')}")
+            eprint(f"Security level: {data.get('security_level', 'standard')}")
 
             # Count keys by algorithm
             keys = keystore.list_keys()
@@ -1828,27 +1828,27 @@ def main():
                 algo = key.get("algorithm", "unknown")
                 algorithms[algo] = algorithms.get(algo, 0) + 1
 
-            print(f"Keys: {len(keys)}")
+            eprint(f"Keys: {len(keys)}")
             for algo, count in algorithms.items():
-                print(f"  {algo}: {count}")
+                eprint(f"  {algo}: {count}")
 
             # Show default keys
             defaults = data.get("defaults", {})
             if defaults:
-                print("Default keys:")
+                eprint("Default keys:")
                 for algo, key_id in defaults.items():
-                    print(f"  {algo}: {key_id}")
+                    eprint(f"  {algo}: {key_id}")
 
         elif args.command == "import-key":
             # Not implemented in CLI
-            print("This command is not implemented in the CLI.")
-            print("Use the programmatic API to import keys.")
+            eprint("This command is not implemented in the CLI.")
+            eprint("Use the programmatic API to import keys.")
             return 1
 
         elif args.command == "export-key":
             # Not implemented in CLI
-            print("This command is not implemented in the CLI.")
-            print("Use the programmatic API to export keys.")
+            eprint("This command is not implemented in the CLI.")
+            eprint("Use the programmatic API to export keys.")
             return 1
 
         elif args.command == "export-qr":
@@ -1872,16 +1872,16 @@ def main():
             return 1
 
     except KeystorePasswordError:
-        print("Incorrect keystore password")
+        eprint("Incorrect keystore password")
         return 1
     except KeyNotFoundError as e:
-        print(str(e))
+        eprint(str(e))
         return 1
     except KeystoreError as e:
-        print(f"Keystore error: {e}")
+        eprint(f"Keystore error: {e}")
         return 1
     except Exception as e:
-        print(f"Error: {e}")
+        eprint(f"Error: {e}")
         return 1
 
     return 0
@@ -1890,8 +1890,8 @@ def main():
 def handle_export_qr_command(args, keystore_password):
     """Handle export-qr command"""
     if not QR_AVAILABLE:
-        print("QR code functionality not available.")
-        print("Install required dependencies: pip install qrcode[pil] pyzbar")
+        eprint("QR code functionality not available.")
+        eprint("Install required dependencies: pip install qrcode[pil] pyzbar")
         return 1
 
     try:
@@ -1910,7 +1910,7 @@ def handle_export_qr_command(args, keystore_password):
                 key_password = f.read().strip()
 
         # Export key data
-        print(f"Exporting key '{args.key_id}' to QR code...")
+        eprint(f"Exporting key '{args.key_id}' to QR code...")
         key_data = keystore.export_key(args.key_id, key_password, not args.public_only)
 
         # Serialize key data to bytes (JSON format)
@@ -1932,30 +1932,30 @@ def handle_export_qr_command(args, keystore_password):
             for i, img in enumerate(qr_images, 1):
                 part_path = f"{base_path}_part_{i:02d}.png"
                 img.save(part_path)
-                print(f"Saved QR part {i}/{len(qr_images)}: {part_path}")
-            print(f"Key exported to {len(qr_images)} QR codes")
+                eprint(f"Saved QR part {i}/{len(qr_images)}: {part_path}")
+            eprint(f"Key exported to {len(qr_images)} QR codes")
         else:
             # Single QR: save directly
             qr_images.save(args.output_path)
-            print(f"Key exported to QR code: {args.output_path}")
+            eprint(f"Key exported to QR code: {args.output_path}")
 
         key_type = "public+private" if not args.public_only else "public only"
-        print(f"Successfully exported {key_type} key '{args.key_id}' to QR code(s)")
+        eprint(f"Successfully exported {key_type} key '{args.key_id}' to QR code(s)")
         return 0
 
     except QRKeyError as e:
-        print(f"QR export error: {e}")
+        eprint(f"QR export error: {e}")
         return 1
     except Exception as e:
-        print(f"Export failed: {e}")
+        eprint(f"Export failed: {e}")
         return 1
 
 
 def handle_import_qr_command(args, keystore_password):
     """Handle import-qr command"""
     if not QR_AVAILABLE:
-        print("QR code functionality not available.")
-        print("Install required dependencies: pip install qrcode[pil] pyzbar")
+        eprint("QR code functionality not available.")
+        eprint("Install required dependencies: pip install qrcode[pil] pyzbar")
         return 1
 
     try:
@@ -1968,7 +1968,7 @@ def handle_import_qr_command(args, keystore_password):
         keystore.load_keystore(keystore_password)
 
         # Read key from QR code(s)
-        print(f"Reading key from {len(args.qr_images)} QR image(s)...")
+        eprint(f"Reading key from {len(args.qr_images)} QR image(s)...")
         qr_dist = QRKeyDistribution()
 
         # Handle single vs multiple QR images
@@ -1999,24 +1999,24 @@ def handle_import_qr_command(args, keystore_password):
 
         # Import the key
         # Note: This would need to be implemented in the keystore
-        print(f"Importing key '{original_key_name}' from QR code...")
+        eprint(f"Importing key '{original_key_name}' from QR code...")
 
         # For now, show what we would import
-        print(f"Key name: {original_key_name}")
-        print(f"Key data size: {len(key_data_bytes)} bytes")
-        print(f"Description: {args.key_description or 'Imported from QR code'}")
-        print(f"Tags: {tags}")
+        eprint(f"Key name: {original_key_name}")
+        eprint(f"Key data size: {len(key_data_bytes)} bytes")
+        eprint(f"Description: {args.key_description or 'Imported from QR code'}")
+        eprint(f"Tags: {tags}")
 
         # This would need actual keystore.import_key_data() method
-        print("Note: Key import from QR codes requires keystore API enhancement")
-        print("Key data successfully read and validated from QR code(s)")
+        eprint("Note: Key import from QR codes requires keystore API enhancement")
+        eprint("Key data successfully read and validated from QR code(s)")
         return 0
 
     except QRKeyError as e:
-        print(f"QR import error: {e}")
+        eprint(f"QR import error: {e}")
         return 1
     except Exception as e:
-        print(f"Import failed: {e}")
+        eprint(f"Import failed: {e}")
         return 1
 
 
@@ -2194,8 +2194,8 @@ def _build_hash_config_from_args(args):
 def handle_create_usb_command(args):
     """Handle create-usb command"""
     if not USB_AVAILABLE:
-        print("USB functionality not available.")
-        print("Install required dependencies: pip install cryptography")
+        eprint("USB functionality not available.")
+        eprint("Install required dependencies: pip install cryptography")
         return 1
 
     try:
@@ -2210,18 +2210,18 @@ def handle_create_usb_command(args):
             usb_password = getpass.getpass("Enter master password for USB encryption: ")
 
         if not usb_password:
-            print("USB master password is required")
+            eprint("USB master password is required")
             return 1
 
-        print(f"Creating portable USB drive at: {args.usb_path}")
-        print(f"Security profile: {args.security_profile}")
+        eprint(f"Creating portable USB drive at: {args.usb_path}")
+        eprint(f"Security profile: {args.security_profile}")
 
         # Build hash configuration from CLI arguments
         hash_config = _build_hash_config_from_args(args)
         if hash_config:
-            print("Using custom hash chaining configuration")
+            eprint("Using custom hash chaining configuration")
         else:
-            print("Using default key derivation (Argon2 with PBKDF2 fallback)")
+            eprint("Using default key derivation (Argon2 with PBKDF2 fallback)")
 
         # Prepare options
         options = {
@@ -2240,50 +2240,50 @@ def handle_create_usb_command(args):
         )
 
         if result["success"]:
-            print("✅ Portable USB drive created successfully!")
-            print(f"   Portable root: {result['portable_root']}")
-            print(f"   Security profile: {result['security_profile']}")
+            eprint("✅ Portable USB drive created successfully!")
+            eprint(f"   Portable root: {result['portable_root']}")
+            eprint(f"   Security profile: {result['security_profile']}")
 
             if result["executable"]["included"]:
-                print(f"   Executable included: {result['executable']['path']}")
+                eprint(f"   Executable included: {result['executable']['path']}")
             else:
-                print(f"   Executable: {result['executable']['note']}")
+                eprint(f"   Executable: {result['executable']['note']}")
 
             if result["keystore"]["included"]:
-                print(f"   Keystore included: {result['keystore']['path']}")
-                print(f"   Keystore size: {result['keystore']['original_size']} bytes")
+                eprint(f"   Keystore included: {result['keystore']['path']}")
+                eprint(f"   Keystore size: {result['keystore']['original_size']} bytes")
             else:
-                print("   Keystore: Not included")
+                eprint("   Keystore: Not included")
 
-            print(
+            eprint(
                 f"   Workspace: {result['workspace']['path']} ({result['workspace']['encryption']})"
             )
-            print(f"   Auto-run files: {', '.join(result['autorun']['files_created'])}")
-            print(
+            eprint(f"   Auto-run files: {', '.join(result['autorun']['files_created'])}")
+            eprint(
                 f"   Integrity protection: {result['integrity']['files_verified']} files verified"
             )
 
-            print("\n🔒 Security Notes:")
-            print("   - All workspace files are automatically encrypted")
-            print("   - USB integrity is protected with tamper detection")
-            print("   - Use the same master password to access the USB")
-            print("   - Auto-run files enable easy launching on different platforms")
+            eprint("\n🔒 Security Notes:")
+            eprint("   - All workspace files are automatically encrypted")
+            eprint("   - USB integrity is protected with tamper detection")
+            eprint("   - Use the same master password to access the USB")
+            eprint("   - Auto-run files enable easy launching on different platforms")
 
         return 0
 
     except USBCreationError as e:
-        print(f"USB creation error: {e}")
+        eprint(f"USB creation error: {e}")
         return 1
     except Exception as e:
-        print(f"USB creation failed: {e}")
+        eprint(f"USB creation failed: {e}")
         return 1
 
 
 def handle_verify_usb_command(args):
     """Handle verify-usb command"""
     if not USB_AVAILABLE:
-        print("USB functionality not available.")
-        print("Install required dependencies: pip install cryptography")
+        eprint("USB functionality not available.")
+        eprint("Install required dependencies: pip install cryptography")
         return 1
 
     try:
@@ -2298,50 +2298,50 @@ def handle_verify_usb_command(args):
             usb_password = getpass.getpass("Enter master password for USB verification: ")
 
         if not usb_password:
-            print("USB master password is required")
+            eprint("USB master password is required")
             return 1
 
-        print(f"Verifying USB drive integrity: {args.usb_path}")
+        eprint(f"Verifying USB drive integrity: {args.usb_path}")
 
         # Build hash configuration from CLI arguments
         hash_config = _build_hash_config_from_args(args)
         if hash_config:
-            print("Using custom hash chaining configuration for verification")
+            eprint("Using custom hash chaining configuration for verification")
 
         # Verify USB integrity
         result = verify_usb_integrity(args.usb_path, usb_password, hash_config=hash_config)
 
-        print(f"📊 Verification Results:")
-        print(f"   Overall integrity: {'✅ PASSED' if result['integrity_ok'] else '❌ FAILED'}")
-        print(f"   Files verified: {result['verified_files']}")
-        print(f"   Files failed: {result['failed_files']}")
-        print(f"   Files missing: {result['missing_files']}")
-        print(f"   Original file count: {result['original_file_count']}")
+        eprint(f"📊 Verification Results:")
+        eprint(f"   Overall integrity: {'✅ PASSED' if result['integrity_ok'] else '❌ FAILED'}")
+        eprint(f"   Files verified: {result['verified_files']}")
+        eprint(f"   Files failed: {result['failed_files']}")
+        eprint(f"   Files missing: {result['missing_files']}")
+        eprint(f"   Original file count: {result['original_file_count']}")
 
         if result["tampered_files"]:
-            print(f"\n⚠️  Tampered files detected:")
+            eprint(f"\n⚠️  Tampered files detected:")
             for file_path in result["tampered_files"]:
-                print(f"      - {file_path}")
+                eprint(f"      - {file_path}")
 
         if result["missing_file_list"]:
-            print(f"\n⚠️  Missing files:")
+            eprint(f"\n⚠️  Missing files:")
             for file_path in result["missing_file_list"]:
-                print(f"      - {file_path}")
+                eprint(f"      - {file_path}")
 
         if result["integrity_ok"]:
-            print(f"\n✅ USB drive integrity verified successfully!")
-            print(f"   Created: {time.ctime(result['created_at'])}")
+            eprint(f"\n✅ USB drive integrity verified successfully!")
+            eprint(f"   Created: {time.ctime(result['created_at'])}")
             return 0
         else:
-            print(f"\n❌ USB drive integrity check FAILED!")
-            print(f"   The drive may have been tampered with or corrupted.")
+            eprint(f"\n❌ USB drive integrity check FAILED!")
+            eprint(f"   The drive may have been tampered with or corrupted.")
             return 1
 
     except USBCreationError as e:
-        print(f"USB verification error: {e}")
+        eprint(f"USB verification error: {e}")
         return 1
     except Exception as e:
-        print(f"USB verification failed: {e}")
+        eprint(f"USB verification failed: {e}")
         return 1
 
 
