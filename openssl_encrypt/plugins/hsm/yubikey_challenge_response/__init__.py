@@ -172,7 +172,10 @@ class YubikeyHSMPlugin(HSMPlugin):
 
                 # Prompt user to touch Yubikey if required
                 self.logger.info(f"Performing Challenge-Response on slot {slot}...")
-                self.logger.info("👆 Touch your Yubikey if touch is required")
+                try:
+                    self.logger.info("👆 Touch your Yubikey if touch is required")
+                except UnicodeEncodeError:
+                    self.logger.info("Touch your Yubikey if touch is required")
 
                 # Calculate response (HMAC-SHA1)
                 # Yubikey Challenge-Response produces 20-byte HMAC-SHA1
@@ -253,16 +256,21 @@ class YubikeyHSMPlugin(HSMPlugin):
 
             # Perform Challenge-Response
             self.logger.info(f"Performing Challenge-Response with Yubikey slot {slot}...")
-            # Write touch prompt to /dev/tty so it is visible even when stderr is
-            # redirected (e.g. 2>/dev/null).  Clear the line after touch completes.
-            _touch_msg = f"👆 Touch your Yubikey now (slot {slot})..."
+            # Write touch prompt to /dev/tty (CON on Windows) so it is visible even
+            # when stderr is redirected (e.g. 2>/dev/null).
+            # Clear the line after touch completes.
+            _touch_msg_emoji = f"👆 Touch your Yubikey now (slot {slot})..."
+            _touch_msg_plain = f"Touch your Yubikey now (slot {slot})..."
             _tty = None
             try:
                 _tty = open("/dev/tty", "w")
-                _tty.write(_touch_msg + "\n")
+                _tty.write(_touch_msg_emoji + "\n")
                 _tty.flush()
             except OSError:
-                print(_touch_msg, file=sys.stderr)
+                try:
+                    print(_touch_msg_emoji, file=sys.stderr)
+                except UnicodeEncodeError:
+                    print(_touch_msg_plain, file=sys.stderr)
             response = self._calculate_challenge_response(salt, slot)
             if _tty is not None:
                 try:
