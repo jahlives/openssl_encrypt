@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Optional
 
-from .crypt_utils import eprint
+from .crypt_utils import eprint, tty_write
 
 from argon2.low_level import Type, hash_secret_raw
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -308,11 +308,10 @@ class IdentityKeyProtectionService:
                     "Please configure slot 1 or 2 for HMAC-SHA1 Challenge-Response."
                 )
 
-        # Show touch prompt if required. Write to stdout so it is visible
-        # even when stderr is redirected (e.g. 2>/dev/null).
+        # Write touch prompt directly to the terminal (bypasses stdout/stderr
+        # redirection) so it's always visible to the user.
         if hsm_config.require_touch:
-            sys.stdout.write("👆 Touch your Yubikey to continue...\n")
-            sys.stdout.flush()
+            tty_write("👆 Touch your Yubikey to continue...\n")
 
         # Perform Challenge-Response
         try:
