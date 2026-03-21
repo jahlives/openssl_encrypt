@@ -34,6 +34,13 @@ try:
 except ImportError:
     QR_AVAILABLE = False
 
+    # Dummy Image class so type annotations and isinstance() don't raise NameError
+    class _DummyImage:
+        """Placeholder when PIL is not installed."""
+        Image = type(None)
+
+    Image = _DummyImage  # type: ignore[misc,assignment]
+
 # Import secure memory functions
 try:
     from ..crypt_errors import KeystoreError
