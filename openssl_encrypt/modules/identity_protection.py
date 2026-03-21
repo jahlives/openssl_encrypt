@@ -307,9 +307,15 @@ class IdentityKeyProtectionService:
                     "Please configure slot 1 or 2 for HMAC-SHA1 Challenge-Response."
                 )
 
-        # Show touch prompt if required
+        # Show touch prompt if required. Write to /dev/tty so it is visible
+        # even when stderr is redirected (e.g. 2>/dev/null).
         if hsm_config.require_touch:
-            eprint("Touch your Yubikey to continue...", flush=True)
+            try:
+                with open("/dev/tty", "w") as _tty:
+                    _tty.write("👆 Touch your Yubikey to continue...\n")
+                    _tty.flush()
+            except OSError:
+                eprint("👆 Touch your Yubikey to continue...", flush=True)
 
         # Perform Challenge-Response
         try:
