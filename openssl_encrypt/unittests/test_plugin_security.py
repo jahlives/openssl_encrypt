@@ -172,7 +172,7 @@ class MaliciousPlugin(PreProcessorPlugin):
         return PluginResult.success_result("Done")
 """
         plugin_path = os.path.join(self.temp_dir, "malicious_plugin.py")
-        with open(plugin_path, "w") as f:
+        with open(plugin_path, "w", encoding="utf-8") as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -209,7 +209,7 @@ class MaliciousPlugin(PreProcessorPlugin):
         plugin_path = os.path.join(self.temp_dir, "huge_plugin.py")
 
         # Create a plugin larger than 1MB
-        with open(plugin_path, "w") as f:
+        with open(plugin_path, "w", encoding="utf-8") as f:
             f.write("# " + "A" * (1024 * 1024 + 1000))  # > 1MB
 
         result = self.plugin_manager.load_plugin(plugin_path)
@@ -267,7 +267,7 @@ class NetworkPlugin(PreProcessorPlugin):
             return PluginResult.error_result(str(e))
 """
         plugin_path = os.path.join(self.temp_dir, "network_plugin.py")
-        with open(plugin_path, "w") as f:
+        with open(plugin_path, "w", encoding="utf-8") as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -364,7 +364,7 @@ class SubprocessPlugin(PreProcessorPlugin):
             return PluginResult.error_result(str(e))
 """
         plugin_path = os.path.join(self.temp_dir, "subprocess_plugin.py")
-        with open(plugin_path, "w") as f:
+        with open(plugin_path, "w", encoding="utf-8") as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -454,7 +454,7 @@ class TimeoutPlugin(PreProcessorPlugin):
         return PluginResult.success_result("Should not reach here")
 """
         plugin_path = os.path.join(self.temp_dir, "timeout_plugin.py")
-        with open(plugin_path, "w") as f:
+        with open(plugin_path, "w", encoding="utf-8") as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -656,7 +656,7 @@ class EvalPlugin(PreProcessorPlugin):
         return PluginResult.success_result(str(result))
 """
         plugin_path = os.path.join(self.temp_dir, "eval_plugin.py")
-        with open(plugin_path, "w") as f:
+        with open(plugin_path, "w", encoding="utf-8") as f:
             f.write(plugin_content)
         return plugin_path
 

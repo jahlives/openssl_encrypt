@@ -434,7 +434,7 @@ class TestUSBDriveEncryption(unittest.TestCase):
         self.assertTrue(os.path.exists(config_path))
 
         # Read and verify config
-        with open(config_path, "r") as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
 
         self.assertTrue(config["portable_mode"])

@@ -359,7 +359,7 @@ class TestCryptCore(unittest.TestCase):
 
         # Create a test file with some content
         self.test_file = os.path.join(self.test_dir, "test_file.txt")
-        with open(self.test_file, "w") as f:
+        with open(self.test_file, "w", encoding="utf-8") as f:
             f.write("This is a test file for encryption and decryption.")
         self.test_files.append(self.test_file)
 
@@ -467,7 +467,7 @@ class TestCryptCore(unittest.TestCase):
         self.assertTrue(os.path.exists(decrypted_file))
 
         # Verify the content
-        with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
+        with open(self.test_file, "r", encoding="utf-8") as original, open(decrypted_file, "r", encoding="utf-8") as decrypted:
             self.assertEqual(original.read(), decrypted.read())
 
     def test_encrypt_decrypt_aes_gcm_algorithm(self):
@@ -495,7 +495,7 @@ class TestCryptCore(unittest.TestCase):
         self.assertTrue(os.path.exists(decrypted_file))
 
         # Verify the content
-        with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
+        with open(self.test_file, "r", encoding="utf-8") as original, open(decrypted_file, "r", encoding="utf-8") as decrypted:
             self.assertEqual(original.read(), decrypted.read())
 
     def test_encrypt_decrypt_chacha20_algorithm(self):
@@ -523,7 +523,7 @@ class TestCryptCore(unittest.TestCase):
         self.assertTrue(os.path.exists(decrypted_file))
 
         # Verify the content
-        with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
+        with open(self.test_file, "r", encoding="utf-8") as original, open(decrypted_file, "r", encoding="utf-8") as decrypted:
             self.assertEqual(original.read(), decrypted.read())
 
     # Fix for test_wrong_password - Using the imported InvalidToken
@@ -573,7 +573,7 @@ class TestCryptCore(unittest.TestCase):
         self.test_files.extend([encrypted_file, decrypted_file])
 
         # Create the test content
-        with open(self.test_file, "r") as f:
+        with open(self.test_file, "r", encoding="utf-8") as f:
             test_content = f.read()
 
         # Create a mock
@@ -602,7 +602,7 @@ class TestCryptCore(unittest.TestCase):
             )
 
             # Create a fake encrypted file for testing
-            with open(encrypted_file, "w") as f:
+            with open(encrypted_file, "w", encoding="utf-8") as f:
                 f.write("This is a mock encrypted file")
 
             # Verify the mock was called correctly
@@ -615,7 +615,7 @@ class TestCryptCore(unittest.TestCase):
             result = mock_decrypt(encrypted_file, decrypted_file, self.test_password, quiet=True)
 
             # Create a fake decrypted file with the original content
-            with open(decrypted_file, "w") as f:
+            with open(decrypted_file, "w", encoding="utf-8") as f:
                 f.write(test_content)
 
             # Verify the mock decryption was called correctly
@@ -623,7 +623,7 @@ class TestCryptCore(unittest.TestCase):
 
             # Verify the "decrypted" content matches original
             # (Since we created it with the same content)
-            with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
+            with open(self.test_file, "r", encoding="utf-8") as original, open(decrypted_file, "r", encoding="utf-8") as decrypted:
                 self.assertEqual(original.read(), decrypted.read())
 
             # In the future, this test should be replaced with a real implementation
@@ -664,7 +664,7 @@ class TestCryptCore(unittest.TestCase):
         self.test_files.append(test_copy)
 
         # Read original content
-        with open(test_copy, "r") as f:
+        with open(test_copy, "r", encoding="utf-8") as f:
             original_content = f.read()
 
         # Mock replacing function to simulate overwrite behavior
@@ -696,7 +696,7 @@ class TestCryptCore(unittest.TestCase):
             decrypt_file(test_copy, decrypted_file, self.test_password, quiet=True)
 
             # Verify content
-            with open(decrypted_file, "r") as f:
+            with open(decrypted_file, "r", encoding="utf-8") as f:
                 decrypted_content = f.read()
 
             self.assertEqual(original_content, decrypted_content)
@@ -1009,7 +1009,7 @@ class TestCryptUtils(unittest.TestCase):
         self.sample_files = []
         for i in range(3):
             file_path = os.path.join(self.test_dir, f"sample_file_{i}.txt")
-            with open(file_path, "w") as f:
+            with open(file_path, "w", encoding="utf-8") as f:
                 f.write(f"This is sample file {i} for shredding test.")
             self.sample_files.append(file_path)
 
@@ -1019,7 +1019,7 @@ class TestCryptUtils(unittest.TestCase):
 
         for i in range(2):
             file_path = os.path.join(self.sub_dir, f"sub_file_{i}.txt")
-            with open(file_path, "w") as f:
+            with open(file_path, "w", encoding="utf-8") as f:
                 f.write(f"This is a file in the subdirectory for recursive shredding test.")
 
     def tearDown(self):
@@ -1118,7 +1118,7 @@ class TestCryptUtils(unittest.TestCase):
         for ext in ["txt", "json", "csv"]:
             for i in range(2):
                 file_path = os.path.join(pattern_dir, f"test_file{i}.{ext}")
-                with open(file_path, "w") as f:
+                with open(file_path, "w", encoding="utf-8") as f:
                     f.write(f"Test file with extension {ext}")
 
         # Test simple pattern
@@ -1144,7 +1144,7 @@ class TestFileOperations(unittest.TestCase):
 
         # Create test files of various sizes
         self.small_file = os.path.join(self.test_dir, "small.txt")
-        with open(self.small_file, "w") as f:
+        with open(self.small_file, "w", encoding="utf-8") as f:
             f.write("Small test file")
 
         # Create a medium-sized file (100KB)
@@ -1159,7 +1159,7 @@ class TestFileOperations(unittest.TestCase):
 
         # Create an empty file
         self.empty_file = os.path.join(self.test_dir, "empty.txt")
-        open(self.empty_file, "w").close()
+        open(self.empty_file, "w", encoding="utf-8").close()
 
         # Test password
         self.test_password = b"TestPassword123!"
@@ -1215,7 +1215,7 @@ class TestFileOperations(unittest.TestCase):
             )
 
             # Create a fake encrypted file for testing
-            with open(encrypted_file, "w") as f:
+            with open(encrypted_file, "w", encoding="utf-8") as f:
                 f.write("Mocked encrypted content")
 
             self.assertTrue(result)
@@ -1227,14 +1227,14 @@ class TestFileOperations(unittest.TestCase):
             result = mock_decrypt(encrypted_file, decrypted_file, self.test_password, quiet=True)
 
             # Create an empty decrypted file (simulating a successful decryption)
-            with open(decrypted_file, "w") as f:
+            with open(decrypted_file, "w", encoding="utf-8") as f:
                 pass  # Empty file
 
             self.assertTrue(result)
             self.assertTrue(os.path.exists(decrypted_file))
 
             # Verify the content (should be empty)
-            with open(decrypted_file, "r") as f:
+            with open(decrypted_file, "r", encoding="utf-8") as f:
                 self.assertEqual(f.read(), "")
             self.assertEqual(os.path.getsize(decrypted_file), 0)
 
@@ -1267,7 +1267,7 @@ class TestFileOperations(unittest.TestCase):
             )
 
             # Create a fake encrypted file for testing (small dummy content)
-            with open(encrypted_file, "w") as f:
+            with open(encrypted_file, "w", encoding="utf-8") as f:
                 f.write("Mocked encrypted content for large file")
 
             self.assertTrue(result)
@@ -1311,7 +1311,7 @@ class TestFileOperations(unittest.TestCase):
 
         # Create a file with specific permissions
         test_file = os.path.join(self.test_dir, "permission_test.txt")
-        with open(test_file, "w") as f:
+        with open(test_file, "w", encoding="utf-8") as f:
             f.write("Test file for permission testing")
 
         # Set specific permissions (read/write for owner only)
@@ -1338,7 +1338,7 @@ class TestFileOperations(unittest.TestCase):
             )
 
             # Create a fake encrypted file with correct permissions
-            with open(encrypted_file, "w") as f:
+            with open(encrypted_file, "w", encoding="utf-8") as f:
                 f.write("Mock encrypted content")
 
             # Set the same permissions that the real encryption would set
@@ -1353,8 +1353,8 @@ class TestFileOperations(unittest.TestCase):
             result = mock_decrypt(encrypted_file, decrypted_file, self.test_password, quiet=True)
 
             # Create a fake decrypted file with the original content
-            with open(decrypted_file, "w") as f:
-                with open(test_file, "r") as original:
+            with open(decrypted_file, "w", encoding="utf-8") as f:
+                with open(test_file, "r", encoding="utf-8") as original:
                     f.write(original.read())
 
             # Set the same permissions that the real decryption would set
@@ -1376,7 +1376,7 @@ class TestEncryptionEdgeCases(unittest.TestCase):
 
         # Create a test file
         self.test_file = os.path.join(self.test_dir, "edge_case_test.txt")
-        with open(self.test_file, "w") as f:
+        with open(self.test_file, "w", encoding="utf-8") as f:
             f.write("This is a test file for edge case testing.")
 
         # Test password
@@ -1470,7 +1470,7 @@ class TestEncryptionEdgeCases(unittest.TestCase):
         """Test behavior when output file already exists."""
         # Create a file that will be the output destination
         existing_file = os.path.join(self.test_dir, "already_exists.bin")
-        with open(existing_file, "w") as f:
+        with open(existing_file, "w", encoding="utf-8") as f:
             f.write("This file already exists and should be overwritten.")
 
         # Encrypt to the existing file
@@ -1578,7 +1578,7 @@ class TestSecureShredding(unittest.TestCase):
 
         # Create files of different sizes for shredding tests
         self.small_file = os.path.join(self.test_dir, "small_to_shred.txt")
-        with open(self.small_file, "w") as f:
+        with open(self.small_file, "w", encoding="utf-8") as f:
             f.write("Small file to shred")
 
         # Medium file (100KB)
@@ -1588,13 +1588,13 @@ class TestSecureShredding(unittest.TestCase):
 
         # Create a read-only file
         self.readonly_file = os.path.join(self.test_dir, "readonly.txt")
-        with open(self.readonly_file, "w") as f:
+        with open(self.readonly_file, "w", encoding="utf-8") as f:
             f.write("This is a read-only file")
         os.chmod(self.readonly_file, 0o444)  # Read-only permissions
 
         # Create an empty file
         self.empty_file = os.path.join(self.test_dir, "empty_to_shred.txt")
-        open(self.empty_file, "w").close()
+        open(self.empty_file, "w", encoding="utf-8").close()
 
         # Create a directory structure for recursive shredding tests
         self.test_subdir = os.path.join(self.test_dir, "test_subdir")
@@ -1602,7 +1602,7 @@ class TestSecureShredding(unittest.TestCase):
 
         for i in range(3):
             file_path = os.path.join(self.test_subdir, f"subfile_{i}.txt")
-            with open(file_path, "w") as f:
+            with open(file_path, "w", encoding="utf-8") as f:
                 f.write(f"This is subfile {i}")
 
     def tearDown(self):
@@ -1687,11 +1687,11 @@ class TestSecureShredding(unittest.TestCase):
         pass2_file = os.path.join(self.test_dir, "pass2.txt")
         pass3_file = os.path.join(self.test_dir, "pass3.txt")
 
-        with open(pass1_file, "w") as f:
+        with open(pass1_file, "w", encoding="utf-8") as f:
             f.write("Test file for 1-pass shredding")
-        with open(pass2_file, "w") as f:
+        with open(pass2_file, "w", encoding="utf-8") as f:
             f.write("Test file for 2-pass shredding")
-        with open(pass3_file, "w") as f:
+        with open(pass3_file, "w", encoding="utf-8") as f:
             f.write("Test file for 3-pass shredding")
 
         # Shred with different passes

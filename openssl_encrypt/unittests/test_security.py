@@ -132,7 +132,7 @@ class TestSecureErrorHandling(unittest.TestCase):
 
         # Create a test file with some content
         self.test_file = os.path.join(self.test_dir, "test_file.txt")
-        with open(self.test_file, "w") as f:
+        with open(self.test_file, "w", encoding="utf-8") as f:
             f.write("This is a test file for encryption and decryption.")
         self.test_files.append(self.test_file)
 
@@ -323,7 +323,7 @@ class TestBufferOverflowProtection(unittest.TestCase):
 
         # Create a test file with some content
         self.test_file = os.path.join(self.test_dir, "test_file.txt")
-        with open(self.test_file, "w") as f:
+        with open(self.test_file, "w", encoding="utf-8") as f:
             f.write("This is a test file for encryption and decryption.")
         self.test_files.append(self.test_file)
 
@@ -526,7 +526,7 @@ class TestBufferOverflowProtection(unittest.TestCase):
         try:
             # Create file with simple content for encryption
             test_input = os.path.join(self.test_dir, "simple_content.txt")
-            with open(test_input, "w") as f:
+            with open(test_input, "w", encoding="utf-8") as f:
                 f.write("Simple test content")
             self.test_files.append(test_input)
 
@@ -1276,7 +1276,7 @@ def test_kyber_v5_wrong_encryption_data():
         algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
         # Get current encryption_data from metadata
-        with open(input_file, "r") as f:
+        with open(input_file, "r", encoding="utf-8") as f:
             content = f.read()
         metadata_b64 = content.split(":", 1)[0]
         metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
@@ -1387,7 +1387,7 @@ class TestSecurityLogger(unittest.TestCase):
         )
 
         # Read log file and verify event was written
-        with open(self.logger.log_file, "r") as f:
+        with open(self.logger.log_file, "r", encoding="utf-8") as f:
             log_content = f.read()
             self.assertIn("test_event", log_content)
             self.assertIn("file_path", log_content)
@@ -1404,7 +1404,7 @@ class TestSecurityLogger(unittest.TestCase):
         )
 
         # Read log file and verify sensitive fields are redacted
-        with open(self.logger.log_file, "r") as f:
+        with open(self.logger.log_file, "r", encoding="utf-8") as f:
             log_content = f.read()
             self.assertIn("test.txt", log_content)
             self.assertNotIn("SuperSecret123!", log_content)
@@ -1418,7 +1418,7 @@ class TestSecurityLogger(unittest.TestCase):
         self.logger.log_event("critical_event", "critical", {"detail": "critical"})
 
         # Read log and verify all events are present
-        with open(self.logger.log_file, "r") as f:
+        with open(self.logger.log_file, "r", encoding="utf-8") as f:
             log_content = f.read()
             self.assertIn("info_event", log_content)
             self.assertIn("warning_event", log_content)
@@ -1491,7 +1491,7 @@ class TestSecurityLogger(unittest.TestCase):
             # Verify no log file was created (or is empty if created)
             log_file = Path(disabled_dir) / "security-audit.log"
             if log_file.exists():
-                with open(log_file, "r") as f:
+                with open(log_file, "r", encoding="utf-8") as f:
                     content = f.read()
                     self.assertEqual(content, "")
         finally:
@@ -1534,7 +1534,7 @@ class TestSecurityLogger(unittest.TestCase):
         self.logger.log_event("test_event", "info", {"long_field": long_value})
 
         # Read log and verify truncation
-        with open(self.logger.log_file, "r") as f:
+        with open(self.logger.log_file, "r", encoding="utf-8") as f:
             log_content = f.read()
             self.assertIn("[truncated]", log_content)
             self.assertNotIn("x" * 500, log_content)

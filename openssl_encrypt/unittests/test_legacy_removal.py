@@ -31,7 +31,7 @@ class TestLegacyCipherRemoval(unittest.TestCase):
         """Set up test environment."""
         self.test_dir = tempfile.mkdtemp()
         self.test_file = os.path.join(self.test_dir, "test_input.txt")
-        with open(self.test_file, "w") as f:
+        with open(self.test_file, "w", encoding="utf-8") as f:
             f.write("Test data for legacy removal verification.")
         self.output_file = os.path.join(self.test_dir, "test_output.enc")
         self.test_password = b"TestPassword123!"
