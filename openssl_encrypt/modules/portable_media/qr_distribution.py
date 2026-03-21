@@ -71,7 +71,7 @@ class QRKeyDistribution:
     # QR Code configuration
     MAX_SINGLE_QR_SIZE = 2048  # Max bytes for single QR (Version 40)
     MAX_QR_DATA_SIZE = 2953  # Theoretical max for Version 40 QR
-    QR_ERROR_CORRECTION = qrcode.constants.ERROR_CORRECT_M  # 15% error correction
+    QR_ERROR_CORRECTION = qrcode.constants.ERROR_CORRECT_M if QR_AVAILABLE else 0  # 15% error correction
 
     # Protocol constants
     PROTOCOL_VERSION = "1.0"
