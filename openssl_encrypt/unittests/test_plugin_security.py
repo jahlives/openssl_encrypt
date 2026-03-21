@@ -1029,6 +1029,7 @@ class TestBuiltinPluginTrust(unittest.TestCase):
 
         self.assertFalse(self.plugin_manager._validate_plugin_file(str(plugin_file)))
 
+    @unittest.skipIf(sys.platform == "win32", "Symlink creation requires privileges on Windows")
     def test_symlink_into_builtin_root_does_not_bypass_validation(self):
         """A symlink inside builtin_plugin_root pointing outside must NOT bypass AST analysis.
 

@@ -67,6 +67,7 @@ class TestPlugin(PreProcessorPlugin):
             f.write(plugin_content)
         return plugin_path
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Symlink creation requires privileges on Windows")
     def test_symlink_attack_blocked(self):
         """Symlink pointing outside plugin directory should be blocked"""
         # Create a sensitive file outside plugin directory
@@ -180,6 +181,7 @@ class TestPlugin(PreProcessorPlugin):
         finally:
             os.unlink(test_file.name)
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Symlink creation requires privileges on Windows")
     def test_double_symlink_chain_blocked(self):
         """Chain of symlinks should be resolved and blocked"""
         # Create target file outside plugin dir
