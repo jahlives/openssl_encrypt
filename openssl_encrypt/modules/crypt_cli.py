@@ -5387,10 +5387,17 @@ def main_with_args(args=None):
                         # We need to show the prompt but we can hide any extra text
                         pwd = getpass.getpass("Enter password: ")
 
-                        # In quiet mode, move up one line and clear it after getting the password
-                        if args.quiet:
-                            sys.stderr.write("\033[A\033[K")
-                            sys.stderr.flush()
+                        # In quiet or progress mode, move up one line and clear it after
+                        # getting the password. Write to /dev/tty so the clear works even
+                        # when stderr is redirected (e.g. 2>/dev/null).
+                        if args.quiet or getattr(args, "progress", False):
+                            try:
+                                with open("/dev/tty", "w") as _tty:
+                                    _tty.write("\033[A\033[K")
+                                    _tty.flush()
+                            except OSError:
+                                sys.stderr.write("\033[A\033[K")
+                                sys.stderr.flush()
 
                         password_secure.extend(pwd.encode("utf-8"))
                         # Securely clear the temporary buffer

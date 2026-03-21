@@ -253,8 +253,23 @@ class YubikeyHSMPlugin(HSMPlugin):
 
             # Perform Challenge-Response
             self.logger.info(f"Performing Challenge-Response with Yubikey slot {slot}...")
-            print(f"👆 Touch your Yubikey now (slot {slot})...", file=sys.stderr)
+            # Write touch prompt to /dev/tty so it is visible even when stderr is
+            # redirected (e.g. 2>/dev/null).  Clear the line after touch completes.
+            _touch_msg = f"👆 Touch your Yubikey now (slot {slot})..."
+            _tty = None
+            try:
+                _tty = open("/dev/tty", "w")
+                _tty.write(_touch_msg + "\n")
+                _tty.flush()
+            except OSError:
+                print(_touch_msg, file=sys.stderr)
             response = self._calculate_challenge_response(salt, slot)
+            if _tty is not None:
+                try:
+                    _tty.write("\033[A\033[K")
+                    _tty.flush()
+                finally:
+                    _tty.close()
 
             # Response is the hsm_pepper (20 bytes HMAC-SHA1)
             return PluginResult.success_result(
