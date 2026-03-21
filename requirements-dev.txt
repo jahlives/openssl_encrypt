@@ -18,7 +18,7 @@ attrs==25.4.0
     # via
     #   jsonschema
     #   referencing
-authlib==1.6.7
+authlib==1.6.9
     # via safety
 bandit==1.7.10
     # via -r requirements-dev.in

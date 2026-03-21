@@ -13,8 +13,8 @@
 
           <div class="stats">
               <h3>&#128196; Application Info</h3>
+              <p><strong>Version:</strong> 1.4.1rc1 (Release Candidate) | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
               <p><strong>Version:</strong> 1.4.0-stable (Latest Stable) | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
-              <p><strong>Version:</strong> 1.4.0rc1 (Release Candidate) | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
               <p><strong>Version:</strong> 1.3.5-stable | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
               <p><strong>Version:</strong> 1.3.4-stable | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
               <p><strong>Version:</strong> 1.3.3-stable | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
@@ -112,6 +112,17 @@
 
           <section id="changelog">
               <h2>&#128203; Recent Updates</h2>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      1.4.1rc1
+                      <span class="release-type rc">RELEASE CANDIDATE</span>
+                      <span class="release-type security">SECURITY</span>
+                  </div>
+                  <div class="description">
+                      Streaming chunked AEAD encryption (format v12) for constant-memory large file handling. Added --info CLI action with encrypted_at timestamp. Full Windows compatibility backport (NTFS ACLs, UTF-8 fixes, Whirlpool build). All non-data output redirected to stderr via eprint() — 2>/dev/null now correctly suppresses progress/status. Cross-platform tty_write/tty_clear_line for terminal prompts. Security hardening: key zeroization, HKDF for all derived keys (v12+), per-layer cascade salts and AAD, plugin sandbox hardening, restrictive file permissions, identity import fingerprint verification. Dependency bumps: authlib 1.6.9, python-jose 3.4.0, cryptography ≥46.0.5.
+                  </div>
+              </div>
 
               <div class="changelog-item">
                   <div class="version">

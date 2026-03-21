@@ -5,6 +5,53 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1rc1] - 2026-03-21
+
+### Added
+
+- **Streaming chunked encryption (format v12)**: Large files now encrypted in authenticated chunks with configurable chunk size, enabling constant-memory operation, per-chunk integrity verification, and efficient handling of multi-gigabyte files
+- **`--info` CLI action**: Display metadata about an encrypted file (format version, algorithms, `encrypted_at` timestamp) without decrypting
+- **`encrypted_at` timestamp**: Metadata now records encryption time for auditing purposes
+- **Windows compatibility**: Full Windows support backported from v1.5.x including NTFS ACL-based file permissions, UTF-8 encoding fixes across all file I/O, and an automated Whirlpool build step for Windows
+- **Cross-platform `tty_write`/`tty_clear_line` helpers**: Interactive terminal prompts (YubiKey touch, password clear) now bypass stdout/stderr redirection by writing directly to `/dev/tty` on Unix or `msvcrt` on Windows, with emoji-safe fallback for Windows consoles
+- **Stderr output separation**: All status, progress, and diagnostic output now goes to stderr via `eprint()`. Redirecting with `2>/dev/null` correctly suppresses all non-data output without affecting the decrypted content on stdout
+
+### Security
+
+- **Key zeroization in streaming/cascade/crypt_core**: All derived intermediate keys zeroed via `SecureBytes`/`secure_memzero` immediately after use
+- **HKDF for keystore password wrap key**: Replaced bare SHA-256 with HKDF for deriving the keystore password wrap key
+- **HKDF for streaming HMAC key** (v12+): Per-encryption HMAC key derived via HKDF rather than direct KDF output
+- **Per-layer salt and AAD for cascade** (v12+): Each cascade layer receives an independently derived salt; all layers bound to the ciphertext via AAD (H6/H7/M12)
+- **HKDF for pepper and PQC signature keys** (v12+): Pepper and PQC signature keys derived via HKDF with `format_version` wired through the derivation context (M15/M18/C2)
+- **PQC signature HKDF salt pre-bound**: Salt generated before AEAD metadata construction, binding it into the ciphertext and preventing post-encryption metadata modification attacks
+- **Per-chunk nonce bound into cascade**: Streaming chunk nonces passed to each cascade layer, preventing cross-chunk nonce reuse
+- **Chunk count validation**: Streaming decryptor validates `chunk_count` from metadata against actual payload size, preventing truncation attacks
+- **Format version integer validation**: `decrypt_file()` now rejects non-integer `format_version` values in metadata
+- **Keystore Argon2id fallback warning**: User is warned when keystore falls back from Argon2id to PBKDF2
+- **Plugin sandbox hardening**: Blocked `marshal` and `codecs` modules; blocked `__dict__`, `__func__`, `__self__` attribute access; added detection of string concatenation building dangerous names; added TOCTOU mitigation for plugin file validation; fixed TOCTOU race in symlink check; hardened AST analyzer against additional bypass vectors (PL-4/PL-5/PL-6/H8/H9/H10)
+- **Plugin execution serialization**: Threading-mode plugins execute under a lock, preventing race conditions in concurrent usage
+- **Algorithm registries frozen after init**: Algorithm registries are made immutable after initialization, preventing runtime tampering (M9/M13)
+- **HSM pepper cache as bytearray**: Cached pepper stored as `bytearray` to allow effective memory zeroing
+- **PQCKeystore context manager**: Added `close()` and `__exit__` to zero keys on teardown
+- **Identity private key AAD binding**: Identity private key encryption now includes AAD for ciphertext binding
+- **Identity import fingerprint verification**: Fingerprint verified on identity import to detect tampering; identity names validated against path traversal (M5/H1/H2)
+- **Restrictive file permissions**: Keystore files set to `0o600`; pepper config directory `0o700`, pepper config file `0o600`; keystore dual encryption now includes AAD (M1/M20)
+- **KeyStretch state reset**: Mutable class-level state reset at the start of each encrypt/decrypt operation to prevent cross-call state leakage
+- **PluginResult sensitive key filtering**: Sensitive keys stripped in `PluginResult` constructor (M10)
+- **PluginSecurityContext immutable capabilities**: `capabilities` stored as `frozenset` to prevent runtime mutation
+- **HTTPS enforcement in keyserver**: `register()` enforces HTTPS for keyserver URL (PL-8)
+- **Server secrets hardening**: Removed insecure default token secrets from server config (SV-2)
+- **Dependency security**: Bumped `authlib` to 1.6.9, `python-jose` to 3.4.0, `cryptography` to ≥46.0.5
+
+### Performance
+
+- **Incremental metadata reads for v12**: `_read_metadata_only()` uses 8KB incremental reads to locate the metadata separator, avoiding loading the full file into memory before decryption begins
+- **Bounded streaming decrypt**: `decrypt_file()` in streaming.py uses bounded reads instead of a single `fin.read()`, keeping memory usage proportional to chunk size regardless of file size
+
+### Changed
+
+- **`eprint()` replaces `print()` for all non-data output**: ~1,500 call sites across all modules now route to stderr by default, making it safe to capture stdout for scripting and automation
+
 ## [1.4.0] - 2026-03-03
 
 ### Security

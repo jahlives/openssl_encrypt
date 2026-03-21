@@ -1,6 +1,53 @@
 # OpenSSL Encrypt - Complete Release Notes
 
-## Current Release: Version 1.4.0-alpha.1 (December 2025)
+## Current Release: Version 1.4.1rc1 (March 2026)
+
+**Status:** Release Candidate 1
+**Development Status:** Release Candidate Testing
+**Target Final Release:** Q2 2026
+
+### Streaming Encryption, Windows Compatibility & Security Hardening
+
+Version 1.4.1rc1 is a security and feature release built on top of the stable 1.4.0 baseline. The headline addition is **Format Version 12 streaming chunked AEAD encryption**, enabling constant-memory encryption and decryption of arbitrarily large files. A broad security hardening sweep addresses ~30 issues identified in an internal audit, and full Windows compatibility is backported from v1.5.x.
+
+#### Format Version 12 — Streaming Chunked Encryption
+
+Large files are now processed as a sequence of independently authenticated AEAD chunks rather than being loaded into memory in full. Each chunk carries its own nonce and is bound to a per-chunk counter to prevent reordering or truncation attacks. The streaming decryptor validates `chunk_count` from metadata against the actual payload and rejects any mismatch. Memory usage is proportional to chunk size regardless of file size.
+
+#### stderr Output Separation
+
+All non-data output — progress bars, status messages, warnings, YubiKey touch prompts — now goes to stderr via the new `eprint()` helper (~1,500 call sites migrated). Piping or capturing stdout in scripts now works correctly without `2>/dev/null` leaking status text into captured output. Interactive terminal prompts use cross-platform `tty_write()`/`tty_clear_line()` helpers that write directly to the controlling terminal (`/dev/tty` on Unix, `msvcrt` on Windows), surviving both `1>/dev/null` and `2>/dev/null`.
+
+#### Windows Compatibility
+
+Full Windows support backported from v1.5.x: NTFS ACL-based file permissions via the new `file_permissions.py` module, UTF-8 encoding fixes across all file I/O and subprocess calls, emoji-safe fallback for Windows consoles, and an automated Whirlpool build step for Windows installations.
+
+#### CLI Additions
+
+- **`--info` action**: Display format version, algorithms, and `encrypted_at` timestamp for any encrypted file without decrypting it.
+
+#### Security Hardening
+
+- Key zeroization via `SecureBytes`/`secure_memzero` in cascade, streaming, and crypt_core after key use
+- HKDF replaces bare SHA-256/KDF-output for: keystore password wrap key, streaming HMAC key, pepper derivation, PQC signature keys (v12+)
+- Per-layer independently derived salts and all-layer AAD for cascade encryption (v12+)
+- Per-chunk nonce bound into each cascade layer in streaming mode
+- PQC signature HKDF salt pre-generated and bound into AEAD metadata before encryption
+- Plugin sandbox: blocked `marshal`/`codecs` modules, `__dict__`/`__func__`/`__self__` attributes, string-concatenation-based dangerous name construction; TOCTOU mitigations for file validation and symlink checks; hardened AST analyzer (PL-4/5/6/H8/H9/H10)
+- Algorithm registries frozen after initialization to prevent runtime tampering (M9/M13)
+- Keystore and pepper config files set to `0o600`/`0o700`; keystore dual encryption includes AAD (M1/M20)
+- Identity import verifies fingerprint to detect tampering; identity names validated against path traversal (M5/H1/H2)
+- `PQCKeystore` gains `close()`/context manager for deterministic key zeroization
+- HSM pepper cache stored as `bytearray` for effective memory zeroing
+- `PluginSecurityContext.capabilities` stored as `frozenset`; `PluginResult` strips sensitive keys on construction (M10)
+- `KeyStretch` mutable class state reset at start of each operation
+- Plugin threading-mode execution serialized with a lock
+- Keystore warns when falling back from Argon2id to PBKDF2
+- Dependency bumps: `authlib` 1.6.9, `python-jose` 3.4.0, `cryptography` ≥46.0.5
+
+---
+
+## Previous Release: Version 1.4.0-alpha.1 (December 2025)
 
 **Status:** Alpha Pre-Release
 **Development Status:** Testing Phase
