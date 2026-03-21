@@ -308,11 +308,15 @@ class IdentityKeyProtectionService:
                     "Please configure slot 1 or 2 for HMAC-SHA1 Challenge-Response."
                 )
 
-        # Show touch prompt if required. Write to stdout so it is visible
-        # even when stderr is redirected (e.g. 2>/dev/null).
+        # TODO: Write touch prompt to /dev/tty (CON on Windows) like getpass does,
+        # so it's visible even with 2>/dev/null and never pollutes captured stdout.
+        # For now, use stderr — visible unless stderr is explicitly redirected.
         if hsm_config.require_touch:
-            sys.stdout.write("👆 Touch your Yubikey to continue...\n")
-            sys.stdout.flush()
+            try:
+                sys.stderr.write("👆 Touch your Yubikey to continue...\n")
+            except UnicodeEncodeError:
+                sys.stderr.write("Touch your Yubikey to continue...\n")
+            sys.stderr.flush()
 
         # Perform Challenge-Response
         try:

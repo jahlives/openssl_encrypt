@@ -172,7 +172,10 @@ class YubikeyHSMPlugin(HSMPlugin):
 
                 # Prompt user to touch Yubikey if required
                 self.logger.info(f"Performing Challenge-Response on slot {slot}...")
-                self.logger.info("👆 Touch your Yubikey if touch is required")
+                try:
+                    self.logger.info("👆 Touch your Yubikey if touch is required")
+                except UnicodeEncodeError:
+                    self.logger.info("Touch your Yubikey if touch is required")
 
                 # Calculate response (HMAC-SHA1)
                 # Yubikey Challenge-Response produces 20-byte HMAC-SHA1
@@ -253,14 +256,20 @@ class YubikeyHSMPlugin(HSMPlugin):
 
             # Perform Challenge-Response
             self.logger.info(f"Performing Challenge-Response with Yubikey slot {slot}...")
-            # Write to stdout so the prompt is visible even when stderr is redirected
-            # (e.g. 2>/dev/null). Clear the line after touch completes.
-            _touch_msg = f"👆 Touch your Yubikey now (slot {slot})...\n"
-            sys.stdout.write(_touch_msg)
-            sys.stdout.flush()
+            # TODO: Write touch prompt to /dev/tty (CON on Windows) like getpass does,
+            # so it's visible even with 2>/dev/null and never pollutes captured stdout.
+            # For now, use stderr — visible unless stderr is explicitly redirected.
+            _touch_msg_emoji = f"👆 Touch your Yubikey now (slot {slot})...\n"
+            _touch_msg_plain = f"Touch your Yubikey now (slot {slot})...\n"
+            try:
+                sys.stderr.write(_touch_msg_emoji)
+            except UnicodeEncodeError:
+                sys.stderr.write(_touch_msg_plain)
+            sys.stderr.flush()
             response = self._calculate_challenge_response(salt, slot)
-            sys.stdout.write("\033[A\033[K")
-            sys.stdout.flush()
+            if sys.stderr.isatty():
+                sys.stderr.write("\033[A\033[K")
+                sys.stderr.flush()
 
             # Response is the hsm_pepper (20 bytes HMAC-SHA1)
             return PluginResult.success_result(
