@@ -289,8 +289,9 @@ class PQCKeystore:
             os.close(fd)
             raise
 
-        # Atomically replace the original file (POSIX rename is atomic)
-        os.rename(temp_path, self.keystore_path)
+        # Atomically replace the original file
+        # os.replace() works on both POSIX and Windows (os.rename fails on Windows if target exists)
+        os.replace(temp_path, self.keystore_path)
 
     def list_keys(self) -> List[Dict[str, Any]]:
         """
