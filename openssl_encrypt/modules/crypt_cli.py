@@ -54,6 +54,7 @@ from .crypt_utils import (
     request_confirmation,
     secure_shred_file,
     show_security_recommendations,
+    tty_clear_line,
 )
 
 # Try to import the CLI helper module
@@ -5388,16 +5389,9 @@ def main_with_args(args=None):
                         pwd = getpass.getpass("Enter password: ")
 
                         # In quiet or progress mode, move up one line and clear it after
-                        # getting the password. Write to /dev/tty so the clear works even
-                        # when stderr is redirected (e.g. 2>/dev/null).
+                        # getting the password.
                         if args.quiet or getattr(args, "progress", False):
-                            try:
-                                with open("/dev/tty", "w") as _tty:
-                                    _tty.write("\033[A\033[K")
-                                    _tty.flush()
-                            except OSError:
-                                sys.stderr.write("\033[A\033[K")
-                                sys.stderr.flush()
+                            tty_clear_line()
 
                         password_secure.extend(pwd.encode("utf-8"))
                         # Securely clear the temporary buffer

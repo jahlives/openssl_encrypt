@@ -30,6 +30,7 @@ import logging
 import sys
 from typing import Any, Dict, Set
 
+from ....modules.crypt_utils import tty_clear_line, tty_write
 from ....modules.plugin_system.plugin_base import (
     HSMPlugin,
     PluginCapability,
@@ -256,28 +257,11 @@ class YubikeyHSMPlugin(HSMPlugin):
 
             # Perform Challenge-Response
             self.logger.info(f"Performing Challenge-Response with Yubikey slot {slot}...")
-            # Write touch prompt to /dev/tty (CON on Windows) so it is visible even
-            # when stderr is redirected (e.g. 2>/dev/null).
-            # Clear the line after touch completes.
-            _touch_msg_emoji = f"👆 Touch your Yubikey now (slot {slot})..."
-            _touch_msg_plain = f"Touch your Yubikey now (slot {slot})..."
-            _tty = None
-            try:
-                _tty = open("/dev/tty", "w")
-                _tty.write(_touch_msg_emoji + "\n")
-                _tty.flush()
-            except OSError:
-                try:
-                    print(_touch_msg_emoji, file=sys.stderr)
-                except UnicodeEncodeError:
-                    print(_touch_msg_plain, file=sys.stderr)
+            # Write touch prompt directly to the terminal (bypasses stdout/stderr
+            # redirection) so it's always visible to the user.
+            tty_write(f"👆 Touch your Yubikey now (slot {slot})...\n")
             response = self._calculate_challenge_response(salt, slot)
-            if _tty is not None:
-                try:
-                    _tty.write("\033[A\033[K")
-                    _tty.flush()
-                finally:
-                    _tty.close()
+            tty_clear_line()
 
             # Response is the hsm_pepper (20 bytes HMAC-SHA1)
             return PluginResult.success_result(

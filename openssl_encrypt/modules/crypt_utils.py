@@ -25,6 +25,84 @@ def eprint(*args, **kwargs):
     print(*args, **kwargs)
 
 
+def tty_write(message: str) -> bool:
+    """Write a message directly to the controlling terminal.
+
+    Uses /dev/tty on Unix and msvcrt.putwch() on Windows, so the message
+    is visible to the user regardless of stdout/stderr redirection.
+    Falls back to stderr if no terminal is available.
+
+    Args:
+        message: The text to display (may contain emoji / non-ASCII).
+
+    Returns:
+        True if the message was written to a real terminal (/dev/tty or
+        console), False if it fell back to stderr.
+    """
+    # Windows: write character-by-character via msvcrt (same as getpass)
+    if sys.platform == "win32":
+        try:
+            import msvcrt
+
+            for ch in message:
+                msvcrt.putwch(ch)
+            return True
+        except Exception:
+            pass
+    else:
+        # Unix: write to /dev/tty
+        try:
+            with open("/dev/tty", "w") as _tty:
+                _tty.write(message)
+                _tty.flush()
+            return True
+        except OSError:
+            pass
+
+    # Fallback: stderr with emoji safety
+    try:
+        sys.stderr.write(message)
+        sys.stderr.flush()
+    except UnicodeEncodeError:
+        # Strip non-ASCII (emoji) and retry
+        safe = message.encode("ascii", errors="ignore").decode("ascii")
+        sys.stderr.write(safe)
+        sys.stderr.flush()
+    return False
+
+
+def tty_clear_line() -> None:
+    """Erase the current line on the terminal using ANSI escape codes.
+
+    Moves cursor up one line and clears it.  Uses the same terminal
+    detection as tty_write (console on Windows, /dev/tty on Unix).
+    No-op if no terminal is available.
+    """
+    _ansi = "\033[A\033[K"
+    if sys.platform == "win32":
+        try:
+            import msvcrt
+
+            for ch in _ansi:
+                msvcrt.putwch(ch)
+            return
+        except Exception:
+            pass
+    else:
+        try:
+            with open("/dev/tty", "w") as _tty:
+                _tty.write(_ansi)
+                _tty.flush()
+            return
+        except OSError:
+            pass
+
+    # Fallback: stderr if it's a TTY (ANSI escapes only work on terminals)
+    if sys.stderr.isatty():
+        sys.stderr.write(_ansi)
+        sys.stderr.flush()
+
+
 def expand_glob_patterns(pattern):
     """
     Expand glob patterns into a list of matching files and directories.

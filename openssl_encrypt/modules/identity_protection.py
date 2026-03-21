@@ -23,7 +23,7 @@ from argon2.low_level import Type, hash_secret_raw
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .secure_memory import SecureBytes, secure_memzero
-from .crypt_utils import eprint
+from .crypt_utils import eprint, tty_write
 
 
 class ProtectionLevel(Enum):
@@ -306,18 +306,10 @@ class IdentityKeyProtectionService:
                     "Please configure slot 1 or 2 for HMAC-SHA1 Challenge-Response."
                 )
 
-        # Show touch prompt if required. Write to /dev/tty (CON on Windows) so it
-        # is visible even when stderr is redirected (e.g. 2>/dev/null).
+        # Write touch prompt directly to the terminal (bypasses stdout/stderr
+        # redirection) so it's always visible to the user.
         if hsm_config.require_touch:
-            try:
-                with open("/dev/tty", "w") as _tty:
-                    _tty.write("👆 Touch your Yubikey to continue...\n")
-                    _tty.flush()
-            except OSError:
-                try:
-                    eprint("👆 Touch your Yubikey to continue...", flush=True)
-                except UnicodeEncodeError:
-                    eprint("Touch your Yubikey to continue...", flush=True)
+            tty_write("👆 Touch your Yubikey to continue...\n")
 
         # Perform Challenge-Response
         try:
