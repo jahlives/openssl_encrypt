@@ -18,3 +18,5 @@ safety>=3.7.0
 filelock>=3.20.3  # Security fix for TOCTOU symlink vulnerability
 virtualenv>=20.36.1  # Security fix for TOCTOU symlink vulnerability in directory creation
 wheel>=0.46.2  # Security fix for path traversal in wheel unpack
+authlib>=1.6.9  # Security fix per Dependabot alert (CVE-2026-27962, CVE-2026-28490, CVE-2026-28498)
+nltk>=3.9.3  # Security fix per Dependabot alert (CVE-2026-33236, CVE-2026-33231, CVE-2026-33230, GHSA-rf74-v2fm-23pw)
