@@ -895,7 +895,8 @@ def set_secure_permissions(file_path):
         return
 
     # Set permissions to 0600 (read/write for owner only)
-    os.chmod(file_path, stat.S_IRUSR | stat.S_IWUSR)
+    from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
+    set_permissions(file_path, PermissionLevel.OWNER_ONLY)
 
 
 def get_file_permissions(file_path):
@@ -924,7 +925,8 @@ def get_file_permissions(file_path):
         eprint(f"Error canonicalizing path '{file_path}': {e}")
         raise
 
-    return os.stat(file_path).st_mode & 0o777  # Get just the permission bits
+    from openssl_encrypt.modules.file_permissions import get_posix_mode
+    return get_posix_mode(file_path)
 
 
 def copy_permissions(source_file, target_file):
@@ -938,10 +940,8 @@ def copy_permissions(source_file, target_file):
         target_file (str): Path to the target file
     """
     try:
-        # Get the permissions from the source file
-        mode = get_file_permissions(source_file)
-        # Apply to the target file
-        os.chmod(target_file, mode)
+        from openssl_encrypt.modules import file_permissions as fp_mod
+        fp_mod.copy_permissions(source_file, target_file)
     except Exception:
         # If we can't copy permissions, fall back to secure permissions
         set_secure_permissions(target_file)

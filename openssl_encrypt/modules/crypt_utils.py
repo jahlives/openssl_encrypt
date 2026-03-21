@@ -292,6 +292,13 @@ def safe_open_file(file_path, mode, secure_mode=False, allow_special_files=True)
     try:
         # On POSIX systems, O_NOFOLLOW will cause open() to fail with ELOOP if path is a symlink
         fd = os.open(file_path, flags, 0o600)  # Secure permissions: owner read/write only
+        # Apply Windows ACL if available
+        if sys.platform == "win32":
+            try:
+                from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
+                set_permissions(file_path, PermissionLevel.OWNER_ONLY)
+            except Exception:
+                pass  # Fall back to os.open mode on failure
     except OSError as e:
         # ELOOP (errno 40): Too many symbolic links (triggered by O_NOFOLLOW on symlink)
         # ENOENT (errno 2): File not found (may occur on some systems for symlinks)

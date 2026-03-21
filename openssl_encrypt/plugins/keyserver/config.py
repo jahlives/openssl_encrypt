@@ -23,6 +23,12 @@ from pathlib import Path
 from typing import List, Optional
 
 from openssl_encrypt.modules.crypt_utils import eprint
+from openssl_encrypt.modules.file_permissions import (
+    PermissionLevel,
+    check_permissions,
+    get_posix_mode,
+    set_permissions,
+)
 
 from ...modules.plugin_system.plugin_config import ensure_plugin_data_dir
 
@@ -182,7 +188,7 @@ class KeyserverConfig:
                 json.dump(data, f, indent=2)
 
             # Set restrictive permissions
-            os.chmod(config_path, 0o600)
+            set_permissions(config_path, PermissionLevel.OWNER_ONLY)
 
             logger.info(f"Saved keyserver config to {config_path}")
 
@@ -207,12 +213,9 @@ class KeyserverConfig:
 
         try:
             # Check file permissions (should be 0600)
-            stat_info = token_file.stat()
-            mode = stat_info.st_mode & 0o777
-
-            if mode != 0o600:
+            if not check_permissions(token_file, PermissionLevel.OWNER_ONLY):
                 logger.warning(
-                    f"API token file has insecure permissions: {oct(mode)}. "
+                    f"API token file has insecure permissions: {oct(get_posix_mode(token_file))}. "
                     f"Should be 0600 (owner read/write only)"
                 )
 
@@ -252,7 +255,7 @@ class KeyserverConfig:
                 f.write(token)
 
             # Set restrictive permissions (owner read/write only)
-            os.chmod(token_file, 0o600)
+            set_permissions(token_file, PermissionLevel.OWNER_ONLY)
 
             logger.info(f"Saved API token to {token_file} with secure permissions")
 

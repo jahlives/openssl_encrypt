@@ -226,7 +226,8 @@ class Share:
         """
         with open(filepath, "w") as f:
             f.write(self.to_json())
-        os.chmod(filepath, 0o600)
+        from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
+        set_permissions(filepath, PermissionLevel.OWNER_ONLY)
 
     @classmethod
     def from_file(cls, filepath: str) -> "Share":

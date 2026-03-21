@@ -54,6 +54,7 @@ from .crypt_utils import (
     secure_shred_file,
     show_security_recommendations,
 )
+from .file_permissions import PermissionLevel, set_permissions as _fp_set_permissions
 
 # Try to import the CLI helper module
 try:
@@ -4957,7 +4958,7 @@ def main_with_args(args=None):
 
         # Read stdin once into a temp file
         stdin_temp_file_early = tempfile.NamedTemporaryFile(delete=False)
-        os.chmod(stdin_temp_file_early.name, 0o600)  # Security: Restrict to user read/write only
+        _fp_set_permissions(stdin_temp_file_early.name, PermissionLevel.OWNER_ONLY)  # Security: Restrict to user read/write only
         temp_files_to_cleanup.append(stdin_temp_file_early.name)
 
         # Copy all data from stdin to temp file
@@ -7045,7 +7046,7 @@ def main_with_args(args=None):
                     mode="w+b", delete=False, suffix=".encrypted"
                 ) as temp_file:
                     temp_output_file = temp_file.name
-                os.chmod(temp_output_file, 0o600)
+                _fp_set_permissions(temp_output_file, PermissionLevel.OWNER_ONLY)
 
                 # Handle cascade encryption parameters for stdout path
                 cascade_mode = False
@@ -8470,8 +8471,8 @@ def main_with_args(args=None):
                     import tempfile
 
                     stdin_temp_file = tempfile.NamedTemporaryFile(delete=False)
-                    os.chmod(
-                        stdin_temp_file.name, 0o600
+                    _fp_set_permissions(
+                        stdin_temp_file.name, PermissionLevel.OWNER_ONLY
                     )  # Security: Restrict to user read/write only
                     temp_files_to_cleanup.append(stdin_temp_file.name)
 
@@ -8592,7 +8593,7 @@ def main_with_args(args=None):
                                     ) as temp_file:
                                         temp_extracted_file = temp_file.name
                                         temp_file.write(encrypted_data)
-                                    os.chmod(temp_extracted_file, 0o600)
+                                    _fp_set_permissions(temp_extracted_file, PermissionLevel.OWNER_ONLY)
 
                                     # Use extracted file as input for decryption
                                     actual_input_file = temp_extracted_file

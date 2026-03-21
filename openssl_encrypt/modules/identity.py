@@ -32,6 +32,11 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from .crypt_utils import eprint
+from .file_permissions import (
+    PermissionLevel,
+    create_secure_directory,
+    set_permissions,
+)
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -369,7 +374,7 @@ class Identity:
             raise IdentityExistsError(f"Identity already exists at {path}")
 
         # Create directory with secure permissions
-        path.mkdir(parents=True, exist_ok=overwrite, mode=0o700)
+        create_secure_directory(path)
 
         logger.debug(f"Saving identity '{self.name}' to {path}")
 
@@ -393,7 +398,7 @@ class Identity:
         identity_json_path = path / "identity.json"
         with open(identity_json_path, "w") as f:
             json.dump(identity_data, f, indent=2)
-        os.chmod(identity_json_path, 0o600)
+        set_permissions(identity_json_path, PermissionLevel.OWNER_ONLY)
 
         # Save public keys
         enc_pub_path = path / "encryption_public.pem"
@@ -401,11 +406,11 @@ class Identity:
 
         with open(enc_pub_path, "wb") as f:
             f.write(self.encryption_public_key)
-        os.chmod(enc_pub_path, 0o644)
+        set_permissions(enc_pub_path, PermissionLevel.OWNER_WRITE_PUBLIC_READ)
 
         with open(sig_pub_path, "wb") as f:
             f.write(self.signing_public_key)
-        os.chmod(sig_pub_path, 0o644)
+        set_permissions(sig_pub_path, PermissionLevel.OWNER_WRITE_PUBLIC_READ)
 
         # Save private keys if available
         if self.encryption_private_key or self.signing_private_key:
@@ -422,7 +427,7 @@ class Identity:
                 enc_priv_path = path / "encryption_private.pem"
                 with open(enc_priv_path, "wb") as f:
                     f.write(enc_priv_encrypted)
-                os.chmod(enc_priv_path, 0o600)
+                set_permissions(enc_priv_path, PermissionLevel.OWNER_ONLY)
 
             if self.signing_private_key:
                 sig_priv_encrypted = _encrypt_private_key(
@@ -431,7 +436,7 @@ class Identity:
                 sig_priv_path = path / "signing_private.pem"
                 with open(sig_priv_path, "wb") as f:
                     f.write(sig_priv_encrypted)
-                os.chmod(sig_priv_path, 0o600)
+                set_permissions(sig_priv_path, PermissionLevel.OWNER_ONLY)
 
         logger.info(f"Saved identity '{self.name}' to {path}")
 
@@ -568,8 +573,8 @@ class IdentityStore:
         self.contacts_path = self.base_path / "contacts"
 
         # Create directories if they don't exist
-        self.base_path.mkdir(parents=True, exist_ok=True, mode=0o700)
-        self.contacts_path.mkdir(parents=True, exist_ok=True, mode=0o700)
+        create_secure_directory(self.base_path)
+        create_secure_directory(self.contacts_path)
 
     def list_identities(self, include_contacts: bool = True) -> List[Identity]:
         """
