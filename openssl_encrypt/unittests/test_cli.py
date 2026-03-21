@@ -350,7 +350,7 @@ def generate_cli_argument_tests():
 
             # Use the module path since crypt.py might not exist
             result = subprocess.run(
-                ["python", "-m", "openssl_encrypt.crypt", "--help"],
+                [sys.executable, "-m", "openssl_encrypt.crypt", "--help"],
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -843,7 +843,7 @@ class TestCLIAdvancedOperations(CLITestBase):
             # Run decrypt command with stdin input
             process = subprocess.Popen(
                 [
-                    "python",
+                    sys.executable,
                     "-m",
                     "openssl_encrypt.crypt",
                     "--quiet",  # Global flags must come before subcommand
@@ -865,7 +865,7 @@ class TestCLIAdvancedOperations(CLITestBase):
 
             # Check that the process succeeded
             self.assertEqual(
-                process.returncode, 0, f"Stdin decryption failed. stderr: {stderr.decode()}"
+                process.returncode, 0, f"Stdin decryption failed. stderr: {stderr.decode('utf-8', errors='replace')}"
             )
 
             # Verify we got some decrypted output
@@ -905,7 +905,7 @@ class TestCLIAdvancedOperations(CLITestBase):
             # Run decrypt command with stdin input and verbose flag
             process = subprocess.Popen(
                 [
-                    "python",
+                    sys.executable,
                     "-m",
                     "openssl_encrypt.crypt",
                     "--verbose",  # Global flags must come before subcommand
@@ -929,7 +929,7 @@ class TestCLIAdvancedOperations(CLITestBase):
             self.assertEqual(
                 process.returncode,
                 0,
-                f"Stdin decryption with warnings failed. stderr: {stderr.decode()}",
+                f"Stdin decryption with warnings failed. stderr: {stderr.decode('utf-8', errors='replace')}",
             )
 
             # Verify we got some decrypted output
