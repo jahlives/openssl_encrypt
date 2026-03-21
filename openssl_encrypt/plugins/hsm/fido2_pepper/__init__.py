@@ -150,9 +150,11 @@ class FIDO2HSMPlugin(HSMPlugin):
                 self.config_dir = config_dir
             else:
                 # Custom directory - create it directly with secure permissions
-                self.config_dir.mkdir(parents=True, exist_ok=True)
-                if hasattr(os, "chmod"):
-                    os.chmod(self.config_dir, 0o700)
+                from openssl_encrypt.modules.file_permissions import (
+                    PermissionLevel,
+                    create_secure_directory,
+                )
+                create_secure_directory(self.config_dir, level=PermissionLevel.OWNER_FULL)
                 logger.info(f"Created custom FIDO2 config directory: {self.config_dir}")
         except Exception as e:
             logger.error(f"Failed to create config directory: {e}")
@@ -292,7 +294,8 @@ class FIDO2HSMPlugin(HSMPlugin):
                 json.dump(data, f, indent=2)
 
             # Set secure permissions (0o600)
-            os.chmod(temp_file, 0o600)
+            from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
+            set_permissions(temp_file, PermissionLevel.OWNER_ONLY)
 
             # Atomic replace
             temp_file.replace(self.credential_file)

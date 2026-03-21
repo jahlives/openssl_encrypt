@@ -69,9 +69,11 @@ class TestFIDO2CredentialStorage(unittest.TestCase):
 
         # Verify file exists with correct permissions
         self.assertTrue(self.credential_file.exists())
-        file_stat = os.stat(self.credential_file)
-        file_mode = file_stat.st_mode & 0o777
-        self.assertEqual(file_mode, 0o600, "Credential file should have 0o600 permissions")
+        from openssl_encrypt.modules.file_permissions import PermissionLevel, check_permissions
+        self.assertTrue(
+            check_permissions(self.credential_file, PermissionLevel.OWNER_ONLY),
+            "Credential file should have OWNER_ONLY (0o600) permissions",
+        )
 
         # Load credentials
         loaded_credentials = self.plugin._load_credentials()
@@ -486,9 +488,11 @@ class TestFIDO2ConfigDirectory(unittest.TestCase):
         self.assertTrue(self.test_dir.exists())
 
         # Check permissions
-        dir_stat = os.stat(self.test_dir)
-        dir_mode = dir_stat.st_mode & 0o777
-        self.assertEqual(dir_mode, 0o700, "Config directory should have 0o700 permissions")
+        from openssl_encrypt.modules.file_permissions import PermissionLevel, check_permissions
+        self.assertTrue(
+            check_permissions(self.test_dir, PermissionLevel.OWNER_FULL),
+            "Config directory should have OWNER_FULL (0o700) permissions",
+        )
 
 
 if __name__ == "__main__":
