@@ -437,7 +437,7 @@ class USBDriveCreator:
             }
 
             metadata_path = workspace_dir / ".workspace"
-            with open(metadata_path, "w") as f:
+            with open(metadata_path, "w", encoding="utf-8") as f:
                 json.dump(metadata, f, indent=2)
 
             # Create README for workspace
@@ -490,7 +490,7 @@ python3 ../decrypt_file.py data.txt.enc mypassword | grep "important"
 """
 
             readme_path = workspace_dir / "README.txt"
-            with open(readme_path, "w") as f:
+            with open(readme_path, "w", encoding="utf-8") as f:
                 f.write(readme_content)
 
             return {"created": True, "path": str(workspace_dir.name), "encryption": "AES-256-GCM"}
@@ -517,7 +517,7 @@ PictureFiles=false
 VideoFiles=false
 """
 
-            with open(autorun_inf, "w") as f:
+            with open(autorun_inf, "w", encoding="utf-8") as f:
                 f.write(autorun_content)
             autorun_info["files_created"].append("autorun.inf")
 
@@ -539,14 +539,14 @@ else
 fi
 """
 
-            with open(autorun_sh, "w") as f:
+            with open(autorun_sh, "w", encoding="utf-8") as f:
                 f.write(autorun_script)
             autorun_sh.chmod(0o755)  # Make executable
             autorun_info["files_created"].append("autorun.sh")
 
             # macOS .autorun file
             autorun_mac = usb_root / ".autorun"
-            with open(autorun_mac, "w") as f:
+            with open(autorun_mac, "w", encoding="utf-8") as f:
                 f.write(f"{portable_root.name}/openssl_encrypt --portable-mode\n")
             autorun_info["files_created"].append(".autorun")
 
@@ -689,7 +689,7 @@ fi
         """Store hash_config in a separate metadata file"""
         try:
             metadata_file = config_dir / "hash_config.json"
-            with open(metadata_file, "w") as f:
+            with open(metadata_file, "w", encoding="utf-8") as f:
                 json.dump(hash_config, f, indent=2)
         except Exception as e:
             logger.warning(f"Failed to store hash_config metadata: {e}")
@@ -967,7 +967,7 @@ if __name__ == "__main__":
     main()
 '''
 
-            with open(crypt_script, "w") as f:
+            with open(crypt_script, "w", encoding="utf-8") as f:
                 f.write(crypt_code)
             crypt_script.chmod(0o755)
 
@@ -976,12 +976,12 @@ if __name__ == "__main__":
                 encrypt_bat = portable_root / "encrypt_file.bat"
                 decrypt_bat = portable_root / "decrypt_file.bat"
 
-                with open(encrypt_bat, "w") as f:
+                with open(encrypt_bat, "w", encoding="utf-8") as f:
                     f.write(
                         "@echo off\\npython crypt.py encrypt -i %1 --password %2 %3 %4 %5 %6 %7 %8 %9\\npause\\n"
                     )
 
-                with open(decrypt_bat, "w") as f:
+                with open(decrypt_bat, "w", encoding="utf-8") as f:
                     f.write(
                         "@echo off\\npython crypt.py decrypt -i %1 --password %2 %3 %4 %5 %6 %7 %8 %9\\npause\\n"
                     )
@@ -1215,7 +1215,7 @@ If any verification step fails, assume the USB has been compromised!
 """
 
             instructions_file = portable_root / "VERIFY_INTEGRITY.md"
-            with open(instructions_file, "w") as f:
+            with open(instructions_file, "w", encoding="utf-8") as f:
                 f.write(instructions_content)
 
             # Clean up sensitive data (handled by main CLI encryption function)

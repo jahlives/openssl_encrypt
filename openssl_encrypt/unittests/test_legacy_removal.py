@@ -145,7 +145,7 @@ class TestPBKDF2Removal(unittest.TestCase):
         import openssl_encrypt.modules.crypt_cli as cli_mod
 
         # The argument should not be in the module's argument definitions
-        source = open(cli_mod.__file__).read()
+        source = open(cli_mod.__file__, encoding="utf-8").read()
         self.assertNotIn("--pbkdf2-iterations", source)
 
 
