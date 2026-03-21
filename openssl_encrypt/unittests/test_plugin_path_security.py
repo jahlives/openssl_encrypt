@@ -63,7 +63,7 @@ class TestPlugin(PreProcessorPlugin):
             return PluginResult.error_result(str(e))
 """
         plugin_path = os.path.join(self.temp_dir, f"{plugin_id}.py")
-        with open(plugin_path, 'w') as f:
+        with open(plugin_path, 'w', encoding='utf-8') as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -71,7 +71,7 @@ class TestPlugin(PreProcessorPlugin):
         """Symlink pointing outside plugin directory should be blocked"""
         # Create a sensitive file outside plugin directory
         sensitive_file = os.path.join(self.temp_dir, "sensitive_data.txt")
-        with open(sensitive_file, 'w') as f:
+        with open(sensitive_file, 'w', encoding='utf-8') as f:
             f.write("SECRET DATA")
 
         # Create symlink in plugin data dir pointing to sensitive file
@@ -184,7 +184,7 @@ class TestPlugin(PreProcessorPlugin):
         """Chain of symlinks should be resolved and blocked"""
         # Create target file outside plugin dir
         target_file = os.path.join(self.temp_dir, "target.txt")
-        with open(target_file, 'w') as f:
+        with open(target_file, 'w', encoding='utf-8') as f:
             f.write("TARGET DATA")
 
         # Create symlink chain: link1 -> link2 -> target
@@ -284,7 +284,7 @@ class TestPlugin(PreProcessorPlugin):
             return PluginResult.error_result(str(e))
 """
         plugin_path = os.path.join(self.temp_dir, f"{plugin_id}.py")
-        with open(plugin_path, 'w') as f:
+        with open(plugin_path, 'w', encoding='utf-8') as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -292,7 +292,7 @@ class TestPlugin(PreProcessorPlugin):
         """Path traversal with ../ should be resolved and blocked"""
         # Create sensitive file outside plugin dir
         sensitive_file = os.path.join(self.temp_dir, "secret.txt")
-        with open(sensitive_file, 'w') as f:
+        with open(sensitive_file, 'w', encoding='utf-8') as f:
             f.write("SECRET")
 
         # Plugin attempts path traversal
@@ -431,7 +431,7 @@ class TestPlugin(PreProcessorPlugin):
             return PluginResult.error_result(str(e))
 """
         plugin_path = os.path.join(self.temp_dir, f"{plugin_id}.py")
-        with open(plugin_path, 'w') as f:
+        with open(plugin_path, 'w', encoding='utf-8') as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -489,7 +489,7 @@ class TestPlugin(PreProcessorPlugin):
         os.makedirs(subdir, exist_ok=True)
 
         subdir_file = os.path.join(subdir, "nested.txt")
-        with open(subdir_file, 'w') as f:
+        with open(subdir_file, 'w', encoding='utf-8') as f:
             f.write("NESTED DATA")
 
         # Plugin accesses file via context
@@ -578,7 +578,7 @@ class TestPlugin(PreProcessorPlugin):
             return PluginResult.error_result(str(e))
 """
         plugin_path = os.path.join(self.temp_dir, f"{plugin_id}.py")
-        with open(plugin_path, 'w') as f:
+        with open(plugin_path, 'w', encoding='utf-8') as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -586,7 +586,7 @@ class TestPlugin(PreProcessorPlugin):
         """Hardlink to file outside plugin dir should be limited by inode checks"""
         # Create sensitive file outside plugin dir
         sensitive_file = os.path.join(self.temp_dir, "sensitive.txt")
-        with open(sensitive_file, 'w') as f:
+        with open(sensitive_file, 'w', encoding='utf-8') as f:
             f.write("SENSITIVE")
 
         # Create hardlink in plugin dir

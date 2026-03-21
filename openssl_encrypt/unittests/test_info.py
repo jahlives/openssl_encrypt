@@ -93,7 +93,7 @@ class TestPrintFileInfo(unittest.TestCase):
     def test_print_file_info_invalid_file(self):
         """print_file_info() raises ValueError for non-encrypted files."""
         plain_file = os.path.join(self.temp_dir, "plain.txt")
-        with open(plain_file, "w") as f:
+        with open(plain_file, "w", encoding="utf-8") as f:
             f.write("Not an encrypted file")
         with self.assertRaises(ValueError):
             print_file_info(plain_file)

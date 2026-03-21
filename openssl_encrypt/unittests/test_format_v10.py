@@ -32,7 +32,7 @@ class TestFormatV10(unittest.TestCase):
 
         # Create test file
         self.test_file = os.path.join(self.test_dir, "test_v10.txt")
-        with open(self.test_file, "w") as f:
+        with open(self.test_file, "w", encoding="utf-8") as f:
             f.write("Test data for v10 XOR composition\n" * 10)
         self.test_files.append(self.test_file)
 
@@ -387,7 +387,7 @@ class TestFormatV10(unittest.TestCase):
         self.test_files.extend([empty_file, encrypted_file, decrypted_file])
 
         # Create empty file
-        open(empty_file, "w").close()
+        open(empty_file, "w", encoding="utf-8").close()
 
         encrypt_file(
             empty_file,

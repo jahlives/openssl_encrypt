@@ -493,7 +493,7 @@ class SimpleTestPlugin(PreProcessorPlugin):
 """
 
             plugin_file = os.path.join(self.plugin_dir, "simple_test.py")
-            with open(plugin_file, "w") as f:
+            with open(plugin_file, "w", encoding="utf-8") as f:
                 f.write(plugin_code)
 
             self.assertTrue(os.path.exists(plugin_file))
@@ -971,17 +971,17 @@ class TestPluginIntegration(unittest.TestCase):
 
         # Create various test files
         self.text_file = os.path.join(self.test_dir, "test.txt")
-        with open(self.text_file, "w") as f:
+        with open(self.text_file, "w", encoding="utf-8") as f:
             f.write("This is a test file for plugin integration.\nLine 2\nLine 3")
         self.test_files.append(self.text_file)
 
         self.json_file = os.path.join(self.test_dir, "test.json")
-        with open(self.json_file, "w") as f:
+        with open(self.json_file, "w", encoding="utf-8") as f:
             json.dump({"name": "test", "data": [1, 2, 3], "nested": {"key": "value"}}, f)
         self.test_files.append(self.json_file)
 
         self.csv_file = os.path.join(self.test_dir, "test.csv")
-        with open(self.csv_file, "w") as f:
+        with open(self.csv_file, "w", encoding="utf-8") as f:
             f.write("name,age,city\nAlice,30,New York\nBob,25,London\n")
         self.test_files.append(self.csv_file)
 
@@ -1067,7 +1067,7 @@ class TestPluginIntegration(unittest.TestCase):
             self.assertTrue(os.path.exists(backup_path))
 
             # Verify backup content matches original
-            with open(self.text_file, "r") as original, open(backup_path, "r") as backup:
+            with open(self.text_file, "r", encoding="utf-8") as original, open(backup_path, "r", encoding="utf-8") as backup:
                 self.assertEqual(original.read(), backup.read())
 
             # Test backup verification
@@ -1121,7 +1121,7 @@ class TestPluginIntegration(unittest.TestCase):
             self.assertTrue(os.path.exists(json_output))
 
             # Verify JSON output is valid
-            with open(json_output, "r") as f:
+            with open(json_output, "r", encoding="utf-8") as f:
                 converted_data = json.load(f)
                 self.assertIsInstance(converted_data, list)
                 self.assertEqual(len(converted_data), 2)  # Two data rows
@@ -1178,7 +1178,7 @@ class TestPluginIntegration(unittest.TestCase):
 
             # Test post-processing audit
             encrypted_file = os.path.join(self.test_dir, "dummy.enc")
-            with open(encrypted_file, "w") as f:
+            with open(encrypted_file, "w", encoding="utf-8") as f:
                 f.write("dummy encrypted content")
             self.test_files.append(encrypted_file)
 

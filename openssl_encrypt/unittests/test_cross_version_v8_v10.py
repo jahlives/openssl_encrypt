@@ -32,7 +32,7 @@ class TestCrossVersionV8V10(unittest.TestCase):
 
         # Create test file
         self.test_file = os.path.join(self.test_dir, "test_cross_version.txt")
-        with open(self.test_file, "w") as f:
+        with open(self.test_file, "w", encoding="utf-8") as f:
             f.write("Cross-version compatibility test data\n" * 10)
         self.test_files.append(self.test_file)
 

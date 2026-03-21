@@ -59,7 +59,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
 
         # Create a test file with "Hello World" content
         self.test_file = os.path.join(self.test_dir, "pqc_test.txt")
-        with open(self.test_file, "w") as f:
+        with open(self.test_file, "w", encoding="utf-8") as f:
             f.write("Hello World\n")
         self.test_files.append(self.test_file)
 
@@ -266,7 +266,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         self.test_files.extend([test_in, test_out])
 
         # Create test file
-        with open(test_in, "w") as f:
+        with open(test_in, "w", encoding="utf-8") as f:
             f.write("This is a test for metadata encryption_data parameter")
 
         # Test different data encryption algorithms
@@ -617,7 +617,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
 
         # Create test file
         test_content = "Testing metadata compatibility between v4 and v5 formats"
-        with open(v4_in, "w") as f:
+        with open(v4_in, "w", encoding="utf-8") as f:
             f.write(test_content)
 
         # Create v4 hash config
@@ -645,10 +645,10 @@ class TestPostQuantumCrypto(unittest.TestCase):
         decrypt_file(v5_out, v5_dec, self.test_password)
 
         # Verify decrypted content matches original
-        with open(v4_dec, "r") as f:
+        with open(v4_dec, "r", encoding="utf-8") as f:
             v4_content = f.read()
 
-        with open(v5_dec, "r") as f:
+        with open(v5_dec, "r", encoding="utf-8") as f:
             v5_content = f.read()
 
         self.assertEqual(v4_content, test_content)
@@ -696,7 +696,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         self.test_files.extend([test_in, test_out])
 
         # Create test file
-        with open(test_in, "w") as f:
+        with open(test_in, "w", encoding="utf-8") as f:
             f.write("Testing invalid encryption_data values")
 
         # Create hash config with an invalid encryption_data
@@ -764,6 +764,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
                     [sys.executable, "-m", "openssl_encrypt.crypt", "-h"],
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
                     check=True,
                 )
 
@@ -1379,7 +1380,7 @@ def test_file_decryption_wrong_algorithm_v3(filename):
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
     # Read the file content and extract metadata to find current algorithm
-    with open(f"{get_testfiles_dir()}/v3/{filename}", "r") as f:
+    with open(f"{get_testfiles_dir()}/v3/{filename}", "r", encoding="utf-8") as f:
         content = f.read()
 
     # Split file content by colon to get the metadata part
@@ -1743,7 +1744,7 @@ class TestPQCErrorHandling(unittest.TestCase):
                 self.test_files.extend([test_in, test_out, test_dec])
 
                 # Write test data
-                with open(test_in, "w") as f:
+                with open(test_in, "w", encoding="utf-8") as f:
                     f.write(self.test_data)
 
                 try:
@@ -1809,7 +1810,7 @@ class TestPQCErrorHandling(unittest.TestCase):
                 self.test_files.extend([test_in, test_out, test_dec])
 
                 # Write test data
-                with open(test_in, "w") as f:
+                with open(test_in, "w", encoding="utf-8") as f:
                     f.write(self.test_data)
 
                 try:
@@ -1891,7 +1892,7 @@ class TestPQCErrorHandling(unittest.TestCase):
                 self.test_files.extend([test_in, test_out, test_dec])
 
                 # Write test data
-                with open(test_in, "w") as f:
+                with open(test_in, "w", encoding="utf-8") as f:
                     f.write(self.test_data)
 
                 try:
@@ -1956,7 +1957,7 @@ class TestPQCErrorHandling(unittest.TestCase):
                 self.test_files.extend([test_in, test_out, test_dec])
 
                 # Write test data
-                with open(test_in, "w") as f:
+                with open(test_in, "w", encoding="utf-8") as f:
                     f.write(self.test_data)
 
                 try:
@@ -2061,7 +2062,7 @@ class TestConcurrentPQCExecutionSafety(unittest.TestCase):
             }
 
             # Write unique test data
-            with open(files["input"], "w") as f:
+            with open(files["input"], "w", encoding="utf-8") as f:
                 f.write(f"Thread {thread_id} test data - {time.time()}")
 
             return files
@@ -2084,7 +2085,7 @@ class TestConcurrentPQCExecutionSafety(unittest.TestCase):
         # Verify all files exist and have unique content
         file_contents = []
         for file_path in [fs["input"] for fs in file_sets]:
-            with open(file_path, "r") as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
                 file_contents.append(content)
 
@@ -2110,7 +2111,7 @@ class TestConcurrentPQCExecutionSafety(unittest.TestCase):
 
                 # Write unique test data
                 test_content = f"Algorithm {algorithm} thread {thread_id} data {time.time()}"
-                with open(input_file, "w") as f:
+                with open(input_file, "w", encoding="utf-8") as f:
                     f.write(test_content)
 
                 # Encrypt (this should always work)
@@ -2324,7 +2325,7 @@ class TestPQCSigHKDFSaltInMetadata(unittest.TestCase):
         test_out = os.path.join(self.test_dir, "mayo_v12_pregen.enc")
         self.test_files.extend([test_in, test_out])
 
-        with open(test_in, "w") as f:
+        with open(test_in, "w", encoding="utf-8") as f:
             f.write(self.test_data)
 
         encrypt_file(
@@ -2362,7 +2363,7 @@ class TestPQCSigHKDFSaltInMetadata(unittest.TestCase):
         test_out = os.path.join(self.test_dir, "mayo_v12_meta.enc")
         self.test_files.extend([test_in, test_out])
 
-        with open(test_in, "w") as f:
+        with open(test_in, "w", encoding="utf-8") as f:
             f.write(self.test_data)
 
         encrypt_file(
@@ -2399,7 +2400,7 @@ class TestPQCSigHKDFSaltInMetadata(unittest.TestCase):
         test_out = os.path.join(self.test_dir, "mayo_legacy_meta.enc")
         self.test_files.extend([test_in, test_out])
 
-        with open(test_in, "w") as f:
+        with open(test_in, "w", encoding="utf-8") as f:
             f.write(self.test_data)
 
         encrypt_file(
@@ -2433,7 +2434,7 @@ class TestPQCSigHKDFSaltInMetadata(unittest.TestCase):
         test_out = os.path.join(self.test_dir, "cross_v12_pregen.enc")
         self.test_files.extend([test_in, test_out])
 
-        with open(test_in, "w") as f:
+        with open(test_in, "w", encoding="utf-8") as f:
             f.write(self.test_data)
 
         encrypt_file(
@@ -2467,7 +2468,7 @@ class TestPQCSigHKDFSaltInMetadata(unittest.TestCase):
             test_out = os.path.join(self.test_dir, f"mayo_v12_unique_{i}.enc")
             self.test_files.extend([test_in, test_out])
 
-            with open(test_in, "w") as f:
+            with open(test_in, "w", encoding="utf-8") as f:
                 f.write(self.test_data)
 
             encrypt_file(

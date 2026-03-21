@@ -94,7 +94,7 @@ class TestIntegrityFileIDConsistency(unittest.TestCase):
         self.mock_storage = MockIntegrityHashStorage()
 
         # Create test file
-        with open(self.test_file, "w") as f:
+        with open(self.test_file, "w", encoding="utf-8") as f:
             f.write("Test content for integrity verification")
 
     def tearDown(self):
@@ -273,7 +273,7 @@ class TestIntegrityHashStorageAndRetrieval(unittest.TestCase):
         self.password = b"secure_password"
         self.mock_storage = MockIntegrityHashStorage()
 
-        with open(self.test_file, "w") as f:
+        with open(self.test_file, "w", encoding="utf-8") as f:
             f.write("Important data")
 
     def tearDown(self):
@@ -458,7 +458,7 @@ class TestIntegrityTamperingDetection(unittest.TestCase):
         self.password = b"password123"
         self.mock_storage = MockIntegrityHashStorage()
 
-        with open(self.test_file, "w") as f:
+        with open(self.test_file, "w", encoding="utf-8") as f:
             f.write("Secret information")
 
     def tearDown(self):
@@ -704,7 +704,7 @@ class TestIntegrityAEADAndNonAEAD(unittest.TestCase):
         self.password = b"test_pass"
         self.mock_storage = MockIntegrityHashStorage()
 
-        with open(self.test_file, "w") as f:
+        with open(self.test_file, "w", encoding="utf-8") as f:
             f.write("Test data for AEAD/non-AEAD")
 
     def tearDown(self):

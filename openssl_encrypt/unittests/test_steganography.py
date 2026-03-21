@@ -451,7 +451,7 @@ class TestSteganographyCLIIntegration(unittest.TestCase):
 
         # Create test files
         self.test_secret_file = os.path.join(self.test_dir, "secret.txt")
-        with open(self.test_secret_file, "w") as f:
+        with open(self.test_secret_file, "w", encoding="utf-8") as f:
             f.write("CLI integration test data")
 
         # Import CLI modules
